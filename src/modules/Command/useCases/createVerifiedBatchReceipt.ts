@@ -26,6 +26,12 @@ type BatchExecutionObservation = {
     }>;
     reason?: string;
     warning?: string;
+    warningDetails?: ReadonlyArray<{
+        kind: 'semantic-cleanup' | 'observer' | 'history' | 'external-effect';
+        message: string;
+        commandId?: string;
+    }>;
+    failureKind?: 'verification';
 };
 
 type CreateVerifiedBatchReceiptInput = {
@@ -86,15 +92,13 @@ function commandAffectedIds(command: VersionedCommandEnvelope): string[] {
 }
 
 function actualBatchOutcome(result: BatchExecutionObservation) {
-    if (result.status === 'committed-with-warning') {
+    if (
+        result.status === 'committed-with-warning' &&
+        result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true
+    ) {
         return 'partially-committed' as const;
     }
-    if (
-        result.status === 'conflicted' &&
-        (result.reason?.includes('postcondition') === true ||
-            result.reason?.includes('project invariants') === true ||
-            result.reason?.includes('invalid audio graph') === true)
-    ) {
+    if (result.status === 'conflicted' && result.failureKind === 'verification') {
         return 'verification-failed' as const;
     }
     return result.status;
@@ -120,10 +124,16 @@ function commandOutcome(input: {
     return 'not-applied' as const;
 }
 
-function collectArtifactLinks(commands: readonly VersionedCommandEnvelope[]) {
+function collectArtifactLinks(
+    commands: readonly VersionedCommandEnvelope[],
+    failedExternalEffectCommandIds: ReadonlySet<string>
+) {
     const render: Array<{ commandId: string; jobId: string }> = [];
     const analysis: Array<{ analysisId: string; commandId: string }> = [];
     for (const command of commands) {
+        if (failedExternalEffectCommandIds.has(command.commandId)) {
+            continue;
+        }
         const jobs = Array.isArray(command.arguments.jobs) ? command.arguments.jobs : [];
         for (const job of jobs) {
             if (isRecord(job) && typeof job.jobId === 'string') {
@@ -155,6 +165,9 @@ function createModelSummary(input: {
     }
     if (input.outcome === 'partially-committed') {
         return `Committed ${String(input.executedCommandCount)} commands atomically, but at least one non-atomic follow-up effect failed.`;
+    }
+    if (input.outcome === 'committed-with-warning') {
+        return `Committed ${String(input.executedCommandCount)} commands atomically; reporting completed with warnings.`;
     }
     if (input.outcome === 'no-op') {
         return 'No commands changed project state.';
@@ -188,8 +201,15 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         };
     });
     const appliedCommands = input.envelope.commands.filter((command) => executedCommandIds.has(command.commandId));
-    const affectedIds = commandOutcomes
-        .flatMap((command) => command.affectedIds)
+    const dynamicAffectedIds =
+        input.result.status === 'committed' || input.result.status === 'committed-with-warning'
+            ? [
+                  ...(input.envelope.dynamicEffects?.affectedTrackIds ?? []),
+                  ...(input.envelope.dynamicEffects?.affectedClipIds ?? []),
+                  ...(input.envelope.dynamicEffects?.affectedTargetIds ?? []),
+              ]
+            : [];
+    const affectedIds = [...commandOutcomes.flatMap((command) => command.affectedIds), ...dynamicAffectedIds]
         .filter((value, index, values) => values.indexOf(value) === index)
         .toSorted();
     const createdBindings = appliedCommands
@@ -233,16 +253,19 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
             : null;
     const compensationAvailable =
         appliedCommands.length > 0 && compensationCommandIds.length === appliedCommands.length;
+    const failedExternalEffectCommandIds = new Set(
+        input.result.warningDetails?.flatMap(({ commandId, kind }) =>
+            kind === 'external-effect' && commandId ? [commandId] : []
+        ) ?? []
+    );
+    const hasFailedExternalEffect = failedExternalEffectCommandIds.size > 0;
 
     return {
         schemaVersion: VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION,
         runId: input.envelope.runId,
         batchId: input.envelope.batchId,
         outcome,
-        atomicity:
-            input.result.status === 'committed-with-warning'
-                ? ('durable-atomic-with-non-atomic-effects' as const)
-                : ('atomic' as const),
+        atomicity: hasFailedExternalEffect ? ('durable-atomic-with-non-atomic-effects' as const) : ('atomic' as const),
         base: parseRevision(input.envelope.baseRevision),
         observedBase: parseRevision(input.observedBaseRevision),
         resulting: parseRevision(input.resultingRevision),
@@ -251,7 +274,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         createdBindings,
         warnings,
         errors,
-        links: collectArtifactLinks(appliedCommands),
+        links: collectArtifactLinks(appliedCommands, failedExternalEffectCommandIds),
         compensation: {
             available: compensationAvailable,
             commandIds: compensationCommandIds,

@@ -74,7 +74,12 @@ function command(input: { action: AppAction; commandId: string; expectedEffect: 
     };
 }
 
-function compileBatch() {
+function compileBatch(
+    input: {
+        dynamicAffectedTargetIds?: readonly string[];
+        protectedTargetIds?: readonly string[];
+    } = {}
+) {
     const commands = [
         command({
             action: {
@@ -100,6 +105,10 @@ function compileBatch() {
         intent: 'Balance vocal and guitar',
         mode: 'commit',
         projectId: 'project-receipt',
+        dynamicEffects: input.dynamicAffectedTargetIds
+            ? { affectedTargetIds: [...input.dynamicAffectedTargetIds] }
+            : undefined,
+        protectedTargetIds: input.protectedTargetIds,
         runId: 'run-receipt',
     });
 }
@@ -117,7 +126,99 @@ describe('verified batch receipt', () => {
     let projectDocument: Record<string, unknown>;
     let gainStorage: ReturnType<typeof createAutomergeStorage<{ value: number }>>;
     let panStorage: ReturnType<typeof createAutomergeStorage<{ value: number }>>;
+    let protectedFingerprintChanged: boolean;
     let rejectPostconditions: boolean;
+
+    function compileArtifactBatch(input: { renderAfterCommit?: () => void } = {}) {
+        projectDocument = { markers: { ids: [] }, rendered: { jobIds: [] } };
+        const markerStorage = createAutomergeStorage<{ ids: string[] }>('root', 'markers');
+        const renderedStorage = createAutomergeStorage<{ jobIds: string[] }>('root', 'rendered');
+        expect(markerStorage.hydrate?.()).toBe(true);
+        expect(renderedStorage.hydrate?.()).toBe(true);
+        const jobs = [
+            {
+                jobId: 'render-verse',
+                sectionId: 'section-verse',
+                sectionName: 'Verse',
+                startBeat: 0,
+                endBeat: 16,
+                sampleRate: 48_000,
+                tailSeconds: 2,
+            },
+        ];
+        const renderAction: RenderProjectSectionsAction = {
+            type: 'renderProjectSections',
+            payload: { sectionIds: ['section-verse'], jobs },
+        };
+        const markerAction: AddMarkerAction = {
+            type: 'addMarker',
+            payload: { beat: 0, markerId: 'marker-render-start', name: 'Render start' },
+        };
+        registerHandlerMap({
+            addMarker: createHandler<AddMarkerAction>({
+                execute: () => markerStorage.set({ ids: ['marker-render-start'] }),
+                describe: () => ({
+                    label: 'Add render marker',
+                    inverseAction: { type: 'removeMarker', payload: { markerId: 'marker-render-start' } },
+                }),
+            }),
+            renderProjectSections: createHandler<RenderProjectSectionsAction>({
+                execute: () => {
+                    renderedStorage.set({ jobIds: ['render-verse'] });
+                    let executionResult;
+                    if (input.renderAfterCommit) {
+                        executionResult = {
+                            status: 'written' as const,
+                            afterCommit: input.renderAfterCommit,
+                            afterAmbiguousCommit: input.renderAfterCommit,
+                        };
+                    }
+                    return executionResult;
+                },
+                describe: () => ({
+                    label: 'Render Verse',
+                    inverseAction: {
+                        type: 'removeRenderedProjectSections',
+                        payload: { sectionIds: ['section-verse'], jobs },
+                    },
+                }),
+            }),
+        });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-receipt',
+            projectInvariantsValid: true,
+            targetFingerprints: { 'section-verse': 'section:section-verse' },
+        }));
+        const markerCommand = {
+            ...createExecutionCommandEnvelope({
+                action: markerAction,
+                expectedEffect: 'Add a render-start marker.',
+                normalizedProjectRevision: revision(0),
+            }).envelope,
+            commandId: GAIN_COMMAND_ID,
+        };
+        const renderCommand = {
+            ...createExecutionCommandEnvelope({
+                action: renderAction,
+                expectedEffect: 'Render the Verse section.',
+                normalizedProjectRevision: revision(0),
+            }).envelope,
+            commandId: PAN_COMMAND_ID,
+        };
+        return compileVersionedCommandBatchEnvelope({
+            baseRevision: revision(0),
+            batchId: 'batch-render-receipt',
+            commands: [JSON.stringify(markerCommand), JSON.stringify(renderCommand)],
+            intent: 'Render Verse',
+            mode: 'commit',
+            projectId: 'project-receipt',
+            runId: 'run-render-receipt',
+        });
+    }
 
     function registerTestHandlers(
         input: {
@@ -167,6 +268,7 @@ describe('verified batch receipt', () => {
         vi.clearAllMocks();
         clearHandlerRegistry();
         mutationCount = 0;
+        protectedFingerprintChanged = false;
         rejectPostconditions = false;
         projectDocument = { trackGain: { value: 1 }, trackPan: { value: 0 } };
         configureAutomergeStoragePort({
@@ -193,7 +295,12 @@ describe('verified batch receipt', () => {
             projectId: 'project-receipt',
             projectInvariantsValid: !(rejectPostconditions && stagedDocument !== undefined),
             targetFingerprints: {
+                'automation-lane-hidden': 'automation:automation-lane-hidden',
                 'track-guitar': 'track:track-guitar',
+                'track-protected':
+                    protectedFingerprintChanged && stagedDocument !== undefined
+                        ? 'protected:after'
+                        : 'protected:before',
                 'track-vocal': 'track:track-vocal',
             },
         }));
@@ -315,8 +422,8 @@ describe('verified batch receipt', () => {
     });
 
     it('distinguishes failed postcondition verification from an ordinary conflict', async () => {
-        rejectPostconditions = true;
-        const batch = compileBatch();
+        protectedFingerprintChanged = true;
+        const batch = compileBatch({ protectedTargetIds: ['track-protected'] });
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -330,7 +437,7 @@ describe('verified batch receipt', () => {
         expect(receiptFrom(result)).toMatchObject({
             outcome: 'verification-failed',
             commandOutcomes: [{ outcome: 'not-applied' }, { outcome: 'not-applied' }],
-            errors: ['Command batch violated project invariants'],
+            errors: ['Command batch changed protected target: track-protected'],
             resulting: { normalizedRevision: revision(0) },
             semanticDiff: null,
             modelSummary: 'Verification failed; the project batch was not committed.',
@@ -388,85 +495,45 @@ describe('verified batch receipt', () => {
         });
     });
 
+    it('reports observer warnings without claiming a partial project commit', async () => {
+        mocks.recordActionHistoryMetadata.mockImplementationOnce(() => {
+            throw new Error('history observer unavailable');
+        });
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed-with-warning');
+        expect(receiptFrom(result)).toMatchObject({
+            outcome: 'committed-with-warning',
+            atomicity: 'atomic',
+            warnings: ['history observer unavailable'],
+            modelSummary: 'Committed 2 commands atomically; reporting completed with warnings.',
+        });
+    });
+
+    it('includes application-owned dynamic targets in the committed affected IDs', async () => {
+        const batch = compileBatch({ dynamicAffectedTargetIds: ['automation-lane-hidden'] });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(receiptFrom(result)).toMatchObject({
+            affectedIds: ['automation-lane-hidden', 'track-guitar', 'track-vocal'],
+        });
+    });
+
     it('returns created bindings and render links only for committed commands', async () => {
         clearHandlerRegistry();
-        projectDocument = { markers: { ids: [] }, rendered: { jobIds: [] } };
-        const markerStorage = createAutomergeStorage<{ ids: string[] }>('root', 'markers');
-        const renderedStorage = createAutomergeStorage<{ jobIds: string[] }>('root', 'rendered');
-        expect(markerStorage.hydrate?.()).toBe(true);
-        expect(renderedStorage.hydrate?.()).toBe(true);
-        const jobs = [
-            {
-                jobId: 'render-verse',
-                sectionId: 'section-verse',
-                sectionName: 'Verse',
-                startBeat: 0,
-                endBeat: 16,
-                sampleRate: 48_000,
-                tailSeconds: 2,
-            },
-        ];
-        const renderAction: RenderProjectSectionsAction = {
-            type: 'renderProjectSections',
-            payload: { sectionIds: ['section-verse'], jobs },
-        };
-        const markerAction: AddMarkerAction = {
-            type: 'addMarker',
-            payload: { beat: 0, markerId: 'marker-render-start', name: 'Render start' },
-        };
-        registerHandlerMap({
-            addMarker: createHandler<AddMarkerAction>({
-                execute: () => markerStorage.set({ ids: ['marker-render-start'] }),
-                describe: () => ({
-                    label: 'Add render marker',
-                    inverseAction: { type: 'removeMarker', payload: { markerId: 'marker-render-start' } },
-                }),
-            }),
-            renderProjectSections: createHandler<RenderProjectSectionsAction>({
-                execute: () => renderedStorage.set({ jobIds: ['render-verse'] }),
-                describe: () => ({
-                    label: 'Render Verse',
-                    inverseAction: {
-                        type: 'removeRenderedProjectSections',
-                        payload: { sectionIds: ['section-verse'], jobs },
-                    },
-                }),
-            }),
-        });
-        commandBatchPreflightPort.setProvider(() => ({
-            audioGraphValid: true,
-            availableAssetHashes: [],
-            availableAudioBufferIds: [],
-            lockedRanges: [],
-            projectId: 'project-receipt',
-            projectInvariantsValid: true,
-            targetFingerprints: { 'section-verse': 'section:section-verse' },
-        }));
-        const markerCommand = {
-            ...createExecutionCommandEnvelope({
-                action: markerAction,
-                expectedEffect: 'Add a render-start marker.',
-                normalizedProjectRevision: revision(0),
-            }).envelope,
-            commandId: GAIN_COMMAND_ID,
-        };
-        const renderCommand = {
-            ...createExecutionCommandEnvelope({
-                action: renderAction,
-                expectedEffect: 'Render the Verse section.',
-                normalizedProjectRevision: revision(0),
-            }).envelope,
-            commandId: PAN_COMMAND_ID,
-        };
-        const batch = compileVersionedCommandBatchEnvelope({
-            baseRevision: revision(0),
-            batchId: 'batch-render-receipt',
-            commands: [JSON.stringify(markerCommand), JSON.stringify(renderCommand)],
-            intent: 'Render Verse',
-            mode: 'commit',
-            projectId: 'project-receipt',
-            runId: 'run-render-receipt',
-        });
+        const batch = compileArtifactBatch();
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -487,6 +554,27 @@ describe('verified batch receipt', () => {
                 render: [{ commandId: PAN_COMMAND_ID, jobId: 'render-verse' }],
                 analysis: [],
             },
+        });
+    });
+
+    it('omits planned render links when the render effect fails persistently', async () => {
+        clearHandlerRegistry();
+        const batch = compileArtifactBatch({
+            renderAfterCommit: () => {
+                throw new Error('renderer unavailable');
+            },
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed-with-warning');
+        expect(receiptFrom(result)).toMatchObject({
+            outcome: 'partially-committed',
+            links: { render: [], analysis: [] },
         });
     });
 });

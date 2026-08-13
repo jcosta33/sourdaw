@@ -230,6 +230,7 @@ describe('command batch preflight', () => {
         const { execution, receipt } = splitBatchReceipt(result);
         expect(execution).toEqual({
             status: 'conflicted',
+            failureKind: 'verification',
             reason: 'Command batch postcondition validation failed: capture failed',
             actions: [],
         });
