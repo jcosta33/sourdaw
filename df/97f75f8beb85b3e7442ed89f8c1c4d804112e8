@@ -1,0 +1,138 @@
+src/modules/Arrangement/handlers/clipStretch/handleFitClipToBeats.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 85
+src/modules/Arrangement/handlers/device/handleAddSend.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 75
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 275
+src/modules/Arrangement/handlers/device/handleRestoreDevice.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 68
+src/modules/Arrangement/handlers/device/handleRemoveSend.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 58
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 157
+src/modules/Automation/handlers/automation/handleReverseAutomation.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 19
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 91
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 53
+src/modules/Arrangement/handlers/clip/handleArpeggiate.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 105
+src/modules/Arrangement/handlers/track/setAutomationMode.ts
+  s_a40848e8f8cca9::t_5c39d6d8f27776 41
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRanges.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 120
+src/modules/MIDI/handlers/noteTransform/handleRemoveShortMidiOverlaps.ts
+  s_a40848e8f8cca9::t_e8021fdb9eb6dc 66
+src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts
+  s_a40848e8f8cca9::t_60aa2f5d1234a7 1-5,7-34,47-92
+  s_a40848e8f8cca9::t_5c26da93a603fb 6,35-46
+src/modules/AudioEngine/useCases/__tests__/compileAudioGraphTopology.spec.ts
+  s_a40848e8f8cca9::t_a2a3bb4a04ad4d 27
+  s_a40848e8f8cca9::t_6804029eb5ea70 25
+  s_a40848e8f8cca9::t_60aa2f5d1234a7 1-24,26,28-41
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_23e3608b97ca82 270
+  s_a40848e8f8cca9::t_cb8db1b762887b 4,154-160,164-174,209,212-218,223,225,232,235,237,243,258-262,309,311,331,333,335,339,360-362
+  s_a40848e8f8cca9::t_6804029eb5ea70 228
+src/modules/AudioRendering/handlers/handleRenderProjectSections.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 86
+src/modules/Arrangement/handlers/track/handleCreateBus.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 71
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 1773-1774
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 166
+src/modules/AudioRendering/handlers/handleRemoveRenderedProjectSections.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 47
+src/modules/AiGeneration/handlers/aiMidi/handleVariationMidi.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 91
+src/modules/Arrangement/handlers/track/setTrackOutput.ts
+  s_a40848e8f8cca9::t_5c39d6d8f27776 75
+src/modules/Arrangement/handlers/device/handleAddSidechainRoute.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 112
+src/modules/Automation/handlers/automation/handleQuantizeAutomation.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 23
+src/modules/Arrangement/handlers/clip/handleRestoreClipGlueState.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 10
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_a40848e8f8cca9::t_5c39d6d8f27776 79
+src/modules/Automation/handlers/automation/handleScaleAutomation.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 24
+src/modules/Automation/handlers/automation/handleStretchAutomation.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 24
+src/modules/Arrangement/handlers/track/armTrack.ts
+  s_a40848e8f8cca9::t_5c39d6d8f27776 113
+src/modules/AiGeneration/handlers/aiMidi/handleReplayGeneratedMidi.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 180
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_a2a3bb4a04ad4d 21-29,180-188,193-231
+  s_a40848e8f8cca9::t_ea2feb53a555b7 189-192
+  s_a40848e8f8cca9::t_bb23ef60210af7 232-233
+src/modules/CrdtDocument/handlers/previewBranches/handleDeleteDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 13
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_e8021fdb9eb6dc 66
+src/modules/Automation/handlers/automation/handleInvertAutomation.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 19
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_60aa2f5d1234a7 144
+src/modules/Arrangement/handlers/track/duplicateTrack.ts
+  s_a40848e8f8cca9::t_5c39d6d8f27776 87
+src/modules/CrdtDocument/handlers/previewBranches/handleCreateDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 29
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 108
+src/modules/Arrangement/handlers/clip/handleGlueClips.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 57
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 60
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_6804029eb5ea70 153
+  s_a40848e8f8cca9::t_5c39d6d8f27776 198
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 33,75-76
+  s_a40848e8f8cca9::t_1c275f99376cc8 72
+  s_a40848e8f8cca9::t_266424eb6fa2f6 77
+src/modules/Arrangement/handlers/clip/handleMoveClip.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 87
+src/modules/Automation/handlers/automation/handleThinAutomation.ts
+  s_a40848e8f8cca9::t_b61f98b9171fc7 23
+src/modules/MIDI/handlers/noteTransform/handleRestoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_e8021fdb9eb6dc 10
+src/modules/AiGeneration/handlers/aiMidi/handleCompleteMidi.ts
+  s_a40848e8f8cca9::t_55d2f6effb6984 155
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_a2a3bb4a04ad4d 217,227,237,255-287
+  s_a40848e8f8cca9::t_36a57cd595baf5 288-290
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_a40848e8f8cca9::t_5c39d6d8f27776 255
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 196
+src/modules/Arrangement/handlers/track/discardCreatedTrack.ts
+  s_a40848e8f8cca9::t_5c39d6d8f27776 85
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 85
+src/modules/Arrangement/handlers/device/handleRemoveSidechainRoute.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 96
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_a40848e8f8cca9::t_d92e9dd7ac029a 23
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_a40848e8f8cca9::t_98a94e1510052a 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "df97f75f8beb85b3e7442ed89f8c1c4d804112e8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
