@@ -14,8 +14,6 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
-    captureCommandTargetFingerprints,
-    commandBatchPreflightPort,
     executeAppActionBatch,
     redo,
     resetActionReplayAuthority,
@@ -24,7 +22,6 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
-    captureProjectRevision,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -43,6 +40,11 @@ import { getDeviceParameterPromptScope } from '../agentReference/getDeviceParame
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
+
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 
 const PROMPT =
     'Set the Bass DI compressor threshold to -18 dB and ratio to 4:1, leaving attack, release, and makeup gain unchanged.';
@@ -271,18 +273,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
-        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
-            audioGraphValid: true,
-            availableAssetHashes: [],
-            availableAudioBufferIds: [],
-            lockedRanges: [],
-            projectId: captureProjectRevision(),
-            projectInvariantsValid: true,
-            targetFingerprints: captureCommandTargetFingerprints({
-                document: trackStore.value,
-                targetIds,
-            }),
-        }));
+        configureAiWorkflowCommandPreflightFixture();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
@@ -316,7 +307,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
-        commandBatchPreflightPort.setProvider(null);
+        resetAiWorkflowCommandPreflightFixture();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
         cloudSession.clear();

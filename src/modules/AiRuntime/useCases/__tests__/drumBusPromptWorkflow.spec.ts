@@ -39,6 +39,10 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
@@ -587,6 +591,7 @@ describe('drum bus prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        configureAiWorkflowCommandPreflightFixture();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getAudioRenderingHandlers());
@@ -624,6 +629,7 @@ describe('drum bus prompt workflow', () => {
         commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
+        resetAiWorkflowCommandPreflightFixture();
         clearAgentSectionRenderArtifacts();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
