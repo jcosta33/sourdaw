@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { scrollTimelineViewportFromWheel } from '../../useCases/scrollTimelineViewportFromWheel';
 import {
     timelineViewStore,
     zoomTimeline,
@@ -182,5 +183,60 @@ describe('setScrollY track-height ceiling', () => {
 
         // ceiling 0 -> clamped 0 == current 0 -> no store write.
         expect(writeSpy).not.toHaveBeenCalled();
+    });
+});
+
+// Regression (F7, second call site): `viewportHeight` used to be a single
+// field on the store, written only by `TrackListView`. A second scrollable
+// view — the automation panel, driven through
+// `scrollTimelineViewportFromWheel` — has no `ResizeObserver` of its own and
+// clamped against whatever the track list last reported, so its scroll
+// ceiling depended on an unrelated view's size (and, worse, on a mounted
+// `TrackListView` re-syncing its own real `scrollTop` to that shared
+// `scrollY`, letting the automation panel desync the track list's actual
+// scroll position). `scrollTimelineViewportFromWheel` now takes the caller's
+// own real height as a required input and forwards it to `setScrollY` as a
+// per-call override, so each view's clamp uses its own height regardless of
+// what any other mounted view reported.
+describe('scrollTimelineViewportFromWheel viewport isolation (F7)', () => {
+    beforeEach(() => {
+        timelineViewStore.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 12,
+            autoScrollEnabled: true,
+            viewportHeight: 0,
+        });
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null });
+    });
+
+    it("clamps the automation panel's own wheel scroll against its own reported height, not the track list's", () => {
+        // 400px of scrollable track content.
+        trackStore.set({
+            tracks: [{ id: 'a', kind: 'audio', height: 200 } as any, { id: 'b', kind: 'audio', height: 200 } as any],
+            selectedTrackId: null,
+        });
+
+        // TrackListView is mounted at 500px tall (taller than all content)
+        // and reports it the way it always does.
+        setTimelineViewportHeight(500);
+
+        // The automation panel is mounted at a real, much smaller 130px and
+        // supplies that height itself on every wheel event, instead of
+        // reading the track list's shared field.
+        scrollTimelineViewportFromWheel({ deltaX: 0, deltaY: 1000, shiftKey: false, viewportHeight: 130 });
+
+        // Its own ceiling: totalHeight(400) - viewportHeight(130) = 270.
+        // Before this fix it inherited the track list's viewport (500 > 400
+        // content), clamping the ceiling to 0 regardless of how far the
+        // automation panel actually scrolled.
+        expect(timelineViewStore.value?.scrollY).toBe(270);
+
+        // The track list's own field is untouched by the automation panel's
+        // call — the two views' heights stay independent.
+        expect(timelineViewStore.value?.viewportHeight).toBe(500);
     });
 });

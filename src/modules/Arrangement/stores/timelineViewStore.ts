@@ -87,19 +87,39 @@ export function setTimelineViewportHeight(viewportHeight: number): void {
     timelineViewStore.set({ ...state, viewportHeight });
 }
 
-export function setScrollY(scrollY: number): void {
+/**
+ * F7 — the shared `viewportHeight` field is written by exactly one caller
+ * (`TrackListView`, via {@link setTimelineViewportHeight}), so it is only
+ * ever correct for that view's own clamp. A second scrollable view (the
+ * automation panel) must not clamp against it: doing so makes its scroll
+ * ceiling depend on an unrelated view's size, and — because a mounted
+ * `TrackListView` also *reads* `scrollY` back to sync its own native
+ * `scrollTop` — a clamp computed from the wrong viewport can write a
+ * `scrollY` that visibly desyncs the track list's real scroll position.
+ *
+ * `viewportHeightOverride` lets a caller that owns its own scrollable
+ * container (and measures its own real height, e.g. from the wheel event's
+ * `currentTarget`) clamp against that height directly instead, without
+ * writing it into the shared field and without disturbing `TrackListView`'s
+ * own no-argument call, which keeps using `state.viewportHeight` exactly as
+ * before.
+ */
+export function setScrollY(scrollY: number, viewportHeightOverride?: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
     // Clamp to prevent scrolling past the last track, against the real
     // viewport height the store was last told about (see
-    // `setTimelineViewportHeight`) rather than an assumed constant.
+    // `setTimelineViewportHeight`) rather than an assumed constant — unless
+    // the caller supplied its own real height, in which case that value is
+    // authoritative for this call.
+    const viewportHeight = viewportHeightOverride ?? state.viewportHeight ?? 0;
     const tracks = trackStore.value?.tracks ?? [];
     const totalHeight = tracks
         .filter((time) => time.kind !== 'master')
         .reduce((sum, time) => sum + (time.height ?? 64), 0);
-    const maxY = Math.max(0, totalHeight - (state.viewportHeight ?? 0));
+    const maxY = Math.max(0, totalHeight - viewportHeight);
     const clamped = Math.max(0, Math.min(maxY, scrollY));
     if (state.scrollY !== clamped) {
         timelineViewStore.set({ ...state, scrollY: clamped });
