@@ -1,9 +1,10 @@
 import {
-    executableAppActionDescriptorByType,
+    isExecutableAppActionType,
     type ExecutableAppActionDirectionalIntent,
     type ExecutableAppActionTargetRule,
     type ExecutableAppActionValueRule,
 } from './executableAppActionRegistry';
+import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 
 type ExecutableAppActionGroundingRules = {
     actionType: string;
@@ -14,18 +15,18 @@ type ExecutableAppActionGroundingRules = {
 };
 
 export function getExecutableAppActionGroundingRules(actionType: string): ExecutableAppActionGroundingRules | null {
-    const descriptor = executableAppActionDescriptorByType.get(actionType);
-    if (!descriptor) {
+    if (!isExecutableAppActionType(actionType)) {
         return null;
     }
+    const registration = getExecutableCommandRegistration(actionType);
     const groundingRules: ExecutableAppActionGroundingRules = {
-        actionType: descriptor.actionType,
-        intentPhrases: descriptor.intentPhrases,
-        targetRules: descriptor.targetRules,
-        valueRules: 'valueRules' in descriptor ? descriptor.valueRules : [],
+        actionType: registration.actionType,
+        intentPhrases: registration.intentPhrases,
+        targetRules: registration.targetChecks,
+        valueRules: registration.valueRules,
     };
-    if ('directionalIntent' in descriptor) {
-        groundingRules.directionalIntent = descriptor.directionalIntent;
+    if (registration.directionalIntent) {
+        groundingRules.directionalIntent = registration.directionalIntent;
     }
     return structuredClone(groundingRules);
 }

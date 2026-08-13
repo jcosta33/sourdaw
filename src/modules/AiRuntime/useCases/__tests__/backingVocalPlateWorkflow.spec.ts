@@ -14,6 +14,7 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandTrackDefaultsPort,
     executeAppAction,
     getExecutableAppActionToolSchemas,
     redo,
@@ -393,6 +394,7 @@ describe('backing-vocal plate workflow', () => {
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getAutomationHandlers());
         registerHandlerMap(getAudioRenderingHandlers());
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -441,6 +443,7 @@ describe('backing-vocal plate workflow', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();
@@ -793,7 +796,10 @@ describe('backing-vocal plate workflow', () => {
         expect(receipt?.content).toContain('Retry missing renders below');
         const receiptLines = receipt?.content.split('\n') ?? [];
         const renderReceiptIndex = receiptLines.findIndex((line) => line.startsWith('- **renderProjectSections**:'));
-        const renderAffectedIds = receiptLines[renderReceiptIndex + 1];
+        const renderAffectedIds = receiptLines
+            .slice(renderReceiptIndex + 1)
+            .find((line) => line.startsWith('  - Affected IDs:'));
+        expect(renderAffectedIds).toBeDefined();
         expect(renderAffectedIds).toContain(successfulJob.sectionId);
         expect(renderAffectedIds).toContain(successfulJob.jobId);
         expect(renderAffectedIds).not.toContain(failedJob.sectionId);
@@ -852,7 +858,10 @@ describe('backing-vocal plate workflow', () => {
         const completedRenderReceiptIndex = completedReceiptLines.findIndex((line) =>
             line.startsWith('- **renderProjectSections**:')
         );
-        const completedRenderAffectedIds = completedReceiptLines[completedRenderReceiptIndex + 1];
+        const completedRenderAffectedIds = completedReceiptLines
+            .slice(completedRenderReceiptIndex + 1)
+            .find((line) => line.startsWith('  - Affected IDs:'));
+        expect(completedRenderAffectedIds).toBeDefined();
         expect(completedRenderAffectedIds).toContain(failedJob.sectionId);
         expect(completedRenderAffectedIds).toContain(failedJob.jobId);
         const completedRenderExecution = getPendingActionConfirmation(confirmation.id)?.executedActions.find(
@@ -1129,13 +1138,22 @@ describe('backing-vocal plate workflow', () => {
         const executed = getPendingActionConfirmation(confirmation.id);
         expect(executed?.executedActions).toHaveLength(11);
         for (const [index, action] of confirmation.actions.entries()) {
-            expect(executed?.executedActions[index]).toEqual({
+            const execution = executed?.executedActions[index];
+            expect(execution).toMatchObject({
                 actionType: action.type,
                 label: confirmation.actionLabels[index],
                 executionKind: 'project',
                 affectedIds: getPlannedActionAffectedIds(action),
                 outcome: 'committed',
+                commandSchemaVersion: 1,
             });
+            expect(typeof execution?.commandId).toBe('string');
+            expect(execution?.applicationAssigned?.ids).toContainEqual({
+                field: 'commandId',
+                value: execution?.commandId,
+            });
+            const issuedAt = execution?.applicationAssigned?.timestamps.find(({ field }) => field === 'issuedAt');
+            expect(typeof issuedAt?.value).toBe('number');
         }
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id

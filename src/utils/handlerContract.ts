@@ -1732,6 +1732,8 @@ export type HandlerExecutionResult = {
 export type ActionHandler<Action extends AppAction = AppAction> = {
     execute: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Action) => HandlerDescribeResult;
+    /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
+    materializeCommandArguments?: (action: Action) => void;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
     prepareAbort?: (action: Action) => HandlerAfterCommit;
     /** True when the canonical action is already reflected in project truth. */

@@ -40,10 +40,16 @@ export function getHandlerMap(): HandlerMap {
     return registry;
 }
 
+export function getHandlerByType<ActionType extends AppAction['type']>(
+    actionType: ActionType
+): ActionHandler<Extract<AppAction, { type: ActionType }>> | undefined {
+    return registry[actionType];
+}
+
 export function getHandler<ActionType extends AppAction['type']>(
     action: Extract<AppAction, { type: ActionType }>
 ): ActionHandler<Extract<AppAction, { type: ActionType }>> | undefined {
-    return registry[action.type];
+    return getHandlerByType(action.type);
 }
 
 export function clearHandlerRegistry(): void {

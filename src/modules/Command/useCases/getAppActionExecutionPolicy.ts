@@ -1,6 +1,7 @@
 import { type AppActionType } from '#/utils/handlerContract';
 
-import { executableAppActionDescriptorByType, type ExecutableAppActionRisk } from './executableAppActionRegistry';
+import { isExecutableAppActionType } from './executableAppActionRegistry';
+import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 
 type AppActionRisk =
     | 'read-only'
@@ -58,14 +59,6 @@ const externalEffectPolicy: AppActionExecutionPolicy = {
     risk: 'external-effect',
     requiresConfirmation: true,
     reason: 'This action affects resources or sessions outside the current project.',
-};
-
-const executablePolicyByRisk: Record<ExecutableAppActionRisk, AppActionExecutionPolicy> = {
-    'bounded-reversible': boundedPolicy,
-    'broad-reversible': broadPolicy,
-    'destructive-reversible': destructivePolicy,
-    'authority-sensitive': authoritySensitivePolicy,
-    'external-effect': externalEffectPolicy,
 };
 
 const defaultPolicy: AppActionExecutionPolicy = {
@@ -170,9 +163,14 @@ const executionPolicies = {
 const executionPolicyByActionType: Partial<Record<string, AppActionExecutionPolicy>> = executionPolicies;
 
 export function getAppActionExecutionPolicy(actionType: string): AppActionExecutionPolicy {
-    const executableDescriptor = executableAppActionDescriptorByType.get(actionType);
-    if (executableDescriptor) {
-        return executablePolicyByRisk[executableDescriptor.risk];
+    if (isExecutableAppActionType(actionType)) {
+        const registration = getExecutableCommandRegistration(actionType);
+        return {
+            classification: 'explicit',
+            risk: registration.risk,
+            requiresConfirmation: registration.confirmation.required,
+            reason: registration.confirmation.reason,
+        };
     }
     return executionPolicyByActionType[actionType] ?? defaultPolicy;
 }

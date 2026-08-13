@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ChatMessage, type ChatState } from '../../models/Chat';
@@ -124,6 +127,8 @@ vi.mock('../../stores/aiActionHistoryStore', () => ({
 describe('sendChatMessage injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
         mocks.proposePendingActionConfirmation.mockImplementation(({ id }) => ({ id }));
         mocks.chatStoreValue.value = null;
         mocks.nativeEngineReady.value = true;
@@ -172,6 +177,10 @@ describe('sendChatMessage injectables', () => {
             activeView: 'arrange',
             playheadPosition: 0,
         });
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
     });
 
     it('returns early when chat store is empty', async () => {

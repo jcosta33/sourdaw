@@ -15,12 +15,12 @@ import {
 } from '../errors/AppActionExecutionError';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
-import { getHandler } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
+import { getCommandHandler } from './getCommandHandler';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
@@ -50,7 +50,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             action = materialized.action;
             traceAppAction(action.type, options?.source ?? 'manual');
 
-            const handler = getHandler(action);
+            const handler = getCommandHandler(action);
             if (!handler) {
                 const error = new AppActionNotDispatchedError(action.type);
                 logger.error(error);

@@ -18,7 +18,6 @@ import {
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
-import { getHandler } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
@@ -26,6 +25,7 @@ import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope
 import { createUndoEntry } from './createUndoEntry';
 import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
+import { getCommandHandler } from './getCommandHandler';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
@@ -246,7 +246,7 @@ async function compensateAttemptedBatch(
             if (!inverseAction) {
                 throw new Error(`No inverse action available for ${prepared.action.type}`);
             }
-            const inverseHandler = getHandler(inverseAction);
+            const inverseHandler = getCommandHandler(inverseAction);
             if (!inverseHandler) {
                 throw new Error(`No registered handler for inverse action: ${inverseAction.type}`);
             }
@@ -433,7 +433,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
                     : materializeCommandApplicationIds(requestedAction);
                 const action = materialized.action;
-                const handler = getHandler(action);
+                const handler = getCommandHandler(action);
                 if (!handler) {
                     return {
                         status: 'rejected',
@@ -457,7 +457,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (
                     options?.requireCompensation &&
                     handler.executionKind !== 'runtime' &&
-                    !description?.inverseAction
+                    !description?.inverseAction &&
+                    !handler.isNoop?.(action)
                 ) {
                     return {
                         status: 'rejected',

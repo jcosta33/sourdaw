@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
 // and, at import time (not inside a callable function), wires their runtime
 // dependencies and hands every module's `get<Module>Handlers()` result to the
-// shared `registerHandlerMap` registry. There is no exported function to call
+// shared production handler assembler. There is no exported bootstrap function to call
 // — the only way to exercise the wiring is to import the module and observe
 // the side effects it performs while doing so.
 //
@@ -33,7 +33,7 @@ type RuntimeSinkUnderTest = {
 const {
     noop,
     sentinelHandlers,
-    registerHandlerMapMock,
+    registerProductionCommandHandlersMock,
     initBrowserAiMock,
     initRaveModelsMock,
     registerGlobalErrorHandlersMock,
@@ -62,7 +62,7 @@ const {
     return {
         noop,
         sentinelHandlers,
-        registerHandlerMapMock: vi.fn<(map: HandlerMapSentinel) => void>(),
+        registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -184,10 +184,9 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
     leaveSession: noop,
 }));
 
-vi.mock('#/modules/Command/stores', () => ({ registerHandlerMap: registerHandlerMapMock }));
-
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: noop,
+    registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
     getUndoRedoHandlers: sentinelHandlers('UndoRedo'),
     getUndoTreeHandlers: sentinelHandlers('UndoTree'),
@@ -389,9 +388,9 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 import '../bootstrap';
 
 describe('bootstrap', () => {
-    // The exact order bootstrap.ts calls registerHandlerMap(get<Module>Handlers())
-    // (src/app/bootstrap.ts lines 283-314). This list IS the assertion: every
-    // module bootstrap wires into the shared handler registry must appear here
+    // The exact order bootstrap.ts passes module handler maps to the production assembler.
+    // This list IS the assertion: every module bootstrap wires into the shared
+    // handler registry must appear here
     // exactly once, in registration order — proving the wiring is both complete
     // (nothing missing) and idempotent (nothing registered twice).
     const expectedRegistrationOrder = [
@@ -432,18 +431,19 @@ describe('bootstrap', () => {
     ];
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {
-        const registeredModuleIds = registerHandlerMapMock.mock.calls.map((call) => call[0].moduleId);
+        const registeredModuleIds = registerProductionCommandHandlersMock.mock.calls[0]?.[0].map(
+            (handlerMap) => handlerMap.moduleId
+        );
 
+        expect(registerProductionCommandHandlersMock).toHaveBeenCalledTimes(1);
         expect(registeredModuleIds).toEqual(expectedRegistrationOrder);
     });
 
     it('registers a complete, duplicate-free set of handler maps', () => {
-        // Complete: exactly one registerHandlerMap call per expected module.
-        expect(registerHandlerMapMock).toHaveBeenCalledTimes(expectedRegistrationOrder.length);
-
-        // Idempotent: no module's handler map is handed to registerHandlerMap
-        // more than once — deduping the recorded module ids must not drop any.
-        const registeredModuleIds = registerHandlerMapMock.mock.calls.map((call) => call[0].moduleId);
+        const registeredModuleIds = registerProductionCommandHandlersMock.mock.calls[0]?.[0].map(
+            (handlerMap) => handlerMap.moduleId
+        );
+        expect(registeredModuleIds).toHaveLength(expectedRegistrationOrder.length);
         expect(new Set(registeredModuleIds).size).toBe(expectedRegistrationOrder.length);
     });
 

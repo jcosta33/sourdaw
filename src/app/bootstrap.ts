@@ -2,12 +2,10 @@
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
-import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration/useCases';
 import {
     beginMixAnalysis,
     completeMixAnalysis,
     failMixAnalysis,
-    getAiOrganizationHandlers,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
@@ -23,18 +21,16 @@ import {
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
-    getArrangementHandlers,
     initStalenessDetection,
     setArrangementEventBus,
     setOfflineRenderDependencies,
     setTimeOperationDependencies,
     setVcaRuntimeProjectionDependencies,
-    getSongStructureHandlers,
     getDeviceContractVersionForCommand,
     getDeviceTypesForCommandDeviceIds,
     reserveNextTrackColorForCommand,
 } from '#/modules/Arrangement/useCases';
-import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
+import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
     updateDeviceParam,
     updateDevicePatch,
@@ -42,7 +38,6 @@ import {
     setTrackPan as engineSetTrackPan,
     getAudioContext,
     getCompensationDelay,
-    getFinalFeatureHandlers,
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
     configureOfflineDeviceParameterLaw,
@@ -51,9 +46,7 @@ import {
     configureOfflineYeastMidiProcessing,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import {
-    getAutomationHandlers,
     getAutomationValueAtBeat,
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
@@ -63,14 +56,11 @@ import {
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
-import { initBrowserAi, initRaveModels, getRaveHandlers } from '#/modules/BrowserAi/useCases';
-import { canMutateBranchMetadata, getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
-import { registerHandlerMap } from '#/modules/Command/stores';
+import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
+import { canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
 import {
     executeAppAction,
-    getMacroHandlers,
-    getUndoRedoHandlers,
-    getUndoTreeHandlers,
+    registerProductionCommandHandlers,
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
     commandProjectRevisionPort,
@@ -79,8 +69,7 @@ import {
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
-import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
-import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
+import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     initBranchState,
@@ -88,18 +77,16 @@ import {
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
-    getDrumPreviewBranchHandlers,
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
 import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
-import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
 import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
-import { getPitchHandlers, setPitchEditDependencies } from '#/modules/Knead/useCases';
+import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
 import {
     initLevainDeviceStatePersistence,
@@ -107,10 +94,6 @@ import {
     unregisterLevainDevice,
 } from '#/modules/Levain/useCases';
 import {
-    getChordTrackHandlers,
-    getMidiGrooveHandlers,
-    getMidiNoteTransformHandlers,
-    getPatternInstanceHandlers,
     prepareMidiGlobalTimeTransaction,
     prepareMidiTimeStateRestore,
     createChordPitchProjector,
@@ -119,24 +102,18 @@ import {
     shouldPlayMidiEvent,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
-    getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
-import { getExternalPluginContractVersionForCommand, getPluginHostHandlers } from '#/modules/PluginHost/useCases';
+import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
 import {
     doesProductionBriefAllowActionBatch,
-    getProjectHandlers,
     initGrooveTemplateDirtyTracking,
     initProjectDirtyTracking,
     migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
-import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
-import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
-import { getNodeViewHandlers } from '#/modules/Routing/useCases';
-import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
-import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
+import { setSetlistEventBus } from '#/modules/Setlist/useCases';
 import {
     initToasterKitPersistence,
     initToasterSubscribers,
@@ -144,7 +121,6 @@ import {
     setToasterGrooveAssignmentExecutor,
 } from '#/modules/Toaster/useCases';
 import {
-    getTransportHandlers,
     getTransportState,
     createMusicalPositionProjector,
     createSamplePositionProjector,
@@ -156,7 +132,7 @@ import {
     stopPlayback,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
-import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
+import { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
 import {
     configureYeastRuntime,
@@ -167,6 +143,7 @@ import {
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
@@ -405,40 +382,7 @@ configureAudioDeviceRuntimeSink({
     updateTunerTelemetry,
 });
 
-registerHandlerMap(getArrangementHandlers());
-registerHandlerMap(getTransportHandlers());
-registerHandlerMap(getSessionLauncherHandlers());
-registerHandlerMap(getSetlistHandlers());
-registerHandlerMap(getPunchRecordingHandlers());
-registerHandlerMap(getWorkspaceHandlers());
-registerHandlerMap(getAutomationHandlers());
-registerHandlerMap(getAudioRenderingHandlers());
-registerHandlerMap(getGenerationHandlers());
-registerHandlerMap(getAnalysisHandlers());
-registerHandlerMap(getCollaborationHandlers());
-registerHandlerMap(getPluginHostHandlers());
-registerHandlerMap(getAiMidiHandlers());
-registerHandlerMap(getAiOrganizationHandlers());
-registerHandlerMap(getChordTrackHandlers());
-registerHandlerMap(getMidiNoteTransformHandlers());
-registerHandlerMap(getDrumPreviewBranchHandlers({ canMutateBranchMetadata }));
-registerHandlerMap(getMidiGrooveHandlers());
-registerHandlerMap(getControlSurfaceHandlers());
-registerHandlerMap(getScratchPadHandlers());
-registerHandlerMap(getPatternInstanceHandlers());
-registerHandlerMap(getMacroHandlers());
-registerHandlerMap(getUndoRedoHandlers());
-registerHandlerMap(getUndoTreeHandlers());
-registerHandlerMap(getPitchHandlers());
-registerHandlerMap(getSongStructureHandlers());
-registerHandlerMap(getProjectHandlers());
-registerHandlerMap(getVersionControlHandlers());
-registerHandlerMap(getDawProjectHandlers());
-registerHandlerMap(getFinalFeatureHandlers());
-registerHandlerMap(getNodeViewHandlers());
-registerHandlerMap(getWebMidiInputHandlers());
-registerHandlerMap(getRaveHandlers());
-registerHandlerMap(getControlRoomHandlers());
+registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }));
 
 initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is

@@ -51,6 +51,35 @@ describe('handleRemoveSidechainRoute', () => {
         });
     });
 
+    it('materializes the exact route snapshot before command serialization', () => {
+        const action: Extract<AppAction, { type: 'removeSidechainRoute' }> = {
+            type: 'removeSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        };
+
+        expect(() => handleRemoveSidechainRoute.materializeCommandArguments?.(action)).not.toThrow();
+        expect(action.payload).toEqual({
+            sourceTrackId: 'source',
+            targetTrackId: 'target',
+            routeId: 'route-1',
+            targetDeviceId: 'sidechain-device',
+            targetParameterId: 'threshold',
+            gain: 0.75,
+        });
+    });
+
+    it('preserves an absent endpoint as an immutable command no-op', () => {
+        mocks.getSidechainRoutesForTrack.mockReturnValue([]);
+        const action: Extract<AppAction, { type: 'removeSidechainRoute' }> = {
+            type: 'removeSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        };
+
+        expect(() => handleRemoveSidechainRoute.materializeCommandArguments?.(action)).not.toThrow();
+        expect(handleRemoveSidechainRoute.isNoop?.(action)).toBe(true);
+        expect(action.payload).toEqual({ sourceTrackId: 'source', targetTrackId: 'target' });
+    });
+
     it('reports ambiguous endpoint matches as a conflict', () => {
         mocks.getSidechainRoutesForTrack.mockReturnValue([
             route,

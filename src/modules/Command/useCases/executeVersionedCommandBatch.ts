@@ -3,7 +3,9 @@ import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { hasCurrentCommandDeviceVersions } from './hasCurrentCommandDeviceVersions';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 
@@ -59,6 +61,11 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
             reason: 'Command batch contains conflicting group IDs',
             actions: [] as [],
         };
+    }
+    for (const envelope of envelopes) {
+        if (isExecutableAppActionType(envelope.operation)) {
+            getExecutableCommandRegistration(envelope.operation);
+        }
     }
     // Each envelope was strictly parsed above, preserving the discriminant and
     // argument pairing at this serialized-command boundary.

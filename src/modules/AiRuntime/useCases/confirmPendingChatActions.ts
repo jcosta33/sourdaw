@@ -1,6 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
-import { executeAppActionBatch, executeVersionedCommandBatch, generateGroupId } from '#/modules/Command/useCases';
+import {
+    executeAppActionBatch,
+    executeVersionedCommandBatch,
+    generateGroupId,
+    parseVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
 import { captureProjectRevision, isDrumPreviewBranchPlanApplied } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
@@ -35,6 +40,18 @@ type ConfirmPendingChatActionsResult =
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
+
+function getApprovalLabelsByCommandId(confirmation: PendingAppActionConfirmation): ReadonlyMap<string, string> {
+    const labels = new Map<string, string>();
+    for (const [index, serialized] of (confirmation.approvalSnapshot.commandEnvelopes ?? []).entries()) {
+        const parsed = parseVersionedCommandEnvelope(serialized);
+        const label = confirmation.approvalSnapshot.actionLabels[index];
+        if (parsed.status === 'valid' && label !== undefined) {
+            labels.set(parsed.envelope.commandId, label);
+        }
+    }
+    return labels;
+}
 
 function isConfirmationExecutionAuthorized(confirmation: PendingAppActionConfirmation, signal: AbortSignal): boolean {
     if (signal.aborted) {
@@ -375,11 +392,13 @@ export async function confirmPendingChatActions(
         if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
             executionKind = 'runtime';
         }
+        const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {
+                const approvedLabel = receipt ? approvalLabelsByCommandId.get(receipt.commandId) : undefined;
                 const execution: PendingActionExecution = {
                     actionType: action.type,
-                    label: confirmation.approvalSnapshot.actionLabels[index] ?? label,
+                    label: approvedLabel ?? confirmation.approvalSnapshot.actionLabels[index] ?? label,
                     executionKind,
                     affectedIds: getPlannedActionAffectedIds(action),
                     ...(receipt
