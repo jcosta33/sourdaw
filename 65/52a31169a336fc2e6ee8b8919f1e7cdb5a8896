@@ -1,0 +1,34 @@
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_a40848e8f8cca9::t_5b1bdb9134fdd2 8
+  s_a40848e8f8cca9::t_b21a67f8dd2564 288-289,298-299,302
+  s_a40848e8f8cca9::t_5b0f0658dd7807 306-308
+  s_a40848e8f8cca9::t_4775a7e4efd352 235,291-294,296
+  s_a40848e8f8cca9::t_53ad8cea5447b6 20,236-287,290,295,297,300-301,303-305,309-319,323
+  s_a40848e8f8cca9::t_45641588f07bba 320-322
+  s_a40848e8f8cca9::t_6e8d8052d74f48 324
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_a40848e8f8cca9::t_8a914662876a18 15,71
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_8a914662876a18 32,120,127,131,133-134
+  s_a40848e8f8cca9::t_808152c9a56eba 185
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  s_a40848e8f8cca9::t_4775a7e4efd352 2,11,30-48,50-51
+  s_a40848e8f8cca9::t_808152c9a56eba 1,6,26-29
+  s_a40848e8f8cca9::t_8a914662876a18 3-5,7-10,12-25,49,52-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6552a31169a336fc2e6ee8b8919f1e7cdb5a8896",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
