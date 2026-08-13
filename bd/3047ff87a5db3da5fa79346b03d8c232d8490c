@@ -1,0 +1,126 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useSelectionLabel.spec.ts
+  s_62e9c3dc3ba52a::t_7bfd117f46db80 13-35
+  s_62e9c3dc3ba52a::t_b0f7d36619be2a 168-206
+  s_62e9c3dc3ba52a::t_dce97fddea01a7 83-85,92,95
+src/modules/WorkspaceShell/presentations/hooks/useSelectionLabel.ts
+  s_62e9c3dc3ba52a::t_484c1be89e7aee 32-36
+  s_62e9c3dc3ba52a::t_9c3c82958042fb 4-7,12,16
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_62e9c3dc3ba52a::t_9889163f009ad7 152-180
+src/modules/WorkspaceShell/handlers/workspace/handleOpenMixer.ts
+  s_62e9c3dc3ba52a::t_2c210aaa58f0b3 3,7
+src/modules/WorkspaceShell/presentations/components/ErrorBoundary.tsx
+  s_62e9c3dc3ba52a::t_ed72b090271a86 5-14,17-23
+  s_62e9c3dc3ba52a::t_bd397caf2366cf 39,41-44
+  s_62e9c3dc3ba52a::t_a1e3a1cd33b3d3 24
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_62e9c3dc3ba52a::t_7206cc35e21c26 12-14
+  s_62e9c3dc3ba52a::t_dcf140e19b649d 322-360
+  s_62e9c3dc3ba52a::t_fef516a3d79a0f 767-768
+  s_62e9c3dc3ba52a::t_cb3fba77cf7d41 721-725
+src/routes/__root.tsx
+  s_62e9c3dc3ba52a::t_4cf03d14107035 6
+  s_62e9c3dc3ba52a::t_e753f24f09e74d 19-23
+src/modules/WorkspaceShell/presentations/views/TemplatePreviewThumb.tsx
+  s_62e9c3dc3ba52a::t_9d3f9ba0509338 190
+  s_62e9c3dc3ba52a::t_95b8ac2e4b8f24 177-183
+src/modules/WorkspaceShell/handlers/workspace/handleSetEditingTool.ts
+  s_62e9c3dc3ba52a::t_2a6ad58bb5755d 1,4,9-18
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_62e9c3dc3ba52a::t_4a2ba5b6fb5bc8 213-215
+  s_62e9c3dc3ba52a::t_abe533a4bac4ed 90-96
+  s_62e9c3dc3ba52a::t_bff9dab763e73c 138-149
+  s_62e9c3dc3ba52a::t_128ca1227111d1 128
+  s_62e9c3dc3ba52a::t_9068c9bc40335f 163
+  s_62e9c3dc3ba52a::t_bbfb1e1fe8fd99 112
+  s_62e9c3dc3ba52a::t_b4550ffc726ba4 177
+  s_62e9c3dc3ba52a::t_1a12d2054a15d9 189
+src/modules/WorkspaceShell/useCases/workspaceQueries/__tests__/helpers.spec.ts
+  s_62e9c3dc3ba52a::t_1aaebb0847a438 9-10,13
+  s_62e9c3dc3ba52a::t_1dc6f8f4df9f1f 3,6-8,11-12,14-15,23-35
+src/routes/__tests__/-__root.spec.tsx
+  s_62e9c3dc3ba52a::t_48f0dbcd11b842 17,26-34
+  s_62e9c3dc3ba52a::t_0b83d9e5d87a2b 35
+src/modules/WorkspaceShell/presentations/views/WorkspaceMobileGate.tsx
+  s_62e9c3dc3ba52a::t_fafe7cc97f12a1 1-22
+src/modules/WorkspaceShell/handlers/workspace/__tests__/workspaceUiHandlers.spec.ts
+  s_62e9c3dc3ba52a::t_26097ef170f8b1 47-67,69,72-73,75,78-80
+  s_62e9c3dc3ba52a::t_f8e60a669eab4a 3
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_62e9c3dc3ba52a::t_67595c612aebe4 166-171
+  s_62e9c3dc3ba52a::t_939e4d80711559 181
+  s_62e9c3dc3ba52a::t_843a13fafe61ff 239-245,258-259
+  s_62e9c3dc3ba52a::t_b679e7ab252142 869
+  s_62e9c3dc3ba52a::t_894cc6b38c344d 550
+  s_62e9c3dc3ba52a::t_e3784de99f7c15 929
+  s_62e9c3dc3ba52a::t_f54ca771ec19ef 987
+  s_62e9c3dc3ba52a::t_81942752f22cbb 165,172
+  s_62e9c3dc3ba52a::t_b0d59b79d82481 599,614,629,644,659,674,689,704,719,734,749,764,779
+  s_62e9c3dc3ba52a::t_b0d7da1473c269 246-251
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_62e9c3dc3ba52a::t_b240d7bf5554c0 596-643
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_62e9c3dc3ba52a::t_d309b349a0a128 601-605,616-620,625-629
+  s_62e9c3dc3ba52a::t_f2b4c3bfa66c92 581-600,606-615,621-624,630-632
+src/modules/WorkspaceShell/handlers/workspace/handleCloseMixer.ts
+  s_62e9c3dc3ba52a::t_e882837ce5a14a 3,7
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_62e9c3dc3ba52a::t_c59e36ed03a68a 153-186
+  s_62e9c3dc3ba52a::t_97bc5f8bc6c6ca 1
+src/modules/WorkspaceShell/useCases/togglePanel/zoomOperations/zoomToSelection.ts
+  s_62e9c3dc3ba52a::t_5f9bf0fdd5e222 28-31,36
+src/modules/WorkspaceShell/models/EditingTool.ts
+  s_62e9c3dc3ba52a::t_231196cd780887 12-23
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_62e9c3dc3ba52a::t_faee42e2447699 385-401
+  s_62e9c3dc3ba52a::t_aaddfef1a9799b 471,473
+  s_62e9c3dc3ba52a::t_0e9ff2d0155283 420-436,438-439,441-453,455,457-470,472,474-477
+  s_62e9c3dc3ba52a::t_fab5ded92dfd5a 454,456
+  s_62e9c3dc3ba52a::t_c4ab0f6dabc1a3 437,440
+src/modules/TimelineEditor/presentations/components/__tests__/ResizeHandle.spec.tsx
+  s_62e9c3dc3ba52a::t_8f542f512d46d1 98-139
+src/modules/WorkspaceShell/presentations/views/index.ts
+  s_62e9c3dc3ba52a::t_b62734e0400696 4
+src/modules/WorkspaceShell/presentations/views/__tests__/WorkspaceMobileGate.spec.tsx
+  s_62e9c3dc3ba52a::t_35c9907b33451e 1-110
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_62e9c3dc3ba52a::t_4757bf18933897 219
+  s_62e9c3dc3ba52a::t_cd1733c0330b05 262-271,276-285
+  s_62e9c3dc3ba52a::t_7e3929b52f09b6 479-481,484
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_62e9c3dc3ba52a::t_95ab074a91066c 422-429
+src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx
+  s_62e9c3dc3ba52a::t_5660bda802b6f6 161
+  s_62e9c3dc3ba52a::t_39b1b911a89077 116-128,131-134
+  s_62e9c3dc3ba52a::t_e0ceafd37ed819 144,147,152
+  s_62e9c3dc3ba52a::t_3d07522fffea79 135
+src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts
+  s_62e9c3dc3ba52a::t_cf0f7760f41c9f 21-25
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/closeMixer.ts
+  s_62e9c3dc3ba52a::t_c109077f997269 1-5
+src/modules/WorkspaceShell/presentations/components/__tests__/ErrorBoundary.spec.tsx
+  s_62e9c3dc3ba52a::t_baf18f8565de40 52,60
+  s_62e9c3dc3ba52a::t_a21278a414ccd2 67,73
+  s_62e9c3dc3ba52a::t_284228c242c441 48-51,53-59,61-66,68-72,74
+src/modules/WorkspaceShell/handlers/workspace/__tests__/handleSetEditingTool.spec.ts
+  s_62e9c3dc3ba52a::t_a492da359af5b3 32-34,37-41
+  s_62e9c3dc3ba52a::t_eda5334b75bc15 30-31,35-36,42-63
+  s_62e9c3dc3ba52a::t_90e0bb3e4d22d8 7,14-18
+  s_62e9c3dc3ba52a::t_7dd0c2ac72449c 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bd3047ff87a5db3da5fa79346b03d8c232d8490c",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
