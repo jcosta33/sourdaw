@@ -324,9 +324,17 @@ impl SamplePlayback {
             return;
         }
         self.loop_mode = LoopMode::NoLoop;
-        // A ping-pong loop can be travelling backwards when the note is let
-        // go. `NoLoop` only ever ends a stream by reaching `end`, so leave the
-        // playhead moving towards it.
+        // Defensive, and narrower than it looks. `NoLoop` only ever ends a
+        // stream by reaching `end`, so a backwards playhead would never end.
+        // A `PingPong` reflection is the only thing that makes `speed`
+        // negative, and for `playback` and `crossfade_playback` this flip is
+        // redundant: `update_vibrato_block` runs for every active voice at the
+        // top of every block and calls `apply_pitch_mod`, which reassigns
+        // `speed` from the always-positive `base_speed` before any tick reads
+        // it. `layer_secondary` is never pitch-modulated, so there the flip is
+        // the only thing that turns the stream around. No shipped bank uses
+        // `pingpong` — the 18 banks here declare only `forward` and `none` —
+        // but the manifest schema and the worklet both accept it.
         if self.speed < 0.0 {
             self.speed = -self.speed;
         }
@@ -343,6 +351,17 @@ impl SamplePlayback {
     /// one; a target zone that does not loop is a short or percussive
     /// articulation, where re-articulating from the start is the correct
     /// reading of a slur into it.
+    ///
+    /// Known limit of the fold: sustain lengths vary widely inside one bank —
+    /// flute runs 5.99 s against violin's 15-16 s — so an outgoing playhead
+    /// past the incoming zone's length is routine, and `p % L` then lands
+    /// somewhere unrelated to where the player was, including the recording's
+    /// own frame 0. It never sounds *worse* than the retrigger this replaces
+    /// and costs nothing to compute, but it is arbitrary rather than musical.
+    /// Matching the elapsed *fraction* of each recording, or clamping into the
+    /// last loop iteration, would both be defensible; neither is implemented
+    /// here because no shipped bank has a recorded interval sample to compare
+    /// either against.
     #[inline]
     pub fn seek_to(&mut self, position: f64) {
         let start = self.start as f64;
@@ -875,6 +894,20 @@ impl LevainVoice {
         // Check if sample playback is finished.
         if !self.playback.active && !self.crossfading {
             self.amp_env.release();
+            // ...and once no stream has anything left to read, free the slot
+            // rather than sit out the rest of the release envelope. Every
+            // `read_sample` above returns 0.0 from this point, so the voice can
+            // only emit zeros and nothing audible is lost — but the envelope
+            // does not reach the `1e-5` that idles it until 11.5 time
+            // constants have passed, which on a struck one-shot with a long
+            // modelled release is tens of seconds of pool held by silence.
+            // `VoicePool::allocate` cannot recover it either: `steal_priority`
+            // scores an inaudible release tail `1`, below every sounding
+            // voice, so the allocator steals the note still ringing instead.
+            let layer_still_sounding = self.layer_active && self.layer_secondary.active;
+            if !layer_still_sounding {
+                self.active = false;
+            }
         }
 
         // MPE timbre / CC74 (audit MD-2). A one-pole split gives the low band;

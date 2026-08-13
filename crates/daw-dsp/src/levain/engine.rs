@@ -2265,4 +2265,137 @@ mod tests {
              {choir} at the same point in the release"
         );
     }
+
+    /// A struck bar: the whole natural ringdown is in the recording and there
+    /// is no loop. All three shipped percussion banks are exactly this —
+    /// marimba, glockenspiel and timpani each declare `sustain` zones with
+    /// `loopMode: "none"` and `release: 0.5`, so they take the family scale on
+    /// a zone whose sample stops of its own accord.
+    fn engine_with_percussion_one_shot(
+        instrument_id: &str,
+        max_voices: usize,
+        ring_frames: u32,
+    ) -> LevainEngine {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, max_voices);
+        engine.begin_sample_bank(instrument_id);
+        let data: Vec<f32> = (0..ring_frames)
+            .map(|frame| {
+                let ringdown = 1.0 - frame as f32 / ring_frames as f32;
+                ((frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0) * ringdown
+            })
+            .collect();
+        let sample_id = engine
+            .add_sample(data, ring_frames, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.sample.end = ring_frames;
+        zone.sample.loop_mode = LoopMode::NoLoop;
+        zone.amp_env.release = 0.5;
+        engine.add_zone(zone);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+        assert!(
+            engine.commit_sample_bank(),
+            "the staged test bank should commit"
+        );
+        engine
+    }
+
+    /// The family model has to survive on the shape it was measured from. All
+    /// three shipped percussion banks are non-looping one-shots, so a release
+    /// model that only reached looping zones would leave the 4.6 tuned against
+    /// recordings it can no longer affect. Freeing a run-dry voice does not
+    /// cost this: the slot is reclaimed only once the recording has nothing
+    /// left to read, which is after the whole window measured here.
+    #[test]
+    fn the_family_release_still_shapes_a_percussion_one_shot() {
+        const RING_FRAMES: u32 = 110_400; // 2.3 s, the measured marimba ringdown
+        const BLOCKS_AFTER_OFF: usize = 375; // 1.0 s, well inside the recording
+
+        fn tail_rms(instrument_id: &str) -> f32 {
+            let mut engine = engine_with_percussion_one_shot(instrument_id, 8, RING_FRAMES);
+            engine.note_on(60, 100);
+            render(&mut engine, 38);
+            engine.note_off(60);
+            render(&mut engine, BLOCKS_AFTER_OFF);
+            rms(&render(&mut engine, 8))
+        }
+
+        let percussion = tail_rms("marimba");
+        let choir = tail_rms("soprano");
+
+        assert!(
+            percussion > choir * 3.0,
+            "letting go of a mallet must not damp the bar: marimba one-shot \
+             tail RMS {percussion} against soprano {choir} one second after \
+             note-off, with the recording still playing in both"
+        );
+    }
+
+    /// A voice whose every stream has run dry can only emit zeros, so holding
+    /// the pool with it costs polyphony and buys nothing. `VoicePool::allocate`
+    /// cannot recover the slot either: `steal_priority` scores an inaudible
+    /// release tail `1`, the *minimum* among active voices, while any sounding
+    /// voice scores `2 + …` — so the allocator steals the note that is still
+    /// ringing and leaves the silence in place.
+    ///
+    /// Pinned on an ordinary part rather than a stress case: 4 notes a second,
+    /// each struck and let go like a mallet stroke.
+    #[test]
+    fn a_note_on_must_not_steal_a_sounding_voice_while_run_dry_ones_hold_the_pool() {
+        /// Well above the `1e-4` `steal_priority` itself treats as past
+        /// audibility, so nothing here turns on a borderline reading.
+        const AUDIBLE_ENERGY: f32 = 1e-3;
+        /// The pool `levainProcessor.ts` actually constructs. A smaller one
+        /// exhausts at any release length and would convict every family.
+        const POOL: usize = 64;
+        const ONSETS: u8 = 120;
+        const RING_FRAMES: u32 = 24_000; // 0.5 s at 48 kHz
+        const BLOCKS_PER_ONSET: usize = 94; // 0.25 s at 48 kHz in 128-frame blocks
+        const BLOCKS_HELD: usize = 38; // ~0.1 s, a struck bar released early
+
+        fn audible_steals_over_a_part(instrument_id: &str) -> (u32, f32, usize) {
+            let mut engine = engine_with_percussion_one_shot(instrument_id, POOL, RING_FRAMES);
+            let mut steals = 0_u32;
+            let mut worst_energy = 0.0_f32;
+
+            for index in 0..ONSETS {
+                let note = 60 + index % 12;
+                let victim = engine.voice_pool.allocate();
+                let voice = &engine.voice_pool.voices[victim];
+                if voice.active && voice.energy > AUDIBLE_ENERGY {
+                    steals += 1;
+                    worst_energy = worst_energy.max(voice.energy);
+                }
+                engine.note_on(note, 100);
+                render(&mut engine, BLOCKS_HELD);
+                engine.note_off(note);
+                render(&mut engine, BLOCKS_PER_ONSET - BLOCKS_HELD);
+            }
+
+            (steals, worst_energy, engine.voice_pool.active_count())
+        }
+
+        // Choir carries `release_scale() == 1.0`, so it is this same part
+        // through this same code with the family model contributing nothing.
+        // It is the control: if it ever stole, the fault would be the pool's
+        // rather than the release model's.
+        let (control_steals, _, control_active) = audible_steals_over_a_part("soprano");
+        assert_eq!(
+            control_steals, 0,
+            "the control must not steal, or this test convicts the voice pool \
+             rather than the release model: {control_steals} of {ONSETS} \
+             onsets, pool ended {control_active}/{POOL} active"
+        );
+
+        let (steals, worst_stolen_energy, active) = audible_steals_over_a_part("marimba");
+        assert_eq!(
+            steals, 0,
+            "a note-on must take a run-dry voice before a sounding one: \
+             {steals} of {ONSETS} onsets stole a voice that was still audible \
+             (worst energy stolen {worst_stolen_energy}), and the pool of \
+             {POOL} ended with {active} voices active"
+        );
+    }
 }
