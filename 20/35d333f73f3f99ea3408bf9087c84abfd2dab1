@@ -1,0 +1,47 @@
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_4aed3f07df13ba 1735-1736
+src/modules/Arrangement/handlers/device/handleAddSidechainRoute.ts
+  s_a40848e8f8cca9::t_4aed3f07df13ba 72-76
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_11648c0e546f3d 1-4,130-131,182-183
+  s_a40848e8f8cca9::t_b94cf9d19bba74 184-185
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_39456d9aa5e014 1141-1142,1150-1156
+  s_a40848e8f8cca9::t_11648c0e546f3d 17,397,446
+  s_a40848e8f8cca9::t_e77795d84441e1 861-864
+  s_a40848e8f8cca9::t_a7e01040dc5b9c 799-802,1148
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_11648c0e546f3d 14,593,624
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_4aed3f07df13ba 19,30
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_4aed3f07df13ba 42-44
+src/modules/Command/useCases/migrateLegacyAppActionToVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_4aed3f07df13ba 24
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_a40848e8f8cca9::t_11648c0e546f3d 11,469,493
+src/modules/Command/useCases/materializeCommandApplicationIds.ts
+  s_a40848e8f8cca9::t_0f3332b1d5d78c 45,53,56,85,88,96,113,127,130,138,141,149,168,171
+src/modules/AiRuntime/useCases/__tests__/compilePendingActionCommandEnvelopes.spec.ts
+  s_a40848e8f8cca9::t_4aed3f07df13ba 50,55
+  s_a40848e8f8cca9::t_3e5a72dff2b657 10,46-49,51-54,56-89
+  s_a40848e8f8cca9::t_227e29b24c76dc 90
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_dfb2c416059326 3-8,44-55,395,398,401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2035d333f73f3f99ea3408bf9087c84abfd2dab1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
