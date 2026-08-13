@@ -1,0 +1,113 @@
+src/modules/ControlSurface/useCases/midiLearn/__tests__/handleMidiMessage.spec.ts
+  s_62e9c3dc3ba52a::t_14fab6c53b414f 108,122,136,150,168,182,203,223,253
+  s_62e9c3dc3ba52a::t_32c17c8a59de27 77-82
+src/modules/ControlSurface/useCases/midiLearn/__tests__/findMappingForTarget.spec.ts
+  s_62e9c3dc3ba52a::t_9120e93e7a1c8c 9
+  s_62e9c3dc3ba52a::t_2a8cba672b53f9 23
+  s_62e9c3dc3ba52a::t_a7e77587165e4f 55
+src/modules/ControlSurface/stores/index.ts
+  s_62e9c3dc3ba52a::t_e7f56b26b45a5f 1-4
+src/modules/ControlSurface/useCases/midiLearn/removeMapping.ts
+  s_62e9c3dc3ba52a::t_71dd6b2f4ac919 2,7-13,15-16,18
+src/modules/ControlSurface/useCases/midiLearn/__tests__/removeMapping.spec.ts
+  s_62e9c3dc3ba52a::t_f23bc213e3c704 1,5,7-12,16,19,22,25,28
+src/modules/ControlSurface/useCases/midiLearn/__tests__/clearAllMappings.spec.ts
+  s_62e9c3dc3ba52a::t_eb8e72e3f683af 37
+  s_62e9c3dc3ba52a::t_14eca1c2838e68 19,51
+  s_62e9c3dc3ba52a::t_39692b2fc82779 24
+src/modules/ControlSurface/useCases/midiLearn/__tests__/completeMidiLearn.spec.ts
+  s_62e9c3dc3ba52a::t_4d40f7b5f95768 1,6-14,17-18,21,24,27,29,37-41,44,46,52,54-55
+src/modules/ControlSurface/useCases/getControlSurfaceHandlers.ts
+  s_62e9c3dc3ba52a::t_b77743fbe05848 5-9,15-24
+  s_62e9c3dc3ba52a::t_bea4008f997271 41,44-45
+  s_62e9c3dc3ba52a::t_394c9be7116648 32-36
+src/modules/ControlSurface/useCases/midiLearn/__tests__/stopMidiLearn.spec.ts
+  s_62e9c3dc3ba52a::t_86e8848d68ae3c 19
+src/modules/ControlSurface/useCases/__tests__/getMidiLearnState.spec.ts
+  s_62e9c3dc3ba52a::t_73bbf0e46b7e21 9
+  s_62e9c3dc3ba52a::t_96947767b5120d 18
+src/modules/ControlSurface/stores/midiLearnStore.ts
+  s_62e9c3dc3ba52a::t_46354e90fee558 48-49,55-67
+  s_62e9c3dc3ba52a::t_f4005216f4fa43 129-142,144-146,150-156,159-164,166-168,170-179,184-193,196-207
+  s_62e9c3dc3ba52a::t_b75a8671814e2d 1,3-5
+  s_62e9c3dc3ba52a::t_3a67e0ba31df42 158
+  s_62e9c3dc3ba52a::t_72248f8d3fa7e9 181
+  s_62e9c3dc3ba52a::t_c208a3a7093d4d 84-88
+  s_62e9c3dc3ba52a::t_caf2798922617a 182-183
+  s_62e9c3dc3ba52a::t_8fa94e06155354 68-69
+src/infra/store/storage/LocalStorageKeys.ts
+  s_62e9c3dc3ba52a::t_36dc7a39b8148f 133
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnButton.spec.tsx
+  s_62e9c3dc3ba52a::t_c94226561a0184 155
+  s_62e9c3dc3ba52a::t_494140bc9bfe6f 43
+  s_62e9c3dc3ba52a::t_954710549cfd26 112-117,132-137,197-202
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_62e9c3dc3ba52a::t_6c1881bc3d1919 49
+  s_62e9c3dc3ba52a::t_a55acf717c9c74 82
+src/modules/ControlSurface/handlers/midiLearn/handleRestoreMidiLearnMappings.ts
+  s_62e9c3dc3ba52a::t_9784a349e9c72b 12
+  s_62e9c3dc3ba52a::t_35c2dc67894d05 5-10
+  s_62e9c3dc3ba52a::t_5a65c4627c58c6 106
+  s_62e9c3dc3ba52a::t_be455ca5d57071 191
+  s_62e9c3dc3ba52a::t_f8c8ddd1fdef9f 145
+  s_62e9c3dc3ba52a::t_6f55a962e2a5a8 96-98
+  s_62e9c3dc3ba52a::t_c9f523d366066d 22-29
+  s_62e9c3dc3ba52a::t_fac7a0c9c79ac7 1-4,11,13-21,30-95,99-105,107-144,146-190,192-201
+src/modules/ControlSurface/handlers/midiLearn/__tests__/handleRestoreMidiLearnMappings.spec.ts
+  s_62e9c3dc3ba52a::t_b44c8878c16fb4 273
+  s_62e9c3dc3ba52a::t_ac8bdfaa921a4f 119-122
+  s_62e9c3dc3ba52a::t_8a1d7699b8a481 74-83
+  s_62e9c3dc3ba52a::t_6514a3aa99e14f 97-100,103-108
+  s_62e9c3dc3ba52a::t_00b3c9688f33d4 209,223
+  s_62e9c3dc3ba52a::t_9d6a49718f5e01 1-65,67-73,84-96,101-102,109-118,123-165,176-180,187-195,202-208,210-222,224-250,254-257,261-272,274-311
+  s_62e9c3dc3ba52a::t_fc1dc53d5a61b1 66
+  s_62e9c3dc3ba52a::t_90afd89528d73a 196,201
+  s_62e9c3dc3ba52a::t_778a2354b38e07 251-253,258-260
+  s_62e9c3dc3ba52a::t_d740ac8341051f 166-175
+  s_62e9c3dc3ba52a::t_eee69095bd61df 181,186
+  s_62e9c3dc3ba52a::t_c801d8229b24c6 182-185
+  s_62e9c3dc3ba52a::t_f0f1c21a8d1a28 197-200
+src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts
+  s_62e9c3dc3ba52a::t_9ad0aedb855175 43,87,109-116,118-120,122,127-128,130,133,136,138,149-150,157,172
+  s_62e9c3dc3ba52a::t_833fd9d4fd952b 18
+src/modules/ControlSurface/presentations/views/MidiLearnButton.tsx
+  s_62e9c3dc3ba52a::t_16fe3aef50ebc7 10
+src/modules/ControlSurface/useCases/midiLearn/completeMidiLearn.ts
+  s_62e9c3dc3ba52a::t_c728944f3c824b 2,4,7-24,26-27,34-36
+src/modules/ControlSurface/useCases/__tests__/getControlSurfaceHandlers.spec.ts
+  s_62e9c3dc3ba52a::t_63106a34379f39 5-9,22,25-26
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnRotaryKnob.spec.tsx
+  s_62e9c3dc3ba52a::t_e8bf7beadbd2c7 11
+  s_62e9c3dc3ba52a::t_898b350ce431a6 47,63,97,172,188
+src/utils/handlerContract.ts
+  s_62e9c3dc3ba52a::t_b8fb3b46865562 379-393
+  s_62e9c3dc3ba52a::t_11d8672c4d29b5 1584
+  s_62e9c3dc3ba52a::t_86dcdf8bf75ebf 1585-1589
+src/modules/ControlSurface/presentations/views/MidiLearnRotaryKnob.tsx
+  s_62e9c3dc3ba52a::t_45816a997545df 6-11
+src/modules/ControlSurface/stores/__tests__/midiLearnStore.spec.ts
+  s_62e9c3dc3ba52a::t_c501681f5b1bc6 1,3,5,7-18,20-21,24-26,28,30,34,36-41,43-44,46,49-50,52-57,59-60,62-63,65-66,68-69,72-81,83-85,87
+src/modules/ControlSurface/useCases/midiLearn/__tests__/startMidiLearn.spec.ts
+  s_62e9c3dc3ba52a::t_e8c037c6d3219b 10
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_62e9c3dc3ba52a::t_1b2349b88aa0bd 3
+  s_62e9c3dc3ba52a::t_0504b60bc37fd6 92
+src/modules/ControlSurface/handlers/midiLearn/handleClearAllMappings.ts
+  s_62e9c3dc3ba52a::t_ea437ad32502f0 9-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4c634704e8b4e0598ec2b8374608e946bec3c267",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
