@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_773ee145649de3 44-48,276,310
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandPreflightFixture.ts
+  s_a40848e8f8cca9::t_59434903a91d8c 9-10
+  s_a40848e8f8cca9::t_773ee145649de3 1-5,28-32
+  s_a40848e8f8cca9::t_a1ffc0906e0238 6-8,11-27
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_bec78245d2baf3 632
+  s_a40848e8f8cca9::t_773ee145649de3 42-45,594
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ba65397a58610fca4b8380b5cc0f20c7ddf36118",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
