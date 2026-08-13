@@ -14,6 +14,16 @@ describe('handlePadPress', () => {
         expect(pushStore.value?.pads[4]?.velocity).toBe(0);
     });
 
+    it('should clamp a velocity above the 7-bit MIDI range (F-7)', () => {
+        handlePadPress(2, 500);
+        expect(pushStore.value?.pads[2]?.velocity).toBe(127);
+    });
+
+    it('should clamp a negative velocity to zero (F-7)', () => {
+        handlePadPress(3, -10);
+        expect(pushStore.value?.pads[3]?.velocity).toBe(0);
+    });
+
     it('should not mutate when push store is null', () => {
         pushStore.set(null);
         handlePadPress(0, 64);

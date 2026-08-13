@@ -5,7 +5,7 @@ import { mcuBankLeft } from '../mcuBankLeft';
 
 const mocks = vi.hoisted(() => ({
     state: null as ControlSurfaceState | null,
-    set: vi.fn(),
+    set: vi.fn<(state: ControlSurfaceState) => void>(),
 }));
 
 vi.mock('../../../stores/controlSurface', () => ({
@@ -56,5 +56,16 @@ describe('mcuBankLeft', () => {
                 mcu: expect.objectContaining({ bankOffset: 0 }),
             })
         );
+    });
+
+    it('should reassign channel faders 0-7 to the new bank offset and pin fader 8 to master (F-5)', () => {
+        mcuBankLeft();
+
+        const written = mocks.set.mock.calls[0]![0];
+        const faders = written.mcu.faders;
+        expect(faders.slice(0, 8).map((fader) => fader.trackIndex)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+        // Master (index 8) must stay pinned at its own identity, never
+        // reassigned to a channel track index.
+        expect(faders[8]?.trackIndex).toBe(16);
     });
 });

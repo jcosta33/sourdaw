@@ -5,7 +5,7 @@ import { mcuBankRight } from '../mcuBankRight';
 
 const mocks = vi.hoisted(() => ({
     state: null as ControlSurfaceState | null,
-    set: vi.fn(),
+    set: vi.fn<(state: ControlSurfaceState) => void>(),
 }));
 
 vi.mock('../../../stores/controlSurface', () => ({
@@ -56,5 +56,37 @@ describe('mcuBankRight', () => {
                 mcu: expect.objectContaining({ bankOffset: 8 }),
             })
         );
+    });
+
+    it('should assign channel faders 0-7 to the new bank offset and pin fader 8 to master (F-5)', () => {
+        mcuBankRight(16);
+
+        const written = mocks.set.mock.calls[0]![0];
+        const faders = written.mcu.faders;
+        expect(faders.slice(0, 8).map((fader) => fader.trackIndex)).toEqual([8, 9, 10, 11, 12, 13, 14, 15]);
+        // Master (index 8) must stay pinned at its own identity, never
+        // reassigned to a channel track index.
+        expect(faders[8]?.trackIndex).toBe(8);
+    });
+
+    it('should not resolve the master fader past the last track when the bank offset caps (F-5)', () => {
+        // 10 tracks: maxOffset = 10 - 8 = 2. Pre-fix, fader 8 (master) resolved
+        // to bankOffset + 8 = 10 — one past the last valid track index (9).
+        mcuBankRight(10);
+
+        const written = mocks.set.mock.calls[0]![0];
+        expect(written.mcu.bankOffset).toBe(2);
+        expect(written.mcu.faders[8]?.trackIndex).toBe(8);
+        expect(written.mcu.faders[7]?.trackIndex).toBe(9);
+    });
+
+    it('should clamp channel fader track indices to the last track when there are fewer than 8 tracks (F-5)', () => {
+        mcuBankRight(3);
+
+        const written = mocks.set.mock.calls[0]![0];
+        const channelIndices = written.mcu.faders.slice(0, 8).map((fader) => fader.trackIndex);
+        for (const trackIndex of channelIndices) {
+            expect(trackIndex).toBeLessThanOrEqual(2);
+        }
     });
 });

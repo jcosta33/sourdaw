@@ -15,6 +15,7 @@ import { stopMidiLearn } from '../midiLearn/stopMidiLearn';
 const mocks = vi.hoisted(() => {
     const state: { value: MidiLearnState | null } = {
         value: {
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -39,6 +40,7 @@ describe('midiLearn injectables', () => {
     beforeEach(() => {
         vi.mocked(midiLearnStore.set).mockClear();
         mocks.state.value = {
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -82,6 +84,7 @@ describe('midiLearn injectables', () => {
 
     it('should clear learning state when stopMidiLearn runs', () => {
         mocks.state.value = {
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: true,
             learningTarget: {
@@ -103,24 +106,36 @@ describe('midiLearn injectables', () => {
             })
         );
     });
+});
 
-    it('should not persist mapping when completeMidiLearn runs without active learning', () => {
+describe('completeMidiLearn (audit A-1 — dispatches through executeAppAction)', () => {
+    const dispatched: { type: string; payload: unknown }[] = [];
+    const executeAppAction = vi.fn((action: { type: string; payload: unknown }) => {
+        dispatched.push(action);
+        return Promise.resolve();
+    });
+
+    beforeEach(() => {
+        dispatched.length = 0;
+        executeAppAction.mockClear();
         mocks.state.value = {
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
         };
-
-        const logger = createMock<Logger>();
-        injectDependencies(completeMidiLearn, { logger });
-
-        completeMidiLearn(1, 7);
-
-        expect(midiLearnStore.set).not.toHaveBeenCalled();
+        injectDependencies(completeMidiLearn, { executeAppAction });
     });
 
-    it('should append a new mapping when completeMidiLearn runs while learning', () => {
+    it('should not dispatch when completeMidiLearn runs without active learning', () => {
+        completeMidiLearn(1, 7);
+
+        expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('should dispatch completeMidiLearn with the channel/cc when learning is active', () => {
         mocks.state.value = {
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: true,
             learningTarget: {
@@ -129,73 +144,17 @@ describe('midiLearn injectables', () => {
             },
         };
 
-        const logger = createMock<Logger>();
-        injectDependencies(completeMidiLearn, { logger });
-
         completeMidiLearn(2, 11);
 
-        expect(midiLearnStore.set).toHaveBeenCalledWith(
-            expect.objectContaining({
-                isLearning: false,
-                learningTarget: null,
-                mappings: [
-                    expect.objectContaining({
-                        channel: 2,
-                        cc: 11,
-                        trackId: 't1',
-                        targetType: 'trackGain',
-                    }),
-                ],
-            })
-        );
-    });
-
-    it('should replace an existing mapping when completeMidiLearn targets same channel and cc', () => {
-        mocks.state.value = {
-            mappings: [
-                {
-                    id: 'midi-map-old',
-                    channel: 1,
-                    cc: 2,
-                    targetType: 'trackPan',
-                    trackId: 't2',
-                    deviceId: undefined,
-                    paramId: undefined,
-                    minValue: -50,
-                    maxValue: 50,
-                },
-            ],
-            isLearning: true,
-            learningTarget: {
-                targetType: 'trackGain',
-                trackId: 't9',
-            },
-        };
-
-        const logger = createMock<Logger>();
-        injectDependencies(completeMidiLearn, { logger });
-
-        completeMidiLearn(1, 2);
-
-        const setCall = vi.mocked(midiLearnStore.set).mock.calls[0]?.[0];
-        if (!setCall) {
-            throw new Error('Expected midiLearnStore.set call');
-        }
-        expect(setCall.mappings).toHaveLength(1);
-        expect(setCall.mappings[0]).toEqual(
-            expect.objectContaining({
-                channel: 1,
-                cc: 2,
-                targetType: 'trackGain',
-                trackId: 't9',
-            })
-        );
+        expect(dispatched).toHaveLength(1);
+        expect(dispatched[0]).toMatchObject({ type: 'completeMidiLearn', payload: { channel: 2, cc: 11 } });
     });
 });
 
 describe('midiLearn helpers', () => {
     beforeEach(() => {
         mocks.state.value = {
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -210,6 +169,7 @@ describe('midiLearn helpers', () => {
 
     it('should return mapping for matching learning target', () => {
         mocks.state.value = {
+            mappingsSchemaVersion: 1,
             mappings: [
                 {
                     id: 'm1',

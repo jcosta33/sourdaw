@@ -6,6 +6,7 @@ import { getMidiLearnState } from '../getMidiLearnState';
 describe('getMidiLearnState', () => {
     beforeEach(() => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -14,6 +15,7 @@ describe('getMidiLearnState', () => {
 
     it('should return the current MIDI learn store snapshot', () => {
         const next = {
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
