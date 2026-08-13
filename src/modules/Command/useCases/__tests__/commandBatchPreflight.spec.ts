@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
@@ -8,11 +9,25 @@ import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommand
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
 
+function applyTransactionalMutation(
+    document: Record<string, unknown>,
+    changeFn: (draft: Record<string, unknown>) => void
+): void {
+    const draft = structuredClone(document);
+    changeFn(draft);
+    for (const key of Object.keys(document)) {
+        delete document[key];
+    }
+    Object.assign(document, draft);
+}
+
 describe('command batch preflight', () => {
     afterEach(() => {
         clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
         commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
+        vi.unstubAllGlobals();
     });
 
     it('rejects missing targets before the first handler effect', async () => {
@@ -36,6 +51,7 @@ describe('command batch preflight', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
+            projectId: 'project-1',
             projectInvariantsValid: true,
             targetFingerprints: {},
         }));
@@ -98,6 +114,7 @@ describe('command batch preflight', () => {
                 availableAssetHashes: [],
                 availableAudioBufferIds: [],
                 lockedRanges: [],
+                projectId: 'project-1',
                 projectInvariantsValid: true,
                 targetFingerprints: { 'track-vocal': JSON.stringify({ gain: stagedGain }) },
             };
@@ -160,6 +177,7 @@ describe('command batch preflight', () => {
                 availableAssetHashes: [],
                 availableAudioBufferIds: [],
                 lockedRanges: [],
+                projectId: 'project-1',
                 projectInvariantsValid: true,
                 targetFingerprints: { 'track-vocal': 'vocal' },
             };
@@ -216,6 +234,7 @@ describe('command batch preflight', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
+            projectId: 'project-1',
             projectInvariantsValid: true,
             targetFingerprints: { 'track-1': JSON.stringify({ id: 'track-1' }) },
         }));
@@ -287,6 +306,7 @@ describe('command batch preflight', () => {
                 availableAssetHashes: [],
                 availableAudioBufferIds: [],
                 lockedRanges: [],
+                projectId: 'project-1',
                 projectInvariantsValid: true,
                 targetFingerprints,
             };
@@ -339,6 +359,7 @@ describe('command batch preflight', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [{ startBeat: 8, endBeat: 16 }],
+            projectId: 'project-1',
             projectInvariantsValid: true,
             targetFingerprints: {},
         }));
@@ -373,6 +394,323 @@ describe('command batch preflight', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
+    it('captures authoritative preflight state after the snapshot gate settles', async () => {
+        let releaseSnapshot!: () => void;
+        const snapshotSettled = new Promise<void>((resolve) => {
+            releaseSnapshot = resolve;
+        });
+        const doc: Record<string, unknown> = {};
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => applyTransactionalMutation(doc, changeFn),
+            waitForSnapshotTransaction: () => snapshotSettled,
+        });
+        const execute = vi.fn(() => ({ status: 'written' as const }));
+        registerHandlerMap({
+            setTrackGain: {
+                execute,
+                describe: () => ({
+                    label: 'Set gain',
+                    inverseAction: {
+                        type: 'setTrackGain',
+                        payload: { trackId: 'track-vocal', gain: 1, expectedGain: 0.8 },
+                    },
+                }),
+                undoable: true,
+            },
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-1');
+        let targetExists = true;
+        const capture = vi.fn(() => {
+            const targetFingerprints: Record<string, string> = targetExists ? { 'track-vocal': 'vocal' } : {};
+            return {
+                audioGraphValid: true,
+                availableAssetHashes: [],
+                availableAudioBufferIds: [],
+                lockedRanges: [],
+                projectId: 'project-1',
+                projectInvariantsValid: true,
+                targetFingerprints,
+            };
+        });
+        commandBatchPreflightPort.setProvider(capture);
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+            },
+            expectedEffect: 'Set vocal gain',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-snapshot-race',
+            batchId: 'batch-snapshot-race',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Set vocal gain',
+            commands: [JSON.stringify(command.envelope)],
+        });
+        const execution = executeVersionedCommandBatchEnvelope({
+            authority: compiled.authority,
+            confirmed: true,
+            serialized: compiled.serialized,
+            options: { snapshotTransaction: {} },
+        });
+
+        expect(capture).not.toHaveBeenCalled();
+        targetExists = false;
+        releaseSnapshot();
+
+        await expect(execution).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Command batch target does not exist: track-vocal',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('validates created targets against the staged root document before commit', async () => {
+        type TestTrackState = { tracks: { clips: { id: string }[]; id: string }[] };
+        const doc: Record<string, unknown> = {
+            tracks: { tracks: [{ clips: [], id: 'track-1' }] },
+        };
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => applyTransactionalMutation(doc, changeFn),
+        });
+        const storage = createAutomergeStorage<TestTrackState>('root', 'tracks');
+        storage.hydrate?.();
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn(() => 1)
+        );
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const execute = vi.fn(() => {
+            storage.set({ tracks: [{ clips: [{ id: 'clip-1' }], id: 'track-1' }] });
+            return { status: 'written' as const };
+        });
+        registerHandlerMap({
+            addClip: {
+                execute,
+                describe: () => ({
+                    label: 'Add clip',
+                    inverseAction: { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                }),
+                undoable: true,
+            },
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-1');
+        commandBatchPreflightPort.setProvider((input) => {
+            const suppliedDocument = 'projectDocument' in input ? input.projectDocument : undefined;
+            const authoritativeDocument = suppliedDocument ?? doc;
+            const serializedDocument = JSON.stringify(authoritativeDocument);
+            const targetFingerprints = Object.fromEntries(
+                input.targetIds.flatMap((targetId) =>
+                    serializedDocument.includes(`"id":"${targetId}"`) ? [[targetId, targetId]] : []
+                )
+            );
+            return {
+                audioGraphValid: true,
+                availableAssetHashes: [],
+                availableAudioBufferIds: [],
+                lockedRanges: [],
+                projectId: 'project-1',
+                projectInvariantsValid: true,
+                targetFingerprints,
+            };
+        });
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'addClip',
+                payload: { id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Verse' },
+            },
+            expectedEffect: 'Add clip',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-staged-create',
+            batchId: 'batch-staged-create',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Add clip',
+            commands: [JSON.stringify(command.envelope)],
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.authority,
+            confirmed: true,
+            serialized: compiled.serialized,
+        });
+
+        expect(result).toMatchObject({ status: 'committed', actions: [{ action: { type: 'addClip' } }] });
+        expect(doc).toMatchObject({ tracks: { tracks: [{ clips: [{ id: 'clip-1' }] }] } });
+    });
+
+    it('rejects a staged protected-target mutation before the root document commits', async () => {
+        type TestTrackState = { tracks: { gain: number; id: string }[] };
+        const doc: Record<string, unknown> = {
+            tracks: {
+                tracks: [
+                    { gain: 1, id: 'track-vocal' },
+                    { gain: 1, id: 'track-protected' },
+                ],
+            },
+        };
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => applyTransactionalMutation(doc, changeFn),
+        });
+        const storage = createAutomergeStorage<TestTrackState>('root', 'tracks');
+        storage.hydrate?.();
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn(() => 1)
+        );
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const execute = vi.fn(() => {
+            storage.set({
+                tracks: [
+                    { gain: 0.8, id: 'track-vocal' },
+                    { gain: 0.5, id: 'track-protected' },
+                ],
+            });
+            return { status: 'written' as const };
+        });
+        registerHandlerMap({
+            setTrackGain: {
+                execute,
+                describe: () => ({
+                    label: 'Set gain',
+                    inverseAction: {
+                        type: 'setTrackGain',
+                        payload: { trackId: 'track-vocal', gain: 1, expectedGain: 0.8 },
+                    },
+                }),
+                undoable: true,
+            },
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-1');
+        commandBatchPreflightPort.setProvider((input) => {
+            const suppliedDocument = 'projectDocument' in input ? input.projectDocument : undefined;
+            const authoritativeDocument = suppliedDocument ?? doc;
+            const tracksSlot = (authoritativeDocument as { tracks?: TestTrackState }).tracks;
+            const targetFingerprints = Object.fromEntries(
+                input.targetIds.flatMap((targetId) => {
+                    const target = tracksSlot?.tracks.find((track) => track.id === targetId);
+                    return target ? [[targetId, JSON.stringify(target)]] : [];
+                })
+            );
+            return {
+                audioGraphValid: true,
+                availableAssetHashes: [],
+                availableAudioBufferIds: [],
+                lockedRanges: [],
+                projectId: 'project-1',
+                projectInvariantsValid: true,
+                targetFingerprints,
+            };
+        });
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+            },
+            expectedEffect: 'Set vocal gain',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-protected-mutation',
+            batchId: 'batch-protected-mutation',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Set vocal gain',
+            commands: [JSON.stringify(command.envelope)],
+            protectedTargetIds: ['track-protected'],
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.authority,
+            confirmed: true,
+            serialized: compiled.serialized,
+        });
+
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch changed protected target: track-protected',
+            actions: [],
+        });
+        expect(doc).toMatchObject({
+            tracks: {
+                tracks: [
+                    { gain: 1, id: 'track-vocal' },
+                    { gain: 1, id: 'track-protected' },
+                ],
+            },
+        });
+    });
+
+    it('rejects a batch bound to a different active project before dispatch', async () => {
+        const execute = vi.fn(() => ({ status: 'written' as const }));
+        registerHandlerMap({
+            setTrackGain: {
+                execute,
+                describe: () => ({
+                    label: 'Set gain',
+                    inverseAction: {
+                        type: 'setTrackGain',
+                        payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+                    },
+                }),
+                undoable: true,
+            },
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-1');
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-other',
+            projectInvariantsValid: true,
+            targetFingerprints: { 'track-vocal': 'vocal' },
+        }));
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 },
+            },
+            expectedEffect: 'Set vocal gain',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-project-mismatch',
+            batchId: 'batch-project-mismatch',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Set vocal gain',
+            commands: [JSON.stringify(command.envelope)],
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.authority,
+            confirmed: true,
+            serialized: compiled.serialized,
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Command batch project does not match the active project',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
     it('rejects oversized serialized batches before JSON parsing or dispatch', async () => {
         const execute = vi.fn(() => ({ status: 'written' as const }));
         registerHandlerMap({
@@ -388,6 +726,7 @@ describe('command batch preflight', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
+            projectId: 'project-1',
             projectInvariantsValid: true,
             targetFingerprints: { 'track-vocal': 'fingerprint' },
         }));

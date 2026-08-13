@@ -36,10 +36,6 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     }
     const resolvedCommands = resolveVersionedCommandBatchBindings(parsed.envelope);
     const resolvedEnvelope = { ...parsed.envelope, commands: resolvedCommands };
-    const preflight = prepareCommandBatchPreflight(resolvedEnvelope);
-    if (preflight.status === 'rejected') {
-        return { status: 'rejected' as const, reason: preflight.reason, actions: [] as [] };
-    }
     return executeVersionedCommandBatch({
         commands: resolvedCommands.map((command) =>
             serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
@@ -48,7 +44,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         options: {
             ...input.options,
             groupId: parsed.envelope.batchId,
-            preCommitValidation: preflight.validatePostconditions,
+            prepareValidation: () => prepareCommandBatchPreflight(resolvedEnvelope),
             requireCompensation: true,
         },
     });

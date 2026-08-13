@@ -2,6 +2,7 @@ import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { executeAppActionBatch } from './executeAppActionBatch';
@@ -12,7 +13,10 @@ import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 type ExecuteVersionedCommandBatchInput = {
     commands: readonly string[];
     normalizedProjectRevision?: string;
-    options?: ExecuteOptions & { preCommitValidation?: () => string | null; requireCompensation?: boolean };
+    options?: ExecuteOptions & {
+        prepareValidation?: () => CommandBatchValidationPreparation;
+        requireCompensation?: boolean;
+    };
 };
 
 export async function executeVersionedCommandBatch(input: ExecuteVersionedCommandBatchInput) {

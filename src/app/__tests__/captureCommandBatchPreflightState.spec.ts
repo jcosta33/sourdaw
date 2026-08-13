@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     getCrdtDoc: vi.fn<(id: string) => unknown>(),
     getProjectContext: vi.fn(),
     hasAudioBuffer: vi.fn<(id: string) => boolean>(),
+    projectStore: { value: { createdAt: 42 } },
     trackStore: { value: { tracks: [] } },
 }));
 
@@ -31,6 +32,10 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
+}));
+
+vi.mock('#/modules/Project/stores', () => ({
+    projectStore: mocks.projectStore,
 }));
 
 function projectContext(): ReturnType<typeof getProjectContext> {
@@ -141,6 +146,7 @@ describe('captureCommandBatchPreflightState', () => {
             availableAssetHashes: ['sha256:vocal'],
             availableAudioBufferIds: ['buffer-vocal'],
             lockedRanges: [],
+            projectId: '42',
             projectInvariantsValid: true,
             targetFingerprints: {
                 hw_out: 'system-output:hw_out',
@@ -156,6 +162,50 @@ describe('captureCommandBatchPreflightState', () => {
 
         const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
 
+        expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('captures targets and routing from the staged root document when supplied', () => {
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-vocal',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'bus-vocal',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                        {
+                            id: 'bus-vocal',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'track-vocal',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                        {
+                            id: 'track-created',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+            },
+            targetIds: ['track-created'],
+        });
+
+        expect(state.targetFingerprints['track-created']).toContain('track-created');
+        expect(state.projectInvariantsValid).toBe(true);
         expect(state.audioGraphValid).toBe(false);
     });
 });

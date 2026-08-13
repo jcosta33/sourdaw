@@ -10,6 +10,7 @@ type CommandBatchAssetReference = {
 
 type CommandBatchPreflightCaptureInput = {
     assetReferences: readonly CommandBatchAssetReference[];
+    projectDocument?: Readonly<Record<string, unknown>>;
     targetIds: readonly string[];
 };
 
@@ -18,6 +19,7 @@ type CommandBatchPreflightState = {
     availableAssetHashes: readonly string[];
     availableAudioBufferIds: readonly string[];
     lockedRanges: readonly CommandBatchPreflightRange[];
+    projectId: string;
     projectInvariantsValid: boolean;
     targetFingerprints: Readonly<Record<string, string>>;
 };

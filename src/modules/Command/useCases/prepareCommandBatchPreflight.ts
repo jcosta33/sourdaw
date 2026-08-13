@@ -5,6 +5,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 
 import { commandBatchPreflightPort } from './commandBatchPreflightPort';
+import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 
 type CommandBatchAssetReference = {
@@ -12,12 +13,7 @@ type CommandBatchAssetReference = {
     audioBufferId?: string;
 };
 
-type PreparedCommandBatchPreflight =
-    | { status: 'rejected'; reason: string }
-    | {
-          status: 'ready';
-          validatePostconditions: () => string | null;
-      };
+const COMMAND_PROJECT_DOCUMENT_ID = 'root';
 
 function rangesOverlap(left: CommandBatchRange, right: CommandBatchRange): boolean {
     if (left.startBeat === left.endBeat) {
@@ -134,7 +130,9 @@ function validateConditions(input: {
     return null;
 }
 
-export function prepareCommandBatchPreflight(envelope: VersionedCommandBatchEnvelope): PreparedCommandBatchPreflight {
+export function prepareCommandBatchPreflight(
+    envelope: VersionedCommandBatchEnvelope
+): CommandBatchValidationPreparation {
     const targetIds = getRequiredTargetIds(envelope);
     const assetReferences = getAssetReferences(envelope);
     let before: ReturnType<typeof commandBatchPreflightPort.capture>;
@@ -146,6 +144,9 @@ export function prepareCommandBatchPreflight(envelope: VersionedCommandBatchEnve
     }
     if (!before) {
         return { status: 'rejected', reason: 'Command batch preflight state is unavailable' };
+    }
+    if (before.projectId !== envelope.projectId) {
+        return { status: 'rejected', reason: 'Command batch project does not match the active project' };
     }
     if (!before.projectInvariantsValid) {
         return { status: 'rejected', reason: 'Command batch project invariants are invalid' };
@@ -188,47 +189,53 @@ export function prepareCommandBatchPreflight(envelope: VersionedCommandBatchEnve
 
     return {
         status: 'ready',
-        validatePostconditions(): string | null {
-            let after: ReturnType<typeof commandBatchPreflightPort.capture>;
-            try {
-                after = commandBatchPreflightPort.capture({ assetReferences, targetIds });
-            } catch (error) {
-                const reason = error instanceof Error ? error.message : String(error);
-                return `Command batch postcondition validation failed: ${reason}`;
-            }
-            if (!after) {
-                return 'Command batch preflight state became unavailable';
-            }
-            if (!after.projectInvariantsValid) {
-                return 'Command batch violated project invariants';
-            }
-            if (!after.audioGraphValid) {
-                return 'Command batch produced an invalid audio graph';
-            }
-            const postconditionFailure = validateConditions({
-                conditions: envelope.postconditions,
-                envelope,
-                lockedRanges: after.lockedRanges,
-                revision: commandProjectRevisionPort.isConfigured()
-                    ? commandProjectRevisionPort.capture()
-                    : envelope.baseRevision,
-                targetFingerprints: after.targetFingerprints,
-            });
-            if (postconditionFailure) {
-                return postconditionFailure;
-            }
-            for (const condition of envelope.postconditions) {
-                if (condition.kind !== 'targets-unchanged') {
-                    continue;
+        postconditions: {
+            documentId: COMMAND_PROJECT_DOCUMENT_ID,
+            validate(projectDocument): string | null {
+                let after: ReturnType<typeof commandBatchPreflightPort.capture>;
+                try {
+                    after = commandBatchPreflightPort.capture({ assetReferences, projectDocument, targetIds });
+                } catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    return `Command batch postcondition validation failed: ${reason}`;
                 }
-                const changed = (condition.targetIds ?? []).find(
-                    (targetId) => after.targetFingerprints[targetId] !== protectedFingerprints[targetId]
-                );
-                if (changed) {
-                    return `Command batch changed protected target: ${changed}`;
+                if (!after) {
+                    return 'Command batch preflight state became unavailable';
                 }
-            }
-            return null;
+                if (after.projectId !== envelope.projectId) {
+                    return 'Command batch project changed before commit';
+                }
+                if (!after.projectInvariantsValid) {
+                    return 'Command batch violated project invariants';
+                }
+                if (!after.audioGraphValid) {
+                    return 'Command batch produced an invalid audio graph';
+                }
+                const postconditionFailure = validateConditions({
+                    conditions: envelope.postconditions,
+                    envelope,
+                    lockedRanges: after.lockedRanges,
+                    revision: commandProjectRevisionPort.isConfigured()
+                        ? commandProjectRevisionPort.capture()
+                        : envelope.baseRevision,
+                    targetFingerprints: after.targetFingerprints,
+                });
+                if (postconditionFailure) {
+                    return postconditionFailure;
+                }
+                for (const condition of envelope.postconditions) {
+                    if (condition.kind !== 'targets-unchanged') {
+                        continue;
+                    }
+                    const changed = (condition.targetIds ?? []).find(
+                        (targetId) => after.targetFingerprints[targetId] !== protectedFingerprints[targetId]
+                    );
+                    if (changed) {
+                        return `Command batch changed protected target: ${changed}`;
+                    }
+                }
+                return null;
+            },
         },
     };
 }

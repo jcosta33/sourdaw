@@ -526,6 +526,7 @@ describe('command batch contract', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
+            projectId: 'project-1',
             projectInvariantsValid: true,
             targetFingerprints: {
                 'track-drums': 'drums',

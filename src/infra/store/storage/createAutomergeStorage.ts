@@ -157,10 +157,13 @@ type ActiveAutomergeStorageTransaction = {
  */
 type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
 
+type AutomergeStorageDocumentValidator = (doc: AutomergeStorageReadableDoc) => string | null;
+
 type AutomergeStorageTransactionControl = {
     readonly scope: AutomergeStorageTransactionScope;
     abort(): void;
     commit(): void;
+    validateDocument(docId: AutomergeStorageDocId, validator: AutomergeStorageDocumentValidator): void;
 };
 
 type AutomergeStorageTransactionOutcome<Result> =
@@ -194,6 +197,13 @@ export class AutomergeStorageTransactionCommittedError extends Error {
     }
 }
 
+export class AutomergeStorageTransactionValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'AutomergeStorageTransactionValidationError';
+    }
+}
+
 let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
@@ -220,7 +230,8 @@ type AutomergeStorageCommitOutcome =
 
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
 function commitAutomergeStorageMutations(
-    mutations: readonly AutomergeStorageMutationInput[]
+    mutations: readonly AutomergeStorageMutationInput[],
+    validateDocument?: AutomergeStorageDocumentValidator
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
     if (!firstMutation) {
@@ -246,6 +257,10 @@ function commitAutomergeStorageMutations(
             changeFn: (doc) => {
                 for (const mutation of mutations) {
                     mutation.changeFn(doc);
+                }
+                const validationFailure = validateDocument?.(doc) ?? null;
+                if (validationFailure) {
+                    throw new AutomergeStorageTransactionValidationError(validationFailure);
                 }
                 application.appliedChangeFn = true;
             },
@@ -339,6 +354,7 @@ export function runWithAutomergeStorageTransaction<Result>(
     activeAutomergeStorageTransaction = transaction;
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
     let terminalState: 'open' | 'committed' | 'aborted' = 'open';
+    const documentValidators = new Map<AutomergeStorageDocId, AutomergeStorageDocumentValidator>();
     let outcome: AutomergeStorageTransactionOutcome<Result>;
 
     const scope: AutomergeStorageTransactionScope = (scopedCallback) => {
@@ -390,7 +406,8 @@ export function runWithAutomergeStorageTransaction<Result>(
                 flushMatchingAutomergeStorageWrites(
                     (pending) =>
                         pending.commitOwner === transaction.commitOwner &&
-                        pending.snapshotTransaction === transaction.snapshotTransaction
+                        pending.snapshotTransaction === transaction.snapshotTransaction,
+                    documentValidators
                 );
             } catch (error) {
                 if (error instanceof AutomergeStorageFlushError && error.committedDocumentCount > 0) {
@@ -411,14 +428,27 @@ export function runWithAutomergeStorageTransaction<Result>(
             }
             terminalState = 'committed';
         },
+        validateDocument(docId, validator): void {
+            if (terminalState !== 'open') {
+                throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
+            }
+            if (documentValidators.has(docId)) {
+                throw new Error(`Automerge storage transaction already has a validator for document: ${docId}`);
+            }
+            documentValidators.set(docId, validator);
+        },
     };
 
     return { ...outcome, ...control };
 }
 
-function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomergeStorageWrite) => boolean): void {
+function flushMatchingAutomergeStorageWrites(
+    matches: (pending: PendingAutomergeStorageWrite) => boolean,
+    documentValidators: ReadonlyMap<AutomergeStorageDocId, AutomergeStorageDocumentValidator> = new Map()
+): void {
     let firstError: unknown;
     let committedDocumentCount = 0;
+    const validatedDocumentIds = new Set<AutomergeStorageDocId>();
     const groups = new Map<string, Map<object, PendingAutomergeStorageWrite[]>>();
 
     for (const pending of [...pendingAutomergeStorageWrites]) {
@@ -443,7 +473,7 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
         }
     }
 
-    for (const ownerGroups of groups.values()) {
+    for (const [docId, ownerGroups] of groups) {
         for (const writes of ownerGroups.values()) {
             const mutations: AutomergeStorageMutationInput[] = [];
             const abandonedWrites: PendingAutomergeStorageWrite[] = [];
@@ -500,7 +530,10 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
                 continue;
             }
 
-            const outcome = commitAutomergeStorageMutations(mutations);
+            const outcome = commitAutomergeStorageMutations(mutations, documentValidators.get(docId));
+            if (documentValidators.has(docId)) {
+                validatedDocumentIds.add(docId);
+            }
             if (outcome.status === 'rolled-back') {
                 // Nothing reached the document, so this group did not commit
                 // and must not make a later document's failure look like a
@@ -525,6 +558,18 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
             for (const write of writes) {
                 write.didCommit();
             }
+        }
+    }
+
+    const port = getAutomergeStoragePort();
+    for (const [docId, validateDocument] of documentValidators) {
+        if (validatedDocumentIds.has(docId)) {
+            continue;
+        }
+        const document = port?.getDoc(docId);
+        const validationFailure = validateDocument(document ?? {});
+        if (validationFailure) {
+            firstError ??= new AutomergeStorageTransactionValidationError(validationFailure);
         }
     }
 
