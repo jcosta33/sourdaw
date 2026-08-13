@@ -39,7 +39,7 @@ type BatchExecutionObservation = {
 
 type CreateVerifiedBatchReceiptInput = {
     envelope: VersionedCommandBatchEnvelope;
-    observedBaseRevision: string;
+    observedBaseRevision: string | null;
     receiptWarnings?: readonly string[];
     resultingRevision: string | null;
     result: BatchExecutionObservation;
@@ -316,7 +316,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         outcome,
         atomicity: hasFailedExternalEffect ? ('durable-atomic-with-non-atomic-effects' as const) : ('atomic' as const),
         base: parseRevision(input.envelope.baseRevision),
-        observedBase: parseRevision(input.observedBaseRevision),
+        observedBase: input.observedBaseRevision === null ? null : parseRevision(input.observedBaseRevision),
         resulting: input.resultingRevision === null ? null : parseRevision(input.resultingRevision),
         commandOutcomes,
         affectedIds,

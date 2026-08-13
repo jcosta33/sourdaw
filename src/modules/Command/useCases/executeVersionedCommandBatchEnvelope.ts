@@ -28,14 +28,18 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (parsed.envelope.mode === 'preview') {
         return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
-    let observedBaseRevision = resolvedEnvelope.baseRevision;
+    let observedBaseRevision: string | null = null;
+    const receiptWarnings: string[] = [];
     try {
         if (commandProjectRevisionPort.isConfigured()) {
             observedBaseRevision = commandProjectRevisionPort.capture();
+        } else {
+            receiptWarnings.push('Observed base revision is unavailable: revision provider is not configured');
         }
-    } catch {
-        // Execution performs the authoritative validation and will return its
-        // own failure; the receipt retains the approved base if observation fails.
+    } catch (error) {
+        receiptWarnings.push(
+            `Observed base revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
+        );
     }
     if (!input.confirmed && !parsed.envelope.grants.autoCommit) {
         const result = {
@@ -48,6 +52,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             receipt: createVerifiedBatchReceipt({
                 envelope: resolvedEnvelope,
                 observedBaseRevision,
+                receiptWarnings,
                 resultingRevision: observedBaseRevision,
                 result,
             }),
@@ -66,7 +71,6 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         },
     });
     let resultingRevision: string | null = null;
-    const receiptWarnings: string[] = [];
     try {
         if (commandProjectRevisionPort.isConfigured()) {
             resultingRevision = commandProjectRevisionPort.capture();

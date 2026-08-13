@@ -140,6 +140,7 @@ describe('verified batch receipt', () => {
     let projectDocument: Record<string, unknown>;
     let gainStorage: ReturnType<typeof createAutomergeStorage<{ value: number }>>;
     let panStorage: ReturnType<typeof createAutomergeStorage<{ value: number }>>;
+    let rejectObservedRevisionCapture: boolean;
     let protectedFingerprintChanged: boolean;
     let rejectPostconditions: boolean;
     let rejectResultingRevisionCapture: boolean;
@@ -283,6 +284,7 @@ describe('verified batch receipt', () => {
         vi.clearAllMocks();
         clearHandlerRegistry();
         mutationCount = 0;
+        rejectObservedRevisionCapture = false;
         protectedFingerprintChanged = false;
         rejectPostconditions = false;
         rejectResultingRevisionCapture = false;
@@ -302,7 +304,12 @@ describe('verified batch receipt', () => {
         panStorage = createAutomergeStorage<{ value: number }>('root', 'trackPan');
         expect(gainStorage.hydrate?.()).toBe(true);
         expect(panStorage.hydrate?.()).toBe(true);
+        let revisionCaptureCount = 0;
         commandProjectRevisionPort.setProvider(() => {
+            revisionCaptureCount += 1;
+            if (rejectObservedRevisionCapture && revisionCaptureCount === 1) {
+                throw new Error('base revision observer unavailable');
+            }
             if (rejectResultingRevisionCapture && mutationCount > 0) {
                 throw new Error('revision observer unavailable');
             }
@@ -557,6 +564,24 @@ describe('verified batch receipt', () => {
         });
     });
 
+    it('does not fabricate observed heads when pre-execution revision capture fails', async () => {
+        rejectObservedRevisionCapture = true;
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(receiptFrom(result)).toMatchObject({
+            observedBase: null,
+            resulting: { normalizedRevision: revision(1) },
+            warnings: ['Observed base revision could not be captured: base revision observer unavailable'],
+        });
+    });
+
     it('does not fabricate resulting heads when no revision provider is configured', async () => {
         const batch = compileBatch();
         commandProjectRevisionPort.setProvider(null);
@@ -569,8 +594,12 @@ describe('verified batch receipt', () => {
 
         expect(result.status).toBe('committed');
         expect(receiptFrom(result)).toMatchObject({
+            observedBase: null,
             resulting: null,
-            warnings: ['Resulting project revision is unavailable: revision provider is not configured'],
+            warnings: [
+                'Observed base revision is unavailable: revision provider is not configured',
+                'Resulting project revision is unavailable: revision provider is not configured',
+            ],
             modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
         });
     });
