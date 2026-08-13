@@ -46,6 +46,7 @@ const LIVE_DISPATCH_FRAME = 96_128;
 function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {}): HandleWebMidiCCDependencies {
     return {
         getMidiLearnState: () => ({
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -78,6 +79,7 @@ describe('handleWebMidiCC', () => {
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getMidiLearnState: () => ({
+                    mappingsSchemaVersion: 1,
                     mappings: [],
                     isLearning: true,
                     learningTarget: {

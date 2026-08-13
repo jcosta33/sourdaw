@@ -16,6 +16,7 @@ const existingMapping: MidiMapping = {
 describe('stopMidiLearn', () => {
     beforeEach(() => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [existingMapping],
             isLearning: true,
             learningTarget: { targetType: 'trackPan', trackId: 'track2' },

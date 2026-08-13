@@ -1,64 +1,30 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { midiLearnStore, type MidiMapping } from '../../../stores/midiLearnStore';
 import { removeMapping } from '../removeMapping';
 
-const mappingA: MidiMapping = {
-    id: 'm1',
-    channel: 0,
-    cc: 7,
-    targetType: 'trackGain',
-    trackId: 'track1',
-    minValue: 0,
-    maxValue: 1,
-    scaleMode: 'log',
-};
+const dispatched: { type: string; payload: unknown }[] = [];
 
-const mappingB: MidiMapping = {
-    id: 'm2',
-    channel: 0,
-    cc: 8,
-    targetType: 'trackPan',
-    trackId: 'track1',
-    minValue: -50,
-    maxValue: 50,
-};
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: (action: { type: string; payload: unknown }) => {
+        dispatched.push(action);
+        return Promise.resolve();
+    },
+}));
 
 describe('removeMapping', () => {
     beforeEach(() => {
-        midiLearnStore.set({ mappings: [mappingA, mappingB], isLearning: false, learningTarget: null });
+        dispatched.length = 0;
     });
 
-    it('removes only the mapping with the matching id', () => {
+    it('dispatches removeMidiMapping with the given mapping id (audit A-1)', () => {
         removeMapping('m1');
 
-        expect(midiLearnStore.value?.mappings).toEqual([mappingB]);
+        expect(dispatched).toEqual([{ type: 'removeMidiMapping', payload: { mappingId: 'm1' } }]);
     });
 
-    it('is a no-op when no mapping has that id', () => {
+    it('dispatches unconditionally — existence and no-op checks belong to handleRemoveMidiMapping', () => {
         removeMapping('does-not-exist');
 
-        expect(midiLearnStore.value?.mappings).toEqual([mappingA, mappingB]);
-    });
-
-    it('does not touch isLearning or learningTarget', () => {
-        midiLearnStore.set({
-            mappings: [mappingA, mappingB],
-            isLearning: true,
-            learningTarget: { targetType: 'trackGain', trackId: 'track2' },
-        });
-
-        removeMapping('m1');
-
-        expect(midiLearnStore.value?.isLearning).toBe(true);
-        expect(midiLearnStore.value?.learningTarget).toEqual({ targetType: 'trackGain', trackId: 'track2' });
-    });
-
-    it('does nothing when the store has no state', () => {
-        midiLearnStore.set(null);
-
-        removeMapping('m1');
-
-        expect(midiLearnStore.value).toBeNull();
+        expect(dispatched).toEqual([{ type: 'removeMidiMapping', payload: { mappingId: 'does-not-exist' } }]);
     });
 });

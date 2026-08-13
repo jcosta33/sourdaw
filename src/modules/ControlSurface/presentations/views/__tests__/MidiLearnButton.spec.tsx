@@ -40,6 +40,7 @@ function renderButton(
     state: { isLearning?: boolean; learningTarget?: unknown } = {}
 ): void {
     mockedUseStore.mockReturnValue({
+        mappingsSchemaVersion: 1,
         mappings: [],
         isLearning: state.isLearning ?? false,
         learningTarget: (state.learningTarget as never) ?? null,
@@ -108,7 +109,12 @@ describe('MidiLearnButton — learning state', () => {
 
 describe('MidiLearnButton — existing mapping', () => {
     it('renders the CC number when a mapping exists', () => {
-        mockedUseStore.mockReturnValue({ mappings: [], isLearning: false, learningTarget: null });
+        mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
+            mappings: [],
+            isLearning: false,
+            learningTarget: null,
+        });
         mockedFindMapping.mockReturnValue({
             id: 'm1',
             channel: 3,
@@ -123,7 +129,12 @@ describe('MidiLearnButton — existing mapping', () => {
     });
 
     it('aria-label shows CC and channel (1-based) when a mapping exists', () => {
-        mockedUseStore.mockReturnValue({ mappings: [], isLearning: false, learningTarget: null });
+        mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
+            mappings: [],
+            isLearning: false,
+            learningTarget: null,
+        });
         mockedFindMapping.mockReturnValue({
             id: 'm1',
             channel: 2,
@@ -141,6 +152,7 @@ describe('MidiLearnButton — existing mapping', () => {
 
     it('shows "M" text when mapping exists but is learning (learning takes priority)', () => {
         mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: true,
             learningTarget: { targetType: 'trackGain', trackId: 't1', deviceId: undefined, paramId: undefined },
@@ -182,7 +194,12 @@ describe('MidiLearnButton — click behavior', () => {
     });
 
     it('removes the existing mapping on Alt+click instead of starting a new learn (F-10)', () => {
-        mockedUseStore.mockReturnValue({ mappings: [], isLearning: false, learningTarget: null });
+        mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
+            mappings: [],
+            isLearning: false,
+            learningTarget: null,
+        });
         mockedFindMapping.mockReturnValue({
             id: 'm1',
             channel: 3,

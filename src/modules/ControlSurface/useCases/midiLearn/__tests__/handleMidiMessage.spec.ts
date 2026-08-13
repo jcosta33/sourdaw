@@ -74,7 +74,12 @@ describe('handleMidiMessage', () => {
         deps.getTransportPlayheadPosition.mockReturnValue(0);
         deps.getAllTracks.mockReturnValue([]);
         setMidiLearnDependencies(deps);
-        midiLearnStore.set({ mappings: [baseMapping], isLearning: false, learningTarget: null });
+        midiLearnStore.set({
+            mappingsSchemaVersion: 1,
+            mappings: [baseMapping],
+            isLearning: false,
+            learningTarget: null,
+        });
     });
 
     it('does nothing when the store has no state', () => {
@@ -100,6 +105,7 @@ describe('handleMidiMessage', () => {
 
     it('scales and writes trackPan to both arrangement and engine', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'trackPan', minValue: -50, maxValue: 50 }],
             isLearning: false,
             learningTarget: null,
@@ -113,6 +119,7 @@ describe('handleMidiMessage', () => {
 
     it('skips a trackGain mapping with no trackId instead of writing an undefined target (F-11)', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, trackId: undefined }],
             isLearning: false,
             learningTarget: null,
@@ -126,6 +133,7 @@ describe('handleMidiMessage', () => {
 
     it('skips a trackPan mapping with no trackId instead of writing an undefined target (F-11)', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'trackPan', trackId: undefined, minValue: -50, maxValue: 50 }],
             isLearning: false,
             learningTarget: null,
@@ -139,6 +147,7 @@ describe('handleMidiMessage', () => {
 
     it('writes a deviceParam mapping only when both deviceId and paramId are set', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'deviceParam', deviceId: 'dev1', paramId: 'cutoff' }],
             isLearning: false,
             learningTarget: null,
@@ -156,6 +165,7 @@ describe('handleMidiMessage', () => {
         });
         deps.getAllTracks.mockReturnValue([baseTrack, fermenterTrack]);
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
             isLearning: false,
             learningTarget: null,
@@ -169,6 +179,7 @@ describe('handleMidiMessage', () => {
     it('does not touch the fermenter param when no track carries a fermenter device', () => {
         deps.getAllTracks.mockReturnValue([baseTrack]);
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
             isLearning: false,
             learningTarget: null,
@@ -189,6 +200,7 @@ describe('handleMidiMessage', () => {
         deps.getTransportIsPlaying.mockReturnValue(true);
         deps.getTransportPlayheadPosition.mockReturnValue(12.5);
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
             isLearning: false,
             learningTarget: null,
@@ -208,6 +220,7 @@ describe('handleMidiMessage', () => {
         deps.getAllTracks.mockReturnValue([fermenterTrack]);
         deps.getTransportIsPlaying.mockReturnValue(true);
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
             isLearning: false,
             learningTarget: null,
@@ -237,6 +250,7 @@ describe('handleMidiMessage', () => {
         deps.getTransportIsPlaying.mockReturnValue(true);
         deps.getTransportPlayheadPosition.mockReturnValue(4);
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
             isLearning: false,
             learningTarget: null,

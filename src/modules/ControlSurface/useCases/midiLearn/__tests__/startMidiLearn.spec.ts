@@ -7,7 +7,7 @@ const target: LearningTarget = { targetType: 'trackGain', trackId: 'track1' };
 
 describe('startMidiLearn', () => {
     beforeEach(() => {
-        midiLearnStore.set({ mappings: [], isLearning: false, learningTarget: null });
+        midiLearnStore.set({ mappingsSchemaVersion: 1, mappings: [], isLearning: false, learningTarget: null });
     });
 
     afterEach(() => {

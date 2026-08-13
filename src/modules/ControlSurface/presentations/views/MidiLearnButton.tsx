@@ -7,9 +7,9 @@ import { cn } from '#/utils/Styles/cn';
 
 import {
     midiLearnStore,
+    defaultMidiLearnState,
     type LearningTarget,
     type MidiMappingTargetType,
-    type MidiLearnState,
 } from '../../stores/midiLearnStore';
 import { findMappingForTarget } from '../../useCases/midiLearn/findMappingForTarget';
 import { removeMapping } from '../../useCases/midiLearn/removeMapping';
@@ -21,12 +21,6 @@ type MidiLearnButtonProps = {
     trackId: string;
     deviceId?: string;
     paramId?: string;
-};
-
-const defaultMidiLearnState: MidiLearnState = {
-    mappings: [],
-    isLearning: false,
-    learningTarget: null,
 };
 
 function isTargetMatch(firstTarget: LearningTarget, secondTarget: LearningTarget): boolean {

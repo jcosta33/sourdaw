@@ -3,7 +3,12 @@ import { type MouseEvent, type ReactElement } from 'react';
 import { RotaryKnob, type RotaryKnobProps } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 
-import { midiLearnStore, type LearningTarget, type MidiLearnState } from '../../stores/midiLearnStore';
+import {
+    midiLearnStore,
+    defaultMidiLearnState,
+    type LearningTarget,
+    type MidiLearnState,
+} from '../../stores/midiLearnStore';
 import { findMappingForTarget } from '../../useCases/midiLearn/findMappingForTarget';
 import { removeMapping } from '../../useCases/midiLearn/removeMapping';
 import { startMidiLearn } from '../../useCases/midiLearn/startMidiLearn';
@@ -22,12 +27,6 @@ type MidiLearnRotaryKnobTarget =
     | { targetType: 'deviceParam'; trackId: string; deviceId: string };
 
 type MidiLearnRotaryKnobProps = RotaryKnobProps & MidiLearnRotaryKnobTarget;
-
-const defaultMidiLearnState: MidiLearnState = {
-    mappings: [],
-    isLearning: false,
-    learningTarget: null,
-};
 
 function isSameTarget(left: LearningTarget | null, right: LearningTarget): boolean {
     return (

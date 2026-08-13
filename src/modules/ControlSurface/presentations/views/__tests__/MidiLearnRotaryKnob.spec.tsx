@@ -8,6 +8,7 @@ import { stopMidiLearn } from '../../../useCases/midiLearn/stopMidiLearn';
 import { MidiLearnRotaryKnob } from '../MidiLearnRotaryKnob';
 
 const baseMidiState: MidiLearnState = {
+    mappingsSchemaVersion: 1,
     mappings: [],
     isLearning: false,
     learningTarget: null,
@@ -43,6 +44,7 @@ describe('MidiLearnRotaryKnob', () => {
 
     it('projects the active MIDI learn state onto the matching target', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: true,
             learningTarget: {
@@ -58,6 +60,7 @@ describe('MidiLearnRotaryKnob', () => {
 
     it('projects an existing mapping onto the matching target', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [
                 {
                     id: 'mapping-1',
@@ -91,6 +94,7 @@ describe('MidiLearnRotaryKnob', () => {
 
     it('does not project another target with the same parameter id', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [
                 {
                     id: 'mapping-1',
@@ -165,6 +169,7 @@ describe('MidiLearnRotaryKnob', () => {
 
     it('cancels an in-progress learn on the context menu instead of re-arming it (F-10)', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: true,
             learningTarget: { targetType: 'fermenterGlobalParam', paramId: 'cutoff' },
@@ -180,6 +185,7 @@ describe('MidiLearnRotaryKnob', () => {
 
     it('removes the existing mapping on Alt+right-click instead of starting a new learn (F-10)', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [
                 {
                     id: 'mapping-1',

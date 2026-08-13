@@ -130,8 +130,4 @@ export type LocalStorageKey =
     | 'sourdaw-shortcuts'
 
     // Stores if the user has dismissed the alpha notice modal
-    | 'sourdaw-alpha-notice-dismissed'
-
-    // Stores learned MIDI CC → parameter mappings (per-install controller
-    // config, not project data — excluded from the Automerge document)
-    | 'sourdaw-midi-learn-mappings';
+    | 'sourdaw-alpha-notice-dismissed';
