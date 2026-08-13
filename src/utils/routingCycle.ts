@@ -120,3 +120,41 @@ export function wouldCreateRoutingCycle({
 
     return false;
 }
+
+export function hasRoutingCycle({
+    tracks,
+    sidechainRoutes = [],
+}: Pick<WouldCreateRoutingCycleInput, 'tracks' | 'sidechainRoutes'>): boolean {
+    const visited = new Set<string>();
+    const active = new Set<string>();
+
+    function visit(nodeId: string): boolean {
+        if (active.has(nodeId)) {
+            return true;
+        }
+        if (visited.has(nodeId)) {
+            return false;
+        }
+        visited.add(nodeId);
+        active.add(nodeId);
+        for (const successor of getDownstreamSuccessors(nodeId, tracks, sidechainRoutes)) {
+            if (visit(successor)) {
+                return true;
+            }
+        }
+        active.delete(nodeId);
+        return false;
+    }
+
+    const nodeIds = new Set(tracks.map((track) => track.id));
+    for (const route of sidechainRoutes) {
+        nodeIds.add(route.sourceTrackId);
+        nodeIds.add(route.targetTrackId);
+    }
+    for (const nodeId of nodeIds) {
+        if (visit(nodeId)) {
+            return true;
+        }
+    }
+    return false;
+}

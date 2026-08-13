@@ -12,7 +12,7 @@ import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 type ExecuteVersionedCommandBatchInput = {
     commands: readonly string[];
     normalizedProjectRevision?: string;
-    options?: ExecuteOptions & { requireCompensation?: boolean };
+    options?: ExecuteOptions & { preCommitValidation?: () => string | null; requireCompensation?: boolean };
 };
 
 export async function executeVersionedCommandBatch(input: ExecuteVersionedCommandBatchInput) {

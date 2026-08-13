@@ -4,6 +4,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../../models/VersionedCommandBatchEnvelope';
+import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -73,9 +74,16 @@ function batch(overrides: Record<string, unknown> = {}) {
             protectedTargetIds: ['track-drums'],
             protectedRanges: [{ startBeat: 32, endBeat: 48 }],
         },
-        preconditions: [{ kind: 'project-revision', value: 'revision-1' }],
+        preconditions: [
+            { kind: 'project-revision', value: 'revision-1' },
+            { kind: 'targets-exist', targetIds: ['track-vocal', 'track-guitar'] },
+        ],
         commands,
-        postconditions: [{ kind: 'targets-unchanged', targetIds: ['track-drums'] }],
+        postconditions: [
+            { kind: 'project-invariants-valid' },
+            { kind: 'audio-graph-valid' },
+            { kind: 'targets-unchanged', targetIds: ['track-drums'] },
+        ],
         dependencies: [{ commandId: PAN_COMMAND_ID, dependsOn: [GAIN_COMMAND_ID] }],
         batchLocalBindings: [],
         grants: {
@@ -117,6 +125,7 @@ function authority(input: ReturnType<typeof batch>): CommandBatchAuthority {
 describe('command batch contract', () => {
     afterEach(() => {
         clearHandlerRegistry();
+        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
     });
 
@@ -434,7 +443,11 @@ describe('command batch contract', () => {
                 protectedTargetIds: [],
                 protectedRanges: [],
             },
-            postconditions: [],
+            preconditions: [
+                { kind: 'project-revision', value: 'revision-1' },
+                { kind: 'targets-exist', targetIds: ['track-vocal'] },
+            ],
+            postconditions: [{ kind: 'project-invariants-valid' }, { kind: 'audio-graph-valid' }],
             grants: {
                 ...batch().grants,
                 allowedOperationPrefixes: ['createBus', 'addSend'],
@@ -508,6 +521,18 @@ describe('command batch contract', () => {
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectInvariantsValid: true,
+            targetFingerprints: {
+                'track-drums': 'drums',
+                'track-guitar': 'guitar',
+                'track-vocal': 'vocal',
+            },
+        }));
         const input = batch({ mode: 'commit' });
 
         const result = await executeVersionedCommandBatchEnvelope({

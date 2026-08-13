@@ -103,6 +103,11 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
         throw new Error('Command batch requires application-owned dynamic effect bounds');
     }
     const effects = getVersionedCommandBatchEffects(commands, input.dynamicEffects);
+    const createdTargetIds = new Set(
+        commands.flatMap((command) =>
+            command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
+        )
+    );
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
     const dynamicTargetIds = new Set([
         ...(input.dynamicEffects?.affectedTrackIds ?? []),
@@ -127,6 +132,8 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
         protectedTargetIds,
         protectedRanges: structuredClone(input.protectedRanges ?? []),
     };
+    const existingTargetIds = scope.targetIds.filter((targetId) => !createdTargetIds.has(targetId));
+    const absentTargetIds = scope.targetIds.filter((targetId) => createdTargetIds.has(targetId));
     const grants = {
         allowedOperationPrefixes: [...new Set(commands.map((command) => command.operation))],
         create: effects.requiredGrants.has('create'),
@@ -161,12 +168,15 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
         scope,
         preconditions: [
             { kind: 'project-revision', value: input.baseRevision },
-            ...(scope.targetIds.length > 0 ? [{ kind: 'targets-exist' as const, targetIds: scope.targetIds }] : []),
+            ...(existingTargetIds.length > 0 ? [{ kind: 'targets-exist' as const, targetIds: existingTargetIds }] : []),
+            ...(absentTargetIds.length > 0 ? [{ kind: 'targets-absent' as const, targetIds: absentTargetIds }] : []),
+            ...(scope.targetRanges.length > 0 ? [{ kind: 'ranges-unlocked' as const }] : []),
         ],
         commands,
         postconditions: [
             { kind: 'project-invariants-valid' },
             { kind: 'audio-graph-valid' },
+            ...(absentTargetIds.length > 0 ? [{ kind: 'targets-exist' as const, targetIds: absentTargetIds }] : []),
             ...(protectedTargetIds.length > 0
                 ? [{ kind: 'targets-unchanged' as const, targetIds: protectedTargetIds }]
                 : []),

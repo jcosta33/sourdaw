@@ -49,6 +49,7 @@ type ExecuteAppActionBatchResult =
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
     commandEnvelopes?: readonly VersionedCommandEnvelope[];
+    preCommitValidation?: () => string | null;
     requireCompensation?: boolean;
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
@@ -596,6 +597,27 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     };
                 }
                 return { status: 'cancelled', reason: failureReason(error), actions: [] };
+            }
+
+            let postconditionFailure: string | null;
+            try {
+                postconditionFailure = options?.preCommitValidation?.() ?? null;
+            } catch (error) {
+                postconditionFailure = `Batch postcondition validation failed: ${failureReason(error)}`;
+            }
+            if (postconditionFailure) {
+                const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
+                const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
+                storageTransaction.abort();
+                clearBatchSemanticContext();
+                if (compensationFailure || rollbackFailure) {
+                    return {
+                        status: 'failed',
+                        reason: appendAbortFailures(postconditionFailure, compensationFailure, rollbackFailure),
+                        actions: [],
+                    };
+                }
+                return { status: 'conflicted', reason: postconditionFailure, actions: [] };
             }
 
             const committedActions = executedActions.map(({ action }) => action);
