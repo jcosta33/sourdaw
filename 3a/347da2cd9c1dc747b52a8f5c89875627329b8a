@@ -1,0 +1,39 @@
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_72d61588a34b73 39,78-87
+src/modules/AiRuntime/useCases/__tests__/compilePlannedActionCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_37c922677c78f5 98-101
+  s_a40848e8f8cca9::t_efe4aa62db1115 97,102-108
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_0257a8844db875 8,33,147
+  s_a40848e8f8cca9::t_3732e86b9051df 123
+  s_a40848e8f8cca9::t_c31b01f2488c3d 166-173
+  s_a40848e8f8cca9::t_3506cb57b3dcc1 174-175
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_027c30cefd7a78 17,324
+src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts
+  s_a40848e8f8cca9::t_98e8b13c5fb86c 7,30-31,477-548,550
+  s_a40848e8f8cca9::t_7aa62bd1f36c34 549
+  s_a40848e8f8cca9::t_8d04f0e4d07a2c 551-553
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_a40848e8f8cca9::t_027c30cefd7a78 282
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_027c30cefd7a78 5,366
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_72d61588a34b73 54,415-426
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3a347da2cd9c1dc747b52a8f5c89875627329b8a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
