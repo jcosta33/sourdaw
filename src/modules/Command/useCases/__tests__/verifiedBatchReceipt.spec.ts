@@ -557,6 +557,24 @@ describe('verified batch receipt', () => {
         });
     });
 
+    it('does not fabricate resulting heads when no revision provider is configured', async () => {
+        const batch = compileBatch();
+        commandProjectRevisionPort.setProvider(null);
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(receiptFrom(result)).toMatchObject({
+            resulting: null,
+            warnings: ['Resulting project revision is unavailable: revision provider is not configured'],
+            modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
+        });
+    });
+
     it('includes application-owned dynamic targets in the committed affected IDs', async () => {
         const batch = compileBatch({ dynamicAffectedTargetIds: ['automation-lane-hidden'] });
 

@@ -71,7 +71,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         if (commandProjectRevisionPort.isConfigured()) {
             resultingRevision = commandProjectRevisionPort.capture();
         } else {
-            resultingRevision = observedBaseRevision;
+            receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
         }
     } catch (error) {
         receiptWarnings.push(
