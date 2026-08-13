@@ -52,6 +52,7 @@ const {
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
+    canExecuteCommandBatchMock,
     prepareOfflineLevainMock,
     initBranchStateMock,
     flushDeferredStorageNoticeMock,
@@ -65,6 +66,7 @@ const {
         sentinelHandlers,
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
         configureCommandBatchIdempotencyMock: vi.fn(),
+        canExecuteCommandBatchMock: vi.fn(() => true),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -186,6 +188,7 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 }));
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
+    canExecuteCommandBatch: canExecuteCommandBatchMock,
     canMutateBranchMetadata: () => true,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     getAssetTransfer: () => null,
@@ -466,7 +469,9 @@ describe('bootstrap', () => {
     });
 
     it('configures durable command-batch idempotency exactly once', () => {
-        expect(configureCommandBatchIdempotencyMock).toHaveBeenCalledExactlyOnceWith();
+        expect(configureCommandBatchIdempotencyMock).toHaveBeenCalledExactlyOnceWith({
+            canExecute: canExecuteCommandBatchMock,
+        });
     });
 
     it('registers the exact forward and restore global-time owner preparations', () => {

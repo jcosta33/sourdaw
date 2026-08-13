@@ -57,7 +57,7 @@ import {
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
-import { canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
+import { canExecuteCommandBatch, canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
@@ -164,7 +164,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
-configureCommandBatchIdempotency();
+configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
     markReverted: markActionHistoryEntryReverted,

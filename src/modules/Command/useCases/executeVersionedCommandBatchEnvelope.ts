@@ -2,6 +2,7 @@ import { type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvelope';
 
+import { commandBatchExecutionAuthorityPort } from './commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from './commandBatchIdempotencyPort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
@@ -59,6 +60,23 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         receipt: null,
     };
     if (commandBatchIdempotencyPort.isConfigured()) {
+        if (!commandBatchExecutionAuthorityPort.canExecute()) {
+            const result = {
+                status: 'rejected' as const,
+                reason: 'Only the authoritative collaboration host can execute a durable command batch',
+                actions: [] as [],
+            };
+            return {
+                ...result,
+                receipt: createVerifiedBatchReceipt({
+                    envelope: resolvedEnvelope,
+                    observedBaseRevision,
+                    receiptWarnings,
+                    resultingRevision: observedBaseRevision,
+                    result,
+                }),
+            };
+        }
         try {
             idempotencyContentHash = await getCommandBatchContentHash(parsed.envelope);
             const activeClaimId = `${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`;

@@ -10,6 +10,7 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandBatchPreviewPort } from '../commandBatchPreviewPort';
@@ -120,6 +121,7 @@ describe('command batch idempotency', () => {
             },
         });
         localStorage.removeItem(durableStorageKey);
+        commandBatchExecutionAuthorityPort.setProvider(() => true);
         clearHandlerRegistry();
         mutationCount = 0;
         rejectProjectReceiptFinalization = false;
@@ -230,9 +232,28 @@ describe('command batch idempotency', () => {
         commandBatchPreflightPort.setProvider(null);
         commandBatchPreviewPort.setProvider(null);
         commandBatchIdempotencyPort.setRepository(null);
+        commandBatchExecutionAuthorityPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         localStorage.removeItem(durableStorageKey);
         clearHandlerRegistry();
+    });
+
+    it('rejects a collaboration joiner before project or runtime effects', async () => {
+        commandBatchExecutionAuthorityPort.setProvider(() => false);
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Only the authoritative collaboration host can execute a durable command batch',
+        });
+        expect(mutationCount).toBe(0);
+        expect(runtimeEffectCount).toBe(0);
     });
 
     it('returns the prior verified receipt for an exact retry without repeating project or runtime effects', async () => {
@@ -261,7 +282,7 @@ describe('command batch idempotency', () => {
 
     it('returns the prior receipt after the durable repository is recreated', async () => {
         commandBatchIdempotencyPort.setRepository(null);
-        configureCommandBatchIdempotency();
+        configureCommandBatchIdempotency({ canExecute: () => true });
         const batch = compileBatch();
 
         const first = await executeVersionedCommandBatchEnvelope({
@@ -270,7 +291,7 @@ describe('command batch idempotency', () => {
             serialized: batch.serialized,
         });
         commandBatchIdempotencyPort.setRepository(null);
-        configureCommandBatchIdempotency();
+        configureCommandBatchIdempotency({ canExecute: () => true });
         const retry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
