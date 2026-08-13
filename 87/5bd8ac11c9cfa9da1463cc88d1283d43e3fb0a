@@ -1,0 +1,118 @@
+src/modules/Command/useCases/getCommandBatchContentHash.ts
+  s_a40848e8f8cca9::t_27e972f9504553 12-20
+  s_a40848e8f8cca9::t_308a78c149a293 29
+  s_a40848e8f8cca9::t_489507e4432568 1-11,21-28,30
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_790c63b7d6403f 1-10,12-14,16-17,19-64,76-77,79-83,85-88,91-95,97-100,102-103,106-109,117-118,121-122,161-177,182-183,186-202,204-206,208,210-226,292,322-323,437-438
+  s_a40848e8f8cca9::t_fdbce07854574b 11,123-124,139-142,144-145,147-148,150,152,157,159-160,207,227-230,291
+  s_a40848e8f8cca9::t_99100e0d1a61b9 104,119,154,156,293-321
+  s_a40848e8f8cca9::t_27e972f9504553 18,324-349,354,368-379,383-400,424-427,429-433,436
+  s_a40848e8f8cca9::t_21b47d74d6a059 126-127,129-130,132-133,135,137
+  s_a40848e8f8cca9::t_1ca14b3826cc5b 15,101,116,209,233-260
+  s_a40848e8f8cca9::t_c8116a5572f05e 65-75,78,84,89-90,96,231-232,261-290
+  s_a40848e8f8cca9::t_389c4fb1333d2f 179-180,184-185
+  s_a40848e8f8cca9::t_5711cf5228a597 110-112,114-115,203
+  s_a40848e8f8cca9::t_9caab9d0cc9f26 113,125,128,131,134,136,138,143,146,149,151,153,155,158,380-382,403-405
+  s_a40848e8f8cca9::t_308a78c149a293 178,181,350
+  s_a40848e8f8cca9::t_d57bcc9b2a287d 401-402,406-423
+  s_a40848e8f8cca9::t_262074d69b208b 428
+  s_a40848e8f8cca9::t_1a84cd4964305a 105,120,351-353,355-367,434-435
+src/modules/Command/useCases/configureCommandBatchIdempotency.ts
+  s_a40848e8f8cca9::t_0f02bb0225aec1 1-7
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_bfd66de2f6f14f 83-100
+  s_a40848e8f8cca9::t_27e972f9504553 4,16,74-82,101-142
+  s_62e9c3dc3ba52a::t_671c079c6002a5 143-144
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_5711cf5228a597 47-49,51-52,79
+  s_a40848e8f8cca9::t_9caab9d0cc9f26 50
+  s_a40848e8f8cca9::t_224cce08200c4d 12,80,205,207,210,253-271
+src/modules/Command/useCases/getVersionedCommandBatchIdempotentReplay.ts
+  s_a40848e8f8cca9::t_21b47d74d6a059 1-20,22-29,31,33-39
+  s_a40848e8f8cca9::t_aaa5a13daf249a 21
+  s_a40848e8f8cca9::t_4b30b5720fbca3 30,32
+src/modules/Command/models/CommandBatchIdempotency.ts
+  s_a40848e8f8cca9::t_aaa5a13daf249a 18-23,29
+  s_a40848e8f8cca9::t_21b47d74d6a059 7-12,14-17
+  s_a40848e8f8cca9::t_0f02bb0225aec1 1-6,13,24-28,30
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_b424990abe4893 64,167
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_b424990abe4893 10
+  s_a40848e8f8cca9::t_21b47d74d6a059 48
+src/modules/Command/useCases/parseStoredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_489507e4432568 18-21,103,105,107-108,110-120,127,145-147,149
+  s_a40848e8f8cca9::t_27e972f9504553 22-25,27,36-38,122-123,136-137,139-140,144
+  s_a40848e8f8cca9::t_262074d69b208b 28-35,39-42,44-102,121,125-126,138,141-143
+  s_a40848e8f8cca9::t_389c4fb1333d2f 109,148
+  s_a40848e8f8cca9::t_308a78c149a293 1-3,17
+  s_a40848e8f8cca9::t_4b30b5720fbca3 4-16,26,43,104,106,124,128-130,135
+  s_a40848e8f8cca9::t_5e857e1bee581e 131-134
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_21b47d74d6a059 8,327-337,340-342
+  s_a40848e8f8cca9::t_bc19bdecb9c5ce 338-339,446-447
+  s_a40848e8f8cca9::t_ca413e4e2fa74e 374-376,441-445,448-449
+  s_62e9c3dc3ba52a::t_faed84bd2c6396 343-344,450-451
+src/modules/Command/repositories/createLocalStorageCommandBatchIdempotencyRepository.ts
+  s_a40848e8f8cca9::t_9012496c4d7720 89
+  s_a40848e8f8cca9::t_0f02bb0225aec1 1-2,4-7,9,11,18-31,41-65,67-80,84-88,90-95,97-115,127,135-141,175,195-197
+  s_a40848e8f8cca9::t_5bf946b8e2de6c 66
+  s_a40848e8f8cca9::t_5534cc541b425a 12
+  s_a40848e8f8cca9::t_d04a699eef1c14 3
+  s_a40848e8f8cca9::t_240bdf986f1beb 32-40,130,146,178
+  s_a40848e8f8cca9::t_b90bef4f1476a3 120-122
+  s_a40848e8f8cca9::t_aaa5a13daf249a 10,13-17,117-119,123-126,128-129,131-134,142-145,147-174,176-177,179-194
+  s_a40848e8f8cca9::t_a80f552cd37ff9 116
+  s_a40848e8f8cca9::t_7f304465232b50 81-83
+  s_a40848e8f8cca9::t_e0e5ec0f92dd00 96
+  s_a40848e8f8cca9::t_262074d69b208b 8
+src/modules/Command/repositories/__tests__/createLocalStorageCommandBatchIdempotencyRepository.spec.ts
+  s_a40848e8f8cca9::t_240bdf986f1beb 6-7,51,68,77,84,95,103,114,122,129,143,148,163
+  s_a40848e8f8cca9::t_a80f552cd37ff9 19
+  s_a40848e8f8cca9::t_5534cc541b425a 13
+  s_a40848e8f8cca9::t_21b47d74d6a059 74-76,78
+  s_a40848e8f8cca9::t_1d13c977757995 1-5,8,40-44,48-50,52,54-64,66-67,69-71,81-83,85,87-88,92-94,96,98,100-102,104,106-107,111-113,115,117,119-121,123,126-128,130,153-154,156,158,160-162,164,166-167
+  s_a40848e8f8cca9::t_d04a699eef1c14 35,37-39,45-47,53,65,72-73,79-80,86,89-91,97,99,105,108-110,116,118,124-125,131,155,157,159,165
+  s_a40848e8f8cca9::t_a5d7a0c7e4f981 9-12,14-18,20-34,36,132-142,144-147,149-152
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_4b30b5720fbca3 58,60,117,119
+  s_a40848e8f8cca9::t_78f01fea4a3702 5,9-10,109,111-116,118,120-183,208,218,261-262
+  s_a40848e8f8cca9::t_aaa5a13daf249a 110,220
+  s_a40848e8f8cca9::t_e533bd771c5fb6 47-57,59,61-90,108
+  s_a40848e8f8cca9::t_e486418d7586c4 219,221-260
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_5367ffbaa80341 37,67,198,468-469
+  s_62e9c3dc3ba52a::t_b014d790c7d2c9 470-471
+src/modules/Command/useCases/commandBatchIdempotencyPort.ts
+  s_a40848e8f8cca9::t_cb41410bb81496 1-2,4-5
+  s_a40848e8f8cca9::t_aaa5a13daf249a 14,21,29-30
+  s_a40848e8f8cca9::t_308a78c149a293 17-20
+  s_a40848e8f8cca9::t_489507e4432568 6-9,22-28,31-38
+  s_a40848e8f8cca9::t_21b47d74d6a059 3,10-13,15-16
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_ca413e4e2fa74e 86-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "875bd8ac11c9cfa9da1463cc88d1283d43e3fb0a",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
