@@ -96,6 +96,16 @@ describe('previewCommandBatch', () => {
         expect(preview).toMatchObject({
             status: 'previewed',
             projectDocument: { transport: { tempo: 120 } },
+            semanticDiff: {
+                schemaVersion: 1,
+                baseRevision: revision,
+                batchId: 'batch-production-preview',
+                summary: 'Preview tempo change',
+                estimatedAudioImpact: { level: 'structural' },
+                facts: {
+                    project: [expect.objectContaining({ commandId: command.commandId })],
+                },
+            },
         });
         expect(transportStore.value?.tempo).toBe(100);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.transport).toMatchObject({ tempo: 100 });

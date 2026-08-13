@@ -8,6 +8,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
 import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
@@ -41,21 +42,6 @@ type CompiledVersionedCommandBatchEnvelope = {
     serialized: string;
     authority: CommandBatchAuthority;
 };
-
-const DYNAMIC_EFFECT_OPERATIONS = new Set([
-    'clearSolos',
-    'scaleAutomation',
-    'stretchAutomation',
-    'invertAutomation',
-    'reverseAutomation',
-    'thinAutomation',
-    'quantizeAutomation',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'duplicateTrack',
-    'removeTrack',
-    'removeClip',
-]);
 
 function parseCommands(serializedCommands: readonly string[]): VersionedCommandEnvelope[] {
     const commands: VersionedCommandEnvelope[] = [];
@@ -103,7 +89,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     if (commands.length === 0) {
         throw new Error('Command batch requires at least one command');
     }
-    if (commands.some((command) => DYNAMIC_EFFECT_OPERATIONS.has(command.operation)) && !input.dynamicEffects) {
+    if (commands.some((command) => commandRequiresDynamicEffects(command.operation)) && !input.dynamicEffects) {
         throw new Error('Command batch requires application-owned dynamic effect bounds');
     }
     const effects = getVersionedCommandBatchEffects(commands, input.dynamicEffects);
