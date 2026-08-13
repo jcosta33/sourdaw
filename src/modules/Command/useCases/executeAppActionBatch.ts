@@ -88,11 +88,21 @@ function failureReason(error: unknown): string {
 }
 
 function createExecutedBatchAction(prepared: PreparedBatchAction): ExecutedBatchAction {
+    let compensation: NonNullable<VersionedCommandReceipt['compensation']> = {
+        available: false,
+        strategy: 'none',
+    };
+    if (prepared.handler.undoable && prepared.description?.inverseAction) {
+        compensation = { available: true, strategy: 'inverse' };
+    } else if (prepared.afterAbort || prepared.description?.inverseAction) {
+        compensation = { available: false, strategy: 'abort-only' };
+    }
     return {
         action: prepared.action,
         label: prepared.label,
         receipt: createVersionedCommandReceipt({
             envelope: prepared.envelope,
+            compensation,
         }),
     };
 }

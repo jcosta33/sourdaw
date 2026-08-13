@@ -22,6 +22,23 @@ function applyTransactionalMutation(
     Object.assign(document, draft);
 }
 
+function splitBatchReceipt(result: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>) {
+    if (!('receipt' in result)) {
+        throw new Error('Expected a verified batch receipt');
+    }
+    const { receipt, ...execution } = result;
+    return { execution, receipt };
+}
+
+function expectNonAppliedReceipt(
+    receipt: ReturnType<typeof splitBatchReceipt>['receipt'],
+    outcome: 'rejected' | 'verification-failed'
+): void {
+    expect(receipt.outcome).toBe(outcome);
+    expect(receipt.commandOutcomes.map((command) => command.outcome)).toEqual(['not-applied']);
+    expect(receipt.semanticDiff).toBeNull();
+}
+
 describe('command batch preflight', () => {
     afterEach(() => {
         clearHandlerRegistry();
@@ -81,11 +98,13 @@ describe('command batch preflight', () => {
             serialized: compiled.serialized,
         });
 
-        expect(result).toEqual({
+        const { execution, receipt } = splitBatchReceipt(result);
+        expect(execution).toEqual({
             status: 'rejected',
             reason: 'Command batch target does not exist: track-vocal',
             actions: [],
         });
+        expectNonAppliedReceipt(receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
     });
 
@@ -208,11 +227,13 @@ describe('command batch preflight', () => {
             serialized: compiled.serialized,
         });
 
-        expect(result).toEqual({
+        const { execution, receipt } = splitBatchReceipt(result);
+        expect(execution).toEqual({
             status: 'conflicted',
             reason: 'Command batch postcondition validation failed: capture failed',
             actions: [],
         });
+        expectNonAppliedReceipt(receipt, 'verification-failed');
         expect(execute).toHaveBeenCalledTimes(2);
     });
 
@@ -273,11 +294,13 @@ describe('command batch preflight', () => {
             serialized: compiled.serialized,
         });
 
-        expect(result).toEqual({
+        const { execution, receipt } = splitBatchReceipt(result);
+        expect(execution).toEqual({
             status: 'rejected',
             reason: 'Command batch asset is unavailable: buffer-missing',
             actions: [],
         });
+        expectNonAppliedReceipt(receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
     });
 
@@ -389,11 +412,13 @@ describe('command batch preflight', () => {
             serialized: compiled.serialized,
         });
 
-        expect(result).toEqual({
+        const { execution, receipt } = splitBatchReceipt(result);
+        expect(execution).toEqual({
             status: 'rejected',
             reason: 'Command batch target range is locked',
             actions: [],
         });
+        expectNonAppliedReceipt(receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
     });
 
@@ -466,11 +491,14 @@ describe('command batch preflight', () => {
         targetExists = false;
         releaseSnapshot();
 
-        await expect(execution).resolves.toEqual({
+        const result = await execution;
+        const split = splitBatchReceipt(result);
+        expect(split.execution).toEqual({
             status: 'rejected',
             reason: 'Command batch target does not exist: track-vocal',
             actions: [],
         });
+        expectNonAppliedReceipt(split.receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
     });
 
@@ -783,11 +811,13 @@ describe('command batch preflight', () => {
             serialized: compiled.serialized,
         });
 
-        expect(result).toEqual({
+        const { execution, receipt } = splitBatchReceipt(result);
+        expect(execution).toEqual({
             status: 'rejected',
             reason: 'Command batch project does not match the active project',
             actions: [],
         });
+        expectNonAppliedReceipt(receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
     });
 
@@ -880,11 +910,13 @@ describe('command batch preflight', () => {
             serialized: compiled.serialized,
         });
 
-        expect(result).toEqual({
+        const { execution, receipt } = splitBatchReceipt(result);
+        expect(execution).toEqual({
             status: 'rejected',
             reason: 'Command batch preflight state is unavailable',
             actions: [],
         });
+        expectNonAppliedReceipt(receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
     });
 });

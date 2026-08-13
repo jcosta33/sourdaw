@@ -7,6 +7,7 @@ import {
 type CreateVersionedCommandReceiptInput = {
     envelope: VersionedCommandEnvelope;
     applicationAssignedIds?: readonly string[];
+    compensation?: VersionedCommandReceipt['compensation'];
 };
 
 export function createVersionedCommandReceipt(input: CreateVersionedCommandReceiptInput): VersionedCommandReceipt {
@@ -21,5 +22,6 @@ export function createVersionedCommandReceipt(input: CreateVersionedCommandRecei
             ],
             timestamps: [{ field: 'issuedAt', value: input.envelope.issuedAt }],
         },
+        ...(input.compensation ? { compensation: input.compensation } : {}),
     };
 }

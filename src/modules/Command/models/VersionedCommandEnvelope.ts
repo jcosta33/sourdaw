@@ -52,4 +52,8 @@ export type VersionedCommandReceipt = {
         ids: ReadonlyArray<{ field: 'commandId' | 'historyId' | 'objectId'; value: string }>;
         timestamps: ReadonlyArray<{ field: 'issuedAt' | 'committedAt'; value: number }>;
     };
+    compensation?: {
+        available: boolean;
+        strategy: 'inverse' | 'abort-only' | 'none';
+    };
 };

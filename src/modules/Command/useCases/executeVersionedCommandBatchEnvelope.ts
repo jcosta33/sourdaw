@@ -2,6 +2,8 @@ import { type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvelope';
 
+import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
@@ -26,14 +28,32 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (parsed.envelope.mode === 'preview') {
         return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
+    let observedBaseRevision = resolvedEnvelope.baseRevision;
+    try {
+        if (commandProjectRevisionPort.isConfigured()) {
+            observedBaseRevision = commandProjectRevisionPort.capture();
+        }
+    } catch {
+        // Execution performs the authoritative validation and will return its
+        // own failure; the receipt retains the approved base if observation fails.
+    }
     if (!input.confirmed && !parsed.envelope.grants.autoCommit) {
-        return {
+        const result = {
             status: 'rejected' as const,
             reason: 'Commit batch requires confirmation or the auto-commit grant',
             actions: [] as [],
         };
+        return {
+            ...result,
+            receipt: createVerifiedBatchReceipt({
+                envelope: resolvedEnvelope,
+                observedBaseRevision,
+                resultingRevision: observedBaseRevision,
+                result,
+            }),
+        };
     }
-    return executeVersionedCommandBatch({
+    const result = await executeVersionedCommandBatch({
         commands: resolvedCommands.map((command) =>
             serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
         ),
@@ -45,4 +65,22 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             requireCompensation: true,
         },
     });
+    let resultingRevision = observedBaseRevision;
+    try {
+        if (commandProjectRevisionPort.isConfigured()) {
+            resultingRevision = commandProjectRevisionPort.capture();
+        }
+    } catch {
+        // Keep the last observed authority in the receipt if post-execution
+        // revision capture itself fails.
+    }
+    return {
+        ...result,
+        receipt: createVerifiedBatchReceipt({
+            envelope: resolvedEnvelope,
+            observedBaseRevision,
+            resultingRevision,
+            result,
+        }),
+    };
 }
