@@ -10,7 +10,6 @@ export { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
 export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';
-export { isVersionedCommandOperationSerializable } from './isVersionedCommandOperationSerializable';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';

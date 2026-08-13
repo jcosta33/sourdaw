@@ -11,7 +11,6 @@ import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
-import { isVersionedCommandOperationSerializable } from './isVersionedCommandOperationSerializable';
 import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
@@ -143,10 +142,7 @@ function hasValidArguments(operation: string, value: unknown): boolean {
 }
 
 function isDeterministicSerializedOperation(operation: string, value: unknown): boolean {
-    if (
-        (!isExecutableAppActionType(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) ||
-        (isExecutableAppActionType(operation) && !isVersionedCommandOperationSerializable(operation))
-    ) {
+    if (!isExecutableAppActionType(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) {
         return false;
     }
     if (!isRecord(value)) {

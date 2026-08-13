@@ -28,6 +28,9 @@ function prepareAction(action: SplitClipAction) {
 }
 
 export const handleSplitClip = createHandler<'splitClip'>({
+    materializeCommandArguments: (action) => {
+        prepareAction(action);
+    },
     execute: (action) => {
         return toHandlerExecutionResult(
             splitClip(

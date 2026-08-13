@@ -389,10 +389,6 @@ describe('versioned command contract', () => {
             { type: 'generateDrumPattern', payload: { style: 'rock' } },
             { type: 'generateMelody', payload: { style: 'ambient' } },
             { type: 'generateChordProgression', payload: { style: 'pop' } },
-            { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
-            { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1' } },
-            { type: 'duplicateTrack', payload: { trackId: 'track-1' } },
-            { type: 'splitClip', payload: { clipId: 'clip-1', beat: 2 } },
             { type: 'deleteTime', payload: { startBeat: 4, endBeat: 8 } },
             { type: 'duplicateTimeRange', payload: { startBeat: 4, endBeat: 8 } },
             {

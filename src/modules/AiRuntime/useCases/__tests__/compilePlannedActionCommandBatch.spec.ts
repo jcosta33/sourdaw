@@ -77,10 +77,6 @@ describe('compilePlannedActionCommandBatch', () => {
             ...baseContext,
             tracks: [track('track-solo-a', true), track('track-safe', false), track('track-solo-b', true)],
         });
-        if (!result.commandBatch) {
-            throw new Error('Expected clearSolos to require an outer command batch');
-        }
-
         expect([...result.commandBatch.authority.scope.targetIds].sort()).toEqual(['track-solo-a', 'track-solo-b']);
         expect(result.commandBatch.authority.budgets.maxAffectedTracks).toBe(2);
     });
@@ -107,10 +103,6 @@ describe('compilePlannedActionCommandBatch', () => {
                 },
             ],
         });
-        if (!result.commandBatch) {
-            throw new Error('Expected thinAutomation to require an outer command batch');
-        }
-
         expect(result.commandBatch.authority.scope.targetIds).toEqual(
             expect.arrayContaining(['lane-1', 'track-1', 'clip-1'])
         );
@@ -128,15 +120,26 @@ describe('compilePlannedActionCommandBatch', () => {
         ).toThrow('Cannot prove automation bounds for lane missing-lane');
     });
 
-    it('keeps one non-serializable legacy action outside the outer batch and rejects combining it', () => {
+    it('materializes derived clip identities so split operations can enter an ordered batch', () => {
         const split: AppAction = { type: 'splitClip', payload: { clipId: 'clip-1', beat: 8 } };
 
-        expect(compile([split], baseContext)).toMatchObject({
-            commandEnvelopes: [expect.any(String)],
-            commandBatch: undefined,
-        });
-        expect(() =>
-            compile([split, { type: 'splitClip', payload: { clipId: 'clip-2', beat: 16 } }], baseContext)
-        ).toThrow('Multi-action and dynamic-scope prompts require fully serializable commands');
+        const result = compile([split], baseContext);
+
+        expect(result.commandBatch.serialized).toContain('splitClip');
+        expect(result.commandBatch.authority.grants.create).toBe(true);
+    });
+
+    it('represents multiple duplicate operations as one bounded ordered batch', () => {
+        const result = compile(
+            [
+                { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
+                { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-2' } },
+            ],
+            baseContext
+        );
+
+        expect(result.commandBatch.authority.budgets.maxCommands).toBe(2);
+        expect(result.commandBatch.authority.grants.create).toBe(true);
+        expect(result.commandBatch.serialized).toContain('targetClipId');
     });
 });

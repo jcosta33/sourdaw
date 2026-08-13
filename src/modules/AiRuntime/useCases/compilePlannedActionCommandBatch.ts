@@ -1,7 +1,4 @@
-import {
-    compileVersionedCommandBatchEnvelope,
-    isVersionedCommandOperationSerializable,
-} from '#/modules/Command/useCases';
+import { compileVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -92,20 +89,6 @@ export function compilePlannedActionCommandBatch(input: CompilePlannedActionComm
         group: input.group,
         projectRevision: input.projectRevision,
     });
-    const hasNonSerializableAction = input.actions.some(
-        (action) => !isVersionedCommandOperationSerializable(action.type)
-    );
-    const requiresBatch =
-        input.actions.length > 1 ||
-        input.actions.some((action) => {
-            return action.type === 'clearSolos' || AUTOMATION_TRANSFORM_TYPES.has(action.type);
-        });
-    if (hasNonSerializableAction && requiresBatch) {
-        throw new Error('Multi-action and dynamic-scope prompts require fully serializable commands');
-    }
-    if (hasNonSerializableAction) {
-        return { commandEnvelopes, commandBatch: undefined };
-    }
     return {
         commandEnvelopes,
         commandBatch: compileVersionedCommandBatchEnvelope({

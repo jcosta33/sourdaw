@@ -17,6 +17,9 @@ function ensureTargetTrackId(action: DuplicateTrackAction): string {
 }
 
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
+    materializeCommandArguments: (action) => {
+        ensureTargetTrackId(action);
+    },
     execute: (action) => {
         const tracks = getTrackStoreState()?.tracks;
         const source = tracks?.find((track) => track.id === action.payload.trackId);

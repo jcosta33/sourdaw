@@ -39,6 +39,9 @@ function isDuplicateClipToNextBarNoop(action: DuplicateClipToNextBarAction): boo
 }
 
 export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBar'>({
+    materializeCommandArguments: (action) => {
+        ensureTargetClipId(action);
+    },
     execute: (alpha) => {
         return toHandlerExecutionResult(
             duplicateClipToNextBar({
