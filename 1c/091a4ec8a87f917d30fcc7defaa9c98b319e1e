@@ -1,0 +1,51 @@
+src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts
+  s_a40848e8f8cca9::t_6a8be1931283c8 31-33,45-46
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_a40848e8f8cca9::t_a7f32d3d8ad1c9 37-38,101-103
+  s_a40848e8f8cca9::t_fa0cb6a8d7be3e 104
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_a40848e8f8cca9::t_839ec750140f07 97-99,101
+  s_a40848e8f8cca9::t_a7f32d3d8ad1c9 86-89,100,281
+src/modules/AudioEngine/useCases/__tests__/compileAudioGraphTopology.spec.ts
+  s_a40848e8f8cca9::t_6a8be1931283c8 41-52
+src/modules/Arrangement/handlers/track/handleCreateBus.ts
+  s_a40848e8f8cca9::t_839ec750140f07 79-82
+  s_a40848e8f8cca9::t_ba9b5542d55df2 71,74
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  s_a40848e8f8cca9::t_a7f32d3d8ad1c9 15,60-63,89
+src/modules/Arrangement/handlers/device/handleRestoreDevice.ts
+  s_a40848e8f8cca9::t_a7f32d3d8ad1c9 68
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_6a8be1931283c8 291-337
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_6a8be1931283c8 157,173-174
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_0165816b70e475 6,182-194,240-256,259-261,336-337
+  s_a40848e8f8cca9::t_368fc30a0d99ab 22,28,262-335
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_a7f32d3d8ad1c9 59,120
+  s_a40848e8f8cca9::t_aaf1fe69f8e079 65-85
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_a40848e8f8cca9::t_ba9b5542d55df2 30-56,63
+  s_a40848e8f8cca9::t_839ec750140f07 29
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_a7f32d3d8ad1c9 1733-1734
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_a7f32d3d8ad1c9 92-96,115-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1c091a4ec8a87f917d30fcc7defaa9c98b319e1e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
