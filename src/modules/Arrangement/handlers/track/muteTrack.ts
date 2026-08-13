@@ -6,9 +6,7 @@ import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleMuteTrack = createHandler<'muteTrack'>({
     validate: (action, context) => {
-        const currentMuted =
-            getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.muted ??
-            getPlannedTrackState(context, action.payload.trackId)?.muted;
+        const currentMuted = getPlannedTrackState(context, action.payload.trackId)?.muted;
         return currentMuted === action.payload.expectedMuted;
     },
     execute: (action) => {

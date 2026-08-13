@@ -39,6 +39,24 @@ describe('handleSetTrackGain', () => {
         ).toBe(false);
         expect(mocks.setTrackGain).not.toHaveBeenCalled();
     });
+
+    it('validates a chained write against the prior planned gain', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-1', gain: 1 }] });
+        const actions = [
+            {
+                type: 'setTrackGain' as const,
+                payload: { trackId: 'track-1', gain: 0.8, expectedGain: 1 },
+            },
+            {
+                type: 'setTrackGain' as const,
+                payload: { trackId: 'track-1', gain: 0.6, expectedGain: 0.8 },
+            },
+        ];
+
+        expect(handleSetTrackGain.validate?.(actions[1]!, { actions, actionIndex: 1 })).toBe(true);
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
     });

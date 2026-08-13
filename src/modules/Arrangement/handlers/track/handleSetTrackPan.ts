@@ -7,9 +7,7 @@ import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackPan = createHandler<'setTrackPan'>({
     validate: (action, context) => {
-        const currentPan =
-            getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.pan ??
-            getPlannedTrackState(context, action.payload.trackId)?.pan;
+        const currentPan = getPlannedTrackState(context, action.payload.trackId)?.pan;
         return currentPan === action.payload.expectedPan;
     },
     prepareAbort: () => captureAutomationRecordingRollback(),

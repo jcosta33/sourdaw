@@ -7,9 +7,7 @@ import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackGain = createHandler<'setTrackGain'>({
     validate: (action, context) => {
-        const currentGain =
-            getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.gain ??
-            getPlannedTrackState(context, action.payload.trackId)?.gain;
+        const currentGain = getPlannedTrackState(context, action.payload.trackId)?.gain;
         return currentGain === action.payload.expectedGain;
     },
     prepareAbort: () => captureAutomationRecordingRollback(),
