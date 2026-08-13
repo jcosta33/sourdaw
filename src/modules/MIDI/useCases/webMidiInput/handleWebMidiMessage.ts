@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { type WebMidiInputMessage } from '../../models/WebMidiTypes';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 
 import { handleWebMidiCC } from './handleWebMidiCC';
@@ -83,7 +84,7 @@ function dispatchExpressionHandler(channel: number, handler: () => void): void {
     trackChannelTail(channel, pending.then(handler).catch(logHandlerFailure));
 }
 
-export function handleWebMidiMessage(event: MIDIMessageEvent): void {
+export function handleWebMidiMessage(event: WebMidiInputMessage): void {
     const message = parseWebMidiMessage(event);
     if (!message) {
         return;

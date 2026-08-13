@@ -14,9 +14,10 @@ vi.mock('../helpers', () => ({ attachInput: attachInputMock }));
 vi.mock('../selectMidiInputTauri', () => ({ selectMidiInputTauri: selectMidiInputTauriMock }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: loggerWarnMock, error: vi.fn(), info: vi.fn() } }));
 
+import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
 import { selectMidiInput } from '../selectMidiInput';
 
-const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
 
 describe('selectMidiInput', () => {
     beforeEach(() => {

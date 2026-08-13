@@ -1,5 +1,6 @@
 import { tauriInvoke } from '#/utils/tauriBridge';
 
+import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
 import { mapNativeMidiTimestamp } from '../mapNativeMidiTimestamp';
 import { resetNativeMidiTimeAnchor } from '../resetNativeMidiTimeAnchor';
@@ -63,7 +64,7 @@ function readNativeTimestampMicros(event: TauriMidiMessageEvent): number | undef
 
 type SelectMidiInputTauriInput = {
     portIndex: number;
-    onMidiMessage: (event: MIDIMessageEvent) => void;
+    onMidiMessage: (event: WebMidiInputMessage) => void;
 };
 
 /**
@@ -116,7 +117,7 @@ export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectM
         // event against it. Leave it out and they read the clock at
         // handler-run time instead, which measures main-thread jitter rather
         // than when the note was played.
-        onMidiMessage({ data: uint8, timeStamp } as MIDIMessageEvent);
+        onMidiMessage({ data: uint8, timeStamp });
     });
 
     if (generation !== selectionGeneration) {

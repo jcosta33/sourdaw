@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
 import { getTauriMode } from '../getTauriMode';
 import { setState } from '../setState';
@@ -9,22 +10,27 @@ import { selectMidiInputTauri } from './selectMidiInputTauri';
 
 type SelectMidiInputInput = {
     deviceId: string;
-    onMidiMessage: (event: MIDIMessageEvent) => void;
+    onMidiMessage: (event: WebMidiInputMessage) => void;
 };
+
+/**
+ * Persist only once the port is actually open. Committing the id up front
+ * leaves the picker showing — and `localStorage` remembering — a device that
+ * `open_midi_input` refused, which then delivers no MIDI and reports nothing.
+ * The rejection was also unhandled.
+ */
+async function openTauriPort({ deviceId, onMidiMessage }: SelectMidiInputInput): Promise<void> {
+    try {
+        await selectMidiInputTauri({ portIndex: Number(deviceId), onMidiMessage });
+        setState({ selectedInputId: deviceId });
+    } catch (error: unknown) {
+        logger.warn('[MIDI] Failed to open MIDI input:', error);
+    }
+}
 
 export function selectMidiInput({ deviceId, onMidiMessage }: SelectMidiInputInput): void {
     if (getTauriMode()) {
-        // Persist only once the port is actually open. Committing the id up
-        // front leaves the picker showing — and `localStorage` remembering — a
-        // device that `open_midi_input` refused, which then delivers no MIDI
-        // and reports nothing. The rejection was also unhandled.
-        void selectMidiInputTauri({ portIndex: Number(deviceId), onMidiMessage })
-            .then(() => {
-                setState({ selectedInputId: deviceId });
-            })
-            .catch((error: unknown) => {
-                logger.warn('[MIDI] Failed to open MIDI input:', error);
-            });
+        void openTauriPort({ deviceId, onMidiMessage });
         return;
     }
 

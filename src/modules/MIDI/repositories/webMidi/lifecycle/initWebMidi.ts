@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
-import { type MidiInputInfo } from '../../../models/WebMidiTypes';
+import { type MidiInputInfo, type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
 import { readPersistedInputId } from '../readPersistedInputId';
@@ -16,7 +16,7 @@ import { attachInput } from './helpers';
 import { selectMidiInputTauri } from './selectMidiInputTauri';
 
 type TauriMidiDevice = { index: number; name: string };
-type WebMidiMessageCallback = (event: MIDIMessageEvent) => void;
+type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
 
 function isTauriMidiDevice(value: unknown): value is TauriMidiDevice {
     if (typeof value !== 'object' || value === null) {

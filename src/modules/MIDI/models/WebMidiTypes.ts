@@ -4,6 +4,26 @@ export type MidiInputInfo = {
     manufacturer: string;
 };
 
+/**
+ * The only two fields this module ever reads off an inbound MIDI message.
+ *
+ * Web MIDI delivers a real `MIDIMessageEvent`, which satisfies this shape; the
+ * Tauri bridge has no DOM event to deliver and used to fabricate one with a
+ * cast, producing an object that claimed `target`, `currentTarget`,
+ * `preventDefault` and the rest while carrying none of them (issue #1837 F8).
+ * Naming what is actually consumed lets both sources be honest.
+ */
+export type WebMidiInputMessage = {
+    data: Uint8Array | null;
+    /**
+     * DOMHighResTimeStamp on the `performance.now()` origin. `undefined` when
+     * the source has no usable arrival time — the native bridge can fail to
+     * map midir's stamp, and a message with no arrival time must still be
+     * delivered.
+     */
+    timeStamp: number | undefined;
+};
+
 export type MidiLearnState = {
     active: boolean;
     callback: ((cc: number, channel: number) => void) | null;

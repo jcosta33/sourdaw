@@ -29,6 +29,7 @@ vi.stubGlobal('navigator', {
 
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
+import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
 import { webMidiRuntime } from '../../state';
 import { attachInput } from '../helpers';
 import { initWebMidi } from '../initWebMidi';
@@ -96,7 +97,7 @@ describe('initWebMidi', () => {
     });
 
     it('should initialize via Web MIDI if supported', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const input = { id: 'in-1', name: 'Keyboard' };
         const mockAccess = {
             inputs: new Map([['in-1', input]]),
@@ -117,7 +118,7 @@ describe('initWebMidi', () => {
     });
 
     it('should fallback to Tauri if Web MIDI fails', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         // Force failure of browser MIDI
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(true);
@@ -135,7 +136,7 @@ describe('initWebMidi', () => {
         // The payload crosses IPC, so it is untrusted. A bare cast turned a
         // missing `index` into `id: "undefined"` and then `Number(...)` -> NaN,
         // which was handed straight to `open_midi_input`.
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(true);
         vi.mocked(tauriInvoke).mockResolvedValue([{ name: 'Tauri MIDI' }]);
@@ -148,7 +149,7 @@ describe('initWebMidi', () => {
     });
 
     it('rejects a list_midi_inputs payload that is not an array', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(true);
         vi.mocked(tauriInvoke).mockResolvedValue({ devices: [] });
@@ -160,7 +161,7 @@ describe('initWebMidi', () => {
     });
 
     it('should return false if neither is supported', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(false);
 
@@ -171,7 +172,7 @@ describe('initWebMidi', () => {
     });
 
     it('should remove the active event listener when the selected input disappears', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const activeInput = {
             onmidimessage: null,
             removeEventListener: vi.fn<(type: string, listener: EventListener) => void>(),
@@ -196,7 +197,7 @@ describe('initWebMidi', () => {
     });
 
     it('should auto-select the first available input when the selected one disappears but others remain', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const input = { id: 'in-2', name: 'Keyboard' };
         const mockAccess = {
             inputs: new Map([['in-2', input]]),
@@ -224,7 +225,7 @@ describe('initWebMidi', () => {
     it('does not overwrite the saved device preference when the selected input is unplugged', async () => {
         // Unplugging a controller for a second used to rewrite localStorage to
         // whatever enumerated first, and replugging did not restore it.
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const input = { id: 'in-2', name: 'Other Keyboard' };
         const mockAccess = {
             inputs: new Map([['in-2', input]]),
@@ -246,7 +247,7 @@ describe('initWebMidi', () => {
     });
 
     it('restores the saved device when it reappears after a replug', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const preferred = { id: 'preferred-input', name: 'Keyboard' };
         const standIn = { id: 'in-2', name: 'Other Keyboard' };
         const mockAccess = {
@@ -275,7 +276,7 @@ describe('initWebMidi', () => {
     });
 
     it('should keep the selected input attached when it still exists on state change', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const input = { id: 'in-1', name: 'Keyboard' };
         const mockAccess = {
             inputs: new Map([['in-1', input]]),
@@ -304,7 +305,7 @@ describe('initWebMidi', () => {
     });
 
     it('should return false and warn when MIDI is reported unsupported', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         getStateMock.mockReturnValue({ isSupported: false, inputs: [], selectedInputId: null });
 
         const result = await initWebMidi({ onMidiMessage });
@@ -314,7 +315,7 @@ describe('initWebMidi', () => {
     });
 
     it('should fall straight through to Tauri when Web MIDI is unavailable in navigator', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         vi.stubGlobal('navigator', {/* no requestMIDIAccess */});
         vi.mocked(isTauri).mockReturnValue(true);
         vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Tauri MIDI' }]);
@@ -329,7 +330,7 @@ describe('initWebMidi', () => {
     });
 
     it('should return true with no input selection when Tauri lists zero devices', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(true);
         vi.mocked(tauriInvoke).mockResolvedValue([]);
@@ -342,7 +343,7 @@ describe('initWebMidi', () => {
     });
 
     it('should report "Unknown Device" for an input whose name is null', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const input = { id: 'in-1', name: null };
         const mockAccess = {
             inputs: new Map([['in-1', input]]),
@@ -363,7 +364,7 @@ describe('initWebMidi', () => {
     });
 
     it('should report unsupported and return false when the Tauri MIDI init throws', async () => {
-        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(true);
         vi.mocked(tauriInvoke).mockRejectedValue(new Error('tauri port closed'));
