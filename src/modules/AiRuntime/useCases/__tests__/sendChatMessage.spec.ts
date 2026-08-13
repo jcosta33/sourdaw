@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { createVerifiedBatchReceipt, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
@@ -198,16 +198,25 @@ describe('sendChatMessage injectables', () => {
                 })),
             })
         );
-        mocks.executeVersionedCommandBatchEnvelope.mockImplementation((input) => {
+        mocks.executeVersionedCommandBatchEnvelope.mockImplementation(async (input) => {
             const parsed = parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
             if (parsed.status === 'invalid') {
-                return Promise.resolve({ status: 'rejected', reason: parsed.reason, actions: [] });
+                throw new Error(parsed.reason);
             }
             const actions = parsed.envelope.commands.map((command) => ({
                 type: command.operation,
                 payload: command.arguments,
             })) as Parameters<ExecuteAppActionBatch>[0];
-            return mocks.executeAppActionBatch(actions, input.options);
+            const result = await mocks.executeAppActionBatch(actions, input.options);
+            return {
+                ...result,
+                receipt: createVerifiedBatchReceipt({
+                    envelope: parsed.envelope,
+                    observedBaseRevision: parsed.envelope.baseRevision,
+                    resultingRevision: parsed.envelope.baseRevision,
+                    result,
+                }),
+            };
         });
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });

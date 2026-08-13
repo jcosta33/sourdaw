@@ -40,14 +40,35 @@ type ExecutedBatchAction = {
     receipt?: VersionedCommandReceipt;
 };
 
+type BatchWarningDetail = {
+    kind: 'semantic-cleanup' | 'observer' | 'history' | 'external-effect';
+    message: string;
+    commandId?: string;
+};
+
 type ExecuteAppActionBatchResult =
     | { status: 'committed'; actions: ExecutedBatchAction[] }
-    | { status: 'committed-with-warning'; actions: ExecutedBatchAction[]; warning: string }
+    | {
+          status: 'committed-with-warning';
+          actions: ExecutedBatchAction[];
+          warning: string;
+          warningDetails?: BatchWarningDetail[];
+      }
     | { status: 'executed'; actions: ExecutedBatchAction[] }
-    | { status: 'executed-with-warning'; actions: ExecutedBatchAction[]; warning: string }
+    | {
+          status: 'executed-with-warning';
+          actions: ExecutedBatchAction[];
+          warning: string;
+          warningDetails?: BatchWarningDetail[];
+      }
     | { status: 'no-op'; actions: [] }
     | { status: 'ambiguous'; reason: string; actions: [] }
-    | { status: 'rejected' | 'conflicted' | 'cancelled' | 'failed'; reason: string; actions: [] };
+    | {
+          status: 'rejected' | 'conflicted' | 'cancelled' | 'failed';
+          reason: string;
+          actions: [];
+          failureKind?: 'verification';
+      };
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
     commandEnvelopes?: readonly VersionedCommandEnvelope[];
@@ -88,11 +109,21 @@ function failureReason(error: unknown): string {
 }
 
 function createExecutedBatchAction(prepared: PreparedBatchAction): ExecutedBatchAction {
+    let compensation: NonNullable<VersionedCommandReceipt['compensation']> = {
+        available: false,
+        strategy: 'none',
+    };
+    if (prepared.handler.undoable && prepared.description?.inverseAction) {
+        compensation = { available: true, strategy: 'inverse' };
+    } else if (prepared.afterAbort || prepared.description?.inverseAction) {
+        compensation = { available: false, strategy: 'abort-only' };
+    }
     return {
         action: prepared.action,
         label: prepared.label,
         receipt: createVersionedCommandReceipt({
             envelope: prepared.envelope,
+            compensation,
         }),
     };
 }
@@ -144,10 +175,12 @@ async function executeRuntimeAction(
             await result.afterRuntimeExecution();
             return { status: 'executed', actions };
         } catch (effectError) {
+            const warning = `${prepared.action.type} follow-up effect failed: ${failureReason(effectError)}`;
             return {
                 status: 'executed-with-warning',
                 actions,
-                warning: `${prepared.action.type} follow-up effect failed: ${failureReason(effectError)}`,
+                warning,
+                warningDetails: [{ kind: 'external-effect', message: warning, commandId: prepared.envelope.commandId }],
             };
         }
     } catch (error) {
@@ -698,17 +731,17 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     };
                 }
                 if (error instanceof AutomergeStorageTransactionValidationError) {
-                    return { status: 'conflicted', reason, actions: [] };
+                    return { status: 'conflicted', reason, actions: [], failureKind: 'verification' };
                 }
                 return { status: 'failed', reason, actions: [] };
             }
 
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
-            const warnings: string[] = [];
+            const warningDetails: BatchWarningDetail[] = [];
             const semanticCleanupWarning = clearBatchSemanticContext();
             if (semanticCleanupWarning) {
                 logger.error(new Error('Action batch semantic context cleanup failed'));
-                warnings.push(semanticCleanupWarning);
+                warningDetails.push({ kind: 'semantic-cleanup', message: semanticCleanupWarning });
             }
 
             try {
@@ -716,7 +749,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             } catch (error) {
                 const warning = `Committed observer failed: ${failureReason(error)}`;
                 logger.error(new Error(warning, { cause: error }));
-                warnings.push(warning);
+                warningDetails.push({ kind: 'observer', message: warning });
             }
 
             try {
@@ -724,7 +757,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             } catch (error) {
                 const warning = failureReason(error);
                 logger.error(new Error('Action batch history recording failed after commit', { cause: error }));
-                warnings.push(warning);
+                warningDetails.push({ kind: 'history', message: warning });
             }
 
             for (const executed of executedActions) {
@@ -737,7 +770,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     if (!executed.afterAmbiguousCommit) {
                         const warning = `${executed.action.type} post-commit effect failed: ${failureReason(effectError)}`;
                         logger.error(new Error(warning, { cause: effectError }));
-                        warnings.push(warning);
+                        warningDetails.push({
+                            kind: 'external-effect',
+                            message: warning,
+                            commandId: executed.envelope.commandId,
+                        });
                         continue;
                     }
 
@@ -751,16 +788,21 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                                 `${executed.action.type} post-commit effect and runtime reconciliation both failed`
                             )
                         );
-                        warnings.push(warning);
+                        warningDetails.push({
+                            kind: 'external-effect',
+                            message: warning,
+                            commandId: executed.envelope.commandId,
+                        });
                     }
                 }
             }
 
-            if (warnings.length > 0) {
+            if (warningDetails.length > 0) {
                 return {
                     status: 'committed-with-warning',
                     actions: executedBatchActions,
-                    warning: warnings.join('; '),
+                    warning: warningDetails.map(({ message }) => message).join('; '),
+                    warningDetails,
                 };
             }
 

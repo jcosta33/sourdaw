@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -82,6 +83,20 @@ describe('compilePlannedActionCommandBatch', () => {
         });
         expect([...result.commandBatch.authority.scope.targetIds].sort()).toEqual(['track-solo-a', 'track-solo-b']);
         expect(result.commandBatch.authority.budgets.maxAffectedTracks).toBe(2);
+        const parsedCommand = parseVersionedCommandEnvelope(result.commandEnvelopes[0] ?? '');
+        if (parsedCommand.status === 'invalid') {
+            throw new Error(parsedCommand.reason);
+        }
+        expect(JSON.parse(result.commandBatch.serialized)).toMatchObject({
+            dynamicEffects: {
+                commandEffects: [
+                    {
+                        commandId: parsedCommand.envelope.commandId,
+                        effects: { affectedTrackIds: ['track-solo-a', 'track-solo-b'] },
+                    },
+                ],
+            },
+        });
         expect(() =>
             compile(
                 [{ type: 'clearSolos' }],

@@ -16,6 +16,7 @@ export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
 export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
+export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
