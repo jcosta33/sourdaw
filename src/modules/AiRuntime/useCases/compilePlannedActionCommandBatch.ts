@@ -2,7 +2,6 @@ import { takeLaneStore } from '#/modules/Arrangement/stores';
 import { modulationStore } from '#/modules/Automation/stores';
 import { compileVersionedCommandBatchEnvelope, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectStore } from '#/modules/Project/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -280,7 +279,7 @@ export function compilePlannedActionCommandBatch(input: CompilePlannedActionComm
         commandBatch: compileVersionedCommandBatchEnvelope({
             runId: input.runId,
             batchId: input.group.groupId,
-            projectId: String(projectStore.value?.createdAt ?? 0),
+            projectId: input.projectRevision,
             baseRevision: input.projectRevision,
             intent: input.intent,
             commands: commandEnvelopes,

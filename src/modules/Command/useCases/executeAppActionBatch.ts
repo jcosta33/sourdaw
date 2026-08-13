@@ -2,6 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
     AutomergeStorageTransactionCommittedError,
+    AutomergeStorageTransactionValidationError,
     runWithAutomergeStorageTransaction,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -20,6 +21,7 @@ import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commitUndoEntry } from './commitUndoEntry';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
@@ -49,6 +51,8 @@ type ExecuteAppActionBatchResult =
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
     commandEnvelopes?: readonly VersionedCommandEnvelope[];
+    preExecutionValidation?: () => string | null;
+    prepareValidation?: () => CommandBatchValidationPreparation;
     requireCompensation?: boolean;
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
@@ -177,14 +181,19 @@ async function executePreparedBatch(
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
-    for (const prepared of preparedActions) {
+    for (const [actionIndex, prepared] of preparedActions.entries()) {
         assertExecutionAuthorized(shouldExecute);
         if (prepared.handler.isNoop?.(prepared.action)) {
             continue;
         }
         prepared.afterAbort = prepared.handler.prepareAbort?.(prepared.action) ?? null;
         attemptedActions.push(prepared);
-        const result: HandlerExecutionResult | void = await scope(() => prepared.handler.execute(prepared.action));
+        const result: HandlerExecutionResult | void = await scope(() =>
+            prepared.handler.execute(prepared.action, {
+                actions: preparedActions.map((candidate) => candidate.action),
+                actionIndex,
+            })
+        );
         if (result?.status === 'no-write' || result?.status === 'conflict') {
             attemptedActions.pop();
             throw new AppActionConflictError(prepared.action.type);
@@ -408,6 +417,32 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
+            try {
+                const preExecutionFailure = options?.preExecutionValidation?.() ?? null;
+                if (preExecutionFailure) {
+                    return { status: 'conflicted', reason: preExecutionFailure, actions: [] };
+                }
+            } catch (error) {
+                return {
+                    status: 'rejected',
+                    reason: `Command batch validation failed: ${failureReason(error)}`,
+                    actions: [],
+                };
+            }
+            let batchValidation: Extract<CommandBatchValidationPreparation, { status: 'ready' }> | null;
+            try {
+                const preparedValidation = options?.prepareValidation?.();
+                if (preparedValidation?.status === 'rejected') {
+                    return { status: 'rejected', reason: preparedValidation.reason, actions: [] };
+                }
+                batchValidation = preparedValidation ?? null;
+            } catch (error) {
+                return {
+                    status: 'rejected',
+                    reason: `Command batch preflight failed: ${failureReason(error)}`,
+                    actions: [],
+                };
+            }
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return { status: 'cancelled', reason: 'Batch execution authority was revoked', actions: [] };
             }
@@ -526,7 +561,34 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
             const runtimeAction = runtimeActions[0];
             if (runtimeAction) {
+                if (
+                    runtimeAction.handler.validate &&
+                    !runtimeAction.handler.validate(runtimeAction.action, {
+                        actions: [runtimeAction.action],
+                        actionIndex: 0,
+                    })
+                ) {
+                    return {
+                        status: 'conflicted',
+                        reason: `Action conflicts with current project state: ${runtimeAction.action.type}`,
+                        actions: [],
+                    };
+                }
                 return executeRuntimeAction(runtimeAction, options?.source, options?.shouldExecute);
+            }
+
+            const validationActions = preparedActions.map((prepared) => prepared.action);
+            for (const [actionIndex, prepared] of preparedActions.entries()) {
+                if (
+                    prepared.handler.validate &&
+                    !prepared.handler.validate(prepared.action, { actions: validationActions, actionIndex })
+                ) {
+                    return {
+                        status: 'conflicted',
+                        reason: `Action conflicts with current project state: ${prepared.action.type}`,
+                        actions: [],
+                    };
+                }
             }
 
             for (const prepared of preparedActions) {
@@ -598,6 +660,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'cancelled', reason: failureReason(error), actions: [] };
             }
 
+            if (batchValidation) {
+                storageTransaction.validateDocument(
+                    batchValidation.postconditions.documentId,
+                    batchValidation.postconditions.validate
+                );
+            }
+
             const committedActions = executedActions.map(({ action }) => action);
 
             try {
@@ -627,6 +696,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         reason: appendAbortFailures(reason, compensationFailure, rollbackFailure),
                         actions: [],
                     };
+                }
+                if (error instanceof AutomergeStorageTransactionValidationError) {
+                    return { status: 'conflicted', reason, actions: [] };
                 }
                 return { status: 'failed', reason, actions: [] };
             }

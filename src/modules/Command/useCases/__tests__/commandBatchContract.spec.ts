@@ -4,6 +4,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../../models/VersionedCommandBatchEnvelope';
+import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -73,9 +74,16 @@ function batch(overrides: Record<string, unknown> = {}) {
             protectedTargetIds: ['track-drums'],
             protectedRanges: [{ startBeat: 32, endBeat: 48 }],
         },
-        preconditions: [{ kind: 'project-revision', value: 'revision-1' }],
+        preconditions: [
+            { kind: 'project-revision', value: 'revision-1' },
+            { kind: 'targets-exist', targetIds: ['track-vocal', 'track-guitar'] },
+        ],
         commands,
-        postconditions: [{ kind: 'targets-unchanged', targetIds: ['track-drums'] }],
+        postconditions: [
+            { kind: 'project-invariants-valid' },
+            { kind: 'audio-graph-valid' },
+            { kind: 'targets-unchanged', targetIds: ['track-drums'] },
+        ],
         dependencies: [{ commandId: PAN_COMMAND_ID, dependsOn: [GAIN_COMMAND_ID] }],
         batchLocalBindings: [],
         grants: {
@@ -117,6 +125,7 @@ function authority(input: ReturnType<typeof batch>): CommandBatchAuthority {
 describe('command batch contract', () => {
     afterEach(() => {
         clearHandlerRegistry();
+        commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
     });
 
@@ -209,6 +218,84 @@ describe('command batch contract', () => {
             scope: parsed.envelope.scope,
             grants: parsed.envelope.grants,
             budgets: parsed.envelope.budgets,
+        });
+    });
+
+    it('keeps a created device parameter in scope without requiring it before the batch', () => {
+        const addDeviceCommand = actionCommand({
+            action: {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-bus',
+                    deviceType: 'builtin-filter',
+                    deviceId: 'device-filter',
+                },
+            },
+            commandId: GAIN_COMMAND_ID,
+        });
+        const setParameterCommand = actionCommand({
+            action: {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-filter',
+                    expectedDeviceType: 'builtin-filter',
+                    paramId: 'filter-type',
+                    value: 1,
+                },
+            },
+            commandId: PAN_COMMAND_ID,
+            dependencyIds: [GAIN_COMMAND_ID],
+        });
+
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-device-parameter',
+            batchId: 'batch-device-parameter',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Create and configure a filter',
+            commands: [JSON.stringify(addDeviceCommand), JSON.stringify(setParameterCommand)],
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+
+        expect(parsed.envelope.scope.targetIds).toEqual(['track-bus', 'device-filter']);
+        expect(parsed.envelope.preconditions).toContainEqual({ kind: 'targets-exist', targetIds: ['track-bus'] });
+        expect(parsed.envelope.preconditions).toContainEqual({ kind: 'targets-absent', targetIds: ['device-filter'] });
+    });
+
+    it('still requires an existing device parameter before the batch', () => {
+        const setParameterCommand = actionCommand({
+            action: {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-filter',
+                    expectedDeviceType: 'builtin-filter',
+                    paramId: 'filter-type',
+                    value: 1,
+                },
+            },
+            commandId: GAIN_COMMAND_ID,
+        });
+
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-existing-device-parameter',
+            batchId: 'batch-existing-device-parameter',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Configure an existing filter',
+            commands: [JSON.stringify(setParameterCommand)],
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+
+        expect(parsed.envelope.scope.targetIds).toEqual(['device-filter', 'filter-type']);
+        expect(parsed.envelope.preconditions).toContainEqual({
+            kind: 'targets-exist',
+            targetIds: ['device-filter', 'filter-type'],
         });
     });
 
@@ -372,7 +459,44 @@ describe('command batch contract', () => {
         });
         expect(parseVersionedCommandBatchEnvelope(JSON.stringify(protectedInput))).toEqual({
             status: 'invalid',
-            reason: 'Command time 12 beats is outside the declared batch scope',
+            reason: 'Command target range overlaps a protected range',
+        });
+    });
+
+    it('rejects a target interval that crosses a protected range between its endpoints', () => {
+        const section = actionCommand({
+            action: {
+                type: 'addSection',
+                payload: { sectionId: 'section-1', startBeat: 0, endBeat: 16, name: 'Verse' },
+            },
+            commandId: '55555555-5555-4555-8555-555555555555',
+        });
+        const input = batch({
+            commands: [section],
+            dependencies: [],
+            postconditions: [{ kind: 'project-invariants-valid' }, { kind: 'audio-graph-valid' }],
+            scope: {
+                targetIds: ['section-1'],
+                targetRanges: [{ startBeat: 0, endBeat: 16 }],
+                protectedTargetIds: [],
+                protectedRanges: [{ startBeat: 8, endBeat: 12 }],
+            },
+            preconditions: [
+                { kind: 'project-revision', value: 'revision-1' },
+                { kind: 'targets-absent', targetIds: ['section-1'] },
+                { kind: 'ranges-unlocked' },
+            ],
+            grants: {
+                ...batch().grants,
+                allowedOperationPrefixes: ['addSection'],
+                create: true,
+            },
+            budgets: { ...batch().budgets, maxCommands: 1 },
+        });
+
+        expect(parseVersionedCommandBatchEnvelope(JSON.stringify(input))).toEqual({
+            status: 'invalid',
+            reason: 'Command target range overlaps a protected range',
         });
     });
 
@@ -434,7 +558,11 @@ describe('command batch contract', () => {
                 protectedTargetIds: [],
                 protectedRanges: [],
             },
-            postconditions: [],
+            preconditions: [
+                { kind: 'project-revision', value: 'revision-1' },
+                { kind: 'targets-exist', targetIds: ['track-vocal'] },
+            ],
+            postconditions: [{ kind: 'project-invariants-valid' }, { kind: 'audio-graph-valid' }],
             grants: {
                 ...batch().grants,
                 allowedOperationPrefixes: ['createBus', 'addSend'],
@@ -508,6 +636,19 @@ describe('command batch contract', () => {
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-1',
+            projectInvariantsValid: true,
+            targetFingerprints: {
+                'track-drums': 'drums',
+                'track-guitar': 'guitar',
+                'track-vocal': 'vocal',
+            },
+        }));
         const input = batch({ mode: 'commit' });
 
         const result = await executeVersionedCommandBatchEnvelope({

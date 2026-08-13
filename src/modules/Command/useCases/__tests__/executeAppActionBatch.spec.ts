@@ -53,6 +53,7 @@ function createHandler<Action extends AppAction>(input: {
     describe?: ActionHandler<Action>['describe'];
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: ActionHandler<Action>['isNoop'];
+    validate?: ActionHandler<Action>['validate'];
     requiresAbortCompensation?: boolean;
     undoable?: boolean;
 }): ActionHandler<Action> {
@@ -62,6 +63,7 @@ function createHandler<Action extends AppAction>(input: {
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         executionKind: input.executionKind,
         isNoop: input.isNoop,
+        validate: input.validate ?? (() => true),
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
     };
@@ -173,6 +175,33 @@ describe('executeAppActionBatch', () => {
             },
         ]);
         expect(mocks.commitUndoEntry).toHaveBeenCalledTimes(2);
+    });
+
+    it('validates the whole batch before the first handler effect', async () => {
+        const firstEffect = vi.fn();
+        const secondEffect = vi.fn();
+        const editingAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const snapAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: firstEffect,
+                validate: () => true,
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: secondEffect,
+                validate: () => false,
+            }),
+        });
+
+        const result = await executeAppActionBatch([editingAction, snapAction]);
+
+        expect(result).toEqual({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: setSnapValue',
+            actions: [],
+        });
+        expect(firstEffect).not.toHaveBeenCalled();
+        expect(secondEffect).not.toHaveBeenCalled();
     });
 
     it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {

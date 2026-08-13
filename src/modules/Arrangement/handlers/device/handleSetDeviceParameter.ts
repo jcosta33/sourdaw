@@ -1,12 +1,14 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 function hasExecutionGuards(action: {
@@ -29,25 +31,40 @@ function hasExecutionGuards(action: {
     );
 }
 
-function executionGuardsMatch(action: {
-    payload: {
-        deviceId: string;
-        paramId: string;
-        expectedTrackId?: string;
-        expectedDeviceType?: string;
-        expectedDeviceIds?: readonly string[];
-        expectedValue?: number;
-        expectedValuePresent?: boolean;
-        expectedTrackFrozen?: boolean;
-    };
-}): boolean {
+function executionGuardsMatch(
+    action: {
+        payload: {
+            deviceId: string;
+            paramId: string;
+            expectedTrackId?: string;
+            expectedDeviceType?: string;
+            expectedDeviceIds?: readonly string[];
+            expectedValue?: number;
+            expectedValuePresent?: boolean;
+            expectedTrackFrozen?: boolean;
+        };
+    },
+    context?: HandlerValidationContext
+): boolean {
     if (!hasExecutionGuards(action)) {
         return true;
     }
-    const owners = (getTrackStoreState()?.tracks ?? []).filter((track) =>
-        track.devices.some((device) => device.id === action.payload.deviceId)
-    );
-    const owner = owners.length === 1 ? owners[0] : undefined;
+    const currentTracks = getTrackStoreState()?.tracks ?? [];
+    const candidateTrackIds = new Set(currentTracks.map((track) => track.id));
+    for (const priorAction of context?.actions.slice(0, context.actionIndex) ?? []) {
+        if (priorAction.type === 'addTrack' && priorAction.payload.id) {
+            candidateTrackIds.add(priorAction.payload.id);
+        }
+        if (priorAction.type === 'createBus' && priorAction.payload.busId) {
+            candidateTrackIds.add(priorAction.payload.busId);
+        }
+    }
+    const owners = [...candidateTrackIds]
+        .map((trackId) =>
+            context ? getPlannedTrackState(context, trackId) : currentTracks.find((track) => track.id === trackId)
+        )
+        .filter((track) => track?.devices.some((device) => device.id === action.payload.deviceId));
+    const owner = owners.length === 1 ? (owners[0] ?? undefined) : undefined;
     const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
     const currentDeviceIds = owner?.devices.map((candidate) => candidate.id);
     const valuePresent = device ? Object.hasOwn(device.parameterValues, action.payload.paramId) : false;
@@ -129,6 +146,7 @@ function createRuntimeParameterRollbackFailure(input: {
 }
 
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
+    validate: (action, context) => executionGuardsMatch(action, context),
     prepareAbort: (action) => {
         const rollbackAutomationRecording = captureAutomationRecordingRollback();
         const owner = getTrackStoreState()?.tracks.find((track) =>
@@ -167,7 +185,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
             runAllEffects(effects);
         };
     },
-    execute: (alpha) => handleGuardedSetDeviceParameter(alpha),
+    execute: handleGuardedSetDeviceParameter,
     isNoop: (action) => {
         if (!executionGuardsMatch(action)) {
             return false;

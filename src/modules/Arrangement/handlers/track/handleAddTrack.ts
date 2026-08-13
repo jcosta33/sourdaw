@@ -27,6 +27,11 @@ function ensureTrackId(action: AddTrackAction): string {
 }
 
 export const handleAddTrack = createHandler<'addTrack'>({
+    validate: (action) => {
+        const trackId = ensureTrackId(action);
+        const state = getTrackStoreState();
+        return state !== null && !state.tracks.some((track) => track.id === trackId);
+    },
     execute: (action) => {
         ensureTrackId(action);
         const track = addTrack({ ...action.payload, suppressAddedEvent: true });

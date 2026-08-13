@@ -59,12 +59,13 @@ import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
 import { canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
 import {
+    commandBatchPreflightPort,
+    commandDeviceVersionsPort,
     executeAppAction,
     registerProductionCommandHandlers,
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
     commandProjectRevisionPort,
-    commandDeviceVersionsPort,
     commandTrackDefaultsPort,
     setCommandEventBus,
     syncActionReplayMetadata,
@@ -143,6 +144,7 @@ import {
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { captureCommandBatchPreflightState } from './captureCommandBatchPreflightState';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { eventBus, logger } from './registerDependencies';
@@ -166,6 +168,7 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>

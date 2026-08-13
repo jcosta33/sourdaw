@@ -77,6 +77,33 @@ function materializeMidiInputOwnerId(
     };
 }
 
+function materializeImportedStemIds(
+    action: Extract<AppAction, { type: 'importStemSet' }>
+): MaterializedCommandApplicationIds {
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [
+        { argument: 'folderId', value: action.payload.folderId },
+    ];
+    if (action.payload.folderAlternativeId) {
+        applicationAssignedIds.push({
+            argument: 'folderAlternativeId',
+            value: action.payload.folderAlternativeId,
+        });
+    }
+    for (const [index, stem] of action.payload.stems.entries()) {
+        applicationAssignedIds.push(
+            { argument: `stems[${String(index)}].trackId`, value: stem.trackId },
+            { argument: `stems[${String(index)}].clipId`, value: stem.clipId }
+        );
+        if (stem.trackAlternativeId) {
+            applicationAssignedIds.push({
+                argument: `stems[${String(index)}].trackAlternativeId`,
+                value: stem.trackAlternativeId,
+            });
+        }
+    }
+    return { action, applicationAssignedIds };
+}
+
 function materializeTrackCreationIds(
     action: Extract<AppAction, { type: 'addTrack' }>
 ): MaterializedCommandApplicationIds {
@@ -172,6 +199,9 @@ function materializeBusCreationIds(
 }
 
 export function materializeCommandApplicationIds(action: AppAction): MaterializedCommandApplicationIds {
+    if (action.type === 'importStemSet') {
+        return materializeImportedStemIds(action);
+    }
     if (action.type === 'addNotes') {
         return materializeNestedNoteIds(action);
     }

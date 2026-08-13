@@ -191,6 +191,23 @@ function getRequiredApplicationAssignedIdArguments(
     if (operation === 'armTrack') {
         return typeof argumentsValue.midiInputOwnerId === 'string' ? ['midiInputOwnerId'] : [];
     }
+    if (operation === 'importStemSet') {
+        const stems = argumentsValue.stems;
+        if (!Array.isArray(stems)) {
+            return [];
+        }
+        const argumentsList = ['folderId'];
+        if (typeof argumentsValue.folderAlternativeId === 'string') {
+            argumentsList.push('folderAlternativeId');
+        }
+        for (const [index, stem] of stems.entries()) {
+            argumentsList.push(`stems[${String(index)}].trackId`, `stems[${String(index)}].clipId`);
+            if (isRecord(stem) && typeof stem.trackAlternativeId === 'string') {
+                argumentsList.push(`stems[${String(index)}].trackAlternativeId`);
+            }
+        }
+        return argumentsList;
+    }
     const rule = COMMAND_APPLICATION_ID_RULES[operation as keyof typeof COMMAND_APPLICATION_ID_RULES];
     if (!rule || typeof argumentsValue[rule.argument] !== 'string') {
         return [];

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { type RoutingCycleTrack, wouldCreateRoutingCycle } from '../routingCycle';
+import { hasRoutingCycle, type RoutingCycleTrack, wouldCreateRoutingCycle } from '../routingCycle';
 
 function track(id: string, outputId: string, sendBusIds: string[] = []): RoutingCycleTrack {
     return { id, outputId, sends: sendBusIds.map((busId) => ({ busId })) };
@@ -61,5 +61,32 @@ describe('wouldCreateRoutingCycle', () => {
             track('busC', 'master', ['t1']),
         ];
         expect(wouldCreateRoutingCycle({ sourceId: 't1', targetId: 'busA', tracks })).toBe(true);
+    });
+});
+
+describe('hasRoutingCycle', () => {
+    it('detects a cycle already present across output, send, and sidechain edges', () => {
+        const tracks = [
+            { id: 'audio', outputId: 'bus-a' },
+            { id: 'bus-a', sends: [{ busId: 'bus-b' }] },
+            { id: 'bus-b', outputId: 'master' },
+        ];
+
+        expect(
+            hasRoutingCycle({
+                tracks,
+                sidechainRoutes: [{ sourceTrackId: 'bus-b', targetTrackId: 'audio' }],
+            })
+        ).toBe(true);
+    });
+
+    it('accepts an acyclic routing graph', () => {
+        const tracks = [
+            { id: 'audio', outputId: 'bus-a' },
+            { id: 'bus-a', sends: [{ busId: 'bus-b' }] },
+            { id: 'bus-b', outputId: 'master' },
+        ];
+
+        expect(hasRoutingCycle({ tracks })).toBe(false);
     });
 });

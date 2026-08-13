@@ -37,6 +37,11 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const PROMPT =
     'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
 
@@ -215,6 +220,7 @@ describe('mix prompt workflow', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        configureAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -251,6 +257,7 @@ describe('mix prompt workflow', () => {
 
     afterEach(() => {
         clearUndoHistory();
+        resetAiWorkflowCommandPreflightFixture();
         resetActionReplayAuthority();
         clearHandlerRegistry();
         clearAiHistory();
@@ -509,6 +516,31 @@ describe('mix prompt workflow', () => {
         );
         expect(terminalMessage?.content).not.toContain('Affected IDs:');
         expect(terminalMessage?.content).not.toContain('Outcome: committed');
+    });
+
+    it('rejects a stale later pan guard before any earlier runtime effect', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        if (!confirmation) {
+            throw new Error('Expected the proposed mix batch');
+        }
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-guitar-left' ? { ...track, pan: 12 } : track
+            ),
+        });
+        runtimeMocks.pans.set('track-guitar-left', 12);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(result).toMatchObject({ status: 'failed' });
+        expect(runtimeMocks.setTrackGain).not.toHaveBeenCalled();
+        expect(runtimeMocks.setTrackPan).not.toHaveBeenCalled();
+        expect(runtimeMocks.setTrackMute).not.toHaveBeenCalled();
+        expect(getTrack('track-lead-vocal').gain).toBe(1);
+        expect(getTrack('track-guitar-left').pan).toBe(12);
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each(['write', 'touch', 'latch'] as const)(

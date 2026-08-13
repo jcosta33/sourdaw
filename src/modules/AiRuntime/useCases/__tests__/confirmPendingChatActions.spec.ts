@@ -33,10 +33,16 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 
 describe('confirmPendingChatActions transaction admission', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         clearHandlerRegistry();
         clearUndoHistory();
         clearAiHistory();
@@ -62,6 +68,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
@@ -184,6 +191,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('executes the approved outer command batch instead of the legacy envelope array', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
             setTempo: {

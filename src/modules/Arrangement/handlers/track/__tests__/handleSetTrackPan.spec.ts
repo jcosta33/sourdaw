@@ -20,6 +20,30 @@ describe('handleSetTrackPan', () => {
         vi.clearAllMocks();
     });
 
+    it('validates the expected pan without writing runtime or project state', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', pan: 0 }] });
+
+        expect(
+            handleSetTrackPan.validate?.(
+                {
+                    type: 'setTrackPan',
+                    payload: { trackId: 't1', pan: -20, expectedPan: 0 },
+                },
+                { actions: [], actionIndex: 0 }
+            )
+        ).toBe(true);
+        expect(
+            handleSetTrackPan.validate?.(
+                {
+                    type: 'setTrackPan',
+                    payload: { trackId: 't1', pan: -20, expectedPan: 12 },
+                },
+                { actions: [], actionIndex: 0 }
+            )
+        ).toBe(false);
+        expect(mocks.setTrackPan).not.toHaveBeenCalled();
+    });
+
     describe('execute', () => {
         it('calls setTrackPan', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', pan: 0 }] });

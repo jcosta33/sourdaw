@@ -6,6 +6,7 @@ import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrang
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandBatchPreflightPort,
     executeAppAction,
     redo,
     resetActionReplayAuthority,
@@ -13,6 +14,7 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -310,6 +312,23 @@ describe('stem import and starting mix workflow', () => {
             markReverted: () => ({ status: 'unavailable' as const }),
             clear: () => undefined,
         });
+        commandBatchPreflightPort.setProvider(({ assetReferences, targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: assetReferences.flatMap((reference) =>
+                reference.assetHash ? [reference.assetHash] : []
+            ),
+            availableAudioBufferIds: assetReferences.flatMap((reference) =>
+                reference.audioBufferId ? [reference.audioBufferId] : []
+            ),
+            lockedRanges: [],
+            projectId: captureProjectRevision(),
+            projectInvariantsValid: true,
+            targetFingerprints: Object.fromEntries(
+                targetIds
+                    .filter((targetId) => JSON.stringify(trackStore.value).includes(targetId))
+                    .map((targetId) => [targetId, targetId])
+            ),
+        }));
         clearAiHistory();
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: mocks.arrangementEventEmit });
@@ -350,6 +369,7 @@ describe('stem import and starting mix workflow', () => {
         clearAiHistory();
         clearUndoHistory();
         resetActionReplayAuthority();
+        commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState });

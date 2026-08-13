@@ -2,6 +2,7 @@ import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { executeAppActionBatch } from './executeAppActionBatch';
@@ -12,7 +13,10 @@ import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 type ExecuteVersionedCommandBatchInput = {
     commands: readonly string[];
     normalizedProjectRevision?: string;
-    options?: ExecuteOptions & { requireCompensation?: boolean };
+    options?: ExecuteOptions & {
+        prepareValidation?: () => CommandBatchValidationPreparation;
+        requireCompensation?: boolean;
+    };
 };
 
 export async function executeVersionedCommandBatch(input: ExecuteVersionedCommandBatchInput) {
@@ -32,12 +36,7 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
         return { status: 'rejected' as const, reason: 'Command IDs must be unique within a batch', actions: [] as [] };
     }
     const batchRevision = input.normalizedProjectRevision ?? envelopes[0]?.normalizedProjectRevision;
-    const currentRevision = commandProjectRevisionPort.capture();
-    if (
-        envelopes.some((envelope) => envelope.normalizedProjectRevision !== batchRevision) ||
-        (commandProjectRevisionPort.isConfigured() && batchRevision !== currentRevision) ||
-        envelopes.some((envelope) => !hasCurrentCommandDeviceVersions(envelope))
-    ) {
+    if (envelopes.some((envelope) => envelope.normalizedProjectRevision !== batchRevision)) {
         return {
             status: 'conflicted' as const,
             reason: 'Command batch base revision does not match current project state',
@@ -76,5 +75,15 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
         ...input.options,
         commandEnvelopes: envelopes,
         groupId,
+        preExecutionValidation: () => {
+            const currentRevision = commandProjectRevisionPort.capture();
+            if (
+                (commandProjectRevisionPort.isConfigured() && batchRevision !== currentRevision) ||
+                envelopes.some((envelope) => !hasCurrentCommandDeviceVersions(envelope))
+            ) {
+                return 'Command batch base revision does not match current project state';
+            }
+            return null;
+        },
     });
 }

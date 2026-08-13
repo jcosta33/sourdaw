@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { createStore } from '../../createStore';
 import {
     AutomergeStorageTransactionCommittedError,
+    AutomergeStorageTransactionValidationError,
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
@@ -426,6 +427,37 @@ describe('createAutomergeStorage', () => {
             tracks: { imported: true },
             midi: { imported: true },
         });
+    });
+
+    it('validates the staged document inside the mutation and rolls it back on rejection', () => {
+        const doc: TestDoc = { state: { count: 0 } };
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const draft = structuredClone(doc);
+                changeFn(draft);
+                for (const key of Object.keys(doc)) {
+                    delete doc[key];
+                }
+                Object.assign(doc, draft);
+            },
+        });
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+        transaction.validateDocument('root', (stagedDocument) =>
+            (stagedDocument.state as { count: number }).count === 1 ? 'staged document rejected' : null
+        );
+
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionValidationError);
+        transaction.abort();
+
+        expect(doc).toEqual({ state: { count: 0 } });
+        expect(storage.get()).toEqual({ count: 0 });
     });
 
     it('does not commit a compensated action-owner write that returns to its cached base', () => {

@@ -53,6 +53,7 @@ function resolveRoute(action: RemoveSidechainRouteAction): RouteResolution {
 }
 
 export const handleRemoveSidechainRoute = createHandler<'removeSidechainRoute'>({
+    validate: (action) => resolveRoute(action).status !== 'conflict',
     materializeCommandArguments: (action) => {
         if (resolveRoute(action).status === 'conflict') {
             throw new Error('Sidechain route arguments conflict with current project state');

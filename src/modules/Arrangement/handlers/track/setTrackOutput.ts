@@ -3,8 +3,23 @@ import { createHandler } from '#/utils/createHandler';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackOutput } from '../../useCases/toggleTrackState/setTrackOutput';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackOutput = createHandler<'setTrackOutput'>({
+    validate: (action, context) => {
+        const track = getPlannedTrackState(context, action.payload.trackId);
+        const target = getPlannedTrackState(context, action.payload.outputId);
+        if (!track || (!target && action.payload.outputId !== 'master' && action.payload.outputId !== 'hw_out')) {
+            return false;
+        }
+        if (
+            !getTrackEligibility(track.kind).acceptsOutput ||
+            (target !== null && !getTrackEligibility(target.kind).acceptsRoutingEndpoint)
+        ) {
+            return false;
+        }
+        return action.payload.expectedOutputId === undefined || track.outputId === action.payload.expectedOutputId;
+    },
     execute: (action) => {
         const state = getTrackStoreState();
         const track = state?.tracks.find((candidate) => candidate.id === action.payload.trackId);

@@ -37,6 +37,10 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Add a syncopated arpeggio while preserving voicing and harmonic rhythm.';
@@ -233,6 +237,7 @@ const sourceNotes = [
 
 describe('EX-07 syncopated arpeggio prompt workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
@@ -293,6 +298,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();
         resetActionReplayAuthority();

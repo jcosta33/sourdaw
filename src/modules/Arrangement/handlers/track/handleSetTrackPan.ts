@@ -3,8 +3,13 @@ import { createHandler } from '#/utils/createHandler';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackPan } from '../../useCases/setTrackGainPan/setTrackPan';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackPan = createHandler<'setTrackPan'>({
+    validate: (action, context) => {
+        const currentPan = getPlannedTrackState(context, action.payload.trackId)?.pan;
+        return currentPan === action.payload.expectedPan;
+    },
     prepareAbort: () => captureAutomationRecordingRollback(),
     execute: (action) => {
         const currentPan = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.pan;

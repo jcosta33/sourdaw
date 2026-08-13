@@ -41,6 +41,11 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const PROMPT =
     'Set the Bass DI compressor threshold to -18 dB and ratio to 4:1, leaving attack, release, and makeup gain unchanged.';
 const CANCELLED_PROMPT = `${PROMPT} Actually, cancel that command.`;
@@ -268,6 +273,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        configureAiWorkflowCommandPreflightFixture();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
@@ -301,6 +307,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        resetAiWorkflowCommandPreflightFixture();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
         cloudSession.clear();
@@ -562,7 +569,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('restores runtime and project values when a later guarded action conflicts', async () => {
+    it('rejects a later guarded conflict before the first runtime or project write', async () => {
         const result = await executeAppActionBatch(createGuardedActions(999), {
             requireCompensation: true,
             source: 'prompt',
@@ -571,20 +578,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         expect(result).toMatchObject({ status: 'conflicted', actions: [] });
         expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
         expect(runtimeMocks.runtimeParameterValues.get('comp-threshold')).toBe(-24);
-        expect(runtimeMocks.updateDeviceParam).toHaveBeenNthCalledWith(
-            1,
-            'track-bass-di',
-            COMPRESSOR_ID,
-            'comp-threshold',
-            -18
-        );
-        expect(runtimeMocks.updateDeviceParam).toHaveBeenNthCalledWith(
-            2,
-            'track-bass-di',
-            COMPRESSOR_ID,
-            'comp-threshold',
-            -24
-        );
+        expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
     });
 
@@ -672,7 +666,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         }
     );
 
-    it('reports persistent runtime rollback failure as manual repair and permits explicit repair', async () => {
+    it('does not enter runtime rollback when preflight detects the later domain conflict', async () => {
         runtimeMocks.failedRuntimeWrites.add('comp-threshold:-24');
 
         const result = await executeAppActionBatch(createGuardedActions(999), {
@@ -680,21 +674,11 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             source: 'prompt',
         });
 
-        expect(result).toMatchObject({ status: 'failed', actions: [] });
-        if (result.status !== 'failed') {
-            throw new Error(`Expected a failed batch, received ${result.status}`);
-        }
-        expect(result.reason).toContain('abort rollback failed');
-        expect(result.reason).toContain('manual repair is required');
+        expect(result).toMatchObject({ status: 'conflicted', actions: [] });
         expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
-        expect(runtimeMocks.runtimeParameterValues.get('comp-threshold')).toBe(-18);
-        expect(undoStore.value?.past).toEqual([]);
-
-        runtimeMocks.failedRuntimeWrites.clear();
-        expect(setDeviceParameter(COMPRESSOR_ID, 'comp-threshold', -24)).toBe(true);
-
         expect(runtimeMocks.runtimeParameterValues.get('comp-threshold')).toBe(-24);
-        expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
+        expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it('conflicts a confirmed batch after Bass DI freezes without any project, runtime, receipt, or history write', async () => {

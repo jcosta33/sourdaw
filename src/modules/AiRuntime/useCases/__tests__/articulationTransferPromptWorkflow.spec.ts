@@ -29,6 +29,10 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Copy chorus-one articulation to chorus two without copying pitches or velocities.';
@@ -263,6 +267,7 @@ function getConfirmationId(): string {
 
 describe('MF-03 articulation transfer prompt workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
@@ -334,6 +339,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();
         resetActionReplayAuthority();
@@ -383,7 +389,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             reason: 'This action can change a broad section of the project.',
         });
 
-        await confirmPendingChatActions({ confirmationId });
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({ status: 'executed' });
 
         expect(midiStore.value?.notesByClipId['clip-chorus-two']).toEqual([
             {

@@ -13,6 +13,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
@@ -21,6 +22,7 @@ type ParseVersionedCommandBatchEnvelopeResult =
     { status: 'valid'; envelope: VersionedCommandBatchEnvelope } | { status: 'invalid'; reason: string };
 
 const MAX_BATCH_ARRAY_LENGTH = 10_000;
+const MAX_BATCH_SERIALIZED_BYTES = 1_048_576;
 const BUDGET_KEYS = [
     'maxCommands',
     'maxCreatedTracks',
@@ -76,6 +78,32 @@ const CONDITION_KINDS = new Set<CommandBatchConditionKind>([
     'project-invariants-valid',
     'audio-graph-valid',
 ]);
+
+function exceedsUtf8ByteLimit(value: string, limit: number): boolean {
+    let bytes = 0;
+    for (let index = 0; index < value.length; index += 1) {
+        const codeUnit = value.charCodeAt(index);
+        if (codeUnit <= 0x7f) {
+            bytes += 1;
+        } else if (codeUnit <= 0x7ff) {
+            bytes += 2;
+        } else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff && index + 1 < value.length) {
+            const next = value.charCodeAt(index + 1);
+            if (next >= 0xdc00 && next <= 0xdfff) {
+                bytes += 4;
+                index += 1;
+            } else {
+                bytes += 3;
+            }
+        } else {
+            bytes += 3;
+        }
+        if (bytes > limit) {
+            return true;
+        }
+    }
+    return false;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -303,8 +331,30 @@ function parseCommands(value: unknown): VersionedCommandEnvelope[] | null {
 function validateCommandScope(commands: readonly VersionedCommandEnvelope[], scope: CommandBatchScope): string | null {
     const declaredTargets = new Set(scope.targetIds);
     const protectedTargets = new Set(scope.protectedTargetIds);
+    const createdTargetIds = new Set(
+        commands.flatMap((command) =>
+            command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
+        )
+    );
+    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands, createdTargetIds);
+    const overlapsProtectedRange = scope.targetRanges.some((targetRange) =>
+        scope.protectedRanges.some((protectedRange) => {
+            if (targetRange.startBeat === targetRange.endBeat) {
+                return (
+                    targetRange.startBeat >= protectedRange.startBeat && targetRange.startBeat < protectedRange.endBeat
+                );
+            }
+            return targetRange.startBeat < protectedRange.endBeat && protectedRange.startBeat < targetRange.endBeat;
+        })
+    );
+    if (overlapsProtectedRange) {
+        return 'Command target range overlaps a protected range';
+    }
     for (const command of commands) {
         for (const targetId of getCommandTargetIds(command)) {
+            if (batchLocalDependentTargetIds.has(targetId)) {
+                continue;
+            }
             if (!declaredTargets.has(targetId) || protectedTargets.has(targetId)) {
                 return `Command target ${targetId} is outside the declared batch scope`;
             }
@@ -332,6 +382,31 @@ function validateConditions(
 ): string | null {
     if (!preconditions.some((condition) => condition.kind === 'project-revision' && condition.value === baseRevision)) {
         return 'Command batch requires an exact base-revision precondition';
+    }
+    const targetConditionIds = preconditions
+        .filter((condition) => condition.kind === 'targets-exist' || condition.kind === 'targets-absent')
+        .flatMap((condition) => condition.targetIds ?? []);
+    if (
+        new Set(targetConditionIds).size !== targetConditionIds.length ||
+        JSON.stringify([...targetConditionIds].sort()) !== JSON.stringify([...scope.targetIds].sort())
+    ) {
+        return 'Command batch requires exact target-presence preconditions';
+    }
+    if (scope.targetRanges.length > 0 && !preconditions.some((condition) => condition.kind === 'ranges-unlocked')) {
+        return 'Command batch requires an unlocked-range precondition';
+    }
+    if (!postconditions.some((condition) => condition.kind === 'project-invariants-valid')) {
+        return 'Command batch requires a project-invariants postcondition';
+    }
+    if (!postconditions.some((condition) => condition.kind === 'audio-graph-valid')) {
+        return 'Command batch requires an audio-graph postcondition';
+    }
+    const targetsUnchanged = postconditions.find((condition) => condition.kind === 'targets-unchanged');
+    if (
+        scope.protectedTargetIds.length > 0 &&
+        (!targetsUnchanged || JSON.stringify(targetsUnchanged.targetIds) !== JSON.stringify(scope.protectedTargetIds))
+    ) {
+        return 'Command batch requires exact protected-target postconditions';
     }
     const declaredIds = new Set([...scope.targetIds, ...scope.protectedTargetIds]);
     for (const condition of [...preconditions, ...postconditions]) {
@@ -451,6 +526,9 @@ export function parseVersionedCommandBatchEnvelope(
     serialized: string,
     authority?: CommandBatchAuthority
 ): ParseVersionedCommandBatchEnvelopeResult {
+    if (exceedsUtf8ByteLimit(serialized, MAX_BATCH_SERIALIZED_BYTES)) {
+        return { status: 'invalid', reason: 'Command batch exceeds the serialized payload limit' };
+    }
     let value: unknown;
     try {
         value = JSON.parse(serialized);
@@ -528,12 +606,12 @@ export function parseVersionedCommandBatchEnvelope(
         return { status: 'invalid', reason: 'Command group IDs do not match the batch identity' };
     }
     const failure =
-        validateConditions(preconditions, postconditions, scope, value.baseRevision) ??
         validateCommandScope(commands, scope) ??
         validateDependencies(commands, dependencies) ??
         validateBatchLocalBindings(commands, batchLocalBindings) ??
         validateGrants(commands, grants) ??
-        validateBudgets(commands, budgets);
+        validateBudgets(commands, budgets) ??
+        validateConditions(preconditions, postconditions, scope, value.baseRevision);
     if (failure) {
         return { status: 'invalid', reason: failure };
     }

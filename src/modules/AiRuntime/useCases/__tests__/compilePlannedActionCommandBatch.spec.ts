@@ -94,6 +94,18 @@ describe('compilePlannedActionCommandBatch', () => {
         ).toThrow('Dynamic command effects target protected objects: track-solo-a');
     });
 
+    it('binds the command batch project identity to the full active document revision', () => {
+        const result = compile([{ type: 'clearSolos' }], {
+            ...baseContext,
+            tracks: [track('track-solo', true)],
+        });
+
+        expect(JSON.parse(result.commandBatch.serialized)).toMatchObject({
+            projectId: 'revision-1',
+        });
+        expect(result.commandBatch.authority.projectId).toBe('revision-1');
+    });
+
     it('binds whole-lane automation transforms to the current lane size and owners', () => {
         const result = compile([{ type: 'thinAutomation', payload: { laneId: 'lane-1', tolerance: 0.05 } }], {
             ...baseContext,

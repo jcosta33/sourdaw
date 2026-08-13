@@ -4,6 +4,7 @@ import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvel
 
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
+import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 import { resolveVersionedCommandBatchBindings } from './resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
 
@@ -33,14 +34,17 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             actions: [] as [],
         };
     }
+    const resolvedCommands = resolveVersionedCommandBatchBindings(parsed.envelope);
+    const resolvedEnvelope = { ...parsed.envelope, commands: resolvedCommands };
     return executeVersionedCommandBatch({
-        commands: resolveVersionedCommandBatchBindings(parsed.envelope).map((command) =>
+        commands: resolvedCommands.map((command) =>
             serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
         ),
         normalizedProjectRevision: parsed.envelope.baseRevision,
         options: {
             ...input.options,
             groupId: parsed.envelope.batchId,
+            prepareValidation: () => prepareCommandBatchPreflight(resolvedEnvelope),
             requireCompensation: true,
         },
     });

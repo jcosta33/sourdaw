@@ -33,6 +33,11 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const SHARED_VOCAL_FX_PROMPT = 'Move vocal delays and reverbs to shared buses while preserving balance.';
 const SHARED_VOCAL_FX_PARAPHRASE =
     'Put the vocal delay and reverb effects on shared buses, keeping the current wet and dry balance intact.';
@@ -439,6 +444,7 @@ function createTestAudioBuffer(sampleRate = 44_100): AudioBuffer {
 
 describe('shared vocal FX buses workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
@@ -487,6 +493,7 @@ describe('shared vocal FX buses workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -820,9 +827,10 @@ describe('shared vocal FX buses workflow', () => {
             ])
         );
 
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'executed',
-        });
+        const execution = await confirmPendingChatActions({ confirmationId: confirmation.id });
+        if (execution.status !== 'executed') {
+            throw new Error(`Expected executed confirmation: ${JSON.stringify(execution)}`);
+        }
 
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
         const committedLead = committedTracks.find((track) => track.id === 'track-lead-vocal');
@@ -937,7 +945,9 @@ describe('shared vocal FX buses workflow', () => {
             throw new Error('Expected EX-08 confirmation');
         }
 
-        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
 
         const executed = getPendingActionConfirmation(confirmation.id);
         const doubleDelayRemoval = executed?.executedActions.find(
@@ -1024,7 +1034,9 @@ describe('shared vocal FX buses workflow', () => {
         if (!confirmation) {
             throw new Error('Expected EX-08 confirmation');
         }
-        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
         const delayBus = committedTracks.find((track) => track.name === 'Vocal Delay');
         if (!delayBus) {

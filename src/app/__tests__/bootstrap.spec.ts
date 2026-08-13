@@ -99,6 +99,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
+    getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
     setVoiceToggleEventBus: noop,
 }));
@@ -155,6 +156,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAllScheduled: noop,
 }));
 
+vi.mock('#/modules/AudioEngine/stores', () => ({
+    audioBufferCache: { has: () => false },
+}));
+
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
@@ -181,10 +186,12 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 vi.mock('#/modules/Collaboration/useCases', () => ({
     canMutateBranchMetadata: () => true,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
+    getAssetTransfer: () => null,
     leaveSession: noop,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commandBatchPreflightPort: { setProvider: noop },
     executeAppAction: noop,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
@@ -214,7 +221,9 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    DOC_PREFIX_ROOT: 'root',
     captureProjectRevision: () => 'revision-1',
+    getCrdtDoc: noop,
     getDrumPreviewBranchHandlers: sentinelHandlers('DrumPreviewBranch'),
     initBranchState: initBranchStateMock,
     markActionHistoryEntryReverted: noop,

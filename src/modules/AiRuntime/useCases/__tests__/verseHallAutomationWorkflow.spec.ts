@@ -33,6 +33,11 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const PROMPT = 'Lower every vocal send to the Hall by 3 dB only in verse two.';
 
 const providerPlan = [
@@ -179,6 +184,7 @@ function expectExactAutomation(): void {
 
 describe('verse Hall send automation workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
@@ -260,6 +266,7 @@ describe('verse Hall send automation workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

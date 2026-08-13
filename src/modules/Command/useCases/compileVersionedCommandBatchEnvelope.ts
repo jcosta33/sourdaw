@@ -8,6 +8,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
@@ -68,11 +69,14 @@ function parseCommands(serializedCommands: readonly string[]): VersionedCommandE
     return commands;
 }
 
-function getScopeTargetIds(commands: readonly VersionedCommandEnvelope[]): string[] {
+function getScopeTargetIds(
+    commands: readonly VersionedCommandEnvelope[],
+    excludedTargetIds: ReadonlySet<string>
+): string[] {
     const targetIds = new Set<string>();
     for (const command of commands) {
         for (const reference of getVersionedCommandTargetReferences(command)) {
-            if (reference.scope === 'stable') {
+            if (reference.scope === 'stable' && !excludedTargetIds.has(reference.id)) {
                 targetIds.add(reference.id);
             }
         }
@@ -103,6 +107,12 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
         throw new Error('Command batch requires application-owned dynamic effect bounds');
     }
     const effects = getVersionedCommandBatchEffects(commands, input.dynamicEffects);
+    const createdTargetIds = new Set(
+        commands.flatMap((command) =>
+            command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
+        )
+    );
+    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands, createdTargetIds);
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
     const dynamicTargetIds = new Set([
         ...(input.dynamicEffects?.affectedTrackIds ?? []),
@@ -115,7 +125,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     }
     const targetIds = [
         ...new Set([
-            ...getScopeTargetIds(commands),
+            ...getScopeTargetIds(commands, batchLocalDependentTargetIds),
             ...effects.affectedTrackIds,
             ...effects.affectedClipIds,
             ...(input.dynamicEffects?.affectedTargetIds ?? []),
@@ -127,6 +137,8 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
         protectedTargetIds,
         protectedRanges: structuredClone(input.protectedRanges ?? []),
     };
+    const existingTargetIds = scope.targetIds.filter((targetId) => !createdTargetIds.has(targetId));
+    const absentTargetIds = scope.targetIds.filter((targetId) => createdTargetIds.has(targetId));
     const grants = {
         allowedOperationPrefixes: [...new Set(commands.map((command) => command.operation))],
         create: effects.requiredGrants.has('create'),
@@ -161,12 +173,15 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
         scope,
         preconditions: [
             { kind: 'project-revision', value: input.baseRevision },
-            ...(scope.targetIds.length > 0 ? [{ kind: 'targets-exist' as const, targetIds: scope.targetIds }] : []),
+            ...(existingTargetIds.length > 0 ? [{ kind: 'targets-exist' as const, targetIds: existingTargetIds }] : []),
+            ...(absentTargetIds.length > 0 ? [{ kind: 'targets-absent' as const, targetIds: absentTargetIds }] : []),
+            ...(scope.targetRanges.length > 0 ? [{ kind: 'ranges-unlocked' as const }] : []),
         ],
         commands,
         postconditions: [
             { kind: 'project-invariants-valid' },
             { kind: 'audio-graph-valid' },
+            ...(absentTargetIds.length > 0 ? [{ kind: 'targets-exist' as const, targetIds: absentTargetIds }] : []),
             ...(protectedTargetIds.length > 0
                 ? [{ kind: 'targets-unchanged' as const, targetIds: protectedTargetIds }]
                 : []),

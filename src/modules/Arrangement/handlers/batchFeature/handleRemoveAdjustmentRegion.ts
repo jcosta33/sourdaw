@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { adjustmentLayerStore, type AdjustmentLayer } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
@@ -17,19 +18,25 @@ function matchesExpectedRegion(current: AdjustmentRegion, expected: AdjustmentRe
     );
 }
 
+function currentStateMatches(action: Extract<AppAction, { type: 'removeAdjustmentRegion' }>): boolean {
+    if (!action.payload.expectedRegion) {
+        return true;
+    }
+    const layer = adjustmentLayerStore.value?.layers.find((candidate) => candidate.id === action.payload.layerId);
+    const region = layer?.regions.find((candidate) => candidate.id === action.payload.regionId);
+    const tracks = trackStore.value?.tracks ?? [];
+    const tracksChanged = (action.payload.expectedTracks ?? []).some((expected) => {
+        const track = tracks.find((candidate) => candidate.id === expected.trackId);
+        return !track || track.frozen !== expected.frozen;
+    });
+    return Boolean(region && matchesExpectedRegion(region, action.payload.expectedRegion) && !tracksChanged);
+}
+
 export const handleRemoveAdjustmentRegion = createHandler<'removeAdjustmentRegion'>({
+    validate: (action) => currentStateMatches(action),
     execute: (a) => {
-        if (a.payload.expectedRegion) {
-            const layer = adjustmentLayerStore.value?.layers.find((candidate) => candidate.id === a.payload.layerId);
-            const region = layer?.regions.find((candidate) => candidate.id === a.payload.regionId);
-            const tracks = trackStore.value?.tracks ?? [];
-            const tracksChanged = (a.payload.expectedTracks ?? []).some((expected) => {
-                const track = tracks.find((candidate) => candidate.id === expected.trackId);
-                return !track || track.frozen !== expected.frozen;
-            });
-            if (!region || !matchesExpectedRegion(region, a.payload.expectedRegion) || tracksChanged) {
-                return { status: 'conflict' as const };
-            }
+        if (!currentStateMatches(a)) {
+            return { status: 'conflict' as const };
         }
         removeAdjustmentRegion(a.payload.layerId, a.payload.regionId);
         return { status: 'written' as const };
