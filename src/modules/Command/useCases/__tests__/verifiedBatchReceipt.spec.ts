@@ -142,6 +142,7 @@ describe('verified batch receipt', () => {
     let panStorage: ReturnType<typeof createAutomergeStorage<{ value: number }>>;
     let protectedFingerprintChanged: boolean;
     let rejectPostconditions: boolean;
+    let rejectResultingRevisionCapture: boolean;
 
     function compileArtifactBatch(input: { renderAfterCommit?: () => void } = {}) {
         projectDocument = { markers: { ids: [] }, rendered: { jobIds: [] } };
@@ -284,6 +285,7 @@ describe('verified batch receipt', () => {
         mutationCount = 0;
         protectedFingerprintChanged = false;
         rejectPostconditions = false;
+        rejectResultingRevisionCapture = false;
         projectDocument = { trackGain: { value: 1 }, trackPan: { value: 0 } };
         configureAutomergeStoragePort({
             getDoc: () => projectDocument,
@@ -300,7 +302,12 @@ describe('verified batch receipt', () => {
         panStorage = createAutomergeStorage<{ value: number }>('root', 'trackPan');
         expect(gainStorage.hydrate?.()).toBe(true);
         expect(panStorage.hydrate?.()).toBe(true);
-        commandProjectRevisionPort.setProvider(() => revision(mutationCount));
+        commandProjectRevisionPort.setProvider(() => {
+            if (rejectResultingRevisionCapture && mutationCount > 0) {
+                throw new Error('revision observer unavailable');
+            }
+            return revision(mutationCount);
+        });
         commandBatchPreflightPort.setProvider(({ projectDocument: stagedDocument }) => ({
             audioGraphValid: true,
             availableAssetHashes: [],
@@ -527,7 +534,26 @@ describe('verified batch receipt', () => {
             outcome: 'committed-with-warning',
             atomicity: 'atomic',
             warnings: ['history observer unavailable'],
+            compensation: { available: false, commandIds: [] },
             modelSummary: 'Committed 2 commands atomically; reporting completed with warnings.',
+        });
+    });
+
+    it('does not fabricate resulting heads when post-commit revision capture fails', async () => {
+        rejectResultingRevisionCapture = true;
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(receiptFrom(result)).toMatchObject({
+            resulting: null,
+            warnings: ['Resulting project revision could not be captured: revision observer unavailable'],
+            modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
         });
     });
 

@@ -40,7 +40,8 @@ type BatchExecutionObservation = {
 type CreateVerifiedBatchReceiptInput = {
     envelope: VersionedCommandBatchEnvelope;
     observedBaseRevision: string;
-    resultingRevision: string;
+    receiptWarnings?: readonly string[];
+    resultingRevision: string | null;
     result: BatchExecutionObservation;
 };
 
@@ -202,8 +203,12 @@ function createModelSummary(input: {
     compensationAvailable: boolean;
     executedCommandCount: number;
     outcome: ReturnType<typeof actualBatchOutcome>;
+    resultingRevisionAvailable: boolean;
 }): string {
     if (input.outcome === 'committed') {
+        if (!input.resultingRevisionAvailable) {
+            return `Committed ${String(input.executedCommandCount)} commands atomically, but resulting project heads are unavailable.`;
+        }
         const compensation = input.compensationAvailable ? 'compensation is available' : 'compensation is unavailable';
         return `Committed ${String(input.executedCommandCount)} commands atomically; ${String(input.affectedIds.length)} targets changed; ${compensation}.`;
     }
@@ -232,6 +237,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         )
     );
     const executedCommandIds = new Set(executedByCommandId.keys());
+    const historyPublicationFailed = input.result.warningDetails?.some(({ kind }) => kind === 'history') === true;
     const commandOutcomes = input.envelope.commands.map((command) => {
         const outcome = commandOutcome({ commandId: command.commandId, result: input.result, executedCommandIds });
         const receipt = executedByCommandId.get(command.commandId);
@@ -241,7 +247,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
             operation: command.operation,
             outcome,
             affectedIds,
-            compensationAvailable: receipt?.compensation?.available === true,
+            compensationAvailable: !historyPublicationFailed && receipt?.compensation?.available === true,
         };
     });
     const appliedCommands = input.envelope.commands.filter((command) => executedCommandIds.has(command.commandId));
@@ -279,7 +285,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         .filter((command) => command.compensationAvailable)
         .map((command) => command.commandId);
     const outcome = actualBatchOutcome(input.result);
-    const warnings = input.result.warning ? [input.result.warning] : [];
+    const warnings = [...(input.result.warning ? [input.result.warning] : []), ...(input.receiptWarnings ?? [])];
     const errors = input.result.reason ? [input.result.reason] : [];
     const semanticDiff =
         input.result.status === 'committed' || input.result.status === 'committed-with-warning'
@@ -311,7 +317,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         atomicity: hasFailedExternalEffect ? ('durable-atomic-with-non-atomic-effects' as const) : ('atomic' as const),
         base: parseRevision(input.envelope.baseRevision),
         observedBase: parseRevision(input.observedBaseRevision),
-        resulting: parseRevision(input.resultingRevision),
+        resulting: input.resultingRevision === null ? null : parseRevision(input.resultingRevision),
         commandOutcomes,
         affectedIds,
         createdBindings,
@@ -328,6 +334,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
             compensationAvailable,
             executedCommandCount: appliedCommands.length,
             outcome,
+            resultingRevisionAvailable: input.resultingRevision !== null,
         }),
     };
 }

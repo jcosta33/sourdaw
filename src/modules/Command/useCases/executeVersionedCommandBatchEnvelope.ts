@@ -65,20 +65,25 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             requireCompensation: true,
         },
     });
-    let resultingRevision = observedBaseRevision;
+    let resultingRevision: string | null = null;
+    const receiptWarnings: string[] = [];
     try {
         if (commandProjectRevisionPort.isConfigured()) {
             resultingRevision = commandProjectRevisionPort.capture();
+        } else {
+            resultingRevision = observedBaseRevision;
         }
-    } catch {
-        // Keep the last observed authority in the receipt if post-execution
-        // revision capture itself fails.
+    } catch (error) {
+        receiptWarnings.push(
+            `Resulting project revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
+        );
     }
     return {
         ...result,
         receipt: createVerifiedBatchReceipt({
             envelope: resolvedEnvelope,
             observedBaseRevision,
+            receiptWarnings,
             resultingRevision,
             result,
         }),
