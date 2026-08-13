@@ -1,0 +1,37 @@
+src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts
+  s_62e9c3dc3ba52a::t_e49bdc76e70a11 225-232
+  s_62e9c3dc3ba52a::t_0afa044a67c393 51-59,224
+src/modules/PluginHost/useCases/faustEngine/dsp/zita-rev1.dsp
+  s_62e9c3dc3ba52a::t_7de514cf97be0b 2-14,16-17
+src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp
+  s_62e9c3dc3ba52a::t_eeac47ca9b4d42 3-15,18-21
+  s_62e9c3dc3ba52a::t_b437cb9add30ef 2,16-17,22-23
+src/modules/Arrangement/repositories/presets/__tests__/faustInstrumentPresets.spec.ts
+  s_62e9c3dc3ba52a::t_3cb969cfe8d924 130-137
+  s_62e9c3dc3ba52a::t_924665900b6fc6 20
+  s_62e9c3dc3ba52a::t_34304e8b5c5b1c 6-19,21-60
+  s_62e9c3dc3ba52a::t_199042bdcd39c8 110,114-119,139
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_62e9c3dc3ba52a::t_d5de70dd9de776 9
+  s_62e9c3dc3ba52a::t_116dd5b6ef7b5f 304-328
+src/modules/Arrangement/repositories/track/__tests__/updateClip.spec.ts
+  s_62e9c3dc3ba52a::t_cdd457479b308e 106-107
+  s_62e9c3dc3ba52a::t_b5cb5ab73844fe 91-105,108-109
+  s_62e9c3dc3ba52a::t_d1167b3bc57a14 20-30,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "dcfa29c15041fd6c83a312c8b78a3e5fd5c86732",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
