@@ -82,6 +82,16 @@ describe('compilePlannedActionCommandBatch', () => {
         });
         expect([...result.commandBatch.authority.scope.targetIds].sort()).toEqual(['track-solo-a', 'track-solo-b']);
         expect(result.commandBatch.authority.budgets.maxAffectedTracks).toBe(2);
+        expect(() =>
+            compile(
+                [{ type: 'clearSolos' }],
+                {
+                    ...baseContext,
+                    tracks: [track('track-solo-a', true), track('track-safe', false)],
+                },
+                ['track-solo-a']
+            )
+        ).toThrow('Dynamic command effects target protected objects: track-solo-a');
     });
 
     it('binds whole-lane automation transforms to the current lane size and owners', () => {
@@ -282,6 +292,9 @@ describe('compilePlannedActionCommandBatch', () => {
             maxAutomationPoints: 2,
             maxDeletedObjects: 7,
         });
+        expect(() =>
+            compile([{ type: 'removeClip', payload: { clipId: 'clip-remove' } }], context, ['lane-remove'])
+        ).toThrow('Dynamic command effects target protected objects: lane-remove');
     });
 
     it('binds the complete track-removal cascade and rejects protected survivor rewrites', () => {

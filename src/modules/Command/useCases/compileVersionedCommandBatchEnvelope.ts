@@ -104,6 +104,15 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     }
     const effects = getVersionedCommandBatchEffects(commands, input.dynamicEffects);
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
+    const dynamicTargetIds = new Set([
+        ...(input.dynamicEffects?.affectedTrackIds ?? []),
+        ...(input.dynamicEffects?.affectedClipIds ?? []),
+        ...(input.dynamicEffects?.affectedTargetIds ?? []),
+    ]);
+    const protectedDynamicOverlap = protectedTargetIds.filter((targetId) => dynamicTargetIds.has(targetId));
+    if (protectedDynamicOverlap.length > 0) {
+        throw new Error(`Dynamic command effects target protected objects: ${protectedDynamicOverlap.join(', ')}`);
+    }
     const targetIds = [
         ...new Set([
             ...getScopeTargetIds(commands),
