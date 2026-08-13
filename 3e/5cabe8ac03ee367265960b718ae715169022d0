@@ -1,0 +1,51 @@
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_1cd29d30f9a7e1 10-11
+src/modules/Command/useCases/buildSemanticProjectDiff.ts
+  s_a40848e8f8cca9::t_1cd29d30f9a7e1 1-8,10-26,28-155,157-169,172,174-175,177-178,180-181,183-184,186-187,189-190,192,197-324,333-413
+  s_a40848e8f8cca9::t_cd183cc5bbbaed 156
+  s_a40848e8f8cca9::t_f672e1149ca82e 9,27,170-171,173,176,179,182,185,188,191,193-196,325-332
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_1cd29d30f9a7e1 5,37,42,166-169,171-172
+  s_a40848e8f8cca9::t_e46f2946fd1fba 40,58,60,69-80,170
+  s_a40848e8f8cca9::t_80f6319a810a87 68
+src/modules/Command/useCases/__tests__/semanticProjectDiff.spec.ts
+  s_a40848e8f8cca9::t_7ee307ea828c6d 133-137
+  s_a40848e8f8cca9::t_b49bb1e99fe74a 1-8,10-15,18-30,32-102,107-112,114-120,125-132,138-148,150-170,172-179,181-183,267-268,341-361
+  s_a40848e8f8cca9::t_68cdd6986d711f 16-17,184-200,202-216,218-266
+  s_a40848e8f8cca9::t_4b7b23d650935d 180,331-337
+  s_a40848e8f8cca9::t_f7e6b2b5aab58b 121-123
+  s_a40848e8f8cca9::t_355eadca4a8d17 9,124
+  s_a40848e8f8cca9::t_c017986b684adc 201,217
+  s_a40848e8f8cca9::t_085f27c2f49641 269-321,338-340
+  s_a40848e8f8cca9::t_af91971865e5bd 322-330
+  s_a40848e8f8cca9::t_cd183cc5bbbaed 31,103-106,113,149,171
+  s_a40848e8f8cca9::t_bfd57f68af87d6 362-370
+src/modules/Command/useCases/compilePartialCommandBatchAcceptance.ts
+  s_a40848e8f8cca9::t_cd183cc5bbbaed 18,93
+  s_a40848e8f8cca9::t_f672e1149ca82e 66-68
+  s_a40848e8f8cca9::t_7ee307ea828c6d 111
+  s_a40848e8f8cca9::t_1cd29d30f9a7e1 1-17,19-65,69-92,94-110,112-134,136-144
+  s_a40848e8f8cca9::t_4b7b23d650935d 135
+src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_1cd29d30f9a7e1 11,92
+src/modules/Command/useCases/commandRequiresDynamicEffects.ts
+  s_a40848e8f8cca9::t_1cd29d30f9a7e1 1-20
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_f672e1149ca82e 99-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3e5cabe8ac03ee367265960b718ae715169022d0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
