@@ -319,7 +319,7 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
     });
 
-    it('recovers the committed receipt when durable completion fails without replaying effects', async () => {
+    it('retries reconciliation after completion crashes without duplicating external effects', async () => {
         rejectProjectReceiptFinalization = true;
         rejectReceiptPersistence = true;
         const batch = compileBatch();
@@ -334,9 +334,14 @@ describe('command batch idempotency', () => {
             claim: () => Promise.resolve({ status: 'claimed' }),
             complete: () => Promise.resolve(),
         });
-        rejectProjectReceiptFinalization = false;
         runtimeEffectCount = 0;
         runtimeGain = 1;
+        const interruptedRecovery = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        rejectProjectReceiptFinalization = false;
         const retry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
@@ -346,6 +351,10 @@ describe('command batch idempotency', () => {
         expect(first.status).toBe('committed-with-warning');
         expect('warning' in first ? first.warning : '').toContain('post-commit receipt finalization was interrupted');
         expect('receipt' in first ? first.receipt.outcome : null).toBe('committed-with-warning');
+        expect(interruptedRecovery).toMatchObject({
+            status: 'ambiguous',
+            reason: 'Idempotency checkpoint finalization failed: project receipt finalization unavailable',
+        });
         expect(retry).toEqual({
             status: 'idempotent-replay',
             actions: [],

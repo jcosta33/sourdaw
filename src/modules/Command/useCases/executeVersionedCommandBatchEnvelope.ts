@@ -130,13 +130,22 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         receipt,
                     };
                 }
-                persistProjectCommandBatchIdempotencyCheckpoint({
-                    projectId: parsed.envelope.projectId,
-                    idempotencyKey: parsed.envelope.idempotencyKey,
-                    contentHash: idempotencyContentHash,
-                    state: 'complete',
-                    serializedReceipt: projectCheckpoint.serializedReceipt,
-                });
+                try {
+                    persistProjectCommandBatchIdempotencyCheckpoint({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: idempotencyContentHash,
+                        state: 'complete',
+                        serializedReceipt: projectCheckpoint.serializedReceipt,
+                    });
+                } catch (error) {
+                    return {
+                        status: 'ambiguous' as const,
+                        reason: `Idempotency checkpoint finalization failed: ${error instanceof Error ? error.message : String(error)}`,
+                        actions: [] as [],
+                        receipt,
+                    };
+                }
                 try {
                     await commandBatchIdempotencyPort.complete({
                         projectId: parsed.envelope.projectId,
