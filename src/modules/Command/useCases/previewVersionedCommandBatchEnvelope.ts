@@ -7,12 +7,10 @@ import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 
+type PreviewActionHandler = Extract<ActionHandler, { previewExecution: 'isolated-project' }>;
+
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
-}
-
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-    return typeof value === 'object' && value !== null && 'then' in value;
 }
 
 export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandBatchEnvelope) {
@@ -35,7 +33,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
 
     const preparedActions = [] as Array<{
         action: AppAction;
-        handler: ActionHandler;
+        handler: PreviewActionHandler;
         label: string;
     }>;
     for (const action of actions) {
@@ -47,11 +45,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                 actions: [] as [],
             };
         }
-        if (
-            handler.executionKind === 'runtime' ||
-            handler.requiresAbortCompensation !== false ||
-            handler.execute.constructor.name === 'AsyncFunction'
-        ) {
+        if (handler.executionKind === 'runtime' || handler.previewExecution !== 'isolated-project') {
             return {
                 status: 'rejected' as const,
                 reason: `Action cannot execute inside an isolated preview: ${action.type}`,
@@ -71,7 +65,16 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         preparedActions.push({ action, handler, label });
     }
 
-    const workspace = commandBatchPreviewPort.create(envelope.baseRevision);
+    let workspace;
+    try {
+        workspace = commandBatchPreviewPort.create(envelope.baseRevision);
+    } catch (error) {
+        return {
+            status: 'rejected' as const,
+            reason: `Command batch preview workspace is unavailable: ${failureReason(error)}`,
+            actions: [] as [],
+        };
+    }
     if (!workspace) {
         return {
             status: 'rejected' as const,
@@ -107,14 +110,6 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             const result = workspace.scope(() =>
                 prepared.handler.execute(prepared.action, { actions: validationActions, actionIndex })
             );
-            if (isPromiseLike(result)) {
-                workspace.release();
-                return {
-                    status: 'rejected' as const,
-                    reason: `Action requires asynchronous execution and cannot be isolated: ${prepared.action.type}`,
-                    actions: [] as [],
-                };
-            }
             if (result?.status === 'no-write' || result?.status === 'conflict') {
                 workspace.release();
                 return {

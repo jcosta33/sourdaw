@@ -11,12 +11,8 @@ import {
  * Typical shape: `execute: (action) => myUseCase(…unpack action.payload…)`, plus `describe` / `undoable`.
  * Do **not** call from `get<Module>Handlers` — that file only merges maps.
  */
-export function createHandler<ActionType extends AppAction['type']>(config: {
+type HandlerConfig<ActionType extends AppAction['type']> = {
     undoable: boolean;
-    execute: (
-        action: Extract<AppAction, { type: ActionType }>,
-        context?: HandlerValidationContext
-    ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
     validate?: (action: Extract<AppAction, { type: ActionType }>, context: HandlerValidationContext) => boolean;
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
@@ -25,7 +21,26 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
     requiresAbortCompensation?: boolean;
     executionKind?: 'project' | 'runtime';
     batchExecution?: 'singleton';
-}): ActionHandler<Extract<AppAction, { type: ActionType }>> {
+} & (
+    | {
+          previewExecution: 'isolated-project';
+          execute: (
+              action: Extract<AppAction, { type: ActionType }>,
+              context?: HandlerValidationContext
+          ) => void | HandlerExecutionResult;
+      }
+    | {
+          previewExecution?: undefined;
+          execute: (
+              action: Extract<AppAction, { type: ActionType }>,
+              context?: HandlerValidationContext
+          ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+      }
+);
+
+export function createHandler<ActionType extends AppAction['type']>(
+    config: HandlerConfig<ActionType>
+): ActionHandler<Extract<AppAction, { type: ActionType }>> {
     const batchExecution = config.batchExecution ?? (config.validate ? undefined : 'singleton');
     let batchRestriction: ActionHandler['batchRestriction'];
     if (config.batchExecution === 'singleton') {
@@ -33,9 +48,8 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
     } else if (!config.validate) {
         batchRestriction = 'missing-validation';
     }
-    return {
+    const common = {
         undoable: config.undoable,
-        execute: config.execute,
         describe: config.describe,
         validate: config.validate ?? (() => true),
         materializeCommandArguments: config.materializeCommandArguments,
@@ -46,4 +60,8 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
         batchExecution,
         batchRestriction,
     };
+    if (config.previewExecution === 'isolated-project') {
+        return { ...common, execute: config.execute, previewExecution: config.previewExecution };
+    }
+    return { ...common, execute: config.execute, previewExecution: undefined };
 }

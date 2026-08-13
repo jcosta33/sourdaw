@@ -25,6 +25,7 @@ function buildTargetedAction(bpm: number, tempoChangeId: string | null): SetTemp
 }
 
 export const handleSetTempo = createHandler<'setTempo'>({
+    previewExecution: 'isolated-project',
     validate: (action) => getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId })?.writable === true,
     execute: (alpha): HandlerExecutionResult | void => {
         const result = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });

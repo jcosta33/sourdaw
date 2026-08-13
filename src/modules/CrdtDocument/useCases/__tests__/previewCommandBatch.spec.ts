@@ -13,6 +13,8 @@ import {
     executeVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
+import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureProjectRevision } from '../captureProjectRevision';
@@ -32,6 +34,61 @@ describe('previewCommandBatch', () => {
         commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
         commandDeviceVersionsPort.setDeviceTypeResolver(() => ({}));
         commandDeviceVersionsPort.setResolver(() => undefined);
+    });
+
+    it('previews the registered production tempo command without changing live transport truth', async () => {
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.transport = { ...defaultTransportState, tempo: 100 };
+            document.tempoMap = { changes: [] };
+        });
+        transportStore.hydrate();
+        tempoMapStore.hydrate();
+        registerHandlerMap(getTransportHandlers());
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: {},
+        }));
+        const revision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: { type: 'setTempo', payload: { bpm: 120 } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Tempo becomes 120 beats per minute.',
+            normalizedProjectRevision: revision,
+            objectReferences: [],
+            parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+            reason: 'Preview a tempo change.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'batch-production-preview',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview tempo change',
+            mode: 'preview',
+            projectId: 'project-preview',
+            runId: 'run-production-preview',
+        });
+
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(preview).toMatchObject({
+            status: 'previewed',
+            projectDocument: { transport: { tempo: 120 } },
+        });
+        expect(transportStore.value?.tempo).toBe(100);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.transport).toMatchObject({ tempo: 100 });
+        if (preview.status !== 'previewed') {
+            throw new Error('Expected a production preview resource');
+        }
+        preview.resource.release();
     });
 
     afterEach(() => {
@@ -67,6 +124,7 @@ describe('previewCommandBatch', () => {
                     label: 'Set tempo to 120 BPM',
                 }),
                 execute,
+                previewExecution: 'isolated-project',
                 requiresAbortCompensation: false,
                 undoable: true,
                 validate: () => true,
@@ -211,6 +269,118 @@ describe('previewCommandBatch', () => {
             actions: [],
         });
         expect(execute).not.toHaveBeenCalled();
+        expect(automergeRepository.getDoc('root')).toMatchObject({ tempo: { bpm: 100 } });
+    });
+
+    it('rejects an uncertified thenable handler before it can escape the isolated scope', async () => {
+        const tempoStore = createStore({
+            storage: createAutomergeStorage<{ bpm: number }>('root', 'tempo'),
+        });
+        tempoStore.hydrate();
+        const execute = vi.fn(() => Promise.resolve().then(() => tempoStore.set({ bpm: 120 })));
+        registerHandlerMap({
+            setTempo: {
+                describe: () => ({ label: 'Set tempo' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: {},
+        }));
+        const revision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: { type: 'setTempo', payload: { bpm: 120 } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Tempo becomes 120 beats per minute.',
+            normalizedProjectRevision: revision,
+            objectReferences: [],
+            parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+            reason: 'Preview a tempo change.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'batch-thenable-preview',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview tempo change',
+            mode: 'preview',
+            projectId: 'project-preview',
+            runId: 'run-thenable-preview',
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+        await Promise.resolve();
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Action cannot execute inside an isolated preview: setTempo',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+        expect(tempoStore.value).toEqual({ bpm: 100 });
+    });
+
+    it('returns a typed rejection when workspace acquisition fails', async () => {
+        registerHandlerMap({
+            setTempo: {
+                describe: () => ({ label: 'Set tempo' }),
+                execute: () => ({ status: 'written' as const }),
+                previewExecution: 'isolated-project',
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: {},
+        }));
+        commandBatchPreviewPort.setProvider(() => {
+            throw new Error('stale preview revision');
+        });
+        const revision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: { type: 'setTempo', payload: { bpm: 120 } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Tempo becomes 120 beats per minute.',
+            normalizedProjectRevision: revision,
+            objectReferences: [],
+            parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+            reason: 'Preview a tempo change.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'batch-provider-failure',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview tempo change',
+            mode: 'preview',
+            projectId: 'project-preview',
+            runId: 'run-provider-failure',
+        });
+
+        await expect(
+            executeVersionedCommandBatchEnvelope({ authority: batch.authority, serialized: batch.serialized })
+        ).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Command batch preview workspace is unavailable: stale preview revision',
+            actions: [],
+        });
         expect(automergeRepository.getDoc('root')).toMatchObject({ tempo: { bpm: 100 } });
     });
 });
