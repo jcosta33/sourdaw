@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_a40848e8f8cca9::t_8f5ec556e8c9f1 8-9,82-84
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_a40848e8f8cca9::t_8f5ec556e8c9f1 25,210,234-235
+src/modules/AiRuntime/useCases/getExactAgentActionHash.ts
+  s_a40848e8f8cca9::t_8f5ec556e8c9f1 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ea6410169d860a957ae2a34d114b45c7d74d1e6b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
