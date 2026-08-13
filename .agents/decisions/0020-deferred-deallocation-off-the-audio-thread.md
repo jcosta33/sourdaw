@@ -51,10 +51,12 @@ is already present in the workspace lockfile. `basedrop` is not in the tree.
 `crates/daw-engine/src/scheduler.rs` handled `RemoveEffect`/`RemovePlugin` with
 `self.effects.retain(|e| e.id != id)`. `ActiveEffect` owns `PluginCore::Native(Box<dyn NativePlugin>)`
 and `Vec<Box<dyn MidiFx>>`, so `retain` freed heap allocations on the audio thread, and `RemoveMidiFx`
-did the same through `Vec::remove`. Filed as #1622, closed 2026-08-11 by commit `d1203bd23`, which
-replaced it with the retire-over-`rtrb`/background-drop pattern this record prescribes. That range now
-holds `impl Drop for RetiredGraphObjects`. The decision below is therefore a statement of what already
-ships, not an outstanding repair.
+did the same through `Vec::remove`. Filed as #1622, closed 2026-08-11 by commit `586ddc2e7`
+("fix(daw-engine): defer plugin destruction"), which deleted those `retain`/`Vec::remove` calls and
+replaced them with the retire-over-`rtrb`/background-drop pattern this record prescribes. The
+follow-up `d1203bd23` ("fix(daw-engine): contain retirement failures") added the panic containment and
+background draining in `impl Drop for RetiredGraphObjects`, which is what stands in `scheduler.rs`
+today. The decision below is therefore a statement of what already ships, not an outstanding repair.
 
 ## Decision
 
