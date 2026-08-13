@@ -27,6 +27,35 @@ type PendingActionProtectedObject = {
     name: string;
 };
 
+type PendingAgentRiskApproval = {
+    schemaVersion: 1;
+    actionHashes: string[];
+    sourceRevision: string;
+    targetFingerprints: Readonly<Record<string, string>>;
+    consequences: {
+        audioUpload: boolean;
+        fileAccess: boolean;
+        maxImportedAssets: number;
+        maxRenderJobs: number;
+        remoteGeneration: boolean;
+    };
+    localActorId: string;
+    policy: {
+        decision: 'allow' | 'confirm';
+        reasons: string[];
+        requiredTrustMode:
+            'analyze-only' | 'create-branch' | 'apply-reversible' | 'replace-selection' | 'destructive-commit';
+        risk:
+            | 'read-only'
+            | 'bounded-reversible'
+            | 'broad-reversible'
+            | 'destructive-reversible'
+            | 'authority-sensitive'
+            | 'external-effect'
+            | 'unclassified';
+    };
+};
+
 type PendingCommandBatchAuthority = {
     projectId: string;
     baseRevision: string;
@@ -70,6 +99,7 @@ type PendingActionApprovalSnapshot = {
     actionLabels: string[];
     commandEnvelopes?: string[];
     commandBatch?: PendingCommandBatch;
+    agentApproval?: PendingAgentRiskApproval;
     protectedUnchanged: PendingActionProtectedObject[];
 };
 
@@ -139,6 +169,7 @@ type ProposePendingActionConfirmationInput = {
     actionLabels: string[];
     commandEnvelopes?: string[];
     commandBatch?: PendingCommandBatch;
+    agentApproval?: PendingAgentRiskApproval;
     affectedIds?: string[];
     protectedUnchanged?: PendingActionProtectedObject[];
     risk?: PendingActionRisk;
@@ -177,6 +208,7 @@ export function proposePendingActionConfirmation(
         actionLabels: structuredClone(input.actionLabels),
         commandEnvelopes: input.commandEnvelopes ? [...input.commandEnvelopes] : undefined,
         commandBatch: input.commandBatch ? structuredClone(input.commandBatch) : undefined,
+        agentApproval: input.agentApproval ? structuredClone(input.agentApproval) : undefined,
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
     };
     const confirmation: PendingAppActionConfirmation = {

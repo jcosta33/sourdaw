@@ -31,6 +31,7 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
 import {
@@ -227,6 +228,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             actionLabels: ['Set tempo to 132 BPM'],
             commandEnvelopes: ['invalid legacy envelope must not execute'],
             commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
             executionMode: 'atomic',
             groupId: 'group-batch',
             groupLabel: 'Set tempo batch',

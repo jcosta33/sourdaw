@@ -29,8 +29,10 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { createThinkBlockParser } from './createThinkBlockParser';
+import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
@@ -129,6 +131,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 });
 
                 if (result.requiresConfirmation) {
+                    const agentApproval = compileAgentRiskApproval({ commandBatch });
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
@@ -138,9 +141,13 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         actionLabels: confirmationDescription.actionLabels,
                         commandEnvelopes,
                         commandBatch,
+                        agentApproval,
                         affectedIds: confirmationDescription.affectedIds,
                         protectedUnchanged: confirmationDescription.protectedUnchanged,
-                        risk: confirmationDescription.risk,
+                        risk: {
+                            level: agentApproval.policy.risk,
+                            reason: agentApproval.policy.reasons.join(' ') || null,
+                        },
                         executionMode: result.executionMode,
                         groupId: commandGroup.groupId,
                         groupLabel: commandGroup.groupLabel,
@@ -162,7 +169,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         isStreaming: false,
                         pendingActionConfirmationId: confirmationId,
                         pendingActionConfirmationStatus: 'proposed',
-                        content: confirmationDescription.content,
+                        content: `${confirmationDescription.content}\n\n${describeAgentRiskApproval(agentApproval)}`,
                     });
                     return;
                 }
