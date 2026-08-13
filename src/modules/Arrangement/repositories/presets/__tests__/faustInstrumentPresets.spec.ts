@@ -3,6 +3,61 @@ import { describe, expect, it } from 'vitest';
 import { getPluginById } from '../../../models/DeviceParameter';
 import { FAUST_INSTRUMENT_PRESETS } from '../faustInstrumentPresets';
 
+// Source-text scan of `registerFaustDSP`'s address lists in PluginHost's
+// `builtinDSP.ts` — the addresses that actually reach the compiled Faust
+// node (see `FaustDeviceStrategy.setParam`). Read as raw text via
+// `import.meta.glob` rather than imported, because PluginHost is outside
+// this module's ownership and cross-module imports may only target its
+// contract barrels (`useCases/`, `stores/`, `events/`,
+// `presentations/views/`), none of which currently re-export this data.
+// Mirrors the source-scanning "class guard" pattern already used in
+// `CrdtDocument/useCases/projection/__tests__/projectionCompleteness.spec.ts`
+// for the same kind of cross-module-truth problem.
+const BUILTIN_DSP_SOURCE_GLOB = import.meta.glob('/src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+});
+
+const REGISTER_FAUST_DSP_CALL = /registerFaustDSP\(\s*'([^']+)',\s*\w+,\s*\[([\s\S]*?)\]/g;
+const REGISTERED_ADDRESS = /address:\s*'\/[^/']+\/([^']+)'/g;
+
+/**
+ * The real, running parameter ids for each built-in Faust device, keyed the
+ * same way `registerFaustDSP` derives its module id (`faust-${lower,
+ * hyphenated name}`). This is the ground truth `FaustDeviceStrategy.setParam`
+ * actually resolves against — not any TS-side descriptor catalog. F1 — the
+ * previous version of this guard checked presets against
+ * `FaustEffectDescriptors.ts` instead, which had independently invented a
+ * `dry_wet` key for zita-rev1/tape-delay that the compiled node never
+ * accepted; two catalogs that drifted the same way passed regardless of
+ * what the DSP actually declared.
+ */
+function scanRealFaustDeviceParamIds(): Map<string, Set<string>> {
+    const [source] = Object.values(BUILTIN_DSP_SOURCE_GLOB);
+    if (!source) {
+        throw new Error('builtinDSP.ts source not found via import.meta.glob — check the glob pattern');
+    }
+    const idsByDevice = new Map<string, Set<string>>();
+    for (const call of source.matchAll(REGISTER_FAUST_DSP_CALL)) {
+        const name = call[1];
+        const block = call[2];
+        if (!name || !block) {
+            continue;
+        }
+        const deviceId = `faust-${name.toLowerCase().replaceAll(/\s+/g, '-')}`;
+        const ids = new Set<string>();
+        for (const address of block.matchAll(REGISTERED_ADDRESS)) {
+            const id = address[1];
+            if (id) {
+                ids.add(id);
+            }
+        }
+        idsByDevice.set(deviceId, ids);
+    }
+    return idsByDevice;
+}
+
 describe('faustInstrumentPresets', () => {
     it('exports a non-empty preset array', () => {
         expect(FAUST_INSTRUMENT_PRESETS.length).toBeGreaterThan(0);
@@ -52,13 +107,16 @@ describe('faustInstrumentPresets', () => {
         }
     });
 
-    it('every authored parameter key matches a declared id on its device descriptor', () => {
+    it('every authored parameter key matches a real registered Faust address id (F1)', () => {
         // Regression guard for the audit finding where reverb/delay/comp/eq
         // overrides spread legacy `builtin-*` keys (e.g. `rev-size`,
         // `delay-time`) into `parameterValues` alongside the real Faust
-        // param ids the descriptor declares (`decay_time`, `delay`, …). The
-        // device only reads the declared ids, so a stray legacy key is an
-        // authored value that silently never reaches the DSP.
+        // param ids the compiled node accepts (`decay_time`, `delay`, …). A
+        // stray key is an authored value that silently never reaches the DSP.
+        // Checked against `scanRealFaustDeviceParamIds()` (builtinDSP.ts's
+        // registered addresses), not this module's own descriptor catalog —
+        // see that function's docstring for why.
+        const realIdsByDevice = scanRealFaustDeviceParamIds();
         const unknownKeysByDevice: string[] = [];
         for (const preset of FAUST_INSTRUMENT_PRESETS) {
             for (const device of preset.devices) {
@@ -69,9 +127,16 @@ describe('faustInstrumentPresets', () => {
                     // and out of scope for this check.
                     continue;
                 }
-                const declaredIds = new Set(descriptor.parameters.map((parameter) => parameter.id));
+                // Faust effects (the ones this finding is about) are checked
+                // against the compiled node's real registered addresses;
+                // native `builtin-*` devices (chorus, distortion, …) have no
+                // Faust compiler in the loop, so their own TS descriptor is
+                // legitimate ground truth and isn't in `builtinDSP.ts` at all.
+                const realIds = device.type.startsWith('faust-')
+                    ? (realIdsByDevice.get(device.type) ?? new Set<string>())
+                    : new Set(descriptor.parameters.map((parameter) => parameter.id));
                 for (const paramId of Object.keys(device.parameterValues)) {
-                    if (!declaredIds.has(paramId)) {
+                    if (!realIds.has(paramId)) {
                         unknownKeysByDevice.push(`${preset.id} -> ${device.type} "${device.name}": ${paramId}`);
                     }
                 }
