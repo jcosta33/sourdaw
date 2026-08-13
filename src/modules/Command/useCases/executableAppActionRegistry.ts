@@ -1,4 +1,4 @@
-import { type AppActionType } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 
 export type ExecutableAppActionRisk =
@@ -2305,7 +2305,8 @@ type DescriptorAction<Descriptor> = Descriptor extends {
     : never;
 
 export type ExecutableAppActionType = (typeof executableAppActionDescriptors)[number]['actionType'];
-export type ExecutableAppAction = DescriptorAction<(typeof executableAppActionDescriptors)[number]>;
+export type ExecutableProviderAction = DescriptorAction<(typeof executableAppActionDescriptors)[number]>;
+export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppActionType }>;
 
 export const executableAppActionDescriptorByType: ReadonlyMap<string, (typeof executableAppActionDescriptors)[number]> =
     new Map(executableAppActionDescriptors.map((descriptor) => [descriptor.actionType, descriptor]));

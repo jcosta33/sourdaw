@@ -8,7 +8,11 @@ import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
-import { executableAppActionDescriptors, type ExecutableAppAction } from '../executableAppActionRegistry';
+import {
+    executableAppActionDescriptors,
+    type ExecutableAppAction,
+    type ExecutableProviderAction,
+} from '../executableAppActionRegistry';
 import { getCommandHandler } from '../getCommandHandler';
 import { getExecutableCommandRegistrations } from '../getExecutableCommandRegistrations';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
@@ -88,9 +92,15 @@ describe('command registry completeness', () => {
     it('derives the executable compile-time action union from the canonical descriptor registry', () => {
         type DescriptorActionType = (typeof executableAppActionDescriptors)[number]['actionType'];
 
-        type GainAction = Extract<ExecutableAppAction, { type: 'setTrackGain' }>;
+        type GainProviderAction = Extract<ExecutableProviderAction, { type: 'setTrackGain' }>;
+        type GainAppAction = Extract<ExecutableAppAction, { type: 'setTrackGain' }>;
 
         expectTypeOf<ExecutableAppAction['type']>().toEqualTypeOf<DescriptorActionType>();
-        expectTypeOf<GainAction['payload']>().toEqualTypeOf<{ trackId: string; gain: number }>();
+        expectTypeOf<GainProviderAction['payload']>().toEqualTypeOf<{ trackId: string; gain: number }>();
+        expectTypeOf<GainAppAction['payload']>().toEqualTypeOf<{
+            trackId: string;
+            gain: number;
+            expectedGain: number;
+        }>();
     });
 });

@@ -388,9 +388,9 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 import '../bootstrap';
 
 describe('bootstrap', () => {
-    // The exact order bootstrap.ts calls registerHandlerMap(get<Module>Handlers())
-    // (src/app/bootstrap.ts lines 283-314). This list IS the assertion: every
-    // module bootstrap wires into the shared handler registry must appear here
+    // The exact order bootstrap.ts passes module handler maps to the production assembler.
+    // This list IS the assertion: every module bootstrap wires into the shared
+    // handler registry must appear here
     // exactly once, in registration order — proving the wiring is both complete
     // (nothing missing) and idempotent (nothing registered twice).
     const expectedRegistrationOrder = [
