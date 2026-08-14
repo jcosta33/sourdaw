@@ -1,0 +1,78 @@
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_4d43da0b3c9d5f 25
+  s_a40848e8f8cca9::t_9aa45ff502010f 11
+src/modules/Command/useCases/__tests__/captureCommandTargetFingerprints.spec.ts
+  s_a40848e8f8cca9::t_20d365e3b041df 4,6-9,11,13,40-63,66-72,75,77,86-93,100
+  s_a40848e8f8cca9::t_9aa45ff502010f 99
+  s_a40848e8f8cca9::t_d29f9de1d228ec 5,10,12,64-65,73-74,76,78-85,94-98
+src/infra/store/createStore.ts
+  s_a40848e8f8cca9::t_c3707a1acdbb85 54-56
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_4d43da0b3c9d5f 16
+  s_a40848e8f8cca9::t_a82f1805231a99 17
+src/modules/Command/useCases/getVersionedCommandBatchDivergenceTargetIds.ts
+  s_a40848e8f8cca9::t_4d43da0b3c9d5f 1-12,14-17
+  s_a40848e8f8cca9::t_9aa45ff502010f 13
+src/modules/CrdtDocument/useCases/inspectCurrentAgentProjectRepairState.ts
+  s_a40848e8f8cca9::t_c3707a1acdbb85 1,20-23,31-36,46-51
+  s_a40848e8f8cca9::t_89fe6a11eae87a 2
+src/modules/Command/useCases/captureCommandTargetFingerprints.ts
+  s_a40848e8f8cca9::t_d29f9de1d228ec 2,8,12,160-189
+  s_a40848e8f8cca9::t_4d43da0b3c9d5f 3-4,6-7,9,90-105,131-159
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_a40848e8f8cca9::t_4d43da0b3c9d5f 4,37-39
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_4d43da0b3c9d5f 8,66
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_a40848e8f8cca9::t_22ec35f7a44f12 825,827-845
+  s_a40848e8f8cca9::t_6ee5c8133f1aa2 63-69,88-99,118,635-694
+  s_a40848e8f8cca9::t_9aa45ff502010f 24
+  s_a40848e8f8cca9::t_309200ba20e246 51,61,116,601-634,695-699,784-819,821-824
+  s_a40848e8f8cca9::t_ca0fddd1fd0b7d 820
+  s_a40848e8f8cca9::t_c9f16c220746dd 826
+src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts
+  s_a40848e8f8cca9::t_a82f1805231a99 1-9,11-61,88-89,91-113,115-126
+  s_a40848e8f8cca9::t_03bde2ab1965b5 10,63-69
+  s_a40848e8f8cca9::t_d09a20decde40e 62,70-87,114
+  s_a40848e8f8cca9::t_6a6a65dfb759a5 90
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_76c845a228df18 271
+  s_a40848e8f8cca9::t_309200ba20e246 12,57,82,261-267,269-270,272-280,282-285,287-331,333-336,338-353,357
+  s_a40848e8f8cca9::t_b3033ecaa1659a 268,281,337
+  s_a40848e8f8cca9::t_13dc413cd99265 286
+  s_a40848e8f8cca9::t_9aa45ff502010f 332,354-356
+  s_a40848e8f8cca9::t_61f0dd86dfac4a 358-359
+src/modules/Command/useCases/getCommandDivergenceTargetIds.ts
+  s_a40848e8f8cca9::t_4d43da0b3c9d5f 3-4,8-12,16-41,51-54,62-67,75-78
+  s_a40848e8f8cca9::t_d29f9de1d228ec 13-15,42-50
+src/infra/store/storage/createAutomergeStorage.ts
+  s_a40848e8f8cca9::t_c3707a1acdbb85 224-245,248-270,1160,1164-1165
+  s_a40848e8f8cca9::t_9aa45ff502010f 246-247
+  s_a40848e8f8cca9::t_110d724d357936 1161-1163
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_a82f1805231a99 261-304
+src/infra/store/storage/types.ts
+  s_a40848e8f8cca9::t_c3707a1acdbb85 53-55
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_a82f1805231a99 9,20,49-50,52,339-347,352-368
+  s_a40848e8f8cca9::t_d09a20decde40e 348-351,669-689
+  s_a40848e8f8cca9::t_72b3aaeeefa286 29,38-42,48,51
+  s_a40848e8f8cca9::t_df7b297eeb1498 650-652
+  s_a40848e8f8cca9::t_92cdf6157aaf45 690-691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "56a95fcddcd0b25ad4f131d4b0aca93c12a31204",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
