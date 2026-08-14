@@ -122,25 +122,14 @@ export function buildVerificationPlan(rawChanges: ChangedPath[], options: PlanOp
         });
     }
 
-    const srcInputs = presentPaths.filter((path) => /^src\/.*\.(?:[cm]?[jt]sx?)$/.test(path));
-    const scriptInputs = presentPaths.filter((path) => /^scripts\/.*\.(?:[cm]?[jt]sx?)$/.test(path));
-    if (srcInputs.length > 0) {
+    const changedSpecs = presentPaths.filter((path) => /^(?:src|scripts)\/.*\.(?:spec|test)\.[cm]?[jt]sx?$/.test(path));
+    if (changedSpecs.length > 0) {
         addCheck(checks, {
-            id: 'vitest-related-src',
+            id: 'vitest-changed-specs',
             command: 'pnpm',
-            args: ['test:related', ...srcInputs, '--run', '--passWithNoTests'],
+            args: ['test:run', ...changedSpecs],
             heavyweight: false,
-            reason: 'run tests related to changed web source',
-        });
-    }
-
-    if (scriptInputs.length > 0) {
-        addCheck(checks, {
-            id: 'vitest-related-scripts',
-            command: 'pnpm',
-            args: ['test:related', ...scriptInputs, '--run', '--dir', 'scripts', '--passWithNoTests'],
-            heavyweight: false,
-            reason: 'run tests related to changed tooling',
+            reason: 'run changed test files',
         });
     }
 
