@@ -42,6 +42,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
+    executeAppAction: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
