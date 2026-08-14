@@ -1,9 +1,11 @@
 import { type PeerMessage } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
 
+import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function leaveSession(): Promise<void> {
+    joinAttemptAuthority.invalidate();
     const peerManager = runtime.state.peerManager;
     if (peerManager) {
         const leaveMessage: PeerMessage = {
