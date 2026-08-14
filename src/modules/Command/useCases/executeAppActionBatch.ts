@@ -76,6 +76,7 @@ type ExecuteAppActionBatchOptions = ExecuteOptions & {
     preExecutionValidation?: () => string | null;
     prepareValidation?: () => CommandBatchValidationPreparation;
     requireCompensation?: boolean;
+    onProjectCommitPrepared?: (result: { status: 'committed'; actions: readonly ExecutedBatchAction[] }) => void;
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
 
@@ -725,8 +726,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             const committedActions = executedActions.map(({ action }) => action);
+            const executedBatchActions = executedActions.map(createExecutedBatchAction);
 
             try {
+                storageTransaction.scope(() =>
+                    options?.onProjectCommitPrepared?.({ status: 'committed', actions: executedBatchActions })
+                );
                 storageTransaction.commit();
             } catch (error) {
                 const cleanupWarning = clearBatchSemanticContext();
@@ -760,7 +765,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'failed', reason, actions: [] };
             }
 
-            const executedBatchActions = executedActions.map(createExecutedBatchAction);
             const warningDetails: BatchWarningDetail[] = [];
             const semanticCleanupWarning = clearBatchSemanticContext();
             if (semanticCleanupWarning) {

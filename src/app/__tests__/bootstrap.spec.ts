@@ -34,6 +34,7 @@ const {
     noop,
     sentinelHandlers,
     registerProductionCommandHandlersMock,
+    configureCommandBatchIdempotencyMock,
     initBrowserAiMock,
     initRaveModelsMock,
     registerGlobalErrorHandlersMock,
@@ -51,6 +52,7 @@ const {
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
+    canExecuteCommandBatchMock,
     prepareOfflineLevainMock,
     initBranchStateMock,
     flushDeferredStorageNoticeMock,
@@ -63,6 +65,8 @@ const {
         noop,
         sentinelHandlers,
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
+        configureCommandBatchIdempotencyMock: vi.fn(),
+        canExecuteCommandBatchMock: vi.fn(() => true),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -184,6 +188,7 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 }));
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
+    canExecuteCommandBatch: canExecuteCommandBatchMock,
     canMutateBranchMetadata: () => true,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     getAssetTransfer: () => null,
@@ -192,7 +197,8 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     commandBatchPreflightPort: { setProvider: noop },
-    commandBatchPreviewPort: { setProvider: noop },
+    commandBatchPreviewPort: { setProvider: noop, setRecoveryProvider: noop },
+    configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
@@ -227,6 +233,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     agentProjectInspectionPort: { setProvider: noop },
     captureProjectRevision: () => 'revision-1',
     createCommandPreviewWorkspace: noop,
+    createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
     getDrumPreviewBranchHandlers: sentinelHandlers('DrumPreviewBranch'),
     initBranchState: initBranchStateMock,
@@ -463,6 +470,12 @@ describe('bootstrap', () => {
 
     it('wires global error handlers to the app runtime logger', () => {
         expect(registerGlobalErrorHandlersMock).toHaveBeenCalledExactlyOnceWith({ logger: loggerMock });
+    });
+
+    it('configures durable command-batch idempotency exactly once', () => {
+        expect(configureCommandBatchIdempotencyMock).toHaveBeenCalledExactlyOnceWith({
+            canExecute: canExecuteCommandBatchMock,
+        });
     });
 
     it('registers the exact forward and restore global-time owner preparations', () => {

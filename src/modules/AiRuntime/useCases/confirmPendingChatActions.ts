@@ -6,6 +6,7 @@ import {
     executeVersionedCommandBatch,
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
+    getVersionedCommandBatchIdempotentReplay,
     parseVersionedCommandEnvelope,
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
@@ -29,6 +30,7 @@ import {
 
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
+import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -55,6 +57,73 @@ type ConfirmPendingChatActionsResult =
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
+
+type VerifiedBatchReplayReceipt = Parameters<typeof getVerifiedBatchReplayDisposition>[0];
+
+function settleVerifiedBatchReplay(
+    confirmation: PendingAppActionConfirmation,
+    receipt: VerifiedBatchReplayReceipt,
+    recoveredExternalEffects = false
+): ConfirmPendingChatActionsResult {
+    const replay = getVerifiedBatchReplayDisposition(receipt);
+    if (replay.status === 'committed' || replay.status === 'executed') {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'executed',
+            error: replay.warning,
+        });
+        const effect =
+            replay.status === 'committed' ? 'project batch was already committed' : 'runtime batch already executed';
+        const warning = replay.warning ? ` The prior receipt also reports: ${replay.warning}` : '';
+        const content = recoveredExternalEffects
+            ? `This exact ${effect}. Pending external effects were reconciled successfully and the recovered verified receipt was returned.${warning}`
+            : `This exact ${effect}. The prior verified receipt was returned without replaying project or runtime effects.${warning}`;
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            error: replay.warning,
+            content,
+        });
+        return { status: 'executed' };
+    }
+    if (replay.status === 'no-op') {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            content: 'The prior verified receipt records a no-op. No project or runtime effects were applied.',
+        });
+        return { status: 'executed' };
+    }
+    if (replay.status === 'cancelled') {
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'cancelled',
+            error: undefined,
+            content: 'The prior verified receipt records cancellation before commit. No project changes were applied.',
+        });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
+        return { status: 'cancelled' };
+    }
+    settlePendingActionResourceLease({
+        confirmationId: confirmation.id,
+        disposition: replay.status === 'ambiguous' ? 'retain' : 'discard',
+    });
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'failed',
+        error: replay.reason,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'failed',
+        error: replay.reason,
+        content:
+            replay.status === 'ambiguous'
+                ? `The prior verified receipt records an ambiguous outcome: ${replay.reason}. Do not retry it; inspect the project first.`
+                : `The prior verified receipt records that this command batch did not apply successfully: ${replay.reason}`,
+    });
+    return { status: 'failed', reason: replay.reason };
+}
 
 function getApprovalLabelsByCommandId(confirmation: PendingAppActionConfirmation): ReadonlyMap<string, string> {
     const labels = new Map<string, string>();
@@ -336,7 +405,17 @@ export async function confirmPendingChatActions(
         return { status: 'not_pending', currentStatus: confirmation.status };
     }
 
-    if (captureProjectRevision() !== confirmation.projectRevision) {
+    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    let hasPriorVerifiedBatchReceipt = false;
+    if (approvedCommandBatch) {
+        const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: approvedCommandBatch.authority,
+            serialized: approvedCommandBatch.serialized,
+        });
+        hasPriorVerifiedBatchReceipt = priorReceipt !== null;
+    }
+
+    if (!hasPriorVerifiedBatchReceipt && captureProjectRevision() !== confirmation.projectRevision) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (!commandBatch) {
             return invalidatePendingConfirmation(confirmation);
@@ -377,7 +456,7 @@ export async function confirmPendingChatActions(
         return { status: 'busy' };
     }
 
-    const approvalPreflightFailure = getApprovalPreflightFailure(confirmation);
+    const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
     if (approvalPreflightFailure) {
         return failApprovalPreflight(confirmation, approvalPreflightFailure);
     }
@@ -394,7 +473,9 @@ export async function confirmPendingChatActions(
     const aborter = new AbortController();
     setChatGenerating(true);
     setActiveAborter(aborter);
-    let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
+    let batchResult:
+        | Awaited<ReturnType<typeof executeAppActionBatch>>
+        | Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
     try {
         const executionOptions = {
             ...group,
@@ -463,6 +544,14 @@ export async function confirmPendingChatActions(
     } finally {
         setActiveAborter(null);
         setChatGenerating(false);
+    }
+
+    if (batchResult.status === 'idempotent-replay') {
+        return settleVerifiedBatchReplay(
+            confirmation,
+            batchResult.receipt,
+            'recoveredExternalEffects' in batchResult && batchResult.recoveredExternalEffects === true
+        );
     }
 
     if (batchResult.status === 'cancelled') {

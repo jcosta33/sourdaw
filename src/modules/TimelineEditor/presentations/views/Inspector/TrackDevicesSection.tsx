@@ -13,11 +13,11 @@ import {
     getPluginById,
     bypassDevice,
     removeDevice,
-    addDevice,
     addExternalDevice,
     reorderDevices,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import {
     pluginScanStore,
     defaultPluginScanState,
@@ -128,7 +128,17 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={cn(menuBtnClass, 'text-foreground')}
                                         role="menuitem"
                                         onClick={() => {
-                                            addDevice(track.id, plugin.id);
+                                            // Route through the action
+                                            // boundary so the add lands in
+                                            // one Automerge transaction and
+                                            // is undoable — the same
+                                            // mutation issued by an AI
+                                            // prompt already goes through
+                                            // this action.
+                                            executeAppAction({
+                                                type: 'addDevice',
+                                                payload: { trackId: track.id, deviceType: plugin.id },
+                                            });
                                             setShowDeviceMenu(false);
                                         }}
                                     >
@@ -144,7 +154,10 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
                                         role="menuitem"
                                         onClick={() => {
-                                            addDevice(track.id, plugin.id);
+                                            executeAppAction({
+                                                type: 'addDevice',
+                                                payload: { trackId: track.id, deviceType: plugin.id },
+                                            });
                                             setShowDeviceMenu(false);
                                         }}
                                     >
@@ -162,7 +175,10 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 className={cn(menuBtnClass, 'text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
-                                                    addDevice(track.id, plugin.id);
+                                                    executeAppAction({
+                                                        type: 'addDevice',
+                                                        payload: { trackId: track.id, deviceType: plugin.id },
+                                                    });
                                                     setShowDeviceMenu(false);
                                                 }}
                                             >

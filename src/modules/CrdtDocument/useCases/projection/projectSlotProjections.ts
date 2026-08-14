@@ -1,5 +1,6 @@
 import { gainEnvelopeStore, markerStore, takeLaneStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import { commandBatchIdempotencyStore } from '#/modules/Command/stores';
 import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import { kneadStore } from '#/modules/Knead/stores';
@@ -91,6 +92,7 @@ export const projectSlotProjections: readonly ProjectSlotProjection[] = [
     slotProjection({ slot: 'cvGate', getStore: () => cvGateStore }),
     slotProjection({ slot: 'midiLearn', getStore: () => midiLearnStore }),
     slotProjection({ slot: 'actionHistory', getStore: () => actionHistoryStore }),
+    slotProjection({ slot: 'commandBatchIdempotency', getStore: () => commandBatchIdempotencyStore }),
     slotProjection({ slot: 'midi', getStore: () => midiStore }),
     slotProjection({ slot: 'chordTrack', getStore: () => chordTrackStore }),
     slotProjection({ slot: 'grooveTemplates', getStore: () => grooveTemplateStore }),

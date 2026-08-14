@@ -587,7 +587,11 @@ async fn unload_plugin_runtime(
         return Ok(());
     }
 
-    Err(format!("No plugin instance found with id: {}", instance_id))
+    // A keyed unload is a convergence operation: the requested runtime being
+    // absent already satisfies its postcondition. This also makes a retry safe
+    // when the process stopped after native teardown but before its durable
+    // command-batch checkpoint advanced.
+    Ok(())
 }
 
 // ── Parameter commands ──────────────────────────────────────────────────
@@ -1152,6 +1156,39 @@ mod tests {
         assert_eq!(unload_all.1, ["Native engine not running"]);
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
+    }
+
+    #[test]
+    fn keyed_unload_is_idempotent_after_the_instance_is_already_absent() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
+        state.plugins.lock().expect("plugins lock").insert(
+            "command-instance".into(),
+            PluginInstanceData {
+                plugin: Box::new(wrapper),
+            },
+        );
+
+        let first = tauri::async_runtime::block_on(unload_plugin_runtime(
+            "command-instance",
+            None,
+            state.inner(),
+        ));
+        let retry = tauri::async_runtime::block_on(unload_plugin_runtime(
+            "command-instance",
+            None,
+            state.inner(),
+        ));
+
+        assert_eq!(first, Ok(()));
+        assert_eq!(retry, Ok(()));
+        assert!(!state
+            .plugins
+            .lock()
+            .expect("plugins lock")
+            .contains_key("command-instance"));
     }
 
     /// Unwrap a command's `tauri::ipc::Response` into the bytes it will actually

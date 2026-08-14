@@ -9,6 +9,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 
+import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
 import { recordAiActionGroup } from './recordAiActionGroup';
 
@@ -81,6 +82,25 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     if (batchResult.status === 'previewed') {
         batchResult.resource.release();
         return { status: 'failed', reason: 'A planned action batch cannot execute in preview mode' };
+    }
+
+    if (batchResult.status === 'idempotent-replay') {
+        const replay = getVerifiedBatchReplayDisposition(batchResult.receipt);
+        if (replay.status === 'committed') {
+            return {
+                status: 'committed',
+                actions: [],
+                ...(replay.warning ? { commitWarning: replay.warning } : {}),
+            };
+        }
+        if (replay.status === 'executed') {
+            return {
+                status: 'executed',
+                actions: [],
+                ...(replay.warning ? { executionWarning: replay.warning } : {}),
+            };
+        }
+        return replay;
     }
 
     if (batchResult.status === 'cancelled') {
