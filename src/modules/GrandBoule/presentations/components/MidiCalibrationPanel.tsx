@@ -326,7 +326,7 @@ export const MidiCalibrationPanel = ({
                     <Knob
                         value={midiCalibration.velocityCurveExponent}
                         onChange={onVelocityCurveExponentChange}
-                        label="Curve"
+                        label="Velocity Curve"
                         min={r.velocityCurveExponent.min}
                         max={r.velocityCurveExponent.max}
                         step={r.velocityCurveExponent.step}

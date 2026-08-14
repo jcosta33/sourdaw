@@ -25,7 +25,7 @@ describe('MidiCalibrationPanel', () => {
         // present labels are the pin that keeps it honest.
         render(<MidiCalibrationPanel {...baseProps()} lastVelocity={null} />);
 
-        for (const label of ['Curve', 'Floor', 'Ceiling', 'CC Smooth', 'Sus Thresh']) {
+        for (const label of ['Velocity Curve', 'Floor', 'Ceiling', 'CC Smooth', 'Sus Thresh']) {
             expect(screen.getByText(label)).toBeInTheDocument();
         }
         expect(screen.queryByText(/aftertouch/i)).not.toBeInTheDocument();
@@ -35,7 +35,7 @@ describe('MidiCalibrationPanel', () => {
     it('labels each calibration knob so its slider resolves by accessible name', () => {
         render(<MidiCalibrationPanel {...baseProps()} lastVelocity={null} />);
 
-        for (const label of ['Curve', 'Floor', 'Ceiling', 'CC Smooth', 'Sus Thresh']) {
+        for (const label of ['Velocity Curve', 'Floor', 'Ceiling', 'CC Smooth', 'Sus Thresh']) {
             expect(screen.getByRole('slider', { name: label })).toBeInTheDocument();
         }
     });
