@@ -202,7 +202,7 @@ describe('confirmPendingChatActions transaction admission', () => {
 
     it('executes the approved outer command batch instead of the legacy envelope array', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
-        configureCommandBatchIdempotency();
+        configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
         registerHandlerMap({
