@@ -316,8 +316,12 @@ function isPrivateMember(member) {
     );
 }
 
+// Anchored to a package's own lib directory. A repository file that happens to be named
+// `lib.something.d.ts` is project code, and the type walk skips whole categories of member for a
+// library type — misfiling one project file here makes it invisible.
 function isTypeScriptLibraryFile(fileName) {
-    return /(?:\/typescript\/lib\/|\/lib\.[^/]+\.d\.ts$)/.test(toPosixPath(fileName));
+    const posixPath = toPosixPath(fileName);
+    return /\/typescript\/lib\//.test(posixPath) || /\/node_modules\/.*\/lib\.[^/]+\.d\.ts$/.test(posixPath);
 }
 
 function isExternalDeclarationFile(fileName) {
@@ -1206,19 +1210,23 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
     ].filter(Boolean)) {
         collectVendorModulesFromType(context, nestedType, location, modules, seenTypes, seenSymbols);
     }
-    // Signatures declared by a lib or vendor type can only mention that declaration's own types and
-    // the type arguments it was instantiated with, and those arguments are already walked above.
-    // Descending into them anyway walks every method of types like `Uint8Array<ArrayBufferLike>`,
-    // and `getTypeOfSymbolAtLocation` mints a fresh Type per parameter that `seenTypes` — keyed on
-    // object identity — can never match. That is unbounded: one repository export of a project type
-    // whose members are generic lib types took the pre-pass from 13s to hours and past 4 GB.
-    if (!isLibraryType && !isExternalType) {
+    // A signature declared by a TypeScript lib type can only mention that declaration's own types
+    // and the type arguments it was instantiated with, and those arguments are walked above — so
+    // descending into `Uint8Array<ArrayBufferLike>`'s methods finds nothing new and costs
+    // everything. A package in `node_modules` is different: its `.d.ts` can name a type from
+    // another package, with no type-argument path to it, and the syntax pass never reads a file
+    // outside `src`. Skipping those signatures would lose the only route to a Tauri type carried by
+    // a third-party callable interface.
+    if (!isLibraryType) {
         for (const signature of [...(type.getCallSignatures?.() ?? []), ...(type.getConstructSignatures?.() ?? [])]) {
             for (const parameter of signature.parameters) {
                 const parameterLocation = parameter.valueDeclaration ?? location;
                 collectTypeSafely(
                     context,
-                    () => context.checker.getTypeOfSymbolAtLocation(parameter, parameterLocation),
+                    // Not the `AtLocation` variant: it mints a fresh Type object per call, which
+                    // `seenTypes` — keyed on object identity — can never match, so a recursive or
+                    // widely reused signature is walked again at every occurrence.
+                    () => context.checker.getTypeOfSymbol(parameter),
                     parameterLocation,
                     modules,
                     seenTypes,
@@ -1253,7 +1261,7 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
             }
             collectTypeSafely(
                 context,
-                () => context.checker.getTypeOfSymbolAtLocation(property, propertyLocation),
+                () => context.checker.getTypeOfSymbol(property),
                 propertyLocation,
                 modules,
                 seenTypes,

@@ -940,6 +940,117 @@ describe('check-dependency-boundaries', () => {
         }
     });
 
+    it('should follow signatures of third-party and project types that carry a vendor type', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-external-signature-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            const thirdPartyDirectory = join(repositoryRoot, 'node_modules/vendorlib');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+            mkdirSync(thirdPartyDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, { 'package.json': JSON.stringify({ type: 'module' }) });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': [
+                    'export type InvokeArgs = { command: string };',
+                    'export type InvokeResult = { data: string };',
+                ],
+            });
+            // A third-party package can name a type from another package in its own signature, with
+            // no type-argument path to it. The syntax pass never reads a file outside `src`, so the
+            // signature walk is the only route to it.
+            writeFixtureFiles(thirdPartyDirectory, {
+                'package.json': JSON.stringify({
+                    name: 'vendorlib',
+                    type: 'module',
+                    exports: { '.': { types: './index.d.ts', default: './index.js' } },
+                }),
+                'index.js': 'export const nothing = null;\n',
+                'index.d.ts': [
+                    "import type { InvokeArgs, InvokeResult } from '@tauri-apps/api/core';",
+                    'export interface CallableHandler {',
+                    '    (args: InvokeArgs): void;',
+                    '}',
+                    'export interface ConstructHandler {',
+                    '    new (): InvokeResult;',
+                    '}',
+                ],
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                // Reaches a Tauri type directly, which is what puts this repository's files in the
+                // relevance set the vendor walk starts from.
+                'seed.ts': [
+                    "import type { InvokeResult } from '@tauri-apps/api/core';",
+                    'export type Seed = InvokeResult;',
+                ],
+                'callable-external.ts': [
+                    "import type { CallableHandler } from 'vendorlib';",
+                    "import type { Seed } from './seed.js';",
+                    'export const callableHandler: CallableHandler = () => undefined;',
+                    'export type SeededResult = Seed;',
+                ],
+                'construct-external.ts': [
+                    "import type { ConstructHandler } from 'vendorlib';",
+                    "import type { Seed } from './seed.js';",
+                    'export const ConstructHandlerImpl: ConstructHandler = null as unknown as ConstructHandler;',
+                    'export type SeededConstruct = Seed;',
+                ],
+                // Named like a TypeScript lib file but owned by this repository, so it must still be
+                // walked as project code.
+                'lib.custom.d.ts': [
+                    "import type { InvokeArgs } from '@tauri-apps/api/core';",
+                    'export type LibNamedCallable = { (args: InvokeArgs): void };',
+                ],
+                'callable-lib-named.ts': [
+                    "import type { LibNamedCallable } from './lib.custom.js';",
+                    'export const libNamedCallable: LibNamedCallable = () => undefined;',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-external-signatures.ts': [
+                    "import { callableHandler } from '../repositories/callable-external';",
+                    "import { ConstructHandlerImpl } from '../repositories/construct-external';",
+                    "import { libNamedCallable } from '../repositories/callable-lib-named';",
+                    'export const consumed = [callableHandler, ConstructHandlerImpl, libNamedCallable];',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            // Each of the three reaches `InvokeArgs`/`InvokeResult` only through a call or construct
+            // signature: two through `vendorlib`'s own declaration, one through a repository file
+            // whose name matches the TypeScript lib pattern.
+            expect(vendorFindings).toEqual([
+                vendorFinding('src/modules/Foo/repositories/callable-external.ts', 3),
+                vendorFinding('src/modules/Foo/repositories/callable-lib-named.ts', 2),
+                vendorFinding('src/modules/Foo/repositories/construct-external.ts', 3),
+            ]);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
     it('should match vendor bindings by checker symbol, not a same-name local type parameter', () => {
         let repositoryRoot: string | undefined;
 
