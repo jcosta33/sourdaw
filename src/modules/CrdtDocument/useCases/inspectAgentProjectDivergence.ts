@@ -144,7 +144,11 @@ export function inspectAgentProjectDivergence(input: InspectAgentProjectDivergen
 
     const baseRevision = parseProjectRevision(input.baseRevision);
     const rootReference = baseRevision?.documents.find(({ docId }) => docId === DOC_PREFIX_ROOT);
-    if (!baseRevision || !rootReference) {
+    if (
+        !baseRevision ||
+        !rootReference ||
+        baseRevision.documentIdentityEpoch !== automergeRepository.getDocumentIdentityEpoch()
+    ) {
         return ambiguous(input.targetIds);
     }
     let baseDocument: Readonly<Record<string, unknown>> | undefined;

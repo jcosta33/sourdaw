@@ -315,6 +315,28 @@ describe('agent concurrency and compensation', () => {
         ).toMatchObject({ kind: 'deleted-target', mayReapply: false });
     });
 
+    it('never reapplies a command across project identity replacement', () => {
+        seedProject();
+        const baseRevision = captureProjectRevision();
+        automergeRepository.createProject('Replacement project');
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.audioGraphValid = true;
+            draft.binary = new Uint8Array([1, 2, 3]);
+            draft.projectInvariantsValid = true;
+            draft.targets = {
+                'track-bass': { gain: 0.8, id: 'track-bass', name: 'Bass' },
+            };
+        });
+
+        expect(
+            inspectAgentProjectDivergence({
+                baseRevision,
+                commandsCompatible: true,
+                targetIds: ['track-bass'],
+            })
+        ).toMatchObject({ kind: 'ambiguous-same-object', mayReapply: false });
+    });
+
     it('revalidates and reapplies compatible stale commands while preserving collaborator fields', async () => {
         const { command, targetStorage } = prepareTargetCommand();
 
