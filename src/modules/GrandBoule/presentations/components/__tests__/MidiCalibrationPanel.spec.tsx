@@ -32,6 +32,14 @@ describe('MidiCalibrationPanel', () => {
         expect(screen.getAllByRole('slider')).toHaveLength(5);
     });
 
+    it('labels each calibration knob so its slider resolves by accessible name', () => {
+        render(<MidiCalibrationPanel {...baseProps()} lastVelocity={null} />);
+
+        for (const label of ['Curve', 'Floor', 'Ceiling', 'CC Smooth', 'Sus Thresh']) {
+            expect(screen.getByRole('slider', { name: label })).toBeInTheDocument();
+        }
+    });
+
     it('should render', () => {
         render(<MidiCalibrationPanel {...baseProps()} lastVelocity={null} />);
         expect(screen.getByText(/midi calibration/i)).toBeInTheDocument();
