@@ -1,0 +1,21 @@
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_6cd3475ab9eb4f::t_9f3ba54e693a71 393-396,429,436,452-453,466-468,474,498,511,524,537,873-882
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_6cd3475ab9eb4f::t_2073baa542126d 103-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "966c99b38da5cc6f9dcc776d665982d1ca0d6131",
+  "prompts": {},
+  "sessions": {
+    "s_6cd3475ab9eb4f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00236-e755-7880-85ad-fb3fa332e566",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
