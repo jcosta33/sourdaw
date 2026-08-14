@@ -145,7 +145,7 @@ transform pipeline. `encodeAudio` is a deterministic spectral
 transform, `decodeLatent` is a synthetic sine-based decoder, and the interpolation
 and transfer helpers blend arrays in memory. Current `loadModel.ts` only changes model state in
 `raveStore`; it does not load ONNX or create a transfer path. These files are direct deterministic
-CI/test helpers, not evidence for the future model-backed acceptance criteria in
+test helpers, not evidence for the future model-backed acceptance criteria in
 [RAVE timbre transfer](../rave-timbre-transfer/spec.md). The encode/decode tests make direct calls;
 `timbreTransfer.spec.ts` only checks the export exists, while `interpolateLatent.spec.ts` covers one
 midpoint and one missing target dimension but not endpoints or input immutability. The focused
@@ -182,7 +182,7 @@ non-retiring.
   close it; neither do Worker presence, `new Function`, a launcher, or CSP alone. Push AC-023
   through AC-027 remain on the separate declarative path.
 - The four RAVE helper warnings MUST remain visible while their current files serve as direct
-  deterministic CI/test helpers. Their exact path-specific gates are
+  deterministic test helpers. Their exact path-specific gates are
   [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-encode-helper-remains-test-only),
   [AC-032](../rave-timbre-transfer/spec.md#ac-032--direct-decode-helper-remains-test-only),
   [AC-033](../rave-timbre-transfer/spec.md#ac-033--direct-timbre-helper-needs-behavioral-evidence),

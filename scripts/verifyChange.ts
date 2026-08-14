@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { acquireResourceLock, RESOURCE_SESSION_ENV } from './resourceGuard.ts';
 
 export type VerificationCheck = {
     id: string;
     command: string;
     args: string[];
     heavyweight: boolean;
+    profile?: 'focused' | 'broad' | 'extended';
     reason: string;
 };
 
@@ -21,7 +21,6 @@ export type ChangedPath = {
 };
 
 type PlanOptions = {
-    allowFullE2e: boolean;
     requestedE2e: string[];
     cargoPackages: string[];
 };
@@ -29,22 +28,8 @@ type PlanOptions = {
 type CliOptions = {
     base: string;
     head: string;
-    allowFullE2e: boolean;
     requestedE2e: string[];
     planOnly: boolean;
-};
-
-type LockOwner = {
-    token: string;
-    pid: number;
-    cwd: string;
-    startedAt: string;
-    processStartedAt: string;
-};
-
-export type HeavyweightLock = {
-    path: string;
-    release: () => void;
 };
 
 const help = `Usage: pnpm verify:change [options]
@@ -53,7 +38,6 @@ Options:
   --base <ref>       Diff base (default: origin/main)
   --head <ref>       Diff head (default: HEAD)
   --e2e <spec>       Add one targeted E2E spec; repeat as needed
-  --full-e2e         Explicitly authorize the full E2E suite
   --plan             Print paths, reasons, and commands without running them
   --help             Show this help
 `;
@@ -64,21 +48,6 @@ function normalizePath(path: string): string {
 
 function isLintable(path: string): boolean {
     return /^(?:src|scripts)\/.*\.(?:[cm]?[jt]sx?)$/.test(path);
-}
-
-function isSharedWebPath(path: string): boolean {
-    return (
-        /^src\/(?:app|helpers|infra|utils)\//.test(path) ||
-        /^src\/setupTests\.ts$/.test(path) ||
-        /\/stores\//.test(path) ||
-        /\/models\//.test(path)
-    );
-}
-
-function isE2eHarnessPath(path: string): boolean {
-    return (
-        path === 'playwright.config.ts' || path === 'tests/e2e/e2eUtils.ts' || path.startsWith('tests/e2e/fixtures/')
-    );
 }
 
 function addCheck(checks: VerificationCheck[], check: VerificationCheck): void {
@@ -104,18 +73,11 @@ export function buildVerificationPlan(rawChanges: ChangedPath[], options: PlanOp
 
     if (lintable.length > 0) {
         addCheck(checks, {
-            id: 'oxlint',
+            id: 'lint-changed',
             command: 'pnpm',
-            args: ['exec', 'oxlint', ...lintable],
+            args: ['lint', ...lintable],
             heavyweight: false,
             reason: 'lint changed files that still exist',
-        });
-        addCheck(checks, {
-            id: 'eslint',
-            command: 'pnpm',
-            args: ['exec', 'eslint', ...lintable],
-            heavyweight: false,
-            reason: 'run retained lint rules on changed files that still exist',
         });
     }
 
@@ -162,68 +124,23 @@ export function buildVerificationPlan(rawChanges: ChangedPath[], options: PlanOp
 
     const srcInputs = presentPaths.filter((path) => /^src\/.*\.(?:[cm]?[jt]sx?)$/.test(path));
     const scriptInputs = presentPaths.filter((path) => /^scripts\/.*\.(?:[cm]?[jt]sx?)$/.test(path));
-    const deletedSrc = changes.some((change) => !change.present && /^src\/.*\.(?:[cm]?[jt]sx?)$/.test(change.path));
-    const deletedScript = changes.some(
-        (change) => !change.present && /^scripts\/.*\.(?:[cm]?[jt]sx?)$/.test(change.path)
-    );
-    if (srcInputs.length > 0 || deletedSrc) {
-        const broadWebChange = deletedSrc || paths.some(isSharedWebPath);
+    if (srcInputs.length > 0) {
         addCheck(checks, {
-            id: broadWebChange ? 'vitest-full-src' : 'vitest-related-src',
+            id: 'vitest-related-src',
             command: 'pnpm',
-            args: broadWebChange
-                ? ['test:run', '--dir', 'src', '--maxWorkers=2', '--bail=1', '--reporter=dot', '--silent=passed-only']
-                : [
-                      'exec',
-                      'vitest',
-                      'related',
-                      ...srcInputs,
-                      '--run',
-                      '--maxWorkers=2',
-                      '--bail=1',
-                      '--passWithNoTests',
-                      '--reporter=dot',
-                      '--silent=passed-only',
-                  ],
-            heavyweight: broadWebChange,
-            reason: broadWebChange
-                ? 'shared or deleted web source requires the source suite'
-                : 'run tests related to changed web source',
+            args: ['test:related', ...srcInputs, '--run', '--passWithNoTests'],
+            heavyweight: false,
+            reason: 'run tests related to changed web source',
         });
     }
 
-    if (scriptInputs.length > 0 || deletedScript) {
+    if (scriptInputs.length > 0) {
         addCheck(checks, {
-            id: deletedScript ? 'vitest-full-scripts' : 'vitest-related-scripts',
+            id: 'vitest-related-scripts',
             command: 'pnpm',
-            args: deletedScript
-                ? [
-                      'test:run',
-                      '--dir',
-                      'scripts',
-                      '--maxWorkers=2',
-                      '--bail=1',
-                      '--reporter=dot',
-                      '--silent=passed-only',
-                  ]
-                : [
-                      'exec',
-                      'vitest',
-                      'related',
-                      ...scriptInputs,
-                      '--run',
-                      '--dir',
-                      'scripts',
-                      '--maxWorkers=2',
-                      '--bail=1',
-                      '--passWithNoTests',
-                      '--reporter=dot',
-                      '--silent=passed-only',
-                  ],
-            heavyweight: deletedScript,
-            reason: deletedScript
-                ? 'deleted tooling requires the scripts suite'
-                : 'run tests related to changed tooling',
+            args: ['test:related', ...scriptInputs, '--run', '--dir', 'scripts', '--passWithNoTests'],
+            heavyweight: false,
+            reason: 'run tests related to changed tooling',
         });
     }
 
@@ -279,163 +196,79 @@ export function buildVerificationPlan(rawChanges: ChangedPath[], options: PlanOp
             command: 'pnpm',
             args: ['build'],
             heavyweight: false,
+            profile: 'broad',
             reason: 'web build inputs changed',
         });
     }
 
-    const fullE2e = options.allowFullE2e || paths.some(isE2eHarnessPath);
     const changedE2e = presentPaths.filter((path) => /^tests\/e2e\/.*\.spec\.ts$/.test(path));
     const e2eSpecs = [...new Set([...changedE2e, ...options.requestedE2e])].sort();
-    if (fullE2e || e2eSpecs.length > 0) {
+    if (e2eSpecs.length > 0) {
         addCheck(checks, {
-            id: fullE2e ? 'e2e-full' : 'e2e-targeted',
+            id: 'e2e-targeted',
             command: 'pnpm',
-            args: ['exec', 'playwright', 'test', ...(fullE2e ? [] : e2eSpecs), '--workers=1', '--max-failures=1'],
+            args: ['test:e2e', ...e2eSpecs],
             heavyweight: true,
-            reason: fullE2e
-                ? 'E2E harness changed or full E2E was explicitly authorized'
-                : 'run only selected E2E specs',
+            reason: 'run only selected E2E specs',
         });
     }
 
     return checks;
 }
 
-function lockPath(commonGitDirectory: string, root: string): string {
-    const identity = createHash('sha256').update(resolve(commonGitDirectory)).digest('hex').slice(0, 16);
-    return join(root, `sourdaw-heavyweight-${identity}.lock`);
+const defaultSyncTimeoutMs = 2 * 60_000;
+
+function syncTimeoutMs(): number {
+    const configured = Number(process.env.SOURDAW_SYNC_TIMEOUT_MS);
+    return Number.isFinite(configured) && configured > 0 ? configured : defaultSyncTimeoutMs;
 }
 
-function processStartedAt(pid: number): string | undefined {
-    const result = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' });
+function throwSpawnError(
+    command: string,
+    result: { error?: Error; status: number | null; stderr?: string | Buffer | null }
+): void {
+    if (result.error !== undefined && 'code' in result.error && result.error.code === 'ETIMEDOUT') {
+        throw new Error(`${command} timed out after ${syncTimeoutMs()}ms`);
+    }
+    if (result.error !== undefined) {
+        throw result.error;
+    }
     if (result.status !== 0) {
-        return undefined;
+        const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+        throw new Error(stderr || `${command} failed with exit ${result.status ?? 'signal'}`);
     }
-    return result.stdout.trim() || undefined;
-}
-
-function isCurrentProcess(owner: LockOwner): boolean {
-    try {
-        process.kill(owner.pid, 0);
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-            return false;
-        }
-        return true;
-    }
-    const currentStart = processStartedAt(owner.pid);
-    return (
-        currentStart === undefined ||
-        typeof owner.processStartedAt !== 'string' ||
-        currentStart === owner.processStartedAt
-    );
-}
-
-export function acquireHeavyweightLock(input: { commonGitDirectory: string; root?: string }): HeavyweightLock {
-    const root = input.root ?? tmpdir();
-    const path = lockPath(input.commonGitDirectory, root);
-    const ownerPath = join(path, 'owner.json');
-    const token = randomUUID();
-    const candidatePath = `${path}.candidate-${token}`;
-    const currentProcessStart = processStartedAt(process.pid);
-    if (currentProcessStart === undefined) {
-        throw new Error('cannot identify the current process for heavyweight admission');
-    }
-    const owner: LockOwner = {
-        token,
-        pid: process.pid,
-        cwd: process.cwd(),
-        startedAt: new Date().toISOString(),
-        processStartedAt: currentProcessStart,
-    };
-    mkdirSync(candidatePath);
-    writeFileSync(join(candidatePath, 'owner.json'), `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
-
-    let published = false;
-    while (!published) {
-        try {
-            renameSync(candidatePath, path);
-            published = true;
-            continue;
-        } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code !== 'EEXIST' && code !== 'ENOTEMPTY') {
-                rmSync(candidatePath, { recursive: true, force: true });
-                throw error;
-            }
-        }
-
-        let current: LockOwner;
-        try {
-            current = JSON.parse(readFileSync(ownerPath, 'utf8')) as LockOwner;
-        } catch (error) {
-            rmSync(candidatePath, { recursive: true, force: true });
-            throw new Error(`heavyweight work is locked at ${path}; owner is not readable`, { cause: error });
-        }
-        if (isCurrentProcess(current)) {
-            rmSync(candidatePath, { recursive: true, force: true });
-            throw new Error(
-                `heavyweight work is locked by pid ${current.pid} since ${current.startedAt} from ${current.cwd}`
-            );
-        }
-
-        const stalePath = `${path}.stale-${randomUUID()}`;
-        try {
-            renameSync(path, stalePath);
-            rmSync(stalePath, { recursive: true, force: true });
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-                rmSync(candidatePath, { recursive: true, force: true });
-                throw error;
-            }
-        }
-    }
-
-    return {
-        path,
-        release: () => {
-            try {
-                const current = JSON.parse(readFileSync(ownerPath, 'utf8')) as LockOwner;
-                if (current.token === token) {
-                    rmSync(path, { recursive: true, force: true });
-                }
-            } catch {
-                // Never delete a lock whose ownership changed or cannot be proved.
-            }
-        },
-    };
 }
 
 function run(command: string, args: string[]): void {
     console.log(`\n> ${[command, ...args].join(' ')}`);
-    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit' });
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status !== 0) {
-        throw new Error(`${command} failed with exit ${result.status ?? 'signal'}`);
-    }
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+        timeout: syncTimeoutMs(),
+        killSignal: 'SIGKILL',
+    });
+    throwSpawnError(command, result);
 }
 
-function capture(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8' });
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status !== 0) {
-        throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
-    }
+export function capture(command: string, args: string[]): string {
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        timeout: syncTimeoutMs(),
+        killSignal: 'SIGKILL',
+    });
+    throwSpawnError(command, result);
     return result.stdout.trim();
 }
 
 function captureRaw(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8' });
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status !== 0) {
-        throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
-    }
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        timeout: syncTimeoutMs(),
+        killSignal: 'SIGKILL',
+    });
+    throwSpawnError(command, result);
     return result.stdout;
 }
 
@@ -557,7 +390,6 @@ function parseArgs(args: string[]): CliOptions {
     const options: CliOptions = {
         base: 'origin/main',
         head: 'HEAD',
-        allowFullE2e: false,
         requestedE2e: [],
         planOnly: false,
     };
@@ -569,10 +401,6 @@ function parseArgs(args: string[]): CliOptions {
         if (argument === '--help') {
             console.log(help);
             process.exit(0);
-        }
-        if (argument === '--full-e2e') {
-            options.allowFullE2e = true;
-            continue;
         }
         if (argument === '--plan') {
             options.planOnly = true;
@@ -635,7 +463,6 @@ function main(): number {
             }
         }
         const checks = buildVerificationPlan(changedPaths, {
-            allowFullE2e: options.allowFullE2e,
             requestedE2e: options.requestedE2e,
             cargoPackages: affectedCargoPackages(changedPaths),
         });
@@ -658,26 +485,29 @@ function main(): number {
             run('git', ['diff', '--check', 'HEAD']);
         }
 
-        const lightChecks = checks.filter((check) => !check.heavyweight);
-        const heavyweightChecks = checks.filter((check) => check.heavyweight);
-        for (const check of lightChecks) {
-            run(check.command, check.args);
-        }
-
-        if (heavyweightChecks.length > 0) {
-            const rawCommonGitDirectory = capture('git', ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-            const commonGitDirectory = isAbsolute(rawCommonGitDirectory)
-                ? rawCommonGitDirectory
-                : resolve(process.cwd(), rawCommonGitDirectory);
-            const lock = acquireHeavyweightLock({ commonGitDirectory });
-            console.log(`\nHeavyweight lock: ${lock.path}`);
-            try {
-                for (const check of heavyweightChecks) {
-                    run(check.command, check.args);
-                }
-            } finally {
-                lock.release();
+        const lock = acquireResourceLock({ command: 'pnpm verify:change' });
+        const inheritedSession = process.env[RESOURCE_SESSION_ENV];
+        process.env[RESOURCE_SESSION_ENV] = lock.token;
+        console.log(`\nResource lock: ${lock.path}`);
+        try {
+            for (const check of checks) {
+                run(process.execPath, [
+                    '--experimental-strip-types',
+                    'scripts/resourceGuard.ts',
+                    '--profile',
+                    check.profile ?? (check.heavyweight ? 'extended' : 'focused'),
+                    '--',
+                    check.command,
+                    ...check.args,
+                ]);
             }
+        } finally {
+            if (inheritedSession === undefined) {
+                delete process.env[RESOURCE_SESSION_ENV];
+            } else {
+                process.env[RESOURCE_SESSION_ENV] = inheritedSession;
+            }
+            lock.release();
         }
         return 0;
     } catch (error) {

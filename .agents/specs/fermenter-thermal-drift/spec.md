@@ -32,7 +32,7 @@ sketch, which sounds like "digital with vibrato."
 When a voice drifts, its pitch offset must be the weighted sum of at least three
 periodic generators, never a single LFO.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_generator_count`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_generator_count`
 
 ### AC-002 — Drift frequencies avoid low-order rational locking
 
@@ -43,27 +43,27 @@ than 8. This bounded low-order-ratio test is the operational meaning of
 "incommensurate" here; finite decimal frequencies are not mathematically
 irrational.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_incommensurate_ratios`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_incommensurate_ratios`
 
 ### AC-003 — Each voice carries an independent drift seed and phases
 
 When two voices are allocated for the same note at the same time, each must have
 a distinct `drift_seed` and therefore distinct initial drift phases.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_per_voice_seed`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_per_voice_seed`
 
 ### AC-004 — Per-voice frequency jitter perturbs the baseline set
 
 When a voice initializes, its drift frequencies must be the baseline set scaled
 by a per-voice jitter factor drawn from its seed.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_frequency_jitter`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_frequency_jitter`
 
 ### AC-005 — Drift amount scales total excursion to ±5 cents
 
 When `drift_amount` is one, the peak drift excursion must reach ±5 cents.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_amount_scaling`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_amount_scaling`
 
 ### AC-006 — Drift state is separate from other modulation
 
@@ -71,14 +71,14 @@ When other modulation is applied, the drift generators must remain separate
 state, summed after user-accessible modulation, disableable only via
 `drift_amount = 0`.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_independent_layer`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_independent_layer`
 
 ### AC-007 — Drift updates at control rate without allocating
 
 When a block is processed, drift must update once per block (≤128 samples) from
 per-voice phase accumulators, with no allocation or lock.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_rt_safe`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_rt_safe`
 
 ### AC-008 — Two same-pitch voices beat instead of cancelling
 
@@ -86,14 +86,14 @@ When two seeded voices hold the same note at `drift_amount = 1`, their inverted
 mix must stay above −24 dB and show beating below 10 Hz, never dropping below
 −60 dB.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_two_voice_beating`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_two_voice_beating`
 
 ### AC-009 — drift_amount = 0 is bit-deterministic
 
 When `drift_amount` is zero, two voices at identical pitch, velocity, and reset
 mode must produce bit-identical output over the first second.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_zero_deterministic`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_zero_deterministic`
 
 ### AC-010 — No cross-module internal imports
 
@@ -105,7 +105,7 @@ Verify with: `pnpm deps:validate`
 
 When `drift_amount` is zero, voices must be frequency-locked.
 
-Verify with: `cargo test -p daw-dsp fermenter::drift_amount_scaling`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::drift_amount_scaling`
 
 ## Open questions
 

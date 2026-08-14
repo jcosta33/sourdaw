@@ -35,21 +35,21 @@ When dynamics rise on a sustaining note, the engine must raise the level of a
 filtered noise layer (bow-on-string or air turbulence) mixed subtly below the
 sample.
 
-Verify with: `cargo test -p daw-dsp levain::physical::noise_layer_tracks_cc`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::physical::noise_layer_tracks_cc`
 
 ### AC-002 — Sympathetic resonance excites tuned resonators
 
 When a note sounds, the engine must excite a bank of narrow resonators tuned to
 the instrument's open-string frequencies, adding a subtle sympathetic tail.
 
-Verify with: `cargo test -p daw-dsp levain::physical::sympathetic_resonance`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::physical::sympathetic_resonance`
 
 ### AC-003 — A parametric body-resonance filter colors the output
 
 When the body-resonance layer is enabled, the engine must apply a biquad
 resonator bank whose center frequencies, gains, and bandwidths are adjustable.
 
-Verify with: `cargo test -p daw-dsp levain::physical::body_resonance_bank`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::physical::body_resonance_bank`
 
 ### AC-004 — A waveguide sustain layer blends under samples
 
@@ -57,14 +57,14 @@ When the waveguide augmentation is enabled, the engine must blend a low-level
 bowed/reed waveguide signal under the sustain so continuous CC/MPE input changes
 the timbre between sample loop points.
 
-Verify with: `cargo test -p daw-dsp levain::physical::waveguide_sustain_blend`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::physical::waveguide_sustain_blend`
 
 ### AC-005 — Augmentation layers are individually bypassable with no residual cost
 
 When a physical-modeling layer is disabled, the engine must produce output
 identical to the sample-only path and add no per-block processing for that layer.
 
-Verify with: `cargo test -p daw-dsp levain::physical::bypass_is_clean`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::physical::bypass_is_clean`
 
 ## Open questions
 

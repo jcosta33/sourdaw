@@ -6,7 +6,10 @@ This guide defines coding conventions and patterns for clarity, consistency, and
 
 ## TypeScript soundness
 
-Agent-enforced rules for typing and tests — no `any` escapes, lazy assertions, or suppression comments without justification — are **canonical in `AGENTS.md`** under **Always-on rules** → TypeScript soundness. Follow that section for implementation; this document does not repeat it.
+- Use real types. Do not escape through `any`, unsafe casts, or broad index signatures.
+- Narrow unknown values at their boundary.
+- Do not suppress errors with `@ts-ignore`, `@ts-expect-error`, or disabled lint rules.
+- Fix fixtures and tests to match production contracts. Never weaken the contract to make a check pass.
 
 ## Prefer explicit control flow
 

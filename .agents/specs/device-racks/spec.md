@@ -38,14 +38,14 @@ Verify with: `pnpm test:run -- deviceRackModel`
 Building a rack must flatten the nested tree into the engine's
 `Vec<ProcessTask>` schedule preserving chain order and parallel summing.
 
-Verify with: `cargo test -p daw-engine rack::flatten_schedule`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::flatten_schedule`
 
 ### AC-003 — Topology changes swap the schedule atomically
 
 Adding, removing, or reordering a chain or device must publish a new compiled
 schedule via `ArcSwap` so the audio thread switches with no dropout.
 
-Verify with: `cargo test -p daw-engine rack::arc_swap_topology`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::arc_swap_topology`
 
 ### AC-004 — Eight macro knobs map to multiple parameters
 
@@ -59,14 +59,14 @@ Verify with: `pnpm test:run -- macroMapping`
 The modulation matrix must sum all sources targeting a parameter onto its base
 value (Bitwig-style additive) and store only non-zero connections.
 
-Verify with: `cargo test -p daw-engine modulation::sparse_additive`
+Verify with: `pnpm cargo:test -- -p daw-engine modulation::sparse_additive`
 
 ### AC-006 — Modulation evaluates at control rate and interpolates to audio rate
 
 Modulation sources must evaluate once per control block and interpolate linearly
 across the audio block to avoid zipper noise.
 
-Verify with: `cargo test -p daw-engine modulation::control_rate_interp`
+Verify with: `pnpm cargo:test -- -p daw-engine modulation::control_rate_interp`
 
 ### AC-007 — A chain selector routes by zone
 
@@ -87,7 +87,7 @@ Verify with: `pnpm test:run -- drumRack`
 Modulation values must be delivered to hosted CLAP plugins via per-voice/note
 modulation and to VST3 via parameter automation, per each format's model.
 
-Verify with: `cargo test -p daw-engine modulation::plugin_delivery`
+Verify with: `pnpm cargo:test -- -p daw-engine modulation::plugin_delivery`
 
 ### AC-010 — Macro and modulation edits are live with no audio stall
 
@@ -109,7 +109,7 @@ per-sample (for FM-style modulation where the source LFO exceeds ~500 Hz or an
 oscillator acts as an FM carrier) and skip the control-rate interpolation, while
 unflagged slots evaluate once per control tick — required.
 
-Verify with: `cargo test -p daw-engine modulation::audio_rate_slot`
+Verify with: `pnpm cargo:test -- -p daw-engine modulation::audio_rate_slot`
 
 ### AC-013 — Drum rack uses a 4x4 pad model with choke groups
 
@@ -128,7 +128,7 @@ base and modulation stay separable; VST3 targets receive a clamped absolute
 `final = clamp(base + offset, 0.0, 1.0)` via `IParamValueQueue::addPoint` with the
 rack tracking base separately — required.
 
-Verify with: `cargo test -p daw-engine modulation::format_delivery_contract`
+Verify with: `pnpm cargo:test -- -p daw-engine modulation::format_delivery_contract`
 
 ### AC-015 — Compiler flattens via Kahn's sort with Split/Mix and cycle rejection
 
@@ -137,7 +137,7 @@ inserting one Split plus N chain paths plus one Mix node per rack, with
 deterministic tie-breaking (chain index then slot index) and graph-coloring buffer
 allocation — required.
 
-Verify with: `cargo test -p daw-engine rack::kahn_split_mix_cycle`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::kahn_split_mix_cycle`
 
 ### AC-016 — Serialization carries a version tag with registered migrations
 
@@ -145,7 +145,7 @@ Rack serialization must be JSON `{ schema_version: u16, rack }` with opaque
 base64 plugin-state blobs and a CRDT/Automerge-compatible tree shape (child
 arrays, opaque string IDs, no numeric-keyed maps) — required.
 
-Verify with: `cargo test -p daw-engine rack::serialization_migration`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::serialization_migration`
 
 ### AC-017 — Granular RT command path complements the schedule swap
 
@@ -154,7 +154,7 @@ flow through an SPSC ring buffer drained at the top of the process callback, sin
 hot scalars must cross via `AtomicF32`, and old schedules must be reclaimed via
 `basedrop` deferred to a non-RT thread — required.
 
-Verify with: `cargo test -p daw-engine rack::rt_command_path`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::rt_command_path`
 
 ### AC-018 — Chain selector handles stuck notes, broadcast, and inverted ranges
 
@@ -174,7 +174,7 @@ pre-allocated slots per rack with bipolar depth in `[-1, 1]`, and pre-allocate i
 `source_values`/`base_values`/`dest_accumulators`/`final_values`/`current_values`
 arrays so a control-rate tick performs no allocation — required.
 
-Verify with: `cargo test -p daw-engine modulation::source_catalogue_sizing`
+Verify with: `pnpm cargo:test -- -p daw-engine modulation::source_catalogue_sizing`
 
 ### AC-020 — Macro mapping map-mode UX
 
@@ -205,7 +205,7 @@ Verify with: `pnpm test:run -- drumRackChoke`
 A tree that would require a cycle must be rejected with a `ScheduleError::Cycle`
 error rather than compiled — required.
 
-Verify with: `cargo test -p daw-engine rack::kahn_split_mix_cycle`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::kahn_split_mix_cycle`
 
 ### AC-024 — A reader migrates older versions and rejects newer ones
 
@@ -213,7 +213,7 @@ A serialization reader must run registered `V_n -> V_{n+1}` migration steps for
 older versions and return an `UnsupportedVersion` error when
 `version > CURRENT` — required.
 
-Verify with: `cargo test -p daw-engine rack::serialization_migration`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::serialization_migration`
 
 ### AC-025 — A MidiFx rack routes input to the first matching chain
 
@@ -222,7 +222,7 @@ index) whose key/velocity ranges contain the event — first-match, not parallel
 summing — and its output is the processed MIDI from that one chain. (`AudioFx`,
 `Instrument`, and `Drum` racks sum outputs per AC-002; `MidiFx` is the exception.)
 
-Verify with: `cargo test -p daw-engine rack::midifx_first_match_routing`
+Verify with: `pnpm cargo:test -- -p daw-engine rack::midifx_first_match_routing`
 
 ### AC-026 — Macro mapping applies a named curve and supports inverted ranges
 
@@ -251,7 +251,7 @@ reaching `final` at the end of the 32-sample tick window. Zipper-noise spectral
 peaks at `Fs / 32` Hz and its harmonics must stay below **-80 dBFS** for a rapid
 macro sweep. (Audio-rate slots per AC-012 skip this and write the raw value.)
 
-Verify with: `cargo test -p daw-engine modulation::control_rate_interp`
+Verify with: `pnpm cargo:test -- -p daw-engine modulation::control_rate_interp`
 
 ## Open questions
 

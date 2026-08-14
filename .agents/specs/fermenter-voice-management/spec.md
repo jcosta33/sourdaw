@@ -31,42 +31,42 @@ pool, stealing, and glide ship today.
 When a note-on arrives, the manager must take a voice from the pre-allocated pool
 (128 native / 32 WASM) without heap allocation.
 
-Verify with: `cargo test -p daw-dsp fermenter::voice_allocation`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::voice_allocation`
 
 ### AC-002 — Voice stealing prefers releasing then oldest voices
 
 When no free voice exists, the manager must steal the oldest releasing voice
 first, then the oldest held note.
 
-Verify with: `cargo test -p daw-dsp fermenter::voice_stealing_order`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::voice_stealing_order`
 
 ### AC-003 — A stolen voice crossfades to avoid clicks
 
 When a voice is stolen, the manager must fade the old voice out while the new
 voice fades in so no click is produced.
 
-Verify with: `cargo test -p daw-dsp fermenter::voice_steal_fade`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::voice_steal_fade`
 
 ### AC-004 — Glide ramps pitch in log-frequency space
 
 When glide is active, the pitch must approach the target exponentially in
 log-frequency space so the time per octave is equal.
 
-Verify with: `cargo test -p daw-dsp fermenter::glide_log_ramp`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::glide_log_ramp`
 
 ### AC-005 — Legato glide engages only on overlapping notes
 
 When glide mode is legato, the pitch must glide only when a new note overlaps a
 held note, not on the first note.
 
-Verify with: `cargo test -p daw-dsp fermenter::glide_legato`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::glide_legato`
 
 ### AC-006 — Per-voice FX render independent tails
 
 When per-voice FX are enabled, each voice must process its own effect instance so
 each note carries a separate tail.
 
-Verify with: `cargo test -p daw-dsp fermenter::per_voice_fx`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::per_voice_fx`
 
 ### AC-007 — No cross-module internal imports
 

@@ -33,42 +33,42 @@ musically-snapped bar length.
 The capture writer must push events from the realtime thread with no mutex acquisition and
 no heap allocation.
 
-Verify with: `cargo test -p daw-engine capture_assert_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_assert_no_alloc`
 
 ### AC-002 — Consistent buffer snapshot
 
 A consumer reading the buffer during active writing must observe a consistent prefix of
 events with no torn or duplicated entries.
 
-Verify with: `cargo test -p daw-engine capture_snapshot_consistency`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_snapshot_consistency`
 
 ### AC-003 — Orphaned note recovery
 
 A capture window beginning mid-note must produce a clip with no hung notes — every emitted
 note-on must have a matching note-off.
 
-Verify with: `cargo test -p daw-engine capture_orphan_notes`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_orphan_notes`
 
 ### AC-004 — Tempo inference
 
 Extracting a free performance must produce a tempo hypothesis from the inter-onset-interval
 distribution, falling back to project tempo below a confidence threshold.
 
-Verify with: `cargo test -p daw-engine capture_tempo_inference`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_tempo_inference`
 
 ### AC-005 — Power-of-two bar snapping
 
 The extracted clip length must snap to the nearest power-of-two bar count under the
 inferred tempo.
 
-Verify with: `cargo test -p daw-engine capture_bar_snap`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_bar_snap`
 
 ### AC-006 — Bounded buffer
 
 The ring buffer must never grow beyond its configured capacity — the oldest events are
 overwritten once full.
 
-Verify with: `cargo test -p daw-engine capture_ring_bounded`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_ring_bounded`
 
 ### AC-007 — Capture module isolation
 
@@ -81,7 +81,7 @@ Verify with: `pnpm deps:validate`
 Inferred tempo must be reported only within 80–160 BPM, folding out-of-range estimates by
 doubling or halving until in range (e.g. a 70 BPM performance is reported as 140 BPM).
 
-Verify with: `cargo test -p daw-engine capture_tempo_octave_fold`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_tempo_octave_fold`
 
 ### AC-009 — User-configurable capture window
 
@@ -89,7 +89,7 @@ The capture command must accept a user-selected window — `Last 30 seconds`, `L
 seconds`, `Last 8 bars`, `Last 4 bars`, `Last loop iteration`, or a custom value — resolving
 bar windows against the project-or-inferred tempo and second windows directly.
 
-Verify with: `cargo test -p daw-engine capture_window_resolution`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_window_resolution`
 
 ### AC-010 — Power-of-two bar-snap ratio rule
 
@@ -97,14 +97,14 @@ Clip length must snap among 1, 2, 4, 8, 16 bars by the rule: snap to a candidate
 candidate ≤ span ≤ 1.25 × candidate`, else snap to the next-larger candidate, with ties
 resolving upward — verified by the cases 7.8→8, 3.1→4, 2.25→2, 5.0→8.
 
-Verify with: `cargo test -p daw-engine capture_bar_snap_ratio`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_bar_snap_ratio`
 
 ### AC-011 — Audio ring-buffer safety margin
 
 A capture spanning more than `capacity − margin_frames` (a 2–3 s margin) must be flagged
 PARTIAL and truncated to the valid region rather than returning corrupted data.
 
-Verify with: `cargo test -p daw-engine capture_audio_safety_margin`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_audio_safety_margin`
 
 ### AC-012 — MIDI FIFO sizing and batch eviction
 
@@ -112,7 +112,7 @@ The MIDI ring buffer must hold 16,384 events and, when full, batch-evict the old
 events at once, with a 128×16 active-note table plus sustain-pedal CC#64 state driving
 orphaned-note recovery.
 
-Verify with: `cargo test -p daw-engine capture_midi_fifo_eviction`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_midi_fifo_eviction`
 
 ### AC-013 — Non-RT snapshot pipeline on a dedicated worker thread
 
@@ -120,7 +120,7 @@ The snapshot pipeline must run on a dedicated `std::thread::spawn` worker thread
 producing zero audio xruns under a 64-sample / 10-track stress capture and no MIDI-callback
 p99.9 latency regression beyond 5% versus a non-capture baseline.
 
-Verify with: `cargo test -p daw-engine capture_worker_xrun_free`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_worker_xrun_free`
 
 ### AC-014 — Captured-audio file persistence
 
@@ -134,7 +134,7 @@ The IOI histogram must weight contributions by note velocity for downbeat / phra
 detection (separate from tempo estimation), with optional log-Gaussian autocorrelation
 refinement when histogram peaks are within 5% of each other.
 
-Verify with: `cargo test -p daw-engine capture_velocity_weighted_downbeat`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_velocity_weighted_downbeat`
 
 ### AC-016 — Capture button disabled when buffer empty
 
@@ -148,7 +148,7 @@ Verify with: `pnpm test:run captureButtonDisabledState`
 When the transport is stopped and the user has set no tempo, the inferred tempo must be
 applied to the newly-created clip only; the project tempo must not be silently changed.
 
-Verify with: `cargo test -p daw-engine capture_inferred_tempo_clip_scoped`
+Verify with: `pnpm cargo:test -- -p daw-engine capture_inferred_tempo_clip_scoped`
 
 ### AC-018 — Missing-asset handling for captured audio
 

@@ -31,28 +31,28 @@ A Rust generator must emit `{min,max}` peak pyramids at standard power-of-two zo
 levels; a 60-minute 48 kHz stereo file completes in ≤3 s and the cache file is ≤2% of
 the source WAV size.
 
-Verify with: `cargo test -p daw-io peak_mipmap_generate`
+Verify with: `pnpm cargo:test -- -p daw-io peak_mipmap_generate`
 
 ### AC-002 — Content-addressed persistence and invalidation
 
 Mipmaps must persist next to the source keyed by content hash and regenerate on a hash
 mismatch when the source changes.
 
-Verify with: `cargo test -p daw-io peak_cache_invalidation`
+Verify with: `pnpm cargo:test -- -p daw-io peak_cache_invalidation`
 
 ### AC-003 — Binary peak payload to frontend
 
 The peak payload delivered to the frontend must be a binary buffer
 (`application/octet-stream`), not a JSON number array.
 
-Verify with: `cargo test -p daw-io peak_payload_binary`
+Verify with: `pnpm cargo:test -- -p daw-io peak_payload_binary`
 
 ### AC-004 — Zoom does not block the main thread
 
 Zooming a 32-track project from waveform to arrangement level must not block the main
 thread more than ~16 ms per frame, served from the cached mipmap.
 
-Verify with: `pnpm test:perf -- waveformZoom`
+Verify with: `pnpm test:run -- waveformZoom`
 
 ## Open questions
 

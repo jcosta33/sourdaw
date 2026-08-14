@@ -53,14 +53,14 @@ Verify with: `manual` — request a constrained reharmonization with a deliberat
 The constraint solver must report feasibility, internal contradictions, and dependencies
 on unavailable capabilities before generation runs.
 
-Verify with: `cargo test -p daw-core constraint_solver_feasibility`
+Verify with: `pnpm cargo:test -- -p daw-core constraint_solver_feasibility`
 
 ### AC-005 — Constraints are stored and replayable
 
 A stored constraint set must replay against a later generation operation producing the
 same admissibility decision.
 
-Verify with: `cargo test -p daw-core constraint_replay`
+Verify with: `pnpm cargo:test -- -p daw-core constraint_replay`
 
 ### AC-006 — Payload encodes constraint kind
 

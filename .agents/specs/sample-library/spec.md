@@ -32,28 +32,28 @@ backed by a Rust index with content-addressed IDs and license-aware attribution.
 A `SampleId` must be the blake3 hash of the file's raw bytes, identical across runs and
 unchanged by rename or move.
 
-Verify with: `cargo test -p daw-samples sample_id`
+Verify with: `pnpm cargo:test -- -p daw-samples sample_id`
 
 ### AC-002 — Fuzzy search meets the latency target
 
 `search_samples` must return ranked results with p95 latency under 50 ms on a 100k-entry
 index.
 
-Verify with: `cargo test -p daw-samples search`
+Verify with: `pnpm cargo:test -- -p daw-samples search`
 
 ### AC-003 — Fuzzy ranking matches by subsequence
 
 The query "kick 808" must rank "808_Kick_Dirty.wav" within the top results without an
 exact-substring match.
 
-Verify with: `cargo test -p daw-samples search`
+Verify with: `pnpm cargo:test -- -p daw-samples search`
 
 ### AC-004 — Facet counts update incrementally
 
 Removing one entry must decrement its ancestor category counts by exactly one without a full
 rebuild.
 
-Verify with: `cargo test -p daw-samples facets`
+Verify with: `pnpm cargo:test -- -p daw-samples facets`
 
 ### AC-005 — Freesound OAuth2 with PKCE persists tokens
 
@@ -66,25 +66,25 @@ Verify with: `manual` — sign in to Freesound and confirm the token survives an
 
 On a 429 response the Freesound client must back off with exponential jitter and retry.
 
-Verify with: `cargo test -p daw-samples freesound`
+Verify with: `pnpm cargo:test -- -p daw-samples freesound`
 
 ### AC-007 — Pack install verifies checksum
 
 `import_pack` must stream, verify sha256, extract, and index a pack.
 
-Verify with: `cargo test -p daw-samples packs`
+Verify with: `pnpm cargo:test -- -p daw-samples packs`
 
 ### AC-008 — Peak cache invalidates on file change
 
 `get_waveform_peaks` must recompute when the source file's mtime or size changes.
 
-Verify with: `cargo test -p daw-samples peaks`
+Verify with: `pnpm cargo:test -- -p daw-samples peaks`
 
 ### AC-009 — Folder watcher surfaces new files
 
 A new audio file dropped into a watched root must appear in a search result within 500 ms.
 
-Verify with: `cargo test -p daw-samples watcher`
+Verify with: `pnpm cargo:test -- -p daw-samples watcher`
 
 ### AC-010 — Preview runs off the DAW audio thread
 
@@ -110,13 +110,13 @@ Verify with: `pnpm deps:validate`
 
 `preview_sample` must decode WAV (PCM/float), AIFF, FLAC, MP3, Ogg Vorbis, and Opus.
 
-Verify with: `cargo test -p daw-samples preview_formats`
+Verify with: `pnpm cargo:test -- -p daw-samples preview_formats`
 
 ### AC-014 — Watcher ignores non-audio, dotfiles, and symlink cycles
 
 The folder watcher must ignore non-audio files and hidden/dotfiles.
 
-Verify with: `cargo test -p daw-samples watcher_filters`
+Verify with: `pnpm cargo:test -- -p daw-samples watcher_filters`
 
 ### AC-015 — Full Tauri command surface and coalesced progress events
 
@@ -126,21 +126,21 @@ The command surface must expose `search_samples`, `get_sample_metadata`, `get_wa
 `pack-import-progress`, `library-scan-progress`, and `library-updated` progress events
 coalesced at a maximum of 10 Hz.
 
-Verify with: `cargo test -p daw-samples commands`
+Verify with: `pnpm cargo:test -- -p daw-samples commands`
 
 ### AC-016 — Resumable downloads and clean uninstall
 
 A partial pack download must resume via Range requests or restart cleanly leaving no corrupted
 partials.
 
-Verify with: `cargo test -p daw-samples packs_download_uninstall`
+Verify with: `pnpm cargo:test -- -p daw-samples packs_download_uninstall`
 
 ### AC-017 — Per-entry extraction size limit rejects zip bombs
 
 Pack extraction must reject any single archive entry whose extracted size exceeds 500 MB with
 an error and without filling the disk.
 
-Verify with: `cargo test -p daw-samples zip_bomb`
+Verify with: `pnpm cargo:test -- -p daw-samples zip_bomb`
 
 ### AC-018 — License and warning badges on every result
 
@@ -160,27 +160,27 @@ Verify with: `pnpm test:run -- ExportCredits`
 
 A tampered pack archive must fail import and be removed.
 
-Verify with: `cargo test -p daw-samples packs`
+Verify with: `pnpm cargo:test -- -p daw-samples packs`
 
 ### AC-021 — Unsupported or truncated formats fail cleanly
 
 An unsupported or truncated format must fail with a clear error and never panic.
 
-Verify with: `cargo test -p daw-samples preview_formats`
+Verify with: `pnpm cargo:test -- -p daw-samples preview_formats`
 
 ### AC-022 — Symlink cycle detection stops traversal
 
 The folder watcher must resolve each symlink once with cycle detection that logs and stops
 rather than traversing infinitely.
 
-Verify with: `cargo test -p daw-samples watcher_filters`
+Verify with: `pnpm cargo:test -- -p daw-samples watcher_filters`
 
 ### AC-023 — Uninstall removes a pack's directory and index entries
 
 Uninstalling a pack must remove its directory and all of its index entries while leaving other
 packs' entries intact.
 
-Verify with: `cargo test -p daw-samples packs_download_uninstall`
+Verify with: `pnpm cargo:test -- -p daw-samples packs_download_uninstall`
 
 ### AC-024 — Warning badge on commercial and unknown licenses
 
@@ -193,28 +193,28 @@ Verify with: `pnpm test:run -- SampleLibrary`
 When a new preview starts while a previous preview is still sounding, `preview_sample` must
 crossfade from the outgoing to the incoming sample rather than hard-cutting.
 
-Verify with: `cargo test -p daw-samples preview_crossfade`
+Verify with: `pnpm cargo:test -- -p daw-samples preview_crossfade`
 
 ### AC-026 — Transparent token refresh on 401
 
 On a 401 response, the Freesound client must transparently refresh the access token and retry
 the original request before surfacing an error to the caller.
 
-Verify with: `cargo test -p daw-samples freesound`
+Verify with: `pnpm cargo:test -- -p daw-samples freesound`
 
 ### AC-027 — Revoked token triggers re-auth, not a crash
 
 A revoked or otherwise unrecoverable token must trigger a re-authentication prompt rather than
 crash the app.
 
-Verify with: `cargo test -p daw-samples freesound`
+Verify with: `pnpm cargo:test -- -p daw-samples freesound`
 
 ### AC-028 — Index carries an explicit schema version
 
 `PackIndex` must carry an explicit `schema_version: u32`, and loading an older version must
 either migrate forward or be rejected with a clear error — never silently corrupt.
 
-Verify with: `cargo test -p daw-samples index_schema_version`
+Verify with: `pnpm cargo:test -- -p daw-samples index_schema_version`
 
 ### AC-029 — Ascending migration dispatch loads an old fixture
 
@@ -222,21 +222,21 @@ A `Migration` trait exposing `from_version() -> u32` and `migrate()` must be dis
 ascending version order, such that a `schema_version = 1` fixture `index.json` loads correctly
 under the current codebase via migration.
 
-Verify with: `cargo test -p daw-samples index_migration`
+Verify with: `pnpm cargo:test -- -p daw-samples index_migration`
 
 ### AC-030 — Cancelling a download frees all disk space
 
 Cancelling a partially complete download (e.g. at 50%) must delete the temp file and free all
 disk space it used, leaving no orphaned state.
 
-Verify with: `cargo test -p daw-samples packs_download_uninstall`
+Verify with: `pnpm cargo:test -- -p daw-samples packs_download_uninstall`
 
 ### AC-031 — Concurrent downloads are deterministic
 
 Concurrent pack downloads must be serialized into a FIFO queue or capped at 2 simultaneous; the
 chosen behavior must be deterministic.
 
-Verify with: `cargo test -p daw-samples packs_download_concurrency`
+Verify with: `pnpm cargo:test -- -p daw-samples packs_download_concurrency`
 
 ### AC-032 — Peak cache stays within its size bound
 
@@ -244,7 +244,7 @@ The on-disk peak cache for a 1-minute stereo 48 kHz WAV must stay under 256 KB a
 mipmap levels, stored as `{min: f32, max: f32}` pairs per block with a level-0 block size of 64
 samples and subsequent levels at powers of two, and read back `mmap`-backed.
 
-Verify with: `cargo test -p daw-samples peaks`
+Verify with: `pnpm cargo:test -- -p daw-samples peaks`
 
 ## Open questions
 

@@ -33,42 +33,42 @@ without removing their character.
 When fuzz is enabled and the input is silent, the pedal output must settle near silence
 instead of emitting a steady residual signal.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — Distortion loudness stays usable
 
 When distortion is set to moderate values, the output must remain within a sane loudness
 range relative to bypass rather than behaving like a broken gain jump.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — Fuzz loudness stays usable
 
 When fuzz is set to moderate values, the output must remain within a sane loudness range
 relative to bypass.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — High-gain pedals remain audibly active
 
 When distortion or fuzz is enabled, the pedal must still audibly change the signal; the
 fix must not collapse it into near-bypass behavior.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-005 — Bounded alias mitigation is real
 
 Distortion and fuzz must not rely only on plain sample-rate clipping; the implementation
 must add a real, RT-safe mitigation step around the main nonlinearity.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — RT safety is preserved
 
 The pedal processing must remain allocation-free and lock-free in `process_sample()`,
 with state held inside the pedal structs and initialized in `new()` / `reset()`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-007 — Existing pedal types are reused, with no parallel high-gain subsystem
 
@@ -76,7 +76,7 @@ The retuned distortion and fuzz behavior must be implemented entirely by reusing
 existing `DistortionPedal` and `FuzzPedal` types; the change must not introduce a
 separate parallel high-gain subsystem alongside them.
 
-Verify with: `cargo test -p daw-dsp grinder::` and inspect `crates/daw-dsp/src/grinder/pedals.rs` to confirm no new parallel high-gain pedal subsystem was added.
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::` and inspect `crates/daw-dsp/src/grinder/pedals.rs` to confirm no new parallel high-gain pedal subsystem was added.
 
 ### AC-008 — Module-level regression gates run green
 
@@ -91,7 +91,7 @@ The suite must include DSP regression tests that explicitly prove the distortion
 loudness invariants and the fuzz-on-silence invariant, so the resolved behavior cannot
 silently regress.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-010 — TypeScript types check after the change
 

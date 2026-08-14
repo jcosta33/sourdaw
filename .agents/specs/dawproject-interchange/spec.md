@@ -36,7 +36,7 @@ Verify with: `manual` — export the reference project, import into Bitwig 5, co
 Round-tripping the reference project export → import into a fresh Sourdaw instance must
 yield byte-identical user-visible fields (track names, clip ids, notes, automation points).
 
-Verify with: `cargo test -p daw-interchange dawproject_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-interchange dawproject_roundtrip`
 
 ### AC-003 — .sourdaw bundle is self-contained
 
@@ -44,14 +44,14 @@ Verify with: `cargo test -p daw-interchange dawproject_roundtrip`
 by content hash; opening it on a machine with an empty asset cache reconstructs the
 project with no missing-asset warnings.
 
-Verify with: `cargo test -p daw-interchange sourdaw_bundle_selfcontained`
+Verify with: `pnpm cargo:test -- -p daw-interchange sourdaw_bundle_selfcontained`
 
 ### AC-004 — Unsupported constructs warn, never fail silently
 
 Importing a DAWproject referencing unsupported constructs must emit a structured warning
 list (one entry per dropped element) rather than failing silently.
 
-Verify with: `cargo test -p daw-interchange dawproject_unsupported_warnings`
+Verify with: `pnpm cargo:test -- -p daw-interchange dawproject_unsupported_warnings`
 
 ### AC-005 — Both surfaced in File menu
 

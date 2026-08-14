@@ -43,7 +43,7 @@ Verify with: `manual` — start a Link peer and confirm Sourdaw starts on the ne
 Disabling Link must return the transport to the internal clock within ≤1 block without
 glitching audio.
 
-Verify with: `cargo test -p daw-engine link_disable_clean`
+Verify with: `pnpm cargo:test -- -p daw-engine link_disable_clean`
 
 ### AC-004 — Feature-flag isolation
 

@@ -34,7 +34,7 @@ When auto-divisi is on and a chord is played, the engine must distribute the
 section across the chord notes and reduce per-note level proportionally rather
 than playing the full section on every note.
 
-Verify with: `cargo test -p daw-dsp levain::ensemble::auto_divisi_split`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::ensemble::auto_divisi_split`
 
 ### AC-002 — Auto-articulation selects from note duration and overlap
 
@@ -42,21 +42,21 @@ When auto-articulate is on, the engine must choose the articulation from the
 note's measured duration and overlap (short→staccato, overlapping→legato,
 long→sustain) using the configured thresholds.
 
-Verify with: `cargo test -p daw-dsp levain::ensemble::auto_articulate`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::ensemble::auto_articulate`
 
 ### AC-003 — Section players are spread in attack timing
 
 When a section note sounds, the engine must offset each virtual player's onset by
 a seeded random spread (±5–20 ms) so the attack is broadened, not coincident.
 
-Verify with: `cargo test -p daw-dsp levain::ensemble::attack_spread`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::ensemble::attack_spread`
 
 ### AC-004 — Section pitch converges after onset
 
 When a section note begins, the engine must start virtual players slightly
 detuned and converge them toward unison over the configured time.
 
-Verify with: `cargo test -p daw-dsp levain::ensemble::pitch_convergence`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::ensemble::pitch_convergence`
 
 ### AC-005 — Section size scales by player multiplication
 
@@ -64,7 +64,7 @@ When section size is increased, the engine must layer additional virtual players
 with per-instance tuning, timing, level, and pan offsets rather than only raising
 gain.
 
-Verify with: `cargo test -p daw-dsp levain::ensemble::section_size_scaling`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::ensemble::section_size_scaling`
 
 ## Open questions
 
