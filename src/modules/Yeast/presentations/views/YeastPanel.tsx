@@ -389,11 +389,12 @@ export const YeastPanel = (): ReactElement => {
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
 const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
-    const hasArp = state.processors.some((param) => param.type === 'arpeggiator');
+    const arp = state.processors.find((param) => param.type === 'arpeggiator');
+    const hasArp = arp !== undefined;
     // Latch is processor param state, not view state: handleSetYeastProcessorParam
     // commits it to yeastStore, and a reload or undo that restores the
     // arpeggiator must restore its latch with it.
-    const latchOn = state.processors.find((param) => param.type === 'arpeggiator')?.params?.latch === 1;
+    const latchOn = arp?.params?.latch === 1;
 
     return (
         <Row align="center" justify="center" gap={8} className="flex-1 px-8">
@@ -407,11 +408,8 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 offLabel="Arp Off"
                 caps
                 onClick={() => {
-                    if (hasArp) {
-                        const arp = state.processors.find((param) => param.type === 'arpeggiator');
-                        if (arp) {
-                            removeYeastProcessor(arp.id);
-                        }
+                    if (arp) {
+                        removeYeastProcessor(arp.id);
                     } else {
                         addYeastProcessor('arpeggiator');
                     }
@@ -428,12 +426,11 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     className="min-w-[4.5rem]"
                     aria-label="Mode"
                     onChange={(event) => {
-                        const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
                             handleSetYeastProcessorParam(arp.id, 'mode', parseInt(event.target.value));
                         }
                     }}
-                    value={state.processors.find((param) => param.type === 'arpeggiator')?.params?.mode ?? 0}
+                    value={arp?.params?.mode ?? 0}
                 >
                     <option value={0}>Up</option>
                     <option value={1}>Down</option>
@@ -450,9 +447,8 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Rate</span>
                 <YeastKnob
                     aria-label="Rate"
-                    value={state.processors.find((param) => param.type === 'arpeggiator')?.params?.rate_denom ?? 8}
+                    value={arp?.params?.rate_denom ?? 8}
                     onChange={(value) => {
-                        const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
                             handleSetYeastProcessorParam(arp.id, 'rate_denom', Math.round(value));
                         }
@@ -463,9 +459,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     defaultValue={8}
                     size="lg"
                 />
-                <span className="text-[8px] text-muted-foreground font-mono">
-                    1/{state.processors.find((param) => param.type === 'arpeggiator')?.params?.rate_denom ?? 8}
-                </span>
+                <span className="text-[8px] text-muted-foreground font-mono">1/{arp?.params?.rate_denom ?? 8}</span>
             </Stack>
             {/* Latch */}
             <YeastChip
@@ -473,7 +467,6 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 active={latchOn}
                 aria-pressed={latchOn}
                 onClick={() => {
-                    const arp = state.processors.find((param) => param.type === 'arpeggiator');
                     const next = !latchOn;
                     if (arp) {
                         handleSetYeastProcessorParam(arp.id, 'latch', next ? 1 : 0);
