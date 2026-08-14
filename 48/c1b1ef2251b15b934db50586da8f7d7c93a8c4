@@ -1,0 +1,49 @@
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_4ff8efe8c98a88 541-547,552-555
+  s_a40848e8f8cca9::t_eb914888f0fd34 197-204,245,393,396-400
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_eb914888f0fd34 10
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_eb914888f0fd34 84,185
+src/modules/Command/useCases/commandBatchPreviewPort.ts
+  s_a40848e8f8cca9::t_eb914888f0fd34 10,16-18,22-24
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_eb914888f0fd34 41
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_6abd8b70183524 405,411,414
+  s_a40848e8f8cca9::t_e7e5a6cce93847 455
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_17d57693c0b5b2 236
+  s_a40848e8f8cca9::t_eb914888f0fd34 200
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_eb914888f0fd34 21,67,96
+  s_a40848e8f8cca9::t_4ff8efe8c98a88 299-378
+  s_a40848e8f8cca9::t_5c96ebea6c44a5 12,22,66,95
+src/modules/CrdtDocument/useCases/inspectAgentProjectDivergence.ts
+  s_a40848e8f8cca9::t_e84afd6d652684 8
+src/modules/CrdtDocument/useCases/parseProjectRevision.ts
+  s_a40848e8f8cca9::t_e84afd6d652684 1-47
+src/modules/Command/useCases/createRecoveredVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_6abd8b70183524 1-46
+src/modules/CrdtDocument/useCases/createCommandRecoveryWorkspace.ts
+  s_a40848e8f8cca9::t_eb914888f0fd34 1-8,10-42
+  s_a40848e8f8cca9::t_e84afd6d652684 9
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_6abd8b70183524 8,253-258,265,280,285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "48c1b1ef2251b15b934db50586da8f7d7c93a8c4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
