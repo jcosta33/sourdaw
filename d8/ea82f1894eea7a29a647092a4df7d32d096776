@@ -1,0 +1,16 @@
+src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx
+  h_1228e573df1f42 35-40,42,49,100,110,120-122
+tests/e2e/generativeOptionGridsTestId.spec.ts
+  h_1228e573df1f42 1-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d8ea82f1894eea7a29a647092a4df7d32d096776",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
