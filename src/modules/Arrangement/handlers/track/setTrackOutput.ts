@@ -6,6 +6,7 @@ import { setTrackOutput } from '../../useCases/toggleTrackState/setTrackOutput';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackOutput = createHandler<'setTrackOutput'>({
+    canReapplyAfterDivergence: (action) => action.payload.expectedOutputId !== undefined,
     validate: (action, context) => {
         const track = getPlannedTrackState(context, action.payload.trackId);
         const target = getPlannedTrackState(context, action.payload.outputId);

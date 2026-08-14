@@ -6,6 +6,7 @@ import { setTrackPan } from '../../useCases/setTrackGainPan/setTrackPan';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackPan = createHandler<'setTrackPan'>({
+    canReapplyAfterDivergence: () => true,
     validate: (action, context) => {
         const currentPan = getPlannedTrackState(context, action.payload.trackId)?.pan;
         return currentPan === action.payload.expectedPan;

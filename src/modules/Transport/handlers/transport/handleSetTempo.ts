@@ -17,17 +17,27 @@ type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
  * clobbered.) Both the inverse and the redo therefore name the change the
  * original write landed on.
  */
-function buildTargetedAction(bpm: number, tempoChangeId: string | null): SetTempoAction {
-    if (tempoChangeId === null) {
-        return { type: 'setTempo', payload: { bpm } };
-    }
-    return { type: 'setTempo', payload: { bpm, tempoChangeId } };
+function buildTargetedAction(bpm: number, tempoChangeId: string | null, expectedBpm: number): SetTempoAction {
+    return { type: 'setTempo', payload: { bpm, expectedBpm, tempoChangeId } };
 }
 
 export const handleSetTempo = createHandler<'setTempo'>({
     previewExecution: 'isolated-project',
-    validate: (action) => getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId })?.writable === true,
+    canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+    validate: (action) => {
+        const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
+        return (
+            target?.writable === true &&
+            (action.payload.expectedBpm === undefined || target.tempo === action.payload.expectedBpm)
+        );
+    },
     execute: (alpha): HandlerExecutionResult | void => {
+        if (alpha.payload.expectedBpm !== undefined) {
+            const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
+            if (target?.writable !== true || target.tempo !== alpha.payload.expectedBpm) {
+                return { status: 'conflict' };
+            }
+        }
         const result = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
         if (result.status === 'no-write') {
             // There was nothing to write to — no transport state, or a named
@@ -51,7 +61,10 @@ export const handleSetTempo = createHandler<'setTempo'>({
             // ran, hiding the refusal exactly as the old `no-write` did.
             return false;
         }
-        return target?.tempo === action.payload.bpm;
+        return (
+            target?.tempo === action.payload.bpm &&
+            (action.payload.expectedBpm === undefined || target.tempo === action.payload.expectedBpm)
+        );
     },
     describe: (alpha) => {
         const label = `Set tempo to ${alpha.payload.bpm} BPM`;
@@ -68,8 +81,8 @@ export const handleSetTempo = createHandler<'setTempo'>({
 
         return {
             label,
-            inverseAction: buildTargetedAction(target.tempo, target.tempoChangeId),
-            redoAction: buildTargetedAction(alpha.payload.bpm, target.tempoChangeId),
+            inverseAction: buildTargetedAction(target.tempo, target.tempoChangeId, alpha.payload.bpm),
+            redoAction: buildTargetedAction(alpha.payload.bpm, target.tempoChangeId, target.tempo),
         };
     },
     undoable: true,

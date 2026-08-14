@@ -50,4 +50,7 @@ export type StorageAdapter<TData> = {
      *  caller falls back to `set()`. There repairing the backing store is the
      *  point and there is no peer to lose. */
     setProjected?(value: TData | null): void;
+    /** Register the store's inbound sanitizer so shared raw CRDT content can
+     *  be checked for projection loss before any read model is hydrated. */
+    registerInboundSanitizer?(sanitize: (value: unknown) => unknown): void;
 };

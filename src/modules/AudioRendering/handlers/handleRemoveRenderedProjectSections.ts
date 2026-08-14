@@ -26,6 +26,7 @@ function currentArtifactsMatch(action: RemoveRenderedProjectSectionsAction): boo
 }
 
 export const handleRemoveRenderedProjectSections = createHandler<'removeRenderedProjectSections'>({
+    canReapplyAfterDivergence: currentArtifactsMatch,
     validate: currentArtifactsMatch,
     execute: (action) => {
         if (!currentArtifactsMatch(action)) {

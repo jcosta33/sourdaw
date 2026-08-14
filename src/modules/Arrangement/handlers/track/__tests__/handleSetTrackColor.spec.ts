@@ -42,7 +42,11 @@ describe('handleSetTrackColor', () => {
             expect(desc.label).toBe('Set track color');
             expect(desc.inverseAction).toEqual({
                 type: 'setTrackColor',
-                payload: { trackId: 't1', color: '#00ff00' },
+                payload: { trackId: 't1', color: '#00ff00', expectedColor: '#ff0000' },
+            });
+            expect(desc.redoAction).toEqual({
+                type: 'setTrackColor',
+                payload: { trackId: 't1', color: '#ff0000', expectedColor: '#00ff00' },
             });
         });
 
@@ -56,6 +60,29 @@ describe('handleSetTrackColor', () => {
 
             expect(desc.inverseAction).toBeNull();
         });
+    });
+
+    it('refuses a guarded inverse after a collaborator changes the color', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', color: '#collaborator' }] });
+
+        const result = handleSetTrackColor.execute({
+            type: 'setTrackColor',
+            payload: { trackId: 't1', color: '#old', expectedColor: '#new' },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setTrackColor).not.toHaveBeenCalled();
+    });
+
+    it('does not consume a guarded inverse as a no-op after the target is deleted', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const action = {
+            type: 'setTrackColor',
+            payload: { trackId: 't1', color: '#old', expectedColor: '#new' },
+        } as const;
+
+        expect(handleSetTrackColor.isNoop?.(action)).toBe(false);
+        expect(handleSetTrackColor.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
     });
 
     it('is a no-op when the requested color is already applied', () => {

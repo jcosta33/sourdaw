@@ -5,6 +5,7 @@ import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvel
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
+import { getVersionedCommandBatchDivergenceTargetIds } from './getVersionedCommandBatchDivergenceTargetIds';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 import { previewVersionedCommandBatchEnvelope } from './previewVersionedCommandBatchEnvelope';
@@ -62,11 +63,13 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         commands: resolvedCommands.map((command) =>
             serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
         ),
+        divergenceTargetIds: getVersionedCommandBatchDivergenceTargetIds(resolvedEnvelope),
         normalizedProjectRevision: parsed.envelope.baseRevision,
         options: {
             ...input.options,
             groupId: parsed.envelope.batchId,
-            prepareValidation: () => prepareCommandBatchPreflight(resolvedEnvelope),
+            prepareValidation: ({ allowCompatibleProjectDivergence }) =>
+                prepareCommandBatchPreflight(resolvedEnvelope, { allowCompatibleProjectDivergence }),
             requireCompensation: true,
         },
     });

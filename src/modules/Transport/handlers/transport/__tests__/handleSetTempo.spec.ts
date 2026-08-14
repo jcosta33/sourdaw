@@ -76,9 +76,22 @@ describe('transport handlers', () => {
     it('handleSetTempo captures the transport base tempo when there is no tempo map', () => {
         expect(handleSetTempo.describe({ type: 'setTempo', payload: { bpm: 128 } })).toEqual({
             label: 'Set tempo to 128 BPM',
-            inverseAction: { type: 'setTempo', payload: { bpm: 110 } },
-            redoAction: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 110, expectedBpm: 128, tempoChangeId: null } },
+            redoAction: { type: 'setTempo', payload: { bpm: 128, expectedBpm: 110, tempoChangeId: null } },
         });
+    });
+
+    it('keeps a base-tempo inverse pinned after a collaborator adds a tempo map', () => {
+        const described = handleSetTempo.describe({ type: 'setTempo', payload: { bpm: 128 } });
+        void handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 128 } });
+        tempoMapRef.value = { changes: [{ id: 'tc-new', beat: 0, tempo: 95, curve: 'instant' }] };
+        if (described.inverseAction?.type !== 'setTempo') {
+            throw new Error('Expected a guarded base-tempo inverse');
+        }
+
+        expect(handleSetTempo.execute(described.inverseAction)).toBeUndefined();
+        expect(transportRef.value!.tempo).toBe(110);
+        expect(tempoOf('tc-new')).toBe(95);
     });
 
     it('handleSetTempo captures the map-governed tempo when a change sits at beat 0', () => {
@@ -89,8 +102,8 @@ describe('transport handlers', () => {
             // 90, not the inert base tempo 110 — undoing has to restore what the
             // field read out, which is the tempo event at the playhead. Both
             // replay actions name that event so they cannot re-resolve later.
-            inverseAction: { type: 'setTempo', payload: { bpm: 90, tempoChangeId: 'tc-0' } },
-            redoAction: { type: 'setTempo', payload: { bpm: 128, tempoChangeId: 'tc-0' } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 90, expectedBpm: 128, tempoChangeId: 'tc-0' } },
+            redoAction: { type: 'setTempo', payload: { bpm: 128, expectedBpm: 90, tempoChangeId: 'tc-0' } },
         });
     });
 
@@ -144,9 +157,27 @@ describe('transport handlers', () => {
         void handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 128 } });
         expect(tempoOf('tc-0')).toBe(128);
 
-        expect(described.inverseAction).toEqual({ type: 'setTempo', payload: { bpm: 400, tempoChangeId: 'tc-0' } });
+        expect(described.inverseAction).toEqual({
+            type: 'setTempo',
+            payload: { bpm: 400, expectedBpm: 128, tempoChangeId: 'tc-0' },
+        });
         void handleSetTempo.execute(described.inverseAction as { type: 'setTempo'; payload: { bpm: number } });
         expect(tempoOf('tc-0')).toBe(400);
+    });
+
+    it('refuses a guarded inverse after a collaborator changes the targeted tempo event', () => {
+        tempoMapRef.value = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
+        const described = handleSetTempo.describe({ type: 'setTempo', payload: { bpm: 128 } });
+        void handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 128 } });
+        tempoMapRef.value.changes[0]!.tempo = 95;
+        if (described.inverseAction?.type !== 'setTempo') {
+            throw new Error('Expected a guarded tempo inverse');
+        }
+        const inverse = described.inverseAction;
+
+        expect(handleSetTempo.validate?.(inverse, { actionIndex: 0, actions: [inverse] })).toBe(false);
+        expect(handleSetTempo.execute(inverse)).toEqual({ status: 'conflict' });
+        expect(tempoOf('tc-0')).toBe(95);
     });
 
     it('handleSetTempo emits no inverse and lands no write inside a tempo ramp', () => {

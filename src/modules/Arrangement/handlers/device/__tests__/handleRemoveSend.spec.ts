@@ -112,4 +112,24 @@ describe('handleRemoveSend', () => {
     it('is undoable', () => {
         expect(handleRemoveSend.undoable).toBe(true);
     });
+
+    it('certifies only fully guarded removals for divergent reapplication', () => {
+        expect(
+            handleRemoveSend.canReapplyAfterDivergence?.({
+                type: 'removeSend',
+                payload: {
+                    trackId: 't1',
+                    busId: 'bus-1',
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            })
+        ).toBe(true);
+        expect(
+            handleRemoveSend.canReapplyAfterDivergence?.({
+                type: 'removeSend',
+                payload: { trackId: 't1', busId: 'bus-1', expectedLevel: 0.5 },
+            })
+        ).toBe(false);
+    });
 });

@@ -1,6 +1,7 @@
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
     commandBatchPreflightPort,
+    getVersionedCommandBatchDivergenceTargetIds,
     getAgentActionRiskPolicy,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
@@ -33,7 +34,9 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
     );
     const targetIds = [
         ...new Set([
-            ...envelope.scope.targetIds.filter((targetId) => !applicationAssignedIds.has(targetId)),
+            ...getVersionedCommandBatchDivergenceTargetIds(envelope).filter(
+                (targetId) => !applicationAssignedIds.has(targetId)
+            ),
             ...envelope.scope.protectedTargetIds,
         ]),
     ];

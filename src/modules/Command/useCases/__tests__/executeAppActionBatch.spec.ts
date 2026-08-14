@@ -20,6 +20,7 @@ type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
 
 const mocks = vi.hoisted(() => ({
+    agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
     logger: {
         error: vi.fn<Logger['error']>(),
         info: vi.fn<Logger['info']>(),
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
 }));
@@ -122,6 +124,7 @@ describe('executeAppActionBatch', () => {
         vi.clearAllMocks();
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
+        mocks.agentProjectRepairStateStore.value = null;
         productionBriefAdmissionPort.setGuard(() => true);
     });
 
@@ -202,6 +205,57 @@ describe('executeAppActionBatch', () => {
         });
         expect(firstEffect).not.toHaveBeenCalled();
         expect(secondEffect).not.toHaveBeenCalled();
+    });
+
+    it('should block project batches before the first handler effect while project repair is required', async () => {
+        const effect = vi.fn();
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({ execute: effect }),
+        });
+        mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
+
+        const result = await executeAppActionBatch([action]);
+
+        expect(result).toEqual({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        expect(effect).not.toHaveBeenCalled();
+    });
+
+    it('should abort a project batch when repair becomes required before commit', async () => {
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: async () => {
+                    markHandlerStarted?.();
+                    await handlerRelease;
+                    return { status: 'written' };
+                },
+            }),
+        });
+
+        const execution = executeAppActionBatch([action]);
+        await handlerStarted;
+        mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
+        releaseHandler?.();
+
+        await expect(execution).resolves.toEqual({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+            failureKind: 'verification',
+        });
     });
 
     it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {
@@ -793,6 +847,31 @@ describe('executeAppActionBatch', () => {
         expect(result).toEqual({
             status: 'rejected',
             reason: 'Action is not compensable inside an atomic batch: setEditingTool',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unguarded inverse before an atomic batch can dispatch', async () => {
+        const execute = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+                validate: () => true,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+            requireCompensation: true,
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Action compensation is not guarded inside an atomic batch: setEditingTool',
             actions: [],
         });
         expect(execute).not.toHaveBeenCalled();
