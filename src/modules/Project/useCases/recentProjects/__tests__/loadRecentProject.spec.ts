@@ -41,6 +41,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));

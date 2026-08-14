@@ -58,6 +58,7 @@ vi.mock('../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () =
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
