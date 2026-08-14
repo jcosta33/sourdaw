@@ -1,0 +1,19 @@
+tests/e2e/mutationUndoRedoTestId.spec.ts
+  s_a40848e8f8cca9::t_7c25386518c879 1-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "49f86b84f394ed98750fc5f0b19bd1f5556b8630",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
