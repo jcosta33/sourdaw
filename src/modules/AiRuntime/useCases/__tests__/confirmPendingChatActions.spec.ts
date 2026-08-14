@@ -9,6 +9,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
+    commandBatchPreviewPort,
     configureCommandBatchIdempotency,
     commandProjectDivergencePort,
     migrateLegacyAppActionToVersionedCommandEnvelope,
@@ -17,6 +18,8 @@ import {
 } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
+    createCommandRecoveryWorkspace,
+    createCommandPreviewWorkspace,
     createCrdtDoc,
     mutateCrdtDoc,
     getCrdtDoc,
@@ -60,6 +63,8 @@ describe('confirmPendingChatActions transaction admission', () => {
         createCrdtDoc('independent');
         createCrdtDoc('owned');
         registerCrdtStorageRuntime();
+        commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
+        commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandProjectDivergencePort.setProvider(null);
         chatStore.set({
@@ -87,6 +92,8 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearUndoHistory();
         clearAiHistory();
         clearPendingActionConfirmations();
+        commandBatchPreviewPort.setProvider(null);
+        commandBatchPreviewPort.setRecoveryProvider(null);
         commandProjectRevisionPort.setProvider(null);
         commandProjectDivergencePort.setProvider(null);
     });
@@ -287,6 +294,86 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(execute).toHaveBeenCalledTimes(1);
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
+    });
+
+    it('routes a partially committed confirmation retry through external-effect recovery', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        let effectAttempts = 0;
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute: (action: SetTempoAction) => {
+                    ownedStorage.set({ bpm: action.payload.bpm });
+                    const applyRuntimeEffect = () => {
+                        effectAttempts += 1;
+                        if (effectAttempts <= 2) {
+                            return Promise.reject(new Error('tempo runtime unavailable'));
+                        }
+                        return Promise.resolve();
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: applyRuntimeEffect,
+                        afterAmbiguousCommit: applyRuntimeEffect,
+                    };
+                },
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                previewExecution: 'isolated-project',
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-recovery-batch', groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-recovery-batch',
+            batchId: 'group-recovery-batch',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        const proposal = {
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic' as const,
+            groupId: 'group-recovery-batch',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+        };
+        proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch' });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch' })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(effectAttempts).toBe(2);
+
+        proposePendingActionConfirmation({ ...proposal, id: 'confirmation-recovery-batch-retry' });
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-recovery-batch-retry' })
+        ).resolves.toEqual({ status: 'executed' });
+
+        expect(effectAttempts).toBe(3);
+        expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
+        expect(chatStore.value?.messages[0]?.content).not.toContain('tempo runtime unavailable');
     });
 
     it('preserves a failed verified receipt on retry instead of reporting the batch already applied', async () => {

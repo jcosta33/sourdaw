@@ -194,6 +194,14 @@ describe('command batch idempotency', () => {
                 scope: preview.scope,
             };
         });
+        commandBatchPreviewPort.setRecoveryProvider(() => {
+            const preview = createAutomergeStoragePreview(new Map([['root', from(baseProjectDocument)]]));
+            return {
+                getProjectDocument: () => preview.getDocument('root') ?? {},
+                release: preview.release,
+                scope: preview.scope,
+            };
+        });
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
         registerHandlerMap({
@@ -234,6 +242,7 @@ describe('command batch idempotency', () => {
         configureAutomergeStoragePort(null);
         commandBatchPreflightPort.setProvider(null);
         commandBatchPreviewPort.setProvider(null);
+        commandBatchPreviewPort.setRecoveryProvider(null);
         commandBatchIdempotencyPort.setRepository(null);
         commandBatchExecutionAuthorityPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
@@ -381,10 +390,14 @@ describe('command batch idempotency', () => {
             status: 'ambiguous',
             reason: 'Idempotency checkpoint finalization failed: project receipt finalization unavailable',
         });
-        expect(retry).toEqual({
+        expect(retry).toMatchObject({
             status: 'idempotent-replay',
             actions: [],
-            receipt: 'receipt' in first ? first.receipt : undefined,
+            receipt: {
+                outcome: 'committed',
+                errors: [],
+                modelSummary: expect.stringContaining('external effects were reconciled successfully'),
+            },
         });
         expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
@@ -525,12 +538,21 @@ describe('command batch idempotency', () => {
             status: 'committed-with-warning',
             receipt: { outcome: 'partially-committed' },
         });
-        expect(retry.status).toBe('idempotent-replay');
+        expect(retry).toMatchObject({
+            status: 'idempotent-replay',
+            receipt: { outcome: 'committed', errors: [] },
+        });
+        expect('receipt' in retry ? retry.receipt.warnings : []).not.toContain(
+            expect.stringContaining('runtime strip unavailable')
+        );
         expect(concurrentRetry).toMatchObject({
             status: 'ambiguous',
             reason: 'Command batch external-effect recovery is already in progress',
         });
-        expect(settledRetry.status).toBe('idempotent-replay');
+        expect(settledRetry).toMatchObject({
+            status: 'idempotent-replay',
+            receipt: { outcome: 'committed', errors: [] },
+        });
         expect(tryAcquireRecoveryLease).toHaveBeenCalledTimes(2);
         expect(release).toHaveBeenCalledTimes(1);
         expect(effectAttempts).toBe(3);

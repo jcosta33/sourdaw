@@ -38,7 +38,7 @@ export async function reconcileProjectCommandBatchEffects(
     );
     let workspace;
     try {
-        workspace = commandBatchPreviewPort.create(input.envelope.baseRevision);
+        workspace = commandBatchPreviewPort.createRecovery(input.envelope.baseRevision);
     } catch (error) {
         return { status: 'failed', reason: `Idempotency recovery workspace failed: ${failureReason(error)}` };
     }

@@ -402,17 +402,16 @@ export async function confirmPendingChatActions(
     }
 
     const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    let hasPriorVerifiedBatchReceipt = false;
     if (approvedCommandBatch) {
         const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
             authority: approvedCommandBatch.authority,
             serialized: approvedCommandBatch.serialized,
         });
-        if (priorReceipt) {
-            return settleVerifiedBatchReplay(confirmation, priorReceipt);
-        }
+        hasPriorVerifiedBatchReceipt = priorReceipt !== null;
     }
 
-    if (captureProjectRevision() !== confirmation.projectRevision) {
+    if (!hasPriorVerifiedBatchReceipt && captureProjectRevision() !== confirmation.projectRevision) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (!commandBatch) {
             return invalidatePendingConfirmation(confirmation);
@@ -453,7 +452,7 @@ export async function confirmPendingChatActions(
         return { status: 'busy' };
     }
 
-    const approvalPreflightFailure = getApprovalPreflightFailure(confirmation);
+    const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
     if (approvalPreflightFailure) {
         return failApprovalPreflight(confirmation, approvalPreflightFailure);
     }

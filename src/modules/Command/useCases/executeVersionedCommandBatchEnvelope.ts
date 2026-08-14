@@ -5,6 +5,7 @@ import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvel
 import { commandBatchExecutionAuthorityPort } from './commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from './commandBatchIdempotencyPort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { createRecoveredVerifiedBatchReceipt } from './createRecoveredVerifiedBatchReceipt';
 import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { getCommandBatchContentHash } from './getCommandBatchContentHash';
@@ -249,13 +250,19 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             receipt: recoveryReceipt,
                         };
                     }
+                    const recoveredReceipt = createRecoveredVerifiedBatchReceipt({
+                        envelope: resolvedEnvelope,
+                        priorReceipt: recoveryReceipt,
+                        receiptWarnings: [PROJECT_RECEIPT_REVISION_WARNING],
+                    });
+                    const serializedRecoveredReceipt = JSON.stringify(recoveredReceipt);
                     try {
                         persistProjectCommandBatchIdempotencyCheckpoint({
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
                             contentHash: idempotencyContentHash,
                             state: 'complete',
-                            serializedReceipt: recoveryCheckpoint.serializedReceipt,
+                            serializedReceipt: serializedRecoveredReceipt,
                         });
                     } catch (error) {
                         return {
@@ -270,12 +277,12 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
                             contentHash: idempotencyContentHash,
-                            serializedReceipt: recoveryCheckpoint.serializedReceipt,
+                            serializedReceipt: serializedRecoveredReceipt,
                         });
                     } catch {
                         // Project truth is the durable authority; the local cache may heal on a later retry.
                     }
-                    return { status: 'idempotent-replay' as const, actions: [] as [], receipt: recoveryReceipt };
+                    return { status: 'idempotent-replay' as const, actions: [] as [], receipt: recoveredReceipt };
                 } finally {
                     try {
                         await commandBatchIdempotencyPort.release({

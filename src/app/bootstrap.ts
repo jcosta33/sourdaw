@@ -81,6 +81,7 @@ import {
     captureProjectRevision,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
+    createCommandRecoveryWorkspace,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -181,6 +182,7 @@ agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
 );
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
+commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>

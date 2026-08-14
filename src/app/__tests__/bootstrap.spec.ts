@@ -197,7 +197,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     commandBatchPreflightPort: { setProvider: noop },
-    commandBatchPreviewPort: { setProvider: noop },
+    commandBatchPreviewPort: { setProvider: noop, setRecoveryProvider: noop },
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
@@ -233,6 +233,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     agentProjectInspectionPort: { setProvider: noop },
     captureProjectRevision: () => 'revision-1',
     createCommandPreviewWorkspace: noop,
+    createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
     getDrumPreviewBranchHandlers: sentinelHandlers('DrumPreviewBranch'),
     initBranchState: initBranchStateMock,
