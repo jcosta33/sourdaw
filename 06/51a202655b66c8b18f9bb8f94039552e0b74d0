@@ -1,0 +1,23 @@
+src/modules/Yeast/presentations/components/__tests__/ProcessorParams.spec.tsx
+  s_a40848e8f8cca9::t_02facf75530a34 58-71
+src/modules/Yeast/presentations/components/ProcessorParams.tsx
+  s_a40848e8f8cca9::t_a57465cf79b23c 20-21,107,131,138,148,159,169,180,188,195,206,233,241,248,260,281,302,325,333,340,358,366,373,385,392,404,417,427,437,447,457,475,482,492,503,517,524,535,545,562,572,582,592,603,616,627,637,690,701,708,721,735,745,755,765,775,785,801,811,821,838,848
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_a40848e8f8cca9::t_d95773b9690fb2 214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0651a202655b66c8b18f9bb8f94039552e0b74d0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
