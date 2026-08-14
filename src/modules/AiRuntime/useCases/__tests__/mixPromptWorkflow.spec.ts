@@ -293,7 +293,9 @@ describe('mix prompt workflow', () => {
         ]);
         expect(confirmation).toMatchObject({
             executionMode: 'atomic',
-            risk: { level: 'bounded-reversible' },
+            // Four commands across four tracks resolve broader than any single
+            // bounded default, so the risk policy reports broad-reversible.
+            risk: { level: 'broad-reversible' },
             protectedUnchanged: [{ id: 'track-drum-bus', name: 'Drum Bus' }],
         });
         const proposal = chatStore.value?.messages.find(
@@ -303,7 +305,7 @@ describe('mix prompt workflow', () => {
         expect(proposal?.content).toContain('Set track "Guitar Left" (track-guitar-left) pan to -20');
         expect(proposal?.content).toContain('Set track "Guitar Right" (track-guitar-right) pan to +20');
         expect(proposal?.content).toContain('Mute track "Room Mic" (track-room-mic) (muted=true)');
-        expect(proposal?.content).toContain('Risk: bounded-reversible');
+        expect(proposal?.content).toContain('Approval risk: broad-reversible');
         expect(proposal?.content).toContain('Protected unchanged: "Drum Bus" (track-drum-bus)');
         const revisionBefore = captureProjectRevision();
 
