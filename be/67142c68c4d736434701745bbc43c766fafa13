@@ -1,0 +1,14 @@
+tests/e2e/punchPrePostRollTestId.spec.ts
+  h_1228e573df1f42 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "be67142c68c4d736434701745bbc43c766fafa13",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
