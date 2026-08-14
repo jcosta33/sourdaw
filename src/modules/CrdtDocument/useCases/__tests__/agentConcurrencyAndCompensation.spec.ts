@@ -57,7 +57,7 @@ type TestProjectDocument = {
     binary: Uint8Array;
     projectInvariantsValid: boolean;
     targets: Record<string, TargetState>;
-    transport: { tempo: number };
+    transport: { masterGain: number; tempo: number };
 };
 
 function inspectTestProject(input: {
@@ -72,6 +72,9 @@ function inspectTestProject(input: {
             input.targetIds.flatMap((targetId) => {
                 if (targetId === '@project/transport/tempo') {
                     return [[targetId, JSON.stringify(document.transport.tempo)]];
+                }
+                if (targetId === '@project/transport/master-gain') {
+                    return [[targetId, JSON.stringify(document.transport.masterGain)]];
                 }
                 const target = document.targets[targetId];
                 return target ? [[targetId, JSON.stringify(target)]] : [];
@@ -90,7 +93,7 @@ function seedProject(): void {
             'track-bass': { gain: 0.8, id: 'track-bass', name: 'Bass' },
             'track-drums': { gain: 0.8, id: 'track-drums', name: 'Drums' },
         };
-        draft.transport = { tempo: 120 };
+        draft.transport = { masterGain: 80, tempo: 120 };
     });
 }
 
@@ -435,6 +438,39 @@ describe('agent concurrency and compensation', () => {
         }
     });
 
+    it('reclassifies a certified stale preview when current-head validation conflicts', async () => {
+        const { command, targetStorage } = prepareTargetCommand();
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.targets['track-bass']!.gain = 0.7;
+        });
+        targetStorage.hydrate?.();
+        const compiled = compileVersionedCommandBatchEnvelope({
+            baseRevision: command.normalizedProjectRevision,
+            batchId: 'batch-conflicted-preview',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview stale Bass rebalance.',
+            mode: 'preview',
+            projectId: 'project-test',
+            runId: 'run-conflicted-preview',
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.authority,
+            serialized: compiled.serialized,
+        });
+
+        expect(result).toMatchObject({
+            divergence: {
+                kind: 'ambiguous-same-object',
+                mayReapply: false,
+                repairCandidates: [{ kind: 'review-ambiguous-target', targetIds: ['track-bass'] }],
+                targetIds: ['track-bass'],
+            },
+            status: 'conflicted',
+        });
+        expect(targetStorage.get()?.['track-bass']).toMatchObject({ gain: 0.7 });
+    });
+
     it('refuses same-object stale reapply without an explicit per-action compatibility proof', async () => {
         const { command, targetStorage } = prepareTargetCommand();
         clearHandlerRegistry();
@@ -489,6 +525,44 @@ describe('agent concurrency and compensation', () => {
         });
         automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
             draft.transport.tempo = 90;
+        });
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+
+        expect(result).toMatchObject({
+            divergence: { kind: 'ambiguous-same-object', mayReapply: false },
+            status: 'conflicted',
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('treats master gain as a project-slot target instead of non-overlapping state', async () => {
+        seedProject();
+        registerCrdtStorageRuntime();
+        const execute = vi.fn();
+        registerHandlerMap({
+            setMasterGain: {
+                describe: () => ({ inverseAction: null, label: 'Set master gain' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const baseRevision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: { type: 'setMasterGain', payload: { gain: 0.7 } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Set master gain.',
+            normalizedProjectRevision: baseRevision,
+            objectReferences: [],
+            parameterUnits: [{ argument: 'gain', unit: 'linear-gain' }],
+            reason: 'Change master gain.',
+            time: [],
+        });
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.transport.masterGain = 75;
         });
 
         const result = await executeVersionedCommandBatch({

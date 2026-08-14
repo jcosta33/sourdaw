@@ -22,6 +22,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
     const actions = envelope.commands.map(
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
+    const divergenceTargetIds = getCommandDivergenceTargetIds({ actions, targetIds: envelope.scope.targetIds });
     const observedRevision = commandProjectRevisionPort.isConfigured()
         ? commandProjectRevisionPort.capture()
         : envelope.baseRevision;
@@ -105,7 +106,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             commandsCompatible: preparedActions.every(
                 ({ action, handler }) => handler.canReapplyAfterDivergence?.(action) === true
             ),
-            targetIds: getCommandDivergenceTargetIds({ actions, targetIds: envelope.scope.targetIds }),
+            targetIds: divergenceTargetIds,
         });
         if (!divergence?.mayReapply) {
             return {
@@ -161,11 +162,19 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                     })
             );
             if (!valid) {
+                const incompatibleDivergence = divergence?.mayReapply
+                    ? commandProjectDivergencePort.classify({
+                          baseRevision: envelope.baseRevision,
+                          commandsCompatible: false,
+                          targetIds: divergenceTargetIds,
+                      })
+                    : divergence;
                 workspace.release();
                 return {
                     status: 'conflicted' as const,
                     reason: `Action conflicts with current project state: ${prepared.action.type}`,
                     actions: [] as [],
+                    ...(incompatibleDivergence ? { divergence: incompatibleDivergence } : {}),
                 };
             }
         }

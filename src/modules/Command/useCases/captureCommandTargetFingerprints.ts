@@ -1,4 +1,8 @@
-import { COMMAND_TEMPO_TARGET_ID, COMMAND_TIME_SIGNATURE_TARGET_ID } from './getCommandDivergenceTargetIds';
+import {
+    COMMAND_MASTER_GAIN_TARGET_ID,
+    COMMAND_TEMPO_TARGET_ID,
+    COMMAND_TIME_SIGNATURE_TARGET_ID,
+} from './getCommandDivergenceTargetIds';
 
 type CaptureCommandTargetFingerprintsInput = {
     document: unknown;
@@ -76,6 +80,13 @@ export function captureCommandTargetFingerprints(
     const fingerprintMatches = new Map<string, string[]>();
     collectTargetFingerprints(input.document, new Set(input.targetIds), fingerprintMatches, new WeakSet<object>());
     if (isRecord(input.document) && isRecord(input.document.transport)) {
+        if (input.targetIds.includes(COMMAND_MASTER_GAIN_TARGET_ID)) {
+            appendFingerprint(
+                fingerprintMatches,
+                COMMAND_MASTER_GAIN_TARGET_ID,
+                stableStringify(input.document.transport.masterGain)
+            );
+        }
         if (input.targetIds.includes(COMMAND_TEMPO_TARGET_ID)) {
             appendFingerprint(
                 fingerprintMatches,

@@ -798,6 +798,31 @@ describe('executeAppActionBatch', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
+    it('rejects an unguarded inverse before an atomic batch can dispatch', async () => {
+        const execute = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+                validate: () => true,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+            requireCompensation: true,
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Action compensation is not guarded inside an atomic batch: setEditingTool',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
     it('accepts a canonical no-op without requiring an inverse inside an atomic batch', async () => {
         const execute = vi.fn();
         registerHandlerMap({

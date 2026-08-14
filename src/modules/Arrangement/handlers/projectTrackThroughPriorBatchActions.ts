@@ -39,6 +39,8 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             projected.gain = action.payload.gain;
         } else if (action.type === 'renameTrack') {
             projected.name = action.payload.name;
+        } else if (action.type === 'setTrackColor') {
+            projected.color = action.payload.color;
         } else if (action.type === 'setTrackPan') {
             projected.pan = action.payload.pan;
         } else if (action.type === 'muteTrack') {

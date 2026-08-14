@@ -4,6 +4,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { compileAudioGraphTopology } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureCommandTargetFingerprints } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 type CaptureCommandBatchPreflightStateInput = {
@@ -389,7 +390,7 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 }
 
 export function captureCommandBatchPreflightState(input: CaptureCommandBatchPreflightStateInput) {
-    const context = getProjectContext();
+    const context = agentProjectRepairStateStore.value ? null : getProjectContext();
     const targetIds = new Set(input.targetIds);
     const projectDoc = input.projectDocument ?? getCrdtDoc(DOC_PREFIX_ROOT);
     const allIds = new Set<string>();
@@ -402,14 +403,14 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
     if (targetIds.has('hw_out')) {
         targetFingerprints.hw_out = 'system-output:hw_out';
     }
-    const tracks = context.tracks.map((track) => ({
+    const tracks = (context?.tracks ?? []).map((track) => ({
         devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
         id: track.id,
         kind: track.kind,
         outputId: track.outputId,
         sends: (track.sends ?? []).map((send) => ({ busId: send.busId, level: send.level })),
     }));
-    const sidechainRoutes = (context.sidechainRoutes ?? []).map((route) => ({
+    const sidechainRoutes = (context?.sidechainRoutes ?? []).map((route) => ({
         sourceTrackId: route.sourceTrackId,
         targetDeviceId: route.targetDeviceId,
         targetTrackId: route.targetTrackId,
@@ -439,12 +440,13 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             (assetHash) => currentClipAssetHashes.has(assetHash) || assetTransfer?.hasAsset(assetHash) === true
         ),
         availableAudioBufferIds: audioBufferIds.filter((audioBufferId) => audioBufferCache.has(audioBufferId)),
-        lockedRanges: (context.productionBrief?.locks ?? []).flatMap((lock) =>
+        lockedRanges: (context?.productionBrief?.locks ?? []).flatMap((lock) =>
             lock.scope.kind === 'range' ? [{ startBeat: lock.scope.startBeat, endBeat: lock.scope.endBeat }] : []
         ),
         projectId: captureProjectRevision(),
         projectInvariantsValid:
-            duplicateIds.size === 0 && (stagedInspection?.projectInvariantsValid ?? projectInvariantsAreValid(context)),
+            duplicateIds.size === 0 &&
+            (stagedInspection?.projectInvariantsValid ?? (context ? projectInvariantsAreValid(context) : false)),
         targetFingerprints,
     };
 }

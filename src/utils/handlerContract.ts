@@ -732,10 +732,20 @@ export type AppAction =
                * therefore name the tempo-map change the original write landed on.
                * AiRuntime payload validation rejects this field.
                */
-              tempoChangeId?: string;
+              tempoChangeId?: string | null;
+              /** Application-owned replay guard. AiRuntime payload validation rejects this field. */
+              expectedBpm?: number;
           };
       }
-    | { type: 'setTimeSignature'; payload: { numerator: number; denominator: number } }
+    | {
+          type: 'setTimeSignature';
+          payload: {
+              numerator: number;
+              denominator: number;
+              expectedNumerator?: number;
+              expectedDenominator?: number;
+          };
+      }
     | { type: 'setPlayback'; payload: { playing: boolean } }
     | { type: 'togglePlayback'; payload?: undefined }
     | { type: 'stopPlayback'; payload?: undefined }
@@ -909,7 +919,7 @@ export type AppAction =
       }
     | { type: 'addMarker'; payload: { beat: number; name: string; markerId?: string; color?: string } }
     | { type: 'removeMarker'; payload: { markerId: string } }
-    | { type: 'setMarkerColor'; payload: { markerId: string; color: string } }
+    | { type: 'setMarkerColor'; payload: { markerId: string; color: string; expectedColor?: string } }
     | {
           type: 'addSection';
           payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string };
@@ -1153,7 +1163,7 @@ export type AppAction =
     | { type: 'setAllVelocities'; payload: { clipId: string; velocity: number } }
     | { type: 'setTrackGain'; payload: { trackId: string; gain: number; expectedGain: number } }
     | { type: 'setTrackPan'; payload: { trackId: string; pan: number; expectedPan: number } }
-    | { type: 'setTrackColor'; payload: { trackId: string; color: string } }
+    | { type: 'setTrackColor'; payload: { trackId: string; color: string; expectedColor?: string } }
     | { type: 'copyClip'; payload?: undefined }
     | { type: 'cutClip'; payload?: undefined }
     | { type: 'pasteClip'; payload?: undefined }

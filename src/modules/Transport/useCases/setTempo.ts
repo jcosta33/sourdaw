@@ -13,10 +13,10 @@ export type SetTempoInput = {
     bpm: number;
     /**
      * Rewrite this tempo-map change instead of resolving one from the playhead.
-     * Undo and redo replay carry it so a position-dependent write stays pinned to
-     * the event it originally landed on.
+     * `null` pins replay to the transport's base tempo. Undo and redo carry the
+     * resolved target so a position-dependent write cannot move later.
      */
-    tempoChangeId?: string;
+    tempoChangeId?: string | null;
 };
 
 export type SetTempoOutput = {

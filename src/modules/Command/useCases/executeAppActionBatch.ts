@@ -534,6 +534,20 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
+                if (options?.requireCompensation && description?.inverseAction) {
+                    const inverseHandler = getCommandHandler(description.inverseAction);
+                    if (
+                        !inverseHandler?.validate ||
+                        inverseHandler.batchRestriction === 'missing-validation' ||
+                        inverseHandler.canReapplyAfterDivergence?.(description.inverseAction) !== true
+                    ) {
+                        return {
+                            status: 'rejected',
+                            reason: `Action compensation is not guarded inside an atomic batch: ${action.type}`,
+                            actions: [],
+                        };
+                    }
+                }
                 if (
                     suppliedEnvelope &&
                     (suppliedEnvelope.operation !== action.type ||
