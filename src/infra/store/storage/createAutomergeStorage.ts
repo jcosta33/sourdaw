@@ -175,6 +175,7 @@ type AutomergeStorageTransactionControl = {
     readonly scope: AutomergeStorageTransactionScope;
     abort(): void;
     commit(): void;
+    validateCommit(validator: () => string | null): void;
     validateDocument(docId: AutomergeStorageDocId, validator: AutomergeStorageDocumentValidator): void;
 };
 
@@ -458,6 +459,7 @@ export function runWithAutomergeStorageTransaction<Result>(
     activeAutomergeStorageTransaction = transaction;
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
     let terminalState: 'open' | 'committed' | 'aborted' = 'open';
+    const commitValidators: Array<() => string | null> = [];
     const documentValidators = new Map<AutomergeStorageDocId, AutomergeStorageDocumentValidator>();
     let outcome: AutomergeStorageTransactionOutcome<Result>;
 
@@ -505,6 +507,12 @@ export function runWithAutomergeStorageTransaction<Result>(
             if (terminalState !== 'open') {
                 return;
             }
+            for (const validateCommit of commitValidators) {
+                const validationFailure = validateCommit();
+                if (validationFailure) {
+                    throw new AutomergeStorageTransactionValidationError(validationFailure);
+                }
+            }
             openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
             try {
                 flushMatchingAutomergeStorageWrites(
@@ -531,6 +539,12 @@ export function runWithAutomergeStorageTransaction<Result>(
                 throw error instanceof AutomergeStorageFlushError ? error.failure : error;
             }
             terminalState = 'committed';
+        },
+        validateCommit(validator): void {
+            if (terminalState !== 'open') {
+                throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
+            }
+            commitValidators.push(validator);
         },
         validateDocument(docId, validator): void {
             if (terminalState !== 'open') {

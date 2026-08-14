@@ -225,6 +225,39 @@ describe('executeAppActionBatch', () => {
         expect(effect).not.toHaveBeenCalled();
     });
 
+    it('aborts a project batch when repair becomes required before commit', async () => {
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: async () => {
+                    markHandlerStarted?.();
+                    await handlerRelease;
+                    return { status: 'written' };
+                },
+            }),
+        });
+
+        const execution = executeAppActionBatch([action]);
+        await handlerStarted;
+        mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
+        releaseHandler?.();
+
+        await expect(execution).resolves.toEqual({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+            failureKind: 'verification',
+        });
+    });
+
     it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {
         const firstAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const secondAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };

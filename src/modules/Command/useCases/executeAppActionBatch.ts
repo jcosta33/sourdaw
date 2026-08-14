@@ -29,7 +29,7 @@ import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
-import { isProjectMutationAllowed } from './isProjectMutationAllowed';
+import { getProjectMutationAdmissionFailure, PROJECT_REPAIR_REQUIRED_MESSAGE } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
@@ -625,10 +625,10 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return executeRuntimeAction(runtimeAction, options?.source, options?.shouldExecute);
             }
 
-            if (!isProjectMutationAllowed()) {
+            if (getProjectMutationAdmissionFailure()) {
                 return {
                     status: 'conflicted',
-                    reason: 'Project repair is required before project actions can execute',
+                    reason: PROJECT_REPAIR_REQUIRED_MESSAGE,
                     actions: [],
                 };
             }
@@ -661,6 +661,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             const storageTransaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, (scope) =>
                 executePreparedBatch(preparedActions, scope, attemptedActions, options?.shouldExecute)
             );
+            storageTransaction.validateCommit(getProjectMutationAdmissionFailure);
             if (storageTransaction.status === 'threw') {
                 storageTransaction.abort();
                 clearBatchSemanticContext();
