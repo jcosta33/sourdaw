@@ -48,9 +48,6 @@ const PARAM_MAP: Record<string, string> = {
 const LEGATO_TRANSITION_TYPE_IDS: Record<string, number> = {
     slurred: 0,
     portamento: 1,
-    run: 2,
-    rip: 3,
-    fall: 4,
 };
 const LEGATO_DYNAMIC_IDS: Record<string, number> = {
     pp: 0,
@@ -68,7 +65,6 @@ type LevainAddLegatoTransitionMsg = {
     interval: number;
     transitionType: string;
     dynamic: string;
-    crossfadeInMs: number;
     crossfadeOutMs: number;
 };
 
@@ -573,7 +569,6 @@ class LevainProcessor extends AudioWorkletProcessor {
                     LEGATO_TRANSITION_TYPE_IDS[msg.transitionType] ?? 0,
                     LEGATO_DYNAMIC_IDS[msg.dynamic] ?? 0,
                     msg.sampleId,
-                    msg.crossfadeInMs,
                     msg.crossfadeOutMs
                 );
                 break;

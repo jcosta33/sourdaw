@@ -443,9 +443,17 @@ pub struct LegatoTransition {
     pub transition_type: TransitionType,
     pub dynamic: Dynamic,
     pub sample_id: SampleId,
-    /// Time to crossfade from sustain into transition.
-    pub crossfade_in_ms: f32,
-    /// Time to crossfade from transition into new sustain.
+    /// Time to crossfade from the transition recording into the new sustain
+    /// zone, in milliseconds. `0.0` means the bank authored none, and the
+    /// adaptive `crossfade_times(speed)` default applies instead. Read in
+    /// `LegatoEngine::note_on`.
+    ///
+    /// There is deliberately no `crossfade_in_ms` beside it. The "fade the
+    /// outgoing note into the transition" half has nowhere to run in this
+    /// voice pool — the departing voice is faded by its own release curve
+    /// (`engine.rs`, the `TrueTransition` arm), with no independent stream to
+    /// give a second, separately-timed ramp to. A manifest field that is
+    /// validated and stored but cannot reach the audio is worse than no field.
     pub crossfade_out_ms: f32,
 }
 

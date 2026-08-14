@@ -46,11 +46,13 @@ describe('parseSampleManifest legato transitions', () => {
             ...createValidManifest(),
             legatoTransitions: [
                 {
+                    // Wider than an octave: `LegatoTransitionStore::find` has no
+                    // interval bound, so a recorded transition this wide does
+                    // play. Only the synthetic-glide fallback stops at 12.
                     file: 'slur/up-2-mf.wav',
-                    interval: -12,
+                    interval: -13,
                     transitionType: 'portamento',
                     dynamic: 'ff',
-                    crossfadeInMs: 40,
                     crossfadeOutMs: 80.5,
                 },
             ],
@@ -59,10 +61,9 @@ describe('parseSampleManifest legato transitions', () => {
         expect(parsed.legatoTransitions).toEqual([
             {
                 file: 'slur/up-2-mf.wav',
-                interval: -12,
+                interval: -13,
                 transitionType: 'portamento',
                 dynamic: 'ff',
-                crossfadeInMs: 40,
                 crossfadeOutMs: 80.5,
             },
         ]);
@@ -70,18 +71,21 @@ describe('parseSampleManifest legato transitions', () => {
 
     it.each([
         ['a zero interval, which is not a transition', { interval: 0 }],
-        ['an interval past the DSP lookup range', { interval: 13 }],
+        ['an interval no i8 lookup key could hold', { interval: 128 }],
         ['a transition type the DSP has no discriminant for', { transitionType: 'scoop' }],
+        // The classifier only ever asks for `slurred` or `portamento`; a `rip`
+        // could be reached solely by the store's any-type fallback, in the
+        // context of a slur it was not recorded for.
+        ['a transition type the classifier can never request', { transitionType: 'rip' }],
         ['a dynamic outside the six recorded layers', { dynamic: 'mff' }],
         ['an absolute sample path', { file: '/etc/passwd' }],
-        ['a negative crossfade time', { crossfadeInMs: -1 }],
+        ['a negative crossfade time', { crossfadeOutMs: -1 }],
     ])('rejects %s', (_case, override) => {
         const transition = {
             file: 'slur.wav',
             interval: 2,
             transitionType: 'slurred',
             dynamic: 'mf',
-            crossfadeInMs: 40,
             crossfadeOutMs: 80,
             ...override,
         };

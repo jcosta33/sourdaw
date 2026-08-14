@@ -666,23 +666,24 @@ describe('LevainProcessor message handling', () => {
             loadToken: 1,
             sampleId: 7,
             interval: -3,
-            crossfadeInMs: 40,
             crossfadeOutMs: 80,
         };
         send(proc, { ...base, transitionType: 'slurred', dynamic: 'pp' });
         send(proc, { ...base, transitionType: 'portamento', dynamic: 'ff' });
-        send(proc, { ...base, transitionType: 'fall', dynamic: 'mf' });
+        send(proc, { ...base, transitionType: 'slurred', dynamic: 'mf', crossfadeOutMs: 0 });
         // A transition left over from a superseded load must not reach the
         // sounding bank's transition store.
-        send(proc, { ...base, loadToken: 99, transitionType: 'rip', dynamic: 'f' });
+        send(proc, { ...base, loadToken: 99, transitionType: 'portamento', dynamic: 'f' });
 
         const registered = calls.filter((call) => call.method === 'add_legato_transition');
         expect(registered).toHaveLength(3);
         // add_legato_transition(interval, transitionType, dynamic, sampleId,
-        //                       crossfadeInMs, crossfadeOutMs)
-        expect(registered[0]!.args).toEqual([-3, 0, 0, 7, 40, 80]);
-        expect(registered[1]!.args).toEqual([-3, 1, 5, 7, 40, 80]);
-        expect(registered[2]!.args).toEqual([-3, 4, 3, 7, 40, 80]);
+        //                       crossfadeOutMs)
+        expect(registered[0]!.args).toEqual([-3, 0, 0, 7, 80]);
+        expect(registered[1]!.args).toEqual([-3, 1, 5, 7, 80]);
+        // 0 is "unauthored" — it reaches the DSP as 0 and the adaptive default
+        // applies there, rather than being dropped on this side.
+        expect(registered[2]!.args).toEqual([-3, 0, 3, 7, 0]);
     });
 
     it('forwards buildZoneMap', async () => {

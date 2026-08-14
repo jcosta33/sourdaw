@@ -228,7 +228,7 @@ describe('loadInstrumentFromManifest', () => {
         expect(addZone).toMatchObject({ loopMode: 'forward', loopStart: 0, loopEnd: 1, loopCrossfade: 0 });
     });
 
-    it('registers each recorded legato transition against its own sample id before the zone map is built', async () => {
+    it('registers each recorded legato transition against its own sample id', async () => {
         const port = makePort();
         const manifest = {
             ...MANIFEST,
@@ -238,7 +238,6 @@ describe('loadInstrumentFromManifest', () => {
                     interval: 2,
                     transitionType: 'slurred',
                     dynamic: 'mf',
-                    crossfadeInMs: 40,
                     crossfadeOutMs: 80,
                 },
             ],
@@ -273,12 +272,9 @@ describe('loadInstrumentFromManifest', () => {
             interval: 2,
             transitionType: 'slurred',
             dynamic: 'mf',
-            crossfadeInMs: 40,
             crossfadeOutMs: 80,
         });
-
-        const types = postedTypes(port);
-        expect(types.indexOf('addLegatoTransition')).toBeLessThan(types.indexOf('buildZoneMap'));
+        expect(registered[0]).not.toHaveProperty('crossfadeInMs');
     });
 
     it('posts no legato transition for a bank that authors none', async () => {

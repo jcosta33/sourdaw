@@ -39,8 +39,21 @@ export type ManifestArticulation = {
     zones: readonly ManifestZone[];
 };
 
-/** Transition kinds the DSP's `TransitionType` can be addressed by, in its own order. */
-export const LEGATO_TRANSITION_TYPES = ['slurred', 'portamento', 'run', 'rip', 'fall'] as const;
+/**
+ * Transition kinds a bank can author, in the DSP `TransitionType`'s own order.
+ *
+ * Only the two the classifier can ask for. `LegatoEngine::note_on` derives the
+ * type it looks up from velocity alone — under the portamento threshold gives
+ * `Portamento`, at or above it gives `Slurred` — and never requests the DSP's
+ * remaining `Run`, `Rip` or `Fall`. An authored one of those could only be
+ * reached by the store's last-resort "same interval, any type" fallback, which
+ * would play it in the context of a slur it was not recorded for. Rips and
+ * falls are brass gestures rather than transitions *between two pitches*, which
+ * is what this interval-keyed table indexes; they belong to the articulation
+ * system. The Rust discriminants are unchanged, so the wire encoding still
+ * matches on both sides.
+ */
+export const LEGATO_TRANSITION_TYPES = ['slurred', 'portamento'] as const;
 export type LegatoTransitionType = (typeof LEGATO_TRANSITION_TYPES)[number];
 
 /** Dynamic layers a transition can be recorded at, in `Dynamic`'s own order. */
@@ -60,11 +73,20 @@ export type LegatoDynamic = (typeof LEGATO_DYNAMICS)[number];
  */
 export type ManifestLegatoTransition = {
     file: string;
-    /** Semitones, `newNote - oldNote`. Non-zero, within the DSP's ±12 lookup range. */
+    /** Semitones, `newNote - oldNote`. Non-zero, within the ±127 an `i8` key can hold. */
     interval: number;
     transitionType: LegatoTransitionType;
     dynamic: LegatoDynamic;
-    crossfadeInMs: number;
+    /**
+     * How long the recording takes to hand over to the new sustain zone. `0`
+     * leaves the DSP's speed-derived `crossfade_times` default in place.
+     *
+     * There is no `crossfadeInMs` beside it: the "fade the outgoing note into
+     * the transition" half has nowhere to run in Levain's voice pool, where the
+     * departing voice is faded by its own release curve with no independent
+     * stream to give a second, separately-timed ramp to. A validated field that
+     * cannot reach the audio is a promise to bank authors this cannot keep.
+     */
     crossfadeOutMs: number;
 };
 
@@ -85,8 +107,19 @@ const MAX_ARTICULATIONS = Object.keys(ARTICULATION_ID_BY_TYPE).length;
 const MAX_ZONE_ARENA = 65_536;
 /** `LegatoTransitionStore::MAX_TRANSITIONS` — anything past this is dropped by the DSP. */
 const MAX_LEGATO_TRANSITIONS = 1024;
-/** `MAX_LEGATO_INTERVAL` — the widest interval the DSP's transition lookup covers. */
-const MAX_LEGATO_INTERVAL = 12;
+/**
+ * The widest interval the classifier can ever ask the transition store for.
+ *
+ * Not a lookup limit: `LegatoTransitionStore::find` matches on interval with no
+ * bound at all, so a recorded transition wider than an octave does play. (The
+ * DSP's `MAX_LEGATO_INTERVAL` of 12 gates only the *synthetic glide* fallback,
+ * which is a different branch and a different thing — a pitch glide across more
+ * than an octave is what that bound is protecting against.) What does bound an
+ * authored interval is the lookup key itself: `note as i8 - held.note as i8`
+ * over MIDI 0-127, so nothing outside ±127 can ever be requested, and the wire
+ * field is an `i8`.
+ */
+const MAX_LEGATO_INTERVAL = 127;
 const MAX_ZONE_LIST_COUNT = 65_535;
 const VELOCITY_BUCKET_SIZE = 8;
 const SAMPLE_BANK_BASE_URL = new URL('https://sourdaw.invalid/bank/');
@@ -265,9 +298,6 @@ function parseLegatoTransition(value: unknown, path: string): ManifestLegatoTran
     if (!isLegatoDynamic(value.dynamic)) {
         throw new TypeError(`${path}.dynamic must be one of ${LEGATO_DYNAMICS.join(', ')}`);
     }
-    if (!isNonNegativeF32(value.crossfadeInMs)) {
-        throw new TypeError(`${path}.crossfadeInMs must be a non-negative finite 32-bit float`);
-    }
     if (!isNonNegativeF32(value.crossfadeOutMs)) {
         throw new TypeError(`${path}.crossfadeOutMs must be a non-negative finite 32-bit float`);
     }
@@ -277,7 +307,6 @@ function parseLegatoTransition(value: unknown, path: string): ManifestLegatoTran
         interval: value.interval,
         transitionType: value.transitionType,
         dynamic: value.dynamic,
-        crossfadeInMs: value.crossfadeInMs,
         crossfadeOutMs: value.crossfadeOutMs,
     });
 }

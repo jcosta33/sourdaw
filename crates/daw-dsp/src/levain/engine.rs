@@ -1936,8 +1936,7 @@ mod tests {
             transition_type: TransitionType::Slurred,
             dynamic: Dynamic::MF, // cc1_to_dynamic(0.5), the engine's default
             sample_id: transition_sample,
-            crossfade_in_ms: 0.0,
-            crossfade_out_ms: 0.0,
+            crossfade_out_ms: 0.0, // unauthored: the adaptive default applies
         });
 
         // Hold 60, then slur into 64 well inside the legato engine's 100 ms
@@ -1957,6 +1956,78 @@ mod tests {
              slur; got {crossings} zero crossings in the first block, versus \
              roughly {self_crossfade_estimate} for a 200 Hz sustain zone \
              crossfaded against itself"
+        );
+    }
+
+    /// `crossfadeOutMs` is a manifest field this PR validates and documents,
+    /// so it has to reach the audio. The hand-over from the transition
+    /// recording into the new sustain zone is the one half of the authored
+    /// pair this voice pool can actually time; an authored value replaces the
+    /// speed-derived `crossfade_times` default, and `0.0` leaves that default
+    /// alone so every bank shipped today behaves exactly as before.
+    #[test]
+    fn an_authored_crossfade_out_lengthens_the_transition_hand_over() {
+        /// Blocks after the slur at which the 40 ms fast default is long over
+        /// (15 blocks) but a 200 ms authored fade is barely a quarter through.
+        const SETTLED_BLOCKS: usize = 20;
+
+        fn crossings_after_the_default_would_have_finished(crossfade_out_ms: f32) -> usize {
+            let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+
+            let sustain_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+                .collect();
+            let transition_period = 6u32;
+            let transition_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| {
+                    (frame % transition_period) as f32 / transition_period as f32 * 2.0 - 1.0
+                })
+                .collect();
+
+            let sustain_sample = engine
+                .add_sample(sustain_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("sustain sample should fit the bank");
+            let transition_sample = engine
+                .add_sample(transition_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("transition sample should fit the bank");
+
+            engine.add_zone(wide_zone(
+                0,
+                sustain_sample,
+                VelRange { lo: 0, hi: 127 },
+                false,
+            ));
+            engine
+                .build_zone_map(1, 1)
+                .expect("zone map should build");
+            engine.add_legato_transition(LegatoTransition {
+                interval: 4,
+                transition_type: TransitionType::Slurred,
+                dynamic: Dynamic::MF,
+                sample_id: transition_sample,
+                crossfade_out_ms,
+            });
+
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_on(64, 100);
+            render(&mut engine, SETTLED_BLOCKS);
+            zero_crossings(&render(&mut engine, 4))
+        }
+
+        // 0.0 is "unauthored": the fast-legato 40 ms default, finished well
+        // before the measurement window, so this reads as the 200 Hz sustain.
+        let default_fade = crossings_after_the_default_would_have_finished(0.0);
+        // 200 ms: still roughly three quarters weighted onto the 8 kHz
+        // transition recording when the window opens.
+        let authored_fade = crossings_after_the_default_would_have_finished(200.0);
+
+        assert!(
+            authored_fade > default_fade * 4,
+            "an authored crossfadeOutMs must lengthen the hand-over out of the \
+             transition recording: {authored_fade} zero crossings against \
+             {default_fade} for the speed-derived default, measured over the \
+             same window {SETTLED_BLOCKS} blocks after the slur"
         );
     }
 
