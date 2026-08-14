@@ -1,0 +1,22 @@
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  h_1228e573df1f42 1010-1015
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  h_1228e573df1f42 393-394,396-397,408
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  h_1228e573df1f42 500
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  h_1228e573df1f42 296-298,308
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  h_1228e573df1f42 5-9,17-18,33-36,177-189,201-215,303,576-578,581,590-591,597,600,603,619,627,897,905-906,915,933-936,945,950,954,959,963-964,974,983,988,992,997-998,1011-1014,1023,1028,1034,1063-1075,1082-1085,1095,1116-1122,1129-1132,1162-1168,1178-1180,1185-1186,1190-1193,1197-1198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "593eeeec230e2e09efde4124feba565824ad0613",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
