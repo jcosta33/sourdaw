@@ -460,6 +460,28 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(0);
     });
 
+    it.each([
+        ['forward-versioned', { schemaVersion: 2, records: [] }],
+        ['malformed', { records: [{ id: 'corrupt' }] }],
+    ])('fails closed when the project idempotency ledger is %s', async (_case, storedLedger) => {
+        projectDocument.commandBatchIdempotency = storedLedger;
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Project idempotency ledger schema is unsupported',
+        });
+        expect(projectDocument.commandBatchIdempotency).toEqual(storedLedger);
+        expect(mutationCount).toBe(0);
+        expect(runtimeEffectCount).toBe(0);
+    });
+
     it('fails closed before effects when durable idempotency admission is unavailable', async () => {
         commandBatchIdempotencyPort.setRepository({
             lookup: () => Promise.resolve({ status: 'missing' }),

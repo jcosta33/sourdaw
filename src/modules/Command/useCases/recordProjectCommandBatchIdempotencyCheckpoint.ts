@@ -18,6 +18,9 @@ export function recordProjectCommandBatchIdempotencyCheckpoint(
         throw new Error('The project idempotency receipt exceeds the durable limit');
     }
     const state = commandBatchIdempotencyStore.value ?? { records: [] };
+    if ('unsupportedSchema' in state) {
+        throw new Error('Project idempotency ledger schema is unsupported');
+    }
     const existing = state.records.filter(
         (record) => record.projectId === input.projectId && record.idempotencyKey === input.idempotencyKey
     );

@@ -7,14 +7,21 @@ type GetProjectCommandBatchIdempotencyCheckpointInput = {
 };
 
 type GetProjectCommandBatchIdempotencyCheckpointOutput =
-    { status: 'missing' } | { status: 'pending' | 'complete'; serializedReceipt: string } | { status: 'conflict' };
+    | { status: 'missing' }
+    | { status: 'pending' | 'complete'; serializedReceipt: string }
+    | { status: 'conflict' }
+    | { status: 'unsupported-schema' };
 
 export function getProjectCommandBatchIdempotencyCheckpoint(
     input: GetProjectCommandBatchIdempotencyCheckpointInput
 ): GetProjectCommandBatchIdempotencyCheckpointOutput {
     commandBatchIdempotencyStore.hydrate();
+    const state = commandBatchIdempotencyStore.value;
+    if (state && 'unsupportedSchema' in state) {
+        return { status: 'unsupported-schema' };
+    }
     const matches =
-        commandBatchIdempotencyStore.value?.records.filter(
+        state?.records.filter(
             (record) => record.projectId === input.projectId && record.idempotencyKey === input.idempotencyKey
         ) ?? [];
     if (matches.length === 0) {

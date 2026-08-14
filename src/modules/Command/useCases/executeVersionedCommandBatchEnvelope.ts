@@ -87,6 +87,23 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                       idempotencyKey: parsed.envelope.idempotencyKey,
                       contentHash: idempotencyContentHash,
                   });
+            if (projectCheckpoint.status === 'unsupported-schema') {
+                const result = {
+                    status: 'rejected' as const,
+                    reason: 'Project idempotency ledger schema is unsupported',
+                    actions: [] as [],
+                };
+                return {
+                    ...result,
+                    receipt: createVerifiedBatchReceipt({
+                        envelope: resolvedEnvelope,
+                        observedBaseRevision,
+                        receiptWarnings,
+                        resultingRevision: observedBaseRevision,
+                        result,
+                    }),
+                };
+            }
             if (projectCheckpoint.status === 'conflict') {
                 const result = {
                     status: 'rejected' as const,

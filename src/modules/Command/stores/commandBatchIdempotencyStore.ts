@@ -12,6 +12,13 @@ const MAX_RECEIPT_BYTES = 1_048_576;
 
 export const defaultProjectCommandBatchIdempotencyState: ProjectCommandBatchIdempotencyState = { records: [] };
 
+type ProjectCommandBatchIdempotencyStoreState =
+    | ProjectCommandBatchIdempotencyState
+    | {
+          records: [];
+          unsupportedSchema: true;
+      };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -54,11 +61,11 @@ function isExactState(value: unknown): value is ProjectCommandBatchIdempotencySt
     return value.records.length <= MAX_RECORDS && value.records.every(isValidRecord);
 }
 
-export function sanitizeProjectCommandBatchIdempotencyState(value: unknown): ProjectCommandBatchIdempotencyState {
-    return isExactState(value) ? value : defaultProjectCommandBatchIdempotencyState;
+export function sanitizeProjectCommandBatchIdempotencyState(value: unknown): ProjectCommandBatchIdempotencyStoreState {
+    return isExactState(value) ? value : { records: [], unsupportedSchema: true };
 }
 
-export const commandBatchIdempotencyStore = createStore<ProjectCommandBatchIdempotencyState>({
+export const commandBatchIdempotencyStore = createStore<ProjectCommandBatchIdempotencyStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'commandBatchIdempotency', {
         crdtEntityIdentity: {
             records: (value) => (isValidRecord(value) ? value.id : null),
