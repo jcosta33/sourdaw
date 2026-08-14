@@ -140,7 +140,7 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
         expect(storage.get()).toEqual({ tool: 'draw' });
     });
 
-    it('aborts a captured post-await write when repair becomes required before commit', async () => {
+    it('should abort a captured post-await write when repair becomes required before commit', async () => {
         const { doc, mutations, storage } = createHarness();
         let releaseHandler: (() => void) | undefined;
         let markHandlerStarted: (() => void) | undefined;

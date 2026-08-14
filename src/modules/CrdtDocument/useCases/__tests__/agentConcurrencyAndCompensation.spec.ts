@@ -876,7 +876,7 @@ describe('agent concurrency and compensation', () => {
         });
     });
 
-    it('retains unresolved Automerge alternatives and blocks ordinary writes until typed repair', async () => {
+    it('should retain unresolved Automerge alternatives and block ordinary writes until typed repair', async () => {
         const { targetStorage } = prepareTargetCommand();
         const baseRevision = captureProjectRevision();
         const baseDocument = automergeRepository.getDoc<TestProjectDocument>('root');

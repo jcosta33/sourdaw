@@ -207,7 +207,7 @@ describe('executeAppActionBatch', () => {
         expect(secondEffect).not.toHaveBeenCalled();
     });
 
-    it('blocks project batches before the first handler effect while project repair is required', async () => {
+    it('should block project batches before the first handler effect while project repair is required', async () => {
         const effect = vi.fn();
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         registerHandlerMap({
@@ -225,7 +225,7 @@ describe('executeAppActionBatch', () => {
         expect(effect).not.toHaveBeenCalled();
     });
 
-    it('aborts a project batch when repair becomes required before commit', async () => {
+    it('should abort a project batch when repair becomes required before commit', async () => {
         let releaseHandler: (() => void) | undefined;
         let markHandlerStarted: (() => void) | undefined;
         const handlerStarted = new Promise<void>((resolve) => {
