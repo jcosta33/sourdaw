@@ -8,7 +8,7 @@ test.describe('Status bar — test-id targeted', () => {
         await launch_new_project(page);
     });
 
-    test('status bar is present as a footer with role=status', async ({ page }) => {
+    test('status bar is present as a labelled contentinfo footer', async ({ page }) => {
         const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status).toBeAttached({ timeout: 10_000 });
     });
