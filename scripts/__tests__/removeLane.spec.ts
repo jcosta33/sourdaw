@@ -108,6 +108,14 @@ describe('lane removal', () => {
         expect(calls).toEqual(['fetch', `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
     });
 
+    it('removes a lane whose campaign ledger is still open', () => {
+        const { port, calls } = fakePort({ campaigns: [campaign({ state: 'OPEN' })] });
+
+        removeLane(target, port);
+
+        expect(calls).toContain(`remove:${target}`);
+    });
+
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
         const { port, calls } = fakePort({ remoteHead: null });
 
@@ -135,12 +143,17 @@ describe('lane removal', () => {
         ['open PR', target, { pullRequests: [pullRequest({ state: 'OPEN', mergedAt: null })] }, /still active/],
         ['foreign repository', target, { pullRequests: [pullRequest({ headRepository: 'jcosta33/fork' })] }, /foreign/],
         ['reused branch', target, { pullRequests: [pullRequest(), pullRequest({ number: 43 })] }, /one pull request/],
-        ['open campaign', target, { campaigns: [campaign({ state: 'OPEN' })] }, /no closed campaign authority/],
         [
             'unlinked campaign',
             target,
             { campaigns: [campaign({ body: 'Other work.' })] },
-            /no closed campaign authority/,
+            /is not recorded in one campaign ledger/,
+        ],
+        [
+            'non-epic issue',
+            target,
+            { campaigns: [campaign({ labels: [{ name: 'bug' }] })] },
+            /is not recorded in one campaign ledger/,
         ],
         ['moved remote', target, { remoteHead: 'moved' }, /ownership is unproven/],
     ])('rejects a %s lane', (_case, path, input, message) => {

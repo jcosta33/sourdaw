@@ -212,20 +212,22 @@ function validateOwnership(
     if (pullRequest.state !== 'MERGED' || pullRequest.mergedAt === null || pullRequest.isDraft) {
         fail(`PR #${pullRequest.number} is still active`);
     }
+    // The ledger's own state is deliberately not checked. What authorises removal is that this
+    // lane's work is finished and recorded: the pull request is MERGED (above) and one epic ledger
+    // names it. A ledger stays OPEN for the whole life of its campaign, which is exactly when its
+    // lanes finish and accumulate — requiring CLOSED made every lane of a live campaign
+    // unremovable until the campaign itself ended, and lanes were retired by hand instead.
     const campaigns = port
         .campaignIssues(issueReferences(pullRequest.body))
         .filter(
-            (issue) =>
-                issue.state === 'CLOSED' &&
-                issue.labels.some((label) => label.name === 'epic') &&
-                mentions(issue.body, pullRequest.number)
+            (issue) => issue.labels.some((label) => label.name === 'epic') && mentions(issue.body, pullRequest.number)
         );
     if (campaigns.length !== 1) {
-        fail(`PR #${pullRequest.number} has no closed campaign authority`);
+        fail(`PR #${pullRequest.number} is not recorded in one campaign ledger`);
     }
     const campaign = campaigns[0];
     if (campaign === undefined) {
-        fail(`PR #${pullRequest.number} has no closed campaign authority`);
+        fail(`PR #${pullRequest.number} is not recorded in one campaign ledger`);
     }
     const remoteHead = port.remoteHead(branch);
     if (
