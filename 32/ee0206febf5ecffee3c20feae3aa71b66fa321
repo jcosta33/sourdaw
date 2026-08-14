@@ -1,0 +1,19 @@
+src/modules/Toaster/stores/__tests__/toasterStore.spec.ts
+  s_ab5443e65c7fba::t_a83d4437558fc1 9,154-157,207-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "32ee0206febf5ecffee3c20feae3aa71b66fa321",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
