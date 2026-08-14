@@ -231,11 +231,20 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     const reconciliation = await reconcileProjectCommandBatchEffects({
                         envelope: resolvedEnvelope,
                         serializedReceipt: recoveryCheckpoint.serializedReceipt,
+                        shouldReconcile: () => commandBatchExecutionAuthorityPort.canExecute(),
                     });
                     if (reconciliation.status === 'failed') {
                         return {
                             status: 'ambiguous' as const,
                             reason: reconciliation.reason,
+                            actions: [] as [],
+                            receipt: recoveryReceipt,
+                        };
+                    }
+                    if (!commandBatchExecutionAuthorityPort.canExecute()) {
+                        return {
+                            status: 'ambiguous' as const,
+                            reason: 'Only the authoritative collaboration host can reconcile a durable command batch',
                             actions: [] as [],
                             receipt: recoveryReceipt,
                         };

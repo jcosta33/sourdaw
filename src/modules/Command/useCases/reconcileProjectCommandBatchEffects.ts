@@ -11,6 +11,7 @@ type PreviewActionHandler = Extract<ActionHandler, { previewExecution: 'isolated
 type ReconcileProjectCommandBatchEffectsInput = {
     envelope: VersionedCommandBatchEnvelope;
     serializedReceipt: string;
+    shouldReconcile?: () => boolean;
 };
 
 type ReconcileProjectCommandBatchEffectsOutput = { status: 'reconciled' } | { status: 'failed'; reason: string };
@@ -82,6 +83,12 @@ export async function reconcileProjectCommandBatchEffects(
 
     try {
         for (const reconcile of reconciliations) {
+            if (input.shouldReconcile?.() === false) {
+                return {
+                    status: 'failed',
+                    reason: 'Only the authoritative collaboration host can reconcile a durable command batch',
+                };
+            }
             await reconcile();
         }
     } catch (error) {

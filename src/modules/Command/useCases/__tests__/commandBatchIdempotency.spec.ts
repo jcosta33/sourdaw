@@ -622,6 +622,82 @@ describe('command batch idempotency', () => {
         expect(release).toHaveBeenCalledTimes(1);
     });
 
+    it('rechecks host authority after waiting for the recovery lease', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        let effectAttempts = 0;
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    const applyRuntimeEffect = () => {
+                        effectAttempts += 1;
+                        if (effectAttempts <= 2) {
+                            return Promise.reject(new Error('runtime strip unavailable'));
+                        }
+                        runtimeGain = 0.8;
+                        runtimeEffectCount += 1;
+                        return Promise.resolve();
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: applyRuntimeEffect,
+                        afterAmbiguousCommit: applyRuntimeEffect,
+                    };
+                },
+            }),
+        });
+        let markRecoveryLeaseRequested!: () => void;
+        let grantRecoveryLease!: () => void;
+        const recoveryLeaseRequested = new Promise<void>((resolve) => {
+            markRecoveryLeaseRequested = resolve;
+        });
+        const recoveryLeaseGate = new Promise<void>((resolve) => {
+            grantRecoveryLease = resolve;
+        });
+        const release = vi.fn(() => Promise.resolve());
+        const recoveryAwareRepository = {
+            lookup: () => Promise.resolve({ status: 'missing' as const }),
+            claim: () => Promise.resolve({ status: 'claimed' as const }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: async () => {
+                markRecoveryLeaseRequested();
+                await recoveryLeaseGate;
+                return true;
+            },
+            release,
+        };
+        commandBatchIdempotencyPort.setRepository(recoveryAwareRepository);
+        const batch = compileBatch();
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        expect(first.status).toBe('committed-with-warning');
+
+        const retryPromise = executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        await recoveryLeaseRequested;
+        commandBatchExecutionAuthorityPort.setProvider(() => false);
+        grantRecoveryLease();
+        const retry = await retryPromise;
+
+        expect(retry).toMatchObject({
+            status: 'ambiguous',
+            reason: 'Only the authoritative collaboration host can reconcile a durable command batch',
+        });
+        expect(effectAttempts).toBe(2);
+        expect(runtimeEffectCount).toBe(0);
+        expect(runtimeGain).toBe(1);
+        expect(release).toHaveBeenCalledTimes(1);
+    });
+
     it('rechecks host authority after async claim admission and before project execution', async () => {
         let resolveClaim!: () => void;
         let markClaimStarted!: () => void;
