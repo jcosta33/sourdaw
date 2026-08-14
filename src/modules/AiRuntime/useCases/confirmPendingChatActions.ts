@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
+import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
     executeAppActionBatch,
     executeVersionedCommandBatch,
@@ -362,17 +363,23 @@ export async function confirmPendingChatActions(
                 if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
                     return false;
                 }
+                // Only abort, revision, and actor authorization gate the
+                // in-flight batch. The approval itself was fully validated by
+                // getApprovalPreflightFailure before execution began;
+                // re-deriving target fingerprints per action would read
+                // target state this batch has already mutated, so any
+                // multi-action batch touching a fingerprinted target would
+                // invalidate itself mid-flight. External interference is
+                // still caught here: every project mutation moves the
+                // revision heads isConfirmationExecutionAuthorized compares.
+                // The actor binding is re-checked separately because a
+                // collaborator reconnect rotates localPeerId (same fallback
+                // as compileAgentRiskApproval) without moving those heads.
                 const approved = confirmation.approvalSnapshot;
-                if (!approved.commandBatch || !approved.agentApproval) {
-                    return approved.commandBatch === undefined;
+                if (!approved.agentApproval) {
+                    return true;
                 }
-                return (
-                    validateAgentRiskApproval({
-                        approval: approved.agentApproval,
-                        commandBatch: approved.commandBatch,
-                        currentRevision: captureProjectRevision(),
-                    }).status === 'valid'
-                );
+                return (collaborationStore.value?.localPeerId ?? 'standalone') === approved.agentApproval.localActorId;
             },
         };
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;

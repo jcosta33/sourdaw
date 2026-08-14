@@ -55,6 +55,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     clearUndoHistory: mocks.clearUndoHistory,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
 }));

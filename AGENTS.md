@@ -2,6 +2,15 @@
 
 `CLAUDE.md` points here. Nested `AGENTS.md` files override this file inside their subtrees.
 
+## Decision Authority
+
+Treat the user as CEO. Bring product decisions, not technical homework. Research technical doubt
+to closure through the code, primary sources, standards, and the best proven industry examples.
+Apply the strongest established answer. Never ask the user to resolve niche implementation details.
+
+Ask only when the choice changes product vision, UX, feature scope, policy, risk tolerance, or
+irreversible business direction. Present researched options and a recommendation.
+
 ## Resource Safety
 
 - Run repository commands sequentially. Never overlap tests, lint, typechecks, builds, Cargo,
@@ -10,22 +19,25 @@
   Never bypass it with raw tool commands.
 - Run only checks that can fail because of the changed files. Never expand to repository-wide
   tests, lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
+- Name exact affected test files. Shared code never justifies guessed or expanded test scope.
 - Never use watch mode for verification. Start a server only when the task needs it.
 
 ## Checks
 
-| Need | Command |
-| --- | --- |
-| Focused tests | `pnpm test:run <file-or-narrow-directory>` |
-| Focused lint | `pnpm lint <changed-files>` |
-| App types | `pnpm typecheck` |
-| Test types | `pnpm typecheck:test` |
-| Script types | `pnpm typecheck:scripts` |
-| E2E types | `pnpm typecheck:e2e` |
-| Focused Rust tests | `pnpm cargo:test -- -p <crate> <test-filter>` |
-| Module boundaries | `pnpm deps:validate` |
-| Barrel mocks | `pnpm test:barrel-mocks` |
-| Change-derived gate | `pnpm verify:change --plan`, then `pnpm verify:change` |
+| Need                | Command                                       |
+| ------------------- | --------------------------------------------- |
+| Focused tests       | `pnpm test:run <file-or-narrow-directory>`    |
+| Focused E2E         | `pnpm test:e2e <spec>`                        |
+| Focused lint        | `pnpm lint <changed-files>`                   |
+| Focused format      | `pnpm format <changed-files>`                 |
+| App types           | `pnpm typecheck`                              |
+| Test types          | `pnpm typecheck:test`                         |
+| Script types        | `pnpm typecheck:scripts`                      |
+| E2E types           | `pnpm typecheck:e2e`                          |
+| Focused Rust tests  | `pnpm cargo:test -- -p <crate> <test-filter>` |
+| Focused Rust format | `pnpm cargo:fmt -- -p <crate>`                |
+| Module boundaries   | `pnpm deps:validate`                          |
+| Barrel mocks        | `pnpm test:barrel-mocks`                      |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
@@ -81,8 +93,8 @@ Leave existing `.agents/specs/` material untouched unless assigned. Durable deci
 
 ## Delivery
 
-- Use `pnpm deliver <pr-number>`; add targeted `--e2e <spec>` only when justified. Never bypass it
-  with raw merge or branch deletion.
+- Run affected checks before delivery. Use `pnpm deliver <pr-number>` only to validate PR state and
+  merge. Never bypass it with raw merge or branch deletion.
 - Follow `.github/pull_request_template.md`. PR descriptions stay under 4000 bytes. State what
   changed, why, and what deserves attention.
 - Put review findings on the relevant diff line. Use one short paragraph: defect, consequence,

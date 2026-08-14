@@ -78,6 +78,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
 }));
 

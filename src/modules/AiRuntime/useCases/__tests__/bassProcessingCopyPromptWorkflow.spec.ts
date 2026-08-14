@@ -497,7 +497,7 @@ describe('bass-processing section copy workflow', () => {
         expect(confirmation?.approvalSnapshot.actionLabels).toEqual(confirmation?.actionLabels);
         expect(confirmation?.risk).toEqual({
             level: 'broad-reversible',
-            reason: 'This applies the same change to multiple project targets.',
+            reason: 'The resolved operation is broader than its bounded default.',
         });
         expect(confirmation?.protectedUnchanged).toEqual(
             expect.arrayContaining([
