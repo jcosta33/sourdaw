@@ -131,7 +131,13 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 const input = access.inputs.get(targetId) ?? access.inputs.get(inputs[0]!.id);
                 if (input) {
                     attachInput({ input, onMidiMessage });
-                    setState({ selectedInputId: input.id });
+                    // `state.selectedInputId` is seeded from the saved
+                    // preference, so a startup with that device unplugged
+                    // resolves it, misses, and falls back. Persisting the
+                    // stand-in rebinds the controller for good — and the replug
+                    // restore in `onStateChange` cannot undo it, because it only
+                    // fires while the saved id differs from the selected one.
+                    setState({ selectedInputId: input.id }, { persistSelection: input.id === targetId });
                 }
             }
 
@@ -162,7 +168,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 const targetId = state.selectedInputId ?? inputs[0]!.id;
                 const targetInput = inputs.find((index) => index.id === targetId) ?? inputs[0]!;
                 await selectMidiInputTauri({ portIndex: Number(targetInput.id), onMidiMessage });
-                setState({ selectedInputId: targetInput.id });
+                // Same rule as the Web MIDI path: a stand-in for an absent
+                // device is this session's choice, never the saved one.
+                setState({ selectedInputId: targetInput.id }, { persistSelection: targetInput.id === targetId });
             }
 
             return true;

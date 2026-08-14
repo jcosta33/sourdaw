@@ -117,6 +117,43 @@ describe('initWebMidi', () => {
         });
     });
 
+    it('does not overwrite the saved preference when starting up with that device unplugged', async () => {
+        // The saved id seeds `selectedInputId`, so the startup attach resolves
+        // it, misses, and falls back to whatever enumerates first. Persisting
+        // that stand-in rebinds the controller permanently — and the replug
+        // restore above can never undo it, because it only fires while the
+        // saved id differs from the selected one.
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        const standIn = { id: 'built-in', name: 'Built-in' };
+        const mockAccess = { inputs: new Map([['built-in', standIn]]), onstatechange: null };
+        requestMidiAccessMock.mockResolvedValue(mockAccess);
+        getMidiAccessMock.mockReturnValue(mockAccess);
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'launchkey' });
+        readPersistedInputIdMock.mockReturnValue('launchkey');
+
+        await initWebMidi({ onMidiMessage });
+
+        const persistedSelectionWrites = setStateMock.mock.calls.filter(
+            ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
+        );
+        expect(persistedSelectionWrites).toEqual([]);
+        expect(attachInput).toHaveBeenCalledWith({ input: standIn, onMidiMessage });
+    });
+
+    it('still remembers the device it attached when that is the one asked for', async () => {
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        const input = { id: 'launchkey', name: 'Launchkey' };
+        const mockAccess = { inputs: new Map([['launchkey', input]]), onstatechange: null };
+        requestMidiAccessMock.mockResolvedValue(mockAccess);
+        getMidiAccessMock.mockReturnValue(mockAccess);
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'launchkey' });
+        readPersistedInputIdMock.mockReturnValue('launchkey');
+
+        await initWebMidi({ onMidiMessage });
+
+        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'launchkey' }, { persistSelection: true });
+    });
+
     it('should fallback to Tauri if Web MIDI fails', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         // Force failure of browser MIDI
@@ -348,7 +385,27 @@ describe('initWebMidi', () => {
         expect(setStateMock).toHaveBeenCalledWith({
             inputs: [expect.objectContaining({ id: 'in-1', name: 'Unknown Device', manufacturer: 'Unknown' })],
         });
-        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'in-1' });
+        // The attached device is the one asked for, so the preference is saved.
+        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'in-1' }, { persistSelection: true });
+    });
+
+    it('does not overwrite the saved preference on the Tauri path either', async () => {
+        // Tauri ports are indices, so a device list that shifted by one port
+        // rebinds the saved preference to a different instrument entirely.
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '3' });
+        readPersistedInputIdMock.mockReturnValue('3');
+
+        await initWebMidi({ onMidiMessage });
+
+        const persistedSelectionWrites = setStateMock.mock.calls.filter(
+            ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
+        );
+        expect(persistedSelectionWrites).toEqual([]);
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
     });
 
     it('should report unsupported and return false when the Tauri MIDI init throws', async () => {

@@ -295,7 +295,7 @@ describe('PianoRollContextMenu', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set(['n1', 'n2'])} />);
         fireEvent.click(screen.getByText('↑ Up'));
 
-        expect(strumNotes).toHaveBeenCalledWith('clip-1', ['n1', 'n2'], 0.04, 'up');
+        expect(strumNotes).toHaveBeenCalledWith('clip-1', ['n1', 'n2'], 0.04, 'up', expect.any(Number));
         expect(pushUndoEntry).toHaveBeenCalledWith('Strum up', expect.any(Function), expect.any(Function));
 
         const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
@@ -303,6 +303,10 @@ describe('PianoRollContextMenu', () => {
         expect(restoreStrumOriginals).toHaveBeenCalledWith('clip-1', new Map([['n1', 0]]));
         redo();
         expect(strumNotes).toHaveBeenCalledTimes(2);
+        // Redo replays the transform by re-invoking it, so it has to land on the
+        // offsets it is replaying rather than on a fresh random draw.
+        const [applyCall, redoCall] = vi.mocked(strumNotes).mock.calls;
+        expect(redoCall).toEqual(applyCall);
     });
 
     it('routes AI auto-complete through the provider-neutral AppAction handler', async () => {

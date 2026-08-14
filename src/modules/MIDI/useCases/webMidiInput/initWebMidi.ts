@@ -7,6 +7,7 @@ import { routeYeastNoteOffsForTargetTrack } from '../../repositories/webMidi/rou
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 
 import { disposeWebMidiSubscriptions } from './disposeWebMidiSubscriptions';
+import { getMidiInputTrackOwnerId } from './getMidiInputTrackOwnerId';
 import { handleWebMidiMessage } from './handleWebMidiMessage';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { setMidiInputTrack } from './setMidiInputTrack';
@@ -37,6 +38,16 @@ function subscribeToTrackSelection(): void {
         // must drop the live input target too. Leaving the previous MIDI track
         // armed keeps the controller playing an instrument the user can no
         // longer see selected, and keeps recording into it.
+        //
+        // Unless something claimed the route explicitly: `armTrack` passes an
+        // owner id, and in every DAW that ships this, record-arm outranks
+        // selection. Clearing an armed route because the user clicked an audio
+        // track's fader would kill the controller mid-take, and `armTrack`'s
+        // `ownsRuntimeRoute` check would no longer recognise the route it set,
+        // so un-arming could not tear it down cleanly either.
+        if (getMidiInputTrackOwnerId() !== null) {
+            return;
+        }
         setMidiInputTrack(null);
     });
 }
