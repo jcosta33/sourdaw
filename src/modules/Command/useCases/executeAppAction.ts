@@ -22,6 +22,7 @@ import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope
 import { createUndoEntry } from './createUndoEntry';
 import { getCommandHandler } from './getCommandHandler';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { isProjectMutationAllowed } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
@@ -131,6 +132,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return;
+            }
+
+            if (!isProjectMutationAllowed()) {
+                throw new AppActionConflictError(action.type);
             }
 
             if (!productionBriefAdmissionPort.allows([action])) {

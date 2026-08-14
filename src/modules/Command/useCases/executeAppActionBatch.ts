@@ -29,6 +29,7 @@ import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { isProjectMutationAllowed } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
@@ -622,6 +623,14 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     };
                 }
                 return executeRuntimeAction(runtimeAction, options?.source, options?.shouldExecute);
+            }
+
+            if (!isProjectMutationAllowed()) {
+                return {
+                    status: 'conflicted',
+                    reason: 'Project repair is required before project actions can execute',
+                    actions: [],
+                };
             }
 
             const validationActions = preparedActions.map((prepared) => prepared.action);

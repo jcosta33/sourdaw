@@ -16,6 +16,7 @@ import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
+    executeAppAction,
     executeVersionedCommandBatch,
     executeVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
@@ -875,8 +876,8 @@ describe('agent concurrency and compensation', () => {
         });
     });
 
-    it('retains unresolved Automerge alternatives and exposes deterministic repair candidates', () => {
-        seedProject();
+    it('retains unresolved Automerge alternatives and blocks ordinary writes until typed repair', async () => {
+        const { targetStorage } = prepareTargetCommand();
         const baseRevision = captureProjectRevision();
         const baseDocument = automergeRepository.getDoc<TestProjectDocument>('root');
         if (!baseDocument) {
@@ -928,5 +929,28 @@ describe('agent concurrency and compensation', () => {
             ],
             status: 'repair-required',
         });
+
+        await expect(
+            executeAppAction({
+                type: 'setTrackGain',
+                payload: { expectedGain: 0.8, gain: 0.5, trackId: 'track-bass' },
+            })
+        ).rejects.toThrow('Action conflicts with current project state: setTrackGain');
+
+        const retainedDocument = automergeRepository.getDoc<TestProjectDocument>('root');
+        expect(retainedDocument).not.toBeNull();
+        expect(
+            findAutomergeProjectConflicts({
+                document: retainedDocument!,
+                targetIds: ['track-bass'],
+            })
+        ).toEqual([
+            {
+                conflictIds: [expect.any(String), expect.any(String)],
+                path: ['targets', 'track-bass', 'gain'],
+                targetIds: ['track-bass'],
+            },
+        ]);
+        expect(targetStorage.get()?.['track-bass']).toMatchObject({ gain: 0.8 });
     });
 });

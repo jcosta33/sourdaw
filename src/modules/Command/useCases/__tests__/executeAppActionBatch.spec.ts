@@ -20,6 +20,7 @@ type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
 
 const mocks = vi.hoisted(() => ({
+    agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
     logger: {
         error: vi.fn<Logger['error']>(),
         info: vi.fn<Logger['info']>(),
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
 }));
@@ -122,6 +124,7 @@ describe('executeAppActionBatch', () => {
         vi.clearAllMocks();
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
+        mocks.agentProjectRepairStateStore.value = null;
         productionBriefAdmissionPort.setGuard(() => true);
     });
 
@@ -202,6 +205,24 @@ describe('executeAppActionBatch', () => {
         });
         expect(firstEffect).not.toHaveBeenCalled();
         expect(secondEffect).not.toHaveBeenCalled();
+    });
+
+    it('blocks project batches before the first handler effect while project repair is required', async () => {
+        const effect = vi.fn();
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({ execute: effect }),
+        });
+        mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
+
+        const result = await executeAppActionBatch([action]);
+
+        expect(result).toEqual({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        expect(effect).not.toHaveBeenCalled();
     });
 
     it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {
