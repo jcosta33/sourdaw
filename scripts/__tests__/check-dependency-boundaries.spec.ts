@@ -913,6 +913,23 @@ describe('check-dependency-boundaries', () => {
                 'src/utils/legacy.cjs': ['const helper = {};', 'module.exports = helper;'],
             });
             writeFixtureFiles(repositoryDirectory, {
+                // A renamed binding names a member of the object or module on the other side, never
+                // the ambient runtime — and `module` is ordinary vocabulary in an audio tree. The
+                // type deliberately lives in a sibling file: the verdict must not depend on that.
+                'lease-model.ts': ['export type Lease = { module: string; exports: string; require: string };'],
+                'lease.ts': [
+                    "import type { Lease } from './lease-model';",
+                    'export function read(lease: Lease) {',
+                    '    const { module: wasmModule, exports: surface, require: loader } = lease;',
+                    '    return [wasmModule, surface, loader];',
+                    '}',
+                ],
+                'names.ts': ['export const module = 1;'],
+                'rename-import.ts': [
+                    "import { module as synthModule } from './names';",
+                    'export const used = synthModule;',
+                ],
+                'rename-export.ts': ["export { module as synthModule } from './names';"],
                 'locals.ts': [
                     'type Loader = (name: string) => unknown;',
                     'export function load(require: Loader, exports: Record<string, unknown>) {',

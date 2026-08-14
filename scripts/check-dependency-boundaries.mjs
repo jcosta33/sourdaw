@@ -394,6 +394,15 @@ function isDeclarationNamePosition(node) {
     if (ts.isShorthandPropertyAssignment(parent)) {
         return false;
     }
+    // `const { module: lease } = value`, `import { module as synth }` and `export { module as synth }`
+    // name a member of some other object or module, so they can never reach the ambient runtime. The
+    // renamed spelling is the one an audio tree reaches for, because `module` alone reads badly.
+    if (
+        (ts.isBindingElement(parent) || ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent)) &&
+        parent.propertyName === node
+    ) {
+        return true;
+    }
     return ts.isDeclaration(parent) && parent.name === node;
 }
 
@@ -521,9 +530,8 @@ function resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, optio
     return existingPath ? normalizeFileName(existingPath) : null;
 }
 
-function collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker) {
+function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
     const targets = [];
-    const context = { checker };
     const addTarget = (moduleSpecifier, exportedName, all = false) => {
         const targetFile = moduleSpecifier ? resolveModuleSpecifier(moduleSpecifier, sourceFile.fileName) : null;
         if (targetFile) {
@@ -607,7 +615,7 @@ function findRepositoryConsumerPaths(
         if (!hasRepositoryImport && !/\b(?:import|require)\b/.test(sourceFile.text)) {
             return false;
         }
-        const targets = collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker);
+        const targets = collectConsumerTargets(sourceFile, resolveModuleSpecifier);
         const consumesRepository = targets.some(({ targetFile }) => isRepositorySourceFile(repositoryRoot, targetFile));
         if (consumesRepository) {
             targetsByFile.set(normalizeFileName(filePath), targets);
