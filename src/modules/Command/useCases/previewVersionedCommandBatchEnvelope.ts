@@ -4,8 +4,11 @@ import { type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBa
 
 import { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 import { commandBatchPreviewPort } from './commandBatchPreviewPort';
+import { commandProjectDivergencePort } from './commandProjectDivergencePort';
+import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
+import { getVersionedCommandBatchDivergenceTargetIds } from './getVersionedCommandBatchDivergenceTargetIds';
 import { partialCommandBatchSelection } from './partialCommandBatchSelection';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 
@@ -16,14 +19,21 @@ function failureReason(error: unknown): string {
 }
 
 export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandBatchEnvelope) {
-    const preparedValidation = prepareCommandBatchPreflight(envelope);
-    if (preparedValidation.status === 'rejected') {
-        return { status: 'rejected' as const, reason: preparedValidation.reason, actions: [] as [] };
-    }
-
     const actions = envelope.commands.map(
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
+    const divergenceTargetIds = getVersionedCommandBatchDivergenceTargetIds(envelope);
+    const observedRevision = commandProjectRevisionPort.isConfigured()
+        ? commandProjectRevisionPort.capture()
+        : envelope.baseRevision;
+    const revisionDiverged = observedRevision !== envelope.baseRevision;
+    let preparedValidation: ReturnType<typeof prepareCommandBatchPreflight> | null = null;
+    if (!revisionDiverged) {
+        preparedValidation = prepareCommandBatchPreflight(envelope);
+        if (preparedValidation.status === 'rejected') {
+            return { status: 'rejected' as const, reason: preparedValidation.reason, actions: [] as [] };
+        }
+    }
     const singletonAction = findSingletonBatchAction(actions);
     if (singletonAction) {
         return {
@@ -81,9 +91,48 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         });
     }
 
+    let divergence: ReturnType<typeof commandProjectDivergencePort.classify> = null;
+    let workspaceRevision = envelope.baseRevision;
+    if (revisionDiverged) {
+        if (!commandProjectDivergencePort.isConfigured()) {
+            return {
+                status: 'rejected' as const,
+                reason: 'Command batch base revision does not match current project state',
+                actions: [] as [],
+            };
+        }
+        divergence = commandProjectDivergencePort.classify({
+            baseRevision: envelope.baseRevision,
+            commandsCompatible: preparedActions.every(
+                ({ action, handler }) => handler.canReapplyAfterDivergence?.(action) === true
+            ),
+            targetIds: divergenceTargetIds,
+        });
+        if (!divergence?.mayReapply) {
+            return {
+                status: 'conflicted' as const,
+                reason: divergence
+                    ? `Command batch project divergence is ${divergence.kind}`
+                    : 'Command batch project divergence could not be classified',
+                actions: [] as [],
+                ...(divergence ? { divergence } : {}),
+            };
+        }
+        workspaceRevision = observedRevision;
+    }
+
+    if (!preparedValidation) {
+        preparedValidation = prepareCommandBatchPreflight(envelope, {
+            allowCompatibleProjectDivergence: divergence?.mayReapply === true,
+        });
+        if (preparedValidation.status === 'rejected') {
+            return { status: 'rejected' as const, reason: preparedValidation.reason, actions: [] as [] };
+        }
+    }
+
     let workspace;
     try {
-        workspace = commandBatchPreviewPort.create(envelope.baseRevision);
+        workspace = commandBatchPreviewPort.create(workspaceRevision);
     } catch (error) {
         return {
             status: 'rejected' as const,
@@ -113,11 +162,19 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                     })
             );
             if (!valid) {
+                const incompatibleDivergence = divergence?.mayReapply
+                    ? commandProjectDivergencePort.classify({
+                          baseRevision: envelope.baseRevision,
+                          commandsCompatible: false,
+                          targetIds: divergenceTargetIds,
+                      })
+                    : divergence;
                 workspace.release();
                 return {
                     status: 'conflicted' as const,
                     reason: `Action conflicts with current project state: ${prepared.action.type}`,
                     actions: [] as [],
+                    ...(incompatibleDivergence ? { divergence: incompatibleDivergence } : {}),
                 };
             }
         }
@@ -190,6 +247,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                 baseRevision: envelope.baseRevision,
                 release,
             },
+            ...(divergence && divergence.kind !== 'none' ? { divergence } : {}),
         };
     } catch (error) {
         workspace.release();

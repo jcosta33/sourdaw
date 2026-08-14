@@ -5,6 +5,8 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleRemoveDevice = createHandler<'removeDevice'>({
+    canReapplyAfterDivergence: (action) =>
+        action.payload.expectedTrackId !== undefined && action.payload.expectedDeviceIds !== undefined,
     validate: (action, context) => {
         if (!action.payload.expectedTrackId && !action.payload.expectedDeviceIds) {
             return true;

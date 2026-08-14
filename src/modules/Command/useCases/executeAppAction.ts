@@ -22,6 +22,7 @@ import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope
 import { createUndoEntry } from './createUndoEntry';
 import { getCommandHandler } from './getCommandHandler';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
@@ -133,6 +134,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 return;
             }
 
+            if (getProjectMutationAdmissionFailure()) {
+                throw new AppActionConflictError(action.type);
+            }
+
             if (!productionBriefAdmissionPort.allows([action])) {
                 throw new AppActionConflictError(action.type);
             }
@@ -190,6 +195,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                 throw error;
             }
+            storage_transaction.validateCommit(getProjectMutationAdmissionFailure);
             try {
                 execution_result = await storage_transaction.value;
             } catch (error) {

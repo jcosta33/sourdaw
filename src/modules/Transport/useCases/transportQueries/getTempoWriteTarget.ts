@@ -36,10 +36,10 @@ export type TempoWriteTarget =
 export type GetTempoWriteTargetInput = {
     /**
      * Resolve this named tempo-map change instead of resolving from the playhead.
-     * Undo and redo replay pass it so a position-dependent write stays pinned to
-     * the event it originally landed on.
+     * `null` pins replay to the transport's base tempo. Undo and redo pass the
+     * resolved target so a position-dependent write stays pinned.
      */
-    tempoChangeId?: string;
+    tempoChangeId?: string | null;
 };
 
 /**
@@ -62,6 +62,11 @@ export type GetTempoWriteTargetInput = {
  */
 export function getTempoWriteTarget(input: GetTempoWriteTargetInput = {}): TempoWriteTarget | null {
     const changes = tempoMapStore.value?.changes ?? [];
+
+    if (input.tempoChangeId === null) {
+        const transport = transportStore.value;
+        return transport ? { tempo: transport.tempo, tempoChangeId: null, writable: true } : null;
+    }
 
     if (input.tempoChangeId !== undefined) {
         const named = changes.find((change) => change.id === input.tempoChangeId);

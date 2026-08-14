@@ -175,6 +175,7 @@ type AutomergeStorageTransactionControl = {
     readonly scope: AutomergeStorageTransactionScope;
     abort(): void;
     commit(): void;
+    validateCommit(validator: () => string | null): void;
     validateDocument(docId: AutomergeStorageDocId, validator: AutomergeStorageDocumentValidator): void;
 };
 
@@ -221,6 +222,53 @@ const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
+const inboundSanitizersBySlot = new Map<string, (value: unknown) => unknown>();
+
+function getInboundSanitizerKey(docId: string, key: string): string {
+    return `${docId}\u0000${key}`;
+}
+
+function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean {
+    if (Object.is(raw, projected)) {
+        return true;
+    }
+    if (Array.isArray(raw)) {
+        return (
+            Array.isArray(projected) &&
+            projected.length >= raw.length &&
+            raw.every((item, index) => projectionPreservesRawValue(item, projected[index]))
+        );
+    }
+    if (typeof raw !== 'object' || raw === null || typeof projected !== 'object' || projected === null) {
+        return false;
+    }
+    const projectedRecord = projected as Readonly<Record<string, unknown>>;
+    return Object.entries(raw).every(
+        ([key, value]) =>
+            Object.hasOwn(projectedRecord, key) && projectionPreservesRawValue(value, projectedRecord[key])
+    );
+}
+
+export function findAutomergeStorageRawProjectionLosses(input: {
+    docId: string;
+    document: Readonly<Record<string, unknown>>;
+}): string[] {
+    const losses: string[] = [];
+    for (const [slot, rawValue] of Object.entries(input.document)) {
+        const sanitize = inboundSanitizersBySlot.get(getInboundSanitizerKey(input.docId, slot));
+        if (!sanitize) {
+            continue;
+        }
+        try {
+            if (!projectionPreservesRawValue(rawValue, sanitize(rawValue))) {
+                losses.push(slot);
+            }
+        } catch {
+            losses.push(slot);
+        }
+    }
+    return losses.toSorted();
+}
 
 function clonePreviewValue<Value>(value: Value): Value {
     return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as Value);
@@ -411,6 +459,7 @@ export function runWithAutomergeStorageTransaction<Result>(
     activeAutomergeStorageTransaction = transaction;
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
     let terminalState: 'open' | 'committed' | 'aborted' = 'open';
+    const commitValidators: Array<() => string | null> = [];
     const documentValidators = new Map<AutomergeStorageDocId, AutomergeStorageDocumentValidator>();
     let outcome: AutomergeStorageTransactionOutcome<Result>;
 
@@ -458,6 +507,12 @@ export function runWithAutomergeStorageTransaction<Result>(
             if (terminalState !== 'open') {
                 return;
             }
+            for (const validateCommit of commitValidators) {
+                const validationFailure = validateCommit();
+                if (validationFailure) {
+                    throw new AutomergeStorageTransactionValidationError(validationFailure);
+                }
+            }
             openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
             try {
                 flushMatchingAutomergeStorageWrites(
@@ -484,6 +539,12 @@ export function runWithAutomergeStorageTransaction<Result>(
                 throw error instanceof AutomergeStorageFlushError ? error.failure : error;
             }
             terminalState = 'committed';
+        },
+        validateCommit(validator): void {
+            if (terminalState !== 'open') {
+                throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
+            }
+            commitValidators.push(validator);
         },
         validateDocument(docId, validator): void {
             if (terminalState !== 'open') {
@@ -1110,6 +1171,12 @@ export const createAutomergeStorage = <TData>(
     };
 
     const adapter: StorageAdapter<TData> = {
+        registerInboundSanitizer(sanitize): void {
+            inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), (value) =>
+                sanitize(fromCrdt ? fromCrdt(value as TData) : value)
+            );
+        },
+
         get(): TData | null {
             if (activeAutomergeStoragePreview) {
                 return getPreviewValue(activeAutomergeStoragePreview);

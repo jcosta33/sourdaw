@@ -50,6 +50,10 @@ function artifactsDoNotConflict(jobs: readonly RenderProjectSectionJobSnapshot[]
 }
 
 export const handleRenderProjectSections = createHandler<'renderProjectSections'>({
+    canReapplyAfterDivergence: (action) => {
+        const jobs = getJobs(action);
+        return jobs !== null && artifactsDoNotConflict(jobs);
+    },
     validate: (action) => {
         const jobs = getJobs(action);
         return jobs !== null && artifactsDoNotConflict(jobs);

@@ -31,6 +31,7 @@ function restoreDeviceGuardMatches(action: RestoreDeviceAction, context?: Handle
 }
 
 export const handleRestoreDevice = createHandler<'restoreDevice'>({
+    canReapplyAfterDivergence: (action) => action.payload.expectedDeviceIds !== undefined,
     validate: restoreDeviceGuardMatches,
     execute: (action) => {
         const currentTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);

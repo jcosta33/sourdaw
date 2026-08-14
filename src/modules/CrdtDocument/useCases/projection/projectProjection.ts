@@ -1,6 +1,8 @@
 import { resetAutomergeStorageProjections } from '#/infra/store/storage/createAutomergeStorage';
 
+import { agentProjectRepairStateStore } from '../../stores/agentProjectRepairStateStore';
 import { DOC_PREFIX_ROOT } from '../crdtDocumentTypes';
+import { inspectCurrentAgentProjectRepairState } from '../inspectCurrentAgentProjectRepairState';
 
 import { projectSlotProjections } from './projectSlotProjections';
 
@@ -23,7 +25,11 @@ export function projectCrdtToStores({ resetProjections = false }: ProjectCrdtToS
     if (resetProjections) {
         resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
     }
-
+    const repairState = inspectCurrentAgentProjectRepairState();
+    agentProjectRepairStateStore.set(repairState);
+    if (repairState) {
+        return;
+    }
     for (const projection of projectSlotProjections) {
         projection.hydrate();
     }

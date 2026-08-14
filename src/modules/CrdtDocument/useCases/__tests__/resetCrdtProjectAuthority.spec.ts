@@ -6,6 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
+import { agentProjectRepairStateStore } from '../../stores/agentProjectRepairStateStore';
 import { resetCrdtProjectAuthority } from '../resetCrdtProjectAuthority';
 
 const mocks = vi.hoisted(() => {
@@ -62,6 +63,7 @@ describe('resetCrdtProjectAuthority', () => {
         const initialRoot = {};
         mocks.rootDocs.push(initialRoot);
         mocks.docs.set('root', initialRoot);
+        agentProjectRepairStateStore.set(null);
         configureAutomergeStoragePort({
             getDoc: (docId) => mocks.docs.get(docId),
             getSemanticMessage: () => undefined,
@@ -98,6 +100,22 @@ describe('resetCrdtProjectAuthority', () => {
             mocks.branchStoreSet.mock.invocationCallOrder[0]!
         );
         expect(mocks.createProject).toHaveBeenCalledWith('Imported');
+    });
+
+    it('clears repair state owned by the replaced project authority', () => {
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'repair-revision',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            status: 'repair-required',
+            repairCandidates: [],
+        });
+
+        resetCrdtProjectAuthority('Imported');
+
+        expect(agentProjectRepairStateStore.value).toBeNull();
     });
 
     it('drains old deferred writes before replacing authority and sends new branch state to the new root', () => {

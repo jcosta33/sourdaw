@@ -7,6 +7,7 @@ import {
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
     parseVersionedCommandEnvelope,
+    refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
 import { captureProjectRevision, isDrumPreviewBranchPlanApplied } from '#/modules/CrdtDocument/useCases';
 
@@ -17,6 +18,7 @@ import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } fro
 import {
     getPendingActionConfirmation,
     recordPendingActionExecution,
+    refreshPendingActionConfirmationApproval,
     replacePendingActionExecutions,
     settlePendingActionResourceLease,
     type PendingActionExecution,
@@ -25,6 +27,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { notifyAiChange } from './notifyAiChange';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
@@ -33,12 +36,21 @@ type ConfirmPendingChatActionsInput = {
     confirmationId: string;
 };
 
+type ApprovalDivergence = Extract<
+    ReturnType<typeof refreshVersionedCommandBatchForApproval>,
+    { status: 'ready' | 'conflicted' }
+>['divergence'];
+
 type ConfirmPendingChatActionsResult =
     | { status: 'missing' }
     | { status: 'not_pending'; currentStatus: ChatActionConfirmationStatus }
     | { status: 'busy' }
     | { status: 'executed' }
-    | { status: 'invalidated'; reason: string }
+    | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence }
+    | {
+          status: 'reapproval_required';
+          divergence: ApprovalDivergence;
+      }
     | { status: 'cancelled' }
     | { status: 'failed'; reason: string };
 
@@ -325,7 +337,36 @@ export async function confirmPendingChatActions(
     }
 
     if (captureProjectRevision() !== confirmation.projectRevision) {
-        return invalidatePendingConfirmation(confirmation);
+        const commandBatch = confirmation.approvalSnapshot.commandBatch;
+        if (!commandBatch) {
+            return invalidatePendingConfirmation(confirmation);
+        }
+        const refreshed = refreshVersionedCommandBatchForApproval({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+        });
+        if (refreshed.status !== 'ready') {
+            if (refreshed.status === 'conflicted') {
+                return invalidatePendingConfirmationForDivergence(confirmation, refreshed.divergence);
+            }
+            return invalidatePendingConfirmation(confirmation);
+        }
+        const agentApproval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch });
+        const rebound = refreshPendingActionConfirmationApproval({
+            agentApproval,
+            commandBatch: refreshed.commandBatch,
+            commandEnvelopes: refreshed.commandEnvelopes,
+            confirmationId: confirmation.id,
+            projectRevision: refreshed.currentRevision,
+        });
+        if (!rebound) {
+            return invalidatePendingConfirmation(confirmation);
+        }
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'proposed',
+            content: `The project changed after the prior approval. Divergence was classified as ${refreshed.divergence.kind}; the unchanged command plan was revalidated and rebound to the current project revision. Review and confirm again:\n\n${rebound.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+        });
+        return { status: 'reapproval_required', divergence: refreshed.divergence };
     }
 
     if (chatStore.value?.isGenerating === true) {
@@ -608,7 +649,9 @@ function failApprovalPreflight(
     return { status: 'failed', reason };
 }
 
-function invalidatePendingConfirmation(confirmation: PendingAppActionConfirmation): ConfirmPendingChatActionsResult {
+function invalidatePendingConfirmation(
+    confirmation: PendingAppActionConfirmation
+): Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }> {
     const reason = new AiProposalInvalidatedError().message;
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
@@ -623,6 +666,29 @@ function invalidatePendingConfirmation(confirmation: PendingAppActionConfirmatio
     });
     settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'invalidated', reason };
+}
+
+function invalidatePendingConfirmationForDivergence(
+    confirmation: PendingAppActionConfirmation,
+    divergence: ApprovalDivergence
+): Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }> {
+    const targetIds = divergence.targetIds.length > 0 ? divergence.targetIds.join(', ') : 'none';
+    const candidates = divergence.repairCandidates
+        .map((candidate) => `${candidate.kind}: ${candidate.targetIds.join(', ') || 'project'}`)
+        .join('; ');
+    const reason = `The approved command was not executed because project divergence is ${divergence.kind}.`;
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'invalidated',
+        error: reason,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'invalidated',
+        error: reason,
+        content: `${reason} Affected targets: ${targetIds}.${candidates ? ` Repair candidates: ${candidates}.` : ''} Review the current project before planning again.`,
+    });
+    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
+    return { status: 'invalidated', reason, divergence };
 }
 
 function cancelAcceptedConfirmation(confirmation: PendingAppActionConfirmation): ConfirmPendingChatActionsResult {

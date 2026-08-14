@@ -2,6 +2,10 @@ export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
 export { captureProjectRevision } from './captureProjectRevision';
+export { agentProjectInspectionPort } from './agentProjectInspectionPort';
+export { inspectAgentProjectDivergence } from './inspectAgentProjectDivergence';
+export { findAutomergeProjectConflicts } from './findAutomergeProjectConflicts';
+export { inspectCurrentAgentProjectRepairState } from './inspectCurrentAgentProjectRepairState';
 export { createCommandPreviewWorkspace } from './createCommandPreviewWorkspace';
 export { captureActiveBranchReference } from './captureActiveBranchReference';
 export { getDrumPreviewBranchHandlers } from './getDrumPreviewBranchHandlers';

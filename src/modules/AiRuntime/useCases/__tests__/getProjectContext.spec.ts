@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     const markerStoreValue: { value: { sections: ProjectContextSection[] } | null } = { value: null };
     const vcaStoreValue: { value: { groups: ProjectContextVcaGroup[] } | null } = { value: null };
     const projectStoreValue: { value: unknown } = { value: null };
+    const repairStateStoreValue: { value: unknown } = { value: null };
     return {
         trackStoreValue,
         midiStoreValue,
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => {
         markerStoreValue,
         vcaStoreValue,
         projectStoreValue,
+        repairStateStoreValue,
         getPluginById: vi.fn(),
         getPlatformPlugins: vi.fn(),
         getGlueEligibleClipPairs: vi.fn(),
@@ -76,6 +78,14 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: {
         get value() {
             return mocks.automationStoreValue.value;
+        },
+    },
+}));
+
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: {
+        get value() {
+            return mocks.repairStateStoreValue.value;
         },
     },
 }));
@@ -134,12 +144,19 @@ describe('getProjectContext', () => {
         mocks.markerStoreValue.value = null;
         mocks.vcaStoreValue.value = null;
         mocks.projectStoreValue.value = null;
+        mocks.repairStateStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getGlueEligibleClipPairs.mockReturnValue([]);
         mocks.getPlatformPlugins.mockReturnValue([
             { id: 'builtin-eq', name: 'EQ' },
             { id: 'crust', name: 'Crust' },
         ]);
+    });
+
+    it('withholds all model context while raw collaborative truth requires repair', () => {
+        mocks.repairStateStoreValue.value = { status: 'repair-required' };
+
+        expect(() => getProjectContext()).toThrow('unresolved collaborative state');
     });
 
     it('projects glue eligibility and invalidates the cache when hidden eligibility changes', () => {

@@ -136,4 +136,19 @@ describe('handleAddSend', () => {
     it('is undoable', () => {
         expect(handleAddSend.undoable).toBe(true);
     });
+
+    it('certifies only app-guarded additions for divergent reapplication', () => {
+        expect(
+            handleAddSend.canReapplyAfterDivergence?.({
+                type: 'addSend',
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.5, expectedAbsent: true },
+            })
+        ).toBe(true);
+        expect(
+            handleAddSend.canReapplyAfterDivergence?.({
+                type: 'addSend',
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.5 },
+            })
+        ).toBe(false);
+    });
 });

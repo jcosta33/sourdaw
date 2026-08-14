@@ -97,6 +97,8 @@ function currentStateMatches(action: RemoveTrackGainAutomationRangeAction): bool
 }
 
 export const handleRemoveTrackGainAutomationRange = createHandler<'removeTrackGainAutomationRange'>({
+    canReapplyAfterDivergence: () => true,
+    validate: (action) => currentStateMatches(action),
     execute: (action) => {
         if (!currentStateMatches(action)) {
             return { status: 'conflict' };
