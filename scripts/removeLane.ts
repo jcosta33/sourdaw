@@ -74,8 +74,10 @@ function issueReferences(body: string | null): number[] {
     return [...new Set(references.filter((number) => Number.isSafeInteger(number) && number > 0))];
 }
 
+// A ledger records a merged pull request as `#N` or as the URL `gh` prints. Accepting only `#N`
+// made pasting that URL silently unrecordable, and an unrecorded PR cannot have its lane retired.
 function mentions(body: string, number: number): boolean {
-    return new RegExp(`(?:^|\\D)#${number}(?!\\d)`).test(body);
+    return new RegExp(`(?:^|\\D)#${number}(?!\\d)|/(?:pull|issues)/${number}(?!\\d)`).test(body);
 }
 
 function disposableIgnored(path: string): boolean {
@@ -217,13 +219,19 @@ function validateOwnership(
     // names it. A ledger stays OPEN for the whole life of its campaign, which is exactly when its
     // lanes finish and accumulate — requiring CLOSED made every lane of a live campaign
     // unremovable until the campaign itself ended, and lanes were retired by hand instead.
-    const campaigns = port
-        .campaignIssues(issueReferences(pullRequest.body))
-        .filter(
-            (issue) => issue.labels.some((label) => label.name === 'epic') && mentions(issue.body, pullRequest.number)
-        );
-    if (campaigns.length !== 1) {
-        fail(`PR #${pullRequest.number} is not recorded in one campaign ledger`);
+    const referenced = port.campaignIssues(issueReferences(pullRequest.body));
+    const ledgers = referenced.filter((issue) => issue.labels.some((label) => label.name === 'epic'));
+    if (ledgers.length === 0) {
+        fail(`PR #${pullRequest.number} references no epic-labelled ledger issue`);
+    }
+    const campaigns = ledgers.filter((issue) => mentions(issue.body, pullRequest.number));
+    if (campaigns.length === 0) {
+        const names = ledgers.map((issue) => `#${issue.number}`).join(', ');
+        fail(`PR #${pullRequest.number} is referenced by epic ledger ${names}, whose body does not name it back`);
+    }
+    if (campaigns.length > 1) {
+        const names = campaigns.map((issue) => `#${issue.number}`).join(', ');
+        fail(`PR #${pullRequest.number} is claimed by epic ledgers ${names}`);
     }
     const campaign = campaigns[0];
     if (campaign === undefined) {
@@ -420,6 +428,13 @@ function main(): number {
         const args = process.argv.slice(2);
         if (args[0] === '--help' && args.length === 1) {
             console.log('Usage: pnpm lane:remove <worktree-path>');
+            console.log('');
+            console.log('Removes a spent agent worktree. The lane must be clean, unlocked, idle, and');
+            console.log('hold the merged head of exactly one pull request in this repository.');
+            console.log('');
+            console.log("Record the merged PR in its ledger issue's BODY (a comment is not read) as");
+            console.log('`#<pr>` or as the pull-request URL, and label that issue `epic`. Exactly one');
+            console.log('such issue must name the PR back, or removal is refused.');
             return 0;
         }
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {

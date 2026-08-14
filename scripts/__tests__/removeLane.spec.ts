@@ -147,19 +147,19 @@ describe('lane removal', () => {
             'unlinked campaign',
             target,
             { campaigns: [campaign({ body: 'Other work.' })] },
-            /is not recorded in one campaign ledger/,
+            /referenced by epic ledger #7, whose body does not name it back/,
         ],
         [
             'non-epic issue',
             target,
             { campaigns: [campaign({ labels: [{ name: 'bug' }] })] },
-            /is not recorded in one campaign ledger/,
+            /references no epic-labelled ledger issue/,
         ],
         [
             'two claiming ledgers',
             target,
             { campaigns: [campaign(), campaign({ number: 8 })] },
-            /is not recorded in one campaign ledger/,
+            /claimed by epic ledgers #7, #8/,
         ],
         ['moved remote', target, { remoteHead: 'moved' }, /ownership is unproven/],
     ])('rejects a %s lane', (_case, path, input, message) => {
@@ -184,6 +184,17 @@ describe('lane removal', () => {
         'accepts campaign reference form: %s',
         (body) => {
             const { port, calls } = fakePort({ pullRequests: [pullRequest({ body })] });
+
+            removeLane(target, port);
+
+            expect(calls).toContain(`remove:${target}`);
+        }
+    );
+
+    it.each(['Merged in #42.', 'Merged https://github.com/jcosta33/sourdaw/pull/42'])(
+        'accepts ledger record form: %s',
+        (body) => {
+            const { port, calls } = fakePort({ campaigns: [campaign({ body })] });
 
             removeLane(target, port);
 
