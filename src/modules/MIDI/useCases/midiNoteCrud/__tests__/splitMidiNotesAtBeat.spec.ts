@@ -48,7 +48,11 @@ describe('splitMidiNotesAtBeat', () => {
     it('re-bases right-side and straddler notes onto the right clip', () => {
         mocks.midiStoreValue.value = {
             notesByClipId: {
-                source: [note(60, 1, 1, 'left'), note(64, 6, 1, 'right'), note(67, 3, 4, 'straddler')],
+                source: [
+                    note(60, 1, 1, 'left'),
+                    note(64, 6, 1, 'right'),
+                    { id: 'straddler', pitch: 67, startBeat: 3, duration: 4, velocity: 100, channel: 5 },
+                ],
             },
             ccByClipId: {},
             pitchBendByClipId: {},
@@ -76,7 +80,10 @@ describe('splitMidiNotesAtBeat', () => {
         expect(right).toHaveLength(2);
         expect(right[0]).toMatchObject({ id: 'right', startBeat: 2, duration: 1 });
         expect(right[1]).toMatchObject({ startBeat: 0, duration: 3, pitch: 67, probability: 100 });
-        expect(right[1]).not.toHaveProperty('channel');
+        // The right half is rebuilt field by field, so per-note MPE routing
+        // has to be named explicitly or the split silently moves the half to
+        // channel 0 (issue #1832 F8).
+        expect(right[1]?.channel).toBe(5);
     });
 
     /// Regression (PR #608 review): range deletion (deleteTimeRange) must

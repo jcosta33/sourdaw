@@ -47,73 +47,73 @@ const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
 
 type HasExactKeysInput = {
     value: object;
-    required_keys: readonly string[];
-    optional_keys?: readonly string[];
+    requiredKeys: readonly string[];
+    optionalKeys?: readonly string[];
 };
 
-function has_exact_keys({ value, required_keys, optional_keys = [] }: HasExactKeysInput): boolean {
-    const value_keys = Object.keys(value);
-    const allowed_keys = new Set([...required_keys, ...optional_keys]);
+function hasExactKeys({ value, requiredKeys, optionalKeys = [] }: HasExactKeysInput): boolean {
+    const valueKeys = Object.keys(value);
+    const allowedKeys = new Set([...requiredKeys, ...optionalKeys]);
 
-    return required_keys.every((key) => Object.hasOwn(value, key)) && value_keys.every((key) => allowed_keys.has(key));
+    return requiredKeys.every((key) => Object.hasOwn(value, key)) && valueKeys.every((key) => allowedKeys.has(key));
 }
 
-function is_plain_object(value: unknown): value is { [key: string]: unknown } {
+function isPlainObject(value: unknown): value is { [key: string]: unknown } {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function is_finite_number(value: unknown): value is number {
+function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
 export function isValidMidiProbabilitySeed(value: unknown): value is number {
-    return is_finite_number(value) && Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff;
+    return isFiniteNumber(value) && Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff;
 }
 
-function is_valid_midi_note(value: unknown): value is MidiNote {
+function isValidMidiNote(value: unknown): value is MidiNote {
     return (
-        is_plain_object(value) &&
+        isPlainObject(value) &&
         'id' in value &&
         typeof value.id === 'string' &&
         'pitch' in value &&
-        is_finite_number(value.pitch) &&
+        isFiniteNumber(value.pitch) &&
         'startBeat' in value &&
-        is_finite_number(value.startBeat) &&
+        isFiniteNumber(value.startBeat) &&
         'duration' in value &&
-        is_finite_number(value.duration) &&
+        isFiniteNumber(value.duration) &&
         'velocity' in value &&
-        is_finite_number(value.velocity)
+        isFiniteNumber(value.velocity)
     );
 }
 
-function has_valid_midi_note_optionals(value: MidiNote): boolean {
+function hasValidMidiNoteOptionals(value: MidiNote): boolean {
     return (
-        (!('probability' in value) || value.probability === undefined || is_finite_number(value.probability)) &&
-        (!('pressure' in value) || value.pressure === undefined || is_finite_number(value.pressure)) &&
-        (!('slide' in value) || value.slide === undefined || is_finite_number(value.slide)) &&
-        (!('pitchBend' in value) || value.pitchBend === undefined || is_finite_number(value.pitchBend)) &&
+        (!('probability' in value) || value.probability === undefined || isFiniteNumber(value.probability)) &&
+        (!('pressure' in value) || value.pressure === undefined || isFiniteNumber(value.pressure)) &&
+        (!('slide' in value) || value.slide === undefined || isFiniteNumber(value.slide)) &&
+        (!('pitchBend' in value) || value.pitchBend === undefined || isFiniteNumber(value.pitchBend)) &&
         (!('pitchBendRangeSemitones' in value) ||
             value.pitchBendRangeSemitones === undefined ||
-            is_finite_number(value.pitchBendRangeSemitones)) &&
-        (!('channel' in value) || value.channel === undefined || is_finite_number(value.channel)) &&
+            isFiniteNumber(value.pitchBendRangeSemitones)) &&
+        (!('channel' in value) || value.channel === undefined || isFiniteNumber(value.channel)) &&
         (!('articulation' in value) || value.articulation === undefined || isValidMidiArticulation(value.articulation))
     );
 }
 
-function is_exact_midi_note(value: unknown): value is MidiNote {
+function isExactMidiNote(value: unknown): value is MidiNote {
     return (
-        is_valid_midi_note(value) &&
-        has_valid_midi_note_optionals(value) &&
-        has_exact_keys({
+        isValidMidiNote(value) &&
+        hasValidMidiNoteOptionals(value) &&
+        hasExactKeys({
             value,
-            required_keys: MIDI_NOTE_REQUIRED_KEYS,
-            optional_keys: MIDI_NOTE_OPTIONAL_KEYS,
+            requiredKeys: MIDI_NOTE_REQUIRED_KEYS,
+            optionalKeys: MIDI_NOTE_OPTIONAL_KEYS,
         })
     );
 }
 
-function normalize_midi_note(note: MidiNote): MidiNote {
-    const normalized_note: MidiNote = {
+function normalizeMidiNote(note: MidiNote): MidiNote {
+    const normalizedNote: MidiNote = {
         id: note.id,
         pitch: note.pitch,
         startBeat: note.startBeat,
@@ -121,52 +121,52 @@ function normalize_midi_note(note: MidiNote): MidiNote {
         velocity: note.velocity,
     };
 
-    if (is_finite_number(note.probability)) {
-        normalized_note.probability = note.probability;
+    if (isFiniteNumber(note.probability)) {
+        normalizedNote.probability = note.probability;
     }
-    if (is_finite_number(note.pressure)) {
-        normalized_note.pressure = note.pressure;
+    if (isFiniteNumber(note.pressure)) {
+        normalizedNote.pressure = note.pressure;
     }
-    if (is_finite_number(note.slide)) {
-        normalized_note.slide = note.slide;
+    if (isFiniteNumber(note.slide)) {
+        normalizedNote.slide = note.slide;
     }
-    if (is_finite_number(note.pitchBend)) {
-        normalized_note.pitchBend = note.pitchBend;
+    if (isFiniteNumber(note.pitchBend)) {
+        normalizedNote.pitchBend = note.pitchBend;
     }
-    if (is_finite_number(note.pitchBendRangeSemitones)) {
-        normalized_note.pitchBendRangeSemitones = note.pitchBendRangeSemitones;
+    if (isFiniteNumber(note.pitchBendRangeSemitones)) {
+        normalizedNote.pitchBendRangeSemitones = note.pitchBendRangeSemitones;
     }
-    if (is_finite_number(note.channel)) {
-        normalized_note.channel = note.channel;
+    if (isFiniteNumber(note.channel)) {
+        normalizedNote.channel = note.channel;
     }
     if (isValidMidiArticulation(note.articulation)) {
-        normalized_note.articulation = note.articulation;
+        normalizedNote.articulation = note.articulation;
     }
 
-    return normalized_note;
+    return normalizedNote;
 }
 
-function is_valid_midi_cc(value: unknown): value is MidiCC {
+function isValidMidiCc(value: unknown): value is MidiCC {
     return (
-        is_plain_object(value) &&
+        isPlainObject(value) &&
         'id' in value &&
         typeof value.id === 'string' &&
         'controller' in value &&
-        is_finite_number(value.controller) &&
+        isFiniteNumber(value.controller) &&
         'value' in value &&
-        is_finite_number(value.value) &&
+        isFiniteNumber(value.value) &&
         'beat' in value &&
-        is_finite_number(value.beat) &&
+        isFiniteNumber(value.beat) &&
         'channel' in value &&
-        is_finite_number(value.channel)
+        isFiniteNumber(value.channel)
     );
 }
 
-function is_exact_midi_cc(value: unknown): value is MidiCC {
-    return is_valid_midi_cc(value) && has_exact_keys({ value, required_keys: MIDI_CC_KEYS });
+function isExactMidiCc(value: unknown): value is MidiCC {
+    return isValidMidiCc(value) && hasExactKeys({ value, requiredKeys: MIDI_CC_KEYS });
 }
 
-function normalize_midi_cc(event: MidiCC): MidiCC {
+function normalizeMidiCc(event: MidiCC): MidiCC {
     return {
         id: event.id,
         controller: event.controller,
@@ -176,25 +176,25 @@ function normalize_midi_cc(event: MidiCC): MidiCC {
     };
 }
 
-function is_valid_midi_pitch_bend(value: unknown): value is MidiPitchBend {
+function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
     return (
-        is_plain_object(value) &&
+        isPlainObject(value) &&
         'id' in value &&
         typeof value.id === 'string' &&
         'value' in value &&
-        is_finite_number(value.value) &&
+        isFiniteNumber(value.value) &&
         'beat' in value &&
-        is_finite_number(value.beat) &&
+        isFiniteNumber(value.beat) &&
         'channel' in value &&
-        is_finite_number(value.channel)
+        isFiniteNumber(value.channel)
     );
 }
 
-function is_exact_midi_pitch_bend(value: unknown): value is MidiPitchBend {
-    return is_valid_midi_pitch_bend(value) && has_exact_keys({ value, required_keys: MIDI_PITCH_BEND_KEYS });
+function isExactMidiPitchBend(value: unknown): value is MidiPitchBend {
+    return isValidMidiPitchBend(value) && hasExactKeys({ value, requiredKeys: MIDI_PITCH_BEND_KEYS });
 }
 
-function normalize_midi_pitch_bend(event: MidiPitchBend): MidiPitchBend {
+function normalizeMidiPitchBend(event: MidiPitchBend): MidiPitchBend {
     return {
         id: event.id,
         value: event.value,
@@ -205,78 +205,76 @@ function normalize_midi_pitch_bend(event: MidiPitchBend): MidiPitchBend {
 
 type NormalizeClipMapInput<TRow> = {
     value: unknown;
-    is_valid_row: (value: unknown) => value is TRow;
-    normalize_row: (value: TRow) => TRow;
+    isValidRow: (value: unknown) => value is TRow;
+    normalizeRow: (value: TRow) => TRow;
 };
 
-function normalize_clip_map<TRow>({
+function normalizeClipMap<TRow>({
     value,
-    is_valid_row,
-    normalize_row,
+    isValidRow,
+    normalizeRow,
 }: NormalizeClipMapInput<TRow>): Record<string, TRow[]> {
-    if (!is_plain_object(value)) {
+    if (!isPlainObject(value)) {
         return {};
     }
 
-    const normalized_clip_map: Record<string, TRow[]> = {};
+    const normalizedClipMap: Record<string, TRow[]> = {};
 
-    for (const [clip_id, rows] of Object.entries(value)) {
+    for (const [clipId, rows] of Object.entries(value)) {
         if (!Array.isArray(rows)) {
             continue;
         }
 
-        normalized_clip_map[clip_id] = rows.filter(is_valid_row).map(normalize_row);
+        normalizedClipMap[clipId] = rows.filter(isValidRow).map(normalizeRow);
     }
 
-    return normalized_clip_map;
+    return normalizedClipMap;
 }
 
-function is_exact_note_clip_map(value: unknown): value is Record<string, MidiNote[]> {
+function isExactNoteClipMap(value: unknown): value is Record<string, MidiNote[]> {
     return (
-        is_plain_object(value) &&
-        Object.values(value).every((rows) => Array.isArray(rows) && rows.every(is_exact_midi_note))
+        isPlainObject(value) && Object.values(value).every((rows) => Array.isArray(rows) && rows.every(isExactMidiNote))
     );
 }
 
-function is_exact_cc_clip_map(value: unknown): value is Record<string, MidiCC[]> {
+function isExactCcClipMap(value: unknown): value is Record<string, MidiCC[]> {
     return (
-        is_plain_object(value) &&
-        Object.values(value).every((rows) => Array.isArray(rows) && rows.every(is_exact_midi_cc))
+        isPlainObject(value) && Object.values(value).every((rows) => Array.isArray(rows) && rows.every(isExactMidiCc))
     );
 }
 
-function is_exact_pitch_bend_clip_map(value: unknown): value is Record<string, MidiPitchBend[]> {
+function isExactPitchBendClipMap(value: unknown): value is Record<string, MidiPitchBend[]> {
     return (
-        is_plain_object(value) &&
-        Object.values(value).every((rows) => Array.isArray(rows) && rows.every(is_exact_midi_pitch_bend))
+        isPlainObject(value) &&
+        Object.values(value).every((rows) => Array.isArray(rows) && rows.every(isExactMidiPitchBend))
     );
 }
 
-function is_migrated_clip_id_list(value: unknown): value is string[] {
+function isMigratedClipIdList(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
-function is_exact_midi_store_state(value: unknown): value is MidiStoreState {
+function isExactMidiStoreState(value: unknown): value is MidiStoreState {
     return (
-        is_plain_object(value) &&
-        has_exact_keys({
+        isPlainObject(value) &&
+        hasExactKeys({
             value,
-            required_keys: MIDI_STORE_STATE_KEYS,
-            optional_keys: MIDI_STORE_STATE_OPTIONAL_KEYS,
+            requiredKeys: MIDI_STORE_STATE_KEYS,
+            optionalKeys: MIDI_STORE_STATE_OPTIONAL_KEYS,
         }) &&
         isValidMidiProbabilitySeed(value.probabilitySeed) &&
-        is_exact_note_clip_map(value.notesByClipId) &&
-        is_exact_cc_clip_map(value.ccByClipId) &&
-        is_exact_pitch_bend_clip_map(value.pitchBendByClipId) &&
-        (value.migratedAbsoluteNoteClipIds === undefined || is_migrated_clip_id_list(value.migratedAbsoluteNoteClipIds))
+        isExactNoteClipMap(value.notesByClipId) &&
+        isExactCcClipMap(value.ccByClipId) &&
+        isExactPitchBendClipMap(value.pitchBendByClipId) &&
+        (value.migratedAbsoluteNoteClipIds === undefined || isMigratedClipIdList(value.migratedAbsoluteNoteClipIds))
     );
 }
 
-export function sanitize_midi_store_state(
+export function sanitizeMidiStoreState(
     value: unknown,
     probabilitySeedFallback = LEGACY_MIDI_PROBABILITY_SEED
 ): MidiStoreState {
-    if (!is_plain_object(value)) {
+    if (!isPlainObject(value)) {
         return { ...defaultMidiStoreState, probabilitySeed: probabilitySeedFallback };
     }
 
@@ -287,28 +285,28 @@ export function sanitize_midi_store_state(
     } else {
         candidate = { ...value, probabilitySeed };
     }
-    if (is_exact_midi_store_state(candidate)) {
+    if (isExactMidiStoreState(candidate)) {
         return candidate;
     }
 
     return {
         probabilitySeed,
-        notesByClipId: normalize_clip_map({
+        notesByClipId: normalizeClipMap({
             value: candidate.notesByClipId,
-            is_valid_row: is_valid_midi_note,
-            normalize_row: normalize_midi_note,
+            isValidRow: isValidMidiNote,
+            normalizeRow: normalizeMidiNote,
         }),
-        ccByClipId: normalize_clip_map({
+        ccByClipId: normalizeClipMap({
             value: candidate.ccByClipId,
-            is_valid_row: is_valid_midi_cc,
-            normalize_row: normalize_midi_cc,
+            isValidRow: isValidMidiCc,
+            normalizeRow: normalizeMidiCc,
         }),
-        pitchBendByClipId: normalize_clip_map({
+        pitchBendByClipId: normalizeClipMap({
             value: candidate.pitchBendByClipId,
-            is_valid_row: is_valid_midi_pitch_bend,
-            normalize_row: normalize_midi_pitch_bend,
+            isValidRow: isValidMidiPitchBend,
+            normalizeRow: normalizeMidiPitchBend,
         }),
-        ...(is_migrated_clip_id_list(candidate.migratedAbsoluteNoteClipIds)
+        ...(isMigratedClipIdList(candidate.migratedAbsoluteNoteClipIds)
             ? { migratedAbsoluteNoteClipIds: candidate.migratedAbsoluteNoteClipIds }
             : {}),
     };
@@ -331,7 +329,7 @@ const runtimeMidiStore = createStore<MidiStoreState>({
         hydrateMissing: () => defaultMidiStoreState,
     }),
     initialData: defaultMidiStoreState,
-    sanitize: sanitize_midi_store_state,
+    sanitize: sanitizeMidiStoreState,
 });
 
 export const midiStore: MidiStore = {
@@ -345,7 +343,7 @@ export const midiStore: MidiStore = {
             return;
         }
         const probabilitySeedFallback = runtimeMidiStore.value?.probabilitySeed ?? LEGACY_MIDI_PROBABILITY_SEED;
-        runtimeMidiStore.set(sanitize_midi_store_state(value, probabilitySeedFallback));
+        runtimeMidiStore.set(sanitizeMidiStoreState(value, probabilitySeedFallback));
     },
 
     update(updater: (current: MidiStoreState | null) => MidiStoreStateInput | null): void {

@@ -285,6 +285,12 @@ function createSplitRightHalf(note: MidiNote, duration: number, id: string): Mid
         pressure: note.pressure,
         slide: note.slide,
         pitchBend: note.pitchBend,
+        // Per-note expression that the field-by-field rebuild used to drop:
+        // the MPE channel carries voice routing, and the bend range is what
+        // makes a recorded pitchBend mean anything.
+        pitchBendRangeSemitones: note.pitchBendRangeSemitones,
+        channel: note.channel,
+        articulation: note.articulation,
     };
 }
 
@@ -441,6 +447,15 @@ function createDuplicateClone(note: MidiNote, id: string): MidiNote {
     }
     if (note.pitchBend !== undefined) {
         clone.pitchBend = note.pitchBend;
+    }
+    if (note.pitchBendRangeSemitones !== undefined) {
+        clone.pitchBendRangeSemitones = note.pitchBendRangeSemitones;
+    }
+    if (note.channel !== undefined) {
+        clone.channel = note.channel;
+    }
+    if (note.articulation !== undefined) {
+        clone.articulation = note.articulation;
     }
 
     return clone;

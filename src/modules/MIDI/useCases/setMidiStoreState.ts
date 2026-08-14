@@ -1,6 +1,6 @@
-import { LEGACY_MIDI_PROBABILITY_SEED, midiStore, sanitize_midi_store_state } from '../stores/midiStore';
+import { LEGACY_MIDI_PROBABILITY_SEED, midiStore, sanitizeMidiStoreState } from '../stores/midiStore';
 
 export function setMidiStoreState(state: unknown): void {
     const probabilitySeedFallback = midiStore.value?.probabilitySeed ?? LEGACY_MIDI_PROBABILITY_SEED;
-    midiStore.set(sanitize_midi_store_state(state, probabilitySeedFallback));
+    midiStore.set(sanitizeMidiStoreState(state, probabilitySeedFallback));
 }

@@ -1,4 +1,10 @@
-export type MidiNote = {
+/**
+ * Note shape consumed by the MIDI effect chain.
+ *
+ * Deliberately distinct from the arrangement note model in `MidiNote.ts`: an
+ * effect operates on transient, id-less notes and measures length in beats.
+ */
+export type MidiEffectNote = {
     pitch: number;
     velocity: number;
     startBeat: number;
@@ -9,19 +15,7 @@ export type MidiNote = {
 export type MidiEffect = {
     id: string;
     name: string;
-    process: (notes: MidiNote[]) => MidiNote[];
-};
-
-export const CHORD_INTERVALS: Record<string, number[]> = {
-    major: [0, 4, 7],
-    minor: [0, 3, 7],
-    dim: [0, 3, 6],
-    aug: [0, 4, 8],
-    sus2: [0, 2, 7],
-    sus4: [0, 5, 7],
-    '7': [0, 4, 7, 10],
-    maj7: [0, 4, 7, 11],
-    min7: [0, 3, 7, 10],
+    process: (notes: MidiEffectNote[]) => MidiEffectNote[];
 };
 
 export const SCALES: Record<string, number[]> = {

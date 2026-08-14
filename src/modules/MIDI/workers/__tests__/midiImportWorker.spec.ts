@@ -82,6 +82,40 @@ function mTrk(events: { status: number; data1: number; data2?: number; delta: nu
     return [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, (len >> 8) & 0xff, len & 0xff), ...body];
 }
 
+/**
+ * MThd with a declared header length longer than the 6-byte body. SMF 1.0
+ * requires a reader to skip the surplus; real exporters do emit it.
+ */
+function mThdWithTrailer(format: number, numTracks: number, division: number, trailer: number[]): number[] {
+    const length = 6 + trailer.length;
+    return [
+        ...u32(0x4d, 0x54, 0x68, 0x64),
+        ...u32(0, 0, (length >> 8) & 0xff, length & 0xff),
+        (format >> 8) & 0xff,
+        format & 0xff,
+        (numTracks >> 8) & 0xff,
+        numTracks & 0xff,
+        (division >> 8) & 0xff,
+        division & 0xff,
+        ...trailer,
+    ];
+}
+
+/**
+ * Wrap a fully-formed track body (deltas included, End-Of-Track included) into
+ * an MTrk chunk. Unlike `mTrk` this appends nothing, so a test can control the
+ * delta that precedes End-Of-Track.
+ */
+function mTrkRaw(body: number[]): number[] {
+    const len = body.length;
+    return [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, (len >> 8) & 0xff, len & 0xff), ...body];
+}
+
+/** End-Of-Track meta preceded by `delta` ticks. */
+function endOfTrack(delta: number): number[] {
+    return [...varlen(delta), 0xff, 0x2f, 0x00];
+}
+
 function toBuffer(bytes: number[]): ArrayBuffer {
     return new Uint8Array(bytes).buffer;
 }
@@ -209,6 +243,40 @@ describe('midiImportWorker', () => {
             dispatchParse(toBuffer(mThd(1, 0, 96)));
             expect(lastPosted()).toEqual({ type: 'parsed', tracks: [], ticksPerBeat: 96, tempo: 120 });
         });
+
+        it('rejects SMPTE-encoded timing instead of reading the division as PPQN', () => {
+            // Bit 15 set selects SMPTE: high byte is the negative frame rate
+            // (0xe7 = -25 fps), low byte the ticks per frame (0x28 = 40). Read as
+            // PPQN this is 59176 ticks per beat and every startBeat is nonsense.
+            const track = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            dispatchParse(toBuffer([...mThd(0, 1, 0xe728), ...track]));
+            expect(lastPosted()).toEqual({ type: 'error', message: 'SMPTE-encoded MIDI timing is not supported' });
+        });
+
+        it('rejects a zero division rather than emitting Infinity beats', () => {
+            const track = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            dispatchParse(toBuffer([...mThd(0, 1, 0), ...track]));
+            expect(lastPosted()).toEqual({ type: 'error', message: 'Invalid MIDI file: zero ticks per beat' });
+        });
+
+        it('skips header bytes beyond the declared 6-byte body', () => {
+            // A header declaring length 10 carries 4 surplus bytes before the
+            // first chunk id. Ignoring the declared length reads "MTrk" from the
+            // middle of the header and the whole file parses as zero tracks.
+            const track = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            dispatchParse(toBuffer([...mThdWithTrailer(0, 1, 480, [0x00, 0x00, 0x00, 0x00]), ...track]));
+            expect(parsedTracks()).toHaveLength(1);
+            expect(firstNote().pitch).toBe(60);
+        });
     });
 
     describe('note on/off pairing (SMF channel-voice messages)', () => {
@@ -257,13 +325,41 @@ describe('midiImportWorker', () => {
             expect(parsedTracks()).toEqual([]);
         });
 
-        it('drops a note-on that never receives a matching note-off (stuck note at end-of-track)', () => {
-            // Intent: a note is only emitted once its note-off (or note-on vel 0)
-            // arrives, because the duration cannot be known until then. A note-on
-            // left hanging at End-Of-Track yields no note, so the track is dropped.
-            const track = mTrk([{ status: 0x90, data1: 60, data2: 100, delta: 0 }]);
+        it('closes a note-on that never receives a note-off at the end of the track', () => {
+            // A hanging note-on is content the file asked for; the duration is
+            // unknown but bounded by the track end. Discarding it loses the note
+            // outright. On at tick 0, End-Of-Track at tick 960 -> 2 beats.
+            const track = mTrkRaw([...varlen(0), 0x90, 60, 100, ...endOfTrack(960)]);
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
-            expect(parsedTracks()).toEqual([]);
+            const note = firstNote();
+            expect(note.pitch).toBe(60);
+            expect(note.velocity).toBe(100);
+            expect(note.startBeat).toBe(0);
+            expect(note.duration).toBe(2); // 960 ticks / 480 ppq
+        });
+
+        it('pairs same-pitch notes per channel rather than merging them', () => {
+            // Format-0 files put every channel in one track. Middle C sounds on
+            // channel 0 for 1 beat and on channel 1 for 2 beats, overlapping.
+            // Keying active notes on pitch alone pairs channel 1's note-off with
+            // channel 0's note-on and loses one note entirely.
+            const track = mTrk([
+                { status: 0x90, data1: 60, data2: 90, delta: 0 }, // ch 0 on @0
+                { status: 0x91, data1: 60, data2: 70, delta: 0 }, // ch 1 on @0
+                { status: 0x80, data1: 60, data2: 0, delta: 480 }, // ch 0 off @480
+                { status: 0x81, data1: 60, data2: 0, delta: 480 }, // ch 1 off @960
+            ]);
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
+            const notes = firstTrack().notes;
+            expect(notes).toHaveLength(2);
+            expect(
+                notes
+                    .map((n) => ({ velocity: n.velocity, duration: n.duration }))
+                    .sort((a, b) => a.duration - b.duration)
+            ).toEqual([
+                { velocity: 90, duration: 1 },
+                { velocity: 70, duration: 2 },
+            ]);
         });
 
         it('carries note pitch and velocity but does not duplicate overlapping notes', () => {
@@ -355,6 +451,34 @@ describe('midiImportWorker', () => {
             expect(lastPosted().tempo).toBe(120);
         });
 
+        it('keeps the first tempo when the file carries a tempo map', () => {
+            // 60_000_000/500000 = 120 at tick 0, then 60_000_000/300000 = 200
+            // later. The result protocol carries one tempo; the file starts at
+            // 120, so importing at 200 puts every note at the wrong wall time.
+            const body: number[] = [];
+            body.push(...varlen(0), 0xff, 0x51, 0x03, 0x07, 0xa1, 0x20); // 500000 us
+            body.push(...varlen(0), 0x90, 60, 100, ...varlen(480), 0x80, 60, 0);
+            body.push(...varlen(0), 0xff, 0x51, 0x03, 0x04, 0x93, 0xe0); // 300000 us
+            body.push(...varlen(0), 0x90, 62, 100, ...varlen(480), 0x80, 62, 0);
+            body.push(...endOfTrack(0));
+
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+            expect(lastPosted().tempo).toBe(120);
+        });
+
+        it('decodes a track name with multi-byte UTF-8 characters', () => {
+            // SMF meta text is conventionally UTF-8. Latin-1 byte-by-byte
+            // decoding turns "Bläser" into "BlÃ¤ser".
+            const nameEncoded = Array.from(new TextEncoder().encode('Bläser'));
+            const body: number[] = [];
+            body.push(...varlen(0), 0xff, 0x03, ...varlen(nameEncoded.length), ...nameEncoded);
+            body.push(...varlen(0), 0x90, 40, 100, ...varlen(120), 0x80, 40, 0);
+            body.push(...endOfTrack(0));
+
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+            expect(firstTrack().name).toBe('Bläser');
+        });
+
         it('skips unknown meta events without misreading subsequent events', () => {
             // An unrecognized meta (e.g. type 0x06 marker text) followed by a
             // real note: the varlen-length skip must land exactly at the next delta.
@@ -394,6 +518,35 @@ describe('midiImportWorker', () => {
 
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
             expect(firstNote().pitch).toBe(60);
+        });
+
+        it('skips a stray system real-time byte without consuming the next event', () => {
+            // 0xf8 (timing clock) is illegal inside an MTrk but does occur.
+            // Treating it as a status byte reads the following delta as its data
+            // byte and desyncs the rest of the track.
+            const body: number[] = [];
+            body.push(...varlen(0), 0xf8);
+            body.push(...varlen(0), 0x90, 60, 100, ...varlen(480), 0x80, 60, 0);
+            body.push(...endOfTrack(0));
+
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+            const note = firstNote();
+            expect(note.pitch).toBe(60);
+            expect(note.duration).toBe(1);
+        });
+
+        it('skips a system common message together with its data bytes', () => {
+            // 0xf3 (song select) carries exactly one data byte. Treating it as a
+            // channel-voice status reads two, swallowing the next event's delta.
+            const body: number[] = [];
+            body.push(...varlen(0), 0xf3, 0x02);
+            body.push(...varlen(0), 0x90, 67, 100, ...varlen(240), 0x80, 67, 0);
+            body.push(...endOfTrack(0));
+
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+            const note = firstNote();
+            expect(note.pitch).toBe(67);
+            expect(note.duration).toBeCloseTo(0.5, 10);
         });
 
         it('skips a non-MTrk chunk between tracks without desyncing', () => {
@@ -452,6 +605,83 @@ describe('midiImportWorker', () => {
             ]);
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
             expect(firstNote().duration).toBeCloseTo(0.4, 10);
+        });
+    });
+
+    describe('malformed input', () => {
+        it('keeps the tracks it already parsed when a later chunk length overruns the buffer', () => {
+            // A partial download: two intact tracks, then a third whose declared
+            // length runs past the end of what arrived.
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const overrunning = [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, 0x01, 0xf4), 0x00, 0xff];
+            dispatchParse(toBuffer([...mThd(1, 3, 480), ...intact, ...intact, ...overrunning]));
+
+            const message = lastPosted();
+            expect(message.type).toBe('parsed');
+            expect(parsedTracks()).toHaveLength(2);
+        });
+
+        it('reports a file truncated before its first track instead of parsing zero tracks', () => {
+            // A parse that resolves with no tracks is indistinguishable from an
+            // empty file, and the importer treats that as nothing to add — so a
+            // corrupt drop would produce no tracks and no message at all.
+            dispatchParse(toBuffer([...mThd(1, 2, 480), 0x4d, 0x54]));
+
+            const message = lastPosted();
+            expect(message.type).toBe('error');
+            expect(message.message).toBe('Invalid MIDI file: no readable track data');
+        });
+
+        it('keeps the intact tracks when a later track desyncs into an over-long quantity', () => {
+            // The bad quantity closes its own track; it must not discard the
+            // tracks that already parsed.
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const desynced = mTrkRaw([0xff, 0xff, 0xff, 0xff, 0x7f, 0x90, 60, 100, ...endOfTrack(0)]);
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...desynced]));
+
+            expect(parsedTracks()).toHaveLength(1);
+        });
+
+        it('refuses a variable-length quantity longer than the four bytes SMF allows', () => {
+            // Five continuation bytes overflow a signed 32-bit shift into a
+            // negative delta, which places notes before beat 0 where nothing can
+            // reach them.
+            const body = [0xff, 0xff, 0xff, 0xff, 0x7f, 0x90, 60, 100, ...endOfTrack(0)];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+
+            const message = lastPosted();
+            expect(message.type).toBe('error');
+        });
+
+        it('does not let a desynced data byte above 127 collide with another channel', () => {
+            // `90 80 64` is a note-on whose pitch byte is 128. Unmasked its key
+            // is 1 * 128 + 0 — the key channel 1 pitch 0 owns — so the genuine
+            // channel 1 note-on below overwrites it and channel 1's note-off
+            // closes only one of the two. Both notes must survive.
+            const body = [
+                0x00,
+                0x90,
+                0x80,
+                0x64, // ch0 note-on, desynced pitch byte 128
+                0x00,
+                0x91,
+                0x00,
+                0x64, // ch1 note-on, pitch 0
+                0x60,
+                0x81,
+                0x00,
+                0x00, // ch1 note-off, pitch 0
+                ...endOfTrack(0),
+            ];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+
+            expect(firstTrack().notes).toHaveLength(2);
         });
     });
 
