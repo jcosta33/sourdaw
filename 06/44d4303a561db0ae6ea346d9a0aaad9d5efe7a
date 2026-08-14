@@ -1,0 +1,19 @@
+tests/e2e/grandBouleBoardSympLidSustain.spec.ts
+  s_62e9c3dc3ba52a::t_bd3fe12c8cc10a 1-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0644d4303a561db0ae6ea346d9a0aaad9d5efe7a",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
