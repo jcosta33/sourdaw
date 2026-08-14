@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction, type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
+import { handleRemoveRenderedProjectSections } from '../handleRemoveRenderedProjectSections';
 import { handleRenderProjectSections } from '../handleRenderProjectSections';
 
 const mocks = vi.hoisted(() => ({
@@ -124,5 +125,12 @@ describe('handleRenderProjectSections', () => {
             },
         });
         expect(handleRenderProjectSections.undoable).toBe(true);
+        expect(handleRenderProjectSections.canReapplyAfterDivergence?.(action)).toBe(true);
+        expect(
+            handleRemoveRenderedProjectSections.canReapplyAfterDivergence?.({
+                type: 'removeRenderedProjectSections',
+                payload: { sectionIds: ['section-chorus-one', 'section-chorus-two'], jobs },
+            })
+        ).toBe(true);
     });
 });

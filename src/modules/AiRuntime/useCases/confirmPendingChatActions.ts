@@ -352,6 +352,7 @@ export async function confirmPendingChatActions(
     const aborter = new AbortController();
     setChatGenerating(true);
     setActiveAborter(aborter);
+    let exactApprovalConsumed = false;
     let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
     try {
         const executionOptions = {
@@ -359,20 +360,24 @@ export async function confirmPendingChatActions(
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
+                if (exactApprovalConsumed) {
+                    return !aborter.signal.aborted;
+                }
                 if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
                     return false;
                 }
                 const approved = confirmation.approvalSnapshot;
                 if (!approved.commandBatch || !approved.agentApproval) {
-                    return approved.commandBatch === undefined;
+                    exactApprovalConsumed = approved.commandBatch === undefined;
+                    return exactApprovalConsumed;
                 }
-                return (
-                    validateAgentRiskApproval({
-                        approval: approved.agentApproval,
-                        commandBatch: approved.commandBatch,
-                        currentRevision: captureProjectRevision(),
-                    }).status === 'valid'
-                );
+                const validation = validateAgentRiskApproval({
+                    approval: approved.agentApproval,
+                    commandBatch: approved.commandBatch,
+                    currentRevision: captureProjectRevision(),
+                });
+                exactApprovalConsumed = validation.status === 'valid';
+                return exactApprovalConsumed;
             },
         };
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;

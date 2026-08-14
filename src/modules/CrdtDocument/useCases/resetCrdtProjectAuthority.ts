@@ -6,6 +6,7 @@ import {
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { automergeRepository } from '../repositories/automergeRepository';
+import { agentProjectRepairStateStore } from '../stores/agentProjectRepairStateStore';
 import { branchStore, MAIN_BRANCH_ID } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
@@ -45,6 +46,7 @@ export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: ()
     // first projection against the fresh document would carry the previous
     // project's tracks/automation/markers into it.
     resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
+    agentProjectRepairStateStore.set(null);
     // The point of no return, reported only once everything it asserts is
     // actually true: the previous root is gone from the repository *and* every
     // root-doc projection has been reset to its default, so the previous

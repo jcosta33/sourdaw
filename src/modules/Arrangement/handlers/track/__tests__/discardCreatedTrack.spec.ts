@@ -41,6 +41,24 @@ describe('handleDiscardCreatedTrack', () => {
         });
     });
 
+    it('certifies only snapshot-guarded discard compensation', () => {
+        expect(
+            handleDiscardCreatedTrack.canReapplyAfterDivergence?.({
+                type: 'discardCreatedTrack',
+                payload: {
+                    trackId: 'created',
+                    generatedMidiStateGuard: { entityJson: '{}', midiByClipIdJson: '{}' },
+                },
+            })
+        ).toBe(true);
+        expect(
+            handleDiscardCreatedTrack.canReapplyAfterDivergence?.({
+                type: 'discardCreatedTrack',
+                payload: { trackId: 'created' },
+            })
+        ).toBe(false);
+    });
+
     it('removes a committed created track and publishes after commit', async () => {
         mocks.removeTrack.mockReturnValue({
             removed: true,

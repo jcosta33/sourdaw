@@ -11,6 +11,7 @@ import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
 
 export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
+    canReapplyAfterDivergence: (action) => action.payload.generatedMidiStateGuard !== undefined,
     validate: (action, context) => {
         const guard = action.payload.generatedMidiStateGuard;
         if (!guard) {

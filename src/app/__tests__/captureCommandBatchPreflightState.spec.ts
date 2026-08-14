@@ -4,15 +4,18 @@ import { type getProjectContext } from '#/modules/AiRuntime/useCases';
 
 import { captureCommandBatchPreflightState } from '../captureCommandBatchPreflightState';
 
-const mocks = vi.hoisted(() => ({
-    agentProjectRepairStateStore: { value: null as unknown },
-    captureProjectRevision: vi.fn(() => 'document-identity-a'),
-    getAssetTransfer: vi.fn(),
-    getCrdtDoc: vi.fn<(id: string) => unknown>(),
-    getProjectContext: vi.fn(),
-    hasAudioBuffer: vi.fn<(id: string) => boolean>(),
-    trackStore: { value: { tracks: [] } },
-}));
+const mocks = vi.hoisted(() => {
+    const agentProjectRepairStateStore: { value: unknown } = { value: null };
+    return {
+        agentProjectRepairStateStore,
+        captureProjectRevision: vi.fn(() => 'document-identity-a'),
+        getAssetTransfer: vi.fn(),
+        getCrdtDoc: vi.fn<(id: string) => unknown>(),
+        getProjectContext: vi.fn(),
+        hasAudioBuffer: vi.fn<(id: string) => boolean>(),
+        trackStore: { value: { tracks: [] } },
+    };
+});
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     getProjectContext: mocks.getProjectContext,

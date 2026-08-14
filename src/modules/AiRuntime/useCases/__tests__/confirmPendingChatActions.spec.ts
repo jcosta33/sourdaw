@@ -86,12 +86,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         registerHandlerMap({
             setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
                 execute,
-                describe: () => ({
+                describe: (action) => ({
                     label: 'Set tempo',
-                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         const proposal = {
@@ -154,12 +159,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
             setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
                 execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
-                describe: () => ({
+                describe: (action) => ({
                     label: 'Generic handler label',
-                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         const action = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
@@ -196,12 +206,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
             setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
                 execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
-                describe: () => ({
+                describe: (action) => ({
                     label: 'Set tempo',
-                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
