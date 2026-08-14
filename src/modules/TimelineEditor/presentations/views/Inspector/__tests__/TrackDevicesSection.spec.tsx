@@ -61,6 +61,14 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
+const mockExecuteAppAction = vi.fn<(action: unknown) => void>();
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: (action: unknown): void => {
+        mockExecuteAppAction(action);
+    },
+}));
+
 const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
@@ -291,9 +299,13 @@ describe('TrackDevicesSection', () => {
 
         fireEvent.click(chorusMenuItem);
 
-        // By id, not by the label on the menu item: `addDevice` matches on name
-        // *or* id, and three catalog names are carried by two plugins each.
-        expect(mockAddDevice).toHaveBeenCalledWith('track-1', 'chorus');
+        // The menu routes through the action boundary so the add is one
+        // Automerge transaction (undoable), by plugin id — not the label.
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'addDevice',
+            payload: { trackId: 'track-1', deviceType: 'chorus' },
+        });
+        expect(mockAddDevice).not.toHaveBeenCalled();
         expect(screen.queryByRole('menuitem', { name: 'Chorus' })).not.toBeInTheDocument();
     });
 
