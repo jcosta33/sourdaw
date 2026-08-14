@@ -98,5 +98,4 @@ Leave existing `.agents/specs/` material untouched unless assigned. Durable deci
 - Never run destructive git, force-push, amend published history, or delete branches without
   explicit authority.
 - Never install packages or edit CI/build controls unless the task requires it.
-- Never use repo-wide codemods, rewrites, formatters, or automatic fixes without explicit authority.
 - Reproduce behavioral defects before repair. After three failed attempts, stop and change strategy.
