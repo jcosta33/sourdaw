@@ -100,6 +100,71 @@ describe('YeastPanel', () => {
         expect(screen.getByText('Rate')).toBeInTheDocument();
     });
 
+    it('binds the Play deck arp controls to the stored processor params', () => {
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { mode: 2, rate_denom: 16, latch: 1 },
+                },
+            ],
+            uiLevel: 1,
+        };
+
+        render(<YeastPanel />);
+
+        expect(screen.getByRole('combobox', { name: 'Mode' })).toHaveValue('2');
+        expect(screen.getByRole('slider', { name: 'Rate' })).toHaveAttribute('aria-valuenow', '16');
+        // The readout follows the stored rate, not a hardcoded 1/8.
+        expect(screen.getByText('1/16')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Latch' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('binds the Shape deck knobs to the stored processor params', () => {
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { gate: 1.2, swing: 0.5, octave_range: 3, fixed_velocity: 64 },
+                },
+            ],
+            uiLevel: 2,
+        };
+
+        render(<YeastPanel />);
+
+        expect(screen.getByRole('slider', { name: 'Gate' })).toHaveAttribute('aria-valuenow', '1.2');
+        expect(screen.getByRole('slider', { name: 'Swing' })).toHaveAttribute('aria-valuenow', '0.5');
+        expect(screen.getByRole('slider', { name: 'Octaves' })).toHaveAttribute('aria-valuenow', '3');
+        expect(screen.getByRole('slider', { name: 'Velocity' })).toHaveAttribute('aria-valuenow', '64');
+    });
+
+    it('defaults latch to off without a stored param', () => {
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: {},
+                },
+            ],
+            uiLevel: 1,
+        };
+
+        render(<YeastPanel />);
+
+        expect(screen.getByRole('button', { name: 'Latch' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('slider', { name: 'Rate' })).toHaveAttribute('aria-valuenow', '8');
+    });
+
     it('should render stored processor rack text', () => {
         storeMock.yeastState = {
             processors: [
