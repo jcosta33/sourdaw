@@ -24,14 +24,6 @@ export type PullRequest = {
     headRefOid: string;
     headRepository: string | null;
     mergedAt: string | null;
-    body: string | null;
-};
-
-export type CampaignIssue = {
-    number: number;
-    state: string;
-    body: string;
-    labels: Array<{ name: string }>;
 };
 
 export type LaneRemovalPort = {
@@ -46,7 +38,6 @@ export type LaneRemovalPort = {
     operation: (path: string) => string | undefined;
     remoteHead: (branch: string) => string | undefined;
     pullRequests: (branch: string) => PullRequest[];
-    campaignIssues: (numbers: number[]) => CampaignIssue[];
     lock: (path: string) => void;
     unlock: (path: string) => void;
     remove: (path: string) => void;
@@ -64,36 +55,6 @@ function fail(message: string): never {
 function inside(parent: string, candidate: string): boolean {
     const path = relative(parent, candidate);
     return path === '' || (!path.startsWith('..') && !isAbsolute(path));
-}
-
-function escapeExpression(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-}
-
-// GitHub shares one number sequence between issues and pull requests, so both URL forms name the
-// same object. Both are scoped to this repository: a number lifted out of a link to some other
-// tracker collides with our own numbering and would satisfy the handshake by coincidence.
-function reference(repository: string, number: string): RegExp {
-    return new RegExp(
-        `(?:^|\\D)#${number}(?!\\d)|github\\.com/${escapeExpression(repository)}/(?:pull|issues)/${number}(?!\\d)`,
-        'g'
-    );
-}
-
-function issueReferences(body: string | null, repository: string): number[] {
-    if (body === null) {
-        return [];
-    }
-    const references = [...body.matchAll(reference(repository, String.raw`(\d+)`))].map((match) =>
-        Number(match[1] ?? match[2])
-    );
-    return [...new Set(references.filter((number) => Number.isSafeInteger(number) && number > 0))];
-}
-
-// A ledger records a merged pull request as `#N` or as the URL `gh` prints. Accepting only `#N`
-// made pasting that URL silently unrecordable, and an unrecorded PR cannot have its lane retired.
-function mentions(body: string, number: number, repository: string): boolean {
-    return reference(repository, String(number)).test(body);
 }
 
 function disposableIgnored(path: string): boolean {
@@ -174,7 +135,6 @@ type OwnershipSnapshot = {
     branch: string;
     ignored: string[];
     pullRequest: number;
-    campaign: number;
     remoteHead?: string;
 };
 
@@ -230,30 +190,6 @@ function validateOwnership(
     if (pullRequest.state !== 'MERGED' || pullRequest.mergedAt === null || pullRequest.isDraft) {
         fail(`PR #${pullRequest.number} is still active`);
     }
-    // The ledger's own state is deliberately not checked. What authorises removal is that this
-    // lane's work is finished and recorded: the pull request is MERGED (above) and one epic ledger
-    // names it. A ledger stays OPEN for the whole life of its campaign, which is exactly when its
-    // lanes finish and accumulate — requiring CLOSED made every lane of a live campaign
-    // unremovable until the campaign itself ended, and lanes were retired by hand instead.
-    // `gh issue view <n>` resolves a pull-request number too, so a PR that references itself and
-    // carries the `epic` label would otherwise be its own ledger and grant its own removal.
-    const referenced = port.campaignIssues(issueReferences(pullRequest.body, repository));
-    const ledgers = referenced.filter(
-        (issue) => issue.number !== pullRequest.number && issue.labels.some((label) => label.name === 'epic')
-    );
-    if (ledgers.length === 0) {
-        fail(`PR #${pullRequest.number} references no epic-labelled ledger issue`);
-    }
-    const campaigns = ledgers.filter((issue) => mentions(issue.body, pullRequest.number, repository));
-    const campaign = campaigns[0];
-    if (campaign === undefined) {
-        const names = ledgers.map((issue) => `#${issue.number}`).join(', ');
-        fail(`PR #${pullRequest.number} is not named back by any epic ledger it references (${names})`);
-    }
-    if (campaigns.length > 1) {
-        const names = campaigns.map((issue) => `#${issue.number}`).join(', ');
-        fail(`PR #${pullRequest.number} is claimed by epic ledgers ${names}`);
-    }
     const remoteHead = port.remoteHead(branch);
     if (
         pullRequest.headRefName !== branch ||
@@ -270,7 +206,6 @@ function validateOwnership(
         branch,
         ignored: [...ignored].sort(),
         pullRequest: pullRequest.number,
-        campaign: campaign.number,
         remoteHead,
     };
 }
@@ -404,7 +339,6 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                         draft: boolean;
                         head: { ref: string; sha: string; repo: { full_name: string } | null };
                         merged_at: string | null;
-                        body: string | null;
                     }>
                 >
             >(
@@ -424,25 +358,8 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                 headRefOid: pullRequest.head.sha,
                 headRepository: pullRequest.head.repo?.full_name ?? null,
                 mergedAt: pullRequest.merged_at,
-                body: pullRequest.body,
             }));
         },
-        // `gh issue view <n>` and `repos/:owner/:repo/issues/<n>` both resolve pull-request numbers.
-        // Only the REST form reports which it returned, so drop anything carrying `pull_request`.
-        campaignIssues: (numbers) =>
-            numbers
-                .map((number) =>
-                    parseJson<CampaignIssue & { isPullRequest: boolean }>(
-                        shell.capture('gh', [
-                            'api',
-                            `repos/${repository()}/issues/${number}`,
-                            '--jq',
-                            '{number, state, body: (.body // ""), labels, isPullRequest: (.pull_request != null)}',
-                        ]),
-                        `issue #${number}`
-                    )
-                )
-                .filter((issue) => !issue.isPullRequest),
         lock: (path) => shell.run('git', ['worktree', 'lock', '--reason', `lane-remove:${process.pid}`, path]),
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
@@ -453,18 +370,14 @@ function main(): number {
     try {
         const args = process.argv.slice(2);
         if (args[0] === '--help' && args.length === 1) {
-            console.log('Usage: pnpm lane:remove <worktree-path>');
+            console.log('Usage: node --experimental-strip-types scripts/removeLane.ts <worktree-path>');
             console.log('');
             console.log('Removes a spent agent worktree. The lane must be clean, unlocked, idle, and');
             console.log('hold the merged head of exactly one pull request in this repository.');
-            console.log('');
-            console.log("Record the merged PR in its ledger issue's BODY (a comment is not read) as");
-            console.log('`#<pr>` or as the pull-request URL, and label that issue `epic`. Exactly one');
-            console.log('such issue must name the PR back, or removal is refused.');
             return 0;
         }
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
-            fail('usage: pnpm lane:remove <worktree-path>');
+            fail('usage: node --experimental-strip-types scripts/removeLane.ts <worktree-path>');
         }
         removeLane(realpathSync(resolve(process.cwd(), args[0])), shellPort());
         return 0;
