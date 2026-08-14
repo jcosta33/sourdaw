@@ -359,20 +359,16 @@ export async function confirmPendingChatActions(
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
-                if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
-                    return false;
-                }
-                const approved = confirmation.approvalSnapshot;
-                if (!approved.commandBatch || !approved.agentApproval) {
-                    return approved.commandBatch === undefined;
-                }
-                return (
-                    validateAgentRiskApproval({
-                        approval: approved.agentApproval,
-                        commandBatch: approved.commandBatch,
-                        currentRevision: captureProjectRevision(),
-                    }).status === 'valid'
-                );
+                // Only abort and revision authorization gate the in-flight
+                // batch. The approval itself was fully validated by
+                // getApprovalPreflightFailure before execution began;
+                // re-deriving target fingerprints per action would read
+                // target state this batch has already mutated, so any
+                // multi-action batch touching a fingerprinted target would
+                // invalidate itself mid-flight. External interference is
+                // still caught here: every project mutation moves the
+                // revision heads isConfirmationExecutionAuthorized compares.
+                return isConfirmationExecutionAuthorized(confirmation, aborter.signal);
             },
         };
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
