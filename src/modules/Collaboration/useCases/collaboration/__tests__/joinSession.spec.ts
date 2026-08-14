@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PEER_COLORS, type SignalingMessage } from '../../../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../../../repositories/peerConnection';
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { canExecuteCommandBatch } from '../canExecuteCommandBatch';
 import { joinSession } from '../joinSession';
 
 /**
@@ -115,6 +116,40 @@ describe('joinSession', () => {
 
         expect(createPeer).toHaveBeenCalledWith('host-42');
         expect(acceptOffer).toHaveBeenCalledWith('offer-sdp-xyz');
+    });
+
+    it('revokes command-batch authority before awaiting the host offer', async () => {
+        let resolveOffer!: (sdp: string) => void;
+        acceptOffer.mockReturnValueOnce(
+            new Promise<string>((resolve) => {
+                resolveOffer = resolve;
+            })
+        );
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeOffer()));
+
+        const joining = joinSession('invite', 'Alice');
+        await vi.waitFor(() => expect(acceptOffer).toHaveBeenCalledTimes(1));
+
+        expect(canExecuteCommandBatch()).toBe(false);
+
+        resolveOffer('fake-answer-sdp');
+        await joining;
+    });
+
+    it('restores standalone authority after a failed join tears down its runtime', async () => {
+        acceptOffer.mockRejectedValueOnce(new Error('offer rejected'));
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeOffer()));
+
+        await expect(joinSession('invite', 'Alice')).rejects.toThrow('offer rejected');
+
+        expect(mockRuntime.cleanup).toHaveBeenCalledTimes(2);
+        expect(canExecuteCommandBatch()).toBe(true);
+        expect(collaborationStore.value).toMatchObject({
+            connectionStatus: 'error',
+            error: 'offer rejected',
+            isEnabled: false,
+            isHost: false,
+        });
     });
 
     it('writes joiner session state to the collaboration store', async () => {
