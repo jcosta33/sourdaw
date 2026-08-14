@@ -1,0 +1,25 @@
+tests/e2e/yeastParamMatrix.spec.ts
+  h_1228e573df1f42 1-58,62-90
+  s_6062ab4f1810df::t_5bde508a922667 59-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2f7286442a3ce6181869ea381b16c7153290b5a0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_6062ab4f1810df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00223-b520-7562-9ffc-f4aa3ac4aa94",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
