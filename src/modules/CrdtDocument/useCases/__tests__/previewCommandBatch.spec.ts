@@ -442,7 +442,7 @@ describe('previewCommandBatch', () => {
                 lockedRanges: [],
                 projectId: 'project-preview',
                 projectInvariantsValid: true,
-                targetFingerprints: {},
+                targetFingerprints: { 'track-preview': 'fixture-track-preview' },
             };
         });
         const revision = captureProjectRevision();
@@ -454,8 +454,11 @@ describe('previewCommandBatch', () => {
             availableDeviceVersions: {},
             expectedEffect: 'Preview track gain becomes 0.8.',
             normalizedProjectRevision: revision,
-            objectReferences: [],
-            parameterUnits: [{ argument: 'gain', unit: 'linear-gain' }],
+            objectReferences: [{ argument: 'trackId', id: 'track-preview', scope: 'stable' }],
+            parameterUnits: [
+                { argument: 'gain', unit: 'linear-gain' },
+                { argument: 'expectedGain', unit: 'linear-gain' },
+            ],
             reason: 'Preview a guarded gain change.',
             time: [],
         });
@@ -478,7 +481,6 @@ describe('previewCommandBatch', () => {
             serialized: previewBatch.serialized,
             options: { skipUndo: true },
         });
-
         expect(preview).toMatchObject({
             status: 'previewed',
             audioGraphValid: true,

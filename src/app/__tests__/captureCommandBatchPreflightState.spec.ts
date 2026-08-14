@@ -297,10 +297,13 @@ describe('captureCommandBatchPreflightState', () => {
                 tracks: {
                     tracks: [
                         {
+                            clips: [],
                             devices: [],
+                            gain: 1,
                             id: 'master',
                             kind: 'master',
                             outputId: null,
+                            pan: 0,
                             sends: [],
                         },
                     ],
