@@ -1,0 +1,14 @@
+tests/e2e/aiChatActionButtonsTestId.spec.ts
+  h_1228e573df1f42 1-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "214ddf7e8d94aa34ad6b748ef3fa68a690149b60",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
