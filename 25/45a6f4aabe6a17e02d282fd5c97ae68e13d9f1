@@ -1,0 +1,19 @@
+tests/e2e/elasticDetectQuantizeTestId.spec.ts
+  s_62e9c3dc3ba52a::t_f9d67585032e53 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2545a6f4aabe6a17e02d282fd5c97ae68e13d9f1",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
