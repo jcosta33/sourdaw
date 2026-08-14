@@ -1,0 +1,96 @@
+src/modules/Command/useCases/prepareCommandBatchPreflight.ts
+  s_a40848e8f8cca9::t_51e1b3603d186e 134-135,158-160,162
+src/modules/CrdtDocument/useCases/inspectAgentProjectDivergence.ts
+  s_a40848e8f8cca9::t_13c6ef378971a7 73-86,130,159-160
+  s_a40848e8f8cca9::t_56fea12aa2d6b8 152
+  s_a40848e8f8cca9::t_a4926d250849af 1-7,10-72,117-120,128-129,131-151,153-158,161-174
+  s_a40848e8f8cca9::t_317acd3ebbbb8b 8,95,116
+  s_a40848e8f8cca9::t_f1f925b0c5c86a 9,87-94,96-115,121-127
+src/modules/CrdtDocument/useCases/projection/projectProjection.ts
+  s_a40848e8f8cca9::t_7d3d7822c2ebe1 3,5,25-29
+src/modules/CrdtDocument/stores/index.ts
+  s_a40848e8f8cca9::t_7d3d7822c2ebe1 2
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_a4926d250849af 8
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_f1f925b0c5c86a 7
+  s_a40848e8f8cca9::t_7d3d7822c2ebe1 8
+  s_a40848e8f8cca9::t_a4926d250849af 5-6
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_317acd3ebbbb8b 24-26
+  s_a40848e8f8cca9::t_8b6e1a397f8a63 97
+  s_a40848e8f8cca9::t_c27186dec0bc72 41,92,99
+  s_a40848e8f8cca9::t_a86a8f0ccdbbd8 119-120
+  s_a40848e8f8cca9::t_3ad6183e880630 6,16,27-29,83-88,93,105,108-111,113-116,122-123,125,130-142,145-146
+  s_a40848e8f8cca9::t_56fea12aa2d6b8 19,40
+  s_a40848e8f8cca9::t_51e1b3603d186e 98,100-102
+  s_a40848e8f8cca9::t_c3553d802d29f8 47,89-91,112,117-118,121,124,129,143-144
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_a40848e8f8cca9::t_d6c3929505c101 9
+  s_a40848e8f8cca9::t_3f40850e6da7b8 1,29,449-450,469-475,479-494,496-521
+  s_a40848e8f8cca9::t_4ecd46b8a02825 54,80
+  s_a40848e8f8cca9::t_13971895728606 4-8,10,12-13,16-17,19,21-27,30-47,49-53,55-57,59-79,81-82,85-88,156-157,159-163,177-184,186-187,189-193,270-318,320-324,330,334,343-347,382,419-448
+  s_a40848e8f8cca9::t_f549f6d23f2d41 143-154,319,368,384-418
+  s_a40848e8f8cca9::t_1f6a513c748b50 3,28,58,155,194-195,198-221,223-237,239-269,522-523
+  s_a40848e8f8cca9::t_3d0b52241961ed 167
+  s_a40848e8f8cca9::t_9e1ad15c7d1024 451-468
+  s_a40848e8f8cca9::t_13afe1f57589ff 11,15,18,164,166,168-176,188,331-333,335-342
+  s_a40848e8f8cca9::t_06e2f4deeba228 14
+  s_a40848e8f8cca9::t_317acd3ebbbb8b 2,476-478
+  s_a40848e8f8cca9::t_6a82fb7fd04bf8 48,83-84,196-197,222,238,325-329,348-352
+  s_a40848e8f8cca9::t_a4e197cef9c38a 495
+  s_a40848e8f8cca9::t_6d1923e9cdc179 20,89-142,158,185,353-367,369-381,383
+  s_a40848e8f8cca9::t_3d26061d0b5524 165
+src/modules/CrdtDocument/useCases/classifyAgentProjectDivergence.ts
+  s_a40848e8f8cca9::t_34aeb6d78bd0a2 2-41,43-90
+  s_a40848e8f8cca9::t_317acd3ebbbb8b 42
+  s_a40848e8f8cca9::t_0f361acf58ee7d 1
+src/modules/Command/useCases/commandProjectDivergencePort.ts
+  s_a40848e8f8cca9::t_c3553d802d29f8 10-11,13-21
+  s_a40848e8f8cca9::t_a4926d250849af 1-9,22-43
+  s_a40848e8f8cca9::t_56fea12aa2d6b8 12
+src/modules/CrdtDocument/useCases/agentProjectInspectionPort.ts
+  s_a40848e8f8cca9::t_a4926d250849af 1-26
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_51e1b3603d186e 70-71
+  s_a40848e8f8cca9::t_3ad6183e880630 65
+src/modules/CrdtDocument/stores/agentProjectRepairStateStore.ts
+  s_a40848e8f8cca9::t_7d3d7822c2ebe1 1-2,15-17,19-20,22-27
+  s_a40848e8f8cca9::t_13c6ef378971a7 18
+  s_a40848e8f8cca9::t_0f361acf58ee7d 3-13
+  s_a40848e8f8cca9::t_f1f925b0c5c86a 14,21
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_b0ea957801c31a 196,227,233
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_a40848e8f8cca9::t_a4926d250849af 274-282
+src/modules/CrdtDocument/useCases/findAutomergeProjectConflicts.ts
+  s_a40848e8f8cca9::t_f1f925b0c5c86a 2-3,5-14,16-45,50-52,54-57,61,63,65-77
+  s_a40848e8f8cca9::t_3cc965c1b8849e 46-48
+  s_a40848e8f8cca9::t_56fea12aa2d6b8 58,64
+  s_a40848e8f8cca9::t_048cbf58018295 1,49
+  s_a40848e8f8cca9::t_a4e197cef9c38a 4,59-60,62
+  s_a40848e8f8cca9::t_c3553d802d29f8 15,53
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_844c47c2776f2b 70,78,81,177-180
+src/modules/CrdtDocument/useCases/inspectCurrentAgentProjectRepairState.ts
+  s_a40848e8f8cca9::t_7d3d7822c2ebe1 1-6,8-16,26-27,36,38,41,43-45
+  s_a40848e8f8cca9::t_c1b71072fa89fe 18-24
+  s_a40848e8f8cca9::t_f1f925b0c5c86a 7,17,28-35,42
+  s_a40848e8f8cca9::t_13c6ef378971a7 25,37,39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4b7a7afd5a09771af26fdf141d9f9d048656312a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
