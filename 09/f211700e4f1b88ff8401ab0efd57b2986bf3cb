@@ -1,0 +1,58 @@
+scripts/deliverPullRequest.ts
+  s_0a3429e31e555d::t_6d0d9651a061c7 168
+  s_0a3429e31e555d::t_8bd11c8237796d 207-214,218-219
+  s_0a3429e31e555d::t_3e8bf93c08bec0 187,391,396,402-403,405,412,419
+  s_0a3429e31e555d::t_cc000c84b69e7e 137,157
+.github/workflows/health-gates.yml
+  s_0a3429e31e555d::t_35c72d5ce1ea3e 25-26,66,113,141
+.oxlintrc.json
+  s_0a3429e31e555d::t_49656805ba0082 44
+  s_ea92a92ea61e01::t_a0de641b6c1c91 68
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_0a3429e31e555d::t_cc000c84b69e7e 128,131,133,136,143,147,154,157,161,164,186,221,226-227
+  s_0a3429e31e555d::t_6d0d9651a061c7 173
+package.json
+  s_0a3429e31e555d::t_e2f701e3c668e0 36
+  s_0a3429e31e555d::t_35c72d5ce1ea3e 17-18,24-25,37,46,56
+AGENTS.md
+  s_0a3429e31e555d::t_35c72d5ce1ea3e 30-40,96-97
+  s_0a3429e31e555d::t_9b1f0b7418af06 27-29
+tsconfig.scripts.json
+  s_0a3429e31e555d::t_35c72d5ce1ea3e 23
+scripts/__tests__/resourceGuard.spec.ts
+  s_0a3429e31e555d::t_e2f701e3c668e0 390,398
+  s_0a3429e31e555d::t_cc000c84b69e7e 372,377-387
+docs/06-testing.md
+  s_0a3429e31e555d::t_6d0d9651a061c7 690-691
+  s_0a3429e31e555d::t_49656805ba0082 686
+  s_0a3429e31e555d::t_b6b7bb49db6502 684-685
+  s_0a3429e31e555d::t_c319a114bef468 687-689
+  s_0a3429e31e555d::t_a827a90b9cb12d 692-693
+  s_ea92a92ea61e01::t_d28659a80365b0 117-121,183
+scripts/checkVitestCollectionScope.ts
+  s_0a3429e31e555d::t_6d0d9651a061c7 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "09f211700e4f1b88ff8401ab0efd57b2986bf3cb",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ea92a92ea61e01": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a001db-5d40-7a62-84e2-5dbe7a7e439f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
