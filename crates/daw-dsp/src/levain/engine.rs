@@ -457,6 +457,7 @@ impl LevainEngine {
                 self.attach_dynamic_layer(voice_idx, art, note, zone_id, velocity);
             }
             LegatoResult::TrueTransition {
+                from_note,
                 from_voice,
                 transition,
                 crossfade_out,
@@ -466,7 +467,18 @@ impl LevainEngine {
                 // "into the transition" ramp `crossfade_in` names — this
                 // voice pool has no independent stream to apply a second,
                 // separately-timed crossfade to that departing voice.
-                if from_voice < self.voice_pool.voices.len() {
+                //
+                // `note == from_note` is what makes the stored index safe to
+                // act on. `LegatoEngine` remembers a voice index from when
+                // the held key went down, and the pool can recycle that slot
+                // underneath it — a voice whose recording has run dry frees
+                // itself with the key still held (`LevainVoice::tick`), so the
+                // next note-on takes the slot and the remembered index then
+                // addresses a different, sounding note. Releasing on a stale
+                // index cuts that note off mid-sound.
+                if self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
+                    voice.active && voice.note == from_note
+                }) {
                     self.voice_pool.voices[from_voice].release();
                 }
                 let voice = &mut self.voice_pool.voices[voice_idx];
@@ -499,16 +511,22 @@ impl LevainEngine {
                 );
             }
             LegatoResult::SyntheticGlide {
+                from_note,
                 from_voice,
                 glide_time,
-                ..
             } => {
                 // Reuse the existing voice and crossfade to the new zone.
                 // The reused voice keeps its existing vibrato state (it's
                 // a continuous slur, not a fresh attack).
-                if from_voice < self.voice_pool.voices.len()
-                    && self.voice_pool.voices[from_voice].active
-                {
+                //
+                // `active` alone is not enough to trust the remembered index:
+                // see the `TrueTransition` arm. A recycled slot is active and
+                // sounding *someone else's* note, and gliding it would drag
+                // that note to this pitch instead of slurring the one the
+                // player is actually holding.
+                if self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
+                    voice.active && voice.note == from_note
+                }) {
                     // The incoming zone enters at the outgoing stream's own
                     // playhead, so the slur adds no second attack. This is
                     // the fallback for an interval the bank has no recorded
@@ -1049,6 +1067,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::LevainEngine;
+    use crate::levain::voice::crossfade_rate_for;
     use crate::levain::types::{
         AdsrParams, Dynamic, KeyRange, LegatoTransition, LoopMode, SampleRef, TransitionType,
         VelRange, Zone, MAX_ARTICULATIONS,
@@ -2031,17 +2050,16 @@ mod tests {
         );
     }
 
-    /// Reading `crossfadeOutMs` puts bank data on `crossfade_rate`, which is
-    /// accumulated per sample into an `f32`. The validator bounds that field
-    /// only to a non-negative finite `f32`, so a fat-fingered manifest can ask
-    /// for a fade so long the increment underflows the accumulator's ULP and
-    /// the ramp stops advancing for good — the voice is then stuck part-way
-    /// into its own zone forever, which is not "a very slow crossfade" but a
-    /// note that never arrives. `crossfade_rate_for` floors the rate at
-    /// `f32::EPSILON` so every authored value completes.
+    /// End-to-end: no authored `crossfadeOutMs`, however absurd, may leave a
+    /// voice stuck part-way into its own zone. Two independent mechanisms now
+    /// hold this — the outgoing stream running dry completes the hand-over,
+    /// and `crossfade_rate_for` floors the ramp increment — and this asserts
+    /// the property rather than either mechanism, so it stays honest if one of
+    /// them is later replaced. The floor itself is pinned directly by
+    /// `a_crossfade_rate_always_advances_the_ramp`.
     #[test]
     fn an_absurd_authored_crossfade_out_still_completes() {
-        /// 1e9 ms — eleven days. Its unclamped rate is 2.08e-14, six orders of
+        /// 1e9 ms — eleven days. Its unfloored rate is 2.08e-14, six orders of
         /// magnitude under the ULP near 1.0, so the accumulator never moves.
         const ABSURD_MS: f32 = 1_000_000_000.0;
         /// 175 s at 48 kHz is the longest fade `f32::EPSILON` can express;
@@ -2092,6 +2110,198 @@ mod tests {
              after {} s of audio, stuck at crossfade_amount {}",
             BLOCKS as f32 * 128.0 / SAMPLE_RATE,
             slurred.crossfade_amount
+        );
+    }
+
+    /// Single-bin magnitude, so one note's fundamental can be tracked through
+    /// a texture without pulling in an FFT.
+    fn tone_magnitude(samples: &[f32], freq_hz: f32) -> f32 {
+        let omega = std::f32::consts::TAU * freq_hz / SAMPLE_RATE;
+        let coeff = 2.0 * omega.cos();
+        let mut s1 = 0.0_f32;
+        let mut s2 = 0.0_f32;
+        for &value in samples {
+            let s0 = value + coeff * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        (s1 * s1 + s2 * s2 - coeff * s1 * s2).abs().sqrt() / samples.len() as f32
+    }
+
+    /// `LegatoEngine` stores the voice index a held note was given when its key
+    /// went down, and the glide arm trusted that index on nothing but `active`.
+    /// Freeing a run-dry voice with the key still held made the index
+    /// recyclable *during* the hold: the next note-on takes the slot, and the
+    /// remembered index then addresses a different, sounding note. Gliding it
+    /// drags that note to the new pitch, so a slur silences an unrelated note
+    /// mid-sound. Reachable on shipped banks — a non-looping zone held past the
+    /// end of its recording is every `loopMode: "none"` percussion sustain and
+    /// every pizzicato or spiccato note written longer than its sample.
+    #[test]
+    fn a_slur_must_not_glide_a_voice_that_no_longer_holds_the_note_it_was_stored_for() {
+        /// 3 s at 48 kHz, long enough that the higher note is still ringing
+        /// throughout the measurement window after its own pitch-up speed.
+        const RING_FRAMES: u32 = 144_000;
+        /// Blocks of 128 frames. The first note's recording is dry by 3 s.
+        const BLOCKS_UNTIL_DRY: usize = 1_170; // 3.12 s
+        const BLOCKS_BETWEEN: usize = 38; // ~0.1 s
+        const BLOCKS_MEASURED: usize = 110; // ~0.29 s
+        /// 200 Hz at the root key, transposed by the zone's own pitch
+        /// correction: 13 semitones up for note 73, 2 for note 62.
+        const HIGH_HZ: f32 = 423.86;
+        const SLUR_HZ: f32 = 224.49;
+
+        // Choir scales release by 1.0, so the free timing is the only variable.
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank("soprano");
+        let data: Vec<f32> = (0..RING_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, RING_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.sample.end = RING_FRAMES;
+        zone.sample.loop_mode = LoopMode::NoLoop;
+        engine.add_zone(zone);
+        engine.build_zone_map(1, 1).expect("zone map should build");
+        engine.commit_sample_bank();
+
+        // Key down and never lifted. Its recording runs out underneath it.
+        engine.note_on(60, 100);
+        render(&mut engine, BLOCKS_UNTIL_DRY);
+
+        // Takes the slot note 60 just freed, and is 13 semitones away, so it
+        // is outside the glide interval and triggers as a normal note.
+        engine.note_on(73, 100);
+        let before = render(&mut engine, BLOCKS_BETWEEN);
+        let high_before = tone_magnitude(&before, HIGH_HZ);
+        assert!(
+            high_before > 1e-3,
+            "the high note must be audible before the slur for this to measure \
+             anything: magnitude {high_before}"
+        );
+
+        // Two semitones from the still-held note 60, so `find_closest_held`
+        // picks 60 over 73 and the glide arm gets 60's stale voice index.
+        engine.note_on(62, 100);
+        let after = render(&mut engine, BLOCKS_MEASURED);
+        let high_after = tone_magnitude(&after, HIGH_HZ);
+        let slur_after = tone_magnitude(&after, SLUR_HZ);
+
+        assert!(
+            slur_after > 1e-3,
+            "the slurred note must sound: magnitude {slur_after}"
+        );
+        assert!(
+            high_after > high_before * 0.5,
+            "the slur must leave the unrelated high note ringing: its \
+             fundamental fell from {high_before} to {high_after} \
+             ({:.1} dB) while the slurred note reads {slur_after}",
+            20.0 * (high_after / high_before).log10()
+        );
+    }
+
+    /// The RT invariant behind `crossfade_rate_for`, tested where it lives
+    /// rather than through the engine. Completing the crossfade when the
+    /// outgoing stream runs dry means an authored `crossfadeOutMs` can no
+    /// longer reach the stall through `start_legato_transition` — the
+    /// transition stream is always `NoLoop` and always ends — but the floor is
+    /// still what guarantees the ramp advances, and `start_crossfade` hands it
+    /// a stream that may loop indefinitely.
+    ///
+    /// The stall is not hypothetical: `tick` accumulates this rate into an
+    /// `f32` in `[0, 1)`, and an `f32` add is a no-op once the addend drops
+    /// below half the accumulator's ULP.
+    #[test]
+    fn a_crossfade_rate_always_advances_the_ramp() {
+        /// Requested fade lengths in seconds, spanning the built-in glide
+        /// times, plausible authored values, and lengths whose unfloored rate
+        /// underflows outright.
+        const REQUESTED_SECS: [f32; 8] =
+            [0.0, 0.02, 0.15, 5.0, 300.0, 1_000.0, 10_000.0, 1_000_000.0];
+
+        for requested in REQUESTED_SECS {
+            let rate = crossfade_rate_for(requested, SAMPLE_RATE);
+            // The binding case is an accumulator just under 1.0, where the ULP
+            // is largest. If the add moves the value there, it moves it
+            // everywhere below.
+            let worst_case = 1.0_f32 - f32::EPSILON;
+            assert!(
+                worst_case + rate > worst_case,
+                "a {requested} s crossfade produced rate {rate:e}, which does \
+                 not advance an f32 accumulator near 1.0 — the ramp would \
+                 stall there and the voice would never finish crossfading"
+            );
+        }
+    }
+
+    /// Equal power is the right law for two live streams and the wrong one for
+    /// a live stream against silence. A transition recording is a short
+    /// gesture, so any fade longer than it left `gain_old` weighting a stream
+    /// reading 0.0 while `gain_new` held the arriving note under unity for the
+    /// rest of the ramp — not a slow arrival but a hole in the line, measured
+    /// at 29 dB below the default with a 100 ms recording under a 30 s fade.
+    /// It bit the built-in 40-150 ms defaults too, wherever a bank's recording
+    /// was shorter than the fade.
+    #[test]
+    fn a_fade_longer_than_its_transition_recording_still_reaches_full_level() {
+        /// The transition recording is `SAMPLE_FRAMES` long — 100 ms, or 37
+        /// blocks — so this window opens well after it has run out.
+        const BLOCKS_AFTER_THE_RECORDING_ENDS: usize = 300;
+
+        fn line_level_once_the_recording_is_gone(crossfade_out_ms: f32) -> f32 {
+            let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+            let sustain_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+                .collect();
+            let transition_period = 6u32;
+            let transition_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| {
+                    (frame % transition_period) as f32 / transition_period as f32 * 2.0 - 1.0
+                })
+                .collect();
+            let sustain_sample = engine
+                .add_sample(sustain_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("sustain sample should fit the bank");
+            let transition_sample = engine
+                .add_sample(transition_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("transition sample should fit the bank");
+            engine.add_zone(wide_zone(
+                0,
+                sustain_sample,
+                VelRange { lo: 0, hi: 127 },
+                false,
+            ));
+            engine.build_zone_map(1, 1).expect("zone map should build");
+            engine.add_legato_transition(LegatoTransition {
+                interval: 4,
+                transition_type: TransitionType::Slurred,
+                dynamic: Dynamic::MF,
+                sample_id: transition_sample,
+                crossfade_out_ms,
+            });
+
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_on(64, 100);
+            render(&mut engine, 37);
+            rms(&render(&mut engine, BLOCKS_AFTER_THE_RECORDING_ENDS))
+        }
+
+        // The 40 ms fast default finishes inside the recording, so this is the
+        // line at its intended level.
+        let default_fade = line_level_once_the_recording_is_gone(0.0);
+        // Five seconds: the recording is 100 ms, so the remaining 98% of the
+        // ramp used to run against silence.
+        let long_fade = line_level_once_the_recording_is_gone(5_000.0);
+
+        assert!(
+            long_fade > default_fade * 0.8,
+            "once the transition recording is gone the arriving note must be at \
+             its own level: RMS {long_fade} under a 5 s fade against \
+             {default_fade} under the default, {:.1} dB apart",
+            20.0 * (long_fade / default_fade).log10()
         );
     }
 
@@ -2348,17 +2558,20 @@ mod tests {
     /// so an instrument-derived behaviour wired only to that export would never
     /// reach a player.
     fn engine_with_long_dry_zone(instrument_id: &str) -> LevainEngine {
-        const LONG_FRAMES: u32 = 96_000; // 2 s at 48 kHz
+        engine_with_dry_zone_of(instrument_id, 96_000) // 2 s at 48 kHz
+    }
+
+    fn engine_with_dry_zone_of(instrument_id: &str, long_frames: u32) -> LevainEngine {
         let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
         engine.begin_sample_bank(instrument_id);
-        let data: Vec<f32> = (0..LONG_FRAMES)
+        let data: Vec<f32> = (0..long_frames)
             .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
             .collect();
         let sample_id = engine
-            .add_sample(data, LONG_FRAMES, 1, SAMPLE_RATE)
+            .add_sample(data, long_frames, 1, SAMPLE_RATE)
             .expect("test sample should fit the bank");
         let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
-        zone.sample.end = LONG_FRAMES;
+        zone.sample.end = long_frames;
         zone.sample.loop_mode = LoopMode::NoLoop;
         // The release every shipped manifest carries for a sustaining
         // articulation, emitted by `scripts/download-levain-samples.ts` from
@@ -2398,6 +2611,47 @@ mod tests {
             "an undamped percussion bar must ring on where a breath-stopped \
              voice does not: marimba tail RMS {percussion} against soprano \
              {choir} at the same point in the release"
+        );
+    }
+
+    /// Timpani is the one percussion instrument here whose note-off is a
+    /// physical damp — the player's hand on the head — where a marimba or
+    /// glockenspiel bar is undamped and rings on regardless. Folding it into
+    /// the struck-bar 4.6 would stretch every existing timpani part's note-off
+    /// from ~2.3 s to ~10.4 s of ring. Its own recordings already say it is the
+    /// shortest of the three (1.74 s against 2.31 and 2.50).
+    #[test]
+    fn timpani_damps_faster_than_an_undamped_struck_bar() {
+        /// 8 s, so the recording still has audio to shape 3 s into the release
+        /// and the voice is not freed by running dry instead.
+        const LONG_FRAMES: u32 = 384_000;
+        /// ~3 s of release at 128 frames a block, where a 1.75 s and a 2.3 s
+        /// time constant are 3.6 dB apart rather than the 1 dB they differ by
+        /// in the first second.
+        const RELEASE_BLOCKS: usize = 1_125;
+
+        fn tail_rms(instrument_id: &str) -> f32 {
+            let mut engine = engine_with_dry_zone_of(instrument_id, LONG_FRAMES);
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_off(60);
+            render(&mut engine, RELEASE_BLOCKS);
+            rms(&render(&mut engine, 8))
+        }
+
+        let timpani = tail_rms("timpani");
+        let marimba = tail_rms("marimba");
+        let choir = tail_rms("soprano");
+
+        assert!(
+            timpani < marimba * 0.8,
+            "a damped drum must stop sooner than an undamped bar: timpani tail \
+             RMS {timpani} against marimba {marimba} at the same point"
+        );
+        assert!(
+            timpani > choir * 10.0,
+            "it is still percussion, not the neutral default: timpani tail RMS \
+             {timpani} against soprano {choir}"
         );
     }
 

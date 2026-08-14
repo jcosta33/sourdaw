@@ -69,6 +69,37 @@ describe('parseSampleManifest legato transitions', () => {
         ]);
     });
 
+    it('accepts a crossfade time right at the ceiling and rejects the next representable one', () => {
+        const atCeiling = parseSampleManifest({
+            ...createValidManifest(),
+            legatoTransitions: [
+                {
+                    file: 'slur.wav',
+                    interval: 2,
+                    transitionType: 'slurred',
+                    dynamic: 'mf',
+                    crossfadeOutMs: 5000,
+                },
+            ],
+        });
+        expect(atCeiling.legatoTransitions[0]?.crossfadeOutMs).toBe(5000);
+
+        expect(() =>
+            parseSampleManifest({
+                ...createValidManifest(),
+                legatoTransitions: [
+                    {
+                        file: 'slur.wav',
+                        interval: 2,
+                        transitionType: 'slurred',
+                        dynamic: 'mf',
+                        crossfadeOutMs: 5000.001,
+                    },
+                ],
+            })
+        ).toThrow(TypeError);
+    });
+
     it.each([
         ['a zero interval, which is not a transition', { interval: 0 }],
         ['an interval no i8 lookup key could hold', { interval: 128 }],
@@ -80,6 +111,9 @@ describe('parseSampleManifest legato transitions', () => {
         ['a dynamic outside the six recorded layers', { dynamic: 'mff' }],
         ['an absolute sample path', { file: '/etc/passwd' }],
         ['a negative crossfade time', { crossfadeOutMs: -1 }],
+        // The engine renders 1e6 and 1e9 identically, so a typo here is
+        // invisible in the audio rather than obviously wrong.
+        ['a crossfade time no legato gesture could take', { crossfadeOutMs: 1_000_000 }],
     ])('rejects %s', (_case, override) => {
         const transition = {
             file: 'slur.wav',

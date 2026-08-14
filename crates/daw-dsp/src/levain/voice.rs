@@ -500,21 +500,25 @@ impl SamplePlayback {
 /// 300 s completes, 1000 s stops dead at `crossfade_amount == 0.5`, 3000 s at
 /// 0.125, 10000 s at 0.0625.
 ///
-/// `f32::EPSILON` (1.19e-7) is the smallest increment that provably advances
-/// the accumulator everywhere in `[0, 1)`, since the largest ULP in that range
-/// is 5.96e-8. It caps a crossfade at ~175 s at 48 kHz. That ceiling is a
-/// representability limit, not a musical opinion: every legato time this
-/// engine can otherwise produce is between 20 ms and 150 ms, and an authored
-/// `crossfadeOutMs` under ~175 s is honoured exactly as written. Only a value
-/// the arithmetic cannot express at all is bent, and it is bent to the longest
-/// fade that still completes rather than rejected.
+/// `f32::EPSILON` (1.19e-7) is the floor. It is deliberately one binade above
+/// the tightest correct bound rather than at it: the largest ULP in `[0, 1)`
+/// is 5.96e-8, so `2^-24` (EPSILON/2) is the smallest increment that still
+/// advances the accumulator everywhere, and EPSILON is twice that. The factor
+/// of two buys nothing musical and costs nothing — it caps a crossfade at
+/// ~175 s at 48 kHz instead of ~350 s, and every legato time this engine
+/// produces on its own is between 20 ms and 150 ms — so the rounder constant
+/// wins over the tighter one.
+///
+/// That ceiling is a representability limit, not a musical opinion. Only a
+/// value the arithmetic cannot express at all is bent, and it is bent to the
+/// longest fade that still completes rather than rejected.
 ///
 /// Reachable from bank data: `crossfadeOutMs` is validated only as a
 /// non-negative finite `f32`, so a manifest may legitimately carry `1e9`.
 ///
 /// Audio-thread safe: arithmetic only.
 #[inline]
-fn crossfade_rate_for(crossfade_time_secs: f32, sample_rate: f32) -> f32 {
+pub(super) fn crossfade_rate_for(crossfade_time_secs: f32, sample_rate: f32) -> f32 {
     let samples = (crossfade_time_secs * sample_rate).max(1.0);
     (1.0 / samples).max(f32::EPSILON)
 }
@@ -897,7 +901,22 @@ impl LevainVoice {
             let secondary = self.crossfade_playback.read_sample(pool);
             self.crossfade_amount += self.crossfade_rate;
 
-            if self.crossfade_amount >= 1.0 {
+            // The hand-over is over as soon as either side is finished: the
+            // ramp reached the end, or the outgoing stream ran out of
+            // recording to hand over.
+            //
+            // That second case is not an edge case. A transition recording is
+            // a short gesture — the ones this engine synthesises for its own
+            // fallback are shorter still — and any fade longer than it leaves
+            // `gain_old` weighting a stream that reads 0.0 while `gain_new`
+            // holds the arriving note under unity for the rest of the ramp.
+            // Equal power is the right law for two live streams and the wrong
+            // one for a live stream against silence, where it is just
+            // attenuation: a 100 ms recording under a 30 s fade left the line
+            // 15 dB down for half a minute. Completing here keeps the sum of
+            // powers constant, which is what equal power is for.
+            let outgoing_finished = !self.crossfade_playback.active;
+            if self.crossfade_amount >= 1.0 || outgoing_finished {
                 self.crossfade_amount = 1.0;
                 self.crossfading = false;
                 self.crossfade_playback.active = false;

@@ -120,6 +120,21 @@ const MAX_LEGATO_TRANSITIONS = 1024;
  * field is an `i8`.
  */
 const MAX_LEGATO_INTERVAL = 127;
+/**
+ * The longest hand-over a bank may author, in milliseconds.
+ *
+ * A typo guard, not a DSP limit. The engine floors the ramp increment so any
+ * finite value completes, and it ends the hand-over early once the transition
+ * recording runs out, so a large value no longer misbehaves — it is simply
+ * indistinguishable from a mistake. `1e6` and `1e9` render identically, which
+ * is exactly the property that makes a wrong one impossible to notice.
+ *
+ * 5 s is roughly 17x the longest legato crossfade a shipping sample library
+ * uses, and 33x the slowest this engine picks for itself (150 ms). Nothing
+ * musically real is above it and every plausible typo — a seconds-for-
+ * milliseconds mix-up, a stray zero — is.
+ */
+const MAX_LEGATO_CROSSFADE_MS = 5_000;
 const MAX_ZONE_LIST_COUNT = 65_535;
 const VELOCITY_BUCKET_SIZE = 8;
 const SAMPLE_BANK_BASE_URL = new URL('https://sourdaw.invalid/bank/');
@@ -298,8 +313,10 @@ function parseLegatoTransition(value: unknown, path: string): ManifestLegatoTran
     if (!isLegatoDynamic(value.dynamic)) {
         throw new TypeError(`${path}.dynamic must be one of ${LEGATO_DYNAMICS.join(', ')}`);
     }
-    if (!isNonNegativeF32(value.crossfadeOutMs)) {
-        throw new TypeError(`${path}.crossfadeOutMs must be a non-negative finite 32-bit float`);
+    if (!isNonNegativeF32(value.crossfadeOutMs) || value.crossfadeOutMs > MAX_LEGATO_CROSSFADE_MS) {
+        throw new TypeError(
+            `${path}.crossfadeOutMs must be a non-negative finite 32-bit float of at most ${MAX_LEGATO_CROSSFADE_MS} ms`
+        );
     }
 
     return Object.freeze({
