@@ -1,0 +1,43 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_1fe86baf1b2c1e 110-113
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_a40848e8f8cca9::t_d1d4b78ec8e03c 72
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_a40848e8f8cca9::t_0e8694b8c86af1 3,95
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_a40848e8f8cca9::t_e7fb42c3825abf 52
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_a40848e8f8cca9::t_236d245381d367 85
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_a40848e8f8cca9::t_e7fb42c3825abf 117
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_a40848e8f8cca9::t_1fe86baf1b2c1e 59
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_e759bc7063bca7 60-63
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_a40848e8f8cca9::t_1fe86baf1b2c1e 52
+src/modules/Command/stores/index.ts
+  s_a40848e8f8cca9::t_0e8694b8c86af1 12
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_a40848e8f8cca9::t_e7fb42c3825abf 45
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_a40848e8f8cca9::t_236d245381d367 82
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  s_a40848e8f8cca9::t_4c9cfabc186521 62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "581ee57cc61ca458a4f04d6538e9a668d6a8c615",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
