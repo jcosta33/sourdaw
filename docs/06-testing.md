@@ -7,7 +7,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 ## 1. Philosophy
 
 - **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
-- **Unit-first.** Playwright E2E exists under `tests/e2e/` (`pnpm test:e2e`) but is **not** in CI health gates. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
+- **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm test:e2e -- <spec>`. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
 - **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `@tauri-apps/api/core` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
@@ -58,9 +58,9 @@ Tests live in **`__tests__/`** subfolders **inside** the folder that owns the co
 registers `*.spec.*` and `*.test.*` files as entry points automatically, so do
 not exclude them from `project`. The shipped `src` patterns in `knip.json`
 end with `!` for production mode; the unsuffixed `scripts` pattern remains
-comprehensive-only. Run `pnpm exec knip` for the full graph
-and `pnpm exec knip --production` for a production-only graph; install both
-dependency sets from the [README setup](../README.md) first.
+comprehensive-only. Dead-code audits are repository-wide and explicit-only. Run
+`pnpm deps:unused` or `pnpm deps:unused:production` after installing both dependency sets from the
+[README setup](../README.md).
 
 ```text
 src/modules/Arrangement/
@@ -114,11 +114,11 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 
 ### When to use which
 
-| Subject under test                                              | Mock its deps with                                                                              |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                                             |
-| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                                      |
-| Thin static same-module repos used by an injectable             | `vi.mock` on those repo modules is OK when they are not in the inject map                        |
+| Subject under test                                              | Mock its deps with                                                        |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                       |
+| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                |
+| Thin static same-module repos used by an injectable             | `vi.mock` on those repo modules is OK when they are not in the inject map |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
 
@@ -149,7 +149,7 @@ vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
 }));
 ```
 
-`pnpm test:barrel-mocks` enforces this for `presentations/views` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. It runs in `scripts/health-gates-web.sh`, and its guard spec runs in the ordinary suite. The failure names the spec, the barrel, the missing export and the consuming module, and prints all three remedies — including adding a reasoned row to `exemptions` in `scripts/checkBarrelMockCoverage.ts`, which is the documented exit for a mock that is deliberately narrower than the graph. `--all` reports the same class across the other three barrel kinds, which are measured rather than gated. Background: PR #1572, issue #1393.
+`pnpm test:barrel-mocks` enforces this for `presentations/views` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. Its focused guard spec covers the checker. The failure names the spec, barrel, missing export, and consuming module, then prints the three remedies, including a reasoned `exemptions` row in `scripts/checkBarrelMockCoverage.ts`. `--all` reports the same class across the other three barrel kinds, which are measured rather than gated. Background: PR #1572, issue #1393.
 
 ### Canonical test shape for an injectable
 
@@ -180,10 +180,7 @@ describe('addTrack', () => {
 
         expect(result).not.toBeNull();
         expect(setTrackState).toHaveBeenCalled();
-        expect(eventBus.emit).toHaveBeenCalledWith(
-            'track.added',
-            expect.objectContaining({ name: 'Drums' })
-        );
+        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
     });
 });
 ```
@@ -684,14 +681,22 @@ Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in f
 
 ## 9. Running tests
 
-| Command                  | Purpose                                                     |
-| ------------------------ | ----------------------------------------------------------- |
-| `pnpm test`              | Vitest in watch mode — use during development               |
-| `pnpm test:run`          | Vitest single run — use in CI                               |
-| `pnpm test:coverage`     | Vitest with **v8** coverage; HTML + `lcov` in `./coverage/` |
-| `pnpm typecheck:test`    | Spec-inclusive type check (`tsconfig.test.json`) — all of `src` **including** `*.spec.ts(x)` |
-| `cargo test --workspace` | Run all Rust crate tests                                    |
-| `cargo test -p daw-dsp`  | Run tests for a single Rust crate                           |
+| Command                                  | Purpose                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| `pnpm test:watch`                        | Vitest watch mode for active development                                 |
+| `pnpm test:run <target>`                 | Focused single run; a file or narrow directory is required               |
+| `pnpm test:full`                         | Full Vitest suite; run only when explicitly requested                    |
+| `pnpm test:coverage`                     | Full Vitest run with **v8** coverage; run only when explicitly requested |
+| `pnpm test:e2e <spec>`                   | Run one affected Playwright spec                                         |
+| `pnpm test:e2e:full`                     | Full Playwright suite; run only when explicitly requested                |
+| `pnpm typecheck:test`                    | Spec-inclusive type check (`tsconfig.test.json`)                         |
+| `pnpm cargo:test -- -p <crate> <filter>` | Run affected Rust tests in debug mode                                    |
+
+Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
+coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
+sequentially through `package.json`. The resource guard rejects concurrent validation, low-memory
+starts, timeouts, and process trees above the configured RSS ceiling. A refusal is final; never
+bypass the guard with a raw tool command.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 

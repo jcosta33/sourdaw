@@ -7,6 +7,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
@@ -14,6 +15,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
+import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type ProjectContext } from '../models/ProjectContext';
 
 export type {
@@ -69,6 +71,11 @@ const contextCache: {
 };
 
 export function getProjectContext(): ProjectContext {
+    if (agentProjectRepairStateStore.value) {
+        throw new AiProposalInvalidatedError(
+            'The project contains unresolved collaborative state. Repair it before requesting model context.'
+        );
+    }
     const trackState = trackStore.value;
     const adjustmentLayerState = adjustmentLayerStore.value;
     const automationState = automationStore.value;

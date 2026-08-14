@@ -52,15 +52,13 @@ const {
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    clearRuntimeCachedAudioBuffers: vi.fn(),
     getAudioContext: mockGetAudioContext,
     importCachedAudioBuffers: mockImportCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
     resetAudioGraph: mockResetAudioGraph,
 }));
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: mockClearUndoHistory,
-    executeAppAction: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mockClearUndoHistory, executeAppAction: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
@@ -69,6 +67,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: mockUnloadLoadedExternalPlugins }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    defaultTransportState: { masterGain: 75, isPlaying: false },
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
 }));

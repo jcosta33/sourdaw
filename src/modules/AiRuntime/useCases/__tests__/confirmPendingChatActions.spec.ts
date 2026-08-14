@@ -10,6 +10,7 @@ import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
     configureCommandBatchIdempotency,
+    commandProjectDivergencePort,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
     commandProjectRevisionPort,
@@ -60,6 +61,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         createCrdtDoc('owned');
         registerCrdtStorageRuntime();
         commandProjectRevisionPort.setProvider(captureProjectRevision);
+        commandProjectDivergencePort.setProvider(null);
         chatStore.set({
             messages: [
                 {
@@ -86,6 +88,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         commandProjectRevisionPort.setProvider(null);
+        commandProjectDivergencePort.setProvider(null);
     });
 
     it('invalidates a confirmed action when the project changes while batch admission is waiting', async () => {
@@ -95,12 +98,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         registerHandlerMap({
             setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
                 execute,
-                describe: () => ({
+                describe: (action) => ({
                     label: 'Set tempo',
-                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         const proposal = {
@@ -163,12 +171,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
             setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
                 execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
-                describe: () => ({
+                describe: (action) => ({
                     label: 'Generic handler label',
-                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         const action = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
@@ -207,12 +220,17 @@ describe('confirmPendingChatActions transaction admission', () => {
         const execute = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
         registerHandlerMap({
             setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
                 execute,
-                describe: () => ({
+                describe: (action) => ({
                     label: 'Set tempo',
-                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
@@ -269,5 +287,104 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(execute).toHaveBeenCalledTimes(1);
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
+    });
+
+    it('classifies approval-time divergence and issues a fresh revision-bound approval before execution', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
+        const validate = vi.fn(() => true);
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: () => true,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate,
+            },
+        });
+        const action = {
+            type: 'setTempo',
+            payload: { bpm: 132 },
+        } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes from 120 BPM to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-reapproval', groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-reapproval',
+            batchId: 'group-reapproval',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        proposePendingActionConfirmation({
+            id: 'confirmation-reapproval',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo from 120 BPM to 132 BPM'],
+            commandEnvelopes: [serializeVersionedCommandEnvelope(envelope)],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-reapproval',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+        });
+        const classify = vi.fn(() => ({
+            kind: 'non-overlapping' as const,
+            mayReapply: true,
+            repairCandidates: [],
+            targetIds: [] as string[],
+        }));
+        commandProjectDivergencePort.setProvider(classify);
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'independent',
+            changeFn: (doc) => {
+                doc.collaboratorChange = true;
+            },
+        });
+        const currentRevision = captureProjectRevision();
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-reapproval' })).resolves.toMatchObject({
+            divergence: { kind: 'non-overlapping', mayReapply: true },
+            status: 'reapproval_required',
+        });
+        expect(execute).not.toHaveBeenCalled();
+        expect(validate).toHaveBeenCalledOnce();
+        expect(classify).toHaveBeenCalledWith(
+            expect.objectContaining({
+                baseRevision: projectRevision,
+                commandsCompatible: true,
+                targetIds: expect.arrayContaining(['@project/transport/tempo']),
+            })
+        );
+        expect(getPendingActionConfirmation('confirmation-reapproval')).toMatchObject({
+            approvalSnapshot: {
+                agentApproval: { sourceRevision: currentRevision },
+                commandBatch: { authority: { baseRevision: currentRevision } },
+            },
+            projectRevision: currentRevision,
+            status: 'proposed',
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-reapproval' })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(execute).toHaveBeenCalledOnce();
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
     });
 });

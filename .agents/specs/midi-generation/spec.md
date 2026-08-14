@@ -33,27 +33,27 @@ Track progression, Melodize, and Humanize.
 For every fixture, `MIDI → REMI+ tokens → MIDI` and `MIDI → arrival-time tokens → MIDI`
 must reproduce the same note events (onset/duration within 1 ms, pitch and instrument exact).
 
-Verify with: `cargo test -p daw-engine midi_tokenizer_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-engine midi_tokenizer_roundtrip`
 
 ### AC-002 — Deterministic output
 
 Given identical structured input and seed, every inference contract must produce
 byte-identical MIDI output across two successive runs.
 
-Verify with: `cargo test -p daw-engine midi_determinism`
+Verify with: `pnpm cargo:test -- -p daw-engine midi_determinism`
 
 ### AC-003 — No inference on the audio thread
 
 No ONNX `Session::run` must execute on the CPAL audio thread.
 
-Verify with: `cargo test -p daw-engine audio_thread_isolation`
+Verify with: `pnpm cargo:test -- -p daw-engine audio_thread_isolation`
 
 ### AC-004 — Cancellable blocking inference
 
 Every inference entry point must run on the blocking task pool and exit with a `Cancelled`
 result within 200 ms of a cancel request.
 
-Verify with: `cargo test -p daw-engine inference_cancellation`
+Verify with: `pnpm cargo:test -- -p daw-engine inference_cancellation`
 
 ### AC-005 — Typed channel boundary
 
@@ -81,34 +81,34 @@ Verify with: `pnpm deps:validate`
 The model registry loader must reject any weight whose declared license is outside the
 commercial-safe allowlist (Apache-2.0, MIT, CC-BY-4.0).
 
-Verify with: `cargo test -p daw-engine model_registry_license`
+Verify with: `pnpm cargo:test -- -p daw-engine model_registry_license`
 
 ### AC-009 — Chord-tone constraint at high complexity
 
 At `complexity > 0.7`, sampled pitches on strong beats must be post-filtered to the active
 chord's chord-tone set.
 
-Verify with: `cargo test -p daw-engine chord_tone_filter`
+Verify with: `pnpm cargo:test -- -p daw-engine chord_tone_filter`
 
 ### AC-010 — Model-load latency budgets
 
 Cold model loads must meet their budgets (AMT-small < 3 s, AMT-medium < 8 s, GrooVAE-small
 < 500 ms); the gate fails when a budget is exceeded.
 
-Verify with: `cargo bench -p daw-engine midi_inference_latency`
+Verify with: `pnpm cargo:bench -- -p daw-engine midi_inference_latency`
 
 ### AC-011 — IPC stays responsive during inference
 
 While an AMT inference is in-flight, unrelated Tauri IPC calls (e.g. `get_transport_state`,
 `list_models`) must return within 10 ms at P99.
 
-Verify with: `cargo test -p daw-engine ipc_responsiveness_under_inference`
+Verify with: `pnpm cargo:test -- -p daw-engine ipc_responsiveness_under_inference`
 
 ### AC-012 — Conservative default complexity
 
 Every per-feature parameter type must default `complexity` to ≤ 0.5 on the 0–1 scale.
 
-Verify with: `cargo test -p daw-engine default_complexity_and_ceiling`
+Verify with: `pnpm cargo:test -- -p daw-engine default_complexity_and_ceiling`
 
 ### AC-013 — Committed ghost clip retains provenance after accept
 
@@ -122,21 +122,21 @@ Verify with: `pnpm test:run -- MidiGeneration.provenance`
 Each registry entry must record `hf_revision` (a commit SHA, not a tag), per-file `sha256`,
 `size_bytes`, `min_ram_bytes`, `min_vram_bytes`, and `tokenizer_id`.
 
-Verify with: `cargo test -p daw-engine model_registry_schema_and_verification`
+Verify with: `pnpm cargo:test -- -p daw-engine model_registry_schema_and_verification`
 
 ### AC-015 — KV-cache mandatory
 
 KV-cache must be enabled (disabling it via the diagnostic flag yields identical output but
 ≥ 10× slower latency).
 
-Verify with: `cargo test -p daw-engine kv_cache_and_semaphore`
+Verify with: `pnpm cargo:test -- -p daw-engine kv_cache_and_semaphore`
 
 ### AC-016 — Typed streaming channel variants
 
 The `MidiGenerationEvent` channel must carry the typed variants `Started`, `Tokens`, `Notes`,
 `Completed`, `Failed`, and `Cancelled`.
 
-Verify with: `cargo test -p daw-engine midi_channel_event_ordering`
+Verify with: `pnpm cargo:test -- -p daw-engine midi_channel_event_ordering`
 
 ### AC-017 — Per-feature inference contract shapes
 
@@ -145,7 +145,7 @@ continuation, Chord Track progression (whose output is `ChordSpan[]` symbolic en
 MIDI notes), Melodize, and Humanize (routing GrooVAE for drums versus a deterministic
 humanizer for non-drum input).
 
-Verify with: `cargo test -p daw-engine per_feature_inference_contracts`
+Verify with: `pnpm cargo:test -- -p daw-engine per_feature_inference_contracts`
 
 ### AC-018 — Parameter-to-conditioning mapping applied
 
@@ -156,33 +156,33 @@ post-filter; Intensity → velocity-range bias; Swing → post-decode `upbeat_sh
 triplet_offset`; Genre/Style → registry/prefix selection; Temperature → sampling; Seed → RNG
 init).
 
-Verify with: `cargo test -p daw-engine parameter_conditioning_mapping`
+Verify with: `pnpm cargo:test -- -p daw-engine parameter_conditioning_mapping`
 
 ### AC-019 — Chord-vocabulary round-trip
 
 Chord tokens in REMI+ must round-trip without loss across the full 168-entry vocabulary.
 
-Verify with: `cargo test -p daw-engine chord_vocab_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-engine chord_vocab_roundtrip`
 
 ### AC-020 — Tokenizer never panics on malformed input
 
 Tokenizer errors (invalid token sequences, out-of-vocabulary tokens, invalid timing) must
 return typed errors and never panic, asserted over 10k random token streams.
 
-Verify with: `cargo test -p daw-engine tokenizer_fuzz_no_panic`
+Verify with: `pnpm cargo:test -- -p daw-engine tokenizer_fuzz_no_panic`
 
 ### AC-021 — Control-event interleaving honours delta
 
 Control-event interleaving must honour δ: with δ = 0, a control note at time `t` must appear
 in the prefix of every generated-event position at or before `t`.
 
-Verify with: `cargo test -p daw-engine control_event_delta_interleaving`
+Verify with: `pnpm cargo:test -- -p daw-engine control_event_delta_interleaving`
 
 ### AC-022 — Swing post-processing is a no-op at zero
 
 Swing post-processing with `swing = 0` must leave upbeats unchanged (within ±1 µs).
 
-Verify with: `cargo test -p daw-engine swing_zero_noop`
+Verify with: `pnpm cargo:test -- -p daw-engine swing_zero_noop`
 
 ### AC-023 — Per-feature inference latency budgets
 
@@ -190,14 +190,14 @@ Each feature's P50 inference must stay within its per-platform budget (Session P
 < 500 ms GPU / < 4 s CPU; Chord Track < 1 s GPU / < 8 s CPU; Melodize < 500 ms GPU / < 4 s
 CPU; Humanize < 100 ms CPU); the gate fails when a budget is exceeded.
 
-Verify with: `cargo bench -p daw-engine midi_inference_latency`
+Verify with: `pnpm cargo:bench -- -p daw-engine midi_inference_latency`
 
 ### AC-024 — Complexity refused above the ceiling
 
 The pipeline must refuse to execute with `complexity > 0.8` unless the caller passed an
 explicit non-default value.
 
-Verify with: `cargo test -p daw-engine default_complexity_and_ceiling`
+Verify with: `pnpm cargo:test -- -p daw-engine default_complexity_and_ceiling`
 
 ### AC-025 — Clip conversion preserves provenance
 
@@ -211,47 +211,47 @@ Verify with: `pnpm test:run -- MidiGeneration.provenance`
 SHA256 must be verified on every downloaded file with exactly one automatic re-download on
 mismatch before surfacing an error.
 
-Verify with: `cargo test -p daw-engine model_registry_schema_and_verification`
+Verify with: `pnpm cargo:test -- -p daw-engine model_registry_schema_and_verification`
 
 ### AC-027 — Model upgrade by SHA pinning
 
 A model must be upgraded only by pointing the entry at a different commit SHA.
 
-Verify with: `cargo test -p daw-engine model_registry_schema_and_verification`
+Verify with: `pnpm cargo:test -- -p daw-engine model_registry_schema_and_verification`
 
 ### AC-028 — Per-model serialization
 
 Two parallel AMT requests must serialize on a per-model semaphore so the second starts within
 20 ms of the first completing, with no deadlock or starvation.
 
-Verify with: `cargo test -p daw-engine kv_cache_and_semaphore`
+Verify with: `pnpm cargo:test -- -p daw-engine kv_cache_and_semaphore`
 
 ### AC-029 — Strict streaming-event ordering
 
 A 4-bar render must emit `Started → Tokens (≥1) → Notes (≥1) → Completed` in strict order
 with token-level streaming for live preview.
 
-Verify with: `cargo test -p daw-engine midi_channel_event_ordering`
+Verify with: `pnpm cargo:test -- -p daw-engine midi_channel_event_ordering`
 
 ### AC-030 — Cancel emits exactly one terminal event
 
 Cancelling mid-stream must emit `Cancelled` exactly once, after which no further events are
 emitted for that `request_id`.
 
-Verify with: `cargo test -p daw-engine midi_channel_event_ordering`
+Verify with: `pnpm cargo:test -- -p daw-engine midi_channel_event_ordering`
 
 ### AC-031 — Emitted events carry the matching feature field
 
 Each per-feature contract's emitted events must carry the matching `feature` field.
 
-Verify with: `cargo test -p daw-engine per_feature_inference_contracts`
+Verify with: `pnpm cargo:test -- -p daw-engine per_feature_inference_contracts`
 
 ### AC-032 — Custom chord entries round-trip
 
 Custom chord entries added at startup must serialize with their symbolic name and restore
 identically.
 
-Verify with: `cargo test -p daw-engine chord_vocab_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-engine chord_vocab_roundtrip`
 
 ### AC-033 — First notes stream via incremental REMI decode
 
@@ -260,7 +260,7 @@ decoding REMI tokens incrementally — a note is emitted on receipt of its `Dura
 not held until generation completes. A typical 4-bar render produces ≈ 200–600 REMI tokens
 depending on note density.
 
-Verify with: `cargo test -p daw-engine incremental_remi_decode_first_note`
+Verify with: `pnpm cargo:test -- -p daw-engine incremental_remi_decode_first_note`
 
 ### AC-034 — Per-platform 4-bar generation latency table
 
@@ -269,7 +269,7 @@ CPU (Apple M3 Max / Intel i9) 2–8 s; CUDA (RTX 3060+) 0.3–1.5 s; CoreML (M-s
 the gate fails when a provider's budget is exceeded. (WebGPU 1–5 s is browser-tier and out of
 scope per Non-goals.)
 
-Verify with: `cargo bench -p daw-engine midi_inference_latency`
+Verify with: `pnpm cargo:bench -- -p daw-engine midi_inference_latency`
 
 ### AC-035 — Arrival-time encoding internals
 
@@ -277,7 +277,7 @@ The arrival-time tokenizer must encode each note as `note = 128 × instrument + 
 resolution, and must double the base AMT vocabulary (~27,512 tokens) to ~55,000 so generated
 events are distinguishable from control events.
 
-Verify with: `cargo test -p daw-engine arrival_time_encoding`
+Verify with: `pnpm cargo:test -- -p daw-engine arrival_time_encoding`
 
 ### AC-036 — Humanize routes drums through GrooVAE
 
@@ -286,7 +286,7 @@ humanization model trained on the Groove MIDI Dataset, CC-BY-4.0) and non-drum i
 the deterministic humanizer. The expanded path "rule-generated pattern → GrooVAE humanization"
 must be reachable from the Tier-1 call site.
 
-Verify with: `cargo test -p daw-engine per_feature_inference_contracts`
+Verify with: `pnpm cargo:test -- -p daw-engine per_feature_inference_contracts`
 
 ### AC-037 — Generation cache identity key
 
@@ -295,7 +295,7 @@ The on-disk generation cache must key each entry on the hash of
 size-capped LRU; a key collision across differing inputs must not occur, and a hit must return
 the cached output without re-running inference.
 
-Verify with: `cargo test -p daw-engine generation_cache_identity`
+Verify with: `pnpm cargo:test -- -p daw-engine generation_cache_identity`
 
 ### AC-038 — Streamed chunk framing protocol
 
@@ -303,7 +303,7 @@ Each streamed chunk must carry the fields `{run_id, seq, tokens, is_final}`; a c
 treat an out-of-order `seq` for a given `run_id` as a protocol violation (typed error, not
 silent reorder).
 
-Verify with: `cargo test -p daw-engine chunk_framing_protocol`
+Verify with: `pnpm cargo:test -- -p daw-engine chunk_framing_protocol`
 
 ### AC-039 — Determinism pins runtime nondeterminism
 
@@ -311,7 +311,7 @@ When a seed is supplied, the runtime must pin thread counts and `ort` execution-
 options, and nondeterministic ORT execution paths must be disallowed, so byte-identical output
 (AC-002) is reproducible.
 
-Verify with: `cargo test -p daw-engine midi_determinism`
+Verify with: `pnpm cargo:test -- -p daw-engine midi_determinism`
 
 ## Open questions
 

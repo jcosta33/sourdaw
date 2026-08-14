@@ -32,7 +32,7 @@ per-note humanization so sampled playback reads as a live performance.
 When CC1 changes on a sustaining note, the engine must move the blended dynamic
 layer to track CC1 while velocity continues to govern only the attack character.
 
-Verify with: `cargo test -p daw-dsp levain::expression::cc1_drives_dynamic`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::expression::cc1_drives_dynamic`
 
 ### AC-002 — Dynamic-layer crossfade is equal-power
 
@@ -40,21 +40,21 @@ When CC1 moves between two adjacent dynamic layers, the engine must blend them
 with an equal-power curve (`g0 = cos(π/2·a)`, `g1 = sin(π/2·a)`) so there is no
 perceived volume dip.
 
-Verify with: `cargo test -p daw-dsp levain::expression::equal_power_crossfade`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::expression::equal_power_crossfade`
 
 ### AC-003 — CC11 scales volume without changing the dynamic layer
 
 When CC11 changes, the engine must scale output level while leaving the selected
 dynamic layer (timbre) unchanged.
 
-Verify with: `cargo test -p daw-dsp levain::expression::cc11_volume_only`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::expression::cc11_volume_only`
 
 ### AC-004 — Layer crossfade is time-smoothed
 
 When CC1 jumps, the engine must ramp the layer crossfade over a bounded time
 (50–200 ms) rather than switching layers within a single block.
 
-Verify with: `cargo test -p daw-dsp levain::expression::crossfade_smoothing`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::expression::crossfade_smoothing`
 
 ### AC-005 — Vibrato depth is CC-controllable with onset delay
 
@@ -62,7 +62,7 @@ When the vibrato-depth CC is raised on a held note, the engine must increase
 vibrato depth, applying it only after the configured onset delay from note
 start.
 
-Verify with: `cargo test -p daw-dsp levain::expression::vibrato_onset`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::expression::vibrato_onset`
 
 ### AC-006 — Humanization is a single scaled, seeded control
 
@@ -70,7 +70,7 @@ When the Humanize amount is set, the engine must apply per-note timing, tuning,
 dynamic, and vibrato variation scaled by that one control, and reproduce the
 identical variation for a fixed seed.
 
-Verify with: `cargo test -p daw-dsp levain::humanize::seeded_deterministic`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::humanize::seeded_deterministic`
 
 ### AC-007 — MPE per-note expression maps to intonation, dynamics, and timbre
 
@@ -78,7 +78,7 @@ When MPE per-note pitch, pressure, and timbre (CC74) arrive, the engine must
 route them per voice to intonation, dynamic/bow-breath, and brightness
 respectively.
 
-Verify with: `cargo test -p daw-dsp levain::expression::mpe_per_note`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::expression::mpe_per_note`
 
 ## Open questions
 

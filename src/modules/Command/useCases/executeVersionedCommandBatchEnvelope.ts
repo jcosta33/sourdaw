@@ -9,6 +9,7 @@ import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { getCommandBatchContentHash } from './getCommandBatchContentHash';
 import { getProjectCommandBatchIdempotencyCheckpoint } from './getProjectCommandBatchIdempotencyCheckpoint';
+import { getVersionedCommandBatchDivergenceTargetIds } from './getVersionedCommandBatchDivergenceTargetIds';
 import { parseStoredVerifiedBatchReceipt } from './parseStoredVerifiedBatchReceipt';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 import { persistProjectCommandBatchIdempotencyCheckpoint } from './persistProjectCommandBatchIdempotencyCheckpoint';
@@ -333,6 +334,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             commands: resolvedCommands.map((command) =>
                 serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
             ),
+            divergenceTargetIds: getVersionedCommandBatchDivergenceTargetIds(resolvedEnvelope),
             normalizedProjectRevision: parsed.envelope.baseRevision,
             options: {
                 ...input.options,
@@ -362,7 +364,8 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
                     });
                 },
-                prepareValidation: () => prepareCommandBatchPreflight(resolvedEnvelope),
+                prepareValidation: ({ allowCompatibleProjectDivergence }) =>
+                    prepareCommandBatchPreflight(resolvedEnvelope, { allowCompatibleProjectDivergence }),
                 requireCompensation: true,
             },
         });

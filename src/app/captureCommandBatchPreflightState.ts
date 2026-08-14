@@ -4,6 +4,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { compileAudioGraphTopology } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureCommandTargetFingerprints } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 type CaptureCommandBatchPreflightStateInput = {
@@ -122,6 +123,77 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
     return value as Readonly<Record<string, unknown>>;
 }
 
+function isValidOptionalField(
+    record: Readonly<Record<string, unknown>>,
+    key: string,
+    validate: (value: unknown) => boolean
+): boolean {
+    return !Object.hasOwn(record, key) || validate(record[key]);
+}
+
+function isValidRawTransportSlot(value: unknown): boolean {
+    const transport = asRecord(value);
+    if (!transport) {
+        return false;
+    }
+    const finite = (candidate: unknown) => typeof candidate === 'number' && Number.isFinite(candidate);
+    const nonNegative = (candidate: unknown) => finite(candidate) && (candidate as number) >= 0;
+    const boolean = (candidate: unknown) => typeof candidate === 'boolean';
+    if (
+        !isValidOptionalField(
+            transport,
+            'tempo',
+            (candidate) => finite(candidate) && (candidate as number) >= 20 && (candidate as number) <= 300
+        ) ||
+        !isValidOptionalField(
+            transport,
+            'timeSignatureNumerator',
+            (candidate) =>
+                finite(candidate) &&
+                Number.isInteger(candidate) &&
+                (candidate as number) >= 1 &&
+                (candidate as number) <= 32
+        ) ||
+        !isValidOptionalField(
+            transport,
+            'timeSignatureDenominator',
+            (candidate) => candidate === 2 || candidate === 4 || candidate === 8 || candidate === 16
+        ) ||
+        !['isLooping', 'metronomeEnabled', 'punchInEnabled', 'countInEnabled', 'preRollEnabled'].every((key) =>
+            isValidOptionalField(transport, key, boolean)
+        ) ||
+        !['loopStart', 'loopEnd', 'punchInBeat', 'punchOutBeat', 'masterGain'].every((key) =>
+            isValidOptionalField(transport, key, nonNegative)
+        ) ||
+        !isValidOptionalField(
+            transport,
+            'metronomeVolume',
+            (candidate) => finite(candidate) && (candidate as number) >= 0 && (candidate as number) <= 1
+        ) ||
+        !['countInBars', 'preRollBars'].every((key) =>
+            isValidOptionalField(
+                transport,
+                key,
+                (candidate) =>
+                    finite(candidate) &&
+                    Number.isInteger(candidate) &&
+                    (candidate as number) >= 1 &&
+                    (candidate as number) <= 8
+            )
+        )
+    ) {
+        return false;
+    }
+    const loopStart = typeof transport.loopStart === 'number' ? transport.loopStart : 0;
+    const loopEnd = typeof transport.loopEnd === 'number' ? transport.loopEnd : 0;
+    if (loopEnd < loopStart || (transport.isLooping === true && loopEnd <= loopStart)) {
+        return false;
+    }
+    const punchInBeat = typeof transport.punchInBeat === 'number' ? transport.punchInBeat : 0;
+    const punchOutBeat = typeof transport.punchOutBeat === 'number' ? transport.punchOutBeat : 16;
+    return punchOutBeat > punchInBeat;
+}
+
 function getSlotRows(
     document: Readonly<Record<string, unknown>>,
     slotName: string,
@@ -159,6 +231,9 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
         sends: Array<{ busId: string; level: number }>;
     }> = [];
     let projectInvariantsValid = true;
+    if (document.transport !== undefined && !isValidRawTransportSlot(document.transport)) {
+        projectInvariantsValid = false;
+    }
     for (const rawTrack of rawTracks) {
         const track = asRecord(rawTrack);
         if (
@@ -315,7 +390,7 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 }
 
 export function captureCommandBatchPreflightState(input: CaptureCommandBatchPreflightStateInput) {
-    const context = getProjectContext();
+    const context = agentProjectRepairStateStore.value ? null : getProjectContext();
     const targetIds = new Set(input.targetIds);
     const projectDoc = input.projectDocument ?? getCrdtDoc(DOC_PREFIX_ROOT);
     const allIds = new Set<string>();
@@ -328,14 +403,14 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
     if (targetIds.has('hw_out')) {
         targetFingerprints.hw_out = 'system-output:hw_out';
     }
-    const tracks = context.tracks.map((track) => ({
+    const tracks = (context?.tracks ?? []).map((track) => ({
         devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
         id: track.id,
         kind: track.kind,
         outputId: track.outputId,
         sends: (track.sends ?? []).map((send) => ({ busId: send.busId, level: send.level })),
     }));
-    const sidechainRoutes = (context.sidechainRoutes ?? []).map((route) => ({
+    const sidechainRoutes = (context?.sidechainRoutes ?? []).map((route) => ({
         sourceTrackId: route.sourceTrackId,
         targetDeviceId: route.targetDeviceId,
         targetTrackId: route.targetTrackId,
@@ -365,12 +440,13 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             (assetHash) => currentClipAssetHashes.has(assetHash) || assetTransfer?.hasAsset(assetHash) === true
         ),
         availableAudioBufferIds: audioBufferIds.filter((audioBufferId) => audioBufferCache.has(audioBufferId)),
-        lockedRanges: (context.productionBrief?.locks ?? []).flatMap((lock) =>
+        lockedRanges: (context?.productionBrief?.locks ?? []).flatMap((lock) =>
             lock.scope.kind === 'range' ? [{ startBeat: lock.scope.startBeat, endBeat: lock.scope.endBeat }] : []
         ),
         projectId: captureProjectRevision(),
         projectInvariantsValid:
-            duplicateIds.size === 0 && (stagedInspection?.projectInvariantsValid ?? projectInvariantsAreValid(context)),
+            duplicateIds.size === 0 &&
+            (stagedInspection?.projectInvariantsValid ?? (context ? projectInvariantsAreValid(context) : false)),
         targetFingerprints,
     };
 }

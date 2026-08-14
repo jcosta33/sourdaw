@@ -15,6 +15,7 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     undoable: boolean;
     describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
     validate?: (action: Extract<AppAction, { type: ActionType }>, context: HandlerValidationContext) => boolean;
+    canReapplyAfterDivergence?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
     prepareAbort?: (action: Extract<AppAction, { type: ActionType }>) => () => void | Promise<void>;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
@@ -61,6 +62,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         undoable: config.undoable,
         describe: config.describe,
         validate: config.validate ?? (() => true),
+        canReapplyAfterDivergence: config.canReapplyAfterDivergence,
         materializeCommandArguments: config.materializeCommandArguments,
         prepareAbort: config.prepareAbort,
         isNoop: config.isNoop,

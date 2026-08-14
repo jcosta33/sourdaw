@@ -32,14 +32,14 @@ written passage becomes a performed one.
 When an SMF file is imported, the engine must parse it on a non-audio thread and
 hand the audio side a precompiled event stream, never parsing on the hot path.
 
-Verify with: `cargo test -p daw-dsp levain::score::parse_off_thread`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::score::parse_off_thread`
 
 ### AC-002 — Tempo meta-events build a piecewise tempo map
 
 When an SMF contains tempo changes, the importer must build a piecewise tempo map
 and convert tick times to seconds for scheduling.
 
-Verify with: `cargo test -p daw-dsp levain::score::tempo_map_ticks_to_seconds`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::score::tempo_map_ticks_to_seconds`
 
 ### AC-003 — Phrase microtiming is applied deterministically
 
@@ -47,14 +47,14 @@ When phrase humanization is enabled, the importer must offset note timings withi
 the configured range using a seeded RNG, reproducing identical timing for a fixed
 seed.
 
-Verify with: `cargo test -p daw-dsp levain::score::phrase_microtiming_seeded`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::score::phrase_microtiming_seeded`
 
 ### AC-004 — Velocity shaping follows the phrase contour
 
 When phrase shaping is enabled, the importer must apply crescendo/diminuendo
 velocity drift across a phrase rather than uniform velocity.
 
-Verify with: `cargo test -p daw-dsp levain::score::velocity_shaping`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::score::velocity_shaping`
 
 ## Open questions
 

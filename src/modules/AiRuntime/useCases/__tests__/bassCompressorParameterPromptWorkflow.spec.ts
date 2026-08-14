@@ -390,9 +390,11 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         expect(confirmation?.approvalSnapshot.actionLabels).toEqual(confirmation?.actionLabels);
         expect(confirmation?.approvalSnapshot.protectedUnchanged).toEqual(confirmation?.protectedUnchanged);
         expect(confirmation?.affectedIds).toEqual(['track-bass-di', COMPRESSOR_ID, 'comp-threshold', 'comp-ratio']);
+        // Two setDeviceParameter commands resolve broader than the single
+        // bounded default, so the batch risk is broad-reversible.
         expect(confirmation?.risk).toEqual({
-            level: 'bounded-reversible',
-            reason: null,
+            level: 'broad-reversible',
+            reason: 'The resolved operation is broader than its bounded default.',
         });
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
@@ -403,7 +405,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         expect(proposal?.content).toContain(
             '**setDeviceParameter**: Set "Bass DI" (track-bass-di) device "Compressor" (device-bass-di-compressor, builtin-compressor) parameter "Ratio" (comp-ratio) from 2:1 to 4:1'
         );
-        expect(proposal?.content).toContain('Risk: bounded-reversible');
+        expect(proposal?.content).toContain('Approval risk: broad-reversible');
         expect(undoStore.value?.past).toEqual([]);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({

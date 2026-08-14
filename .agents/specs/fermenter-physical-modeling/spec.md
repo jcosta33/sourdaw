@@ -30,28 +30,28 @@ plucked-string voice ships today.
 When a note sounds, the delay-line length must be set to `sample_rate / freq` so
 the resonant pitch matches the note.
 
-Verify with: `cargo test -p daw-dsp fermenter::ks_tuning`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::ks_tuning`
 
 ### AC-002 — Fractional tuning uses allpass interpolation
 
 When the required delay is fractional, the engine must interpolate with a
 Schroeder allpass so the pitch is accurate between integer delay lengths.
 
-Verify with: `cargo test -p daw-dsp fermenter::ks_fractional_delay`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::ks_fractional_delay`
 
 ### AC-003 — A noise burst excites the string at note-on
 
 When a note starts, the engine must fill the excitation region of the delay line
 with a noise burst.
 
-Verify with: `cargo test -p daw-dsp fermenter::ks_excitation`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::ks_excitation`
 
 ### AC-004 — The feedback low-pass produces natural decay
 
 When the string rings, the feedback path's one-pole low-pass must damp higher
 harmonics faster than the fundamental, producing a natural decay.
 
-Verify with: `cargo test -p daw-dsp fermenter::ks_decay`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::ks_decay`
 
 ### AC-005 — No cross-module internal imports
 

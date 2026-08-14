@@ -258,6 +258,50 @@ export function getPendingActionConfirmation(confirmationId: string): PendingApp
     return confirmation ? clonePendingActionConfirmation(confirmation) : null;
 }
 
+type RefreshPendingActionConfirmationApprovalInput = {
+    agentApproval: PendingAgentRiskApproval;
+    commandBatch: PendingCommandBatch;
+    commandEnvelopes: readonly string[];
+    confirmationId: string;
+    projectRevision: string;
+};
+
+export function refreshPendingActionConfirmationApproval(
+    input: RefreshPendingActionConfirmationApprovalInput
+): PendingAppActionConfirmation | null {
+    const state = pendingActionConfirmationStore.value;
+    if (!state) {
+        return null;
+    }
+    const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
+    if (!current || current.status !== 'proposed') {
+        return null;
+    }
+    const updated: PendingAppActionConfirmation = {
+        ...current,
+        approvalSnapshot: {
+            ...current.approvalSnapshot,
+            agentApproval: structuredClone(input.agentApproval),
+            commandBatch: structuredClone(input.commandBatch),
+            commandEnvelopes: [...input.commandEnvelopes],
+        },
+        error: null,
+        projectRevision: input.projectRevision,
+        resolvedAt: null,
+        risk: {
+            level: input.agentApproval.policy.risk,
+            reason: input.agentApproval.policy.reasons.join(' ') || null,
+        },
+        status: 'proposed',
+    };
+    pendingActionConfirmationStore.set({
+        confirmations: state.confirmations.map((confirmation) =>
+            confirmation.id === input.confirmationId ? updated : confirmation
+        ),
+    });
+    return clonePendingActionConfirmation(updated);
+}
+
 type RecordPendingActionExecutionInput = {
     confirmationId: string;
     execution: PendingActionExecution;

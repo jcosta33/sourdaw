@@ -3,25 +3,35 @@ import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
+import { commandProjectDivergencePort } from './commandProjectDivergencePort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { getCommandDivergenceTargetIds } from './getCommandDivergenceTargetIds';
+import { getCommandHandler } from './getCommandHandler';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { hasCurrentCommandDeviceVersions } from './hasCurrentCommandDeviceVersions';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 
 type ExecuteVersionedCommandBatchInput = {
     commands: readonly string[];
+    divergenceTargetIds?: readonly string[];
     normalizedProjectRevision?: string;
     options?: ExecuteOptions & {
         onProjectCommitPrepared?: (result: {
             status: 'committed';
             actions: readonly { action: AppAction; label: string; receipt?: VersionedCommandReceipt }[];
         }) => void;
-        prepareValidation?: () => CommandBatchValidationPreparation;
+        prepareValidation?: (input: { allowCompatibleProjectDivergence: boolean }) => CommandBatchValidationPreparation;
         requireCompensation?: boolean;
     };
 };
+
+function describeDivergence(
+    kind: NonNullable<ReturnType<typeof commandProjectDivergencePort.classify>>['kind']
+): string {
+    return `Command batch project divergence is ${kind}`;
+}
 
 export async function executeVersionedCommandBatch(input: ExecuteVersionedCommandBatchInput) {
     const envelopes: VersionedCommandEnvelope[] = [];
@@ -33,13 +43,14 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
         envelopes.push(parsed.envelope);
     }
     if (envelopes.length === 0) {
-        return executeAppActionBatch([], input.options);
+        const emptyBatchOptions = input.options ? { ...input.options, prepareValidation: undefined } : undefined;
+        return executeAppActionBatch([], emptyBatchOptions);
     }
     const commandIds = envelopes.map((envelope) => envelope.commandId);
     if (new Set(commandIds).size !== commandIds.length) {
         return { status: 'rejected' as const, reason: 'Command IDs must be unique within a batch', actions: [] as [] };
     }
-    const batchRevision = input.normalizedProjectRevision ?? envelopes[0]?.normalizedProjectRevision;
+    const batchRevision = input.normalizedProjectRevision ?? envelopes[0]!.normalizedProjectRevision;
     if (envelopes.some((envelope) => envelope.normalizedProjectRevision !== batchRevision)) {
         return {
             status: 'conflicted' as const,
@@ -75,19 +86,72 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
     const actions = envelopes.map(
         (envelope) => ({ type: envelope.operation, payload: envelope.arguments }) as AppAction
     );
-    return executeAppActionBatch(actions, {
+    const targetIds = getCommandDivergenceTargetIds({
+        actions,
+        targetIds:
+            input.divergenceTargetIds ??
+            envelopes.flatMap((envelope) => envelope.objectReferences.map((reference) => reference.id)),
+    });
+    const commandsCompatible = actions.every((action) => {
+        const handler = getCommandHandler(action);
+        return handler?.canReapplyAfterDivergence?.(action) === true;
+    });
+    const divergenceState: {
+        current: ReturnType<typeof commandProjectDivergencePort.classify>;
+    } = { current: null };
+    const prepareValidation = input.options?.prepareValidation;
+    const result = await executeAppActionBatch(actions, {
         ...input.options,
         commandEnvelopes: envelopes,
         groupId,
+        prepareValidation: prepareValidation
+            ? () =>
+                  prepareValidation({
+                      allowCompatibleProjectDivergence: divergenceState.current?.mayReapply === true,
+                  })
+            : undefined,
         preExecutionValidation: () => {
             const currentRevision = commandProjectRevisionPort.capture();
-            if (
-                (commandProjectRevisionPort.isConfigured() && batchRevision !== currentRevision) ||
-                envelopes.some((envelope) => !hasCurrentCommandDeviceVersions(envelope))
-            ) {
+            if (envelopes.some((envelope) => !hasCurrentCommandDeviceVersions(envelope))) {
                 return 'Command batch base revision does not match current project state';
+            }
+            if (commandProjectRevisionPort.isConfigured() && batchRevision !== currentRevision) {
+                if (!commandProjectDivergencePort.isConfigured()) {
+                    return 'Command batch base revision does not match current project state';
+                }
+                divergenceState.current = commandProjectDivergencePort.classify({
+                    baseRevision: batchRevision,
+                    commandsCompatible,
+                    targetIds,
+                });
+                if (!divergenceState.current?.mayReapply) {
+                    if (!divergenceState.current) {
+                        return 'Command batch project divergence could not be classified';
+                    }
+                    return describeDivergence(divergenceState.current.kind);
+                }
+            } else {
+                divergenceState.current = null;
             }
             return null;
         },
     });
+    if (result.status === 'conflicted' && divergenceState.current?.mayReapply) {
+        const incompatibleDivergence = commandProjectDivergencePort.classify({
+            baseRevision: batchRevision,
+            commandsCompatible: false,
+            targetIds,
+        });
+        if (incompatibleDivergence && !incompatibleDivergence.mayReapply) {
+            return {
+                ...result,
+                divergence: incompatibleDivergence,
+                reason: describeDivergence(incompatibleDivergence.kind),
+            };
+        }
+    }
+    if (divergenceState.current && divergenceState.current.kind !== 'none') {
+        return { ...result, divergence: divergenceState.current };
+    }
+    return result;
 }

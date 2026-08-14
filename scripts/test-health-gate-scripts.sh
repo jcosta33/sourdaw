@@ -21,8 +21,7 @@ printf '%s\n' \
     '#!/bin/sh' \
     'set -eu' \
     'printf "pnpm %s\n" "$*" >> "$COMMAND_LOG"' \
-    'if [ "${1:-}" = "lint" ]; then' \
-    '    sleep "${FAKE_LINT_SLEEP_SECONDS:-0}"' \
+    'if [ "${1:-}" = "lint:full" ]; then' \
     '    exit "${FAKE_LINT_STATUS:-0}"' \
     'fi' \
     'if [ "${1:-}" = "test:collection-scope" ]; then' \
@@ -70,26 +69,21 @@ ln -s "$(command -v sh)" "$no_cargo_bin/sh"
 ln -s "$(command -v dirname)" "$no_cargo_bin/dirname"
 
 set +e
-lint_output=$(PATH="$fake_bin:$PATH" \
+PATH="$fake_bin:$PATH" \
     COMMAND_LOG="$temp_root/lint-failure.log" \
-    LINT_HEARTBEAT_SECONDS=1 \
-    FAKE_LINT_SLEEP_SECONDS=2 \
     FAKE_LINT_STATUS=37 \
-    sh "$temp_root/scripts/health-gates-web.sh" 2>&1)
+    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
 lint_status=$?
 set -e
 test "$lint_status" -eq 37
-case "$lint_output" in
-    *'lint still running...'*) ;;
-    *) exit 1 ;;
-esac
 printf '%s\n' \
     'pnpm wasm:verify' \
     'pnpm deps:validate' \
     'pnpm typecheck' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
-    'pnpm lint --quiet' \
+    'pnpm typecheck:e2e' \
+    'pnpm lint:full' \
     > "$temp_root/expected-lint-failure.log"
 diff -u "$temp_root/expected-lint-failure.log" "$temp_root/lint-failure.log"
 
@@ -102,11 +96,12 @@ printf '%s\n' \
     'pnpm typecheck' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
-    'pnpm lint --quiet' \
+    'pnpm typecheck:e2e' \
+    'pnpm lint:full' \
     'pnpm test:command-schema' \
     'pnpm test:collection-scope' \
     'pnpm test:barrel-mocks' \
-    'pnpm test:run --reporter=dot --silent=passed-only' \
+    'pnpm test:full' \
     'pnpm build' \
     > "$temp_root/expected-web-success.log"
 diff -u "$temp_root/expected-web-success.log" "$temp_root/web-success.log"
@@ -125,7 +120,8 @@ printf '%s\n' \
     'pnpm typecheck' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
-    'pnpm lint --quiet' \
+    'pnpm typecheck:e2e' \
+    'pnpm lint:full' \
     'pnpm test:command-schema' \
     > "$temp_root/expected-command-schema-failure.log"
 diff -u "$temp_root/expected-command-schema-failure.log" "$temp_root/command-schema-failure.log"
@@ -147,7 +143,8 @@ printf '%s\n' \
     'pnpm typecheck' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
-    'pnpm lint --quiet' \
+    'pnpm typecheck:e2e' \
+    'pnpm lint:full' \
     'pnpm test:command-schema' \
     'pnpm test:collection-scope' \
     > "$temp_root/expected-collection-scope-failure.log"
@@ -170,7 +167,8 @@ printf '%s\n' \
     'pnpm typecheck' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
-    'pnpm lint --quiet' \
+    'pnpm typecheck:e2e' \
+    'pnpm lint:full' \
     'pnpm test:command-schema' \
     'pnpm test:collection-scope' \
     'pnpm test:barrel-mocks' \
@@ -267,8 +265,8 @@ set -e
 test "$cargo_test_status" -eq 134
 
 printf '%s\n' \
-    "lint heartbeat exit: $lint_status" \
-    'lint heartbeat and early stop: PASS' \
+    "lint failure exit: $lint_status" \
+    'lint failure stops the web gate: PASS' \
     "collection scope failure exit: $collection_scope_status" \
     'collection scope failure stops before the suite: PASS' \
     "missing server dependencies exit: $server_status" \

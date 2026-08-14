@@ -54,7 +54,7 @@ Payloads crossing the bridge must be serializable, typed, minimal, and stable. D
 
 ### 5. Empirically verify the FFI bridge
 
-When modifying Tauri commands, events, or state models: align hand-maintained invoke call sites and DTOs (there is **no** Specta→TypeScript export pipeline today — `cargo test` / `cargo build` do not regenerate frontend bindings). Prove alignment with `cargo check -p sourdaw` and `pnpm typecheck`.
+When modifying Tauri commands, events, or state models: align hand-maintained invoke call sites and DTOs (there is **no** Specta→TypeScript export pipeline today — Cargo does not regenerate frontend bindings). Prove alignment with `pnpm cargo:check -- -p sourdaw` and `pnpm typecheck`.
 
 **Why:** serialization mismatches are invisible to a mental model and only surface at the compiler.
 

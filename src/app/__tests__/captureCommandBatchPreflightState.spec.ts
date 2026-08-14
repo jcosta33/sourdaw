@@ -4,14 +4,18 @@ import { type getProjectContext } from '#/modules/AiRuntime/useCases';
 
 import { captureCommandBatchPreflightState } from '../captureCommandBatchPreflightState';
 
-const mocks = vi.hoisted(() => ({
-    captureProjectRevision: vi.fn(() => 'document-identity-a'),
-    getAssetTransfer: vi.fn(),
-    getCrdtDoc: vi.fn<(id: string) => unknown>(),
-    getProjectContext: vi.fn(),
-    hasAudioBuffer: vi.fn<(id: string) => boolean>(),
-    trackStore: { value: { tracks: [] } },
-}));
+const mocks = vi.hoisted(() => {
+    const agentProjectRepairStateStore: { value: unknown } = { value: null };
+    return {
+        agentProjectRepairStateStore,
+        captureProjectRevision: vi.fn(() => 'document-identity-a'),
+        getAssetTransfer: vi.fn(),
+        getCrdtDoc: vi.fn<(id: string) => unknown>(),
+        getProjectContext: vi.fn(),
+        hasAudioBuffer: vi.fn<(id: string) => boolean>(),
+        trackStore: { value: { tracks: [] } },
+    };
+});
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     getProjectContext: mocks.getProjectContext,
@@ -27,6 +31,10 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: mocks.getAssetTransfer,
+}));
+
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -120,6 +128,7 @@ function projectContext(): ReturnType<typeof getProjectContext> {
 describe('captureCommandBatchPreflightState', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.agentProjectRepairStateStore.value = null;
         mocks.captureProjectRevision.mockReturnValue('document-identity-a');
         mocks.getProjectContext.mockReturnValue(projectContext());
         mocks.getCrdtDoc.mockReturnValue({
@@ -251,6 +260,61 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.targetFingerprints['track-created']).toContain('track-created');
         expect(state.projectInvariantsValid).toBe(true);
         expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('rejects invalid raw transport truth instead of validating its sanitized projection', () => {
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-vocal',
+                            kind: 'audio',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+                transport: { tempo: Number.POSITIVE_INFINITY },
+            },
+            targetIds: [],
+        });
+
+        expect(state).toMatchObject({ audioGraphValid: false, projectInvariantsValid: false });
+    });
+
+    it('validates staged raw truth without exposing projected model context during repair', () => {
+        mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
+
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            clips: [],
+                            devices: [],
+                            gain: 1,
+                            id: 'master',
+                            kind: 'master',
+                            outputId: null,
+                            pan: 0,
+                            sends: [],
+                        },
+                    ],
+                },
+                transport: { tempo: 120 },
+            },
+            targetIds: ['master'],
+        });
+
+        expect(mocks.getProjectContext).not.toHaveBeenCalled();
+        expect(state).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
     });
 
     it('rejects a staged output target that cannot compile to an audio node', () => {

@@ -7,6 +7,7 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 
 import { clearActionReplayCapabilities } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -111,11 +112,13 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
         clearActionReplayCapabilities();
         mocks.recordActionHistoryMetadata.mockReturnValue([]);
         configureAutomergeStoragePort(null);
+        agentProjectRepairStateStore.set(null);
     });
 
     afterEach(() => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
+        agentProjectRepairStateStore.set(null);
     });
 
     it('commits a captured post-await write as part of the action’s single atomic change', async () => {
@@ -135,6 +138,44 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
         expect(mutations).toEqual([{ tool: 'draw' }]);
         expect(doc.editingTool).toEqual({ tool: 'draw' });
         expect(storage.get()).toEqual({ tool: 'draw' });
+    });
+
+    it('should abort a captured post-await write when repair becomes required before commit', async () => {
+        const { doc, mutations, storage } = createHarness();
+        let releaseHandler: (() => void) | undefined;
+        let markHandlerStarted: (() => void) | undefined;
+        const handlerStarted = new Promise<void>((resolve) => {
+            markHandlerStarted = resolve;
+        });
+        const handlerRelease = new Promise<void>((resolve) => {
+            releaseHandler = resolve;
+        });
+        registerExecute(async () => {
+            const scope = captureAutomergeStorageTransactionScope();
+            markHandlerStarted?.();
+            await handlerRelease;
+            scope(() => {
+                storage.set({ tool: 'draw' });
+            });
+        });
+
+        const execution = executeAppAction(action);
+        await handlerStarted;
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'repair-revision',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
+        releaseHandler?.();
+
+        await expect(execution).rejects.toThrow('Project repair is required before project actions can execute');
+        expect(mutations).toEqual([]);
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+        expect(storage.get()).toEqual({ tool: 'select' });
     });
 
     it('aborts a captured post-await write when the action reports no-write', async () => {

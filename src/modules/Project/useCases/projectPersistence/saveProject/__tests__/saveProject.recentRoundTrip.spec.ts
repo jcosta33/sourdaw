@@ -58,9 +58,13 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 }));
 
 // loadRecentProject side effects — none touch the round-trip storage path.
-vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    defaultTransportState: { masterGain: 75, isPlaying: false },
+    stopPlayback: vi.fn(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
+    clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(),
     importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
@@ -68,8 +72,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
+    clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/stores', () => ({

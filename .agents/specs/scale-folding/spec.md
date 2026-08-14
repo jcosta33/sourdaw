@@ -31,33 +31,33 @@ root — a pure function evaluated at display/playback, with a "Bake" to commit,
 C Major → D Dorian on the reference fixture must produce MIDI matching the documented mapping
 (C→D, E-F gap → A-B gap, G# passing tone → B♭).
 
-Verify with: `cargo test -p daw-core scale_fold_reference_fixture`
+Verify with: `pnpm cargo:test -- -p daw-core scale_fold_reference_fixture`
 
 ### AC-002 — Pure-function reversibility
 
 Changing scale and back must produce byte-identical original MIDI (property test).
 
-Verify with: `cargo test -p daw-core scale_fold_reversible`
+Verify with: `pnpm cargo:test -- -p daw-core scale_fold_reversible`
 
 ### AC-003 — Proportional chromatic remap
 
 Out-of-scale chromatic notes must remap with `newOffset = round(offset × dstGap / srcGap)`.
 
-Verify with: `cargo test -p daw-core scale_fold_chromatic_proportional`
+Verify with: `pnpm cargo:test -- -p daw-core scale_fold_chromatic_proportional`
 
 ### AC-004 — Bake commits and clears source scale
 
 Baking must replace stored MIDI in place and clear `sourceScale`; later scale changes no
 longer re-fold the baked clip.
 
-Verify with: `cargo test -p daw-core scale_fold_bake`
+Verify with: `pnpm cargo:test -- -p daw-core scale_fold_bake`
 
 ### AC-005 — Cross-EDO fold degrades, never crashes
 
 A 31-EDO source folding to a 19-EDO destination must round out-of-scale degrees to the
 nearest destination degree with a logged warning, not an error.
 
-Verify with: `cargo test -p daw-core scale_fold_cross_edo`
+Verify with: `pnpm cargo:test -- -p daw-core scale_fold_cross_edo`
 
 ## Open questions
 

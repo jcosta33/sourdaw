@@ -114,7 +114,7 @@ Verify with: `pnpm deps:validate`
 ### AC-012 — Platform adapters are code-split out of foreign builds
 
 Browser builds must pull in zero files under `adapters/tauri/**`, enforced by a
-CI bundle-size audit over the emitted chunk graph.
+guarded local bundle-size audit over the emitted chunk graph.
 
 Verify with: `pnpm build` then a chunk-graph audit asserting no forbidden adapter paths are emitted
 
@@ -140,7 +140,7 @@ Verify with: `pnpm test:run -- audioEngineNativeShadow`
 
 The capability probe must resolve within 50 ms on a cold start on desktop and
 within 20 ms in browser, measured with `performance.now()` and asserted by a
-startup-timing test on platform-matrix CI.
+recorded startup-timing test on the supported platform matrix.
 
 Verify with: `pnpm test:run -- startupDetectionLatency`
 
@@ -222,7 +222,7 @@ Verify with: `pnpm deps:validate`
 
 Tauri / WKWebView builds must pull in zero files under `adapters/chrome-only/**`
 (except on a runtime where the chrome-only adapter is the resolved one), enforced
-by a CI bundle-size audit over the emitted chunk graph.
+by a guarded local bundle-size audit over the emitted chunk graph.
 
 Verify with: `pnpm build` then a chunk-graph audit asserting no forbidden adapter paths are emitted
 

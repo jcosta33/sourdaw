@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: { value: null },
     clearSemanticContext: mocks.clearSemanticContext,
     setSemanticContext: mocks.setSemanticContext,
 }));
@@ -53,6 +54,7 @@ function createHandler(input: {
     execute: Extract<ActionHandler<SetTrackGainAction>, { previewExecution: 'isolated-project' }>['execute'];
 }): ActionHandler<SetTrackGainAction> {
     return {
+        canReapplyAfterDivergence: () => true,
         describe: () => ({
             inverseAction: {
                 type: 'setTrackGain',

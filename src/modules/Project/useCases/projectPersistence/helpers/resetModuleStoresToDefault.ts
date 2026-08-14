@@ -12,7 +12,7 @@ import { levainStore } from '#/modules/Levain/stores';
 import { hydrateGrooveTemplates, resetMidiStoreForProject } from '#/modules/MIDI/useCases';
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
-import { toasterStore } from '#/modules/Toaster/stores';
+import { toasterStore, resetToasterDeviceLifecycleState } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { tunerStore } from '#/modules/Tuner/stores';
@@ -72,6 +72,13 @@ export function resetModuleStoresToDefault({
     proofStore.set({});
     tunerStore.set({});
     toasterStore.set({});
+    // The Toaster registration bookkeeping (deferred kit writes and retired
+    // ids) is module-level state beside the store. Surviving a project
+    // switch, it would either flush an abandoned write onto the incoming
+    // project's same-id device — dirtying a just-loaded document — or refuse
+    // its loading-window writes outright. Ids are per-document, so the
+    // bookkeeping ends at the project boundary (§13.1).
+    resetToasterDeviceLifecycleState();
     levainStore.set({});
     // Grand Boule keeps a Map of per-device store instances (not a single
     // Record<deviceId, State> store), so a single `.set(default)` on the shim

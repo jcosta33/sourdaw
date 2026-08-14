@@ -113,8 +113,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     return { ...actual, stopRecording };
 });
 vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
+    clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({

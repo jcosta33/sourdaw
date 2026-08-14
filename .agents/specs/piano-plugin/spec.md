@@ -39,82 +39,82 @@ Sweeping MIDI velocity on a held note must yield a monotonically non-decreasing
 spectral-centroid curve with no jump greater than 10% of its range between adjacent
 velocities (no audible velocity-layer boundary).
 
-Verify with: `cargo test -p daw-dsp grand_boule -- velocity_timbre`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- velocity_timbre`
 
 ### AC-002 — Coupled strings produce two-stage decay
 
 A struck mf C4 must exhibit a prompt decay (T60 in 0.3–2 s) and an aftersound decay
 (T60 in 5–30 s).
 
-Verify with: `cargo test -p daw-dsp grand_boule -- coupled_strings`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- coupled_strings`
 
 ### AC-003 — Partials follow inharmonic, stretched tuning
 
 Partial frequencies must follow `f_n = n·f₁·√(1 + B·n²)`.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- inharmonicity`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- inharmonicity`
 
 ### AC-004 — The DSP engine is real-time safe
 
 The audio callback must perform zero heap allocation, take no locks, and never block
 across idle, single-note, 64-note pedal chord, preset change, and temperament change.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- assert_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- assert_no_alloc`
 
 ### AC-005 — Voice pool is fixed-size and lock-free
 
 A pre-allocated voice pool must hold voices whose capacity never changes after init,
 using atomic state transitions and click-free (≤ −60 dBFS) voice stealing.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- voice_pool`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- voice_pool`
 
 ### AC-006 — Sustain pedal half-pedals continuously
 
 A CC64 sweep while holding mf C4 must produce a monotonically increasing
 fundamental-RMS response between CC64 30 and 110 with no derivative sign change.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- sustain_pedal`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- sustain_pedal`
 
 ### AC-007 — Una corda shifts timbre
 
 CC67 = 127 must reduce the first-partial attack of mf C4 by 2–6 dB versus CC67 = 0 and
 raise the energy in partials 3–5.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- una_corda`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- una_corda`
 
 ### AC-008 — Sostenuto sustains only notes held at engagement
 
 A note depressed before sostenuto engages must ring until release of the pedal;
 notes played afterward must decay normally on their own key release.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- sostenuto`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- sostenuto`
 
 ### AC-009 — Sympathetic resonance is gated and harmonic-selective
 
 With pedal up and no notes held, sympathetic output must be below −80 dBFS.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- sympathetic`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- sympathetic`
 
 ### AC-010 — A mechanical-noise layer is present and switchable
 
 Key-down and pedal events must trigger short filtered noise bursts at calibrated
 levels.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- mechanical_noise`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- mechanical_noise`
 
 ### AC-011 — Low-register modes stay numerically stable
 
 A held A0 rendered for 30 s at 48 kHz on both targets must produce zero denormal or
 NaN samples.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- low_register_stability`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- low_register_stability`
 
 ### AC-012 — Presets and structural changes never glitch
 
 Temperament, model, and mic-config changes during active playback must produce no
 per-sample level delta greater than 12 dB.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- preset_switch`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- preset_switch`
 
 ### AC-013 — Project state uses Vanilla `Store<T>`
 
@@ -140,27 +140,27 @@ Verify with: `pnpm deps:validate`
 
 Setting unison detune to 0 cents must remove the aftersound region of a struck mf C4.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- coupled_strings`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- coupled_strings`
 
 ### AC-017 — Default tuning follows a Railsback stretch
 
 Default tuning must follow a Railsback-style stretch (A1 ≈ −19 cents, C8 ≈ +35 cents
 vs equal temperament).
 
-Verify with: `cargo test -p daw-dsp grand_boule -- inharmonicity`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- inharmonicity`
 
 ### AC-018 — Sympathetic resonance is harmonic-selective
 
 With pedal down and a struck C4, a harmonically related resonance must exceed a
 non-harmonic one by at least 6 dB.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- sympathetic`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- sympathetic`
 
 ### AC-019 — The mechanical-noise layer is switchable
 
 Toggling the noise master off must null the mechanical-noise bursts to ≤ −120 dBFS.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- mechanical_noise`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- mechanical_noise`
 
 ### AC-020 — Multiple mic positions are a user-selectable control
 
@@ -169,7 +169,7 @@ room/audience), each producing a distinct mic blend, and a mic-config change dur
 active playback must not glitch the stream (covered by AC-012). Competitive datum:
 VSL ships up to 11 mic positions per piano.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- mic_positions`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- mic_positions`
 
 ### AC-021 — Lid position is a continuous control the 3D view reflects
 
@@ -192,7 +192,7 @@ A 60-second stress run forcing 60 fps visualization plus 60% audio-thread CPU lo
 maintain a buffer-underrun count of zero (native `cpal` callback error count and
 AudioWorklet processor-error count both zero).
 
-Verify with: `cargo test -p daw-dsp grand_boule -- viz_underrun_stress`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- viz_underrun_stress`
 
 ### AC-024 — Visualization degrades to a placeholder when WebGPU is absent
 
@@ -208,7 +208,7 @@ a documented technique (Bank 2000 / Borin K-method), recorded in the module's to
 comment; an uncontrolled one-sample-delay fallback that biases hammer contact duration
 or peak force out of the research target range at C4 mf must fail the suite.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- delay_free_loop`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- delay_free_loop`
 
 ### AC-026 — Repedaling re-engages string energy within the catch window
 
@@ -216,7 +216,7 @@ A note-on → note-off → CC64-down 75 ms later must keep the fundamental RMS a
 re-engagement instant within 3 dB of a continuous-sustain reference; a 250 ms gap must
 drop by ≥ 6 dB.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- repedaling_catch`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- repedaling_catch`
 
 ### AC-027 — Notes above C7 ring undamped regardless of the sustain pedal
 
@@ -224,7 +224,7 @@ Held C7♯ and higher notes must have effectively identical decay at CC64 = 0 an
 CC64 = 127 (the physical piano has no dampers above ~C7); the voice model must not
 attempt to damp them.
 
-Verify with: `cargo test -p daw-dsp grand_boule -- damper_absence_high`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- damper_absence_high`
 
 ### AC-028 — Install footprint stays small
 
@@ -241,7 +241,7 @@ An optional, default-off quality tier must crossfade a sample-based attack trans
 modal synthesis (bit-identical to the non-hybrid path), and the attack samples must come
 from a license-compatible source (e.g. Salamander Grand Piano).
 
-Verify with: `cargo test -p daw-dsp grand_boule -- hybrid_attack`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- hybrid_attack`
 
 ### AC-030 — The native target is the richer quality tier
 
@@ -250,7 +250,7 @@ and full soundboard modeling, while the browser (WASM) target must run a reduced
 (64 voices, simplified soundboard) that exposes the same parameter UI. Both tiers must
 present identical parameter IDs and use cases (consistent with AC-014).
 
-Verify with: `cargo test -p daw-dsp grand_boule -- quality_tiers`
+Verify with: `pnpm cargo:test -- -p daw-dsp grand_boule -- quality_tiers`
 
 ## Open questions
 

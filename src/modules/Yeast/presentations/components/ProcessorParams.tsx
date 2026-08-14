@@ -17,6 +17,8 @@ type GrooveTemplateOption = { id: string; name: string };
 type Props = {
     processorId: string;
     processorType: ProcessorType;
+    /** Live per-parameter values from yeastStore; each control falls back to its compiled default when absent. */
+    params?: Record<string, number>;
     onSetParam: OnSetParam;
     onCommand: OnCommand;
     grooveTemplates?: readonly GrooveTemplateOption[];
@@ -49,7 +51,12 @@ const K = ({
     <div className="flex flex-col items-center gap-0">
         <RotaryKnob
             value={value}
-            onChange={(nextValue, isTransient) => onSetParam(id, name, nextValue, isTransient)}
+            // Every move commits through the store (like YeastPanel's own
+            // YeastKnob sites): the transient branch of setYeastProcessorParam
+            // applies only an audio projection, so forwarding the flag would
+            // leave this controlled knob frozen for the whole drag and jump
+            // at release.
+            onChange={(nextValue) => onSetParam(id, name, nextValue)}
             min={min}
             max={max}
             step={step}
@@ -102,6 +109,7 @@ const Sel = ({
 export const ProcessorParams = ({
     processorId: pid,
     processorType,
+    params = {},
     onSetParam,
     onCommand,
     grooveTemplates = [],
@@ -125,14 +133,14 @@ export const ProcessorParams = ({
                         name="mode"
                         label="Mode"
                         options={['Up', 'Down', 'Up-Down', 'Down-Up', 'Random', 'Order', 'Chord', 'Pattern']}
-                        value={0}
+                        value={params?.['mode'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="rate_denom"
                         label="Rate"
-                        value={8}
+                        value={params?.['rate_denom'] ?? 8}
                         min={1}
                         max={32}
                         step={1}
@@ -142,7 +150,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="gate"
                         label="Gate"
-                        value={0.8}
+                        value={params?.['gate'] ?? 0.8}
                         min={0.01}
                         max={2}
                         step={0.01}
@@ -153,7 +161,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="swing"
                         label="Swing"
-                        value={0}
+                        value={params?.['swing'] ?? 0}
                         min={0}
                         max={1}
                         step={0.01}
@@ -163,7 +171,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="octave_range"
                         label="Octaves"
-                        value={1}
+                        value={params?.['octave_range'] ?? 1}
                         min={1}
                         max={4}
                         step={1}
@@ -174,7 +182,7 @@ export const ProcessorParams = ({
                         name="octave_direction"
                         label="Oct Dir"
                         options={['Up', 'Down', 'Up-Down']}
-                        value={0}
+                        value={params?.['octave_direction'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <Sel
@@ -182,14 +190,14 @@ export const ProcessorParams = ({
                         name="velocity_mode"
                         label="Vel Mode"
                         options={['Input', 'Fixed', 'Random']}
-                        value={0}
+                        value={params?.['velocity_mode'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="fixed_velocity"
                         label="Fixed Vel"
-                        value={100}
+                        value={params?.['fixed_velocity'] ?? 100}
                         min={1}
                         max={127}
                         step={1}
@@ -200,7 +208,7 @@ export const ProcessorParams = ({
                         name="restart_mode"
                         label="Restart"
                         options={['Free', 'On Note', 'On Bar']}
-                        value={1}
+                        value={params?.['restart_mode'] ?? 1}
                         onSetParam={onSetParam}
                     />
                 </div>
@@ -227,7 +235,7 @@ export const ProcessorParams = ({
                             '9th',
                             '11th',
                         ]}
-                        value={0}
+                        value={params?.['chord_type'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <Sel
@@ -235,14 +243,14 @@ export const ProcessorParams = ({
                         name="voicing"
                         label="Voicing"
                         options={['Close', 'Drop 2', 'Drop 3', 'Spread']}
-                        value={0}
+                        value={params?.['voicing'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="strum_ms"
                         label="Strum"
-                        value={0}
+                        value={params?.['strum_ms'] ?? 0}
                         min={0}
                         max={100}
                         step={1}
@@ -254,7 +262,7 @@ export const ProcessorParams = ({
                         name="strum_direction"
                         label="Strum Dir"
                         options={['Up', 'Down']}
-                        value={0}
+                        value={params?.['strum_direction'] ?? 0}
                         onSetParam={onSetParam}
                     />
                 </div>
@@ -275,7 +283,7 @@ export const ProcessorParams = ({
                         name="transpose_mode"
                         label="Transpose"
                         options={['Off', 'On']}
-                        value={1}
+                        value={params?.['transpose_mode'] ?? 1}
                         onSetParam={onSetParam}
                     />
                     <button
@@ -296,7 +304,7 @@ export const ProcessorParams = ({
                         name="root"
                         label="Root"
                         options={['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']}
-                        value={0}
+                        value={params?.['root'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <Sel
@@ -319,7 +327,7 @@ export const ProcessorParams = ({
                             'Dimin.',
                             'Chromatic',
                         ]}
-                        value={0}
+                        value={params?.['scale'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <Sel
@@ -327,14 +335,14 @@ export const ProcessorParams = ({
                         name="remap_mode"
                         label="Remap"
                         options={['Nearest', 'Up', 'Down']}
-                        value={0}
+                        value={params?.['remap_mode'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="transpose"
                         label="Transpose"
-                        value={0}
+                        value={params?.['transpose'] ?? 0}
                         min={-7}
                         max={7}
                         step={1}
@@ -352,7 +360,7 @@ export const ProcessorParams = ({
                         name="root"
                         label="Root"
                         options={['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']}
-                        value={0}
+                        value={params?.['root'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <Sel
@@ -360,14 +368,14 @@ export const ProcessorParams = ({
                         name="scale"
                         label="Scale"
                         options={['Major', 'Minor', 'Dorian', 'Mixolyd.', 'Pent.', 'Chromatic']}
-                        value={0}
+                        value={params?.['scale'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="voice0_degrees"
                         label="Voice 1"
-                        value={2}
+                        value={params?.['voice0_degrees'] ?? 2}
                         min={-7}
                         max={7}
                         step={1}
@@ -379,14 +387,14 @@ export const ProcessorParams = ({
                         name="voice0_enabled"
                         label="V1"
                         options={['Off', 'On']}
-                        value={1}
+                        value={params?.['voice0_enabled'] ?? 1}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="voice1_degrees"
                         label="Voice 2"
-                        value={4}
+                        value={params?.['voice1_degrees'] ?? 4}
                         min={-7}
                         max={7}
                         step={1}
@@ -398,7 +406,7 @@ export const ProcessorParams = ({
                         name="voice1_enabled"
                         label="V2"
                         options={['Off', 'On']}
-                        value={0}
+                        value={params?.['voice1_enabled'] ?? 0}
                         onSetParam={onSetParam}
                     />
                 </div>
@@ -411,7 +419,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="repeat_count"
                         label="Repeats"
-                        value={3}
+                        value={params?.['repeat_count'] ?? 3}
                         min={1}
                         max={16}
                         step={1}
@@ -421,7 +429,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="rate_denom"
                         label="Rate"
-                        value={16}
+                        value={params?.['rate_denom'] ?? 16}
                         min={1}
                         max={32}
                         step={1}
@@ -431,7 +439,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="decay"
                         label="Decay"
-                        value={0.7}
+                        value={params?.['decay'] ?? 0.7}
                         min={0}
                         max={1}
                         step={0.01}
@@ -441,7 +449,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="gate"
                         label="Gate"
-                        value={0.5}
+                        value={params?.['gate'] ?? 0.5}
                         min={0.01}
                         max={2}
                         step={0.01}
@@ -451,7 +459,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="pitch_step"
                         label="Pitch"
-                        value={0}
+                        value={params?.['pitch_step'] ?? 0}
                         min={-12}
                         max={12}
                         step={1}
@@ -469,14 +477,14 @@ export const ProcessorParams = ({
                         name="mode"
                         label="Mode"
                         options={['Pass', 'Fixed', 'Compress', 'Expand', 'Curve', 'Random']}
-                        value={0}
+                        value={params?.['mode'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="fixed_vel"
                         label="Fixed"
-                        value={100}
+                        value={params?.['fixed_vel'] ?? 100}
                         min={1}
                         max={127}
                         step={1}
@@ -486,7 +494,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="compress_amount"
                         label="Amount"
-                        value={0.5}
+                        value={params?.['compress_amount'] ?? 0.5}
                         min={0}
                         max={3}
                         step={0.01}
@@ -497,7 +505,7 @@ export const ProcessorParams = ({
                         name="curve"
                         label="Curve"
                         options={['Linear', 'Soft', 'Hard', 'S-Curve']}
-                        value={0}
+                        value={params?.['curve'] ?? 0}
                         onSetParam={onSetParam}
                     />
                 </div>
@@ -511,14 +519,14 @@ export const ProcessorParams = ({
                         name="preset"
                         label="Feel"
                         options={['Tight', 'Loose', 'Drunk', 'Rushed', 'Laid Back']}
-                        value={0}
+                        value={params?.['preset'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="timing_sigma_ms"
                         label="Time Jitter"
-                        value={5}
+                        value={params?.['timing_sigma_ms'] ?? 5}
                         min={0}
                         max={30}
                         step={0.5}
@@ -529,7 +537,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="vel_sigma"
                         label="Vel Jitter"
-                        value={8}
+                        value={params?.['vel_sigma'] ?? 8}
                         min={0}
                         max={30}
                         step={1}
@@ -539,7 +547,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="timing_mean_ms"
                         label="Offset"
-                        value={0}
+                        value={params?.['timing_mean_ms'] ?? 0}
                         min={-30}
                         max={30}
                         step={0.5}
@@ -556,7 +564,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="note_min"
                         label="Low"
-                        value={0}
+                        value={params?.['note_min'] ?? 0}
                         min={0}
                         max={127}
                         step={1}
@@ -566,7 +574,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="note_max"
                         label="High"
-                        value={127}
+                        value={params?.['note_max'] ?? 127}
                         min={0}
                         max={127}
                         step={1}
@@ -576,7 +584,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="vel_min"
                         label="Vel Min"
-                        value={0}
+                        value={params?.['vel_min'] ?? 0}
                         min={0}
                         max={127}
                         step={1}
@@ -586,7 +594,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="vel_max"
                         label="Vel Max"
-                        value={127}
+                        value={params?.['vel_max'] ?? 127}
                         min={0}
                         max={127}
                         step={1}
@@ -597,7 +605,7 @@ export const ProcessorParams = ({
                         name="invert"
                         label="Invert"
                         options={['Off', 'On']}
-                        value={0}
+                        value={params?.['invert'] ?? 0}
                         onSetParam={onSetParam}
                     />
                 </div>
@@ -610,7 +618,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="semitones"
                         label="Semi"
-                        value={0}
+                        value={params?.['semitones'] ?? 0}
                         min={-12}
                         max={12}
                         step={1}
@@ -621,7 +629,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="octaves"
                         label="Oct"
-                        value={0}
+                        value={params?.['octaves'] ?? 0}
                         min={-3}
                         max={3}
                         step={1}
@@ -631,7 +639,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="random_range"
                         label="Random"
-                        value={0}
+                        value={params?.['random_range'] ?? 0}
                         min={0}
                         max={12}
                         step={1}
@@ -684,7 +692,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="cc_number"
                         label="CC #"
-                        value={1}
+                        value={params?.['cc_number'] ?? 1}
                         min={0}
                         max={127}
                         step={1}
@@ -695,27 +703,45 @@ export const ProcessorParams = ({
                         name="shape"
                         label="Shape"
                         options={['Sine', 'Tri', 'Square', 'Saw↑', 'Saw↓', 'S&H']}
-                        value={0}
+                        value={params?.['shape'] ?? 0}
                         onSetParam={onSetParam}
                     />
                     <K
                         id={pid}
                         name="rate_denom"
                         label="Rate"
-                        value={4}
+                        value={params?.['rate_denom'] ?? 4}
                         min={1}
                         max={32}
                         step={1}
                         onSetParam={onSetParam}
                     />
-                    <K id={pid} name="min" label="Min" value={0} min={0} max={127} step={1} onSetParam={onSetParam} />
-                    <K id={pid} name="max" label="Max" value={127} min={0} max={127} step={1} onSetParam={onSetParam} />
+                    <K
+                        id={pid}
+                        name="min"
+                        label="Min"
+                        value={params?.['min'] ?? 0}
+                        min={0}
+                        max={127}
+                        step={1}
+                        onSetParam={onSetParam}
+                    />
+                    <K
+                        id={pid}
+                        name="max"
+                        label="Max"
+                        value={params?.['max'] ?? 127}
+                        min={0}
+                        max={127}
+                        step={1}
+                        onSetParam={onSetParam}
+                    />
                     <Sel
                         id={pid}
                         name="retrigger"
                         label="Retrig"
                         options={['Off', 'On']}
-                        value={0}
+                        value={params?.['retrigger'] ?? 0}
                         onSetParam={onSetParam}
                     />
                 </div>
@@ -724,12 +750,21 @@ export const ProcessorParams = ({
         case 'euclidean':
             return (
                 <div className="flex flex-wrap gap-2 px-1 py-1">
-                    <K id={pid} name="hits" label="Hits" value={5} min={0} max={32} step={1} onSetParam={onSetParam} />
+                    <K
+                        id={pid}
+                        name="hits"
+                        label="Hits"
+                        value={params?.['hits'] ?? 5}
+                        min={0}
+                        max={32}
+                        step={1}
+                        onSetParam={onSetParam}
+                    />
                     <K
                         id={pid}
                         name="steps"
                         label="Steps"
-                        value={8}
+                        value={params?.['steps'] ?? 8}
                         min={1}
                         max={32}
                         step={1}
@@ -739,7 +774,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="rotation"
                         label="Rotate"
-                        value={0}
+                        value={params?.['rotation'] ?? 0}
                         min={0}
                         max={31}
                         step={1}
@@ -749,7 +784,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="rate_denom"
                         label="Rate"
-                        value={16}
+                        value={params?.['rate_denom'] ?? 16}
                         min={1}
                         max={32}
                         step={1}
@@ -759,7 +794,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="gate"
                         label="Gate"
-                        value={0.5}
+                        value={params?.['gate'] ?? 0.5}
                         min={0.01}
                         max={2}
                         step={0.01}
@@ -769,7 +804,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="note"
                         label="Note"
-                        value={60}
+                        value={params?.['note'] ?? 60}
                         min={0}
                         max={127}
                         step={1}
@@ -779,7 +814,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="velocity"
                         label="Vel"
-                        value={100}
+                        value={params?.['velocity'] ?? 100}
                         min={1}
                         max={127}
                         step={1}
@@ -795,7 +830,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="rate_denom"
                         label="Rate"
-                        value={8}
+                        value={params?.['rate_denom'] ?? 8}
                         min={1}
                         max={32}
                         step={1}
@@ -805,7 +840,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="gate"
                         label="Gate"
-                        value={0.7}
+                        value={params?.['gate'] ?? 0.7}
                         min={0.01}
                         max={2}
                         step={0.01}
@@ -815,7 +850,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="velocity"
                         label="Vel"
-                        value={100}
+                        value={params?.['velocity'] ?? 100}
                         min={1}
                         max={127}
                         step={1}
@@ -832,7 +867,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="depth"
                         label="Depth"
-                        value={0.5}
+                        value={params?.['depth'] ?? 0.5}
                         min={0}
                         max={1}
                         step={0.01}
@@ -842,7 +877,7 @@ export const ProcessorParams = ({
                         id={pid}
                         name="rate"
                         label="Rate"
-                        value={1}
+                        value={params?.['rate'] ?? 1}
                         min={0.1}
                         max={10}
                         step={0.1}

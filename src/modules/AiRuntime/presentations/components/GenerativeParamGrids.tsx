@@ -32,15 +32,21 @@ type OptionDef = {
     colorClass: string;
 };
 
-const GridContainer = ({ options, value, onChange }: GridProps & { options: OptionDef[] }): ReactElement => {
+type GridContainerProps = GridProps & {
+    options: OptionDef[];
+    gridTestId: string;
+};
+
+const GridContainer = ({ options, value, onChange, gridTestId }: GridContainerProps): ReactElement => {
     return (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2" data-testid={gridTestId}>
             {options.map((opt) => {
                 const isSelected = value === opt.id;
                 return (
                     <button
                         key={opt.id}
                         type="button"
+                        aria-pressed={isSelected}
                         onClick={() => onChange(isSelected ? '' : opt.id)}
                         className={cn(
                             'relative overflow-hidden flex flex-col items-center justify-center p-3 gap-2 rounded-lg border transition-all duration-300 ease-out group',
@@ -91,7 +97,7 @@ const GENRES: OptionDef[] = [
     { id: 'Rock', label: 'Rock', Icon: Zap, colorClass: 'red' },
 ];
 
-export const GenreGrid = (props: GridProps) => <GridContainer options={GENRES} {...props} />;
+export const GenreGrid = (props: GridProps) => <GridContainer options={GENRES} gridTestId="genre-grid" {...props} />;
 
 const MOODS: OptionDef[] = [
     { id: 'Chill / Relaxed', label: 'Chill', Icon: Cloud, colorClass: 'sky' },
@@ -101,7 +107,7 @@ const MOODS: OptionDef[] = [
     { id: 'Epic', label: 'Epic', Icon: Mountain, colorClass: 'emerald' },
 ];
 
-export const MoodGrid = (props: GridProps) => <GridContainer options={MOODS} {...props} />;
+export const MoodGrid = (props: GridProps) => <GridContainer options={MOODS} gridTestId="mood-grid" {...props} />;
 
 const INSTRUMENTS: OptionDef[] = [
     { id: 'Acoustic Piano', label: 'Acoustic Piano', Icon: Piano, colorClass: 'slate' },
@@ -111,4 +117,6 @@ const INSTRUMENTS: OptionDef[] = [
     { id: 'String Section', label: 'Strings', Icon: Music4, colorClass: 'amber' },
 ];
 
-export const InstrumentGrid = (props: GridProps) => <GridContainer options={INSTRUMENTS} {...props} />;
+export const InstrumentGrid = (props: GridProps) => (
+    <GridContainer options={INSTRUMENTS} gridTestId="instrument-grid" {...props} />
+);

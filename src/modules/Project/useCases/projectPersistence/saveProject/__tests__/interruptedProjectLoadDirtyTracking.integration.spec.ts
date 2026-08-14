@@ -107,10 +107,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
     resetAudioGraph: mockResetAudioGraph,
 }));
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: mockClearUndoHistory,
-    executeAppAction: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mockClearUndoHistory, executeAppAction: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,

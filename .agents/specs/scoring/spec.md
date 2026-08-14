@@ -43,7 +43,7 @@ Verify with: `manual` — play A/V; the video frame tracks the audio playhead fr
 Timecode conversion (including 29.97 drop-frame) must use exact rational arithmetic with
 zero accumulated drift over a 1-hour timeline.
 
-Verify with: `cargo test -p daw-core smpte_timecode`
+Verify with: `pnpm cargo:test -- -p daw-core smpte_timecode`
 
 ### AC-003 — PLL keeps long-form sync
 
@@ -57,7 +57,7 @@ Verify with: `manual` — play 10 min A/V; confirm lock at the end and no pitch 
 Loading a video with an audio track must extract that audio into an aligned clip on a
 dedicated reference track.
 
-Verify with: `cargo test -p daw-io video_audio_extract`
+Verify with: `pnpm cargo:test -- -p daw-io video_audio_extract`
 
 ### AC-005 — Scene-marker seeding
 
@@ -105,13 +105,13 @@ cuts), and **hard cuts must match within ±1 frame at the source video frame rat
 timestamps are expressed in project seconds, derived from the video's PTS and the project
 SMPTE offset.
 
-Verify with: `cargo test -p daw-io scene_cut_detector_fixture` — feed `tests/fixtures/video/scene-cuts-10.mp4`; assert exactly 10 `SceneMarker` entries, each within ±0.5 s (±1 frame for hard cuts) of ground truth
+Verify with: `pnpm cargo:test -- -p daw-io scene_cut_detector_fixture` — feed `tests/fixtures/video/scene-cuts-10.mp4`; assert exactly 10 `SceneMarker` entries, each within ±0.5 s (±1 frame for hard cuts) of ground truth
 
 ### AC-006 — Muxed export
 
 Exporting must mux the final stereo mix with the source video into a single playable file.
 
-Verify with: `cargo test -p daw-io video_export_mux`
+Verify with: `pnpm cargo:test -- -p daw-io video_export_mux`
 
 ### AC-007 — Scoring module isolation
 

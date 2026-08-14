@@ -128,9 +128,7 @@ Do not widen this spec to reach them. Its value is that it is safe under every c
 ## Verification
 
 - Failing reproduction first for each behavioural AC, with real output pasted.
-- Full suite at least twice, both exit codes quoted, read from the command itself.
-- `scripts/health-gates-web.sh` and `health-gates-server.sh` from a clean checkout installed off the
-  lockfile.
+- Run each affected test once through guarded package scripts; quote its exit code.
 - Every guard mutation-checked with the reding assertion named.
 
 ## Outcome — landed 2026-08-02

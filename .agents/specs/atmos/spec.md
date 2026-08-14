@@ -46,14 +46,14 @@ Verify with: `pnpm test:run -- atmosObjectPool`
 The panner must compute gains as `g̃ = L⁻¹·p` and normalize by
 `gᵢ = g̃ᵢ / √(Σg̃²)`.
 
-Verify with: `cargo test -p daw-dsp atmos::vbap_gain`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::vbap_gain`
 
 ### AC-004 — Speaker triangulation yields the expected triplet count
 
 Convex-hull triangulation of the 7.1.4 layout must produce ~16–22 valid
 triplets after outward-normal validation and aperture culling.
 
-Verify with: `cargo test -p daw-dsp atmos::vbap_triangulation`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::vbap_triangulation`
 
 ### AC-005 — MDAP spread generates eight auxiliary sources
 
@@ -61,14 +61,14 @@ Source-width spread must generate 8 auxiliary virtual sources via
 `auxₖ = cos(α)·p + sin(α)·(cos(2πk/N)·u + sin(2πk/N)·v)`, summed and
 power-normalized.
 
-Verify with: `cargo test -p daw-dsp atmos::mdap_spread`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::mdap_spread`
 
 ### AC-006 — The LFE send is excluded from VBAP
 
 The per-source LFE send must be a separate gain parameter excluded from VBAP
 triplet selection and power normalization.
 
-Verify with: `cargo test -p daw-dsp atmos::lfe_excluded`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::lfe_excluded`
 
 ### AC-007 — Binaural monitoring uses the hybrid HRTF/Ambisonics path
 
@@ -76,14 +76,14 @@ Binaural rendering must route ≤16 priority sources through direct HRTF
 convolution and the remainder through a 3rd-order Ambisonics bus with MagLS
 decoding.
 
-Verify with: `cargo test -p daw-dsp atmos::hybrid_binaural`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::hybrid_binaural`
 
 ### AC-008 — Binaural convolution adds one buffer of latency
 
 UPOLS convolution with 128-sample blocks must add exactly 128 samples
 (2.67 ms at 48 kHz) of latency.
 
-Verify with: `cargo test -p daw-dsp atmos::upols_latency`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::upols_latency`
 
 ### AC-009 — ADM XML carries timestamped position blocks
 
@@ -91,21 +91,21 @@ Export must emit `audioBlockFormat` elements with `rtime`, `duration`, and
 azimuth/elevation/distance `position` elements per automation segment, conformant
 to ITU-R BS.2076-3.
 
-Verify with: `cargo test -p daw-dsp atmos::adm_xml`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::adm_xml`
 
 ### AC-010 — The chna chunk uses the 40-byte entry layout
 
 Each `chna` entry must be exactly 40 bytes per ITU-R BS.2076 (1-based track
 index, UID, track-format ref, pack-format ref, padding).
 
-Verify with: `cargo test -p daw-dsp atmos::chna_binary`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::chna_binary`
 
 ### AC-011 — Files over 4 GB use the BW64 container
 
 When the rendered file exceeds 4 GB, export must write a BW64 container with a
 `ds64` chunk rather than a 32-bit RIFF.
 
-Verify with: `cargo test -p daw-dsp atmos::bw64_ds64`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::bw64_ds64`
 
 ### AC-012 — 3D position parameters are automatable
 
@@ -156,7 +156,7 @@ Verify with: `pnpm test:run -- atmosMonitoringFormat`
 
 The object inspector must expose a per-object binaural render mode (near/far).
 
-Verify with: `cargo test -p daw-dsp atmos::dbmd_binaural_mode`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::dbmd_binaural_mode`
 
 ### AC-019 — The transport bar shows live object-budget usage with color status
 
@@ -196,7 +196,7 @@ Crossover-based low-frequency redirection (bass management) must not be part of
 VBAP gain computation or normalization; it must live in the monitoring chain
 downstream of the panner.
 
-Verify with: `cargo test -p daw-dsp atmos::bass_management_downstream`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::bass_management_downstream`
 
 ### AC-024 — The binaural path must not depend on the Fyrox `hrtf` crate
 
@@ -225,7 +225,7 @@ Verify with: `pnpm test:run -- atmosMonitoringFormat`
 The chosen per-object binaural render mode must be carried through to the ADM
 `dbmd` per-object binaural distance metadata on export.
 
-Verify with: `cargo test -p daw-dsp atmos::dbmd_binaural_mode`
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::dbmd_binaural_mode`
 
 ### AC-028 — An object metadata status indicator encodes renderer-send state
 
@@ -258,7 +258,7 @@ original R4.6 as a resolved requirement; supersedes research.md Q-003, which had
 demoted this resolved mechanism back to an open question. The user-facing control
 is the per-track feature flag.)
 
-Verify with: `cargo test -p daw-dsp atmos::hrtf_priority_order` — assert a flagged track outranks an unflagged solo, a solo outranks an unflagged non-solo, and ties break by track order
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::hrtf_priority_order` — assert a flagged track outranks an unflagged solo, a solo outranks an unflagged non-solo, and ties break by track order
 
 ### AC-031 — Priority routing is not a bed-vs-object split
 
@@ -269,7 +269,7 @@ left unflagged must fall into the 3rd-order Ambisonics sum. (Restores the origin
 R4.5 disambiguation, dropped in migration; AC-007 alone leaves room for the exact
 misreading this clarification was written to prevent.)
 
-Verify with: `cargo test -p daw-dsp atmos::hrtf_priority_not_bed_split` — assert a flagged bed track routes through direct HRTF and an unflagged object routes through the Ambisonics sum
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::hrtf_priority_not_bed_split` — assert a flagged bed track routes through direct HRTF and an unflagged object routes through the Ambisonics sum
 
 ### AC-032 — Panner handles are color-coded by channel: blue for mono, yellow/red for stereo L/R
 
@@ -305,7 +305,7 @@ padding so any odd-length chunk gets a trailing zero byte. (Restores the origina
 crate-ecosystem / Rust-implementation finding dropped in migration; complements the
 byte-level chunk requirements of AC-009/AC-010/AC-011.)
 
-Verify with: `cargo test -p daw-dsp atmos::adm_riff_word_alignment` — write an odd-length custom chunk and assert a trailing padding byte is emitted so the next chunk starts word-aligned
+Verify with: `pnpm cargo:test -- -p daw-dsp atmos::adm_riff_word_alignment` — write an odd-length custom chunk and assert a trailing padding byte is emitted so the next chunk starts word-aligned
 
 ## Open questions
 

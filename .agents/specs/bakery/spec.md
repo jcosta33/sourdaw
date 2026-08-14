@@ -51,14 +51,14 @@ DAW — Reaktor/Max expressiveness without an interpreter on the audio thread.
 A patch must persist as nodes, typed ports, and connections that round-trip
 through save/load with no loss of topology or parameter values.
 
-Verify with: `cargo test -p daw-bakery patch::serde_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::serde_roundtrip`
 
 ### AC-002 — A device declares one of three roles
 
 A Bakery device must declare exactly one role — Poly, FX, or Note — that fixes
 its I/O contract with the host track.
 
-Verify with: `cargo test -p daw-bakery device::role_contract`
+Verify with: `pnpm cargo:test -- -p daw-bakery device::role_contract`
 
 ### AC-003 — Ports carry a signal type and reject mismatched connections
 
@@ -69,42 +69,42 @@ family and Trigger/Note share an event family; in-family conversions coerce
 automatically while cross-family connections require an explicit user-placed
 converter node.
 
-Verify with: `cargo test -p daw-bakery patch::port_type_check`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::port_type_check`
 
 ### AC-004 — A patch compiles to a flat ordered schedule
 
 Compilation must topologically sort the graph into a flat `Vec<ProcessTask>`
 with feedback edges broken by a one-block delay, ready for cache-local iteration.
 
-Verify with: `cargo test -p daw-bakery compile::topo_schedule`
+Verify with: `pnpm cargo:test -- -p daw-bakery compile::topo_schedule`
 
 ### AC-005 — The compiled schedule is real-time-safe
 
 Processing a compiled schedule on the audio thread must not allocate, lock, or
 block.
 
-Verify with: `cargo test -p daw-bakery compile::rt_safe_assert_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-bakery compile::rt_safe_assert_no_alloc`
 
 ### AC-006 — Editing a patch hot-swaps the schedule without a glitch
 
 Recompiling after an edit must publish the new schedule via `ArcSwap` so the
 audio thread switches at a buffer boundary with no dropout.
 
-Verify with: `cargo test -p daw-bakery compile::arc_swap_hot_reload`
+Verify with: `pnpm cargo:test -- -p daw-bakery compile::arc_swap_hot_reload`
 
 ### AC-007 — Poly devices allocate voices from a fixed pool
 
 A Poly device must allocate from a pre-sized voice pool (no per-note
 allocation) and steal the oldest voice when the pool is exhausted.
 
-Verify with: `cargo test -p daw-bakery voice::pool_steal`
+Verify with: `pnpm cargo:test -- -p daw-bakery voice::pool_steal`
 
 ### AC-008 — Sub-patches encapsulate a reusable sub-graph
 
 A group of nodes must be collapsible into a sub-patch with its own ports that
 compiles inline into the parent schedule.
 
-Verify with: `cargo test -p daw-bakery patch::subpatch_inline`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::subpatch_inline`
 
 ### AC-009 — The canvas supports patch edits with undo/redo
 
@@ -140,7 +140,7 @@ A patch must serialize to a single self-contained JSON document with top-level
 `createdAt`, and `appVersion` are mandatory metadata and export must block when any
 is missing.
 
-Verify with: `cargo test -p daw-bakery patch::sharing_json_format`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::sharing_json_format`
 
 ### AC-014 — The first-ship module catalog ships its named module set
 
@@ -154,7 +154,7 @@ note FX (`Transpose`/`Arpeggiator`/`NoteQuantizer`/`VelocityCurve`), DAW I/O
 wrappers (`Reverb`/`Delay`/`Distortion`/`Chorus`/`Compressor`) — each registered
 in the module registry.
 
-Verify with: `cargo test -p daw-bakery registry::first_ship_catalog_complete`
+Verify with: `pnpm cargo:test -- -p daw-bakery registry::first_ship_catalog_complete`
 
 ### AC-015 — Bakery parameters integrate with host automation
 
@@ -174,15 +174,15 @@ Compilation must run all nine ordered stages — Parse, Resolve, Type-check, Exp
 Constant-fold (`Constant*Constant → Constant`), Dead-code-eliminate (drop nodes
 with no path to an `AudioOut`/`NoteOut` sink), and Emit.
 
-Verify with: `cargo test -p daw-bakery compile::nine_stage_pipeline`
+Verify with: `pnpm cargo:test -- -p daw-bakery compile::nine_stage_pipeline`
 
 ### AC-017 — The reference patch meets quantified RT performance gates
 
 The reference 16-voice subtractive synth (3 oscillators, 1 filter, 1 envelope,
-1 reverb) must process at ≥ 20× realtime at 48 kHz on the CI baseline — within 15 %
+1 reverb) must process at ≥ 20× realtime at 48 kHz on the declared baseline machine — within 15 %
 of the equivalent factory Fermenter preset.
 
-Verify with: `cargo bench -p daw-bakery --bench reference_patch_20x_realtime`
+Verify with: `pnpm cargo:bench -- -p daw-bakery --bench reference_patch_20x_realtime`
 
 ### AC-018 — Poly devices split voice and global domains
 
@@ -192,7 +192,7 @@ Global domain (shared post-voice DSP run once); the polyphony cap defaults to 16
 and is user-adjustable across 1–64; the steal policy is chosen from the fixed enum
 `oldest | quietest | lowestVelocity`.
 
-Verify with: `cargo test -p daw-bakery voice::domain_split_and_polyphony_cap`
+Verify with: `pnpm cargo:test -- -p daw-bakery voice::domain_split_and_polyphony_cap`
 
 ### AC-019 — v1 ships sampler nodes, not a Crumb instrument
 
@@ -211,7 +211,7 @@ that resolves to a bundled sample loads directly, and a missing hash must surfac
 human-readable missing-sample warning and open the patch in a silent "preview" mode
 rather than failing to load.
 
-Verify with: `cargo test -p daw-bakery patch::sample_ref_content_hash`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::sample_ref_content_hash`
 
 ### AC-021 — The canvas honors the full patcher UI contract
 
@@ -229,42 +229,42 @@ Verify with: `pnpm test:run -- BakeryPatcherUiContract`
 
 A patch must never embed executable code (no JavaScript strings, no WASM bytes).
 
-Verify with: `cargo test -p daw-bakery patch::sharing_json_format`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::sharing_json_format`
 
 ### AC-023 — A loader opens any patch at or below its schema version
 
 A version-`N` loader must open any patch with `schemaVersion ≤ N`.
 
-Verify with: `cargo test -p daw-bakery patch::sharing_json_format`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::sharing_json_format`
 
 ### AC-024 — The module registry is verified at build time
 
 The module registry must be verified at build time against the set of Bakery
-wrappers, and a mismatch must fail CI.
+wrappers, and a mismatch must fail the guarded local check.
 
-Verify with: `cargo test -p daw-bakery registry::first_ship_catalog_complete`
+Verify with: `pnpm cargo:test -- -p daw-bakery registry::first_ship_catalog_complete`
 
 ### AC-025 — Compilation is deterministic
 
 Compilation must be deterministic: the same patch on the same engine version
 produces byte-identical `ProcessTask` output.
 
-Verify with: `cargo test -p daw-bakery compile::nine_stage_pipeline`
+Verify with: `pnpm cargo:test -- -p daw-bakery compile::nine_stage_pipeline`
 
 ### AC-026 — The reference patch records zero audio-thread allocations under soak
 
 A 60-second soak of the reference patch must record zero heap allocations on the
 audio thread.
 
-Verify with: `cargo bench -p daw-bakery --bench reference_patch_20x_realtime`
+Verify with: `pnpm cargo:bench -- -p daw-bakery --bench reference_patch_20x_realtime`
 
-### AC-027 — The patch JSON format has a checked-in schema enforced in CI
+### AC-027 — The patch JSON format has a checked-in schema enforced locally
 
 A JSON Schema document for the patch format must be checked into
-`docs/architecture/`, and a CI validator must run that schema against every
-committed sample patch — a sample patch that fails the schema fails CI. (AC-013
+`docs/architecture/`, and a guarded local validator must run that schema against every
+committed sample patch — a sample patch that fails the schema fails validation. (AC-013
 fixes the document's top-level shape; this AC owns the committed schema artifact
-plus its CI enforcement.)
+plus its local enforcement.)
 
 Verify with: `pnpm test:run -- BakeryPatchSchemaCi`
 
@@ -284,7 +284,7 @@ harness that runs both under the same track harness and asserts equivalent
 lifecycle events. (AC-017 covers performance parity only; this AC owns lifecycle
 equivalence.)
 
-Verify with: `cargo test -p daw-bakery device::lifecycle_equivalence_with_fermenter`
+Verify with: `pnpm cargo:test -- -p daw-bakery device::lifecycle_equivalence_with_fermenter`
 
 ### AC-030 — Hot-reload stays click-free under sustained cabling edits
 
@@ -293,7 +293,7 @@ the engine must not produce an output RMS discontinuity above 0.01 — any large
 discontinuity is a failure. (AC-006 covers the ArcSwap swap mechanism; this AC
 owns the quantified audio-stability gate.)
 
-Verify with: `cargo test -p daw-bakery compile::hot_reload_rms_discontinuity_gate`
+Verify with: `pnpm cargo:test -- -p daw-bakery compile::hot_reload_rms_discontinuity_gate`
 
 ### AC-031 — Every port type has a fixed user-facing color
 
@@ -309,7 +309,7 @@ Verify with: `pnpm test:run -- BakeryPortColors`
 A voice whose every envelope has released must early-exit on the first such block
 so its scheduled tasks cost nothing until a note-on reactivates the voice.
 
-Verify with: `cargo test -p daw-bakery voice::released_voice_zero_cost_early_exit`
+Verify with: `pnpm cargo:test -- -p daw-bakery voice::released_voice_zero_cost_early_exit`
 
 ### AC-033 — An audio-rate node in a Note Bakery fails to compile
 
@@ -317,7 +317,7 @@ Placing an audio-rate node in a Note Bakery must raise a compile-time error whos
 human-readable message names the offending node ID. (AC-002 fixes the Note role
 I/O contract; this AC owns the audio-rate-node rejection.)
 
-Verify with: `cargo test -p daw-bakery compile::note_bakery_rejects_audio_rate_node`
+Verify with: `pnpm cargo:test -- -p daw-bakery compile::note_bakery_rejects_audio_rate_node`
 
 ### AC-034 — A patch referencing an unknown module fails to load, atomically
 
@@ -326,11 +326,11 @@ an error naming the missing module(s), and the patch must not be partially loade
 (Distinct from AC-024's build-time registry check; this AC owns load-time graceful
 failure.)
 
-Verify with: `cargo test -p daw-bakery patch::unknown_module_load_fails_atomically`
+Verify with: `pnpm cargo:test -- -p daw-bakery patch::unknown_module_load_fails_atomically`
 
 ### AC-035 — The patcher holds 60 fps while dragging on a large patch
 
-Dragging a node on a 200-node patch must hold 60 fps on the CI baseline machine.
+Dragging a node on a 200-node patch must hold 60 fps on the declared baseline machine.
 
 Verify with: `pnpm test:run -- BakeryCanvasDragPerf`
 
@@ -341,7 +341,7 @@ during `process`, `Vec::push`/`resize`, or any path that can panic, and a clippy
 lint or doctest must enforce this surface-level. (AC-005 covers the runtime
 no-alloc assertion; this AC owns the static enforcement.)
 
-Verify with: `cargo clippy -p daw-bakery -- -D warnings`
+Verify with: `pnpm cargo:clippy -- -p daw-bakery -- -D warnings`
 
 ### AC-037 — The daw-bakery crate dependency direction is enforced
 
@@ -349,7 +349,7 @@ The `daw-bakery` crate must depend only on `daw-dsp` and `daw-core` and must
 never depend on `daw-engine` or `daw-io`; the audio engine may depend on
 `daw-bakery`, never the reverse.
 
-Verify with: `cargo test -p daw-bakery arch::dependency_direction`
+Verify with: `pnpm cargo:test -- -p daw-bakery arch::dependency_direction`
 
 ### AC-038 — The frontend boundary follows the module conventions
 
@@ -369,7 +369,7 @@ commands in `src-tauri`; parse patch JSON with Zod at the boundary and use no
 `any` except at an I/O boundary with immediate narrowing; and register modules in
 a compile-time static table (no runtime module import).
 
-Verify with: `pnpm lint`
+Verify with: `pnpm lint <changed-files>`
 
 ## Open questions
 

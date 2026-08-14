@@ -199,6 +199,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     commandBatchPreflightPort: { setProvider: noop },
     commandBatchPreviewPort: { setProvider: noop },
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
+    commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
@@ -229,11 +230,13 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHist
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
+    agentProjectInspectionPort: { setProvider: noop },
     captureProjectRevision: () => 'revision-1',
     createCommandPreviewWorkspace: noop,
     getCrdtDoc: noop,
     getDrumPreviewBranchHandlers: sentinelHandlers('DrumPreviewBranch'),
     initBranchState: initBranchStateMock,
+    inspectAgentProjectDivergence: noop,
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
     clearActionHistory: noop,

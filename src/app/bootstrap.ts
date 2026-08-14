@@ -68,6 +68,7 @@ import {
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
     commandProjectRevisionPort,
+    commandProjectDivergencePort,
     commandTrackDefaultsPort,
     setCommandEventBus,
     syncActionReplayMetadata,
@@ -75,8 +76,10 @@ import {
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
+    agentProjectInspectionPort,
     initBranchState,
     captureProjectRevision,
+    inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
@@ -173,6 +176,10 @@ setActionHistoryMetadataPort({
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
+    captureCommandBatchPreflightState({ assetReferences: [], projectDocument, targetIds })
+);
+commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(

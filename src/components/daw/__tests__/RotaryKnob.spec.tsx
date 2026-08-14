@@ -495,6 +495,45 @@ describe('RotaryKnob', () => {
         expect(onContextMenu).toHaveBeenCalledTimes(1);
     });
 
+    it('lets a single arrow keystroke escape the default on a bipolar knob', () => {
+        // Regression: the snap-home dead-zone was a fixed (max-min)*1% of range
+        // (±0.02 here) — larger than one keyboard step (0.01). ArrowUp computed
+        // 0.51, the clamp snapped it back to the 0.5 default, and the Object.is
+        // guard early-returned: arrow keys alone could never move such knobs
+        // off the default. Pointer drags escaped only because the raw delta
+        // accumulates past the zone.
+        const onChange = vi.fn();
+        const { container } = render(
+            <RotaryKnob value={0.5} onChange={onChange} bipolar min={-1} max={1} step={0.01} defaultValue={0.5} />
+        );
+        const root = getRoot(container);
+
+        fireEvent.keyDown(root, { key: 'ArrowUp' });
+
+        expect(onChange).toHaveBeenCalledWith(0.51, false);
+    });
+
+    it('still snaps a bipolar drag released near the default back home', () => {
+        // The dead-zone shrink must not break the original intent: releasing a
+        // drag near the default commits the default, not the quantized drift.
+        // Default 50.3 sits off the 0.5 grid, so a release quantizing to 50.5
+        // (0.2 away, inside the half-step zone) snaps home.
+        const onChange = vi.fn();
+        const { container } = render(
+            <RotaryKnob value={60} onChange={onChange} bipolar min={0} max={100} step={0.5} defaultValue={50.3} />
+        );
+        const root = getRoot(container);
+
+        // 14px down-sweep: raw = 60 - 14*(100/150) ≈ 50.67 → quantizes to 50.5
+        // → inside the snap zone → 50.3.
+        fireEvent.pointerDown(root, { button: 0, pointerId: 21, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 21, clientY: 114 });
+        expect(onChange).toHaveBeenLastCalledWith(50.3, true);
+
+        fireEvent.pointerUp(root, { pointerId: 21 });
+        expect(onChange).toHaveBeenLastCalledWith(50.3, false);
+    });
+
     it('should render bipolar arc when bipolar is enabled', () => {
         const { container } = render(
             <RotaryKnob value={25} onChange={vi.fn()} bipolar min={0} max={100} defaultValue={50} />

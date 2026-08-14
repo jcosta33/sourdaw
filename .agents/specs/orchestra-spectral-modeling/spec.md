@@ -31,28 +31,28 @@ attacks.
 When a sample is analyzed, the pipeline must produce partial tracks, a stochastic
 noise-residual envelope, and detected transient events as separate components.
 
-Verify with: `cargo test -p daw-dsp levain::sms::analysis_three_components`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::sms::analysis_three_components`
 
 ### AC-002 — Noise is modeled as a filtered stochastic term
 
 When resynthesizing the noise component, the engine must shape filtered noise by
 the stochastic envelope rather than approximating noise with many sinusoids.
 
-Verify with: `cargo test -p daw-dsp levain::sms::noise_is_stochastic`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::sms::noise_is_stochastic`
 
 ### AC-003 — Synthesis uses recursive oscillators, not per-sample sin()
 
 When resynthesizing partials, the oscillator bank must use recursive sin/cos
 updates rather than calling `sin()` per sample.
 
-Verify with: `cargo test -p daw-dsp levain::sms::recursive_oscillators`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::sms::recursive_oscillators`
 
 ### AC-004 — Transients are injected, not stretched
 
 When time-stretching, the engine must reinsert detected transient waveforms at
 their scheduled times rather than stretching them.
 
-Verify with: `cargo test -p daw-dsp levain::sms::transients_not_stretched`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::sms::transients_not_stretched`
 
 ## Open questions
 

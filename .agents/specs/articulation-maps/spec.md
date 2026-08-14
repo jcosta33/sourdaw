@@ -61,28 +61,28 @@ For a note at tick T with `preSendOffsetMs`, the generated keyswitch timestamp
 must equal `T − samples_for(preSendOffsetMs)`, falling back to
 `globalPreSendOffsetMs` when the per-articulation value is 0.
 
-Verify with: `cargo test -p daw-engine articulation::pre_send_offset`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::pre_send_offset`
 
 ### AC-006 — Articulation maps are shared lock-free to the audio thread
 
 The engine must read the active `ArticulationMap` via `arc_swap::ArcSwap` with
 no allocation or locking on the audio thread.
 
-Verify with: `cargo test -p daw-engine articulation::arc_swap_access`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::arc_swap_access`
 
 ### AC-007 — Hidden events are emitted in priority order
 
 Hidden events generated at the same sample offset must be ordered KS Off → KS
 On → CC → Note On.
 
-Verify with: `cargo test -p daw-engine articulation::preprocess_priority`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::preprocess_priority`
 
 ### AC-008 — Chase is O(log n) at any playback position
 
 `ChaseIndex::chase_at` for a 200-bar / 5,000-event project must complete in
 ≤ 1 ms p99 on the reference workstation.
 
-Verify with: `cargo bench -p daw-engine chase_at_mid_timeline`
+Verify with: `pnpm cargo:bench -- -p daw-engine chase_at_mid_timeline`
 
 ### AC-009 — Chase falls back to an explicit default per group
 
@@ -90,7 +90,7 @@ When no prior state is found for a group, chase must resolve to that group's
 `defaultArticulationId` (then the map-level `defaultDirectionId`, then no active
 direction) rather than reverting to the first slot.
 
-Verify with: `cargo test -p daw-engine articulation::default_chase`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::default_chase`
 
 ### AC-010 — Scrubbing debounces chase to at most once per gesture
 
@@ -99,7 +99,7 @@ second, the engine must execute chase at most once (after the playhead has been
 stationary for the configurable debounce interval, range 50–100 ms, default
 75 ms) and emit no articulation hidden events while scrubbing is in progress.
 
-Verify with: `cargo test -p daw-engine articulation::scrub_debounce_single_chase`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::scrub_debounce_single_chase`
 
 ### AC-011 — Channel-routing chase produces seek-invariant output
 
@@ -107,7 +107,7 @@ When an articulation change moves the output channel, the engine must produce a
 byte-identical emitted event sequence whether the position was reached by
 playback from tick 0 or by direct seek.
 
-Verify with: `cargo test -p daw-engine articulation::channel_chase_equivalence`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::channel_chase_equivalence`
 
 ### AC-012 — No cross-module internal imports
 
@@ -122,7 +122,7 @@ note-delay toggle (every note-on on a VEPro-routed channel delayed by exactly
 1 MIDI tick when enabled, 0 ticks when disabled) or by prioritizing Note-On
 keyswitches over CC switches. This is required.
 
-Verify with: `cargo test -p daw-engine articulation::vepro_compensation_toggle`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::vepro_compensation_toggle`
 
 ### AC-014 — Region splitting preserves articulation metadata
 
@@ -147,7 +147,7 @@ carries two articulations from the same exclusion group, the engine must log a
 structured warning and fall back to the group's `defaultArticulationId` rather
 than silently pick one. This contract must hold exactly.
 
-Verify with: `cargo test -p daw-engine articulation::overlap_cross_group`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::overlap_cross_group`
 
 ### AC-016 — Momentary keyswitch is suppressed in chase when not held at the playhead
 
@@ -155,7 +155,7 @@ A momentary keyswitch whose held duration ends before the playhead position
 must not appear in the engine's emitted event buffer when playback starts at
 that position. This is required.
 
-Verify with: `cargo test -p daw-engine articulation::chase_momentary_suppressed`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::chase_momentary_suppressed`
 
 ### AC-017 — Articulation-List toolbar and batch actions
 
@@ -200,7 +200,7 @@ Hidden events generated at the same sample offset must carry the explicit
 priority index values KS Off = 0, KS On = 1, CC = 2, Note On = 3 as the
 secondary sort key. This is required.
 
-Verify with: `cargo test -p daw-engine articulation::pending_events_deferral`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::pending_events_deferral`
 
 ### AC-022 — ArticulationMap version field round-trips
 
@@ -216,7 +216,7 @@ Keyswitches whose pre-send offset places them before the current buffer's start
 must be deferred via a `pending_events` buffer and emitted at sample offset 0 of
 the next buffer. This is required.
 
-Verify with: `cargo test -p daw-engine articulation::pending_events_deferral`
+Verify with: `pnpm cargo:test -- -p daw-engine articulation::pending_events_deferral`
 
 ### AC-024 — Per-output-card audible Test action
 

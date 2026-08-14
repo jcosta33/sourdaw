@@ -24,14 +24,6 @@ export type PullRequest = {
     headRefOid: string;
     headRepository: string | null;
     mergedAt: string | null;
-    body: string | null;
-};
-
-export type CampaignIssue = {
-    number: number;
-    state: string;
-    body: string;
-    labels: Array<{ name: string }>;
 };
 
 export type LaneRemovalPort = {
@@ -46,7 +38,6 @@ export type LaneRemovalPort = {
     operation: (path: string) => string | undefined;
     remoteHead: (branch: string) => string | undefined;
     pullRequests: (branch: string) => PullRequest[];
-    campaignIssues: (numbers: number[]) => CampaignIssue[];
     lock: (path: string) => void;
     unlock: (path: string) => void;
     remove: (path: string) => void;
@@ -64,18 +55,6 @@ function fail(message: string): never {
 function inside(parent: string, candidate: string): boolean {
     const path = relative(parent, candidate);
     return path === '' || (!path.startsWith('..') && !isAbsolute(path));
-}
-
-function issueReferences(body: string | null): number[] {
-    if (body === null) {
-        return [];
-    }
-    const references = [...body.matchAll(/#(\d+)\b|\/issues\/(\d+)\b/g)].map((match) => Number(match[1] ?? match[2]));
-    return [...new Set(references.filter((number) => Number.isSafeInteger(number) && number > 0))];
-}
-
-function mentions(body: string, number: number): boolean {
-    return new RegExp(`(?:^|\\D)#${number}(?!\\d)`).test(body);
 }
 
 function disposableIgnored(path: string): boolean {
@@ -156,7 +135,6 @@ type OwnershipSnapshot = {
     branch: string;
     ignored: string[];
     pullRequest: number;
-    campaign: number;
     remoteHead?: string;
 };
 
@@ -212,21 +190,6 @@ function validateOwnership(
     if (pullRequest.state !== 'MERGED' || pullRequest.mergedAt === null || pullRequest.isDraft) {
         fail(`PR #${pullRequest.number} is still active`);
     }
-    const campaigns = port
-        .campaignIssues(issueReferences(pullRequest.body))
-        .filter(
-            (issue) =>
-                issue.state === 'CLOSED' &&
-                issue.labels.some((label) => label.name === 'epic') &&
-                mentions(issue.body, pullRequest.number)
-        );
-    if (campaigns.length !== 1) {
-        fail(`PR #${pullRequest.number} has no closed campaign authority`);
-    }
-    const campaign = campaigns[0];
-    if (campaign === undefined) {
-        fail(`PR #${pullRequest.number} has no closed campaign authority`);
-    }
     const remoteHead = port.remoteHead(branch);
     if (
         pullRequest.headRefName !== branch ||
@@ -243,7 +206,6 @@ function validateOwnership(
         branch,
         ignored: [...ignored].sort(),
         pullRequest: pullRequest.number,
-        campaign: campaign.number,
         remoteHead,
     };
 }
@@ -377,7 +339,6 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                         draft: boolean;
                         head: { ref: string; sha: string; repo: { full_name: string } | null };
                         merged_at: string | null;
-                        body: string | null;
                     }>
                 >
             >(
@@ -397,16 +358,8 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                 headRefOid: pullRequest.head.sha,
                 headRepository: pullRequest.head.repo?.full_name ?? null,
                 mergedAt: pullRequest.merged_at,
-                body: pullRequest.body,
             }));
         },
-        campaignIssues: (numbers) =>
-            numbers.map((number) =>
-                parseJson<CampaignIssue>(
-                    shell.capture('gh', ['issue', 'view', String(number), '--json', 'number,state,body,labels']),
-                    `issue #${number}`
-                )
-            ),
         lock: (path) => shell.run('git', ['worktree', 'lock', '--reason', `lane-remove:${process.pid}`, path]),
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
@@ -417,11 +370,14 @@ function main(): number {
     try {
         const args = process.argv.slice(2);
         if (args[0] === '--help' && args.length === 1) {
-            console.log('Usage: pnpm lane:remove <worktree-path>');
+            console.log('Usage: node --experimental-strip-types scripts/removeLane.ts <worktree-path>');
+            console.log('');
+            console.log('Removes a spent agent worktree. The lane must be clean, unlocked, idle, and');
+            console.log('hold the merged head of exactly one pull request in this repository.');
             return 0;
         }
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
-            fail('usage: pnpm lane:remove <worktree-path>');
+            fail('usage: node --experimental-strip-types scripts/removeLane.ts <worktree-path>');
         }
         removeLane(realpathSync(resolve(process.cwd(), args[0])), shellPort());
         return 0;

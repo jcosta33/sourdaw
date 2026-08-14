@@ -78,8 +78,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
+    clearUndoHistory: vi.fn(),
 }));
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({
