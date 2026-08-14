@@ -114,11 +114,11 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 
 ### When to use which
 
-| Subject under test                                              | Mock its deps with                                                                              |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                                             |
-| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                                      |
-| Thin static same-module repos used by an injectable             | `vi.mock` on those repo modules is OK when they are not in the inject map                        |
+| Subject under test                                              | Mock its deps with                                                        |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                       |
+| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                |
+| Thin static same-module repos used by an injectable             | `vi.mock` on those repo modules is OK when they are not in the inject map |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
 
@@ -180,10 +180,7 @@ describe('addTrack', () => {
 
         expect(result).not.toBeNull();
         expect(setTrackState).toHaveBeenCalled();
-        expect(eventBus.emit).toHaveBeenCalledWith(
-            'track.added',
-            expect.objectContaining({ name: 'Drums' })
-        );
+        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
     });
 });
 ```
@@ -684,14 +681,16 @@ Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in f
 
 ## 9. Running tests
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm test` | Vitest watch mode for active development |
-| `pnpm test:run <target>` | Focused single run; a file or narrow directory is required |
-| `pnpm test:full` | Full Vitest suite; run only when explicitly requested |
-| `pnpm test:coverage` | Full Vitest run with **v8** coverage; run only when explicitly requested |
-| `pnpm typecheck:test` | Spec-inclusive type check (`tsconfig.test.json`) |
-| `pnpm cargo:test -- -p <crate> <filter>` | Run affected Rust tests in debug mode |
+| Command                                  | Purpose                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| `pnpm test:watch`                        | Vitest watch mode for active development                                 |
+| `pnpm test:run <target>`                 | Focused single run; a file or narrow directory is required               |
+| `pnpm test:full`                         | Full Vitest suite; run only when explicitly requested                    |
+| `pnpm test:coverage`                     | Full Vitest run with **v8** coverage; run only when explicitly requested |
+| `pnpm test:e2e <spec>`                   | Run one affected Playwright spec                                         |
+| `pnpm test:e2e:full`                     | Full Playwright suite; run only when explicitly requested                |
+| `pnpm typecheck:test`                    | Spec-inclusive type check (`tsconfig.test.json`)                         |
+| `pnpm cargo:test -- -p <crate> <filter>` | Run affected Rust tests in debug mode                                    |
 
 Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
 coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
