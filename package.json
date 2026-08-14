@@ -24,7 +24,6 @@
         "test:e2e": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended --require-target -- playwright test",
         "test:e2e:full": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- playwright test",
         "deliver": "node --experimental-strip-types scripts/deliverPullRequest.ts",
-        "lane:remove": "node --experimental-strip-types scripts/removeLane.ts",
         "audio:deadline": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/measureRenderDeadline.ts",
         "transport:clock": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/measureTransportClock.ts",
         "transport:yeast-drift": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/measureYeastGeneratorDrift.ts",

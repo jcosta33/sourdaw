@@ -83,7 +83,8 @@ One change, one worktree. Never implement or review mutable work in the shared r
 Create its lane from `origin/main` and lock it with
 `git worktree lock --reason active:<owner> <path>`. Touch only your lane. Never disturb another
 owner’s worktree or changes. A merged PR means its worktree is dead: unlock it and immediately run
-`pnpm lane:remove <path>` from elsewhere. Delete the local branch if the remover leaves it behind.
+`node --experimental-strip-types scripts/removeLane.ts <path>` from elsewhere. Delete the local
+branch if the remover leaves it behind.
 
 ## Artifacts
 

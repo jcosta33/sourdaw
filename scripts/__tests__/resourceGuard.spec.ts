@@ -395,7 +395,7 @@ describe('resource CLI', () => {
         const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
-        const exempt = new Set(['deliver', 'dev', 'dev:no-hmr', 'lane:remove', 'preview', 'tauri:dev', 'wasm:all']);
+        const exempt = new Set(['deliver', 'dev', 'dev:no-hmr', 'preview', 'tauri:dev', 'wasm:all']);
 
         for (const [name, command] of Object.entries(packageJson.scripts)) {
             if (!exempt.has(name)) {
