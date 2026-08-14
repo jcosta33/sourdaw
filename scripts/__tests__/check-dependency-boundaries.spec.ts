@@ -940,6 +940,100 @@ describe('check-dependency-boundaries', () => {
         }
     });
 
+    it('should refuse CommonJS reached by declaration, import-equals, or the global object', () => {
+        const { repositoryDirectory, repositoryRoot, useCaseDirectory } = createCommonJsStaticGuardFixture(
+            'check-dependency-boundaries-commonjs-evasion-'
+        );
+
+        try {
+            writeFixtureFiles(repositoryDirectory, {
+                // A `declare` binds the name to the ambient runtime and emits nothing, so it is the
+                // thing being refused rather than a local that shadows it.
+                'declared-require.ts': [
+                    'declare const require: (name: string) => Record<string, unknown>;',
+                    "export const loaded = require('node:path');",
+                ],
+                'declared-module.ts': [
+                    'declare const module: { exports: Record<string, unknown> };',
+                    'module.exports = { value: 1 };',
+                ],
+                // The parser turns this into an external module reference, so there is no `require`
+                // identifier anywhere in the tree for the identifier walk to see.
+                'import-equals.cts': ["import loader = require('node:path');", 'export = loader;'],
+                // Reaching the same runtime through the global object rather than by bare name.
+                'global-require.ts': ["export const loaded = globalThis.require('node:path');"],
+                'global-module.ts': ['globalThis.module.exports = { value: 1 };'],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-evasion.ts': ['export const consumed = true;'],
+            });
+
+            const findings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('CommonJS')
+            );
+
+            // Line 1 of each `declare` file names the declaration; the finding lands on the line that
+            // reads it. The other three are single-line files.
+            expect(findings).toEqual([
+                commonJsSurfaceFinding('src/modules/Foo/repositories/declared-module.ts', 2),
+                commonJsSurfaceFinding('src/modules/Foo/repositories/declared-require.ts', 2),
+                commonJsSurfaceFinding('src/modules/Foo/repositories/global-module.ts', 1),
+                commonJsSurfaceFinding('src/modules/Foo/repositories/global-require.ts', 1),
+                commonJsSurfaceFinding('src/modules/Foo/repositories/import-equals.cts', 1),
+            ]);
+        } finally {
+            rmSync(repositoryRoot, { force: true, recursive: true });
+        }
+    });
+
+    it('should refuse a symbolic link that hides source anywhere under src', () => {
+        const { repositoryDirectory, repositoryRoot, useCaseDirectory } = createCommonJsStaticGuardFixture(
+            'check-dependency-boundaries-symlink-scope-'
+        );
+
+        try {
+            const outsideDirectory = join(repositoryRoot, 'outside');
+            mkdirSync(outsideDirectory, { recursive: true });
+            mkdirSync(join(repositoryRoot, 'src/utils'), { recursive: true });
+            mkdirSync(join(repositoryRoot, 'src/components'), { recursive: true });
+            writeFixtureFiles(outsideDirectory, {
+                'legacy.cjs': ['const helper = {};', 'module.exports = helper;'],
+                'NOTES.md': '# notes\n',
+            });
+            // The walk records a link and does not follow it, so neither of the first two targets is
+            // ever opened. The documentation link hides nothing and stays clean.
+            symlinkSync(join(outsideDirectory, 'legacy.cjs'), join(repositoryRoot, 'src/utils/legacy.cjs'));
+            symlinkSync(outsideDirectory, join(repositoryRoot, 'src/utils/vendor'));
+            symlinkSync(join(outsideDirectory, 'NOTES.md'), join(repositoryRoot, 'src/components/NOTES.md'));
+            writeFixtureFiles(repositoryDirectory, { 'clean.ts': ['export const clean = true;'] });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-clean.ts': [
+                    "import { clean } from '../repositories/clean';",
+                    'export const consumed = clean;',
+                ],
+            });
+
+            const findings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('symbolic link')
+            );
+
+            expect(findings).toEqual([
+                {
+                    file: 'src/utils/legacy.cjs',
+                    line: 1,
+                    reason: 'symbolic link hides source under src from the dependency guard',
+                },
+                {
+                    file: 'src/utils/vendor',
+                    line: 1,
+                    reason: 'symbolic link hides source under src from the dependency guard',
+                },
+            ]);
+        } finally {
+            rmSync(repositoryRoot, { force: true, recursive: true });
+        }
+    });
+
     it('should follow signatures of third-party and project types that carry a vendor type', () => {
         let repositoryRoot: string | undefined;
 

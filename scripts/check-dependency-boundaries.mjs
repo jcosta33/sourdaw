@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +23,7 @@ const sourceFilePath = new RegExp(SOURCE_FILE_RE, 'i');
 const moduleRootRepositoryPath = /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/repositories(?:\/|$)/;
 const tauriBridgeModulePath = /(?:^|\/)utils\/tauriBridge(?:\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx))?$/i;
 const commonJsRuntimeNames = new Set(['exports', 'module', 'require']);
+const globalObjectNames = new Set(['global', 'globalThis', 'self', 'window']);
 const commonJsSurfaceReason = 'CommonJS module, exports, and require are not available under src';
 
 const gates = {
@@ -364,21 +365,48 @@ function referencedSymbol(context, node) {
     return symbolAtLocation(context, node);
 }
 
-// A CommonJS runtime name that resolves to nothing, or to a declaration outside this file, is the
-// ambient one. Only a declaration here — an import, a parameter, a local binding, a member name —
-// means the identifier is something else and the file is clean.
-function isAmbientIdentifier(context, sourceFile, node) {
-    const symbol = referencedSymbol(context, node);
-    return !(symbol?.declarations ?? []).some(
-        (declaration) => declaration.getSourceFile() === sourceFile && ts.isDeclaration(declaration)
+// A `declare const require` emits nothing and binds the name to the ambient CommonJS runtime, so it
+// is the thing being refused rather than a local that shadows it. Only a declaration this file
+// actually emits — an import, a parameter, a binding, a member — means the identifier is something
+// else.
+function shadowsCommonJsRuntime(sourceFile, declaration) {
+    return (
+        declaration.getSourceFile() === sourceFile &&
+        ts.isDeclaration(declaration) &&
+        (declaration.flags & ts.NodeFlags.Ambient) === 0
     );
 }
 
-// `foo.module` and `Foo.exports` name a member of something else entirely.
+// A CommonJS runtime name that resolves to nothing, or to a declaration outside this file, is the
+// ambient one.
+function isAmbientIdentifier(context, sourceFile, node) {
+    const symbol = referencedSymbol(context, node);
+    return !(symbol?.declarations ?? []).some((declaration) => shadowsCommonJsRuntime(sourceFile, declaration));
+}
+
+// A declaration's own name introduces the identifier instead of reading it, so `interface Options {
+// module: string }` and `const exports = instance.exports` are both clean at the name itself. This
+// is what keeps an ambient `.d.ts` from reporting the very names it declares.
+function isDeclarationNamePosition(node) {
+    const { parent } = node;
+    // A shorthand `{ exports }` is the one declaration name that is also a read of the value, which
+    // is why `referencedSymbol` asks the checker for that value rather than for the property.
+    if (ts.isShorthandPropertyAssignment(parent)) {
+        return false;
+    }
+    return ts.isDeclaration(parent) && parent.name === node;
+}
+
+function isGlobalObjectReference(expression) {
+    return ts.isIdentifier(expression) && globalObjectNames.has(expression.text);
+}
+
+// `foo.module` and `Foo.exports` name a member of something else entirely — but `globalThis.require`
+// is the CommonJS runtime itself, reached through the global object rather than by bare name.
 function isMemberNamePosition(node) {
     const { parent } = node;
     if (ts.isPropertyAccessExpression(parent)) {
-        return parent.name === node;
+        return parent.name === node && !isGlobalObjectReference(parent.expression);
     }
     if (ts.isQualifiedName(parent)) {
         return parent.right === node;
@@ -397,20 +425,29 @@ function isMemberNamePosition(node) {
 function findCommonJsSurfaceFindings({ checker, repositoryRoot, sourceFile }) {
     const context = { checker };
     const findings = new Map();
+    const report = (node) => {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        const finding = {
+            file: repositoryRelativePath(repositoryRoot, sourceFile.fileName),
+            line: line + 1,
+            reason: commonJsSurfaceReason,
+        };
+        findings.set(`${finding.file}:${finding.line}`, finding);
+    };
     const visit = (node) => {
-        if (
+        // `import loader = require('node:path')` is the canonical TypeScript spelling and it holds no
+        // `require` identifier at all: the parser turns the call into an external module reference,
+        // so the identifier walk below can never see it.
+        if (ts.isExternalModuleReference(node)) {
+            report(node.parent);
+        } else if (
             ts.isIdentifier(node) &&
             commonJsRuntimeNames.has(node.text) &&
+            !isDeclarationNamePosition(node) &&
             !isMemberNamePosition(node) &&
             isAmbientIdentifier(context, sourceFile, node)
         ) {
-            const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-            const finding = {
-                file: repositoryRelativePath(repositoryRoot, sourceFile.fileName),
-                line: line + 1,
-                reason: commonJsSurfaceReason,
-            };
-            findings.set(`${finding.file}:${finding.line}`, finding);
+            report(node);
         }
         ts.forEachChild(node, visit);
     };
@@ -1233,14 +1270,7 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
                     seenSymbols
                 );
             }
-            collectVendorModulesFromType(
-                context,
-                signature.getReturnType(),
-                location,
-                modules,
-                seenTypes,
-                seenSymbols
-            );
+            collectVendorModulesFromType(context, signature.getReturnType(), location, modules, seenTypes, seenSymbols);
             for (const typeParameter of signature.typeParameters ?? []) {
                 collectVendorModulesFromSymbol(
                     context,
@@ -1465,6 +1495,21 @@ function walkFiles(directory, symlinkPaths = []) {
     return files.sort(comparePaths);
 }
 
+// `walkFiles` records a symbolic link and does not follow it, so a linked source file or a linked
+// directory keeps everything behind it out of every check below. Under `src/modules` links are
+// refused outright; elsewhere under `src` only the ones that hide source matter, which leaves the
+// documentation links that sit beside a component alone.
+function hidesSourceFromTheWalk(absolutePath, file) {
+    if (sourceFilePath.test(file)) {
+        return true;
+    }
+    try {
+        return statSync(absolutePath).isDirectory();
+    } catch {
+        return false;
+    }
+}
+
 export function findStaticGuardFindings(repositoryRoot = root) {
     const symlinkPaths = [];
     const allSourcePaths = walkFiles(resolve(repositoryRoot, 'src'), symlinkPaths);
@@ -1474,13 +1519,16 @@ export function findStaticGuardFindings(repositoryRoot = root) {
             absolutePath,
             repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
         }));
-    const symlinkFindings = symlinkPaths
-        .filter((absolutePath) => /^src\/modules(?:\/|$)/.test(toPosixPath(relative(repositoryRoot, absolutePath))))
-        .map((absolutePath) => ({
-            file: toPosixPath(relative(repositoryRoot, absolutePath)),
-            line: 1,
-            reason: 'symbolic links are not permitted under src/modules',
-        }));
+    const symlinkFindings = symlinkPaths.flatMap((absolutePath) => {
+        const file = toPosixPath(relative(repositoryRoot, absolutePath));
+        if (/^src\/modules(?:\/|$)/.test(file)) {
+            return [{ file, line: 1, reason: 'symbolic links are not permitted under src/modules' }];
+        }
+        if (!hidesSourceFromTheWalk(absolutePath, file)) {
+            return [];
+        }
+        return [{ file, line: 1, reason: 'symbolic link hides source under src from the dependency guard' }];
+    });
     const rootIndexes = files
         .map(({ repoPath }) => repoPath)
         .filter(isModuleRootIndex)
