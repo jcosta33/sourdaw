@@ -369,14 +369,25 @@ describe('resource CLI', () => {
         );
     });
 
-    it('requires targets for focused test and Cargo scripts', () => {
+    it('requires targets for focused repository commands', () => {
         const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
 
-        for (const script of ['test:run', 'cargo:test', 'cargo:check', 'cargo:clippy', 'cargo:bench', 'cargo:fuzz']) {
+        for (const script of [
+            'test:run',
+            'test:e2e',
+            'format',
+            'cargo:fmt',
+            'cargo:test',
+            'cargo:check',
+            'cargo:clippy',
+            'cargo:bench',
+            'cargo:fuzz',
+        ]) {
             expect(packageJson.scripts[script]).toContain('--require-target');
         }
+        expect(packageJson.scripts.format).toMatch(/prettier --write --$/);
         expect(() => parseCliArgs(['--profile', 'focused', '--require-target', '--', 'vitest', 'run'])).not.toThrow();
     });
 
@@ -384,16 +395,7 @@ describe('resource CLI', () => {
         const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
-        const exempt = new Set([
-            'deliver',
-            'dev',
-            'dev:no-hmr',
-            'lane:remove',
-            'preview',
-            'tauri:dev',
-            'verify:change',
-            'wasm:all',
-        ]);
+        const exempt = new Set(['deliver', 'dev', 'dev:no-hmr', 'lane:remove', 'preview', 'tauri:dev', 'wasm:all']);
 
         for (const [name, command] of Object.entries(packageJson.scripts)) {
             if (!exempt.has(name)) {

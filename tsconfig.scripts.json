@@ -18,11 +18,8 @@
     "extends": "./scripts/tsconfig.json",
     "include": ["scripts"],
     "exclude": [
-        "scripts/__tests__/layoutPrimitivesCensus.spec.ts", // 83
         "scripts/download-levain-samples-direct.ts", // 27
         "scripts/download-levain-samples.ts", // 25
-        "scripts/generate-missing-use-case-specs.ts", // 12
-        "scripts/__tests__/check-dependency-boundaries.spec.ts", // 11
-        "scripts/layoutPrimitivesCensus.ts" // 10
+        "scripts/__tests__/check-dependency-boundaries.spec.ts" // 11
     ]
 }
