@@ -683,7 +683,7 @@ export type AppAction =
           payload: { clipId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
       }
     | { type: 'removeAllTracks'; payload?: undefined }
-    | { type: 'renameTrack'; payload: { trackId: string; name: string } }
+    | { type: 'renameTrack'; payload: { trackId: string; name: string; expectedName?: string } }
     | {
           type: 'createTrackAlternative';
           payload: { trackId: string; name: string; duplicateActive: boolean; alternativeId?: string };
@@ -1761,6 +1761,8 @@ type ActionHandlerCommon<Action extends AppAction> = {
     describe: (action: Action) => HandlerDescribeResult;
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
+    /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */
+    canReapplyAfterDivergence?: (action: Action) => boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action) => void;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */

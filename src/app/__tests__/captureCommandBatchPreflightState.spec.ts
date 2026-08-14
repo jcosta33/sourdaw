@@ -253,6 +253,32 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.audioGraphValid).toBe(false);
     });
 
+    it('rejects invalid raw transport truth instead of validating its sanitized projection', () => {
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-vocal',
+                            kind: 'audio',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+                transport: { tempo: Number.POSITIVE_INFINITY },
+            },
+            targetIds: [],
+        });
+
+        expect(state).toMatchObject({ audioGraphValid: false, projectInvariantsValid: false });
+    });
+
     it('rejects a staged output target that cannot compile to an audio node', () => {
         const state = captureCommandBatchPreflightState({
             assetReferences: [],

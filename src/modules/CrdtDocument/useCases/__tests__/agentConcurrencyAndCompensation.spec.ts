@@ -6,9 +6,11 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
+    commandBatchPreviewPort,
     commandProjectDivergencePort,
     commandProjectRevisionPort,
     clearUndoHistory,
@@ -26,6 +28,7 @@ import { agentProjectRepairStateStore } from '../../stores/agentProjectRepairSta
 import { agentProjectInspectionPort } from '../agentProjectInspectionPort';
 import { captureProjectRevision } from '../captureProjectRevision';
 import { classifyAgentProjectDivergence } from '../classifyAgentProjectDivergence';
+import { createCommandPreviewWorkspace } from '../createCommandPreviewWorkspace';
 import { findAutomergeProjectConflicts } from '../findAutomergeProjectConflicts';
 import { inspectAgentProjectDivergence } from '../inspectAgentProjectDivergence';
 import { projectCrdtToStores } from '../projection/projectProjection';
@@ -54,6 +57,7 @@ type TestProjectDocument = {
     binary: Uint8Array;
     projectInvariantsValid: boolean;
     targets: Record<string, TargetState>;
+    transport: { tempo: number };
 };
 
 function inspectTestProject(input: {
@@ -66,6 +70,9 @@ function inspectTestProject(input: {
         projectInvariantsValid: document.projectInvariantsValid,
         targetFingerprints: Object.fromEntries(
             input.targetIds.flatMap((targetId) => {
+                if (targetId === '@project/transport/tempo') {
+                    return [[targetId, JSON.stringify(document.transport.tempo)]];
+                }
                 const target = document.targets[targetId];
                 return target ? [[targetId, JSON.stringify(target)]] : [];
             })
@@ -83,6 +90,7 @@ function seedProject(): void {
             'track-bass': { gain: 0.8, id: 'track-bass', name: 'Bass' },
             'track-drums': { gain: 0.8, id: 'track-drums', name: 'Drums' },
         };
+        draft.transport = { tempo: 120 };
     });
 }
 
@@ -114,7 +122,10 @@ function registerTargetGainHandler(
                 });
                 return { status: 'written' };
             },
+            previewExecution: 'isolated-project',
+            requiresAbortCompensation: false,
             undoable: true,
+            canReapplyAfterDivergence: () => true,
             validate: (action: Extract<AppAction, { type: 'setTrackGain' }>) =>
                 targetStorage.get()?.[action.payload.trackId]?.gain === action.payload.expectedGain,
         },
@@ -160,6 +171,7 @@ describe('agent concurrency and compensation', () => {
         configureAutomergeStoragePort(null);
         agentProjectInspectionPort.setProvider(inspectTestProject);
         commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
+        commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
             const document = projectDocument ?? automergeRepository.getDoc<Record<string, unknown>>('root');
@@ -184,6 +196,7 @@ describe('agent concurrency and compensation', () => {
         clearHandlerRegistry();
         clearUndoHistory();
         commandProjectDivergencePort.setProvider(null);
+        commandBatchPreviewPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         commandBatchPreflightPort.setProvider(null);
         agentProjectInspectionPort.setProvider(null);
@@ -386,6 +399,109 @@ describe('agent concurrency and compensation', () => {
         });
     });
 
+    it('previews a compatible stale command against current truth without touching the live project', async () => {
+        const { command, targetStorage } = prepareTargetCommand();
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.targets['track-bass']!.name = 'Bass Guitar';
+        });
+        targetStorage.hydrate?.();
+        const compiled = compileVersionedCommandBatchEnvelope({
+            baseRevision: command.normalizedProjectRevision,
+            batchId: 'batch-compatible-preview',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview Bass rebalance.',
+            mode: 'preview',
+            projectId: 'project-test',
+            runId: 'run-compatible-preview',
+        });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.authority,
+            serialized: compiled.serialized,
+        });
+
+        expect(result).toMatchObject({
+            divergence: { kind: 'compatible-same-object', mayReapply: true },
+            projectDocument: {
+                targets: {
+                    'track-bass': { gain: 0.6, id: 'track-bass', name: 'Bass Guitar' },
+                },
+            },
+            status: 'previewed',
+        });
+        expect(targetStorage.get()?.['track-bass']).toMatchObject({ gain: 0.8, name: 'Bass Guitar' });
+        if (result.status === 'previewed') {
+            result.resource.release();
+        }
+    });
+
+    it('refuses same-object stale reapply without an explicit per-action compatibility proof', async () => {
+        const { command, targetStorage } = prepareTargetCommand();
+        clearHandlerRegistry();
+        registerHandlerMap({
+            setTrackGain: {
+                describe: () => ({ inverseAction: null, label: 'Unsafe gain write' }),
+                execute: vi.fn(() => {
+                    throw new Error('must not execute');
+                }),
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.targets['track-bass']!.name = 'Bass Guitar';
+        });
+        targetStorage.hydrate?.();
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+
+        expect(result).toMatchObject({
+            divergence: { kind: 'ambiguous-same-object', mayReapply: false },
+            status: 'conflicted',
+        });
+        expect(targetStorage.get()?.['track-bass']).toMatchObject({ gain: 0.8, name: 'Bass Guitar' });
+    });
+
+    it('treats global tempo as a project-slot target instead of non-overlapping state', async () => {
+        seedProject();
+        registerCrdtStorageRuntime();
+        const execute = vi.fn();
+        registerHandlerMap({
+            setTempo: {
+                describe: () => ({ inverseAction: null, label: 'Set tempo' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const baseRevision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: { type: 'setTempo', payload: { bpm: 100 } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Set tempo.',
+            normalizedProjectRevision: baseRevision,
+            objectReferences: [],
+            parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+            reason: 'Change tempo.',
+            time: [],
+        });
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.transport.tempo = 90;
+        });
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command)],
+        });
+
+        expect(result).toMatchObject({
+            divergence: { kind: 'ambiguous-same-object', mayReapply: false },
+            status: 'conflicted',
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
     it('rejects ambiguous stale commands before any project write', async () => {
         const { command, targetStorage } = prepareTargetCommand();
 
@@ -468,6 +584,20 @@ describe('agent concurrency and compensation', () => {
         projectCrdtToStores();
         expect(agentProjectRepairStateStore.value).toBeNull();
         expect(projectionMocks.hydrate).toHaveBeenCalledOnce();
+    });
+
+    it('resets stale projection caches before quarantining an invalid project load', () => {
+        seedProject();
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.audioGraphValid = false;
+            draft.projectInvariantsValid = false;
+        });
+        const reset = vi.spyOn(automergeStorage, 'resetAutomergeStorageProjections');
+
+        projectCrdtToStores({ resetProjections: true });
+
+        expect(reset).toHaveBeenCalledWith('root');
+        expect(projectionMocks.hydrate).not.toHaveBeenCalled();
     });
 
     it('fails closed when merged project inspection is unavailable', () => {

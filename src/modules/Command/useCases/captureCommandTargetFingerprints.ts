@@ -1,3 +1,5 @@
+import { COMMAND_TEMPO_TARGET_ID, COMMAND_TIME_SIGNATURE_TARGET_ID } from './getCommandDivergenceTargetIds';
+
 type CaptureCommandTargetFingerprintsInput = {
     document: unknown;
     targetIds: readonly string[];
@@ -73,6 +75,25 @@ export function captureCommandTargetFingerprints(
 ): Readonly<Record<string, string>> {
     const fingerprintMatches = new Map<string, string[]>();
     collectTargetFingerprints(input.document, new Set(input.targetIds), fingerprintMatches, new WeakSet<object>());
+    if (isRecord(input.document) && isRecord(input.document.transport)) {
+        if (input.targetIds.includes(COMMAND_TEMPO_TARGET_ID)) {
+            appendFingerprint(
+                fingerprintMatches,
+                COMMAND_TEMPO_TARGET_ID,
+                stableStringify(input.document.transport.tempo)
+            );
+        }
+        if (input.targetIds.includes(COMMAND_TIME_SIGNATURE_TARGET_ID)) {
+            appendFingerprint(
+                fingerprintMatches,
+                COMMAND_TIME_SIGNATURE_TARGET_ID,
+                stableStringify({
+                    denominator: input.document.transport.timeSignatureDenominator,
+                    numerator: input.document.transport.timeSignatureNumerator,
+                })
+            );
+        }
+    }
     return Object.fromEntries(
         [...fingerprintMatches].map(([targetId, matches]) => [targetId, JSON.stringify(matches.sort())])
     );

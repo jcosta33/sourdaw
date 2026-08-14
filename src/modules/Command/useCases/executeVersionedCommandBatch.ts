@@ -7,6 +7,8 @@ import { commandProjectDivergencePort } from './commandProjectDivergencePort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { getCommandDivergenceTargetIds } from './getCommandDivergenceTargetIds';
+import { getCommandHandler } from './getCommandHandler';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { hasCurrentCommandDeviceVersions } from './hasCurrentCommandDeviceVersions';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
@@ -80,12 +82,16 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
     const actions = envelopes.map(
         (envelope) => ({ type: envelope.operation, payload: envelope.arguments }) as AppAction
     );
-    const targetIds = [
-        ...new Set(
+    const targetIds = getCommandDivergenceTargetIds({
+        actions,
+        targetIds:
             input.divergenceTargetIds ??
-                envelopes.flatMap((envelope) => envelope.objectReferences.map((reference) => reference.id))
-        ),
-    ];
+            envelopes.flatMap((envelope) => envelope.objectReferences.map((reference) => reference.id)),
+    });
+    const commandsCompatible = actions.every((action) => {
+        const handler = getCommandHandler(action);
+        return handler?.canReapplyAfterDivergence?.(action) === true;
+    });
     const divergenceState: {
         current: ReturnType<typeof commandProjectDivergencePort.classify>;
     } = { current: null };
@@ -111,7 +117,7 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
                 }
                 divergenceState.current = commandProjectDivergencePort.classify({
                     baseRevision: batchRevision,
-                    commandsCompatible: true,
+                    commandsCompatible,
                     targetIds,
                 });
                 if (!divergenceState.current?.mayReapply) {

@@ -22,15 +22,14 @@ type ProjectCrdtToStoresInput = {
 };
 
 export function projectCrdtToStores({ resetProjections = false }: ProjectCrdtToStoresInput = {}): void {
+    if (resetProjections) {
+        resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
+    }
     const repairState = inspectCurrentAgentProjectRepairState();
     agentProjectRepairStateStore.set(repairState);
     if (repairState) {
         return;
     }
-    if (resetProjections) {
-        resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
-    }
-
     for (const projection of projectSlotProjections) {
         projection.hydrate();
     }

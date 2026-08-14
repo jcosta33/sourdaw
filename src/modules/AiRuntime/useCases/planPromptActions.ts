@@ -1,3 +1,4 @@
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
@@ -16,6 +17,11 @@ type PlanPromptActionsInput = {
 };
 
 export async function planPromptActions(input: PlanPromptActionsInput) {
+    if (agentProjectRepairStateStore.value) {
+        throw new AiProposalInvalidatedError(
+            'The project contains unresolved collaborative state. Repair it before requesting an AI proposal.'
+        );
+    }
     const projectRevision = captureProjectRevision();
     const context = getProjectContext();
     let stemImportScope: StemImportPromptScope | undefined;

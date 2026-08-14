@@ -4,10 +4,15 @@ const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'rev-1'),
     getProjectContext: vi.fn(() => ({ tracks: [] })),
     parsePromptToActions: vi.fn(),
+    repairStateStore: { value: null as null | { status: 'repair-required' } },
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+}));
+
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: mocks.repairStateStore,
 }));
 
 vi.mock('../getProjectContext', () => ({
@@ -22,6 +27,14 @@ import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedEr
 import { planPromptActions } from '../planPromptActions';
 
 describe('planPromptActions', () => {
+    it('refuses to expose stale projected state to the model while raw truth requires repair', async () => {
+        mocks.repairStateStore.value = { status: 'repair-required' };
+
+        await expect(planPromptActions({ prompt: 'change the mix' })).rejects.toThrow(AiProposalInvalidatedError);
+        expect(mocks.getProjectContext).not.toHaveBeenCalled();
+        expect(mocks.parsePromptToActions).not.toHaveBeenCalled();
+        mocks.repairStateStore.value = null;
+    });
     it('returns the parsed actions when the project revision is unchanged', async () => {
         mocks.captureProjectRevision.mockReturnValue('rev-1');
         mocks.parsePromptToActions.mockResolvedValue({ actions: [{ type: 'testAction' }], raw: 'parsed' });
