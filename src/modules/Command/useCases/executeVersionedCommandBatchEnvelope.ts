@@ -2,6 +2,8 @@ import { type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvelope';
 
+import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
@@ -26,14 +28,37 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (parsed.envelope.mode === 'preview') {
         return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
+    let observedBaseRevision: string | null = null;
+    const receiptWarnings: string[] = [];
+    try {
+        if (commandProjectRevisionPort.isConfigured()) {
+            observedBaseRevision = commandProjectRevisionPort.capture();
+        } else {
+            receiptWarnings.push('Observed base revision is unavailable: revision provider is not configured');
+        }
+    } catch (error) {
+        receiptWarnings.push(
+            `Observed base revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
+        );
+    }
     if (!input.confirmed && !parsed.envelope.grants.autoCommit) {
-        return {
+        const result = {
             status: 'rejected' as const,
             reason: 'Commit batch requires confirmation or the auto-commit grant',
             actions: [] as [],
         };
+        return {
+            ...result,
+            receipt: createVerifiedBatchReceipt({
+                envelope: resolvedEnvelope,
+                observedBaseRevision,
+                receiptWarnings,
+                resultingRevision: observedBaseRevision,
+                result,
+            }),
+        };
     }
-    return executeVersionedCommandBatch({
+    const result = await executeVersionedCommandBatch({
         commands: resolvedCommands.map((command) =>
             serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
         ),
@@ -45,4 +70,26 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             requireCompensation: true,
         },
     });
+    let resultingRevision: string | null = null;
+    try {
+        if (commandProjectRevisionPort.isConfigured()) {
+            resultingRevision = commandProjectRevisionPort.capture();
+        } else {
+            receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
+        }
+    } catch (error) {
+        receiptWarnings.push(
+            `Resulting project revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
+        );
+    }
+    return {
+        ...result,
+        receipt: createVerifiedBatchReceipt({
+            envelope: resolvedEnvelope,
+            observedBaseRevision,
+            receiptWarnings,
+            resultingRevision,
+            result,
+        }),
+    };
 }

@@ -16,6 +16,7 @@
  *   { type: 'abortSampleBank', loadToken }
  *   { type: 'addSample', loadToken, sampleId, data, frameCount, channels, sampleRate }
  *   { type: 'addZone', loadToken, ... }
+ *   { type: 'addLegatoTransition', loadToken, sampleId, interval, ... }
  *   { type: 'buildZoneMap', loadToken, numArticulations, numMics }
  *   { type: 'dispose' }
  */
@@ -36,6 +37,35 @@ const PARAM_MAP: Record<string, string> = {
     ensembleTiming: 'ensemble_timing',
     attackSpread: 'attack_spread',
     pitchConvergence: 'pitch_convergence',
+};
+
+/**
+ * Wire encodings for `LevainInstance::add_legato_transition`, which takes the
+ * DSP's `TransitionType` and `Dynamic` discriminants as `u8`. Kept here rather
+ * than as numbers on the wire so a mismatch is a name, not a silently wrong
+ * lookup key.
+ */
+const LEGATO_TRANSITION_TYPE_IDS: Record<string, number> = {
+    slurred: 0,
+    portamento: 1,
+};
+const LEGATO_DYNAMIC_IDS: Record<string, number> = {
+    pp: 0,
+    p: 1,
+    mp: 2,
+    mf: 3,
+    f: 4,
+    ff: 5,
+};
+
+type LevainAddLegatoTransitionMsg = {
+    type: 'addLegatoTransition';
+    loadToken: number;
+    sampleId: number;
+    interval: number;
+    transitionType: string;
+    dynamic: string;
+    crossfadeOutMs: number;
 };
 
 type LevainAddZoneMsg = {
@@ -105,6 +135,7 @@ type LevainMsg =
           sampleRate: number;
       }
     | LevainAddZoneMsg
+    | LevainAddLegatoTransitionMsg
     | { type: 'buildZoneMap'; loadToken: number; numArticulations: number; numMics: number }
     | { type: 'dispose' };
 
@@ -526,6 +557,19 @@ class LevainProcessor extends AudioWorkletProcessor {
                     msg.decay,
                     msg.sustain,
                     msg.release
+                );
+                break;
+            }
+            case 'addLegatoTransition': {
+                if (msg.loadToken !== this._bankLoadToken) {
+                    break;
+                }
+                inst.add_legato_transition(
+                    msg.interval,
+                    LEGATO_TRANSITION_TYPE_IDS[msg.transitionType] ?? 0,
+                    LEGATO_DYNAMIC_IDS[msg.dynamic] ?? 0,
+                    msg.sampleId,
+                    msg.crossfadeOutMs
                 );
                 break;
             }

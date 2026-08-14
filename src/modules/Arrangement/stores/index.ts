@@ -20,6 +20,7 @@ export {
     setAutoScroll,
     toggleAutoScroll,
     setScrollY,
+    setTimelineViewportHeight,
 } from './timelineViewStore';
 export type { TimelineViewState } from './timelineViewStore';
 

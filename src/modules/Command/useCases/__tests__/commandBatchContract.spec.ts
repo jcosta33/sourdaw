@@ -122,6 +122,14 @@ function authority(input: ReturnType<typeof batch>): CommandBatchAuthority {
     };
 }
 
+function splitBatchReceipt(result: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>) {
+    if (!('receipt' in result)) {
+        throw new Error('Expected a verified batch receipt');
+    }
+    const { receipt, ...execution } = result;
+    return { execution, receipt };
+}
+
 describe('command batch contract', () => {
     afterEach(() => {
         clearHandlerRegistry();
@@ -323,6 +331,15 @@ describe('command batch contract', () => {
             dynamicEffects: {
                 affectedTrackIds: ['track-empty'],
                 affectedClipIds: ['clip-guard', 'alternative-clip-guard'],
+                commandEffects: [
+                    {
+                        commandId: GAIN_COMMAND_ID,
+                        effects: {
+                            affectedTrackIds: ['track-empty'],
+                            affectedClipIds: ['clip-guard', 'alternative-clip-guard'],
+                        },
+                    },
+                ],
             },
         });
         const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
@@ -337,6 +354,15 @@ describe('command batch contract', () => {
             protectedRanges: [],
         });
         expect(parsed.envelope.budgets).toMatchObject({ maxCommands: 1, maxDeletedObjects: 3 });
+        expect(parsed.envelope.dynamicEffects?.commandEffects).toMatchObject([
+            {
+                commandId: GAIN_COMMAND_ID,
+                effects: {
+                    affectedTrackIds: ['track-empty'],
+                    affectedClipIds: ['clip-guard', 'alternative-clip-guard'],
+                },
+            },
+        ]);
     });
 
     it('rejects a model-enlarged target outside the application-issued scope', () => {
@@ -675,11 +701,15 @@ describe('command batch contract', () => {
             serialized: JSON.stringify(input),
         });
 
-        expect(result).toEqual({
+        const { execution, receipt } = splitBatchReceipt(result);
+        expect(execution).toEqual({
             status: 'rejected',
             reason: 'Commit batch requires confirmation or the auto-commit grant',
             actions: [],
         });
+        expect(receipt.outcome).toBe('rejected');
+        expect(receipt.commandOutcomes.map((command) => command.outcome)).toEqual(['not-applied', 'not-applied']);
+        expect(receipt.semanticDiff).toBeNull();
     });
 
     it('does not dispatch a preview batch when isolated preflight state is unavailable', async () => {

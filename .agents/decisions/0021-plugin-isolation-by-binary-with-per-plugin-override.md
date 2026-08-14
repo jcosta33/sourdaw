@@ -1,12 +1,24 @@
+---
+type: adr
+id: 0021
+title: One helper per plugin binary, with a per-plugin full-isolation override
+status: accepted
+date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/SPEC-native-plugin-isolation.md
+  - .agents/artifacts/sourdaw/CHANGE-plugin-hosting-runtime-and-transport.md
+---
+
 # 0021 — One helper per plugin binary, with a per-plugin full-isolation override
 
-**Status: proposed** — resolves `SPEC-native-plugin-isolation` DG-001, DG-002, DG-003 and
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves `SPEC-native-plugin-isolation` DG-001, DG-002, DG-003 and
 `CHANGE-plugin-hosting-runtime-and-transport` DG-002, DG-003.
 
 ## Context
 
-Today there is no isolation of any kind. `crates/daw-plugin-host/src/scanner.rs:403` calls
-`Library::new(path)`, `:408` resolves `clap_entry`, and `:425` invokes `init_fn` — third-party code
+Today there is no isolation of any kind. `crates/daw-plugin-host/src/scanner.rs:461` calls
+`Library::new(path)`, `:464` resolves `clap_entry`, and `:479` invokes `init_fn` — third-party code
 is `dlopen`ed and executed **in the Tauri application process during metadata scanning**, before the
 user has instantiated anything. `clap_wrapper.rs:336` and `:389` repeat it at instantiation. There is
 no child process, no supervisor, no `catch_unwind`, no timeout. `tauri.conf.json` declares no
@@ -95,7 +107,7 @@ EQ would mute the track, and "audio continues seamlessly" is meaningless then. T
 limiter or de-esser passing unprocessed material, possibly loud — is accepted explicitly, with the
 visible per-slot failure state as the mitigation.
 
-Independent of this decision: `src-tauri/src/commands/plugins.rs:799-802` currently returns the
+Independent of this decision: `src-tauri/src/commands/plugins.rs:956` currently returns the
 **dry input** on ring underflow ("No output yet (first block)"), which contradicts the source
 requirement that under-run outputs zero. That must change regardless of which failure policy is
 chosen.

@@ -52,8 +52,118 @@ pub enum InstrumentFamily {
     Strings,
     Brass,
     Woodwinds,
+    /// Struck and left to ring — marimba, glockenspiel.
     Percussion,
+    /// Struck, but stopped by the player on release — timpani. Split from
+    /// `Percussion` for the release model only; see `release_scale`.
+    DampedPercussion,
     Choir,
+}
+
+impl InstrumentFamily {
+    /// Classify a frontend `instrumentId` slug. Follows `getInstrumentFamily`
+    /// in `src/modules/Levain/models/LevainPatch.ts`, including its ordering
+    /// traps: choir before strings so `bass-voice` doesn't match `bass`, and
+    /// woodwinds before brass so `english-horn` doesn't match `horn`.
+    ///
+    /// This is a second classifier over the same input as
+    /// `realism::Instrument::from_id`, deliberately: that one picks body
+    /// resonance, sympathetic strings and breath colour per *instrument*,
+    /// while this one is the family the release model needs.
+    ///
+    /// It is **one split finer than the TS classifier**, which returns
+    /// `percussion` for timpani. That is right for what the TS side uses it
+    /// for — default articulations and the patch's display family — and wrong
+    /// for release, because timpani is the one percussion instrument in this
+    /// bank set whose player damps the head on release. See `release_scale`.
+    pub fn from_instrument_id(id: &str) -> Self {
+        if matches!(id, "soprano" | "alto" | "tenor" | "bass-voice") {
+            return InstrumentFamily::Choir;
+        }
+        if id.contains("timpani") {
+            return InstrumentFamily::DampedPercussion;
+        }
+        if id.contains("flute")
+            || id.contains("oboe")
+            || id.contains("clarinet")
+            || id.contains("bassoon")
+            || id.contains("piccolo")
+            || id == "english-horn"
+        {
+            return InstrumentFamily::Woodwinds;
+        }
+        if id.contains("violin")
+            || id.contains("viola")
+            || id.contains("cello")
+            || id == "double-bass"
+        {
+            return InstrumentFamily::Strings;
+        }
+        if id.contains("trumpet")
+            || id.contains("horn")
+            || id.contains("trombone")
+            || id.contains("tuba")
+        {
+            return InstrumentFamily::Brass;
+        }
+        InstrumentFamily::Percussion
+    }
+
+    /// Multiplicative scaling applied to a zone's own release time when the
+    /// bank ships no recorded release samples, so the modelled release stops
+    /// like the instrument rather than like a gate.
+    ///
+    /// **Why a ratio, and why in the engine.** The per-zone `release` in every
+    /// shipped manifest is emitted by `scripts/download-levain-samples.ts` from
+    /// articulation type alone — `sustain || tremolo ? 0.5 : 0.15` — so it
+    /// carries no instrument information at all, and a marimba and a horn get
+    /// the same number. The manifest is still the right *override* channel and
+    /// stays authoritative for a bank that authors real per-zone values, so the
+    /// family model scales that value rather than replacing it: the same
+    /// multiplicative-on-time convention `EnvelopeScaling` already documents
+    /// for the Attack/Release macros, which keeps a patch's relative shaping
+    /// (a staccato stays far shorter than a sustain) and moves the whole
+    /// instrument in one direction.
+    ///
+    /// **Where the numbers come from.** Measured off this repo's own shipped
+    /// recordings: the median time from envelope peak to −40 dB (10 ms RMS
+    /// window) over every distinct file of each bank's shortest recorded
+    /// articulation, which is exactly a recording of the instrument being
+    /// excited and then left to ring.
+    ///
+    /// | family           | measured basis                                    | median  | ÷ 0.5 s |
+    /// | ---------------- | ------------------------------------------------- | ------- | ------- |
+    /// | Percussion       | struck bars: marimba 2.31, glockenspiel 2.50      | 2.31 s  | 4.6     |
+    /// | DampedPercussion | timpani 1.74                                      | 1.74 s  | 3.5     |
+    /// | Strings          | pizzicato: cello 1.14, d-bass 1.67, viola 0.57, vln 0.72/0.39 | 0.72 s  | 1.4     |
+    /// | Brass            | staccato: horn 0.34, trombone 0.43, trumpet 0.54, tuba 0.45 | 0.45 s  | 0.9     |
+    /// | Woodwinds        | staccato: bassoon 0.39, clarinet 0.33, flute 0.36, oboe 0.38 | 0.36 s  | 0.7     |
+    ///
+    /// The divisor is the 0.5 s the generator writes for every sustaining
+    /// zone, which is what makes the ratio a correction of that constant.
+    ///
+    /// **Why timpani is not a struck bar.** A marimba or glockenspiel bar is
+    /// undamped: lifting the key does not stop it, so a long modelled release
+    /// is what the instrument does. A timpanist's release *is* the damp — hand
+    /// on the head — so the same treatment turns every existing timpani part
+    /// into a wash. Its own recordings say so directly: it measures 1.74 s
+    /// against marimba's 2.31 and glockenspiel's 2.50, the shortest of the
+    /// three, and folding it into their 4.6 would stretch a note-off from
+    /// ~2.3 s to ~10.4 s of ring on sustains that run to 11.49 s. 3.5 is
+    /// 1.74 ÷ 0.5, the same derivation as every other row.
+    ///
+    /// **Choir is deliberately `1.0`**: no choir bank ships here, so there is
+    /// nothing to measure and a number would be an invention.
+    pub fn release_scale(self) -> f32 {
+        match self {
+            InstrumentFamily::Percussion => 4.6,
+            InstrumentFamily::DampedPercussion => 3.5,
+            InstrumentFamily::Strings => 1.4,
+            InstrumentFamily::Brass => 0.9,
+            InstrumentFamily::Woodwinds => 0.7,
+            InstrumentFamily::Choir => 1.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -359,9 +469,17 @@ pub struct LegatoTransition {
     pub transition_type: TransitionType,
     pub dynamic: Dynamic,
     pub sample_id: SampleId,
-    /// Time to crossfade from sustain into transition.
-    pub crossfade_in_ms: f32,
-    /// Time to crossfade from transition into new sustain.
+    /// Time to crossfade from the transition recording into the new sustain
+    /// zone, in milliseconds. `0.0` means the bank authored none, and the
+    /// adaptive `crossfade_times(speed)` default applies instead. Read in
+    /// `LegatoEngine::note_on`.
+    ///
+    /// There is deliberately no `crossfade_in_ms` beside it. The "fade the
+    /// outgoing note into the transition" half has nowhere to run in this
+    /// voice pool — the departing voice is faded by its own release curve
+    /// (`engine.rs`, the `TrueTransition` arm), with no independent stream to
+    /// give a second, separately-timed ramp to. A manifest field that is
+    /// validated and stored but cannot reach the audio is worse than no field.
     pub crossfade_out_ms: f32,
 }
 

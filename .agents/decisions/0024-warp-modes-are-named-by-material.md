@@ -1,6 +1,17 @@
+---
+type: adr
+id: 0024
+title: Warp modes are named by material, over three closed executors
+status: accepted
+date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/SPEC-time-stretch-engine.md
+---
+
 # 0024 — Warp modes are named by material, over three closed executors
 
-**Status: proposed** — resolves the algorithm-family and naming questions in both
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves the algorithm-family and naming questions in both
 `SPEC-time-stretch-engine` artifacts, and decides the fate of `crumbs/warp/granular.rs`.
 
 ## Context

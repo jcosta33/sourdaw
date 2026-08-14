@@ -24,7 +24,11 @@ export function createAdjustmentLayer(input: CreateAdjustmentLayerInput): void {
         id: input.layerId ?? getNextLayerId(),
         name: input.name,
         effectType: input.effectType,
-        parameters: [...EFFECT_PRESETS[input.effectType]],
+        // Clone each parameter object, not just the outer array — EFFECT_PRESETS
+        // entries are shared module-level objects, and a shallow array spread
+        // would leave every layer of this effect type pointing at the same
+        // parameter objects.
+        parameters: EFFECT_PRESETS[input.effectType].map((parameter) => ({ ...parameter })),
         affectedTrackIds: [],
         insertionIndex: input.insertionIndex ?? 0,
         regions: [],

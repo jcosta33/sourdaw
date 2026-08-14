@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 
 import { normalizeTrack } from '../../../models/Track';
-import { setScrollY } from '../../../stores/timelineViewStore';
+import { setScrollY, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
 import { TrackListView } from '../TrackListView';
@@ -110,6 +110,7 @@ vi.mock('../../../stores/timelineViewStore', () => ({
         subscribeReact: () => () => {},
     },
     setScrollY: vi.fn(),
+    setTimelineViewportHeight: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
@@ -296,6 +297,31 @@ describe('TrackListView', () => {
         // Flushing the scheduled frame writes exactly once.
         rafCallbacks[0]?.(0);
         expect(setScrollY).toHaveBeenCalledTimes(1);
+
+        rafSpy.mockRestore();
+    });
+
+    it('reports the scroll container real height before clamping scrollY (F7)', () => {
+        // Regression guard: `handleScroll` must call `setTimelineViewportHeight`
+        // with the container's own `clientHeight` on every flushed frame, so
+        // `setScrollY`'s clamp always sees the real, current viewport size
+        // rather than a stale or hardcoded one. Deleting that call leaves this
+        // spec's other assertions green — this is the only test guarding it.
+        const rafCallbacks: FrameRequestCallback[] = [];
+        const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+
+        const { container } = renderWithTooltip(<TrackListView />);
+        const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
+
+        fireEvent.scroll(scrollEl);
+        expect(setTimelineViewportHeight).not.toHaveBeenCalled();
+
+        rafCallbacks[0]?.(0);
+        expect(setTimelineViewportHeight).toHaveBeenCalledTimes(1);
+        expect(setTimelineViewportHeight).toHaveBeenCalledWith(scrollEl.clientHeight);
 
         rafSpy.mockRestore();
     });

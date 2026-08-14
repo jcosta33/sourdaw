@@ -105,4 +105,15 @@ describe('importHardwareMappings', () => {
         expect(profile?.mappings).toEqual([baseMapping]);
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
     });
+
+    it('should notify the user when profileId matches no known profile instead of silently doing nothing (F-8)', () => {
+        importHardwareMappings('unknown-profile', JSON.stringify([baseMapping]));
+
+        const profiles = hardwareControllerStore.value?.profiles;
+        expect(profiles?.find((param) => param.id === 'p1')?.mappings).toEqual([baseMapping]);
+        expect(profiles?.find((param) => param.id === 'p2')?.mappings).toEqual([otherMapping]);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser.mock.calls[0]?.[0]).toContain('unknown-profile');
+        expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('error');
+    });
 });

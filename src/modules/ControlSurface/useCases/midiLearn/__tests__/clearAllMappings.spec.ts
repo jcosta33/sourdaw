@@ -16,11 +16,12 @@ const sampleMapping: MidiMapping = {
 
 describe('clearAllMappings', () => {
     beforeEach(() => {
-        midiLearnStore.set({ mappings: [], isLearning: false, learningTarget: null });
+        midiLearnStore.set({ mappingsSchemaVersion: 1, mappings: [], isLearning: false, learningTarget: null });
     });
 
     it('empties every mapping in one call', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [sampleMapping, { ...sampleMapping, id: 'm2', cc: 8 }],
             isLearning: false,
             learningTarget: null,
@@ -33,6 +34,7 @@ describe('clearAllMappings', () => {
 
     it('cancels any in-progress learn so a stale target cannot capture the next CC', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [sampleMapping],
             isLearning: true,
             learningTarget: { targetType: 'trackGain', trackId: 'track1' },
@@ -46,7 +48,7 @@ describe('clearAllMappings', () => {
     });
 
     it('is a no-op when there is nothing to clear', () => {
-        midiLearnStore.set({ mappings: [], isLearning: false, learningTarget: null });
+        midiLearnStore.set({ mappingsSchemaVersion: 1, mappings: [], isLearning: false, learningTarget: null });
         const before = midiLearnStore.value;
 
         clearAllMappings();

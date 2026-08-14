@@ -66,12 +66,19 @@ export type CommandBatchBudgets = {
     maxRenderJobs: number;
 };
 
-export type CommandBatchDynamicEffects = {
+export type CommandDynamicEffectBounds = {
     affectedTrackIds?: readonly string[];
     affectedClipIds?: readonly string[];
     affectedTargetIds?: readonly string[];
     automationPoints?: number;
     deletedObjects?: number;
+};
+
+export type CommandBatchDynamicEffects = CommandDynamicEffectBounds & {
+    commandEffects?: ReadonlyArray<{
+        commandId: string;
+        effects: CommandDynamicEffectBounds;
+    }>;
 };
 
 export type CommandBatchAuthority = {

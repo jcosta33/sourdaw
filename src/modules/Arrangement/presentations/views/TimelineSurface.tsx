@@ -162,6 +162,7 @@ export const TimelineSurface = (): ReactElement => {
                 scrollY: current?.scrollY ?? 0,
                 pixelsPerBeat: ppb,
                 autoScrollEnabled: current?.autoScrollEnabled ?? true,
+                viewportHeight: current?.viewportHeight ?? 0,
             });
         };
 
@@ -187,6 +188,7 @@ export const TimelineSurface = (): ReactElement => {
                 scrollY: current?.scrollY ?? 0,
                 pixelsPerBeat: ppb,
                 autoScrollEnabled: current?.autoScrollEnabled ?? true,
+                viewportHeight: current?.viewportHeight ?? 0,
             });
         };
 

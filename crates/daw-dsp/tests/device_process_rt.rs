@@ -1436,6 +1436,82 @@ fn levain_process_does_not_allocate_with_notes_held() {
     );
 }
 
+/// The guard above holds two notes for its whole run, so it never executes a
+/// note-off or a slur — `LevainVoice::release` (and the `exit_loop` on each of
+/// its three streams) and `start_crossfade` (and its `SamplePlayback` clone and
+/// `seek_to`) both sit outside it. In the worklet those run on the audio thread
+/// like everything else, from the message drain inside `process`, so they are
+/// under the same contract and need the same proof.
+#[test]
+fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
+    use daw_dsp::levain::LevainInstance;
+
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    instance.begin_sample_bank("violin-1");
+
+    let frame_count = 4_800_u32;
+    let sample: Vec<f32> = (0..frame_count)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect();
+    let sample_id = instance
+        .add_sample(sample, frame_count, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    instance.add_zone(
+        0,           // zone_id
+        sample_id,   // sample_id
+        0,           // articulation_id
+        69,          // root_note
+        0,           // lo_key
+        127,         // hi_key
+        0,           // lo_vel
+        127,         // hi_vel
+        0,           // rr_pos
+        1,           // rr_len
+        0,           // mic_id
+        false,       // is_release
+        1,           // loop_mode: forward, so a held note never runs out of sample
+        0,           // loop_start
+        frame_count, // loop_end
+        0,           // loop_crossfade
+        0.0,         // gain_db
+        0.005,       // attack
+        0.1,         // decay
+        1.0,         // sustain
+        0.3,         // release
+    );
+    assert!(instance.build_zone_map(1, 1));
+    assert!(instance.commit_sample_bank());
+
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "levain note lifecycle");
+
+    assert_no_alloc(|| {
+        for _ in 0..64 {
+            // A note, then a second note under it: a whole tone apart is
+            // inside `MAX_LEGATO_INTERVAL` and no transition sample is
+            // registered, so this takes the synthetic-glide branch and runs
+            // `start_crossfade` -> `seek_to`.
+            instance.note_on(60, 100);
+            instance.process(BLOCK as u32);
+            instance.note_on(62, 100);
+            instance.process(BLOCK as u32);
+            // Both note-offs run `release()` -> `exit_loop` on all three
+            // streams while the crossfade is still in flight.
+            instance.note_off(62);
+            instance.note_off(60);
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "levain note lifecycle");
+    assert!(
+        peak(&out) > 1e-6,
+        "levain fell silent across the guarded lifecycle, so the guard did not \
+         exercise the slur and release paths it exists to cover"
+    );
+}
+
 #[test]
 fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
     use daw_dsp::proof::ProofInstance;

@@ -275,6 +275,35 @@ export async function loadInstrumentFromManifest({
             zoneId++;
         }
 
+        // Recorded interval samples. The engine prefers one of these over its
+        // crossfade fallback for any slur whose (interval, dynamic, transition
+        // type) it can match.
+        //
+        // Grouped with the other staging messages for readability, not because
+        // the position matters: `LevainEngine::add_legato_transition` pushes
+        // into the pending bank the same way `add_zone` does, and
+        // `commit_sample_bank` rebuilds the whole transition store from that
+        // list, so a message landing either side of `buildZoneMap` still takes.
+        // `loadToken` is what makes a transition from an abandoned load stale.
+        for (const transition of bank.legatoTransitions) {
+            signal?.throwIfAborted();
+            const sampleId = sampleIdMap.get(transition.file);
+            if (sampleId === undefined) {
+                throw new Error(
+                    `Decoded Levain bank ${bank.instrumentId}@${bank.version} has no id for ${transition.file}`
+                );
+            }
+            nodePort.postMessage({
+                type: 'addLegatoTransition',
+                loadToken,
+                sampleId,
+                interval: transition.interval,
+                transitionType: transition.transitionType,
+                dynamic: transition.dynamic,
+                crossfadeOutMs: transition.crossfadeOutMs,
+            });
+        }
+
         nodePort.postMessage({
             type: 'buildZoneMap',
             loadToken,

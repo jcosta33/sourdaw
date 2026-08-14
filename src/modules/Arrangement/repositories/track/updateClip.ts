@@ -1,45 +1,17 @@
-import { type Clip, type Track } from '../../models/Track';
-import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { trackStore } from '../../stores/trackStore';
+import { type Clip } from '../../models/Track';
+import { updateClipInStore } from '../../stores/updateClipInStore';
 
 /**
  * Update a single clip by id across all tracks.
  *
- * §107.5 — only clone the one track that actually contains the clip,
- * plus a shallow-cloned tracks array. Previously this shallow-cloned
- * every track and every clip array even though we're touching exactly
- * one clip — recording finalize fires updateClip up to 2× per armed
- * track and paid a full-project clone per call.
+ * §107.5 — only clone the one track that actually contains the clip, plus a
+ * shallow-cloned tracks array; avoids the full-project clone recording
+ * finalize used to pay up to 2× per armed track.
+ *
+ * F8 — this used to carry its own byte-identical copy of that logic
+ * alongside `stores/updateClipInStore.ts`; delegating keeps a single
+ * implementation so a behaviour change can no longer silently miss one side.
  */
 export function updateClip(clipId: string, updater: (clip: Clip) => Clip): boolean {
-    const target = resolveEligibleClipWriteTarget({ clipId });
-    if (target.status !== 'eligible' || !('clipId' in target)) {
-        return false;
-    }
-
-    const state = trackStore.value;
-    if (!state) {
-        return false;
-    }
-
-    const trackIdx = state.tracks.findIndex((track) => track.id === target.trackId);
-    if (trackIdx === -1) {
-        return false;
-    }
-
-    const targetTrack = state.tracks[trackIdx]!;
-    const clipIdx = targetTrack.clips.findIndex((clip) => clip.id === target.clipId);
-    if (clipIdx === -1) {
-        return false;
-    }
-
-    const updatedClip = updater(targetTrack.clips[clipIdx]!);
-    const nextClips = targetTrack.clips.slice();
-    nextClips[clipIdx] = updatedClip;
-
-    const nextTracks: Track[] = state.tracks.slice();
-    nextTracks[trackIdx] = { ...targetTrack, clips: nextClips };
-
-    trackStore.set({ ...state, tracks: nextTracks });
-    return true;
+    return updateClipInStore(clipId, updater);
 }

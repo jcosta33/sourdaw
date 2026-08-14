@@ -39,12 +39,64 @@ export type ManifestArticulation = {
     zones: readonly ManifestZone[];
 };
 
+/**
+ * Transition kinds a bank can author, in the DSP `TransitionType`'s own order.
+ *
+ * Only the two the classifier can ask for. `LegatoEngine::note_on` derives the
+ * type it looks up from velocity alone — under the portamento threshold gives
+ * `Portamento`, at or above it gives `Slurred` — and never requests the DSP's
+ * remaining `Run`, `Rip` or `Fall`. An authored one of those could only be
+ * reached by the store's last-resort "same interval, any type" fallback, which
+ * would play it in the context of a slur it was not recorded for. Rips and
+ * falls are brass gestures rather than transitions *between two pitches*, which
+ * is what this interval-keyed table indexes; they belong to the articulation
+ * system. The Rust discriminants are unchanged, so the wire encoding still
+ * matches on both sides.
+ */
+export const LEGATO_TRANSITION_TYPES = ['slurred', 'portamento'] as const;
+export type LegatoTransitionType = (typeof LEGATO_TRANSITION_TYPES)[number];
+
+/** Dynamic layers a transition can be recorded at, in `Dynamic`'s own order. */
+export const LEGATO_DYNAMICS = ['pp', 'p', 'mp', 'mf', 'f', 'ff'] as const;
+export type LegatoDynamic = (typeof LEGATO_DYNAMICS)[number];
+
+/**
+ * One recorded interval sample: the note-to-note transition a library records
+ * so a slur sounds like the player moving rather than like two notes
+ * crossfaded. SFZ models the same thing as a region with `trigger=legato`,
+ * which "will play on note-on, but only if there's a note going on".
+ *
+ * Optional, and no bank in this repo ships one. Registering a transition is
+ * what makes the engine prefer a recording over its crossfade fallback for
+ * that interval, so this is the channel real interval recordings arrive
+ * through when they exist.
+ */
+export type ManifestLegatoTransition = {
+    file: string;
+    /** Semitones, `newNote - oldNote`. Non-zero, within the ±127 an `i8` key can hold. */
+    interval: number;
+    transitionType: LegatoTransitionType;
+    dynamic: LegatoDynamic;
+    /**
+     * How long the recording takes to hand over to the new sustain zone. `0`
+     * leaves the DSP's speed-derived `crossfade_times` default in place.
+     *
+     * There is no `crossfadeInMs` beside it: the "fade the outgoing note into
+     * the transition" half has nowhere to run in Levain's voice pool, where the
+     * departing voice is faded by its own release curve with no independent
+     * stream to give a second, separately-timed ramp to. A validated field that
+     * cannot reach the audio is a promise to bank authors this cannot keep.
+     */
+    crossfadeOutMs: number;
+};
+
 export type SampleManifest = {
     version: 1;
     instrumentId: InstrumentId;
     sampleRate: number;
     articulations: readonly ManifestArticulation[];
     micPositions: readonly string[];
+    legatoTransitions: readonly ManifestLegatoTransition[];
 };
 
 const MAX_F32 = 3.402_823_466_385_288_6e38;
@@ -53,6 +105,36 @@ const MAX_MICS = 8;
 const MAX_RR = 12;
 const MAX_ARTICULATIONS = Object.keys(ARTICULATION_ID_BY_TYPE).length;
 const MAX_ZONE_ARENA = 65_536;
+/** `LegatoTransitionStore::MAX_TRANSITIONS` — anything past this is dropped by the DSP. */
+const MAX_LEGATO_TRANSITIONS = 1024;
+/**
+ * The widest interval the classifier can ever ask the transition store for.
+ *
+ * Not a lookup limit: `LegatoTransitionStore::find` matches on interval with no
+ * bound at all, so a recorded transition wider than an octave does play. (The
+ * DSP's `MAX_LEGATO_INTERVAL` of 12 gates only the *synthetic glide* fallback,
+ * which is a different branch and a different thing — a pitch glide across more
+ * than an octave is what that bound is protecting against.) What does bound an
+ * authored interval is the lookup key itself: `note as i8 - held.note as i8`
+ * over MIDI 0-127, so nothing outside ±127 can ever be requested, and the wire
+ * field is an `i8`.
+ */
+const MAX_LEGATO_INTERVAL = 127;
+/**
+ * The longest hand-over a bank may author, in milliseconds.
+ *
+ * A typo guard, not a DSP limit. The engine floors the ramp increment so any
+ * finite value completes, and it ends the hand-over early once the transition
+ * recording runs out, so a large value no longer misbehaves — it is simply
+ * indistinguishable from a mistake. `1e6` and `1e9` render identically, which
+ * is exactly the property that makes a wrong one impossible to notice.
+ *
+ * 5 s is roughly 17x the longest legato crossfade a shipping sample library
+ * uses, and 33x the slowest this engine picks for itself (150 ms). Nothing
+ * musically real is above it and every plausible typo — a seconds-for-
+ * milliseconds mix-up, a stray zero — is.
+ */
+const MAX_LEGATO_CROSSFADE_MS = 5_000;
 const MAX_ZONE_LIST_COUNT = 65_535;
 const VELOCITY_BUCKET_SIZE = 8;
 const SAMPLE_BANK_BASE_URL = new URL('https://sourdaw.invalid/bank/');
@@ -205,6 +287,47 @@ function parseZone(value: unknown, path: string): ManifestZone {
     });
 }
 
+function isLegatoTransitionType(value: unknown): value is LegatoTransitionType {
+    return LEGATO_TRANSITION_TYPES.some((candidate) => candidate === value);
+}
+
+function isLegatoDynamic(value: unknown): value is LegatoDynamic {
+    return LEGATO_DYNAMICS.some((candidate) => candidate === value);
+}
+
+function parseLegatoTransition(value: unknown, path: string): ManifestLegatoTransition {
+    if (!isRecord(value)) {
+        throw new TypeError(`${path} must be an object`);
+    }
+    if (!isSafeRelativeSamplePath(value.file)) {
+        throw new TypeError(`${path}.file must be a safe relative sample path`);
+    }
+    if (!isIntegerInRange(value.interval, -MAX_LEGATO_INTERVAL, MAX_LEGATO_INTERVAL) || value.interval === 0) {
+        throw new TypeError(
+            `${path}.interval must be a non-zero integer from -${MAX_LEGATO_INTERVAL} through ${MAX_LEGATO_INTERVAL}`
+        );
+    }
+    if (!isLegatoTransitionType(value.transitionType)) {
+        throw new TypeError(`${path}.transitionType must be one of ${LEGATO_TRANSITION_TYPES.join(', ')}`);
+    }
+    if (!isLegatoDynamic(value.dynamic)) {
+        throw new TypeError(`${path}.dynamic must be one of ${LEGATO_DYNAMICS.join(', ')}`);
+    }
+    if (!isNonNegativeF32(value.crossfadeOutMs) || value.crossfadeOutMs > MAX_LEGATO_CROSSFADE_MS) {
+        throw new TypeError(
+            `${path}.crossfadeOutMs must be a non-negative finite 32-bit float of at most ${MAX_LEGATO_CROSSFADE_MS} ms`
+        );
+    }
+
+    return Object.freeze({
+        file: value.file,
+        interval: value.interval,
+        transitionType: value.transitionType,
+        dynamic: value.dynamic,
+        crossfadeOutMs: value.crossfadeOutMs,
+    });
+}
+
 function parseArticulation(value: unknown, path: string): ManifestArticulation {
     if (!isRecord(value)) {
         throw new TypeError(`${path} must be an object`);
@@ -274,6 +397,23 @@ export function parseSampleManifest(value: unknown): SampleManifest {
         throw new TypeError(`Levain sample manifest contains more than ${MAX_ZONE_ARENA} zones`);
     }
 
+    if (value.legatoTransitions !== undefined && !Array.isArray(value.legatoTransitions)) {
+        throw new TypeError('Levain sample manifest legatoTransitions must be an array when present');
+    }
+    const rawLegatoTransitions: readonly unknown[] = Array.isArray(value.legatoTransitions)
+        ? value.legatoTransitions
+        : [];
+    if (rawLegatoTransitions.length > MAX_LEGATO_TRANSITIONS) {
+        throw new TypeError(
+            `Levain sample manifest legatoTransitions must contain at most ${MAX_LEGATO_TRANSITIONS} entries`
+        );
+    }
+    const legatoTransitions = Object.freeze(
+        rawLegatoTransitions.map((transition, index) =>
+            parseLegatoTransition(transition, `legatoTransitions[${index}]`)
+        )
+    );
+
     const micPositions = Object.freeze([...value.micPositions]);
     const articulations = Object.freeze(
         value.articulations.map((articulation, index) => parseArticulation(articulation, `articulations[${index}]`))
@@ -305,5 +445,6 @@ export function parseSampleManifest(value: unknown): SampleManifest {
         sampleRate,
         micPositions,
         articulations,
+        legatoTransitions,
     });
 }

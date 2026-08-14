@@ -234,12 +234,24 @@ impl LegatoEngine {
                 .find(interval, current_dynamic, transition_type)
             {
                 let (cf_in, cf_out) = crossfade_times(speed);
+                // An authored `crossfadeOutMs` wins over the speed-derived
+                // default: the bank knows how long its own recording takes to
+                // hand over to the sustain, and note spacing does not. `0.0`
+                // means "unauthored" — every bank shipped in this repo
+                // registers no transitions at all, and one that registers a
+                // transition without a crossfade time still gets exactly the
+                // adaptive behaviour it would have got before.
+                let crossfade_out = if trans.crossfade_out_ms > 0.0 {
+                    trans.crossfade_out_ms / 1000.0
+                } else {
+                    cf_out
+                };
                 LegatoResult::TrueTransition {
                     from_note: held.note,
                     from_voice: held.voice_index,
                     transition: *trans,
                     crossfade_in: cf_in,
-                    crossfade_out: cf_out,
+                    crossfade_out,
                 }
             } else if interval.abs() <= MAX_LEGATO_INTERVAL {
                 // Synthetic glide fallback for intervals without recorded transitions.
