@@ -1,0 +1,41 @@
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteNotes.spec.ts
+  s_ab5443e65c7fba::t_ae726745d6ec5c 184-185,189-190,198-200,206-210
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_ab5443e65c7fba::t_f186df4170d773 298,306-309
+src/modules/MIDI/useCases/webMidiInput/initWebMidi.ts
+  s_ab5443e65c7fba::t_efb4f226988fa4 41-50
+  s_ab5443e65c7fba::t_45cae897abf180 10
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_ab5443e65c7fba::t_eaf607f74f417d 134-140
+  s_ab5443e65c7fba::t_678e361f88e72f 171-173
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_ab5443e65c7fba::t_71fbb69fe94cb5 16
+  s_ab5443e65c7fba::t_388e5f157cba0c 70-71
+  s_ab5443e65c7fba::t_cfb54dbd2149a7 157-182
+  s_ab5443e65c7fba::t_d45d4d1b246481 58-61
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_ab5443e65c7fba::t_3b7cb4b102395b 276-281,286
+  s_ab5443e65c7fba::t_a665a760eff9e6 25
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_ab5443e65c7fba::t_49031d8c9e7070 120-153,155-156,390
+  s_ab5443e65c7fba::t_7b4dc1217799d5 388-389
+  s_ab5443e65c7fba::t_2336c5bb8298bf 392-408
+  s_ab5443e65c7fba::t_f65b8a18900920 154
+  s_ab5443e65c7fba::t_c87f20ab01481a 391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b41d7a53e3df3e92c3d140dc0605c19d3658bc19",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
