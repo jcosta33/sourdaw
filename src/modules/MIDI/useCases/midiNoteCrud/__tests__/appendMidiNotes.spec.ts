@@ -34,6 +34,7 @@ type TestAppendNote = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
 };
@@ -132,8 +133,8 @@ describe('appendMidiNotes', () => {
                 'clip-1': [
                     existingLater,
                     existingEarlier,
-                    { ...firstPasted, id: 'note-12345678' },
-                    { ...secondPasted, id: 'note-fedcba98' },
+                    { ...firstPasted, id: 'note-12345678-aaaa-bbbb-cccc-dddddddddddd' },
+                    { ...secondPasted, id: 'note-fedcba98-aaaa-bbbb-cccc-dddddddddddd' },
                 ],
             })
         );
@@ -149,7 +150,7 @@ describe('appendMidiNotes', () => {
 
         expect(midiStore.set).toHaveBeenCalledWith(
             createState({
-                'clip-1': [latestExisting, { ...createAppendNote(), id: 'note-abcdef01' }],
+                'clip-1': [latestExisting, { ...createAppendNote(), id: 'note-abcdef01-aaaa-bbbb-cccc-dddddddddddd' }],
             })
         );
     });
@@ -164,9 +165,29 @@ describe('appendMidiNotes', () => {
         expect(midiStore.value).toEqual(
             createState({
                 'other-clip': [createStoredNote('note-other')],
-                'new-clip': [{ ...pasted, id: 'note-cafebabe' }],
+                'new-clip': [{ ...pasted, id: 'note-cafebabe-aaaa-bbbb-cccc-dddddddddddd' }],
             })
         );
+    });
+
+    it('keeps ids distinct for UUIDs that share their first 32 bits', () => {
+        // Two v4 UUIDs whose first 8 hex digits collide are ~1-in-4-billion
+        // apart, which a clip with tens of thousands of pasted notes reaches.
+        // Truncating the id merges the two notes for every id-keyed operation.
+        const first = createAppendNote({ pitch: 61 });
+        const second = createAppendNote({ pitch: 62 });
+        mocks.state.value = createState({ 'clip-1': [] });
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('deadbeef-1111-4222-8333-444444444444')
+            .mockReturnValueOnce('deadbeef-5555-4666-8777-888888888888');
+
+        appendMidiNotes({ clipId: 'clip-1', notes: [first, second] });
+
+        const stored = midiStore.value?.notesByClipId['clip-1'] ?? [];
+        expect(stored.map((note) => note.id)).toEqual([
+            'note-deadbeef-1111-4222-8333-444444444444',
+            'note-deadbeef-5555-4666-8777-888888888888',
+        ]);
     });
 
     it('does not write or allocate IDs for an empty batch', () => {
@@ -208,8 +229,43 @@ describe('appendMidiNotes', () => {
         }
     );
 
+    it('accepts a pasted note carrying the bend range recorded with it', () => {
+        // `handleWebMidiPitchBend` stamps `pitchBendRangeSemitones` onto a recorded
+        // note, `copySelectedNotes` clones it whole, and `pasteNotes` does not strip
+        // it — so refusing the key here throws on pasting any MPE-recorded note.
+        expect(() =>
+            appendMidiNotesUnchecked({
+                clipId: 'clip-1',
+                notes: [createAppendNote({ pitchBend: -4096, pitchBendRangeSemitones: 2 })],
+            })
+        ).not.toThrow();
+    });
+
+    it('accepts an optional key present with the value undefined, as the store holds it', () => {
+        // `splitNoteAtBeat` writes every optional field onto the right half
+        // unconditionally, so a plain note's `pitchBendRangeSemitones` and
+        // `articulation` become own keys holding `undefined`. `midiStore`'s own
+        // `hasValidMidiNoteOptionals` reads that as absent and keeps the note,
+        // and `pasteNotes` strips neither key — so reading it as
+        // present-and-invalid here throws on pasting any split note.
+        expect(() =>
+            appendMidiNotesUnchecked({
+                clipId: 'clip-1',
+                notes: [
+                    {
+                        ...createAppendNote(),
+                        pitchBend: undefined,
+                        pitchBendRangeSemitones: undefined,
+                        articulation: undefined,
+                    },
+                ],
+            })
+        ).not.toThrow();
+    });
+
     it.each([
         ['an unknown key', { ...createAppendNote(), unsupported: 1 }],
+        ['a non-numeric bend range', { ...createAppendNote(), pitchBendRangeSemitones: '2' }],
         ['a source id', { ...createAppendNote(), id: 'clipboard-id' }],
         ['a numeric-string required field', { ...createAppendNote(), pitch: '64' }],
         ['a null optional field', { ...createAppendNote(), pressure: null }],

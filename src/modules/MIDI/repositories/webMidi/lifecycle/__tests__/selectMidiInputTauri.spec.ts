@@ -23,6 +23,7 @@ vi.mock('../../setTauriEventUnlisten', () => ({
     setTauriEventUnlisten: (unlisten: (() => void) | null) => setTauriEventUnlistenMock(unlisten),
 }));
 
+import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
 import { selectMidiInputTauri } from '../selectMidiInputTauri';
 
 describe('selectMidiInputTauri', () => {
@@ -37,7 +38,7 @@ describe('selectMidiInputTauri', () => {
 
     it('should close any previous Tauri listener before opening the selected MIDI input', async () => {
         const previousUnlisten = vi.fn();
-        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
         getTauriEventUnlistenMock.mockReturnValue(previousUnlisten);
 
         await selectMidiInputTauri({ portIndex: 2, onMidiMessage: onMidiMessageMock });
@@ -50,7 +51,7 @@ describe('selectMidiInputTauri', () => {
     });
 
     it('should forward valid Tauri MIDI message bytes to the MIDI handler', async () => {
-        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
 
@@ -62,7 +63,7 @@ describe('selectMidiInputTauri', () => {
     });
 
     it('should not forward malformed Tauri MIDI message payloads', async () => {
-        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
 
@@ -81,8 +82,8 @@ describe('selectMidiInputTauri', () => {
 
     it('should register a new native listener callback after unlistening the previous one', async () => {
         const previousUnlisten = vi.fn();
-        const firstCallback = vi.fn<(event: MIDIMessageEvent) => void>();
-        const secondCallback = vi.fn<(event: MIDIMessageEvent) => void>();
+        const firstCallback = vi.fn<(event: WebMidiInputMessage) => void>();
+        const secondCallback = vi.fn<(event: WebMidiInputMessage) => void>();
         getTauriEventUnlistenMock.mockReturnValueOnce(null).mockReturnValueOnce(previousUnlisten);
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: firstCallback });
@@ -107,7 +108,7 @@ describe('selectMidiInputTauri', () => {
     // fall back to "now", and hand back exactly the jitter it exists to remove.
     // So the bytes are not the only thing that has to survive the trip.
     it('maps the native timestamp onto our clock so a delayed message keeps its arrival instant', async () => {
-        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
         const nowSpy = vi.spyOn(performance, 'now');
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
@@ -127,7 +128,7 @@ describe('selectMidiInputTauri', () => {
     });
 
     it('keeps the mapped stamp inside the window resolveInputEventTime will accept', async () => {
-        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
         const nowSpy = vi.spyOn(performance, 'now');
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
@@ -142,14 +143,17 @@ describe('selectMidiInputTauri', () => {
         listener({ payload: { data: [144, 62, 127], timestamp: 9_000_030_000 } });
 
         const mapped = onMidiMessageMock.mock.calls[1]![0].timeStamp;
+        if (mapped === undefined) {
+            throw new Error('Expected the native stamp to map to an arrival time');
+        }
         const waitedSeconds = (5050 - mapped) / 1000;
         expect(waitedSeconds).toBeGreaterThan(0);
         expect(waitedSeconds).toBeLessThanOrEqual(1);
     });
 
     it('re-anchors on a port reopen, because the native epoch can restart with the port', async () => {
-        const firstCallback = vi.fn<(event: MIDIMessageEvent) => void>();
-        const secondCallback = vi.fn<(event: MIDIMessageEvent) => void>();
+        const firstCallback = vi.fn<(event: WebMidiInputMessage) => void>();
+        const secondCallback = vi.fn<(event: WebMidiInputMessage) => void>();
         const nowSpy = vi.spyOn(performance, 'now');
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: firstCallback });
@@ -166,7 +170,7 @@ describe('selectMidiInputTauri', () => {
     });
 
     it('leaves timeStamp undefined when the payload carries no native stamp', async () => {
-        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
         tauriListenMock.mock.calls[0]![1]({ payload: { data: [144, 60, 127] } });
@@ -175,7 +179,7 @@ describe('selectMidiInputTauri', () => {
     });
 
     it('forwards valid bytes without an untrusted native timestamp', async () => {
-        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
         const listener = tauriListenMock.mock.calls[0]![1];
@@ -183,5 +187,62 @@ describe('selectMidiInputTauri', () => {
 
         expect(onMidiMessageMock).toHaveBeenCalledTimes(1);
         expect(onMidiMessageMock.mock.calls[0]![0].timeStamp).toBeUndefined();
+    });
+
+    describe('overlapping selections', () => {
+        /**
+         * The unlisten registry is read at call start and written three awaits
+         * later. Two selections in flight at once must not have the earlier one
+         * finish last and overwrite the newer registration — that leaves both
+         * listeners subscribed to the single `midi-message` channel while the
+         * registry can only ever cancel one of them.
+         */
+        it('does not let a superseded selection register a listener at all', async () => {
+            const winningUnlisten = vi.fn();
+            const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
+
+            // Hold the first select inside `open_midi_input` while the second
+            // one runs to completion, then release it.
+            let releaseFirstOpen: (() => void) | undefined;
+            tauriInvokeMock.mockImplementationOnce(
+                async () =>
+                    new Promise<void>((resolve) => {
+                        releaseFirstOpen = resolve;
+                    })
+            );
+            tauriListenMock.mockResolvedValue(winningUnlisten);
+
+            const first = selectMidiInputTauri({ portIndex: 0, onMidiMessage: onMidiMessageMock });
+            await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+
+            expect(tauriListenMock).toHaveBeenCalledTimes(1);
+            expect(setTauriEventUnlistenMock).toHaveBeenLastCalledWith(winningUnlisten);
+
+            releaseFirstOpen?.();
+            await first;
+
+            // The superseded call must not subscribe a second listener to the
+            // single `midi-message` channel, nor touch the registry again.
+            expect(tauriListenMock).toHaveBeenCalledTimes(1);
+            expect(setTauriEventUnlistenMock).toHaveBeenLastCalledWith(winningUnlisten);
+        });
+
+        it('cancels its own listener when a newer selection wins during subscribe', async () => {
+            const lateUnlisten = vi.fn();
+            const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
+
+            // A second selection lands and completes while the first is still
+            // inside `tauriListen` — the late-subscribe window.
+            tauriListenMock.mockImplementationOnce(async () => {
+                await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+                return lateUnlisten;
+            });
+
+            await selectMidiInputTauri({ portIndex: 0, onMidiMessage: onMidiMessageMock });
+
+            // Its own registration is torn down rather than left dangling on
+            // the shared channel, where it would double every note.
+            expect(lateUnlisten).toHaveBeenCalledTimes(1);
+        });
     });
 });

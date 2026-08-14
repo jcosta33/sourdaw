@@ -312,7 +312,9 @@ describe('restoreMidiClipData', () => {
             pressure: undefined,
             slide: undefined,
             pitchBend: undefined,
+            pitchBendRangeSemitones: undefined,
             channel: undefined,
+            articulation: undefined,
         };
         const notesSnapshot = [noteWithUndefinedOptionals];
 
@@ -334,7 +336,62 @@ describe('restoreMidiClipData', () => {
         expect(Object.hasOwn(restoredNote, 'pressure')).toBe(true);
         expect(Object.hasOwn(restoredNote, 'slide')).toBe(true);
         expect(Object.hasOwn(restoredNote, 'pitchBend')).toBe(true);
+        expect(Object.hasOwn(restoredNote, 'pitchBendRangeSemitones')).toBe(true);
         expect(Object.hasOwn(restoredNote, 'channel')).toBe(true);
+        expect(Object.hasOwn(restoredNote, 'articulation')).toBe(true);
+    });
+
+    it('restores a note carrying every optional the model defines', () => {
+        // The exact-keys gate is a whitelist, so any `MidiNote` field missing
+        // from it rejects the whole snapshot. That drift is what made undo of a
+        // cut throw once splits started carrying `pitchBendRangeSemitones` and
+        // `articulation` through to the right half.
+        const fullyPopulatedNote = {
+            ...createNote('note-all-optionals'),
+            probability: 0.75,
+            pressure: 90,
+            slide: 12,
+            pitchBend: -4096,
+            pitchBendRangeSemitones: 2,
+            channel: 3,
+            articulation: 'staccato',
+        };
+
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: [fullyPopulatedNote],
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: null,
+        });
+
+        expect(requireMidiState().notesByClipId['clip-restore']).toEqual([fullyPopulatedNote]);
+    });
+
+    it('rejects a note carrying a key the model does not define', () => {
+        const previousState = mocks.state.value;
+
+        expect(() => {
+            restoreMidiClipData({
+                clipId: 'clip-restore',
+                notesSnapshot: [{ ...createNote('note-unknown-key'), tempo: 120 }],
+                controlChangeSnapshot: null,
+                pitchBendSnapshot: null,
+            });
+        }).toThrow(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
+
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(previousState);
+    });
+
+    it('rejects a non-numeric pitch bend range', () => {
+        expect(() => {
+            restoreMidiClipData({
+                clipId: 'clip-restore',
+                notesSnapshot: [{ ...createNote('note-bad-range'), pitchBendRangeSemitones: '2' }],
+                controlChangeSnapshot: null,
+                pitchBendSnapshot: null,
+            });
+        }).toThrow(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
     });
 
     it('copies supplied arrays without cloning their row objects', () => {

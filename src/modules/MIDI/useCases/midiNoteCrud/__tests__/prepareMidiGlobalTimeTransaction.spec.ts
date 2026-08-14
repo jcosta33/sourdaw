@@ -207,7 +207,9 @@ describe('prepareMidiGlobalTimeTransaction', () => {
             duration: 4,
             probability: 55,
         });
-        expect(appliedState.notesByClipId.right?.[0]).not.toHaveProperty('channel');
+        // Both halves of a split keep the source note's MPE routing (#1832 F8);
+        // the right half used to be rebuilt without it and fell back to 0.
+        expect(appliedState.notesByClipId.right?.[0]?.channel).toBe(4);
         expect(appliedState.ccByClipId.source).toBe(sourceCc);
         expect(appliedState.notesByClipId).not.toHaveProperty('remove');
         expect(appliedState.ccByClipId).not.toHaveProperty('remove');
@@ -253,6 +255,9 @@ describe('prepareMidiGlobalTimeTransaction', () => {
                 duration: 0.0625,
                 velocity: 1,
                 probability: 100,
+                // Carried from the source note — a duplicate that loses the
+                // MPE channel is re-routed to channel 0 (#1832 F8).
+                channel: 12,
             },
         ]);
         expect(appliedState.ccByClipId).not.toHaveProperty('target');

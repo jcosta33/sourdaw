@@ -22,6 +22,7 @@ import {
     getGrooveTemplate,
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
+import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
@@ -272,12 +273,17 @@ export const PianoRollContextMenu = ({
                         disabled={selectedNoteIds.size < 2}
                         onClick={act(() => {
                             const ids = [...selectedNoteIds];
-                            const originals = strumNotes(clipId, ids, 0.04, dir);
+                            // Redo replays the transform by re-invoking it, so
+                            // the seed is captured once here and handed to both
+                            // calls. Without it a randomised strum would redo
+                            // onto different offsets than the ones it undid.
+                            const seed = generateSeed();
+                            const originals = strumNotes(clipId, ids, 0.04, dir, seed);
                             if (originals) {
                                 pushUndoEntry(
                                     `Strum ${dir}`,
                                     () => restoreStrumOriginals(clipId, originals),
-                                    () => strumNotes(clipId, ids, 0.04, dir)
+                                    () => strumNotes(clipId, ids, 0.04, dir, seed)
                                 );
                             }
                         })}

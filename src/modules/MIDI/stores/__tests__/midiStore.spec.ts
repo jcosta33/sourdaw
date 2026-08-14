@@ -8,7 +8,7 @@ import {
     isValidMidiProbabilitySeed,
     LEGACY_MIDI_PROBABILITY_SEED,
     midiStore,
-    sanitize_midi_store_state,
+    sanitizeMidiStoreState,
     type MidiStoreState,
 } from '../midiStore';
 
@@ -298,9 +298,9 @@ describe('midiStore', () => {
     });
 });
 
-describe('sanitize_midi_store_state', () => {
+describe('sanitizeMidiStoreState', () => {
     it('returns the default state with the fallback seed for a non-object input', () => {
-        const result = sanitize_midi_store_state('not-an-object', 42);
+        const result = sanitizeMidiStoreState('not-an-object', 42);
         expect(result).toEqual({ ...defaultMidiStoreState, probabilitySeed: 42 });
     });
 
@@ -327,12 +327,12 @@ describe('sanitize_midi_store_state', () => {
             pitchBendByClipId: {},
             migratedAbsoluteNoteClipIds: ['clip-1'],
         };
-        const result = sanitize_midi_store_state(exact);
+        const result = sanitizeMidiStoreState(exact);
         expect(result).toEqual(exact);
     });
 
     it('rebuilds the state, carrying the migrated list only when it is a valid string array', () => {
-        const result = sanitize_midi_store_state({
+        const result = sanitizeMidiStoreState({
             probabilitySeed: 5,
             notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
             ccByClipId: {},
@@ -341,7 +341,7 @@ describe('sanitize_midi_store_state', () => {
         });
         expect(result.migratedAbsoluteNoteClipIds).toEqual(['clip-1']);
 
-        const dropped = sanitize_midi_store_state({
+        const dropped = sanitizeMidiStoreState({
             probabilitySeed: 5,
             notesByClipId: {},
             ccByClipId: {},
@@ -352,7 +352,7 @@ describe('sanitize_midi_store_state', () => {
     });
 
     it('falls back to the legacy seed when the input seed is invalid', () => {
-        const result = sanitize_midi_store_state({
+        const result = sanitizeMidiStoreState({
             probabilitySeed: -5,
             notesByClipId: {},
             ccByClipId: {},
@@ -362,7 +362,7 @@ describe('sanitize_midi_store_state', () => {
     });
 
     it('drops rows that fail validation while keeping valid ones in the same clip', () => {
-        const result = sanitize_midi_store_state({
+        const result = sanitizeMidiStoreState({
             probabilitySeed: 1,
             notesByClipId: {
                 'clip-1': [

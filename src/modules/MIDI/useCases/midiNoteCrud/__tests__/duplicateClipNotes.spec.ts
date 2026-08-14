@@ -85,7 +85,7 @@ describe('duplicateClipNotes', () => {
         expect(clone?.pitchBend).toBeUndefined();
     });
 
-    it('keeps the legacy clamps, probability default, and channel omission', () => {
+    it('keeps the legacy clamps and probability default, and carries the MPE channel', () => {
         midiStore.set({
             notesByClipId: {
                 src: [{ id: 's1', pitch: 200.4, startBeat: 2, duration: 0, velocity: 0, channel: 8 }],
@@ -99,6 +99,8 @@ describe('duplicateClipNotes', () => {
         expect(midiStore.value?.notesByClipId.dst?.[0]).toEqual(
             expect.objectContaining({ pitch: 127, startBeat: 2, duration: 0.0625, velocity: 1, probability: 100 })
         );
-        expect(midiStore.value?.notesByClipId.dst?.[0]).not.toHaveProperty('channel');
+        // Per-note channel is MPE routing, not decoration: dropping it on a
+        // duplicate silently re-routes the copy to channel 0 (issue #1832 F8).
+        expect(midiStore.value?.notesByClipId.dst?.[0]?.channel).toBe(8);
     });
 });

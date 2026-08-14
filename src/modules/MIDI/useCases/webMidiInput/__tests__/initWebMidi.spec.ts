@@ -13,6 +13,7 @@ type RouteYeastNoteOffs = (
 
 const initializeWebMidiMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const setMidiInputTrackMock = vi.hoisted(() => vi.fn());
+const getMidiInputTrackOwnerIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const routeYeastNoteOffsMock = vi.hoisted(() => vi.fn<RouteYeastNoteOffs>());
 const trackStoreSubscribeMock = vi.hoisted(() => vi.fn());
 const eventBusOnMock = vi.hoisted(() => vi.fn());
@@ -54,6 +55,10 @@ vi.mock('../setMidiInputTrack', () => ({
     setMidiInputTrack: setMidiInputTrackMock,
 }));
 
+vi.mock('../getMidiInputTrackOwnerId', () => ({
+    getMidiInputTrackOwnerId: getMidiInputTrackOwnerIdMock,
+}));
+
 import { disposeWebMidiSubscriptions } from '../disposeWebMidiSubscriptions';
 import * as subject from '../initWebMidi';
 
@@ -62,6 +67,8 @@ describe('initWebMidi', () => {
         disposeWebMidiSubscriptions();
         initializeWebMidiMock.mockClear();
         setMidiInputTrackMock.mockClear();
+        getMidiInputTrackOwnerIdMock.mockReset();
+        getMidiInputTrackOwnerIdMock.mockReturnValue(null);
         routeYeastNoteOffsMock.mockClear();
         trackStoreSubscribeMock.mockReset();
         eventBusOnMock.mockReset();
@@ -121,6 +128,76 @@ describe('initWebMidi', () => {
         };
         routeInput.emitGrandBouleEvent('device-a', 60);
         expect(eventBusEmitMock).toHaveBeenCalledWith('midi.noteOff', { deviceId: 'device-a', midiNote: 60 });
+    });
+
+    it('drops the live input target when the selection moves to a non-MIDI track', async () => {
+        let trackSubscription: ((state: unknown) => void) | undefined;
+        trackStoreSubscribeMock.mockImplementation((callback: (state: unknown) => void) => {
+            trackSubscription = callback;
+            return () => {};
+        });
+        eventBusOnMock.mockImplementation(() => () => {});
+
+        await subject.initWebMidi();
+
+        const tracks = [
+            { id: 'track-midi', kind: 'midi', devices: [] },
+            { id: 'track-audio', kind: 'audio', devices: [] },
+        ];
+        trackSubscription?.({ selectedTrackId: 'track-midi', tracks });
+        expect(setMidiInputTrackMock).toHaveBeenLastCalledWith('track-midi');
+
+        // Selecting an audio track used to fall off the end of the handler,
+        // leaving the controller playing — and recording into — a MIDI track
+        // the user can no longer see selected.
+        trackSubscription?.({ selectedTrackId: 'track-audio', tracks });
+        expect(setMidiInputTrackMock).toHaveBeenLastCalledWith(null);
+    });
+
+    it('leaves an armed track receiving when the selection moves to a non-MIDI track', async () => {
+        // `armTrack` claims the route with an owner id. Record-arm outranks
+        // selection in every DAW that ships this, and clearing the route here
+        // would kill the controller the moment the user clicked an audio
+        // track's fader mid-take.
+        let trackSubscription: ((state: unknown) => void) | undefined;
+        trackStoreSubscribeMock.mockImplementation((callback: (state: unknown) => void) => {
+            trackSubscription = callback;
+            return () => {};
+        });
+        eventBusOnMock.mockImplementation(() => () => {});
+
+        await subject.initWebMidi();
+
+        const tracks = [
+            { id: 'track-midi', kind: 'midi', devices: [] },
+            { id: 'track-audio', kind: 'audio', devices: [] },
+        ];
+        trackSubscription?.({ selectedTrackId: 'track-midi', tracks });
+        setMidiInputTrackMock.mockClear();
+        getMidiInputTrackOwnerIdMock.mockReturnValue('arm-track-midi');
+
+        trackSubscription?.({ selectedTrackId: 'track-audio', tracks });
+        expect(setMidiInputTrackMock).not.toHaveBeenCalled();
+    });
+
+    it('drops the live input target when the selected id is not in the store', async () => {
+        let trackSubscription: ((state: unknown) => void) | undefined;
+        trackStoreSubscribeMock.mockImplementation((callback: (state: unknown) => void) => {
+            trackSubscription = callback;
+            return () => {};
+        });
+        eventBusOnMock.mockImplementation(() => () => {});
+
+        await subject.initWebMidi();
+
+        trackSubscription?.({
+            selectedTrackId: 'track-midi',
+            tracks: [{ id: 'track-midi', kind: 'midi', devices: [] }],
+        });
+        expect(setMidiInputTrackMock).toHaveBeenLastCalledWith('track-midi');
+
+        trackSubscription?.({ selectedTrackId: 'track-gone', tracks: [] });
+        expect(setMidiInputTrackMock).toHaveBeenLastCalledWith(null);
     });
 
     it('disposes stale handlers before reinitializing subscriptions', async () => {

@@ -1,3 +1,5 @@
+import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
+
 import { midiStore } from '../../stores/midiStore';
 
 export type StrumDirection = 'up' | 'down' | 'random';
@@ -12,6 +14,11 @@ export type StrumDirection = 'up' | 'down' | 'random';
  * @param noteIds  - IDs of notes to strum (must be 2+)
  * @param strumAmount - Beat offset per note (e.g. 0.04 = ~1/64th note feel)
  * @param direction - 'up' = low→high delay, 'down' = high→low, 'random'
+ * @param seed - Optional RNG seed for `direction: 'random'`. Undo/redo replays
+ *   this transform by re-invoking it, so a caller that wants the redo to land
+ *   on the offsets it is replaying must pass the same seed both times, exactly
+ *   as `humanizeNotes` and `arpeggiate` require. Raw `Math.random()` made that
+ *   impossible.
  *
  * @returns Map of noteId → original startBeat (for undo)
  */
@@ -19,7 +26,8 @@ export function strumNotes(
     clipId: string,
     noteIds: string[],
     strumAmount = 0.04,
-    direction: StrumDirection = 'up'
+    direction: StrumDirection = 'up',
+    seed?: number
 ): Map<string, number> | null {
     const state = midiStore.value;
     if (!state) {
@@ -48,12 +56,15 @@ export function strumNotes(
     // 'random' keeps the array as-is (insertion order = pseudo-random for different chords)
 
     // Build offset map: noteId → offset delta
+    const random = createSeededRandom(seed ?? generateSeed());
     const offsets = new Map<string, number>();
     for (let index = 0; index < sorted.length; index++) {
         const note = sorted[index]!;
-        const offset =
-            direction === 'random' ? (Math.random() - 0.3) * strumAmount * sorted.length : index * strumAmount;
-        offsets.set(note.id, offset);
+        if (direction === 'random') {
+            offsets.set(note.id, (random() - 0.3) * strumAmount * sorted.length);
+            continue;
+        }
+        offsets.set(note.id, index * strumAmount);
     }
 
     // Save original start beats for undo

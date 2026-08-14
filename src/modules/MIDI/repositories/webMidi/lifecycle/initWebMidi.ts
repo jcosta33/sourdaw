@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
-import { type MidiInputInfo } from '../../../models/WebMidiTypes';
+import { type MidiInputInfo, type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
+import { readPersistedInputId } from '../readPersistedInputId';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
 import { setTauriMode } from '../setTauriMode';
@@ -15,7 +16,28 @@ import { attachInput } from './helpers';
 import { selectMidiInputTauri } from './selectMidiInputTauri';
 
 type TauriMidiDevice = { index: number; name: string };
-type WebMidiMessageCallback = (event: MIDIMessageEvent) => void;
+type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
+
+function isTauriMidiDevice(value: unknown): value is TauriMidiDevice {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    if (!('index' in value) || !('name' in value)) {
+        return false;
+    }
+
+    return Number.isInteger(value.index) && typeof value.name === 'string';
+}
+
+/**
+ * The device list arrives over IPC, so it is `unknown` until proven otherwise.
+ * A bare cast let a malformed payload through as `id: "undefined"`, which then
+ * reached `open_midi_input` as `NaN`. Same guard shape as the message-event
+ * validation one file over.
+ */
+function isTauriMidiDeviceList(value: unknown): value is TauriMidiDevice[] {
+    return Array.isArray(value) && value.every(isTauriMidiDevice);
+}
 
 function enumerateInputs(): MidiInputInfo[] {
     const access = getMidiAccess();
@@ -37,27 +59,46 @@ type OnStateChangeInput = {
 function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
     const inputs = enumerateInputs();
     const state = getState();
+    const currentAccess = getMidiAccess();
+    const preferredId = readPersistedInputId();
+
+    // The saved device came back (replug, hub power cycle). Restore it rather
+    // than leaving the session stuck on whatever stood in for it.
+    if (preferredId !== null && preferredId !== state.selectedInputId && currentAccess) {
+        const preferredInput = currentAccess.inputs.get(preferredId);
+        if (preferredInput && inputs.some((entry) => entry.id === preferredId)) {
+            detachActiveInput();
+            attachInput({ input: preferredInput, onMidiMessage });
+            setState({ inputs, selectedInputId: preferredId });
+            return;
+        }
+    }
+
     const selectedStillExists = inputs.some((index) => index.id === state.selectedInputId);
 
     if (!selectedStillExists) {
         detachActiveInput();
     }
 
-    const currentAccess = getMidiAccess();
     if (!selectedStillExists && inputs.length > 0 && currentAccess) {
         const first = inputs[0]!;
         const input = currentAccess.inputs.get(first.id);
         if (input) {
             attachInput({ input, onMidiMessage });
-            setState({ inputs, selectedInputId: first.id });
+            // Session-only stand-in: the user still prefers the device that
+            // was unplugged, so leave the persisted preference alone.
+            setState({ inputs, selectedInputId: first.id }, { persistSelection: false });
             return;
         }
     }
 
-    setState({
-        inputs,
-        selectedInputId: selectedStillExists ? state.selectedInputId : null,
-    });
+    setState(
+        {
+            inputs,
+            selectedInputId: selectedStillExists ? state.selectedInputId : null,
+        },
+        { persistSelection: false }
+    );
 }
 
 type InitWebMidiInput = {
@@ -90,7 +131,13 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 const input = access.inputs.get(targetId) ?? access.inputs.get(inputs[0]!.id);
                 if (input) {
                     attachInput({ input, onMidiMessage });
-                    setState({ selectedInputId: input.id });
+                    // `state.selectedInputId` is seeded from the saved
+                    // preference, so a startup with that device unplugged
+                    // resolves it, misses, and falls back. Persisting the
+                    // stand-in rebinds the controller for good — and the replug
+                    // restore in `onStateChange` cannot undo it, because it only
+                    // fires while the saved id differs from the selected one.
+                    setState({ selectedInputId: input.id }, { persistSelection: input.id === targetId });
                 }
             }
 
@@ -103,7 +150,10 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
     if (isTauri()) {
         try {
             setTauriMode(true);
-            const devices = (await tauriInvoke('list_midi_inputs')) as TauriMidiDevice[];
+            const devices = await tauriInvoke('list_midi_inputs');
+            if (!isTauriMidiDeviceList(devices)) {
+                throw new TypeError('list_midi_inputs returned an invalid device list');
+            }
             const inputs: MidiInputInfo[] = devices.map((data) => ({
                 id: String(data.index),
                 name: data.name,
@@ -118,7 +168,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 const targetId = state.selectedInputId ?? inputs[0]!.id;
                 const targetInput = inputs.find((index) => index.id === targetId) ?? inputs[0]!;
                 await selectMidiInputTauri({ portIndex: Number(targetInput.id), onMidiMessage });
-                setState({ selectedInputId: targetInput.id });
+                // Same rule as the Web MIDI path: a stand-in for an absent
+                // device is this session's choice, never the saved one.
+                setState({ selectedInputId: targetInput.id }, { persistSelection: targetInput.id === targetId });
             }
 
             return true;

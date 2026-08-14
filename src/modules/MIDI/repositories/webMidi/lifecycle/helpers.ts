@@ -1,15 +1,20 @@
+import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getActiveInput } from '../getActiveInput';
 import { setActiveInput } from '../setActiveInput';
 import { webMidiRuntime } from '../state';
 
 type AttachInputInput = {
     input: MIDIInput;
-    onMidiMessage: (event: MIDIMessageEvent) => void;
+    onMidiMessage: (event: WebMidiInputMessage) => void;
 };
 
 export function attachInput({ input, onMidiMessage }: AttachInputInput): void {
     const current = getActiveInput();
-    const listener = onMidiMessage as EventListener;
+    // `midimessage` only ever delivers a MIDIMessageEvent, which satisfies
+    // WebMidiInputMessage; the checked assignment below proves the handler
+    // accepts one before the unavoidable widening to EventListener.
+    const midiListener: (event: MIDIMessageEvent) => void = onMidiMessage;
+    const listener = midiListener as EventListener;
     if (
         current &&
         webMidiRuntime.midiMessageListener &&

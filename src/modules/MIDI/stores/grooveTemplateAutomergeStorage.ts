@@ -112,6 +112,18 @@ function decodeState(value: unknown): GrooveTemplateState {
     return sanitizeGrooveTemplateState({ templates, assignments });
 }
 
+// Key-sorted serialization so the live-vs-live tiebreak below depends on the
+// entity's content alone, never on the property insertion order a peer happened
+// to produce.
+function canonicalEntityValueJson(value: unknown): string {
+    return JSON.stringify(value, (_key, nested: unknown) => {
+        if (!isRecord(nested)) {
+            return nested;
+        }
+        return Object.fromEntries(Object.entries(nested).sort(([left], [right]) => compareEntityKeys(left, right)));
+    });
+}
+
 function mergeEntityRecords<Value>(
     target: Record<string, { deleted: boolean; value: Value }>,
     source: Record<string, { deleted: boolean; value: Value }>
@@ -123,6 +135,21 @@ function mergeEntityRecords<Value>(
             continue;
         }
         if (!existing || incoming.deleted === true) {
+            target[key] = structuredClone(incoming);
+            continue;
+        }
+        // Live-vs-live: both peers wrote a different, non-deleted value under the
+        // same key. Conflicting roots reach this resolver ordered by Automerge
+        // actor id, so leaving the case unhandled made the survivor an actor-id
+        // lottery that silently discarded one peer's rename. Tiebreak on the
+        // content instead — keep the greater canonical JSON. That total order is
+        // commutative and associative, so every replica lands on the same entity
+        // no matter which peer it merges first. (Tombstones still outrank live
+        // values above, and stay sticky; a real last-writer-wins rule would need
+        // a timestamp the GrooveTemplate schema does not carry.)
+        const isIncomingGreater =
+            compareEntityKeys(canonicalEntityValueJson(incoming.value), canonicalEntityValueJson(existing.value)) > 0;
+        if (isIncomingGreater) {
             target[key] = structuredClone(incoming);
         }
     }
