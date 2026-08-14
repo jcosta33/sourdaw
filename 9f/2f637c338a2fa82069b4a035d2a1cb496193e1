@@ -1,0 +1,29 @@
+scripts/removeLane.ts
+  s_62e9c3dc3ba52a::t_7cfc3422bd33a5 242
+  s_62e9c3dc3ba52a::t_8dd0631ef64c83 78
+  s_62e9c3dc3ba52a::t_ba19407f69c7f0 238-241,243,247-249,251
+  s_62e9c3dc3ba52a::t_21ad5547032d1a 69-77,79-83,87-89,95-96
+  s_62e9c3dc3ba52a::t_ab14d3c93c71b7 430-431,433-443,445
+scripts/__tests__/removeLane.spec.ts
+  s_62e9c3dc3ba52a::t_0691280d307f3a 307-327
+  s_62e9c3dc3ba52a::t_c1a5d280e48bf8 88
+  s_62e9c3dc3ba52a::t_aa95d15fe41246 150-171,179
+  s_62e9c3dc3ba52a::t_1c105374e1f5f5 221
+  s_62e9c3dc3ba52a::t_635a50f156e01d 180-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9f2f637c338a2fa82069b4a035d2a1cb496193e1",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
