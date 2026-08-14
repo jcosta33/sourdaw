@@ -26,11 +26,21 @@ function ensureTrackId(action: AddTrackAction): string {
     return trackId;
 }
 
+// Guards for tracks this handler creates, keyed by action so describe-time
+// inverses can be finalized with the created entity once execute lands —
+// the same pattern handleCreateBus uses to keep its discard inverse
+// reapply-guarded inside atomic batches.
+const pendingCreatedTrackGuards = new WeakMap<object, { entityJson: string; midiByClipIdJson: string }>();
+
 function executeAddTrackAction(action: AddTrackAction) {
     ensureTrackId(action);
     const track = addTrack({ ...action.payload, suppressAddedEvent: true });
     if (!track) {
         return { status: 'no-write' as const };
+    }
+    const guard = pendingCreatedTrackGuards.get(action);
+    if (guard) {
+        guard.entityJson = JSON.stringify(track);
     }
     return {
         status: 'written' as const,
@@ -65,9 +75,28 @@ export const handleAddTrack = createHandler<'addTrack'>({
         const trackId = ensureTrackId(action);
         const state = getTrackStoreState();
         const collides = state?.tracks.some((track) => track.id === trackId) ?? true;
+        if (collides) {
+            return {
+                label: `Add ${action.payload.kind} track "${action.payload.name}"`,
+                inverseAction: null,
+            };
+        }
+        // Without the guard, discardCreatedTrack's canReapplyAfterDivergence
+        // returns false and any atomic batch containing this action is
+        // rejected ("Action compensation is not guarded inside an atomic
+        // batch: addTrack") — the prompt fast path's "create N tracks" could
+        // never be confirmed.
+        const generatedMidiStateGuard = {
+            entityJson: '',
+            midiByClipIdJson: JSON.stringify({}),
+        };
+        pendingCreatedTrackGuards.set(action, generatedMidiStateGuard);
         return {
             label: `Add ${action.payload.kind} track "${action.payload.name}"`,
-            inverseAction: collides ? null : { type: 'discardCreatedTrack', payload: { trackId } },
+            inverseAction: {
+                type: 'discardCreatedTrack',
+                payload: { trackId, generatedMidiStateGuard },
+            },
         };
     },
     isNoop: (action) => {
