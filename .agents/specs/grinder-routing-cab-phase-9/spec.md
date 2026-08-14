@@ -32,21 +32,21 @@ the fixed rig architecture, without expanding into the modular graph roadmap.
 `cabType = 'ir' | 'parametric' | 'both'` must change which cabinet stages are rendered in
 the live DSP path.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — Cabinet voice is real
 
 `cabIrId` must select a real built-in cabinet IR voice rather than sitting unused in the
 patch model.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — Routing preset is real
 
 `routingMode = 'serial' | 'parallel' | 'wet-dry-wet' | 'dual-amp'` must select distinct
 bounded signal-path behaviors inside the current Grinder engine.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Patch-to-audio sync is complete for this slice
 
@@ -66,7 +66,7 @@ Verify with: `pnpm test:run -- GrinderPanel`
 The cabinet mic distance and room behavior added in phase 4 must continue to work after
 the routing/cab selections land.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ## Open questions
 

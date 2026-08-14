@@ -32,21 +32,21 @@ real. This is a modest spatial model, not full IR management or true room simula
 Changing `mic1Distance` or `mic2Distance` must change the rendered cabinet output in a
 stable, repeatable way.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — Distance is directionally correct
 
 A farther mic must reduce directness relative to a close mic through lower direct level
 and/or softer high-frequency response, and must not behave as a random tonal change.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — Room amount is audible
 
 Increasing `roomAmount` from minimum to a high setting must change the cabinet output in
 a stable, repeatable way.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Cab UI exposes only real cabinet controls
 
@@ -60,35 +60,35 @@ Verify with: `pnpm test:run -- GrinderPanel`
 The cabinet implementation must remain allocation-free and lock-free in
 `process_sample()`, with added state preallocated at construction/reset time.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — Reuse the existing cabinet path
 
 The audible mic-distance and room-amount behavior must extend the existing
 `CabinetConvolver`; a parallel cabinet effect path must not be introduced.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-007 — Patch contracts stay stable
 
 Existing patch contracts must remain unchanged unless an existing contract is actively
 misleading.
 
-Verify with: `cargo test -p daw-dsp grinder:: && pnpm test:run -- GrinderPanel`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder:: && pnpm test:run -- GrinderPanel`
 
 ### AC-008 — Regression coverage exists
 
 Dedicated regression tests must prove that mic distance and room amount alter cabinet
 output.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-009 — Existing Grinder DSP and UI tests do not regress
 
 The existing Grinder DSP and UI test suites must continue to pass unchanged after the
 mic-distance and room-amount work lands.
 
-Verify with: `cargo test -p daw-dsp grinder:: && pnpm test:run -- GrinderPanel`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder:: && pnpm test:run -- GrinderPanel`
 
 ### AC-010 — Types stay sound
 

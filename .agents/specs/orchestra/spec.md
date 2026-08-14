@@ -36,7 +36,7 @@ When a note-on arrives, the engine must resolve its candidate sample zones
 through a precomputed lookup keyed by `(note, velocity bucket, articulation,
 mic)` without scanning the full zone list.
 
-Verify with: `cargo test -p daw-dsp levain::zones::lookup_is_o1`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::zones::lookup_is_o1`
 
 ### AC-002 — Round-robin selection avoids consecutive repeats
 
@@ -44,14 +44,14 @@ When the same note is struck repeatedly at one dynamic, the engine must cycle
 round-robin groups so that no group repeats on consecutive strikes when the RR
 count is greater than one.
 
-Verify with: `cargo test -p daw-dsp levain::voice::round_robin_no_repeat`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::voice::round_robin_no_repeat`
 
 ### AC-003 — Round-robin selection is reproducible
 
 When the same note sequence is played twice with the same seed, the round-robin
 group selection must be identical across both runs.
 
-Verify with: `cargo test -p daw-dsp levain::voice::round_robin_deterministic`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::voice::round_robin_deterministic`
 
 ### AC-004 — Pitch interpolation between recorded pitches
 
@@ -59,7 +59,7 @@ When a played note falls between recorded sample pitches, the engine must
 resample with cubic Hermite interpolation by default rather than nearest-pitch
 playback.
 
-Verify with: `cargo test -p daw-dsp levain::resample::cubic_hermite`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::resample::cubic_hermite`
 
 ### AC-005 — Voice stealing follows a fixed priority
 
@@ -67,35 +67,35 @@ When polyphony is exceeded, the engine must steal voices in the order
 release-tail-below-threshold, then lowest-energy, then oldest, producing
 identical allocation across runs of the same note sequence.
 
-Verify with: `cargo test -p daw-dsp levain::voice::steal_priority`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::voice::steal_priority`
 
 ### AC-006 — The audio path is allocation-, lock-, and syscall-free
 
 When processing a block, the engine must not allocate, take a lock, or perform
 I/O on the audio thread.
 
-Verify with: `cargo test -p daw-dsp levain::voice::rt_safe_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::voice::rt_safe_no_alloc`
 
 ### AC-007 — Parameter changes arrive lock-free with no string resolution
 
 When the UI changes a parameter, the engine must receive it as a `ParamId`
 through an SPSC queue.
 
-Verify with: `cargo test -p daw-dsp levain::params::spsc_param_by_id`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::params::spsc_param_by_id`
 
 ### AC-008 — Parameter values are smoothed
 
 When a smoothed parameter's target changes, the engine must approach it with a
 one-pole smoother rather than stepping the value within a block.
 
-Verify with: `cargo test -p daw-dsp levain::params::one_pole_smoothing`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::params::one_pole_smoothing`
 
 ### AC-009 — Block size is read at runtime
 
 When `process` is called, the engine must read the output buffer length per call
 rather than assuming a fixed render quantum.
 
-Verify with: `cargo test -p daw-dsp levain::voice::variable_block_size`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::voice::variable_block_size`
 
 ### AC-010 — Native and WASM backends produce equivalent output
 
@@ -103,14 +103,14 @@ When the same patch and MIDI performance run on the native and WASM backends at
 matched quality settings, the rendered output must match within a fixed
 tolerance.
 
-Verify with: `cargo test -p daw-dsp levain::voice::cross_backend_parity`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::voice::cross_backend_parity`
 
 ### AC-011 — No parameter-name resolution on the audio thread
 
 When processing a parameter change, the engine must never resolve a parameter
 name to an id on the audio thread.
 
-Verify with: `cargo test -p daw-dsp levain::params::spsc_param_by_id`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::params::spsc_param_by_id`
 
 ## Open questions
 

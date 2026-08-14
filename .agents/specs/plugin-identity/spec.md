@@ -77,7 +77,7 @@ Verify with: `manual` — confirm Fermenter is sage (not mint), Dutch Oven is am
 
 ## Open questions
 
-- [ ] (non-blocking) Should the no-collision check be enforced by CI, or remain a
+- [ ] (non-blocking) Should the no-collision check become an explicit local gate, or remain a
   reviewer checklist item? A checklist item satisfies the requirement today.
 
 ## Affected areas

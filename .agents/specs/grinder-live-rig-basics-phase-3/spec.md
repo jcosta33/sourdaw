@@ -32,7 +32,7 @@ and stored snapshots become recallable rig scenes rather than dead patch metadat
 The order of supported `prePedals` in the patch must be the order used by the live DSP
 path, for `compressor`, `overdrive`, `distortion`, and `fuzz`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — Snapshot recall is real
 
@@ -82,7 +82,7 @@ Verify with: `pnpm test:run -- GrinderPanel`
 The Rust engine must rebuild its pedal execution order when an order parameter
 changes, not recompute it per sample on the audio thread.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ## Constraints
 

@@ -37,7 +37,7 @@ Verify with: `pnpm test:run -- elasticAudioHandlers`
 Running detection on a clip must place warp markers at detected onsets using a
 spectral-flux algorithm above the sensitivity threshold.
 
-Verify with: `cargo test -p daw-dsp transient::spectral_flux_detect`
+Verify with: `pnpm cargo:test -- -p daw-dsp transient::spectral_flux_detect`
 
 ### AC-003 — A warp marker records its origin and confidence
 
@@ -51,7 +51,7 @@ Verify with: `pnpm test:run -- warpMarkerModel`
 Quantizing must move each detected marker to the nearest grid division at the
 current strength, preserving inter-marker stretch ratios elsewhere.
 
-Verify with: `cargo test -p daw-dsp transient::quantize_to_grid`
+Verify with: `pnpm cargo:test -- -p daw-dsp transient::quantize_to_grid`
 
 ### AC-005 — A sensitivity slider changes detected marker count
 

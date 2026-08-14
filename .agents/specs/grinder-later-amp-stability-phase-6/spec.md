@@ -32,56 +32,56 @@ expert control produces an audible, defensible change instead of decorative move
 Cold and hot `powerAmpBias` settings must produce an audible change in the power-stage
 response rather than a near-zero difference.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — High-gain preamp remains sample-rate stable
 
 A high-gain preamp scenario must produce reasonably similar output behavior at 48 kHz
 and 96 kHz rather than diverging excessively.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — High-gain power amp remains sample-rate stable
 
 A high-drive power-amp scenario must produce reasonably similar output behavior at 48 kHz
 and 96 kHz rather than diverging excessively.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Later stages remain audibly active
 
 The fix must not flatten the preamp or power amp into near-linear behavior; the stages
 must still audibly shape the signal.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-005 — Existing dynamic behavior is preserved
 
 Triode blocking/bias behavior and power-amp sag/feedback behavior must remain stateful
 rather than being replaced by a plain static shaper.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — RT safety is preserved
 
 The implementation must remain allocation-free and lock-free in `process_sample()`, with
 all state preallocated inside the stage structs.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-007 — Power-amp bias stays within realistic bounds
 
 The `powerAmpBias` effect must shape crossover feel and headroom without being so
 exaggerated that the amp sounds gimmicky rather than realistic.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-008 — Bias change stays within a bounded range
 
 The audible bias change (AC-001) must stay within a bounded range that preserves
 believable amp character.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ## Open questions
 

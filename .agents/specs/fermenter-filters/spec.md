@@ -31,49 +31,49 @@ ship today.
 When the state-variable filter runs at high resonance, the zero-delay-feedback
 topology must remain stable and self-oscillate cleanly at cutoff.
 
-Verify with: `cargo test -p daw-dsp fermenter::svf_zdf_stability`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::svf_zdf_stability`
 
 ### AC-002 — The SVF exposes simultaneous response outputs
 
 When the SVF ticks, it must produce low-pass, band-pass, high-pass, notch, peak,
 and allpass outputs from the same state.
 
-Verify with: `cargo test -p daw-dsp fermenter::svf_outputs`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::svf_outputs`
 
 ### AC-003 — The Moog ladder is 24 dB/oct and self-oscillates
 
 When the Moog ladder filter runs, it must roll off at 24 dB/octave and
 self-oscillate at maximum resonance.
 
-Verify with: `cargo test -p daw-dsp fermenter::moog_ladder`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::moog_ladder`
 
 ### AC-004 — Each analog model applies its characteristic nonlinearity
 
 When an analog model is selected (Moog, diode, MS-20, SEM, Curtis), the filter
 must apply that model's defined saturation shape.
 
-Verify with: `cargo test -p daw-dsp fermenter::filter_model_nonlinearity`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::filter_model_nonlinearity`
 
 ### AC-005 — Digital biquads match the RBJ cookbook responses
 
 When a digital filter band type is selected, its coefficients must match the RBJ
 cookbook formula for that band type.
 
-Verify with: `cargo test -p daw-dsp fermenter::rbj_biquads`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::rbj_biquads`
 
 ### AC-006 — The formant filter renders the selected vowel
 
 When a vowel is selected, the formant filter must place its resonant peaks at
 that vowel's formant frequencies.
 
-Verify with: `cargo test -p daw-dsp fermenter::formant_vowels`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::formant_vowels`
 
 ### AC-007 — Saturation placement changes resonance behavior
 
 When drive placement is set pre-filter, in-loop, or post-filter, the resonance
 and harmonic response must differ accordingly.
 
-Verify with: `cargo test -p daw-dsp fermenter::filter_drive_placement`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::filter_drive_placement`
 
 ### AC-008 — No cross-module internal imports
 

@@ -5,16 +5,12 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { acquireHeavyweightLock, affectedCargoPackages, buildVerificationPlan, parseNameStatus } from '../verifyChange';
+import { affectedCargoPackages, buildVerificationPlan, capture, parseNameStatus } from '../verifyChange';
 
-function plan(
-    paths: string[],
-    options: { allowFullE2e?: boolean; requestedE2e?: string[]; cargoPackages?: string[] } = {}
-) {
+function plan(paths: string[], options: { requestedE2e?: string[]; cargoPackages?: string[] } = {}) {
     return buildVerificationPlan(
         paths.map((path) => ({ path, present: true })),
         {
-            allowFullE2e: options.allowFullE2e ?? false,
             requestedE2e: options.requestedE2e ?? [],
             cargoPackages: options.cargoPackages ?? [],
         }
@@ -22,59 +18,80 @@ function plan(
 }
 
 describe('verify change planning', () => {
+    it('bounds synchronous preflight commands', () => {
+        const previous = process.env.SOURDAW_SYNC_TIMEOUT_MS;
+        process.env.SOURDAW_SYNC_TIMEOUT_MS = '50';
+        try {
+            expect(() => capture(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])).toThrow(
+                /timed out after 50ms/
+            );
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_SYNC_TIMEOUT_MS;
+            } else {
+                process.env.SOURDAW_SYNC_TIMEOUT_MS = previous;
+            }
+        }
+    });
+
     it('keeps a module change targeted and bounds every selected test runner', () => {
         const checks = plan(['src/modules/Project/useCases/saveProject.ts']);
 
         expect(checks.map((check) => check.id)).toContain('vitest-related-src');
         expect(checks.map((check) => check.id)).not.toContain('e2e-targeted');
-        expect(checks.map((check) => check.id)).not.toContain('e2e-full');
-        expect(checks.find((check) => check.id === 'vitest-related-src')?.args).toEqual(
-            expect.arrayContaining(['--maxWorkers=2', '--bail=1'])
-        );
+        expect(checks.find((check) => check.id === 'vitest-related-src')?.args).toEqual([
+            'test:related',
+            'src/modules/Project/useCases/saveProject.ts',
+            '--run',
+            '--passWithNoTests',
+        ]);
     });
 
-    it('uses the bounded full unit suite only for shared web state', () => {
+    it('keeps shared web state on related tests', () => {
         const checks = plan(['src/infra/storage/projectRepository.ts']);
-        const unit = checks.find((check) => check.id === 'vitest-full-src');
+        const unit = checks.find((check) => check.id === 'vitest-related-src');
 
-        expect(unit).toMatchObject({ heavyweight: true });
-        expect(unit?.args).toEqual(expect.arrayContaining(['--dir', 'src', '--maxWorkers=2', '--bail=1']));
-        expect(checks.map((check) => check.id)).not.toContain('e2e-full');
+        expect(unit).toMatchObject({ heavyweight: false });
+        expect(unit?.args).toContain('src/infra/storage/projectRepository.ts');
+    });
+
+    it('gives the web build its broad timeout profile', () => {
+        const build = plan(['package.json']).find((check) => check.id === 'web-build');
+
+        expect(build?.profile).toBe('broad');
     });
 
     it('runs only the changed E2E spec by default', () => {
         const checks = plan(['tests/e2e/transportSmoke.spec.ts']);
         const e2e = checks.find((check) => check.id === 'e2e-targeted');
 
-        expect(e2e?.args).toEqual(
-            expect.arrayContaining(['tests/e2e/transportSmoke.spec.ts', '--workers=1', '--max-failures=1'])
-        );
+        expect(e2e?.args).toEqual(['test:e2e', 'tests/e2e/transportSmoke.spec.ts']);
         expect(e2e?.args).not.toContain('tests/e2e/projectLifecycleTestId.spec.ts');
     });
 
-    it('allows the full E2E suite only for harness risk or explicit authority', () => {
-        expect(plan(['playwright.config.ts']).map((check) => check.id)).toContain('e2e-full');
-        expect(plan(['docs/06-testing.md'], { allowFullE2e: true }).map((check) => check.id)).toContain('e2e-full');
-        expect(plan(['docs/06-testing.md']).map((check) => check.id)).not.toContain('e2e-full');
+    it('never infers E2E scope from harness changes', () => {
+        expect(plan(['playwright.config.ts']).map((check) => check.id)).not.toContain('e2e-targeted');
+        expect(
+            plan(['playwright.config.ts'], { requestedE2e: ['tests/e2e/smoke.spec.ts'] }).map((check) => check.id)
+        ).toContain('e2e-targeted');
     });
 
     it('keeps script tests when shared web code changes in the same diff', () => {
         const checks = plan(['src/infra/storage/projectRepository.ts', 'scripts/verifyProject.ts']);
 
         expect(checks.map((check) => check.id)).toEqual(
-            expect.arrayContaining(['vitest-full-src', 'vitest-related-scripts'])
+            expect.arrayContaining(['vitest-related-src', 'vitest-related-scripts'])
         );
     });
 
     it('never passes a deleted source file to a file-taking check', () => {
         const checks = buildVerificationPlan([{ path: 'src/modules/Project/deleted.ts', present: false }], {
-            allowFullE2e: false,
             requestedE2e: [],
             cargoPackages: [],
         });
 
-        expect(checks.find((check) => check.id === 'oxlint')).toBeUndefined();
-        expect(checks.map((check) => check.id)).toContain('vitest-full-src');
+        expect(checks.find((check) => check.id === 'lint-changed')).toBeUndefined();
+        expect(checks.map((check) => check.id)).not.toContain('vitest-related-src');
     });
 
     it('checks the reverse Cargo dependency closure supplied by live metadata', () => {
@@ -140,72 +157,8 @@ describe('git change parsing', () => {
             expect(output).toContain('deleted: src/infra/old.ts');
             expect(output).toContain('present: src/modules/New/new.ts');
             expect(output).toContain('present: scripts/untracked.ts');
-            expect(output).toContain('vitest-full-src');
+            expect(output).toContain('vitest-related-src');
             expect(output).toContain('vitest-related-scripts');
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-});
-
-describe('heavyweight admission', () => {
-    it('rejects a second owner until the first releases the shared lock', () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-lock-collision-'));
-        const commonGitDirectory = join(root, 'repo.git');
-        try {
-            const first = acquireHeavyweightLock({ commonGitDirectory, root });
-
-            expect(() => acquireHeavyweightLock({ commonGitDirectory, root })).toThrow(/locked by pid/);
-            first.release();
-
-            const second = acquireHeavyweightLock({ commonGitDirectory, root });
-            second.release();
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    it('reclaims a lock whose recorded process is gone', () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-lock-stale-'));
-        const commonGitDirectory = join(root, 'repo.git');
-        try {
-            const first = acquireHeavyweightLock({ commonGitDirectory, root });
-            writeFileSync(
-                join(first.path, 'owner.json'),
-                JSON.stringify({
-                    token: 'stale',
-                    pid: 2_147_483_647,
-                    cwd: '/gone',
-                    startedAt: '2020-01-01',
-                    processStartedAt: 'gone',
-                })
-            );
-
-            const replacement = acquireHeavyweightLock({ commonGitDirectory, root });
-            replacement.release();
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    it('reclaims a reused PID whose process-start identity changed', () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-lock-reused-pid-'));
-        const commonGitDirectory = join(root, 'repo.git');
-        try {
-            const first = acquireHeavyweightLock({ commonGitDirectory, root });
-            writeFileSync(
-                join(first.path, 'owner.json'),
-                JSON.stringify({
-                    token: 'stale',
-                    pid: process.pid,
-                    cwd: '/gone',
-                    startedAt: '2020-01-01',
-                    processStartedAt: 'different process',
-                })
-            );
-
-            const replacement = acquireHeavyweightLock({ commonGitDirectory, root });
-            replacement.release();
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

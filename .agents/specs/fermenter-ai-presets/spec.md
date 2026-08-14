@@ -30,7 +30,7 @@ text prompt, and morph between two presets. None of this is built yet.
 When a preset is rendered, the classifier must extract the 64-feature spectral
 vector and output a musicality score in `[0, 1]`.
 
-Verify with: `cargo test -p daw-dsp fermenter::quality_classifier`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::quality_classifier`
 
 ### AC-002 — Inference falls back when the ONNX runtime is unavailable
 
@@ -44,7 +44,7 @@ Verify with: `pnpm test:run -- fermenterAiClassifierFallback`
 When a preset is analysed, the auto-tagger must assign tags from spectral
 centroid, flux, RMS, and onset density via defined thresholds.
 
-Verify with: `cargo test -p daw-dsp fermenter::auto_tagging`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::auto_tagging`
 
 ### AC-004 — Text-to-preset output is validated and clamped to schema
 
@@ -58,7 +58,7 @@ Verify with: `pnpm test:run -- fermenterTextToPreset`
 When two presets are morphed, continuous params must interpolate linearly,
 frequency/Q params logarithmically, and discrete types must crossfade.
 
-Verify with: `cargo test -p daw-dsp fermenter::preset_morph`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::preset_morph`
 
 ### AC-006 — No cross-module internal imports
 

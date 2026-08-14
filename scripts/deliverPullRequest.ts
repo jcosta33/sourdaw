@@ -32,7 +32,6 @@ export type StackedPullRequest = Pick<
 
 export type VerificationOverrides = {
     e2eSpecs: string[];
-    fullE2e: boolean;
 };
 
 export type DeliveryPort = {
@@ -193,7 +192,7 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
 export function deliverPullRequest(
     number: number,
     port: DeliveryPort,
-    overrides: VerificationOverrides = { e2eSpecs: [], fullE2e: false }
+    overrides: VerificationOverrides = { e2eSpecs: [] }
 ): void {
     port.fetch();
     const initial = port.pullRequest(number);
@@ -376,7 +375,6 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
                 '--head',
                 head,
                 ...overrides.e2eSpecs.flatMap((spec) => ['--e2e', spec]),
-                ...(overrides.fullE2e ? ['--full-e2e'] : []),
             ]),
         merge: (number, expectedHead) => {
             const result = parseJson<{ merged: boolean; message: string }>(
@@ -411,7 +409,7 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
 }
 
 export function parseCliArgs(args: string[]): { number?: number; overrides: VerificationOverrides; help: boolean } {
-    const overrides: VerificationOverrides = { e2eSpecs: [], fullE2e: false };
+    const overrides: VerificationOverrides = { e2eSpecs: [] };
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
@@ -424,10 +422,6 @@ export function parseCliArgs(args: string[]): { number?: number; overrides: Veri
     }
     for (let index = 1; index < args.length; index += 1) {
         const argument = args[index];
-        if (argument === '--full-e2e') {
-            overrides.fullE2e = true;
-            continue;
-        }
         if (argument === '--e2e') {
             const spec = args[index + 1];
             if (spec === undefined || spec.startsWith('--')) {
@@ -446,7 +440,7 @@ function main(): number {
     try {
         const parsed = parseCliArgs(process.argv.slice(2));
         if (parsed.help) {
-            console.log('Usage: pnpm deliver <pr-number> [--e2e <spec>] [--full-e2e]');
+            console.log('Usage: pnpm deliver <pr-number> [--e2e <spec>]');
             return 0;
         }
         if (parsed.number === undefined) {

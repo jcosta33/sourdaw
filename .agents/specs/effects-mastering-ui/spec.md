@@ -44,14 +44,14 @@ Verify with: `pnpm test:run -- tierPersistence`
 Meters must read DSP measurements through a lock-free SPSC ring buffer so the
 audio thread never blocks on the UI.
 
-Verify with: `cargo test -p daw-engine metering::spsc_ring`
+Verify with: `pnpm cargo:test -- -p daw-engine metering::spsc_ring`
 
 ### AC-004 — Bypass is gain-matched to EBU R128
 
 Toggling bypass must apply R128 loudness matching between processed and
 bypassed signal so a level change is not mistaken for an improvement.
 
-Verify with: `cargo test -p daw-dsp metering::r128_gain_match`
+Verify with: `pnpm cargo:test -- -p daw-dsp metering::r128_gain_match`
 
 ### AC-005 — Gluten exposes its tier-mapped controls
 
@@ -164,7 +164,7 @@ Verify with: `pnpm test:run -- ProofPanel.nestedTiers` — clicking a module car
 The metering bridge must drop oldest frames on overflow, write without blocking,
 and reflect a DSP frame in the UI within ≤16 ms.
 
-Verify with: `cargo test -p daw-engine metering::drop_oldest metering::non_blocking_write metering::frame_to_paint_latency`
+Verify with: `pnpm cargo:test -- -p daw-engine metering::drop_oldest metering::non_blocking_write metering::frame_to_paint_latency`
 
 ### AC-015 — ProofChamberState replaces numeric uiLevel with the named DisclosureTier union plus a tested migration
 
@@ -210,7 +210,7 @@ The gain-match estimator must clamp compensation to ±24 dB and support the five
 metering frame types (GainReduction, Levels, IspPeaks, Spectrum, History) at
 their fixed rates.
 
-Verify with: `cargo test -p daw-dsp metering::r128_clamp_24db`
+Verify with: `pnpm cargo:test -- -p daw-dsp metering::r128_clamp_24db`
 
 ### AC-020 — This spec performs no drive-by rename of the Dutch Oven collision
 
@@ -236,7 +236,7 @@ is processing (not latched at the moment of bypass), and toggling bypass must
 crossfade the compensation over a bounded ramp of ≤ 20 ms so the transition is
 inaudible.
 
-Verify with: `cargo test -p daw-dsp metering::bypass_crossfade_no_click` — toggling bypass five times over a 5 s active wet stream produces no sample delta > 12 dB per sample across any toggle event
+Verify with: `pnpm cargo:test -- -p daw-dsp metering::bypass_crossfade_no_click` — toggling bypass five times over a 5 s active wet stream produces no sample delta > 12 dB per sample across any toggle event
 
 ### AC-023 — Per-plugin verification thresholds are pinned
 
@@ -258,7 +258,7 @@ Tauri channel, with both conforming to the same TS consumer interface
 `subscribeMeter(instanceId, frameType): Store<Frame>`. The producer side must
 carry no mutex — no `Arc<Mutex<_>>` and no `try_lock`.
 
-Verify with: `cargo test -p daw-engine metering::no_mutex_on_producer` and `pnpm test:run -- subscribeMeter.contract` — both platform paths satisfy the shared interface and the producer hot path holds no lock type
+Verify with: `pnpm cargo:test -- -p daw-engine metering::no_mutex_on_producer` and `pnpm test:run -- subscribeMeter.contract` — both platform paths satisfy the shared interface and the producer hot path holds no lock type
 
 ### AC-025 — Shared-module index.ts re-export discipline and one-function-per-file hold
 

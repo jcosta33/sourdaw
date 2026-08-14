@@ -1,5 +1,9 @@
+import { env } from 'node:process';
+
 import { defineConfig, devices } from '@playwright/test';
 
+// oxlint-disable typescript/no-unsafe-member-access -- Typed by tsconfig.e2e.json.
+// oxlint-disable-next-line import/no-default-export -- Playwright requires this export shape.
 export default defineConfig({
     testDir: './tests/e2e',
     testIgnore: ['**/__tests__/**'],
@@ -12,9 +16,9 @@ export default defineConfig({
     // early (the timeout only bounds the slow ones).
     timeout: 60_000,
     fullyParallel: true,
-    forbidOnly: !!process.env.CI,
-    retries: process.env.CI ? 2 : 0,
-    workers: process.env.CI ? 1 : undefined,
+    forbidOnly: !!env.CI,
+    retries: env.CI ? 2 : 0,
+    workers: 1,
     reporter: 'html',
     use: {
         baseURL: 'http://localhost:5173',
@@ -29,6 +33,6 @@ export default defineConfig({
     webServer: {
         command: 'pnpm dev',
         url: 'http://localhost:5173',
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: !env.CI,
     },
 });

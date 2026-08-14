@@ -171,7 +171,7 @@ Verify with: `pnpm test:run -- SamplePlayer`
 ### AC-019 — Patch load-time budget
 
 A typical factory-size SFZ (50–200 samples) must load in well under a second; loading a
-200-sample patch in a CI environment must complete in under 3 seconds wall-clock.
+200-sample patch on the declared baseline machine must complete in under 3 seconds wall-clock.
 
 Verify with: `pnpm test:run -- SamplePlayer` (perf test: load a 200-sample patch, assert
 wall-clock < 3 s)

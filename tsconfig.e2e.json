@@ -1,0 +1,15 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "types": ["node", "@playwright/test", "vite/client"],
+        "allowImportingTsExtensions": true,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "noUncheckedIndexedAccess": false,
+        "paths": {
+            "#/*": ["./src/*"],
+            "/src/*": ["./src/*"]
+        }
+    },
+    "include": ["playwright.config.ts", "src/types/**/*.d.ts", "tests/e2e/**/*.ts"]
+}
