@@ -51,7 +51,12 @@ const K = ({
     <div className="flex flex-col items-center gap-0">
         <RotaryKnob
             value={value}
-            onChange={(nextValue, isTransient) => onSetParam(id, name, nextValue, isTransient)}
+            // Every move commits through the store (like YeastPanel's own
+            // YeastKnob sites): the transient branch of setYeastProcessorParam
+            // applies only an audio projection, so forwarding the flag would
+            // leave this controlled knob frozen for the whole drag and jump
+            // at release.
+            onChange={(nextValue) => onSetParam(id, name, nextValue)}
             min={min}
             max={max}
             step={step}
@@ -711,8 +716,26 @@ export const ProcessorParams = ({
                         step={1}
                         onSetParam={onSetParam}
                     />
-                    <K id={pid} name="min" label="Min" value={0} min={0} max={127} step={1} onSetParam={onSetParam} />
-                    <K id={pid} name="max" label="Max" value={127} min={0} max={127} step={1} onSetParam={onSetParam} />
+                    <K
+                        id={pid}
+                        name="min"
+                        label="Min"
+                        value={params?.['min'] ?? 0}
+                        min={0}
+                        max={127}
+                        step={1}
+                        onSetParam={onSetParam}
+                    />
+                    <K
+                        id={pid}
+                        name="max"
+                        label="Max"
+                        value={params?.['max'] ?? 127}
+                        min={0}
+                        max={127}
+                        step={1}
+                        onSetParam={onSetParam}
+                    />
                     <Sel
                         id={pid}
                         name="retrigger"
@@ -727,7 +750,16 @@ export const ProcessorParams = ({
         case 'euclidean':
             return (
                 <div className="flex flex-wrap gap-2 px-1 py-1">
-                    <K id={pid} name="hits" label="Hits" value={5} min={0} max={32} step={1} onSetParam={onSetParam} />
+                    <K
+                        id={pid}
+                        name="hits"
+                        label="Hits"
+                        value={params?.['hits'] ?? 5}
+                        min={0}
+                        max={32}
+                        step={1}
+                        onSetParam={onSetParam}
+                    />
                     <K
                         id={pid}
                         name="steps"

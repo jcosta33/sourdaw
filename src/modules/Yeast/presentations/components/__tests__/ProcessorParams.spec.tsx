@@ -242,11 +242,14 @@ describe('ProcessorParams', () => {
         fireEvent.pointerDown(amountSlider, { button: 0, pointerId: 1, clientY: 100 });
         fireEvent.pointerMove(amountSlider, { pointerId: 1, clientY: 80 });
 
-        expect(onSetParam).toHaveBeenCalledWith('groove-1', 'amount', expect.any(Number), true);
+        // Every move commits: K drops the transient flag so the controlled
+        // knob tracks the drag through the store (transient writes only
+        // apply an audio projection and would leave the knob frozen).
+        expect(onSetParam).toHaveBeenCalledWith('groove-1', 'amount', expect.any(Number));
 
         fireEvent.pointerUp(amountSlider, { pointerId: 1 });
 
-        expect(onSetParam).toHaveBeenLastCalledWith('groove-1', 'amount', expect.any(Number), false);
+        expect(onSetParam).toHaveBeenLastCalledWith('groove-1', 'amount', expect.any(Number));
         expect(onSetGrooveTemplate).toHaveBeenCalledWith('groove-1', 'pocket-1');
         expect(onSetParam).not.toHaveBeenCalledWith('groove-1', 'template', expect.any(Number));
     });
@@ -276,11 +279,11 @@ describe('ProcessorParams', () => {
     it('drives a knob via keyboard and routes the changed value through onSetParam', () => {
         // The real RotaryKnob is role=slider, keyboard-driven. ArrowUp changes
         // the value and forwards it through onChange, which the ProcessorParams
-        // K component routes to onSetParam(id, name, value, isTransient).
+        // K component routes to onSetParam as a committed (store-bound) write.
         const { onSetParam } = renderFor('transposer');
         const slider = screen.getByRole('slider', { name: 'Semi' });
         fireEvent.keyDown(slider, { key: 'ArrowUp' });
-        expect(onSetParam).toHaveBeenCalledWith('p1', 'semitones', expect.any(Number), expect.any(Boolean));
+        expect(onSetParam).toHaveBeenCalledWith('p1', 'semitones', expect.any(Number));
         expect(onSetParam.mock.calls[0]?.[1]).toBe('semitones');
     });
 });
