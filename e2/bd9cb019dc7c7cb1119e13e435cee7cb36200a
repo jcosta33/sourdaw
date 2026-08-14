@@ -1,0 +1,16 @@
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrack.spec.ts
+  h_1228e573df1f42 116-125,131-146
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  h_1228e573df1f42 29-34,41-44,78-93,96-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e2bd9cb019dc7c7cb1119e13e435cee7cb36200a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
