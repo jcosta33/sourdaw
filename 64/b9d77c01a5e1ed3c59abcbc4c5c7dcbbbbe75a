@@ -1,0 +1,127 @@
+src/modules/Transport/useCases/setTempo.ts
+  s_a40848e8f8cca9::t_58cfab3c97a17c 16-17
+  s_a40848e8f8cca9::t_1f356fb1223b3c 19
+src/modules/Arrangement/handlers/track/handleSetTrackPan.ts
+  s_a40848e8f8cca9::t_6186183576d69a 9
+src/modules/Command/useCases/captureCommandTargetFingerprints.ts
+  s_a40848e8f8cca9::t_12ea678d78e65e 1-5,83-89
+src/modules/Transport/useCases/transportQueries/getTempoWriteTarget.ts
+  s_a40848e8f8cca9::t_1f356fb1223b3c 42,66-69
+  s_a40848e8f8cca9::t_58cfab3c97a17c 39-40
+  s_62e9c3dc3ba52a::t_8383a464ac3058 70
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_a40848e8f8cca9::t_5ef0557a29e810 155-159
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRange.ts
+  s_a40848e8f8cca9::t_39009059271bf0 81-82
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_a40848e8f8cca9::t_24f4124a15c11f 42-43
+src/modules/Transport/handlers/transport/__tests__/masterGainUndo.spec.ts
+  s_a40848e8f8cca9::t_075ffc18e0944a 59-65
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_a40848e8f8cca9::t_5ef0557a29e810 8-9
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_56e251e5f80168 406,413,443,448-449
+  s_a40848e8f8cca9::t_70020c254b6e7e 7,393
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_5d8a5ed96c6405 797,801-820
+  s_62e9c3dc3ba52a::t_e9e23c304ed8ee 796,798-800
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_a40848e8f8cca9::t_3e6951887aed80 297-301
+  s_a40848e8f8cca9::t_6186183576d69a 314-328
+src/modules/Transport/handlers/transport/__tests__/handleSetTimeSignature.spec.ts
+  s_a40848e8f8cca9::t_af138e82497853 79,81-94
+  s_a40848e8f8cca9::t_aa2ca7b4eaded1 32-52,64-78
+  s_62e9c3dc3ba52a::t_4fbdc4cefd1f4f 80
+src/modules/Arrangement/handlers/track/setTrackOutput.ts
+  s_a40848e8f8cca9::t_5ef0557a29e810 9
+src/modules/Arrangement/handlers/track/muteTrack.ts
+  s_a40848e8f8cca9::t_6186183576d69a 8
+src/modules/Arrangement/handlers/device/handleRestoreDevice.ts
+  s_a40848e8f8cca9::t_5ef0557a29e810 34
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_2964611f7b44cf 25,109,165-171,177
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_a40848e8f8cca9::t_d537e5c176edf4 60,76-78,96,541-566,570,575
+  s_a40848e8f8cca9::t_2964611f7b44cf 441-462,469-473,569,572,574,577
+  s_a40848e8f8cca9::t_3efcce51df7e27 463-468
+  s_62e9c3dc3ba52a::t_dbebfe444b1bfc 567-568,571,573,576,578
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRanges.ts
+  s_a40848e8f8cca9::t_39009059271bf0 105
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_a40848e8f8cca9::t_56e251e5f80168 10,18,74-78
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackColor.spec.ts
+  s_a40848e8f8cca9::t_3e6951887aed80 45-49,65-74
+  s_a40848e8f8cca9::t_1adf9a80d02b06 75,77-87
+  s_62e9c3dc3ba52a::t_141eccdb0e2723 76
+src/modules/Transport/handlers/transport/handleSetTimeSignature.ts
+  s_a40848e8f8cca9::t_af138e82497853 35-39
+  s_a40848e8f8cca9::t_e7b575f935c50e 7-17,19-27,29,52-53,57-67
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_a40848e8f8cca9::t_d1e7199386faf4 21
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_b45e8969e2fe11 736-737
+  s_a40848e8f8cca9::t_e7b575f935c50e 740-746
+  s_a40848e8f8cca9::t_1f356fb1223b3c 735
+  s_a40848e8f8cca9::t_24f4124a15c11f 922,1166
+  s_62e9c3dc3ba52a::t_33fb3c99f392db 738-739
+src/modules/Transport/handlers/transport/handleRestoreMasterGain.ts
+  s_a40848e8f8cca9::t_075ffc18e0944a 9-10
+src/modules/Arrangement/handlers/device/handleRemoveSidechainRoute.ts
+  s_a40848e8f8cca9::t_79f7c14488becb 56-60
+src/modules/Arrangement/handlers/device/handleAddSidechainRoute.ts
+  s_a40848e8f8cca9::t_79f7c14488becb 72-76
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_a40848e8f8cca9::t_56e251e5f80168 23,36,85-92,147,156-159
+  s_62e9c3dc3ba52a::t_04e34fd362f83b 160-161
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_de6d8770d1082f 8,33-36,128,288-311
+  s_62e9c3dc3ba52a::t_f7baf0c4cf7d78 312-313
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.spec.ts
+  s_a40848e8f8cca9::t_b0a6df44784c0c 105-106,160-163,168-172,177-180
+  s_a40848e8f8cca9::t_d0aa6d54a65a4a 173-176
+  s_a40848e8f8cca9::t_164be337da2196 79-80,84-94
+  s_62e9c3dc3ba52a::t_1ee8ee5d736d45 95-96,181-182
+src/modules/Arrangement/handlers/track/handleSetTrackColor.ts
+  s_a40848e8f8cca9::t_24f4124a15c11f 5,8-12,14-17,19,26-33,35-44,52,55
+  s_a40848e8f8cca9::t_1adf9a80d02b06 49-51,53-54
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_5d8a5ed96c6405 626-629,632-637,639,660-665,667,718-721
+  s_a40848e8f8cca9::t_4aba88ef14332b 654-657,682-685
+src/modules/Transport/handlers/transport/handleSetTempo.ts
+  s_a40848e8f8cca9::t_b45e8969e2fe11 20-21,26-33,35-40,64-67,84-85
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_5d8a5ed96c6405 394,400-404,406-411,415-426,432,450-453,455,458-459,466,486,490,495,508,522
+  s_a40848e8f8cca9::t_09ec6c3898a803 473-474
+src/modules/Command/useCases/getCommandDivergenceTargetIds.ts
+  s_a40848e8f8cca9::t_12ea678d78e65e 5,17-18
+src/modules/Arrangement/handlers/marker/handleSetMarkerColor.ts
+  s_a40848e8f8cca9::t_24f4124a15c11f 7-11,13-16,30-41
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_95b1c46d907fd3 537-550
+src/modules/Automation/handlers/automation/handleRemoveTrackGainAutomationRange.ts
+  s_a40848e8f8cca9::t_39009059271bf0 100-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "64b9d77c01a5e1ed3c59abcbc4c5c7dcbbbbe75a",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
