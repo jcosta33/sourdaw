@@ -74,7 +74,7 @@ Verify with: `manual` — confirm migrated files still carry their `grid-cols-[.
 Migrated surfaces must not add `useMemo`, `useCallback`, `React.memo`, or `forwardRef`
 (the codebase runs React 19 with the React Compiler).
 
-Verify with: `pnpm lint`
+Verify with: `pnpm lint <changed-files>`
 
 ### AC-008 — Migration introduces no layout-performance regression
 

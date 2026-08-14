@@ -30,7 +30,7 @@ section to a higher tier and lower/higher realizations share lineage.
 
 An artifact must hold multiple realizations linked to a single semantic source.
 
-Verify with: `cargo test -p daw-core multi_resolution_shared_source`
+Verify with: `pnpm cargo:test -- -p daw-core multi_resolution_shared_source`
 
 ### AC-002 — Fidelity Matrix surfaces state
 
@@ -58,13 +58,13 @@ Verify with: `manual` — sketch in browser, open on desktop, promote to final, 
 Lower-tier and higher-tier outputs of one source must share lineage; a promoted output
 must reference the source it replaced, not become an unrelated file.
 
-Verify with: `cargo test -p daw-core multi_resolution_lineage`
+Verify with: `pnpm cargo:test -- -p daw-core multi_resolution_lineage`
 
 ### AC-006 — Save format does not duplicate semantic data
 
 The save format must not duplicate the semantic data across tiers.
 
-Verify with: `cargo test -p daw-core multi_resolution_shared_source`
+Verify with: `pnpm cargo:test -- -p daw-core multi_resolution_shared_source`
 
 ## Open questions
 

@@ -33,21 +33,21 @@ and `couplingCapCharge` so they stop sharing one internal state variable, and ma
 Changing `gridConduction` must alter preamp behavior through grid-current/drive
 interaction rather than rewriting the same state variable owned by `couplingCapCharge`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — `couplingCapCharge` remains a distinct recovery control
 
 Changing `couplingCapCharge` must alter blocking/recovery behavior independently from
 `gridConduction`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — `rectifierType` is audibly real under burst load
 
 Tube, solid-state, and variac rectifier modes must produce measurably different
 sag/recovery behavior for the same driven-burst stimulus.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Later-stage anti-aliasing is improved in a bounded way
 
@@ -55,21 +55,21 @@ The later nonlinear amp stages must use a bounded real-time numerical improvemen
 internal oversampled pass, 2x-style in magnitude rather than a full topology rewrite)
 rather than staying single-rate brittle shapers.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-005 — Existing later-stage control truth is preserved
 
 `powerAmpBias`, `presence`, `resonance`, `tubeBias`, `bright`, `fat`, `ampModel`, and
 `powerTubeType` must remain audibly active after the retune.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — RT safety is preserved
 
 The implementation must remain allocation-free and lock-free in `process_sample()`, with
 all state preallocated inside the stage structs.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-007 — Differentiated controls stay amp-like, not exaggerated
 
@@ -77,7 +77,7 @@ The `gridConduction` and `rectifierType` differences must stay within an amp-lik
 calibration range so the result reads as a real amp rather than a gimmicky, exaggerated
 effect — the audible spread must be measurable yet bounded, not extreme.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-008 — Cross-module Grinder regression and typecheck guard holds
 

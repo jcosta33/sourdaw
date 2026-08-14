@@ -32,7 +32,7 @@ jitter is unsafe for the audio hot path.
 When GPU work is scheduled, the audio thread must only write analysis taps into
 an SPSC buffer and must never wait on a GPU result.
 
-Verify with: `cargo test -p daw-dsp levain::gpu::audio_never_blocks`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::gpu::audio_never_blocks`
 
 ### AC-002 — Spectrogram is computed by GPU FFT
 
@@ -53,7 +53,7 @@ Verify with: `manual` — zoom a long sample; the overview min/max envelope matc
 When an IR is loaded for convolution, its per-partition FFTs must be precomputed
 off the audio thread (GPU where available) and reused on the render path.
 
-Verify with: `cargo test -p daw-dsp levain::gpu::ir_partition_precompute`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::gpu::ir_partition_precompute`
 
 ### AC-005 — GPU absence falls back to CPU
 

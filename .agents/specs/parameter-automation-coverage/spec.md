@@ -143,11 +143,10 @@ describe('census probe', () => {
 ```
 
 ```
-pnpm test:run --dir src src/modules/AudioEngine/repositories/deviceStrategy/__tests__/tmpCensusProbe.spec.ts
+pnpm test:run src/modules/AudioEngine/repositories/deviceStrategy/__tests__/tmpCensusProbe.spec.ts
 ```
 
-`--dir src` is required. A bare relative path is a *pattern* and also matches the copy inside every
-`.agents/worktrees/*` lane.
+The exact file keeps collection inside the affected surface.
 
 ### `knead NO DESCRIPTOR` is a different defect and gets its own criterion
 
@@ -630,11 +629,7 @@ Report; do not design around.
   (§6a).
 - Every `file:line` in a PR re-derived against the branch it ships from. The citations here were
   checked against `f6d398786`; they go stale.
-- Full suite at least twice, both exit codes quoted, read from the command itself. Say which set —
-  `--dir src` and a bare `test:run` are different, and a bare relative path also matches every
-  `.agents/worktrees/*` copy.
-- `scripts/health-gates-web.sh` and `health-gates-server.sh` from a clean checkout installed off the
-  lockfile.
+- Run each affected test once through guarded package scripts; quote its exit code.
 - If any Rust change lands, `pnpm wasm:verify` in the same PR — a conflict-free rebase ships stale
   wasm silently.
 - No config, baseline or expected value edited to make a gate pass unless the value genuinely

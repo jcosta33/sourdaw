@@ -30,28 +30,28 @@ offload path for high partial counts is deferred.
 When harmonicity is one, partial `n` must sound at `(n+1)` times the fundamental
 frequency.
 
-Verify with: `cargo test -p daw-dsp fermenter::additive_harmonics`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::additive_harmonics`
 
 ### AC-002 — Partials above Nyquist are dropped
 
 When a partial's frequency reaches or exceeds Nyquist, the engine must stop
 adding higher partials so no aliasing is produced.
 
-Verify with: `cargo test -p daw-dsp fermenter::additive_nyquist_limit`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::additive_nyquist_limit`
 
 ### AC-003 — The harmonicity exponent bends partials inharmonic
 
 When harmonicity differs from one, partial frequencies must follow
 `f0 * (n+1)^harmonicity`, shifting the spectrum inharmonic.
 
-Verify with: `cargo test -p daw-dsp fermenter::additive_harmonicity`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::additive_harmonicity`
 
 ### AC-004 — Brightness attenuates higher partials
 
 When brightness increases, higher-indexed partials must be progressively
 attenuated by the exponential brightness scale.
 
-Verify with: `cargo test -p daw-dsp fermenter::additive_brightness`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::additive_brightness`
 
 ### AC-005 — No cross-module internal imports
 

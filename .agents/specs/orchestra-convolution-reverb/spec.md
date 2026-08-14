@@ -31,35 +31,35 @@ algorithmic reverb when IRs are disabled.
 When a multi-second IR is loaded, the engine must process it with a head/tail
 partitioned convolver so the output has zero added input-output delay.
 
-Verify with: `cargo test -p daw-dsp levain::reverb::zero_latency_head`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::reverb::zero_latency_head`
 
 ### AC-002 — Convolution output matches a reference direct convolution
 
 When a known input is convolved with a known IR, the partitioned engine's output
 must match a direct (reference) convolution within tolerance.
 
-Verify with: `cargo test -p daw-dsp levain::reverb::matches_direct_convolution`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::reverb::matches_direct_convolution`
 
 ### AC-003 — The reverb tail is shared per section
 
 When several voices in a section are active, the engine must apply one shared
 convolution tail across them rather than one tail per voice.
 
-Verify with: `cargo test -p daw-dsp levain::reverb::shared_section_tail`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::reverb::shared_section_tail`
 
 ### AC-004 — An algorithmic reverb covers the IR-disabled path
 
 When convolution is disabled, the engine must provide a stable FDN-based reverb
 so a room sound is still available.
 
-Verify with: `cargo test -p daw-dsp levain::reverb::fdn_fallback_stable`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::reverb::fdn_fallback_stable`
 
 ### AC-005 — Convolution processing is allocation- and lock-free
 
 When processing a block through the convolver, the engine must not allocate or
 take a lock on the audio thread.
 
-Verify with: `cargo test -p daw-dsp levain::reverb::rt_safe`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::reverb::rt_safe`
 
 ## Open questions
 

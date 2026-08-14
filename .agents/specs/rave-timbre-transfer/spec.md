@@ -154,7 +154,7 @@ Verify with: `pnpm test:run -- rave`
 ### AC-012 — Encode performance budget
 
 A mark-based benchmark must verify the mocked-model encode path handles 30 s of 44.1 kHz audio
-in under 200 ms on the CI runner.
+in under 200 ms on the declared baseline machine.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -261,7 +261,7 @@ Verify with: `pnpm test:run -- rave`
 
 ### AC-026 — Direct pure latent interpolation helper
 
-The current `interpolateLatent.ts` file MUST remain a directly callable deterministic CI/test
+The current `interpolateLatent.ts` file MUST remain a directly callable deterministic test
 latent-space primitive until its complete direct test is green and the same change either performs
 the exact relocation/removal below or satisfies
 [dependency-boundary-validation AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
@@ -732,7 +732,7 @@ that excludes live sessions, serialized concurrent admission, and zero downstrea
 
 ## Current-state ownership
 
-The four current `no-orphans` paths are direct deterministic CI/test helpers only. The focused
+The four current `no-orphans` paths are direct deterministic test helpers only. The focused
 command is green. The encode/decode tests make the direct calls described in AC-024/AC-032; the
 timbre test is export-only; and the interpolation test calls only midpoint/missing-dimension cases,
 without the required endpoint `timeSec` or immutability evidence. None proves the model-backed
@@ -746,7 +746,7 @@ none retires a warning by passing:
 | `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts`    | Direct deterministic test helper; current test is export-only and insufficient. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts`    | AC-033's missing direct test is green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008.                       |
 | `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | Direct deterministic test helper; current test is partial and insufficient.     | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` | AC-026's missing endpoint/immutability assertions are green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008. |
 
-Direct helper availability, passing CI tests, and product reachability are not warning retirement
+Direct helper availability, passing helper tests, and product reachability are not warning retirement
 conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024`, `AC-026`,
 `AC-032`, and `AC-033` own the path-specific direct-test and relocation gates; dependency
 [AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement) owns the

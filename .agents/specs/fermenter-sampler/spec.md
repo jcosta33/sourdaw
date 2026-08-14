@@ -31,42 +31,42 @@ today.
 When a note-on arrives, the sampler must select the zone whose key and velocity
 ranges contain that note via the O(1) lookup table.
 
-Verify with: `cargo test -p daw-dsp fermenter::sampler_zone_lookup`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::sampler_zone_lookup`
 
 ### AC-002 — Playback pitch-shifts relative to the zone root note
 
 When a note differs from the zone root note, playback must advance the read
 position at the corresponding pitch ratio.
 
-Verify with: `cargo test -p daw-dsp fermenter::sampler_pitch`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::sampler_pitch`
 
 ### AC-003 — Sample reads use cubic interpolation
 
 When the read position is fractional, the sampler must read with 4-point cubic
 interpolation.
 
-Verify with: `cargo test -p daw-dsp fermenter::sampler_interp`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::sampler_interp`
 
 ### AC-004 — Forward looping wraps within the loop region
 
 When loop mode is forward, the read position must wrap from the loop end back to
 the loop start.
 
-Verify with: `cargo test -p daw-dsp fermenter::sampler_loop_forward`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::sampler_loop_forward`
 
 ### AC-005 — Ping-pong looping reverses at the loop bounds
 
 When loop mode is ping-pong, the read direction must reverse at the loop end and
 loop start.
 
-Verify with: `cargo test -p daw-dsp fermenter::sampler_loop_pingpong`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::sampler_loop_pingpong`
 
 ### AC-006 — A non-looping voice deactivates at the sample end
 
 When loop mode is none, the voice must deactivate once the read position passes
 the end of the sample data.
 
-Verify with: `cargo test -p daw-dsp fermenter::sampler_one_shot`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::sampler_one_shot`
 
 ### AC-007 — No cross-module internal imports
 

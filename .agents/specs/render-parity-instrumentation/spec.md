@@ -100,8 +100,7 @@ validated by the fix it motivated proves nothing.
 ## Verification
 
 - Every guard mutation-checked; name the assertion that reds.
-- Full suite at least twice, both exit codes quoted, read from the command itself.
-- `scripts/health-gates-web.sh` and `health-gates-server.sh` from a clean checkout off the lockfile.
+- Run each affected test once through guarded package scripts; quote its exit code.
 
 ## Outcome — landed 2026-08-04
 
@@ -120,9 +119,9 @@ is this phase's own work, and three were found in the cost table.
 
 1. **The bench did not compile, and had not for some time.** `cargo clippy -p daw-dsp --all-targets`
    exited **101** on clean `main`: two `E0308`s where `LevainInstance::add_sample`'s `Option<u32>`
-   was handed to `add_zone` unwrapped. Nothing in CI runs cargo at all — `.github/workflows/health-gates.yml`
-   has no Rust step — which is why `--all-targets` was unavailable as a gate. **The CI gap is
-   reported, not closed**; adding a Rust job is a CI change this phase did not scope.
+   was handed to `add_zone` unwrapped. At landing, `.github/workflows/health-gates.yml` had no Rust
+   step, so `--all-targets` was unavailable as a gate. **That gap was reported, not closed**; adding
+   a Rust job was outside this phase.
 2. **Three hand-written device lists had all gone stale against the crate.** The native bench header,
    `DEVICE_IDS`, and the worklet's import list each claimed to enumerate every `#[wasm_bindgen]`
    render export while asserting Crust "[has] no Rust engine at all" — and `src/crust/` had shipped

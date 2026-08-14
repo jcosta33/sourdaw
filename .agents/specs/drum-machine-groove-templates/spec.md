@@ -33,33 +33,33 @@ in.
 Extraction must compute a `GrooveTemplate` (resolution, swing, per-step micro-timing at 960 PPQN,
 velocity curve, ghost mask) carrying no pad identities, samples, or synth parameters.
 
-Verify with: `cargo test -p daw-dsp groove_template_extract`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_template_extract`
 
 ### AC-002 — Apply preserves activation and reshapes feel
 
 Applying a template must leave step activation unchanged while overwriting micro-timing,
 multiplying velocity by the curve, and setting global swing.
 
-Verify with: `cargo test -p daw-dsp groove_template_apply`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_template_apply`
 
 ### AC-003 — Re-applied timing matches the source within tolerance
 
 Extracting from a known 808 pattern and re-applying to another kit must keep per-step timing within
 ±5 ticks at 960 PPQN and velocity-ratio standard deviation ≤0.05 across the reference suite.
 
-Verify with: `cargo test -p daw-dsp groove_template_fidelity`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_template_fidelity`
 
 ### AC-004 — Round-trip on the same pattern is idempotent
 
 Extracting a template from pattern A and applying it back to A must yield a bit-identical pattern.
 
-Verify with: `cargo test -p daw-dsp groove_template_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_template_roundtrip`
 
 ### AC-005 — Applying to an empty pattern is a no-op
 
 Applying a template to a pattern with no active steps must change nothing.
 
-Verify with: `cargo test -p daw-dsp groove_template_empty_noop`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_template_empty_noop`
 
 ### AC-006 — Application previews and commits once
 
@@ -73,7 +73,7 @@ Verify with: `pnpm test:run -- DrumMachine grooveTemplatePreviewCommit`
 The feature must ship at least the curated set (TR-808 shuffle, TR-909 swing 58%, MPC swing 54%,
 MPC swing 62%, SP-1200 straight, J-Dilla late-snare), each passing the round-trip test.
 
-Verify with: `cargo test -p daw-dsp groove_template_library`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_template_library`
 
 ## Open questions
 

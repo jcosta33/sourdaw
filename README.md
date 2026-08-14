@@ -25,7 +25,7 @@ Server dependencies are installed separately from the frontend workspace.
 ## Common commands
 
 - `pnpm dev` - start the Vite app
-- `pnpm test:run` - run Vitest once
+- `pnpm test:run <target>` - run focused Vitest tests once
 - `pnpm typecheck` - run TypeScript checks
 - `pnpm deps:validate` - validate frontend dependency boundaries
 - `pnpm build` - create a production build

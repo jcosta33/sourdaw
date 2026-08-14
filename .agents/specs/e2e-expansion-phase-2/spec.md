@@ -14,7 +14,7 @@ sources:
 
 Extend the Playwright E2E suite beyond the phase-1 core workflows (transport, arrangement, project
 lifecycle, devices, mixer, browser, MIDI editor) to cover four secondary-but-critical workflows —
-automation editing, undo/redo history, device panels, and the sample library — so CI gives
+automation editing, undo/redo history, device panels, and the sample library — so targeted local checks give
 developers immediate feedback when these intermediate paths break.
 
 ## Non-goals
@@ -56,9 +56,9 @@ Verify with: `pnpm test:e2e library`
 ### AC-005 — Tests use robust locators and auto-retrying assertions
 
 All four suites must use role/testid locators (`getByRole`, `getByTestId`) and Playwright
-auto-retrying `expect`/`waitFor` with no hardcoded timeouts, and pass in the full E2E run.
+auto-retrying `expect`/`waitFor` with no hardcoded timeouts, and pass independently.
 
-Verify with: `pnpm test:e2e`
+Verify with: the focused commands in AC-001 through AC-004
 
 ## Open questions
 

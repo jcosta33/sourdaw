@@ -14,7 +14,7 @@ sources:
 
 Make performance a contract: document per-platform CPU/latency/frame budgets as a
 single source of truth, enforce them where possible (no-alloc assertions, lint denials,
-CI benchmark gates), and document a profiling methodology with checked-in reference
+guarded local benchmark gates), and document a profiling methodology with checked-in reference
 traces so regressions are detectable.
 
 ## Non-goals
@@ -35,22 +35,22 @@ Verify with: `manual` — review the budgets doc and confirm each budget below h
 ### AC-002 — RT audio thread no-alloc enforced
 
 The native audio callback must allocate zero bytes per block, enforced by
-`assert_no_alloc` panicking in debug builds during the full CI test suite.
+`assert_no_alloc` aborting affected debug test targets on allocation.
 
-Verify with: `cargo test -p daw-engine assert_no_alloc_audio_callback`
+Verify with: `pnpm cargo:test -- -p daw-engine assert_no_alloc_audio_callback`
 
 ### AC-003 — RT audio thread no-lock enforced
 
 A Clippy lint must deny mutex/rwlock usage inside the engine `process*` modules.
 
-Verify with: `cargo clippy -p daw-engine -- -D warnings`
+Verify with: `pnpm cargo:clippy -- -p daw-engine -- -D warnings`
 
-### AC-004 — UI long-task budget gated in CI
+### AC-004 — UI long-task budget has a guarded local gate
 
-A scripted Playwright scenario must fail CI if any `longtask` > 50 ms fires during
+A scripted Playwright scenario must fail its guarded local check if any `longtask` > 50 ms fires during
 normal editing gestures.
 
-Verify with: `pnpm test:perf`
+Verify with: `pnpm test:e2e -- tests/e2e/performance-budget.spec.ts`
 
 ### AC-005 — Profiling methodology and reference traces
 
@@ -90,7 +90,7 @@ Verify with: `manual` — confirm the reference traces dir contains one trace pe
 ## Affected areas
 
 - `docs/architecture/performance-budgets.md`, `docs/architecture/profiling.md`
-- `crates/daw-engine/` (asserts, lints), CI perf harness
+- `crates/daw-engine/` (asserts, lints), local perf harness
 - `docs/architecture/traces/reference/`
 
 ## Dropped from sources

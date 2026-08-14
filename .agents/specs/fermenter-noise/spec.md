@@ -29,21 +29,21 @@ colors ship today.
 When white noise is selected, the generator must output samples uniformly
 distributed in `[-1, 1]` from a fast PRNG with a flat spectrum.
 
-Verify with: `cargo test -p daw-dsp fermenter::noise_white`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::noise_white`
 
 ### AC-002 — Pink noise rolls off at roughly 3 dB per octave
 
 When pink noise is selected, the generator must apply the Kellet pinking filter
 so the spectrum falls at approximately 3 dB per octave.
 
-Verify with: `cargo test -p daw-dsp fermenter::noise_pink`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::noise_pink`
 
 ### AC-003 — Brown noise rolls off at roughly 6 dB per octave
 
 When brown noise is selected, the generator must integrate white noise with a
 leak so the spectrum falls at approximately 6 dB per octave.
 
-Verify with: `cargo test -p daw-dsp fermenter::noise_brown`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::noise_brown`
 
 ### AC-004 — No cross-module internal imports
 

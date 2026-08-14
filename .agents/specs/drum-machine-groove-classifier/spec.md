@@ -33,7 +33,7 @@ The classifier must offline-render a 2–4 bar candidate pattern, compute a log-
 (22.05 kHz, 2048-FFT, 512-hop, 128 mels), and output a genre distribution plus a `[0,1]` quality
 score.
 
-Verify with: `cargo test -p daw-dsp groove_classifier_pipeline`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_classifier_pipeline`
 
 ### AC-002 — Classification meets the accuracy and correlation bar
 
@@ -47,7 +47,7 @@ Verify with: `manual` — run the labelled eval set and confirm ≥70% top-1 acc
 Classification triggered during playback must leave the audio callback p99 run-time within ±10% of
 a playback-only control.
 
-Verify with: `cargo test -p daw-dsp groove_classifier_offthread`
+Verify with: `pnpm cargo:test -- -p daw-dsp groove_classifier_offthread`
 
 ### AC-004 — End-to-end latency stays within budget
 

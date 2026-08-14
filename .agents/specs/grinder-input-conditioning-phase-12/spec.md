@@ -32,35 +32,35 @@ rather than a fake extra pedal.
 The conditioner must respond to `inputMode` with measurably different output for the same
 guitar-like stimulus.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — `instrument` stays more open than `reamp`
 
 Under the same bright pick stimulus, `instrument` must preserve more attack/edge than
 `reamp`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — `line` stays flatter and more padded than `instrument`
 
 Under the same stimulus, `line` must not collapse to the same calibrated response as
 `instrument`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Behavior stays bounded
 
 Input-mode changes must remain in the category of front-end conditioning, not obvious
 fake EQ gimmicks.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-005 — RT safety is preserved
 
 `InputConditioner::process_sample()` must remain allocation-free and lock-free, with all
 state preallocated inside the conditioner struct.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ## Open questions
 

@@ -31,13 +31,13 @@ sample-accurate MIDI clock output generator driven by the audio callback.
 Sequencer events must support a `probability` (0.0–1.0); the RT scheduler skips notes
 whose roll exceeds it, and the same seed reproduces bit-identical output.
 
-Verify with: `cargo test -p daw-engine note_probability_deterministic`
+Verify with: `pnpm cargo:test -- -p daw-engine note_probability_deterministic`
 
 ### AC-002 — Probability distribution is correct
 
 Notes at probability 0.5 must fire ~50% over many seeds (binomial variance within ±3σ).
 
-Verify with: `cargo test -p daw-engine note_probability_distribution`
+Verify with: `pnpm cargo:test -- -p daw-engine note_probability_distribution`
 
 ### AC-003 — RT-safe MPE channel allocator
 
@@ -45,14 +45,14 @@ An MPE allocator must assign per-note channels 2–16 with an LRU policy, suppor
 lower-zone convention, and allocate/lock nothing on the audio thread; channel reuse
 stalls ≤1 across 10,000 events in the stress fixture.
 
-Verify with: `cargo test -p daw-engine mpe_allocator_rt_safe`
+Verify with: `pnpm cargo:test -- -p daw-engine mpe_allocator_rt_safe`
 
 ### AC-004 — Sample-accurate MIDI clock output
 
 A MIDI clock generator driven by the audio callback must emit `0xF8` at 24 PPQN plus
 start/stop/continue, with tick jitter ≤0.5 ms stddev over 60 s at 120 BPM.
 
-Verify with: `cargo test -p daw-engine midi_clock_jitter`
+Verify with: `pnpm cargo:test -- -p daw-engine midi_clock_jitter`
 
 ## Open questions
 
