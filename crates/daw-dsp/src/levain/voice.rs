@@ -489,6 +489,36 @@ impl SamplePlayback {
 // Levain voice
 // ---------------------------------------------------------------------------
 
+/// Per-sample increment for a crossfade that must span `crossfade_time_secs`.
+///
+/// The lower bound is the whole point. `tick` advances the crossfade by
+/// accumulating this into an `f32` in `[0, 1)`, and an `f32` add is a no-op
+/// once the addend falls below half the accumulator's ULP — which near 1.0 is
+/// 2.98e-8. A rate under that stalls the ramp *permanently*: the voice stays
+/// `crossfading`, never reaches its own zone at full level, and never runs the
+/// completion branch that frees `crossfade_playback`. Measured on this code:
+/// 300 s completes, 1000 s stops dead at `crossfade_amount == 0.5`, 3000 s at
+/// 0.125, 10000 s at 0.0625.
+///
+/// `f32::EPSILON` (1.19e-7) is the smallest increment that provably advances
+/// the accumulator everywhere in `[0, 1)`, since the largest ULP in that range
+/// is 5.96e-8. It caps a crossfade at ~175 s at 48 kHz. That ceiling is a
+/// representability limit, not a musical opinion: every legato time this
+/// engine can otherwise produce is between 20 ms and 150 ms, and an authored
+/// `crossfadeOutMs` under ~175 s is honoured exactly as written. Only a value
+/// the arithmetic cannot express at all is bent, and it is bent to the longest
+/// fade that still completes rather than rejected.
+///
+/// Reachable from bank data: `crossfadeOutMs` is validated only as a
+/// non-negative finite `f32`, so a manifest may legitimately carry `1e9`.
+///
+/// Audio-thread safe: arithmetic only.
+#[inline]
+fn crossfade_rate_for(crossfade_time_secs: f32, sample_rate: f32) -> f32 {
+    let samples = (crossfade_time_secs * sample_rate).max(1.0);
+    (1.0 / samples).max(f32::EPSILON)
+}
+
 /// A single levain voice that renders one active note.
 /// Heavier than a synth voice: may read from multiple mic streams,
 /// crossfade dynamic layers, and run per-voice envelopes.
@@ -739,8 +769,7 @@ impl LevainVoice {
         self.playback.seek_to(target_start_position);
 
         self.crossfade_amount = 0.0;
-        let samples = (crossfade_time_secs * sample_rate).max(1.0);
-        self.crossfade_rate = 1.0 / samples;
+        self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
         self.zone_id = new_zone.id;
     }
@@ -764,8 +793,7 @@ impl LevainVoice {
         self.crossfade_playback
             .configure_with_pool(transition_sample, note, 1.0, pool);
         self.crossfade_amount = 0.0;
-        let samples = (crossfade_time_secs * sample_rate).max(1.0);
-        self.crossfade_rate = 1.0 / samples;
+        self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
     }
 

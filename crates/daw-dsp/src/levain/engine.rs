@@ -2031,6 +2031,70 @@ mod tests {
         );
     }
 
+    /// Reading `crossfadeOutMs` puts bank data on `crossfade_rate`, which is
+    /// accumulated per sample into an `f32`. The validator bounds that field
+    /// only to a non-negative finite `f32`, so a fat-fingered manifest can ask
+    /// for a fade so long the increment underflows the accumulator's ULP and
+    /// the ramp stops advancing for good — the voice is then stuck part-way
+    /// into its own zone forever, which is not "a very slow crossfade" but a
+    /// note that never arrives. `crossfade_rate_for` floors the rate at
+    /// `f32::EPSILON` so every authored value completes.
+    #[test]
+    fn an_absurd_authored_crossfade_out_still_completes() {
+        /// 1e9 ms — eleven days. Its unclamped rate is 2.08e-14, six orders of
+        /// magnitude under the ULP near 1.0, so the accumulator never moves.
+        const ABSURD_MS: f32 = 1_000_000_000.0;
+        /// 175 s at 48 kHz is the longest fade `f32::EPSILON` can express;
+        /// 200 s of rendering clears it with margin.
+        const BLOCKS: usize = 75_000;
+
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let sustain_data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let transition_data: Vec<f32> = (0..SAMPLE_FRAMES).map(|_| 0.5_f32).collect();
+        let sustain_sample = engine
+            .add_sample(sustain_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("sustain sample should fit the bank");
+        let transition_sample = engine
+            .add_sample(transition_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("transition sample should fit the bank");
+
+        engine.add_zone(wide_zone(
+            0,
+            sustain_sample,
+            VelRange { lo: 0, hi: 127 },
+            false,
+        ));
+        engine.build_zone_map(1, 1).expect("zone map should build");
+        engine.add_legato_transition(LegatoTransition {
+            interval: 4,
+            transition_type: TransitionType::Slurred,
+            dynamic: Dynamic::MF,
+            sample_id: transition_sample,
+            crossfade_out_ms: ABSURD_MS,
+        });
+
+        engine.note_on(60, 100);
+        render(&mut engine, 4);
+        engine.note_on(64, 100);
+        render(&mut engine, BLOCKS);
+
+        let slurred = engine
+            .voice_pool
+            .voices
+            .iter()
+            .find(|voice| voice.active && voice.note == 64)
+            .expect("the slurred note must still be sounding");
+        assert!(
+            !slurred.crossfading,
+            "an authored crossfade must finish: the voice is still crossfading \
+             after {} s of audio, stuck at crossfade_amount {}",
+            BLOCKS as f32 * 128.0 / SAMPLE_RATE,
+            slurred.crossfade_amount
+        );
+    }
+
     /// F14 — `loop_crossfade` is stored on every voice and was never read, so
     /// a loop whose start and end aren't waveform-continuous clicks on every
     /// repeat despite the doc promising an equal-power seam crossfade.
