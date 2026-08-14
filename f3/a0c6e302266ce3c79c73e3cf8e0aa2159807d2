@@ -1,0 +1,14 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  h_1228e573df1f42 362-371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f3a0c6e302266ce3c79c73e3cf8e0aa2159807d2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
