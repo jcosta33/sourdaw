@@ -3,7 +3,7 @@ import { type ReactElement } from 'react';
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
 
 import { type queryClient } from '#/app/queryClient';
-import { AppShell } from '#/modules/WorkspaceShell/presentations/views';
+import { AppShell, WorkspaceMobileGate } from '#/modules/WorkspaceShell/presentations/views';
 
 type AppRouterContext = {
     queryClient: typeof queryClient;
@@ -16,9 +16,11 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
 
 export function RootLayout(): ReactElement {
     return (
-        <AppShell>
-            <Outlet />
-        </AppShell>
+        <WorkspaceMobileGate>
+            <AppShell>
+                <Outlet />
+            </AppShell>
+        </WorkspaceMobileGate>
     );
 }
 

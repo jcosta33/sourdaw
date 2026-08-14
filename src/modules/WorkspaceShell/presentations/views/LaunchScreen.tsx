@@ -216,6 +216,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const [view, setView] = useState<View>('home');
     const [activeCategory, setActiveCategory] = useState<LaunchTemplateCategory | 'all'>('all');
     const [loadingName, setLoadingName] = useState('');
+    const [importingDawProject, setImportingDawProject] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
     const [quipIndex, setQuipIndex] = useState(0);
     const [recentProjects, setRecentProjects] = useState<RecentProject[]>(() =>
@@ -258,17 +259,31 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     };
 
     const handleImportDawProject = (): void => {
+        if (importingDawProject) {
+            return;
+        }
+        // `pickAndImportDawProject` covers both the native file picker and the import
+        // itself, and only resolves once the whole thing is done — so before this flag
+        // existed the slowest action on the launch screen gave no feedback at all and
+        // stayed clickable throughout. The full loading view is wrong here (a native
+        // picker may still be up, and the user can cancel it), so the feedback is
+        // scoped to the button.
+        setImportingDawProject(true);
         // Fire-and-forget: invoked from a click handler with no caller to
         // propagate to; the body resolves to void and has no rejection path
         // worth surfacing beyond the engine's own logging.
         void (async () => {
-            const ok = await pickAndImportDawProject();
-            if (!ok) {
-                return;
+            try {
+                const ok = await pickAndImportDawProject();
+                if (!ok) {
+                    return;
+                }
+                setLoadingName('Imported DAWproject');
+                setView('loading');
+                setRecentProjects(getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT));
+            } finally {
+                setImportingDawProject(false);
             }
-            setLoadingName('Imported DAWproject');
-            setView('loading');
-            setRecentProjects(getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT));
         })();
     };
 
@@ -461,10 +476,18 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 type="button"
                                 id="launch-import-dawproject"
                                 onClick={handleImportDawProject}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
+                                // `aria-disabled`, not `disabled`: a focused element
+                                // that becomes `disabled` blurs to <body>, so a
+                                // keyboard user who activates this loses focus the
+                                // instant the handler runs and has to Tab from the
+                                // top after a slow picker. Re-entry is already
+                                // blocked by the guard in handleImportDawProject.
+                                aria-disabled={importingDawProject}
+                                aria-busy={importingDawProject}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer aria-disabled:cursor-progress"
                             >
                                 <Upload className="size-3" aria-hidden="true" />
-                                Import .dawproject
+                                {importingDawProject ? 'Importing .dawproject…' : 'Import .dawproject'}
                                 <span className="text-white/25">from Ableton, Bitwig, Studio One…</span>
                             </button>
                             <button

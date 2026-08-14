@@ -35,6 +35,7 @@ import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { AnalysisPanel } from '#/modules/Metering/presentations/views';
 import { MixerPanel } from '#/modules/MixerConsole/presentations/views';
 import { OnboardingTour } from '#/modules/Onboarding/presentations/views';
+import { defaultOnboardingState, onboardingStore } from '#/modules/Onboarding/stores';
 import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
 import { preferencesStore } from '#/modules/Preferences/stores';
@@ -75,7 +76,6 @@ import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
-import { MobileGate } from '../components/MobileGate';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
@@ -163,6 +163,14 @@ type BottomTabState = {
     selectedClipId: string | null;
 };
 
+/**
+ * The shell proper. `MobileGate` sits *above* this component, in the root route, so on
+ * a sub-768px viewport AppShell never mounts and none of the effects below run: no
+ * engine init, no project load, no MIDI start, no synth/effect registration and no
+ * autosave interval, on a platform the app declares unsupported. Do not reintroduce
+ * the gate inside this component — hooks cannot be conditional, so a gate here mounts
+ * everything anyway and only swaps the rendered output.
+ */
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const workspaceState = useWorkspaceState();
     const {
@@ -171,6 +179,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         mixerOpen,
         collaborationPanelOpen,
         branchManagerOpen,
+        commandPaletteOpen,
         chatPanelOpen,
         sidebarWidth,
         inspectorWidth,
@@ -228,17 +237,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     };
     const activeBottomTab = bottomTab;
 
-    // True whenever a modal dialog/overlay owned by AppShell is open. Used to
-    // neutralize the skip-link: a focused skip-link targeting #main-content
-    // while a modal is up would scroll focus behind the modal (out of the focus
-    // trap), so we drop it from the tab order and disable its target.
-    const anyDialogOpen =
-        exportOpen ||
-        prefsOpen ||
-        showAlphaNotice ||
-        collaborationPanelOpen ||
-        branchManagerOpen ||
-        projectLoadFailure !== null;
+    // The cheat sheet owns its own '?' keydown toggle and is a leaf component, so it
+    // cannot be read out of workspace state; it reports its open state up instead.
+    const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
+
+    // The onboarding tour is a full-screen aria-modal overlay that owns its own
+    // state; read it here so the skip-link can be suppressed while it is up.
+    const onboarding = useStore(onboardingStore, defaultOnboardingState);
 
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
@@ -456,6 +461,30 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setLaunchReady(true);
     }
 
+    // True whenever a modal dialog/overlay covers the app. Used to neutralize the
+    // skip-link: a focused skip-link targeting #main-content while an overlay is up
+    // moves focus behind it, into content `aria-modal="true"` has told AT does not
+    // exist. The set is every overlay that *covers the app*, not only the ones that
+    // trap focus — the untrapped ones are the dangerous ones, and the trapped ones
+    // (CommandPalette is a Radix Dialog with a real FocusScope) cost nothing to
+    // include and keep the rule simple. `showLaunch` matters most: it is up on every
+    // cold start for a new user, which makes it the app's most common state.
+    // UndoHistoryPanel is deliberately absent: it is a non-modal, absolutely
+    // positioned utility panel that does not cover the app, so removing the
+    // skip-link there would only cost a landmark jump. Declared here, below
+    // `showLaunch`, because it reads it.
+    const anyDialogOpen =
+        exportOpen ||
+        prefsOpen ||
+        showAlphaNotice ||
+        collaborationPanelOpen ||
+        branchManagerOpen ||
+        commandPaletteOpen ||
+        cheatSheetOpen ||
+        showLaunch ||
+        onboarding.active ||
+        projectLoadFailure !== null;
+
     useEffect(() => {
         if (!launchExiting) {
             return undefined;
@@ -528,11 +557,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     };
 
     return (
-        <MobileGate>
+        <>
             <div
                 className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app"
                 data-testid="app-shell"
-                inert={projectLoadFailure !== null}
+                inert={projectLoadFailure !== null || cheatSheetOpen}
             >
                 {/* Skip-link is removed from the DOM while a modal dialog is open:
                     a focused skip-link targeting #main-content would otherwise
@@ -577,7 +606,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setFermenterHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <FermenterPanel deviceId={fermenterDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -592,7 +621,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setToasterHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <ToasterPanel deviceId={toasterDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -607,7 +636,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setLevainHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <LevainPanel deviceId={levainDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -622,7 +651,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setProofChamberHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <ProofChamberPanel deviceId={proofChamberDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -637,7 +666,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setGlutenHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <GlutenPanel deviceId={glutenDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -652,7 +681,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setBacteriaHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <BacteriaPanel deviceId={bacteriaDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -667,7 +696,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setGrinderHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <GrinderPanel deviceId={grinderDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -682,7 +711,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setProofHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <ProofPanel deviceId={proofDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -697,7 +726,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setScoringHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <TunerPanel deviceId={scoringDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -712,7 +741,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setYeastHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <YeastPanel />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -727,7 +756,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setCrustHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <CrustPanel deviceId={crustDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -742,7 +771,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setSamplerHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <CrumbsPanel deviceId={samplerDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -757,7 +786,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setGrandBouleHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ErrorBoundary>
+                                <ErrorBoundary variant="inline">
                                     <GrandBoulePanel deviceId={grandBouleDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
@@ -847,7 +876,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         tabIndex={0}
                                         className="flex-1 overflow-hidden"
                                     >
-                                        <ErrorBoundary>{renderBottomTabContent()}</ErrorBoundary>
+                                        <ErrorBoundary variant="inline">{renderBottomTabContent()}</ErrorBoundary>
                                     </div>
                                 </div>
                             </>
@@ -907,7 +936,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <MixAnalysisPanel />
                 <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
                 <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
-                <ShortcutCheatSheet />
 
                 <AlphaNoticeDialog
                     open={showAlphaNotice}
@@ -939,6 +967,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <ConfirmDialog />
             <PromptDialog />
 
+            {/* Also a sibling, for the same reason as the failure overlay below:
+                it declares `aria-modal="true"`, so the shell root goes `inert`
+                while it is open and it cannot be inside that subtree. */}
+            <ShortcutCheatSheet onOpenChange={setCheatSheetOpen} />
+
             {/* Terminal open failure: the previous session is gone and no
                 project replaced it. Gated on its own store rather than the
                 transient flags — `launchReady` latches on the first open, so
@@ -965,6 +998,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     onReload={() => window.location.reload()}
                 />
             ) : null}
-        </MobileGate>
+        </>
     );
 };

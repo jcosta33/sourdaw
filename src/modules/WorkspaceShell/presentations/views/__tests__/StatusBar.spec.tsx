@@ -149,6 +149,48 @@ describe('StatusBar', () => {
         });
     });
 
+    describe('screen-reader exposure', () => {
+        it('exposes the footer as a landmark, not as a live region', () => {
+            renderWithTooltip(<StatusBar />);
+
+            const footer = screen.getByRole('contentinfo', { name: 'Application status' });
+            expect(footer.tagName).toBe('FOOTER');
+            expect(footer).not.toHaveAttribute('role', 'status');
+        });
+
+        it('scopes the only live region to the selection label', () => {
+            selectionLabel.value = '3 clips selected';
+            renderWithTooltip(<StatusBar />);
+
+            const liveRegions = screen.getAllByRole('status');
+            expect(liveRegions).toHaveLength(1);
+            expect(liveRegions[0]).toHaveTextContent('3 clips selected');
+        });
+
+        it('hides the animation-frame-driven meters from the accessibility tree', () => {
+            renderWithTooltip(<StatusBar />);
+
+            // useStatusBarMetrics rewrites these text nodes every frame; announcing
+            // them drowns out anything the status region was meant to convey.
+            for (const readout of ['0%', '0 MB', 'n/a']) {
+                expect(screen.getByText(readout).closest('[aria-hidden="true"]')).not.toBeNull();
+            }
+        });
+
+        it('keeps the stable device readouts exposed to the accessibility tree', () => {
+            renderWithTooltip(<StatusBar />);
+
+            // Sample rate is fixed for the session and output latency changes
+            // rarely, so neither is meter churn — and this is the only place
+            // either value appears in the app. Hiding them would delete the sole
+            // accessible copy. Dropping role="status" from the footer is what
+            // fixed the announcement problem; aria-hidden here is pure loss.
+            for (const readout of ['0kHz', '0.0ms']) {
+                expect(screen.getByText(readout).closest('[aria-hidden="true"]')).toBeNull();
+            }
+        });
+    });
+
     describe('undo state', () => {
         it('hides the last-action label when there is no undo history', () => {
             renderWithTooltip(<StatusBar />);

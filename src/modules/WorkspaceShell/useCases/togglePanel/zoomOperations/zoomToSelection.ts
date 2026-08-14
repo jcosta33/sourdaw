@@ -25,11 +25,15 @@ export const zoomToSelection = inject({ eventBus: WorkspaceEventBus })(
                 return;
             }
 
+            // Set, not Array#includes: the lookup sits inside a tracks × clips loop,
+            // so a linear scan per clip makes a large marquee selection quadratic.
+            const selectedIdSet = new Set(selectedIds);
+
             let minStart = Infinity;
             let maxEnd = -Infinity;
             for (const track of state.tracks) {
                 for (const clip of track.clips) {
-                    if (selectedIds.includes(clip.id)) {
+                    if (selectedIdSet.has(clip.id)) {
                         if (clip.startBeat < minStart) {
                             minStart = clip.startBeat;
                         }

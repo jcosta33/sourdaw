@@ -14,6 +14,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
+import { defaultOnboardingState, onboardingStore } from '#/modules/Onboarding/stores';
 import {
     defaultProjectStoreState,
     projectLoadFailureStore,
@@ -285,6 +286,7 @@ const createTrack = (clip: Clip): Track => ({
 let projectState: ProjectState;
 let projectLoadFailureState: ProjectLoadFailureState | null;
 let alphaNoticeDismissed: boolean;
+let onboardingState: typeof defaultOnboardingState;
 let trackStoreState: TrackStoreState;
 let selectedClipIdState: string | null;
 let workspaceState: WorkspaceState;
@@ -302,6 +304,7 @@ describe('AppShell', () => {
         projectState = createProjectState();
         projectLoadFailureState = null;
         alphaNoticeDismissed = true;
+        onboardingState = defaultOnboardingState;
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         selectedClipIdState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
@@ -323,6 +326,9 @@ describe('AppShell', () => {
             }
             if (store === workspaceStore) {
                 return workspaceState;
+            }
+            if (store === onboardingStore) {
+                return onboardingState;
             }
             return defaultValue;
         });
@@ -578,6 +584,126 @@ describe('AppShell', () => {
             render(<AppShell>Content</AppShell>);
             expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
         });
+
+        it('removes the skip-link while the command palette is open', () => {
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            // Present first, or its absence below proves nothing.
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+
+            workspaceState = createWorkspaceState({ commandPaletteOpen: true });
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
+        it('removes the skip-link while the shortcut cheat sheet is open', () => {
+            render(<AppShell>Content</AppShell>);
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+
+            // The cheat sheet owns its own '?' toggle and puts up an
+            // aria-modal="true" overlay; AppShell only learns about it through
+            // the onOpenChange report.
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
+        it('restores the skip-link when the cheat sheet closes again', () => {
+            render(<AppShell>Content</AppShell>);
+
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+        });
+
+        it('restores the skip-link when the cheat sheet is dismissed with its Close button', () => {
+            render(<AppShell>Content</AppShell>);
+
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+
+            // The header Close button is a separate path from the '?' toggle,
+            // Escape and the backdrop. If it skips the report, AppShell keeps
+            // believing a modal is up and the skip-link never comes back.
+            fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+            expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).not.toBeInTheDocument();
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+        });
+
+        it('removes the skip-link while the launch screen covers the app', () => {
+            // The most common state there is: every cold start for a new user.
+            // LaunchScreen is aria-modal with no focus trap, so the skip-link is
+            // the first tabbable node and lands focus behind the overlay.
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('launch-screen')).toBeInTheDocument();
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
+        it('removes the skip-link while the onboarding tour is active', () => {
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            // Present first, or its absence below proves nothing.
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+
+            onboardingState = { active: true, stepIndex: 0 };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
+        it('makes the shell root inert while the cheat sheet is open, and restores it on close', () => {
+            render(<AppShell>Content</AppShell>);
+            const shellRoot = screen.getByTestId('app-shell');
+            expect(shellRoot).not.toHaveAttribute('inert');
+
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+
+            // `aria-modal="true"` tells AT the rest of the app does not exist.
+            // `inert` is what makes that true for Tab order and the a11y tree.
+            expect(shellRoot).toHaveAttribute('inert');
+
+            act(() => {
+                fireEvent.keyDown(document.body, { key: 'Escape' });
+            });
+
+            expect(shellRoot).not.toHaveAttribute('inert');
+        });
     });
 
     describe('launch overlay state', () => {
@@ -687,7 +813,9 @@ describe('AppShell', () => {
         });
 
         it('drops the skip-link from the tab order while the failure surface is up', () => {
-            projectState = createProjectState({ initialized: false, loading: false });
+            // Initialized, so the launch screen — itself a skip-link suppressor —
+            // is not what removes the link below.
+            projectState = createProjectState({ initialized: true, loading: false });
 
             const { rerender } = render(<AppShell>Content</AppShell>);
             // Present with no dialog up — otherwise its absence below proves
