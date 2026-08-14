@@ -27,14 +27,24 @@ describe('handleAddTrack', () => {
             type: 'addTrack',
             payload: { name: 'Bass', kind: 'audio', select: false },
         };
-        handleAddTrack.describe(action);
+        const described = handleAddTrack.describe(action);
         const trackId = action.payload.id;
         if (!trackId) {
             throw new Error('Expected describe to prepare a track id');
         }
-        mocks.addTrack.mockReturnValue({ id: trackId, name: 'Bass', kind: 'audio' });
+        const createdTrack = { id: trackId, name: 'Bass', kind: 'audio' };
+        mocks.addTrack.mockReturnValue(createdTrack);
 
         const result = await handleAddTrack.execute(action);
+
+        // Execute finalizes the guard embedded in the inverse: an
+        // unfinalized entityJson would make undo of addTrack conflict-fail
+        // against isGeneratedMidiStateCurrent.
+        const inverse = described?.inverseAction;
+        if (!inverse || inverse.type !== 'discardCreatedTrack') {
+            throw new Error('Expected a discardCreatedTrack inverse');
+        }
+        expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(createdTrack));
 
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
         expect(mocks.addTrack).toHaveBeenCalledWith({
