@@ -1,0 +1,21 @@
+scripts/check-dependency-boundaries.mjs
+  s_ab5443e65c7fba::t_a68a6cac358889 397-405,533,618
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_ab5443e65c7fba::t_b9f4d98b85e138 916-932
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "492b07c42a28c50b028b1fe7e1fad529541e79eb",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
