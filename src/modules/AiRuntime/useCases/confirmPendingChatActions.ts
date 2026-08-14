@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
+import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
     executeAppActionBatch,
     executeVersionedCommandBatch,
@@ -359,8 +360,11 @@ export async function confirmPendingChatActions(
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
-                // Only abort and revision authorization gate the in-flight
-                // batch. The approval itself was fully validated by
+                if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
+                    return false;
+                }
+                // Only abort, revision, and actor authorization gate the
+                // in-flight batch. The approval itself was fully validated by
                 // getApprovalPreflightFailure before execution began;
                 // re-deriving target fingerprints per action would read
                 // target state this batch has already mutated, so any
@@ -368,7 +372,14 @@ export async function confirmPendingChatActions(
                 // invalidate itself mid-flight. External interference is
                 // still caught here: every project mutation moves the
                 // revision heads isConfirmationExecutionAuthorized compares.
-                return isConfirmationExecutionAuthorized(confirmation, aborter.signal);
+                // The actor binding is re-checked separately because a
+                // collaborator reconnect rotates localPeerId (same fallback
+                // as compileAgentRiskApproval) without moving those heads.
+                const approved = confirmation.approvalSnapshot;
+                if (!approved.agentApproval) {
+                    return true;
+                }
+                return (collaborationStore.value?.localPeerId ?? 'standalone') === approved.agentApproval.localActorId;
             },
         };
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
