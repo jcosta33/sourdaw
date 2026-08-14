@@ -282,7 +282,12 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     } catch {
                         // Project truth is the durable authority; the local cache may heal on a later retry.
                     }
-                    return { status: 'idempotent-replay' as const, actions: [] as [], receipt: recoveredReceipt };
+                    return {
+                        status: 'idempotent-replay' as const,
+                        actions: [] as [],
+                        receipt: recoveredReceipt,
+                        recoveredExternalEffects: true as const,
+                    };
                 } finally {
                     try {
                         await commandBatchIdempotencyPort.release({

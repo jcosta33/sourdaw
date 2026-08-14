@@ -62,7 +62,8 @@ type VerifiedBatchReplayReceipt = Parameters<typeof getVerifiedBatchReplayDispos
 
 function settleVerifiedBatchReplay(
     confirmation: PendingAppActionConfirmation,
-    receipt: VerifiedBatchReplayReceipt
+    receipt: VerifiedBatchReplayReceipt,
+    recoveredExternalEffects = false
 ): ConfirmPendingChatActionsResult {
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
@@ -75,10 +76,13 @@ function settleVerifiedBatchReplay(
         const effect =
             replay.status === 'committed' ? 'project batch was already committed' : 'runtime batch already executed';
         const warning = replay.warning ? ` The prior receipt also reports: ${replay.warning}` : '';
+        const content = recoveredExternalEffects
+            ? `This exact ${effect}. Pending external effects were reconciled successfully and the recovered verified receipt was returned.${warning}`
+            : `This exact ${effect}. The prior verified receipt was returned without replaying project or runtime effects.${warning}`;
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
             error: replay.warning,
-            content: `This exact ${effect}. The prior verified receipt was returned without replaying project or runtime effects.${warning}`,
+            content,
         });
         return { status: 'executed' };
     }
@@ -543,7 +547,11 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'idempotent-replay') {
-        return settleVerifiedBatchReplay(confirmation, batchResult.receipt);
+        return settleVerifiedBatchReplay(
+            confirmation,
+            batchResult.receipt,
+            'recoveredExternalEffects' in batchResult && batchResult.recoveredExternalEffects === true
+        );
     }
 
     if (batchResult.status === 'cancelled') {

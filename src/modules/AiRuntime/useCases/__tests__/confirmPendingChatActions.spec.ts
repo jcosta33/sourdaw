@@ -372,7 +372,11 @@ describe('confirmPendingChatActions transaction admission', () => {
         ).resolves.toEqual({ status: 'executed' });
 
         expect(effectAttempts).toBe(3);
-        expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
+        expect(chatStore.value?.messages[0]?.content).toContain('recovered verified receipt');
+        expect(chatStore.value?.messages[0]?.content).toContain(
+            'Pending external effects were reconciled successfully'
+        );
+        expect(chatStore.value?.messages[0]?.content).not.toContain('without replaying project or runtime effects');
         expect(chatStore.value?.messages[0]?.content).not.toContain('tempo runtime unavailable');
     });
 
