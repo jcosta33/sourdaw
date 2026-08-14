@@ -7,6 +7,7 @@ export { inspectAgentProjectDivergence } from './inspectAgentProjectDivergence';
 export { findAutomergeProjectConflicts } from './findAutomergeProjectConflicts';
 export { inspectCurrentAgentProjectRepairState } from './inspectCurrentAgentProjectRepairState';
 export { createCommandPreviewWorkspace } from './createCommandPreviewWorkspace';
+export { createCommandRecoveryWorkspace } from './createCommandRecoveryWorkspace';
 export { captureActiveBranchReference } from './captureActiveBranchReference';
 export { getDrumPreviewBranchHandlers } from './getDrumPreviewBranchHandlers';
 export { isDrumPreviewBranchPlanApplied } from './crdtBranching/isDrumPreviewBranchPlanApplied';

@@ -1,6 +1,6 @@
 import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
-import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
+import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectDivergencePort } from './commandProjectDivergencePort';
@@ -18,6 +18,10 @@ type ExecuteVersionedCommandBatchInput = {
     divergenceTargetIds?: readonly string[];
     normalizedProjectRevision?: string;
     options?: ExecuteOptions & {
+        onProjectCommitPrepared?: (result: {
+            status: 'committed';
+            actions: readonly { action: AppAction; label: string; receipt?: VersionedCommandReceipt }[];
+        }) => void;
         prepareValidation?: (input: { allowCompatibleProjectDivergence: boolean }) => CommandBatchValidationPreparation;
         requireCompensation?: boolean;
     };

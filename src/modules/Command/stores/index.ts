@@ -9,3 +9,4 @@ export type { UndoStoreState } from './undo-store-facade';
 
 export { registerHandlerMap, getHandlerMap, clearHandlerRegistry } from './handlerRegistry';
 export { actionReplayRevisionStore } from './actionReplayRevisionStore';
+export { commandBatchIdempotencyStore } from './commandBatchIdempotencyStore';

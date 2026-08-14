@@ -57,10 +57,11 @@ import {
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
-import { canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
+import { canExecuteCommandBatch, canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
+    configureCommandBatchIdempotency,
     commandDeviceVersionsPort,
     executeAppAction,
     registerProductionCommandHandlers,
@@ -80,6 +81,7 @@ import {
     captureProjectRevision,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
+    createCommandRecoveryWorkspace,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -166,6 +168,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
     markReverted: markActionHistoryEntryReverted,
@@ -179,6 +182,7 @@ agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
 );
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
+commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>

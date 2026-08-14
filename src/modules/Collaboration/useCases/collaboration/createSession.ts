@@ -1,8 +1,10 @@
 import { collaborationStore } from '../../stores/collaborationStore';
 
+import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export function createSession(name: string): string {
+    joinAttemptAuthority.invalidate();
     runtime.cleanup();
 
     const peerId = runtime.generatePeerId();
