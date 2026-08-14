@@ -30,6 +30,7 @@ import {
 
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
+import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -56,6 +57,69 @@ type ConfirmPendingChatActionsResult =
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
+
+type VerifiedBatchReplayReceipt = Parameters<typeof getVerifiedBatchReplayDisposition>[0];
+
+function settleVerifiedBatchReplay(
+    confirmation: PendingAppActionConfirmation,
+    receipt: VerifiedBatchReplayReceipt
+): ConfirmPendingChatActionsResult {
+    const replay = getVerifiedBatchReplayDisposition(receipt);
+    if (replay.status === 'committed' || replay.status === 'executed') {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'executed',
+            error: replay.warning,
+        });
+        const effect =
+            replay.status === 'committed' ? 'project batch was already committed' : 'runtime batch already executed';
+        const warning = replay.warning ? ` The prior receipt also reports: ${replay.warning}` : '';
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            error: replay.warning,
+            content: `This exact ${effect}. The prior verified receipt was returned without replaying project or runtime effects.${warning}`,
+        });
+        return { status: 'executed' };
+    }
+    if (replay.status === 'no-op') {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            content: 'The prior verified receipt records a no-op. No project or runtime effects were applied.',
+        });
+        return { status: 'executed' };
+    }
+    if (replay.status === 'cancelled') {
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'cancelled',
+            error: undefined,
+            content: 'The prior verified receipt records cancellation before commit. No project changes were applied.',
+        });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
+        return { status: 'cancelled' };
+    }
+    settlePendingActionResourceLease({
+        confirmationId: confirmation.id,
+        disposition: replay.status === 'ambiguous' ? 'retain' : 'discard',
+    });
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'failed',
+        error: replay.reason,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'failed',
+        error: replay.reason,
+        content:
+            replay.status === 'ambiguous'
+                ? `The prior verified receipt records an ambiguous outcome: ${replay.reason}. Do not retry it; inspect the project first.`
+                : `The prior verified receipt records that this command batch did not apply successfully: ${replay.reason}`,
+    });
+    return { status: 'failed', reason: replay.reason };
+}
 
 function getApprovalLabelsByCommandId(confirmation: PendingAppActionConfirmation): ReadonlyMap<string, string> {
     const labels = new Map<string, string>();
@@ -344,14 +408,7 @@ export async function confirmPendingChatActions(
             serialized: approvedCommandBatch.serialized,
         });
         if (priorReceipt) {
-            settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
-            updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
-            updateChatMessage(confirmation.assistantMessageId, {
-                pendingActionConfirmationStatus: 'executed',
-                content:
-                    'This exact command batch was already applied. The prior verified receipt was returned without replaying project or runtime effects.',
-            });
-            return { status: 'executed' };
+            return settleVerifiedBatchReplay(confirmation, priorReceipt);
         }
     }
 
@@ -487,14 +544,7 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'idempotent-replay') {
-        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
-        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
-        updateChatMessage(confirmation.assistantMessageId, {
-            pendingActionConfirmationStatus: 'executed',
-            content:
-                'This exact command batch was already applied. The prior verified receipt was returned without replaying project or runtime effects.',
-        });
-        return { status: 'executed' };
+        return settleVerifiedBatchReplay(confirmation, batchResult.receipt);
     }
 
     if (batchResult.status === 'cancelled') {

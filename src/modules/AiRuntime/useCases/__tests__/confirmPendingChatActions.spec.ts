@@ -289,6 +289,75 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
     });
 
+    it('preserves a failed verified receipt on retry instead of reporting the batch already applied', async () => {
+        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const execute = vi.fn(() => {
+            throw new Error('Tempo engine unavailable');
+        });
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 132 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-failed-batch', groupLabel: 'Set tempo batch', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-failed-batch',
+            batchId: 'group-failed-batch',
+            projectId: 'project-1',
+            baseRevision: projectRevision,
+            intent: 'set tempo to 132',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        const proposal = {
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic' as const,
+            groupId: 'group-failed-batch',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+        };
+        proposePendingActionConfirmation({ ...proposal, id: 'confirmation-failed-batch' });
+
+        const first = await confirmPendingChatActions({ confirmationId: 'confirmation-failed-batch' });
+        expect(first).toMatchObject({ status: 'failed' });
+        if (first.status !== 'failed') {
+            throw new Error('Expected the first command batch to fail');
+        }
+        const executionCallsAfterFirstFailure = execute.mock.calls.length;
+
+        proposePendingActionConfirmation({ ...proposal, id: 'confirmation-failed-batch-retry' });
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-failed-batch-retry' })).resolves.toEqual(
+            first
+        );
+        expect(execute).toHaveBeenCalledTimes(executionCallsAfterFirstFailure);
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            content: expect.not.stringContaining('already applied'),
+        });
+    });
+
     it('classifies approval-time divergence and issues a fresh revision-bound approval before execution', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');

@@ -25,6 +25,51 @@ vi.mock('../recordAiActionGroup', () => ({ recordAiActionGroup: vi.fn() }));
 const action = { type: 'togglePlayback' } as const;
 const runtimeAction = { type: 'setPlayback', payload: { playing: true } } as const;
 
+type ReplayOutcome =
+    | 'committed'
+    | 'committed-with-warning'
+    | 'executed'
+    | 'executed-with-warning'
+    | 'no-op'
+    | 'ambiguous'
+    | 'rejected'
+    | 'conflicted'
+    | 'cancelled'
+    | 'failed'
+    | 'partially-committed'
+    | 'verification-failed';
+
+function idempotentReplayResult(outcome: ReplayOutcome, errors: string[] = []) {
+    return {
+        status: 'idempotent-replay' as const,
+        actions: [] as [],
+        receipt: {
+            schemaVersion: 1 as const,
+            runId: 'run-1',
+            batchId: 'batch-1',
+            outcome,
+            atomicity: 'atomic' as const,
+            base: {
+                normalizedRevision: 'revision-1',
+                documentIdentityEpoch: null,
+                mutationEpoch: null,
+                documents: [],
+            },
+            observedBase: null,
+            resulting: null,
+            commandOutcomes: [],
+            affectedIds: [],
+            createdBindings: [],
+            warnings: [],
+            errors,
+            links: { render: [], analysis: [] },
+            compensation: { available: false, commandIds: [] },
+            semanticDiff: null,
+            modelSummary: `Prior batch outcome: ${outcome}.`,
+        },
+    };
+}
+
 describe('executePlannedActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -72,34 +117,7 @@ describe('executePlannedActions', () => {
     });
 
     it('returns a durable idempotent replay without duplicating AI history or notifications', async () => {
-        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
-            status: 'idempotent-replay',
-            actions: [],
-            receipt: {
-                schemaVersion: 1,
-                runId: 'run-1',
-                batchId: 'batch-1',
-                outcome: 'committed',
-                atomicity: 'atomic',
-                base: {
-                    normalizedRevision: 'revision-1',
-                    documentIdentityEpoch: null,
-                    mutationEpoch: null,
-                    documents: [],
-                },
-                observedBase: null,
-                resulting: null,
-                commandOutcomes: [],
-                affectedIds: [],
-                createdBindings: [],
-                warnings: [],
-                errors: [],
-                links: { render: [], analysis: [] },
-                compensation: { available: false, commandIds: [] },
-                semanticDiff: null,
-                modelSummary: 'Committed previously.',
-            },
-        });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue(idempotentReplayResult('committed'));
 
         const result = await executePlannedActions({
             commandBatch: {
@@ -141,6 +159,64 @@ describe('executePlannedActions', () => {
         expect(recordAiActionGroup).not.toHaveBeenCalled();
         expect(notifyAiChange).not.toHaveBeenCalled();
     });
+
+    it.each([
+        ['no-op', { status: 'no-op' }],
+        ['cancelled', { status: 'cancelled' }],
+        ['ambiguous', { status: 'ambiguous', reason: 'Prior ambiguous outcome' }],
+        ['rejected', { status: 'failed', reason: 'Prior rejected outcome' }],
+        ['conflicted', { status: 'failed', reason: 'Prior conflicted outcome' }],
+        ['verification-failed', { status: 'failed', reason: 'Prior verification-failed outcome' }],
+        ['failed', { status: 'failed', reason: 'Prior failed outcome' }],
+    ] as const)(
+        'preserves a prior %s outcome instead of reporting an idempotent replay as committed',
+        async (outcome, expected) => {
+            const reason = `Prior ${outcome} outcome`;
+            vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue(
+                idempotentReplayResult(outcome, outcome === 'no-op' || outcome === 'cancelled' ? [] : [reason])
+            );
+
+            const result = await executePlannedActions({
+                commandBatch: {
+                    authority: {
+                        projectId: 'project-1',
+                        baseRevision: 'revision-1',
+                        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                        grants: {
+                            allowedOperationPrefixes: [],
+                            create: false,
+                            delete: false,
+                            routing: false,
+                            tempo: false,
+                            master: false,
+                            file: false,
+                            audioUpload: false,
+                            remoteGeneration: false,
+                            autoCommit: false,
+                        },
+                        budgets: {
+                            maxCommands: 1,
+                            maxCreatedTracks: 0,
+                            maxDeletedObjects: 0,
+                            maxAffectedTracks: 0,
+                            maxAffectedClips: 0,
+                            maxAutomationPoints: 0,
+                            maxImportedAssets: 0,
+                            maxRenderJobs: 0,
+                        },
+                    },
+                    serialized: '{}',
+                },
+                prompt: 'Mute vocals',
+                actions: [action],
+                projectRevision: 'revision-1',
+            });
+
+            expect(result).toEqual(expected);
+            expect(recordAiActionGroup).not.toHaveBeenCalled();
+            expect(notifyAiChange).not.toHaveBeenCalled();
+        }
+    );
 
     it('reports a runtime-only command as executed rather than committed', async () => {
         vi.mocked(executeAppActionBatch).mockResolvedValue({
