@@ -82,6 +82,7 @@ vi.mock('../../../useCases/clipEditing/lockClip', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
 }));
 

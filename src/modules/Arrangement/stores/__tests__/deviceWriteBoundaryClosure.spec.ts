@@ -473,6 +473,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // hydrates, or writes a device or AudioEngine node.
         'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
         'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
+        // Count provenance: one hit, `compileAgentRiskApproval` in the
+        // in-flight gate's doc comment, naming the compiler whose standalone
+        // actor fallback the actor re-check mirrors (#1927). Kept rather than
+        // reworded: the sentence is the reason the fallback matches. The file
+        // holds no load, compile, or hydration sink — its writes go through
+        // executeAppActionBatch, not a hydration path.
+        'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 1,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/index.ts': 2,
@@ -574,6 +581,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // it holds no store write, no engine write, and no import beyond the
         // `PadState` type.
         'src/modules/Toaster/models/PadStoreUpdate.ts': 1,
+        // Count provenance: one hit, `audioDevice.loaded` in the doc comment on
+        // the pending-kit-update queue, naming the event whose handler creates
+        // the store record that the queued writes wait for. Kept rather than
+        // reworded for the same reason as prepareOfflineToaster: the sentence is
+        // the reason the queue exists. The file's executable writes are
+        // register/unregister/loadKit/updateKit store writes, none of which is
+        // a load/compile/hydration sink.
+        'src/modules/Toaster/stores/toasterStore.ts': 1,
         'src/modules/Toaster/useCases/loadToasterKit.ts': 1,
         // Count provenance: one hit, `audioDevice.loaded` in the doc comment
         // explaining why an offline path is needed — that event never fires
