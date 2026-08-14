@@ -11,13 +11,11 @@ async function open_grand_boule_panel(page: import('@playwright/test').Page): Pr
     await expect(page.getByRole('button', { name: 'Close Grand Boule' })).toBeVisible({ timeout: 15_000 });
 }
 
-// Grand Boule's Morph panel (§3.1) was the only device sub-panel with no E2E
-// cover: its enable DawPluginToggle and the Morph/Balance knobs. The MorphKnob
-// wrapper in MorphPanel does not forward its label as an accessible name, so
-// both knobs resolve to the rotary's fallback accessible name "Parameter
-// control" — disambiguated positionally (.first() = Morph). The enable toggle
-// shares its OFF/ON text with the Una corda and Sostenuto pedal toggles, so it
-// is anchored on its unique "Enable morph" sibling label.
+// Grand Boule's Morph panel (§3.1): its enable DawPluginToggle and the
+// Morph/Balance knobs. The knobs forward their labels as accessible names
+// (#1918), so each is addressable by name. The enable toggle shares its
+// OFF/ON text with the Una corda and Sostenuto pedal toggles, so it is
+// anchored on its unique "Enable morph" sibling label.
 test.describe('Grand Boule Morph panel — enable toggle + morph knob', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
@@ -56,10 +54,9 @@ test.describe('Grand Boule Morph panel — enable toggle + morph knob', () => {
         await morphToggle.click();
         await expect(morphToggle).toHaveAttribute('aria-pressed', 'true');
 
-        // Both Morph and Balance knobs announce as "Parameter control" because
-        // MorphPanel's MorphKnob wrapper does not forward an aria-label. The
-        // Morph knob is the first of the two in DOM order.
-        const morphKnob = page.getByRole('slider', { name: 'Parameter control' }).first();
+        // #1918 gave MorphPanel's knob wrapper its aria-label, so the knob
+        // is addressable by name instead of first-of-the-unlabeled.
+        const morphKnob = page.getByRole('slider', { name: 'Morph' });
         await expect(morphKnob).toBeVisible({ timeout: 5000 });
 
         await morphKnob.focus();
