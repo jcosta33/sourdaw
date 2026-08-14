@@ -20,6 +20,7 @@ import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempo
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
+import { persistProjectCommandBatchIdempotencyCheckpoint } from '../persistProjectCommandBatchIdempotencyCheckpoint';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
@@ -536,6 +537,89 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
         expect(runtimeGain).toBe(0.8);
         expect(mutationCount).toBe(3);
+    });
+
+    it('re-reads project truth after waiting for the recovery lease', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        let effectAttempts = 0;
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    const applyRuntimeEffect = () => {
+                        effectAttempts += 1;
+                        if (effectAttempts <= 2) {
+                            return Promise.reject(new Error('runtime strip unavailable'));
+                        }
+                        runtimeGain = 0.8;
+                        runtimeEffectCount += 1;
+                        return Promise.resolve();
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: applyRuntimeEffect,
+                        afterAmbiguousCommit: applyRuntimeEffect,
+                    };
+                },
+            }),
+        });
+        let markRecoveryLeaseRequested!: () => void;
+        let grantRecoveryLease!: () => void;
+        const recoveryLeaseRequested = new Promise<void>((resolve) => {
+            markRecoveryLeaseRequested = resolve;
+        });
+        const recoveryLeaseGate = new Promise<void>((resolve) => {
+            grantRecoveryLease = resolve;
+        });
+        const release = vi.fn(() => Promise.resolve());
+        const recoveryAwareRepository = {
+            lookup: () => Promise.resolve({ status: 'missing' as const }),
+            claim: () => Promise.resolve({ status: 'claimed' as const }),
+            complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: async () => {
+                markRecoveryLeaseRequested();
+                await recoveryLeaseGate;
+                return true;
+            },
+            release,
+        };
+        commandBatchIdempotencyPort.setRepository(recoveryAwareRepository);
+        const batch = compileBatch();
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        expect(first).toMatchObject({ status: 'committed-with-warning', receipt: { outcome: 'partially-committed' } });
+
+        const retryPromise = executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        await recoveryLeaseRequested;
+        runtimeGain = 0.8;
+        runtimeEffectCount = 1;
+        persistProjectCommandBatchIdempotencyCheckpoint({
+            projectId: 'project-idempotency',
+            idempotencyKey: 'client-request-1',
+            contentHash: await getCommandBatchContentHash(
+                JSON.parse(batch.serialized) as Parameters<typeof getCommandBatchContentHash>[0]
+            ),
+            state: 'complete',
+            serializedReceipt: JSON.stringify('receipt' in first ? first.receipt : null),
+        });
+        grantRecoveryLease();
+        const retry = await retryPromise;
+
+        expect(retry.status).toBe('idempotent-replay');
+        expect(effectAttempts).toBe(2);
+        expect(runtimeEffectCount).toBe(1);
+        expect(runtimeGain).toBe(0.8);
+        expect(release).toHaveBeenCalledTimes(1);
     });
 
     it('rechecks host authority after async claim admission and before project execution', async () => {

@@ -170,16 +170,74 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     };
                 }
                 try {
+                    const recoveryCheckpoint = getProjectCommandBatchIdempotencyCheckpoint({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: idempotencyContentHash,
+                    });
+                    if (recoveryCheckpoint.status === 'complete') {
+                        const completedReceipt = parseStoredVerifiedBatchReceipt({
+                            baseRevision: parsed.envelope.baseRevision,
+                            batchId: parsed.envelope.batchId,
+                            commands: parsed.envelope.commands,
+                            runId: parsed.envelope.runId,
+                            serializedReceipt: recoveryCheckpoint.serializedReceipt,
+                        });
+                        if (!completedReceipt) {
+                            return {
+                                status: 'rejected' as const,
+                                reason: 'Stored project idempotency receipt is invalid',
+                                actions: [] as [],
+                            };
+                        }
+                        return { status: 'idempotent-replay' as const, actions: [] as [], receipt: completedReceipt };
+                    }
+                    if (recoveryCheckpoint.status === 'unsupported-schema') {
+                        return {
+                            status: 'rejected' as const,
+                            reason: 'Project idempotency ledger schema is unsupported',
+                            actions: [] as [],
+                        };
+                    }
+                    if (recoveryCheckpoint.status === 'conflict') {
+                        return {
+                            status: 'rejected' as const,
+                            reason: 'Idempotency key was already used for different batch content',
+                            actions: [] as [],
+                        };
+                    }
+                    if (recoveryCheckpoint.status === 'missing') {
+                        return {
+                            status: 'ambiguous' as const,
+                            reason: 'Project idempotency checkpoint disappeared during external-effect recovery',
+                            actions: [] as [],
+                            receipt,
+                        };
+                    }
+                    const recoveryReceipt = parseStoredVerifiedBatchReceipt({
+                        baseRevision: parsed.envelope.baseRevision,
+                        batchId: parsed.envelope.batchId,
+                        commands: parsed.envelope.commands,
+                        runId: parsed.envelope.runId,
+                        serializedReceipt: recoveryCheckpoint.serializedReceipt,
+                    });
+                    if (!recoveryReceipt) {
+                        return {
+                            status: 'rejected' as const,
+                            reason: 'Stored project idempotency receipt is invalid',
+                            actions: [] as [],
+                        };
+                    }
                     const reconciliation = await reconcileProjectCommandBatchEffects({
                         envelope: resolvedEnvelope,
-                        serializedReceipt: projectCheckpoint.serializedReceipt,
+                        serializedReceipt: recoveryCheckpoint.serializedReceipt,
                     });
                     if (reconciliation.status === 'failed') {
                         return {
                             status: 'ambiguous' as const,
                             reason: reconciliation.reason,
                             actions: [] as [],
-                            receipt,
+                            receipt: recoveryReceipt,
                         };
                     }
                     try {
@@ -188,14 +246,14 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             idempotencyKey: parsed.envelope.idempotencyKey,
                             contentHash: idempotencyContentHash,
                             state: 'complete',
-                            serializedReceipt: projectCheckpoint.serializedReceipt,
+                            serializedReceipt: recoveryCheckpoint.serializedReceipt,
                         });
                     } catch (error) {
                         return {
                             status: 'ambiguous' as const,
                             reason: `Idempotency checkpoint finalization failed: ${error instanceof Error ? error.message : String(error)}`,
                             actions: [] as [],
-                            receipt,
+                            receipt: recoveryReceipt,
                         };
                     }
                     try {
@@ -203,12 +261,12 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             projectId: parsed.envelope.projectId,
                             idempotencyKey: parsed.envelope.idempotencyKey,
                             contentHash: idempotencyContentHash,
-                            serializedReceipt: projectCheckpoint.serializedReceipt,
+                            serializedReceipt: recoveryCheckpoint.serializedReceipt,
                         });
                     } catch {
                         // Project truth is the durable authority; the local cache may heal on a later retry.
                     }
-                    return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+                    return { status: 'idempotent-replay' as const, actions: [] as [], receipt: recoveryReceipt };
                 } finally {
                     try {
                         await commandBatchIdempotencyPort.release({
