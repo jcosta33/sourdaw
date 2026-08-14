@@ -390,11 +390,10 @@ export const YeastPanel = (): ReactElement => {
 
 const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
     const hasArp = state.processors.some((param) => param.type === 'arpeggiator');
-    // Local UI mirror of the latch toggle. Processor params are not projected
-    // back into the store (the panel is write-only — see audit obs #4), so the
-    // chip tracks its own on/off state to drive a real toggle: without it the
-    // chip could only ever send latch=1 and latch could never be turned off.
-    const [latchOn, setLatchOn] = useState(false);
+    // Latch is processor param state, not view state: handleSetYeastProcessorParam
+    // commits it to yeastStore, and a reload or undo that restores the
+    // arpeggiator must restore its latch with it.
+    const latchOn = state.processors.find((param) => param.type === 'arpeggiator')?.params?.latch === 1;
 
     return (
         <Row align="center" justify="center" gap={8} className="flex-1 px-8">
@@ -427,13 +426,14 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     size="micro"
                     tone="inset"
                     className="min-w-[4.5rem]"
+                    aria-label="Mode"
                     onChange={(event) => {
                         const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
                             handleSetYeastProcessorParam(arp.id, 'mode', parseInt(event.target.value));
                         }
                     }}
-                    defaultValue={0}
+                    value={state.processors.find((param) => param.type === 'arpeggiator')?.params?.mode ?? 0}
                 >
                     <option value={0}>Up</option>
                     <option value={1}>Down</option>
@@ -449,7 +449,8 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             <Stack align="center" gap={1}>
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Rate</span>
                 <YeastKnob
-                    value={8}
+                    aria-label="Rate"
+                    value={state.processors.find((param) => param.type === 'arpeggiator')?.params?.rate_denom ?? 8}
                     onChange={(value) => {
                         const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
@@ -462,16 +463,18 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     defaultValue={8}
                     size="lg"
                 />
-                <span className="text-[8px] text-muted-foreground font-mono">1/8</span>
+                <span className="text-[8px] text-muted-foreground font-mono">
+                    1/{state.processors.find((param) => param.type === 'arpeggiator')?.params?.rate_denom ?? 8}
+                </span>
             </Stack>
             {/* Latch */}
             <YeastChip
                 size="sm"
                 active={latchOn}
+                aria-pressed={latchOn}
                 onClick={() => {
                     const arp = state.processors.find((param) => param.type === 'arpeggiator');
                     const next = !latchOn;
-                    setLatchOn(next);
                     if (arp) {
                         handleSetYeastProcessorParam(arp.id, 'latch', next ? 1 : 0);
                     }
@@ -492,7 +495,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
         <Row align="start" justify="around" className="flex-1 px-4 py-3">
             <KnobCol
                 label="Gate"
-                value={0.8}
+                value={arp?.params?.gate ?? 0.8}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -505,7 +508,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             />
             <KnobCol
                 label="Swing"
-                value={0}
+                value={arp?.params?.swing ?? 0}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -518,7 +521,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             />
             <KnobCol
                 label="Octaves"
-                value={1}
+                value={arp?.params?.octave_range ?? 1}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -531,7 +534,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             />
             <KnobCol
                 label="Velocity"
-                value={100}
+                value={arp?.params?.fixed_velocity ?? 100}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -867,7 +870,16 @@ const KnobCol = ({
 }): ReactElement => (
     <Stack align="center" gap={1}>
         <span className="text-[8px] text-muted-foreground uppercase tracking-widest">{label}</span>
-        <YeastKnob value={value} onChange={onChange} min={min} max={max} step={0.01} defaultValue={value} size="md" />
+        <YeastKnob
+            aria-label={label}
+            value={value}
+            onChange={onChange}
+            min={min}
+            max={max}
+            step={0.01}
+            defaultValue={value}
+            size="md"
+        />
         <span className="text-[7px] text-muted-foreground font-mono">
             {value.toFixed(unit === '%' ? 0 : 1)}
             {unit}
