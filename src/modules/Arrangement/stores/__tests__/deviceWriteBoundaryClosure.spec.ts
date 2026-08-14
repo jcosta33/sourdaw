@@ -473,6 +473,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // hydrates, or writes a device or AudioEngine node.
         'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
         'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
+        // Count provenance: one hit, `compileAgentRiskApproval` in the
+        // in-flight gate's doc comment, naming the compiler whose standalone
+        // actor fallback the actor re-check mirrors (#1927). Kept rather than
+        // reworded: the sentence is the reason the fallback matches. The file
+        // holds no load, compile, or hydration sink — its writes go through
+        // executeAppActionBatch, not a hydration path.
+        'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 1,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/index.ts': 2,
