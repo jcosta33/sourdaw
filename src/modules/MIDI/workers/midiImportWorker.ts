@@ -65,7 +65,11 @@ class MidiReader {
      * SMF caps a variable-length quantity at four bytes (28 bits). Reading a
      * fifth continuation byte shifts past bit 31, so `<<` turns the delta
      * negative and places notes before beat 0 where nothing can reach them.
-     * Multiplying keeps the value off the sign bit; the cap refuses the file.
+     * Multiplying keeps the value off the sign bit.
+     *
+     * A fifth byte means the stream desynced, so the rest of this track is
+     * unreadable. Raise the same `RangeError` a read off the end raises: the
+     * track closes on what it already read and the other tracks still import.
      */
     readVarLen(): number {
         let value = 0;
@@ -73,7 +77,7 @@ class MidiReader {
         let bytesRead = 0;
         do {
             if (bytesRead === MAX_VAR_LEN_BYTES) {
-                throw new Error('Invalid MIDI file: variable-length quantity exceeds four bytes');
+                throw new RangeError('variable-length quantity exceeds the four bytes SMF allows');
             }
             byte = this.readUint8();
             bytesRead++;
@@ -167,6 +171,10 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
     // appear last in the map.
     let tempoResolved = false;
     const parsedTracks: ParsedTrack[] = [];
+    // Set whenever the file gave up less than it declared. It decides only
+    // whether an empty result is an empty file or an unreadable one; a partial
+    // result is still the notes the file asked for and is imported as-is.
+    let lostTrackData = false;
 
     for (let time = 0; time < numTracks; time++) {
         // The header's track count is a claim about a file that may have been
@@ -174,6 +182,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         // the whole parse and loses every track already read, so stop here and
         // return what did arrive.
         if (reader.length - reader.position < CHUNK_HEADER_BYTES) {
+            lostTrackData = true;
             break;
         }
 
@@ -288,12 +297,14 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
             }
         } catch (error) {
             // The last event of a truncated file runs off the end of the
-            // buffer. `DataView` reports that as a `RangeError`, and the notes
-            // read before it are still the notes the file asked for — so close
-            // the track here. Anything else is a real parse failure.
+            // buffer, and a desynced stream produces an over-long
+            // variable-length quantity. Both arrive as a `RangeError`, and the
+            // notes read before one are still the notes the file asked for — so
+            // close the track here. Anything else is a real parse failure.
             if (!(error instanceof RangeError)) {
                 throw error;
             }
+            lostTrackData = true;
         }
 
         // A note-on with no matching note-off is still a note the file asked
@@ -316,6 +327,14 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         if (notes.length > 0) {
             parsedTracks.push({ name: trackName, notes, endTick: tick });
         }
+    }
+
+    // Recovering nothing from a file that lost data is a corrupt file, not an
+    // empty one. Resolving it as a parse with zero tracks makes the import a
+    // silent no-op: the caller treats an empty result as "nothing to add" and
+    // says nothing, so the user drops a broken .mid and sees no response at all.
+    if (lostTrackData && parsedTracks.length === 0) {
+        throw new Error('Invalid MIDI file: no readable track data');
     }
 
     return { tracks: parsedTracks, ticksPerBeat, tempo: globalTempo };

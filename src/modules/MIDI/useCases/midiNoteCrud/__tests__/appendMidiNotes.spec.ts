@@ -241,6 +241,28 @@ describe('appendMidiNotes', () => {
         ).not.toThrow();
     });
 
+    it('accepts an optional key present with the value undefined, as the store holds it', () => {
+        // `splitNoteAtBeat` writes every optional field onto the right half
+        // unconditionally, so a plain note's `pitchBendRangeSemitones` and
+        // `articulation` become own keys holding `undefined`. `midiStore`'s own
+        // `hasValidMidiNoteOptionals` reads that as absent and keeps the note,
+        // and `pasteNotes` strips neither key — so reading it as
+        // present-and-invalid here throws on pasting any split note.
+        expect(() =>
+            appendMidiNotesUnchecked({
+                clipId: 'clip-1',
+                notes: [
+                    {
+                        ...createAppendNote(),
+                        pitchBend: undefined,
+                        pitchBendRangeSemitones: undefined,
+                        articulation: undefined,
+                    },
+                ],
+            })
+        ).not.toThrow();
+    });
+
     it.each([
         ['an unknown key', { ...createAppendNote(), unsupported: 1 }],
         ['a non-numeric bend range', { ...createAppendNote(), pitchBendRangeSemitones: '2' }],

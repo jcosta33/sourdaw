@@ -624,6 +624,30 @@ describe('midiImportWorker', () => {
             expect(parsedTracks()).toHaveLength(2);
         });
 
+        it('reports a file truncated before its first track instead of parsing zero tracks', () => {
+            // A parse that resolves with no tracks is indistinguishable from an
+            // empty file, and the importer treats that as nothing to add — so a
+            // corrupt drop would produce no tracks and no message at all.
+            dispatchParse(toBuffer([...mThd(1, 2, 480), 0x4d, 0x54]));
+
+            const message = lastPosted();
+            expect(message.type).toBe('error');
+            expect(message.message).toBe('Invalid MIDI file: no readable track data');
+        });
+
+        it('keeps the intact tracks when a later track desyncs into an over-long quantity', () => {
+            // The bad quantity closes its own track; it must not discard the
+            // tracks that already parsed.
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const desynced = mTrkRaw([0xff, 0xff, 0xff, 0xff, 0x7f, 0x90, 60, 100, ...endOfTrack(0)]);
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...desynced]));
+
+            expect(parsedTracks()).toHaveLength(1);
+        });
+
         it('refuses a variable-length quantity longer than the four bytes SMF allows', () => {
             // Five continuation bytes overflow a signed 32-bit shift into a
             // negative delta, which places notes before beat 0 where nothing can
