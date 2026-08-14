@@ -6,6 +6,7 @@ import {
     defaultToasterState,
     registerToasterDevice,
     unregisterToasterDevice,
+    resetToasterDeviceLifecycleState,
     updatePad,
     updateKit,
     loadKit,
@@ -150,6 +151,10 @@ describe('registerToasterDevice', () => {
 describe('updateKit defers writes made while the device is still loading', () => {
     beforeEach(() => {
         toasterStore.set({});
+        // The queue and retire set are module-level; resetting them keeps the
+        // block independent of declaration order (test 4 retires the id the
+        // earlier tests write to).
+        resetToasterDeviceLifecycleState();
     });
 
     it('a knob write that lands before registration is applied once the device loads, not dropped', () => {
@@ -198,5 +203,39 @@ describe('updateKit defers writes made while the device is still loading', () =>
         registerToasterDevice('dev-loading', reloadKit);
 
         expect(toasterStore.value?.['dev-loading']?.kit.swing).toBe(0.5);
+    });
+
+    it('teardown during the load window drops the queue and retires the id anyway', () => {
+        // unregisterToasterDevice fires on audioDevice.removed regardless of
+        // registration state; a device removed while still loading has queued
+        // writes but no record. Undo restoring the CRDT device re-registers
+        // the same id with project truth, which the stale write must not hit.
+        updateKit('dev-loading', { swing: 0.9 });
+        unregisterToasterDevice('dev-loading');
+
+        const reloadKit = { ...createDefaultKit(), swing: 0.5 };
+        registerToasterDevice('dev-loading', reloadKit);
+
+        expect(toasterStore.value?.['dev-loading']?.kit.swing).toBe(0.5);
+    });
+
+    it('resetToasterDeviceLifecycleState ends both lifetimes at the project boundary', () => {
+        // A write queued in project A's loading window must not flush onto
+        // project B's same-id device, and a teardown in project A must not
+        // refuse project B's loading-window writes: reloads reuse persisted
+        // uuid device ids across project switches.
+        updateKit('dev-shared', { swing: 0.9 });
+        registerToasterDevice('dev-retired');
+        unregisterToasterDevice('dev-retired');
+
+        resetToasterDeviceLifecycleState();
+
+        const reloadKit = { ...createDefaultKit(), swing: 0.5 };
+        registerToasterDevice('dev-shared', reloadKit);
+        expect(toasterStore.value?.['dev-shared']?.kit.swing).toBe(0.5);
+
+        updateKit('dev-retired', { swing: 0.37 });
+        registerToasterDevice('dev-retired', reloadKit);
+        expect(toasterStore.value?.['dev-retired']?.kit.swing).toBe(0.37);
     });
 });

@@ -107,12 +107,23 @@ export function unregisterToasterDevice(deviceId: string): void {
         const next = { ...state };
         delete next[deviceId];
         toasterStore.set(next);
-        // Drop anything queued while this device was loading and refuse writes
-        // from here on: this id's next registration rehydrates project truth,
-        // which a stale write must not touch.
-        pendingKitUpdates.delete(deviceId);
-        retiredDeviceIds.add(deviceId);
     }
+    // Teardown retires the id whether or not a record existed: a device
+    // removed while still loading has queued writes and no record, and the
+    // same id's next registration rehydrates project truth either way.
+    pendingKitUpdates.delete(deviceId);
+    retiredDeviceIds.add(deviceId);
+}
+
+/**
+ * Clears the module-level registration bookkeeping (deferred kit writes and
+ * retired ids). Called when module stores are reset for a project switch:
+ * ids from the outgoing project must not constrain writes in the incoming
+ * one, which may reuse the same persisted device ids.
+ */
+export function resetToasterDeviceLifecycleState(): void {
+    pendingKitUpdates.clear();
+    retiredDeviceIds.clear();
 }
 
 export function selectPad(deviceId: string, index: number): void {

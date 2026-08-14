@@ -1,1 +1,1 @@
-export { defaultToasterState, toasterStore } from './toasterStore';
+export { defaultToasterState, toasterStore, resetToasterDeviceLifecycleState } from './toasterStore';
