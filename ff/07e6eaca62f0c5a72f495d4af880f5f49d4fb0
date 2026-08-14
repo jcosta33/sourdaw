@@ -1,0 +1,53 @@
+src/modules/MIDI/useCases/midiNoteCrud/appendMidiNotes.ts
+  s_ab5443e65c7fba::t_fc8d18a704c328 13
+  s_ab5443e65c7fba::t_206e82857ddff8 24-35
+  s_ab5443e65c7fba::t_b88b5c192493a4 67
+src/modules/MIDI/workers/midiImportWorker.ts
+  s_ab5443e65c7fba::t_2d08c7387a2cfd 25-27
+  s_ab5443e65c7fba::t_ef7b1fabf9ea95 172-179,188-190,296
+  s_ab5443e65c7fba::t_9b1fd7973122ce 217,221,227,236,238,251,254,262,284-286,289-292,295
+  s_ab5443e65c7fba::t_ce3b997b7b1db7 197
+  s_ab5443e65c7fba::t_be63ecafa5f168 64-69,73,75-77,79-80
+  s_ab5443e65c7fba::t_07770c05f524bd 265-276
+  s_ab5443e65c7fba::t_715fab70c4408c 198-200,214-216
+  s_ab5443e65c7fba::t_4fbfff5864abec 218
+  s_ab5443e65c7fba::t_32a80843205c0b 220
+  s_ab5443e65c7fba::t_2e2aa9676efb4a 222
+  s_ab5443e65c7fba::t_5d27fc3c1a1d97 224-226
+  s_ab5443e65c7fba::t_f733a243fbc0df 228
+  s_ab5443e65c7fba::t_4cfe81ff1bc93e 233-235
+  s_ab5443e65c7fba::t_947a95f5228155 248-250
+  s_ab5443e65c7fba::t_dc4b43c4608a7d 252-253
+  s_ab5443e65c7fba::t_58894d5c17b785 259-261
+  s_ab5443e65c7fba::t_5e3dfbb9a06bd5 277-279,281-283
+  s_ab5443e65c7fba::t_2a642878743984 293-294
+  s_a40848e8f8cca9::t_d2327ca0669d01 201-213,230-232,241-247,257,280
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/appendMidiNotes.spec.ts
+  s_ab5443e65c7fba::t_befc54164152b5 37
+src/modules/MIDI/workers/__tests__/midiImportWorker.spec.ts
+  s_a40848e8f8cca9::t_467e3cb083ecab 355-359,611-663
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ff07e6eaca62f0c5a72f495d4af880f5f49d4fb0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
