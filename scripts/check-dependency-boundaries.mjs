@@ -22,7 +22,8 @@ const leafComponentPath = /(^src\/components\/|\/presentations\/components\/)/;
 const sourceFilePath = new RegExp(SOURCE_FILE_RE, 'i');
 const moduleRootRepositoryPath = /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/repositories(?:\/|$)/;
 const tauriBridgeModulePath = /(?:^|\/)utils\/tauriBridge(?:\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx))?$/i;
-const unsupportedCommonJsSurfaceReason = 'unsupported CommonJS public-surface mutation cannot be statically inspected';
+const commonJsRuntimeNames = new Set(['exports', 'module', 'require']);
+const commonJsSurfaceReason = 'CommonJS module, exports, and require are not available under src';
 
 const gates = {
     main: {
@@ -276,10 +277,6 @@ function entityNameRoot(entityName) {
     return null;
 }
 
-function isIdentifierNamed(node, name) {
-    return ts.isIdentifier(node) && node.text === name;
-}
-
 function normalizeFileName(filePath) {
     return toPosixPath(resolve(filePath));
 }
@@ -342,61 +339,6 @@ function bindingIdentifiers(name) {
     return [];
 }
 
-function bindingPropertyNameText(name) {
-    if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
-        return name.text;
-    }
-    return null;
-}
-
-function staticExpressionName(checker, expression) {
-    if (!expression) {
-        return null;
-    }
-    if (ts.isStringLiteralLike(expression) || ts.isNumericLiteral(expression)) {
-        return expression.text;
-    }
-    try {
-        const type = checker.getTypeAtLocation(expression);
-        if (type.flags & ts.TypeFlags.StringLiteral) {
-            return type.value;
-        }
-        if (type.flags & ts.TypeFlags.NumberLiteral) {
-            return String(type.value);
-        }
-    } catch {
-        return null;
-    }
-    return null;
-}
-
-function staticPropertyName(context, name) {
-    if (!name) {
-        return null;
-    }
-    if (ts.isComputedPropertyName(name)) {
-        return staticExpressionName(context.checker, name.expression);
-    }
-    return bindingPropertyNameText(name);
-}
-
-function bindingElementPropertyName(context, element) {
-    if (element.propertyName) {
-        return staticPropertyName(context, element.propertyName);
-    }
-    return ts.isIdentifier(element.name) ? element.name.text : null;
-}
-
-function staticMemberName(checker, node) {
-    if (ts.isPropertyAccessExpression(node)) {
-        return node.name.text;
-    }
-    if (ts.isElementAccessExpression(node)) {
-        return staticExpressionName(checker, node.argumentExpression);
-    }
-    return null;
-}
-
 function symbolAtLocation(context, identifier) {
     try {
         return context.checker.getSymbolAtLocation(identifier) ?? null;
@@ -405,1084 +347,71 @@ function symbolAtLocation(context, identifier) {
     }
 }
 
-function hasLocalDeclaration(context, sourceFile, identifier) {
-    const symbol = symbolAtLocation(context, identifier);
-    if (!symbol) {
-        return true;
-    }
-    return (symbol.declarations ?? []).some(
-        (declaration) => declaration.getSourceFile() === sourceFile && ts.isDeclaration(declaration)
-    );
-}
-
-function isUnshadowedIdentifier(context, sourceFile, node, name) {
-    return isIdentifierNamed(node, name) && !hasLocalDeclaration(context, sourceFile, node);
-}
-
-function unwrapCommonJsExpression(expression) {
-    let current = expression;
-    while (
-        current &&
-        (ts.isParenthesizedExpression(current) ||
-            ts.isAsExpression(current) ||
-            ts.isTypeAssertionExpression(current) ||
-            ts.isSatisfiesExpression(current) ||
-            ts.isNonNullExpression(current))
-    ) {
-        current = current.expression;
-    }
-    return current;
-}
-
-function createCommonJsFlow() {
-    const initialExportsObject = {};
-    const moduleObject = {};
-    const objectAssignIdentity = {};
-    const objectIdentity = {};
-    const requireIdentity = {};
-    const staticMembersByIdentity = new Map([[initialExportsObject, new Map()]]);
-    return {
-        aliases: new Map(),
-        currentModuleExports: initialExportsObject,
-        exportsBinding: initialExportsObject,
-        inexactStaticMemberIdentities: new Set(),
-        lexicalBindings: new Map(),
-        lexicalScopes: [new Set()],
-        moduleBinding: moduleObject,
-        moduleObject,
-        moduleRequireBinding: requireIdentity,
-        nodeIdentities: new Map(),
-        objectAssignBinding: objectAssignIdentity,
-        objectAssignIdentity,
-        objectBinding: objectIdentity,
-        objectIdentity,
-        requireBinding: requireIdentity,
-        requireIdentity,
-        staticMembersByIdentity,
-        symbolIdentities: new Map(),
-    };
-}
-
-function cloneCommonJsFlow(flow) {
-    return {
-        ...flow,
-        aliases: new Map(flow.aliases),
-        inexactStaticMemberIdentities: new Set(flow.inexactStaticMemberIdentities),
-        lexicalBindings: new Map([...flow.lexicalBindings].map(([name, identities]) => [name, [...identities]])),
-        lexicalScopes: flow.lexicalScopes.map((scope) => new Set(scope)),
-        nodeIdentities: new Map(flow.nodeIdentities),
-        staticMembersByIdentity: new Map(
-            [...flow.staticMembersByIdentity].map(([identity, members]) => [identity, new Map(members)])
-        ),
-        symbolIdentities: new Map(flow.symbolIdentities),
-    };
-}
-
-function createCommonJsIdentity(flow, node = null) {
-    if (node && flow.nodeIdentities.has(node)) {
-        return flow.nodeIdentities.get(node);
-    }
-    const identity = {};
-    if (node) {
-        flow.nodeIdentities.set(node, identity);
-    }
-    return identity;
-}
-
-function commonJsResult(flow, node, identity = createCommonJsIdentity(flow, node)) {
-    return { identity, valueNode: node };
-}
-
-function commonJsSymbolIdentity(flow, symbol, node) {
-    if (flow.aliases.has(symbol)) {
-        return flow.aliases.get(symbol);
-    }
-    if (!flow.symbolIdentities.has(symbol)) {
-        flow.symbolIdentities.set(symbol, createCommonJsIdentity(flow, node));
-    }
-    return flow.symbolIdentities.get(symbol);
-}
-
-function commonJsValueSymbol(context, node) {
-    if (ts.isIdentifier(node) && ts.isShorthandPropertyAssignment(node.parent)) {
+// In `{ exports }` the identifier resolves to the property it declares, not to the value it reads,
+// so ask the checker for the value symbol before deciding the name is a local.
+function referencedSymbol(context, node) {
+    if (ts.isShorthandPropertyAssignment(node.parent)) {
         try {
-            return context.checker.getShorthandAssignmentValueSymbol(node.parent) ?? symbolAtLocation(context, node);
+            return context.checker.getShorthandAssignmentValueSymbol(node.parent) ?? null;
         } catch {
-            // Malformed JavaScript can leave a shorthand without a resolvable value symbol.
+            return symbolAtLocation(context, node);
         }
     }
     return symbolAtLocation(context, node);
 }
 
-function commonJsLexicalBinding(flow, name) {
-    const bindings = flow.lexicalBindings.get(name);
-    return bindings?.length ? { identity: bindings.at(-1), name } : null;
-}
-
-function isCommonJsRuntimeName(name) {
-    return name === 'exports' || name === 'module' || name === 'require';
-}
-
-function bindCommonJsLexical(flow, name, identity) {
-    const scope = flow.lexicalScopes.at(-1);
-    const bindings = flow.lexicalBindings.get(name) ?? [];
-    if (scope.has(name)) {
-        bindings[bindings.length - 1] = identity;
-    } else {
-        scope.add(name);
-        bindings.push(identity);
-    }
-    flow.lexicalBindings.set(name, bindings);
-}
-
-function popCommonJsLexicalScope(flow) {
-    for (const name of flow.lexicalScopes.pop()) {
-        const bindings = flow.lexicalBindings.get(name);
-        bindings.pop();
-        if (bindings.length === 0) {
-            flow.lexicalBindings.delete(name);
-        }
-    }
-}
-
-function commonJsIdentifierResult(context, sourceFile, flow, node) {
-    const lexicalBinding = commonJsLexicalBinding(flow, node.text);
-    if (lexicalBinding) {
-        return commonJsResult(flow, node, lexicalBinding.identity);
-    }
-    const symbol = commonJsValueSymbol(context, node);
-    if (symbol && flow.aliases.has(symbol)) {
-        return commonJsResult(flow, node, flow.aliases.get(symbol));
-    }
-    if (isUnshadowedIdentifier(context, sourceFile, node, 'Object')) {
-        return commonJsResult(flow, node, flow.objectBinding);
-    }
-    if (isUnshadowedIdentifier(context, sourceFile, node, 'module')) {
-        return commonJsResult(flow, node, flow.moduleBinding);
-    }
-    if (isUnshadowedIdentifier(context, sourceFile, node, 'exports')) {
-        return commonJsResult(flow, node, flow.exportsBinding);
-    }
-    if (isUnshadowedIdentifier(context, sourceFile, node, 'require')) {
-        return commonJsResult(flow, node, flow.requireBinding);
-    }
-    return commonJsResult(flow, node, symbol ? commonJsSymbolIdentity(flow, symbol, node) : undefined);
-}
-
-function certainStaticMemberResult(flow, owner, memberName, node) {
-    if (owner.identity === flow.moduleObject) {
-        if (memberName === 'exports') {
-            return commonJsResult(flow, node, flow.currentModuleExports);
-        }
-        if (memberName === 'require') {
-            return commonJsResult(flow, node, flow.moduleRequireBinding);
-        }
-    }
-    if (owner.identity === flow.objectIdentity && memberName === 'assign') {
-        return commonJsResult(flow, node, flow.objectAssignBinding);
-    }
-    const member = memberName ? flow.staticMembersByIdentity.get(owner.identity)?.get(memberName) : null;
-    return member ?? commonJsResult(flow, node);
-}
-
-function recordCertainStaticMember(flow, ownerIdentity, memberName, result) {
-    let members = flow.staticMembersByIdentity.get(ownerIdentity);
-    if (!members) {
-        members = new Map();
-        flow.staticMembersByIdentity.set(ownerIdentity, members);
-        flow.inexactStaticMemberIdentities.add(ownerIdentity);
-    }
-    members.set(memberName, result);
-}
-
-function invalidateCertainStaticMembers(flow, ownerIdentity) {
-    flow.staticMembersByIdentity.get(ownerIdentity)?.clear();
-    flow.inexactStaticMemberIdentities.add(ownerIdentity);
-}
-
-function computedPropertyExpression(name) {
-    return name && ts.isComputedPropertyName(name) ? name.expression : null;
-}
-
-function bindCertainValue(context, sourceFile, flow, name, result, effects, statement) {
-    if (ts.isIdentifier(name)) {
-        if (isCommonJsRuntimeName(name.text)) {
-            bindCommonJsLexical(flow, name.text, result.identity);
-        }
-        const symbol = symbolAtLocation(context, name);
-        if (symbol) {
-            flow.aliases.set(symbol, result.identity);
-        }
-        return;
-    }
-
-    if (ts.isObjectBindingPattern(name)) {
-        for (const element of name.elements) {
-            const computedExpression = computedPropertyExpression(element.propertyName);
-            if (computedExpression) {
-                evaluateCertainExpression(context, sourceFile, flow, computedExpression, effects, statement);
-            }
-            const memberName = element.dotDotDotToken ? null : bindingElementPropertyName(context, element);
-            const memberResult = memberName
-                ? certainStaticMemberResult(flow, result, memberName, element)
-                : commonJsResult(flow, element);
-            bindCertainValue(context, sourceFile, flow, element.name, memberResult, effects, statement);
-        }
-        return;
-    }
-
-    if (ts.isArrayBindingPattern(name)) {
-        for (let index = 0; index < name.elements.length; index += 1) {
-            const element = name.elements[index];
-            if (!ts.isBindingElement(element)) {
-                continue;
-            }
-            const memberResult = element.dotDotDotToken
-                ? commonJsResult(flow, element)
-                : certainStaticMemberResult(flow, result, String(index), element);
-            bindCertainValue(context, sourceFile, flow, element.name, memberResult, effects, statement);
-        }
-    }
-}
-
-function certainAssignmentTarget(context, sourceFile, flow, left, effects, statement) {
-    const node = unwrapCommonJsExpression(left);
-    if (ts.isIdentifier(node)) {
-        const lexicalBinding = commonJsLexicalBinding(flow, node.text);
-        if (lexicalBinding) {
-            return { kind: 'lexical', lexicalBinding };
-        }
-        const symbol = commonJsValueSymbol(context, node);
-        if (symbol && flow.aliases.has(symbol)) {
-            return { identifier: node, kind: 'alias', symbol };
-        }
-        if (isUnshadowedIdentifier(context, sourceFile, node, 'Object')) {
-            return { kind: 'objectBinding' };
-        }
-        if (isUnshadowedIdentifier(context, sourceFile, node, 'module')) {
-            return { kind: 'moduleBinding' };
-        }
-        if (isUnshadowedIdentifier(context, sourceFile, node, 'exports')) {
-            return { kind: 'exportsBinding' };
-        }
-        if (isUnshadowedIdentifier(context, sourceFile, node, 'require')) {
-            return { kind: 'requireBinding' };
-        }
-        return symbol && hasLocalDeclaration(context, sourceFile, node)
-            ? { identifier: node, kind: 'alias', symbol }
-            : null;
-    }
-    if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) {
-        return null;
-    }
-    const owner = evaluateCertainExpression(context, sourceFile, flow, node.expression, effects, statement);
-    if (ts.isElementAccessExpression(node) && node.argumentExpression) {
-        evaluateCertainExpression(context, sourceFile, flow, node.argumentExpression, effects, statement);
-    }
-    const memberName = staticMemberName(context.checker, node);
-    if (owner.identity === flow.objectIdentity && memberName === 'assign') {
-        return { kind: 'objectAssign' };
-    }
-    if (owner.identity === flow.moduleObject && memberName === 'exports') {
-        return { kind: 'moduleExports' };
-    }
-    if (owner.identity === flow.moduleObject && memberName === 'require') {
-        return { kind: 'moduleRequire' };
-    }
-    return { kind: 'property', memberName, ownerIdentity: owner.identity };
-}
-
-function applyCertainAssignment(flow, target, result, effects, statement) {
-    if (!target) {
-        return;
-    }
-    if (target.kind === 'moduleBinding') {
-        flow.moduleBinding = result.identity;
-        return;
-    }
-    if (target.kind === 'objectBinding') {
-        flow.objectBinding = result.identity;
-        return;
-    }
-    if (target.kind === 'objectAssign') {
-        flow.objectAssignBinding = result.identity;
-        return;
-    }
-    if (target.kind === 'exportsBinding') {
-        flow.exportsBinding = result.identity;
-        return;
-    }
-    if (target.kind === 'requireBinding') {
-        flow.requireBinding = result.identity;
-        return;
-    }
-    if (target.kind === 'alias') {
-        flow.aliases.set(target.symbol, result.identity);
-        effects.onBindingAssignment?.({ binding: target.identifier, result, statement });
-        return;
-    }
-    if (target.kind === 'lexical') {
-        const bindings = flow.lexicalBindings.get(target.lexicalBinding.name);
-        bindings[bindings.length - 1] = result.identity;
-        return;
-    }
-    if (target.kind === 'moduleExports') {
-        flow.currentModuleExports = result.identity;
-        effects.onModuleExportsAssignment?.({ result, statement });
-        return;
-    }
-    if (target.kind === 'moduleRequire') {
-        flow.moduleRequireBinding = result.identity;
-        return;
-    }
-    if (target.kind !== 'property') {
-        return;
-    }
-    if (target.ownerIdentity === flow.currentModuleExports) {
-        if (target.memberName) {
-            effects.onExportPropertyAssignment?.({ exportedName: target.memberName, result, statement });
-        } else {
-            effects.onUnsupportedExportMutation?.({ statement });
-        }
-    }
-    if (target.memberName) {
-        recordCertainStaticMember(flow, target.ownerIdentity, target.memberName, result);
-        return;
-    }
-    invalidateCertainStaticMembers(flow, target.ownerIdentity);
-    if (target.ownerIdentity === flow.moduleObject) {
-        flow.moduleRequireBinding = createCommonJsIdentity(flow);
-    }
-    if (target.ownerIdentity === flow.objectIdentity) {
-        flow.objectAssignBinding = createCommonJsIdentity(flow);
-    }
-}
-
-function applyCertainAssignmentPattern(context, sourceFile, flow, pattern, result, effects, statement) {
-    const node = unwrapCommonJsExpression(pattern);
-    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-        applyCertainAssignmentPattern(context, sourceFile, flow, node.left, result, effects, statement);
-        return;
-    }
-    if (ts.isObjectLiteralExpression(node)) {
-        for (const property of node.properties) {
-            if (ts.isSpreadAssignment(property)) {
-                applyCertainAssignmentPattern(
-                    context,
-                    sourceFile,
-                    flow,
-                    property.expression,
-                    commonJsResult(flow, property),
-                    effects,
-                    statement
-                );
-                continue;
-            }
-            const computedExpression = computedPropertyExpression(property.name);
-            if (computedExpression) {
-                evaluateCertainExpression(context, sourceFile, flow, computedExpression, effects, statement);
-            }
-            const memberName = staticPropertyName(context, property.name);
-            const memberResult = memberName
-                ? certainStaticMemberResult(flow, result, memberName, property)
-                : commonJsResult(flow, property);
-            if (ts.isShorthandPropertyAssignment(property)) {
-                applyCertainAssignmentPattern(
-                    context,
-                    sourceFile,
-                    flow,
-                    property.name,
-                    memberResult,
-                    effects,
-                    statement
-                );
-            } else if (ts.isPropertyAssignment(property)) {
-                applyCertainAssignmentPattern(
-                    context,
-                    sourceFile,
-                    flow,
-                    property.initializer,
-                    memberResult,
-                    effects,
-                    statement
-                );
-            }
-        }
-        return;
-    }
-    if (ts.isArrayLiteralExpression(node)) {
-        for (let index = 0; index < node.elements.length; index += 1) {
-            const element = node.elements[index];
-            if (ts.isOmittedExpression(element)) {
-                continue;
-            }
-            const memberResult = ts.isSpreadElement(element)
-                ? commonJsResult(flow, element)
-                : certainStaticMemberResult(flow, result, String(index), element);
-            applyCertainAssignmentPattern(
-                context,
-                sourceFile,
-                flow,
-                ts.isSpreadElement(element) ? element.expression : element,
-                memberResult,
-                effects,
-                statement
-            );
-        }
-        return;
-    }
-    const target = certainAssignmentTarget(context, sourceFile, flow, node, effects, statement);
-    applyCertainAssignment(flow, target, result, effects, statement);
-}
-
-function applyCertainObjectAssign(flow, target, sources) {
-    if (!target) {
-        return;
-    }
-    const targetIdentity = target.identity;
-    for (const source of sources) {
-        const members = flow.staticMembersByIdentity.get(source.identity);
-        const sourceIsInexact = !members || flow.inexactStaticMemberIdentities.has(source.identity);
-
-        if (targetIdentity === flow.moduleObject) {
-            if (members?.has('require')) {
-                flow.moduleRequireBinding = members.get('require').identity;
-            } else if (sourceIsInexact) {
-                flow.moduleRequireBinding = createCommonJsIdentity(flow);
-            }
-        }
-        if (targetIdentity === flow.objectIdentity) {
-            if (members?.has('assign')) {
-                flow.objectAssignBinding = members.get('assign').identity;
-            } else if (sourceIsInexact) {
-                flow.objectAssignBinding = createCommonJsIdentity(flow);
-            }
-        }
-
-        let targetMembers = flow.staticMembersByIdentity.get(targetIdentity);
-        if (!targetMembers) {
-            targetMembers = new Map();
-            flow.staticMembersByIdentity.set(targetIdentity, targetMembers);
-            flow.inexactStaticMemberIdentities.add(targetIdentity);
-        }
-        if (sourceIsInexact) {
-            targetMembers.clear();
-            flow.inexactStaticMemberIdentities.add(targetIdentity);
-        }
-        for (const [memberName, memberResult] of members ?? []) {
-            targetMembers.set(memberName, memberResult);
-        }
-    }
-}
-
-function isCertainIifeStatement(statement) {
-    return (
-        ts.isBlock(statement) ||
-        ts.isClassDeclaration(statement) ||
-        ts.isDoStatement(statement) ||
-        ts.isEmptyStatement(statement) ||
-        ts.isExpressionStatement(statement) ||
-        ts.isForInStatement(statement) ||
-        ts.isForOfStatement(statement) ||
-        ts.isForStatement(statement) ||
-        ts.isFunctionDeclaration(statement) ||
-        ts.isIfStatement(statement) ||
-        ts.isReturnStatement(statement) ||
-        ts.isSwitchStatement(statement) ||
-        ts.isThrowStatement(statement) ||
-        ts.isTryStatement(statement) ||
-        ts.isWhileStatement(statement) ||
-        ts.isVariableStatement(statement)
+// A CommonJS runtime name that resolves to nothing, or to a declaration outside this file, is the
+// ambient one. Only a declaration here — an import, a parameter, a local binding, a member name —
+// means the identifier is something else and the file is clean.
+function isAmbientIdentifier(context, sourceFile, node) {
+    const symbol = referencedSymbol(context, node);
+    return !(symbol?.declarations ?? []).some(
+        (declaration) => declaration.getSourceFile() === sourceFile && ts.isDeclaration(declaration)
     );
 }
 
-function directCertainIife(node) {
-    const callee = unwrapCommonJsExpression(node.expression);
-    if (
-        node.questionDotToken ||
-        (!ts.isArrowFunction(callee) && !ts.isFunctionExpression(callee)) ||
-        callee.asteriskToken ||
-        hasModifier(callee, ts.SyntaxKind.AsyncKeyword) ||
-        (ts.isBlock(callee.body) && !callee.body.statements.every(isCertainIifeStatement))
-    ) {
-        return null;
+// `foo.module` and `Foo.exports` name a member of something else entirely.
+function isMemberNamePosition(node) {
+    const { parent } = node;
+    if (ts.isPropertyAccessExpression(parent)) {
+        return parent.name === node;
     }
-    return callee;
+    if (ts.isQualifiedName(parent)) {
+        return parent.right === node;
+    }
+    return false;
 }
 
-function evaluateCertainObjectLiteral(context, sourceFile, flow, node, effects, statement) {
-    const result = commonJsResult(flow, node);
-    const members = new Map();
-    let inexact = false;
-    for (const property of node.properties) {
-        if (property.name && ts.isComputedPropertyName(property.name)) {
-            evaluateCertainExpression(context, sourceFile, flow, property.name.expression, effects, statement);
-        }
-        const memberName = property.name ? staticPropertyName(context, property.name) : null;
-        if (ts.isPropertyAssignment(property)) {
-            const memberResult = evaluateCertainExpression(
-                context,
-                sourceFile,
-                flow,
-                property.initializer,
-                effects,
-                statement
-            );
-            if (memberName) {
-                members.set(memberName, memberResult);
-            } else {
-                members.clear();
-                inexact = true;
-            }
-        } else if (ts.isShorthandPropertyAssignment(property)) {
-            const memberResult = evaluateCertainExpression(
-                context,
-                sourceFile,
-                flow,
-                property.name,
-                effects,
-                statement
-            );
-            members.set(property.name.text, memberResult);
-        } else if (ts.isSpreadAssignment(property)) {
-            const spreadResult = evaluateCertainExpression(
-                context,
-                sourceFile,
-                flow,
-                property.expression,
-                effects,
-                statement
-            );
-            const spreadMembers = flow.staticMembersByIdentity.get(spreadResult.identity);
-            if (!spreadMembers || flow.inexactStaticMemberIdentities.has(spreadResult.identity)) {
-                members.clear();
-                inexact = true;
-            }
-            for (const [spreadMemberName, spreadMemberResult] of spreadMembers ?? []) {
-                members.set(spreadMemberName, spreadMemberResult);
-            }
-        } else if (memberName) {
-            members.set(memberName, commonJsResult(flow, property));
-        } else if (property.name) {
-            members.clear();
-            inexact = true;
-        }
-    }
-    flow.staticMembersByIdentity.set(result.identity, members);
-    if (inexact) {
-        flow.inexactStaticMemberIdentities.add(result.identity);
-    }
-    return result;
-}
-
-function evaluateCertainArrayLiteral(context, sourceFile, flow, node, effects, statement) {
-    const result = commonJsResult(flow, node);
-    const members = new Map();
-    let inexact = false;
-    for (let index = 0; index < node.elements.length; index += 1) {
-        const element = node.elements[index];
-        if (ts.isOmittedExpression(element)) {
-            continue;
-        }
-        if (ts.isSpreadElement(element)) {
-            evaluateCertainExpression(context, sourceFile, flow, element.expression, effects, statement);
-            members.clear();
-            inexact = true;
-            continue;
-        }
-        const memberResult = evaluateCertainExpression(context, sourceFile, flow, element, effects, statement);
-        if (!inexact) {
-            members.set(String(index), memberResult);
-        }
-    }
-    flow.staticMembersByIdentity.set(result.identity, members);
-    if (inexact) {
-        flow.inexactStaticMemberIdentities.add(result.identity);
-    }
-    return result;
-}
-
-function evaluateCertainCall(context, sourceFile, flow, node, effects, statement) {
-    const iife = directCertainIife(node);
-    const calleeResult = evaluateCertainExpression(context, sourceFile, flow, node.expression, effects, statement);
-    const argumentResults = node.arguments.map((argument) =>
-        evaluateCertainExpression(context, sourceFile, flow, argument, effects, statement)
-    );
-
-    if (iife) {
-        flow.lexicalScopes.push(new Set());
-        try {
-            for (let index = 0; index < iife.parameters.length; index += 1) {
-                const parameter = iife.parameters[index];
-                const argumentResult = parameter.dotDotDotToken ? null : argumentResults[index];
-                const parameterResult =
-                    argumentResult ??
-                    (parameter.initializer
-                        ? evaluateCertainExpression(
-                              context,
-                              sourceFile,
-                              flow,
-                              parameter.initializer,
-                              effects,
-                              statement
-                          )
-                        : commonJsResult(flow, parameter));
-                bindCertainValue(context, sourceFile, flow, parameter.name, parameterResult, effects, statement);
-            }
-            if (!ts.isBlock(iife.body)) {
-                return evaluateCertainExpression(context, sourceFile, flow, iife.body, effects, statement);
-            }
-            const completion = executeCertainStatements(context, sourceFile, flow, iife.body.statements, effects);
-            return completion?.result ?? commonJsResult(flow, node);
-        } finally {
-            popCommonJsLexicalScope(flow);
-        }
-    }
-
-    const result = commonJsResult(flow, node);
-    if (!node.questionDotToken && calleeResult.identity === flow.requireIdentity) {
-        effects.onRequireCall?.({ call: node, result, statement });
-    }
-    if (!node.questionDotToken && node.arguments.length >= 2 && calleeResult.identity === flow.objectAssignIdentity) {
-        effects.onObjectAssign?.({ argumentResults, call: node, statement });
-        applyCertainObjectAssign(flow, argumentResults[0], argumentResults.slice(1));
-        return argumentResults[0] ?? result;
-    }
-    return result;
-}
-
-function isLogicalAssignmentOperator(kind) {
-    return (
-        kind === ts.SyntaxKind.AmpersandAmpersandEqualsToken ||
-        kind === ts.SyntaxKind.BarBarEqualsToken ||
-        kind === ts.SyntaxKind.QuestionQuestionEqualsToken
-    );
-}
-
-function isLiveCommonJsExportTarget(flow, target) {
-    return (
-        target?.kind === 'moduleExports' ||
-        (target?.kind === 'property' && target.ownerIdentity === flow.currentModuleExports)
-    );
-}
-
-function evaluateCertainExpression(context, sourceFile, flow, expression, effects, statement) {
-    const node = unwrapCommonJsExpression(expression);
-    if (!node) {
-        return commonJsResult(flow, expression);
-    }
-    if (ts.isIdentifier(node)) {
-        return commonJsIdentifierResult(context, sourceFile, flow, node);
-    }
-    if (ts.isBinaryExpression(node)) {
-        if (node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-            const assignmentPattern = unwrapCommonJsExpression(node.left);
-            if (ts.isObjectLiteralExpression(assignmentPattern) || ts.isArrayLiteralExpression(assignmentPattern)) {
-                const result = evaluateCertainExpression(context, sourceFile, flow, node.right, effects, statement);
-                applyCertainAssignmentPattern(context, sourceFile, flow, assignmentPattern, result, effects, statement);
-                return result;
-            }
-            const target = certainAssignmentTarget(context, sourceFile, flow, assignmentPattern, effects, statement);
-            const result = evaluateCertainExpression(context, sourceFile, flow, node.right, effects, statement);
-            applyCertainAssignment(flow, target, result, effects, statement);
-            return result;
-        }
-        if (isLogicalAssignmentOperator(node.operatorToken.kind)) {
-            const target = certainAssignmentTarget(context, sourceFile, flow, node.left, effects, statement);
-            evaluateCertainExpression(context, sourceFile, flow, node.right, effects, statement);
-            if (isLiveCommonJsExportTarget(flow, target)) {
-                effects.onUnsupportedExportMutation?.({ statement });
-            }
-            return commonJsResult(flow, node);
-        }
-        evaluateCertainExpression(context, sourceFile, flow, node.left, effects, statement);
+// `src` is `"type": "module"` and contains no CommonJS: no `module.exports`, no `require`, and its
+// only three `.js` files are ESM wasm-bindgen glue. Refusing the runtime names outright is a
+// stronger guarantee than analysing what is done with them. The interpreter this replaced modelled
+// export-object identity through aliases, destructuring, `Object.assign` and immediately-invoked
+// functions so it could decide which mutations reached the public surface — and every shape it did
+// not model passed as clean. A refusal models nothing, so writing the same mutation a different way
+// does not evade it: `const own = module.exports` is reported at the alias, before there is any
+// mutation to classify.
+function findCommonJsSurfaceFindings({ checker, repositoryRoot, sourceFile }) {
+    const context = { checker };
+    const findings = new Map();
+    const visit = (node) => {
         if (
-            node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
-            node.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
-            node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
+            ts.isIdentifier(node) &&
+            commonJsRuntimeNames.has(node.text) &&
+            !isMemberNamePosition(node) &&
+            isAmbientIdentifier(context, sourceFile, node)
         ) {
-            return commonJsResult(flow, node);
+            const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+            const finding = {
+                file: repositoryRelativePath(repositoryRoot, sourceFile.fileName),
+                line: line + 1,
+                reason: commonJsSurfaceReason,
+            };
+            findings.set(`${finding.file}:${finding.line}`, finding);
         }
-        const right = evaluateCertainExpression(context, sourceFile, flow, node.right, effects, statement);
-        return node.operatorToken.kind === ts.SyntaxKind.CommaToken ? right : commonJsResult(flow, node);
-    }
-    if (ts.isCallExpression(node)) {
-        return evaluateCertainCall(context, sourceFile, flow, node, effects, statement);
-    }
-    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-        const owner = evaluateCertainExpression(context, sourceFile, flow, node.expression, effects, statement);
-        if (ts.isElementAccessExpression(node) && node.argumentExpression) {
-            evaluateCertainExpression(context, sourceFile, flow, node.argumentExpression, effects, statement);
-        }
-        const memberName = staticMemberName(context.checker, node);
-        return certainStaticMemberResult(flow, owner, memberName, node);
-    }
-    if (ts.isObjectLiteralExpression(node)) {
-        return evaluateCertainObjectLiteral(context, sourceFile, flow, node, effects, statement);
-    }
-    if (ts.isArrayLiteralExpression(node)) {
-        return evaluateCertainArrayLiteral(context, sourceFile, flow, node, effects, statement);
-    }
-    if (ts.isConditionalExpression(node)) {
-        evaluateCertainExpression(context, sourceFile, flow, node.condition, effects, statement);
-        return commonJsResult(flow, node);
-    }
-    if (ts.isTemplateExpression(node)) {
-        for (const span of node.templateSpans) {
-            evaluateCertainExpression(context, sourceFile, flow, span.expression, effects, statement);
-        }
-        return commonJsResult(flow, node);
-    }
-    if (ts.isNewExpression(node)) {
-        evaluateCertainExpression(context, sourceFile, flow, node.expression, effects, statement);
-        for (const argument of node.arguments ?? []) {
-            evaluateCertainExpression(context, sourceFile, flow, argument, effects, statement);
-        }
-        return commonJsResult(flow, node);
-    }
-    if (ts.isPostfixUnaryExpression(node) || ts.isPrefixUnaryExpression(node)) {
-        evaluateCertainExpression(context, sourceFile, flow, node.operand, effects, statement);
-        return commonJsResult(flow, node);
-    }
-    if (
-        ts.isAwaitExpression(node) ||
-        ts.isDeleteExpression(node) ||
-        ts.isTypeOfExpression(node) ||
-        ts.isVoidExpression(node) ||
-        ts.isSpreadElement(node)
-    ) {
-        evaluateCertainExpression(context, sourceFile, flow, node.expression, effects, statement);
-    }
-    return commonJsResult(flow, node);
-}
-
-function isUnsupportedCommonJsControlStatement(statement) {
-    return (
-        ts.isDoStatement(statement) ||
-        ts.isForInStatement(statement) ||
-        ts.isForOfStatement(statement) ||
-        ts.isForStatement(statement) ||
-        ts.isIfStatement(statement) ||
-        ts.isSwitchStatement(statement) ||
-        ts.isTryStatement(statement) ||
-        ts.isWhileStatement(statement)
-    );
-}
-
-function staticControlValue(expression) {
-    const node = unwrapCommonJsExpression(expression);
-    if (node.kind === ts.SyntaxKind.TrueKeyword) {
-        return { known: true, value: true };
-    }
-    if (node.kind === ts.SyntaxKind.FalseKeyword) {
-        return { known: true, value: false };
-    }
-    if (node.kind === ts.SyntaxKind.NullKeyword) {
-        return { known: true, value: null };
-    }
-    if (ts.isStringLiteralLike(node)) {
-        return { known: true, value: node.text };
-    }
-    if (ts.isNumericLiteral(node)) {
-        return { known: true, value: Number(node.text) };
-    }
-    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
-        const operand = staticControlValue(node.operand);
-        return operand.known ? { known: true, value: !operand.value } : { known: false };
-    }
-    return { known: false };
-}
-
-function staticControlBoolean(expression) {
-    const result = staticControlValue(expression);
-    return result.known ? Boolean(result.value) : null;
-}
-
-// Probe possible control subtrees independently; speculative state never rejoins
-// the certain top-level CommonJS flow.
-function possibleCommonJsSubtreeMutation(context, sourceFile, outerFlow, rootStatement) {
-    const tracker = { mutated: false };
-    const markMutation = () => {
-        tracker.mutated = true;
+        ts.forEachChild(node, visit);
     };
-    const mutationEffects = (flow) => ({
-        onExportPropertyAssignment: markMutation,
-        onModuleExportsAssignment: markMutation,
-        onObjectAssign: ({ argumentResults }) => {
-            const target = argumentResults[0];
-            const sources = argumentResults.slice(1);
-            const sourceMayContain = (memberName = null) =>
-                sources.some((source) => {
-                    const members = flow.staticMembersByIdentity.get(source.identity);
-                    return (
-                        !members ||
-                        flow.inexactStaticMemberIdentities.has(source.identity) ||
-                        (memberName ? members.has(memberName) : members.size > 0)
-                    );
-                });
-            if (
-                (target?.identity === flow.currentModuleExports && sourceMayContain()) ||
-                (target?.identity === flow.moduleObject && sourceMayContain('exports'))
-            ) {
-                markMutation();
-            }
-        },
-        onUnsupportedControlFlowMutation: markMutation,
-        onUnsupportedExportMutation: markMutation,
-    });
-    const evaluate = (flow, expression, statement) =>
-        evaluateCertainExpression(context, sourceFile, flow, expression, mutationEffects(flow), statement);
-
-    function bindLoopInitializer(flow, initializer, statement) {
-        const effects = mutationEffects(flow);
-        const fallback = commonJsResult(flow, statement.expression ?? statement);
-        if (ts.isVariableDeclarationList(initializer)) {
-            for (const declaration of initializer.declarations) {
-                const value = declaration.initializer ? evaluate(flow, declaration.initializer, statement) : fallback;
-                bindCertainValue(context, sourceFile, flow, declaration.name, value, effects, statement);
-            }
-            return;
-        }
-        applyCertainAssignmentPattern(context, sourceFile, flow, initializer, fallback, effects, statement);
-    }
-
-    function scanStatements(flow, statements) {
-        for (const statement of statements) {
-            const completion = scanStatement(flow, statement);
-            if (tracker.mutated) {
-                return null;
-            }
-            if (completion) {
-                return completion;
-            }
-        }
-        return null;
-    }
-
-    function scanStatement(flow, statement) {
-        if (ts.isBlock(statement)) {
-            flow.lexicalScopes.push(new Set());
-            try {
-                return scanStatements(flow, statement.statements);
-            } finally {
-                popCommonJsLexicalScope(flow);
-            }
-        }
-        if (ts.isIfStatement(statement)) {
-            evaluate(flow, statement.expression, statement);
-            if (tracker.mutated) {
-                return;
-            }
-            const condition = staticControlBoolean(statement.expression);
-            if (condition !== null) {
-                const branch = condition ? statement.thenStatement : statement.elseStatement;
-                return branch ? scanStatement(flow, branch) : null;
-            }
-            scanStatement(cloneCommonJsFlow(flow), statement.thenStatement);
-            if (!tracker.mutated && statement.elseStatement) {
-                scanStatement(cloneCommonJsFlow(flow), statement.elseStatement);
-            }
-            return null;
-        }
-        if (ts.isSwitchStatement(statement)) {
-            evaluate(flow, statement.expression, statement);
-            if (tracker.mutated) {
-                return null;
-            }
-            const clauses = [...statement.caseBlock.clauses];
-            const discriminant = staticControlValue(statement.expression);
-            const casesAreStatic = clauses.every(
-                (clause) => ts.isDefaultClause(clause) || staticControlValue(clause.expression).known
-            );
-            let startIndexes = clauses.map((_, index) => index);
-            let deterministic = false;
-            if (discriminant.known && casesAreStatic) {
-                const match = clauses.findIndex(
-                    (clause) =>
-                        ts.isCaseClause(clause) && staticControlValue(clause.expression).value === discriminant.value
-                );
-                const start = match >= 0 ? match : clauses.findIndex(ts.isDefaultClause);
-                startIndexes = start >= 0 ? [start] : [];
-                deterministic = true;
-            }
-            for (const startIndex of startIndexes) {
-                const branchFlow = cloneCommonJsFlow(flow);
-                let completion = null;
-                for (let clauseIndex = startIndex; clauseIndex < clauses.length; clauseIndex += 1) {
-                    const clause = clauses[clauseIndex];
-                    if (ts.isCaseClause(clause)) {
-                        evaluate(branchFlow, clause.expression, statement);
-                    }
-                    completion = scanStatements(branchFlow, clause.statements);
-                    if (tracker.mutated || completion) {
-                        break;
-                    }
-                }
-                if (tracker.mutated) {
-                    return null;
-                }
-                if (completion?.kind === 'break' && !completion.label) {
-                    completion = null;
-                }
-                if (deterministic && completion) {
-                    return completion;
-                }
-            }
-            return null;
-        }
-        if (
-            ts.isDoStatement(statement) ||
-            ts.isForInStatement(statement) ||
-            ts.isForOfStatement(statement) ||
-            ts.isForStatement(statement) ||
-            ts.isWhileStatement(statement)
-        ) {
-            if (ts.isForStatement(statement) && statement.initializer) {
-                if (ts.isVariableDeclarationList(statement.initializer)) {
-                    bindLoopInitializer(flow, statement.initializer, statement);
-                } else {
-                    evaluate(flow, statement.initializer, statement);
-                }
-            }
-            if (ts.isForInStatement(statement) || ts.isForOfStatement(statement)) {
-                evaluate(flow, statement.expression, statement);
-            }
-            const condition =
-                (ts.isForStatement(statement) && statement.condition) ||
-                (ts.isWhileStatement(statement) && statement.expression) ||
-                null;
-            if (condition) {
-                evaluate(flow, condition, statement);
-                if (staticControlBoolean(condition) === false) {
-                    return;
-                }
-            }
-            if (tracker.mutated) {
-                return;
-            }
-            const iterationFlow = cloneCommonJsFlow(flow);
-            if (ts.isForInStatement(statement) || ts.isForOfStatement(statement)) {
-                bindLoopInitializer(iterationFlow, statement.initializer, statement);
-            }
-            scanStatement(iterationFlow, statement.statement);
-            const tailFlow = cloneCommonJsFlow(flow);
-            if (!tracker.mutated && ts.isForStatement(statement) && statement.incrementor) {
-                evaluate(tailFlow, statement.incrementor, statement);
-            }
-            if (!tracker.mutated && ts.isDoStatement(statement)) {
-                evaluate(tailFlow, statement.expression, statement);
-            }
-            return null;
-        }
-        if (ts.isTryStatement(statement)) {
-            scanStatement(cloneCommonJsFlow(flow), statement.tryBlock);
-            if (tracker.mutated) {
-                return;
-            }
-            if (statement.catchClause) {
-                const catchFlow = cloneCommonJsFlow(flow);
-                catchFlow.lexicalScopes.push(new Set());
-                if (statement.catchClause.variableDeclaration) {
-                    bindCertainValue(
-                        context,
-                        sourceFile,
-                        catchFlow,
-                        statement.catchClause.variableDeclaration.name,
-                        commonJsResult(catchFlow, statement.catchClause.variableDeclaration),
-                        mutationEffects(catchFlow),
-                        statement
-                    );
-                }
-                scanStatements(catchFlow, statement.catchClause.block.statements);
-                popCommonJsLexicalScope(catchFlow);
-            }
-            if (statement.finallyBlock && !tracker.mutated) {
-                scanStatement(cloneCommonJsFlow(flow), statement.finallyBlock);
-            }
-            return null;
-        }
-        if (ts.isBreakStatement(statement)) {
-            return { kind: 'break', label: statement.label?.text ?? null };
-        }
-        if (ts.isContinueStatement(statement)) {
-            return { kind: 'continue', label: statement.label?.text ?? null };
-        }
-        return executeCertainStatement(context, sourceFile, flow, statement, mutationEffects(flow));
-    }
-
-    scanStatement(cloneCommonJsFlow(outerFlow), rootStatement);
-    return tracker.mutated;
-}
-
-function executeCertainStatement(context, sourceFile, flow, statement, effects) {
-    if (isUnsupportedCommonJsControlStatement(statement)) {
-        if (
-            effects.onUnsupportedControlFlowMutation &&
-            possibleCommonJsSubtreeMutation(context, sourceFile, flow, statement)
-        ) {
-            effects.onUnsupportedControlFlowMutation({ statement });
-        }
-        return null;
-    }
-    if (ts.isBlock(statement)) {
-        flow.lexicalScopes.push(new Set());
-        try {
-            return executeCertainStatements(context, sourceFile, flow, statement.statements, effects);
-        } finally {
-            popCommonJsLexicalScope(flow);
-        }
-    }
-    if (ts.isVariableStatement(statement)) {
-        for (const declaration of statement.declarationList.declarations) {
-            const result = declaration.initializer
-                ? evaluateCertainExpression(context, sourceFile, flow, declaration.initializer, effects, statement)
-                : commonJsResult(flow, declaration);
-            bindCertainValue(context, sourceFile, flow, declaration.name, result, effects, statement);
-        }
-        return null;
-    }
-    if (ts.isExpressionStatement(statement)) {
-        evaluateCertainExpression(context, sourceFile, flow, statement.expression, effects, statement);
-        return null;
-    }
-    if (ts.isExportAssignment(statement)) {
-        evaluateCertainExpression(context, sourceFile, flow, statement.expression, effects, statement);
-        return null;
-    }
-    if (ts.isReturnStatement(statement)) {
-        const result = statement.expression
-            ? evaluateCertainExpression(context, sourceFile, flow, statement.expression, effects, statement)
-            : commonJsResult(flow, statement);
-        return { kind: 'return', result };
-    }
-    if (ts.isThrowStatement(statement)) {
-        evaluateCertainExpression(context, sourceFile, flow, statement.expression, effects, statement);
-        return { kind: 'throw' };
-    }
-    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name) {
-        bindCertainValue(
-            context,
-            sourceFile,
-            flow,
-            statement.name,
-            commonJsResult(flow, statement),
-            effects,
-            statement
-        );
-    }
-    return null;
-}
-
-// Unsupported control flow is inspected only for possible public CommonJS mutations;
-// stored, indirect, async, and generator function bodies remain inert.
-function executeCertainStatements(context, sourceFile, flow, statements, effects = {}) {
-    for (const statement of statements) {
-        const completion = executeCertainStatement(context, sourceFile, flow, statement, effects);
-        if (completion) {
-            return completion;
-        }
-    }
-    return null;
+    visit(sourceFile);
+    return [...findings.values()];
 }
 
 function createRepositoryTypeEnvironment(repositoryRoot) {
@@ -1560,34 +489,6 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker) {
             targets.push({ all, exportedName, targetFile });
         }
     };
-    const addRequireTarget = (node) => {
-        if (node.arguments.length !== 1) {
-            return;
-        }
-        const moduleSpecifier = moduleSpecifierText(node.arguments[0]);
-        const parent = node.parent;
-        if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
-            addTarget(moduleSpecifier, parent.name.text);
-        } else if (ts.isElementAccessExpression(parent) && parent.expression === node) {
-            const name = staticExpressionName(checker, parent.argumentExpression);
-            addTarget(moduleSpecifier, name ?? '*', !name);
-        } else if (ts.isVariableDeclaration(parent) && parent.initializer === node) {
-            if (ts.isObjectBindingPattern(parent.name)) {
-                for (const element of parent.name.elements) {
-                    if (element.dotDotDotToken) {
-                        addTarget(moduleSpecifier, '*', true);
-                        continue;
-                    }
-                    const name = bindingElementPropertyName(context, element);
-                    addTarget(moduleSpecifier, name ?? '*', !name);
-                }
-            } else {
-                addTarget(moduleSpecifier, '*', true);
-            }
-        } else {
-            addTarget(moduleSpecifier, '*', true);
-        }
-    };
     const visit = (node) => {
         if (ts.isImportTypeNode(node)) {
             const moduleSpecifier = moduleSpecifierText(node.argument.literal);
@@ -1636,9 +537,6 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker) {
         ts.forEachChild(node, visit);
     };
     visit(sourceFile);
-    executeCertainStatements(context, sourceFile, createCommonJsFlow(), sourceFile.statements, {
-        onRequireCall: ({ call }) => addRequireTarget(call),
-    });
     return targets;
 }
 
@@ -1699,9 +597,7 @@ function createRepositoryTypeContext(repositoryRoot, program, environment) {
         ),
         recordsByFile: new Map(),
         repositoryRoot,
-        unsupportedCommonJsFindings: new Map(),
         vendorBindingsBySymbol: new Map(),
-        vendorModulesByRequireCall: new Map(),
         vendorModulesByFile: new Map(),
     };
 }
@@ -1831,12 +727,6 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
                 modules.add(moduleSpecifier);
             }
         }
-        if (ts.isCallExpression(current)) {
-            for (const moduleSpecifier of context.vendorModulesByRequireCall.get(current) ?? []) {
-                modules.add(moduleSpecifier);
-            }
-        }
-
         if (includeImplementation) {
             if (ts.isIdentifier(current)) {
                 const declaration = declarationForSymbol(context, sourceFile, current);
@@ -1947,20 +837,6 @@ function collectVendorMetadata(context, sourceFiles) {
     }
 
     for (const sourceFile of sourceFiles) {
-        executeCertainStatements(context, sourceFile, createCommonJsFlow(), sourceFile.statements, {
-            onRequireCall: ({ call }) => {
-                if (call.arguments.length !== 1) {
-                    return;
-                }
-                const moduleSpecifier = moduleSpecifierText(call.arguments[0]);
-                const vendorModule = moduleSpecifier
-                    ? registerVendorModule(context, moduleSpecifier, sourceFile.fileName)
-                    : null;
-                if (vendorModule) {
-                    addToSetMap(context.vendorModulesByRequireCall, call, vendorModule);
-                }
-            },
-        });
         const visit = (node) => {
             for (const tag of ts.getJSDocTags(node)) {
                 if (tag.typeExpression?.type) {
@@ -2021,15 +897,6 @@ function addRepositoryRecord(context, sourceFile, record) {
     return completeRecord;
 }
 
-function replaceCommonJsRecords(context, sourceFile, exportedNames = null) {
-    const fileName = normalizeFileName(sourceFile.fileName);
-    const records = context.recordsByFile.get(fileName) ?? [];
-    context.recordsByFile.set(
-        fileName,
-        records.filter((record) => !record.isCommonJs || exportedNames?.has(record.exportedName) === false)
-    );
-}
-
 function addDeclarationRecord(context, sourceFile, statement, declaration, exportedName) {
     return addRepositoryRecord(context, sourceFile, {
         diagnosticNode: statement,
@@ -2039,121 +906,9 @@ function addDeclarationRecord(context, sourceFile, statement, declaration, expor
     });
 }
 
-function commonJsPropertyRecords(context, sourceFile, statement, valueNode) {
-    let type;
-    try {
-        type = context.checker.getTypeAtLocation(valueNode);
-        if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) {
-            return null;
-        }
-        if (type.getStringIndexType?.() || type.getNumberIndexType?.()) {
-            return null;
-        }
-    } catch {
-        return null;
-    }
-    const properties = type.getProperties?.() ?? null;
-    if (!properties) {
-        return null;
-    }
-    return properties
-        .filter((symbol) => !symbol.name.startsWith('__@'))
-        .map((symbol) => {
-            const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0] ?? null;
-            return {
-                diagnosticNode: statement,
-                exportedName: symbol.name,
-                isCommonJs: true,
-                symbol,
-                symbolNode: declaration?.name ?? declaration,
-                valueNode: declaration ?? valueNode,
-            };
-        });
-}
-
-function enumerateCommonJsProperties(context, sourceFile, statement, valueNode) {
-    const records = commonJsPropertyRecords(context, sourceFile, statement, valueNode);
-    if (!records) {
-        return false;
-    }
-    for (const record of records) {
-        addRepositoryRecord(context, sourceFile, record);
-    }
-    return true;
-}
-
-function addUnsupportedCommonJsFinding(context, sourceFile, statement) {
-    const { line } = sourceFile.getLineAndCharacterOfPosition(statement.getStart(sourceFile));
-    const finding = {
-        file: repositoryRelativePath(context.repositoryRoot, sourceFile.fileName),
-        line: line + 1,
-        reason: unsupportedCommonJsSurfaceReason,
-    };
-    context.unsupportedCommonJsFindings.set(`${finding.file}:${finding.line}:${finding.reason}`, finding);
-}
-
-function collectCommonJsObjectAssign(context, sourceFile, statement, argumentResults, flow) {
-    if (argumentResults[0]?.identity !== flow.currentModuleExports) {
-        return;
-    }
-
-    const recordsByName = new Map();
-    for (const source of argumentResults.slice(1)) {
-        const records = commonJsPropertyRecords(context, sourceFile, statement, source.valueNode);
-        if (!records) {
-            addUnsupportedCommonJsFinding(context, sourceFile, statement);
-            recordsByName.clear();
-            continue;
-        }
-        for (const record of records) {
-            recordsByName.set(record.exportedName, record);
-        }
-    }
-    replaceCommonJsRecords(context, sourceFile, new Set(recordsByName.keys()));
-    for (const record of recordsByName.values()) {
-        addRepositoryRecord(context, sourceFile, record);
-    }
-}
-
-function collectCommonJsModuleAssignment(context, sourceFile, statement, result) {
-    replaceCommonJsRecords(context, sourceFile);
-    addRepositoryRecord(context, sourceFile, {
-        diagnosticNode: statement,
-        exportedName: 'default',
-        isCommonJs: true,
-        symbolNode: result.valueNode,
-        valueNode: result.valueNode,
-    });
-    enumerateCommonJsProperties(context, sourceFile, statement, result.valueNode);
-}
-
-function collectCommonJsPropertyAssignment(context, sourceFile, statement, exportedName, result) {
-    replaceCommonJsRecords(context, sourceFile, new Set([exportedName]));
-    addRepositoryRecord(context, sourceFile, {
-        diagnosticNode: statement,
-        exportedName,
-        isCommonJs: true,
-        symbolNode: result.valueNode,
-        valueNode: result.valueNode,
-    });
-}
-
 function collectExportRecords(context, sourceFile) {
     const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
         resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.options, context.compilerHost);
-    const commonJsFlow = createCommonJsFlow();
-    const commonJsEffects = {
-        onExportPropertyAssignment: ({ exportedName, result, statement }) =>
-            collectCommonJsPropertyAssignment(context, sourceFile, statement, exportedName, result),
-        onModuleExportsAssignment: ({ result, statement }) =>
-            collectCommonJsModuleAssignment(context, sourceFile, statement, result),
-        onObjectAssign: ({ argumentResults, statement }) =>
-            collectCommonJsObjectAssign(context, sourceFile, statement, argumentResults, commonJsFlow),
-        onUnsupportedControlFlowMutation: ({ statement }) =>
-            addUnsupportedCommonJsFinding(context, sourceFile, statement),
-        onUnsupportedExportMutation: ({ statement }) => addUnsupportedCommonJsFinding(context, sourceFile, statement),
-    };
-    executeCertainStatements(context, sourceFile, commonJsFlow, sourceFile.statements, commonJsEffects);
 
     for (const statement of sourceFile.statements) {
         if (ts.isExportDeclaration(statement)) {
@@ -2544,7 +1299,7 @@ function collectRecordVendorModules(context, record, seenRecords = new Set()) {
         if (!node || (publicTypeResolved && ts.isIdentifier(node))) {
             continue;
         }
-        if (!publicTypeResolved || record.isCommonJs || ts.isExportAssignment(record.diagnosticNode)) {
+        if (!publicTypeResolved || ts.isExportAssignment(record.diagnosticNode)) {
             publicTypeResolved =
                 collectTypeSafely(
                     context,
@@ -2591,8 +1346,7 @@ function recordsForExport(context, fileName, exportedName, all = false) {
     if (exact.length > 0) {
         return exact;
     }
-    const fallback = records.filter((record) => record.isCommonJs && record.exportedName === 'default');
-    return [...records.filter((record) => record.exportedName === '*'), ...fallback];
+    return records.filter((record) => record.exportedName === '*');
 }
 
 function collectRepositoryTauriTypeFindings(
@@ -2680,7 +1434,7 @@ function collectRepositoryTauriTypeFindings(
             findings.set(`${finding.file}:${finding.line}:${moduleSpecifier}`, finding);
         }
     }
-    return [...context.unsupportedCommonJsFindings.values(), ...findings.values()];
+    return [...findings.values()];
 }
 
 function walkFiles(directory, symlinkPaths = []) {
@@ -2743,6 +1497,10 @@ export function findStaticGuardFindings(repositoryRoot = root) {
                   }))
                 : [];
         });
+    const commonJsFindings = sourcePaths.flatMap((absolutePath) => {
+        const sourceFile = sourceFilesByPath.get(normalizeFileName(absolutePath));
+        return sourceFile ? findCommonJsSurfaceFindings({ checker, repositoryRoot, sourceFile }) : [];
+    });
     const repositorySourcePaths = sourcePaths.filter((filePath) => isRepositorySourceFile(repositoryRoot, filePath));
     const consumerTargetsByFile = new Map();
     findRepositoryConsumerPaths(
@@ -2766,6 +1524,7 @@ export function findStaticGuardFindings(repositoryRoot = root) {
     const modelCasingFindings = findModelCasingFindings(files.map(({ repoPath }) => repoPath));
     // Dependency-cruiser sees resolved edges, so inspect repository declarations to close type laundering through local aliases.
     return [
+        ...commonJsFindings,
         ...rootIndexes,
         ...mixedExports,
         ...modelCasingFindings,
