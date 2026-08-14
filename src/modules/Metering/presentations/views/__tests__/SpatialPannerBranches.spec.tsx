@@ -130,6 +130,39 @@ describe('SpatialPanner — onChange callback', () => {
     });
 });
 
+describe('SpatialPanner — keyboard operation', () => {
+    it('ArrowUp raises aria-valuenow by the step and fires onChange', () => {
+        const onChange = vi.fn();
+        render(<SpatialPanner onChange={onChange} />);
+        const slider = screen.getByRole('slider');
+        expect(slider).toHaveAttribute('aria-valuenow', '0');
+
+        fireEvent.keyDown(slider, { key: 'ArrowUp' });
+        expect(slider).toHaveAttribute('aria-valuenow', '15');
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenCalledWith(15, 0.5);
+    });
+
+    it('ArrowDown lowers aria-valuenow and clamps at the -180 minimum', () => {
+        render(<SpatialPanner azimuth={-175} />);
+        const slider = screen.getByRole('slider');
+
+        fireEvent.keyDown(slider, { key: 'ArrowDown' });
+        expect(slider).toHaveAttribute('aria-valuenow', '-180');
+
+        fireEvent.keyDown(slider, { key: 'ArrowDown' });
+        expect(slider).toHaveAttribute('aria-valuenow', '-180');
+    });
+
+    it('non-arrow keys leave the value untouched', () => {
+        render(<SpatialPanner azimuth={30} />);
+        const slider = screen.getByRole('slider');
+
+        fireEvent.keyDown(slider, { key: 'Enter' });
+        expect(slider).toHaveAttribute('aria-valuenow', '30');
+    });
+});
+
 describe('SpatialPanner — canvas dimensions', () => {
     it('canvas width and height match the size prop', () => {
         const { container } = render(<SpatialPanner size={100} />);
