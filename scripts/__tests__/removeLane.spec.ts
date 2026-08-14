@@ -155,6 +155,12 @@ describe('lane removal', () => {
             { campaigns: [campaign({ labels: [{ name: 'bug' }] })] },
             /is not recorded in one campaign ledger/,
         ],
+        [
+            'two claiming ledgers',
+            target,
+            { campaigns: [campaign(), campaign({ number: 8 })] },
+            /is not recorded in one campaign ledger/,
+        ],
         ['moved remote', target, { remoteHead: 'moved' }, /ownership is unproven/],
     ])('rejects a %s lane', (_case, path, input, message) => {
         const { port, calls } = fakePort(input);
