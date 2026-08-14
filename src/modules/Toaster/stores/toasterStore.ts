@@ -42,6 +42,23 @@ export const toasterStore = createStore<ToasterInstances>({
     initialData: {},
 });
 
+// Kit-param writes that arrive before the device is registered. The panel mounts
+// as soon as the device sits on its track, but the store record is created only
+// when `audioDevice.loaded` fires (the WASM node finishing its async load), so a
+// knob drag in that window reaches `updateKit` with no record to write. The
+// engine side of that same write is already deferred — the loading placeholder's
+// `setParam` buffers into `pendingParams`, which the loader replays
+// (AudioEngine/engine/wasmDeviceRegistry.ts) — and the store defers it here the
+// same way instead of discarding it. Registration creates the record and then
+// flushes these updates on top, as a separate store write so kit-identity
+// persistence records it as an edit rather than first sight.
+const pendingKitUpdates = new Map<string, Partial<ToasterKit>>();
+
+// Ids torn down by `unregisterToasterDevice`. A write arriving after teardown
+// must not reach the device's next reload: a reload rehydrates project truth,
+// and a stale queued write would corrupt it. Only never-seen ids may queue.
+const retiredDeviceIds = new Set<string>();
+
 /**
  * The single creation point for a Toaster instance record.
  *
@@ -59,6 +76,9 @@ export const toasterStore = createStore<ToasterInstances>({
  * pads/patterns arrays.
  */
 export function registerToasterDevice(deviceId: string, initialKit?: ToasterKit): void {
+    // A registration means the device is live again: post-teardown refusal ends
+    // here, and writes go straight to the record from now on.
+    retiredDeviceIds.delete(deviceId);
     const instances = toasterStore.value ?? {};
     if (instances[deviceId]) {
         return;
@@ -68,6 +88,17 @@ export function registerToasterDevice(deviceId: string, initialKit?: ToasterKit)
     // holding its saved kit, so nothing ever observes this device carrying a default
     // kit it did not have, and a load produces no store change that looks like an edit.
     toasterStore.set({ ...instances, [deviceId]: { ...defaultToasterState, kit: initialKit ?? createDefaultKit() } });
+
+    // Kit edits the user made while the device was still loading land here, on
+    // top of the registration kit. Applied through `updateKit` (record now
+    // exists) rather than merged into the create above, so the store emits a
+    // second kit identity and persistence commits the edit.
+    const pending = pendingKitUpdates.get(deviceId);
+    if (!pending) {
+        return;
+    }
+    pendingKitUpdates.delete(deviceId);
+    updateKit(deviceId, pending);
 }
 
 export function unregisterToasterDevice(deviceId: string): void {
@@ -76,6 +107,11 @@ export function unregisterToasterDevice(deviceId: string): void {
         const next = { ...state };
         delete next[deviceId];
         toasterStore.set(next);
+        // Drop anything queued while this device was loading and refuse writes
+        // from here on: this id's next registration rehydrates project truth,
+        // which a stale write must not touch.
+        pendingKitUpdates.delete(deviceId);
+        retiredDeviceIds.add(deviceId);
     }
 }
 
@@ -120,8 +156,19 @@ export function loadKit(deviceId: string, kit: ToasterKit): void {
 export function updateKit(deviceId: string, updates: Partial<ToasterKit>): void {
     const instances = toasterStore.value ?? {};
     const state = instances[deviceId];
-    // Unknown deviceId → no-op; a kit-param write must not resurrect a deleted device.
+    // Unknown deviceId → refused for a torn-down device, deferred for one still
+    // loading; see the queueing rationale just below.
     if (!state) {
+        // No record. A torn-down device stays refused — queueing a post-teardown
+        // write would let it reach the id's next reload, which rehydrates
+        // project truth. A device still loading (panel mounted, registration
+        // not yet fired) gets the write deferred until registration creates the
+        // record, mirroring the engine placeholder's `pendingParams` deferral
+        // of the same write instead of discarding it.
+        if (!retiredDeviceIds.has(deviceId)) {
+            const pending = pendingKitUpdates.get(deviceId);
+            pendingKitUpdates.set(deviceId, { ...pending, ...updates });
+        }
         return;
     }
 

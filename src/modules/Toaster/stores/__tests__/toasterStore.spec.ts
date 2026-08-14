@@ -146,3 +146,57 @@ describe('registerToasterDevice', () => {
         expect(toasterStore.value).toEqual({});
     });
 });
+
+describe('updateKit defers writes made while the device is still loading', () => {
+    beforeEach(() => {
+        toasterStore.set({});
+    });
+
+    it('a knob write that lands before registration is applied once the device loads, not dropped', () => {
+        // Reproduces the Groove-knob drop: the panel mounts as soon as the device
+        // sits on its track, while the WASM node — and with it the
+        // `audioDevice.loaded` registration — is still in flight. The engine side
+        // of the same write is deferred through the loading placeholder's
+        // pendingParams; the store side must defer it too instead of dropping it.
+        updateKit('dev-loading', { swing: 0.37 });
+
+        registerToasterDevice('dev-loading');
+
+        expect(toasterStore.value?.['dev-loading']?.kit.swing).toBe(0.37);
+    });
+
+    it('deferred writes merge across params and the latest value per param wins', () => {
+        updateKit('dev-loading', { swing: 0.1 });
+        updateKit('dev-loading', { swing: 0.9 });
+        updateKit('dev-loading', { masterGain: 1.4 });
+
+        registerToasterDevice('dev-loading');
+
+        expect(toasterStore.value?.['dev-loading']?.kit.swing).toBe(0.9);
+        expect(toasterStore.value?.['dev-loading']?.kit.masterGain).toBe(1.4);
+    });
+
+    it('deferred writes land on top of the registration kit, keeping its other fields', () => {
+        const projectKit = { ...createDefaultKit(), swing: 0.5, masterGain: 0.8 };
+        updateKit('dev-loading', { swing: 0.37 });
+
+        registerToasterDevice('dev-loading', projectKit);
+
+        expect(toasterStore.value?.['dev-loading']?.kit.swing).toBe(0.37);
+        expect(toasterStore.value?.['dev-loading']?.kit.masterGain).toBe(0.8);
+    });
+
+    it('a write arriving after teardown stays refused and never reaches the next reload', () => {
+        // Teardown retires the id. A reload of the same id rehydrates project
+        // truth, so a stale write queued after teardown would corrupt it.
+        registerToasterDevice('dev-loading');
+        unregisterToasterDevice('dev-loading');
+
+        updateKit('dev-loading', { swing: 0.9 });
+
+        const reloadKit = { ...createDefaultKit(), swing: 0.5 };
+        registerToasterDevice('dev-loading', reloadKit);
+
+        expect(toasterStore.value?.['dev-loading']?.kit.swing).toBe(0.5);
+    });
+});
