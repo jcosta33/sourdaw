@@ -1,0 +1,14 @@
+tests/e2e/loopStationSlotsTestId.spec.ts
+  h_1228e573df1f42 1-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f650be0d3cf7b6c25c8c2d140c60f6f39a70ed89",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
