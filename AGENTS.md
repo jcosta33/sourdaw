@@ -110,6 +110,6 @@ Leave existing `.agents/specs/` material untouched unless assigned. Durable deci
 - Never run destructive git, force-push, amend published history, or delete branches without
   explicit authority.
 - Never install packages or edit CI/build controls unless the task requires it.
-- Never run a whole-tree writer: `pnpm format`, `cargo fmt --all`, a codemod. Bulk-edit only files
-  your change already owns.
+- Never widen a formatter, codemod, or autofix past the files your change owns. `pnpm format`
+  requires a target; never route around it with a raw `prettier --write` or `cargo fmt --all`.
 - Reproduce behavioral defects before repair. After three failed attempts, stop and change strategy.
