@@ -1,0 +1,20 @@
+src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx
+  h_1228e573df1f42 125
+src/modules/GrandBoule/presentations/components/MorphPanel.tsx
+  h_1228e573df1f42 94
+src/modules/GrandBoule/presentations/components/__tests__/MidiCalibrationPanel.spec.tsx
+  h_1228e573df1f42 35-42
+src/modules/GrandBoule/presentations/components/__tests__/MorphPanel.spec.tsx
+  h_1228e573df1f42 68-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bd6a6626fbc144695071fd8dc43358f4121d95a6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
