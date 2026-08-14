@@ -117,11 +117,19 @@ type ShortcutCheatSheetProps = {
     /**
      * Notified whenever the sheet opens or closes. The sheet declares
      * `aria-modal="true"`, which tells assistive tech the rest of the app does not
-     * exist; AppShell is what makes that true, by marking the shell root `inert`
-     * while the sheet is up. Without it, Tab walks straight out of the dialog into
-     * controls the virtual buffer says are not there. This component is a leaf
-     * `presentations/components/`: it may not read workspace state or call use cases
-     * directly, so it reports upward instead.
+     * exist; AppShell marks the shell root `inert` so that holds for the tab order
+     * and the accessibility tree. Without it, Tab walks straight out of the dialog
+     * into controls the virtual buffer says are not there.
+     *
+     * `inert` does not reach the global shortcut layer, which is a `window` listener
+     * gated on focus target rather than on DOM containment
+     * (`CommandInterface/.../keyboardShortcutsContract.ts`). With this sheet open,
+     * Space still toggles transport and ⌘S still saves. That predates this component
+     * reporting its state and is deliberately out of scope here: gating it needs the
+     * open state in a store the CommandInterface module can read.
+     *
+     * This component is a leaf `presentations/components/`: it may not read workspace
+     * state or call use cases directly, so it reports upward instead.
      */
     onOpenChange?: (open: boolean) => void;
 };
