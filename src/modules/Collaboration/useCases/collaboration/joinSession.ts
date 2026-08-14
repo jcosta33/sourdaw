@@ -2,10 +2,12 @@ import { createCollaborationError } from '../../errors/CollaborationError';
 import { type SignalingMessage, PEER_COLORS } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
 
+import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function joinSession(inviteString: string, name: string): Promise<string> {
     runtime.cleanup();
+    const joinAttempt = joinAttemptAuthority.begin();
     collaborationStore.set({
         isEnabled: true,
         sessionId: null,
@@ -24,10 +26,19 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             throw createCollaborationError('Invite string is empty');
         }
 
+        let decompressedInvite: string;
+        try {
+            decompressedInvite = await runtime.decompressInvite(inviteString.trim());
+        } catch {
+            throw createCollaborationError('Invalid invite — must be a valid invite string');
+        }
+        if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
+            throw createCollaborationError('Join attempt was superseded');
+        }
+
         let invite: SignalingMessage;
         try {
-            const json = await runtime.decompressInvite(inviteString.trim());
-            invite = JSON.parse(json) as SignalingMessage;
+            invite = JSON.parse(decompressedInvite) as SignalingMessage;
         } catch {
             throw createCollaborationError('Invalid invite — must be a valid invite string');
         }
@@ -75,6 +86,9 @@ export async function joinSession(inviteString: string, name: string): Promise<s
 
         const peer = peerManager.createPeer(invite.peerId);
         const answerSdp = await peer.acceptOffer(invite.sdp);
+        if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
+            throw createCollaborationError('Join attempt was superseded');
+        }
 
         const answer: SignalingMessage = {
             type: 'answer',
@@ -84,8 +98,15 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             pendingPeerId: invite.pendingPeerId,
         };
 
-        return runtime.compressInvite(JSON.stringify(answer));
+        const compressedAnswer = await runtime.compressInvite(JSON.stringify(answer));
+        if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
+            throw createCollaborationError('Join attempt was superseded');
+        }
+        return compressedAnswer;
     } catch (error) {
+        if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
+            throw error;
+        }
         if (runtimeStarted) {
             runtime.cleanup();
         }

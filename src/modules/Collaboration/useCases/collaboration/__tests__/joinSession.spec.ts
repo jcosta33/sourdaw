@@ -5,6 +5,7 @@ import { type PeerConnectionManager } from '../../../repositories/peerConnection
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { canExecuteCommandBatch } from '../canExecuteCommandBatch';
 import { joinSession } from '../joinSession';
+import { leaveSession } from '../leaveSession';
 
 /**
  * `joinSession` orchestrates against the WebRTC/signaling boundary exposed
@@ -21,6 +22,7 @@ const mockRuntime = vi.hoisted(() => ({
     pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
     compressInvite: vi.fn<(json: string) => Promise<string>>(),
     decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
+    state: { peerManager: null },
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
@@ -150,6 +152,28 @@ describe('joinSession', () => {
             isEnabled: false,
             isHost: false,
         });
+    });
+
+    it('does not let a stale join continuation overwrite a completed leave', async () => {
+        let resolveInvite!: (invite: string) => void;
+        mockRuntime.decompressInvite.mockReturnValueOnce(
+            new Promise<string>((resolve) => {
+                resolveInvite = resolve;
+            })
+        );
+
+        const joining = joinSession('invite', 'Alice');
+        expect(canExecuteCommandBatch()).toBe(false);
+        await leaveSession();
+        resolveInvite(JSON.stringify(makeOffer()));
+
+        await expect(joining).rejects.toThrow('Join attempt was superseded');
+        expect(collaborationStore.value).toMatchObject({
+            connectionStatus: 'disconnected',
+            isEnabled: false,
+            isHost: false,
+        });
+        expect(mockRuntime.initialize).not.toHaveBeenCalled();
     });
 
     it('writes joiner session state to the collaboration store', async () => {
