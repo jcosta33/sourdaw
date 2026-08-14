@@ -35,6 +35,7 @@ import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { AnalysisPanel } from '#/modules/Metering/presentations/views';
 import { MixerPanel } from '#/modules/MixerConsole/presentations/views';
 import { OnboardingTour } from '#/modules/Onboarding/presentations/views';
+import { defaultOnboardingState, onboardingStore } from '#/modules/Onboarding/stores';
 import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
 import { preferencesStore } from '#/modules/Preferences/stores';
@@ -240,24 +241,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // cannot be read out of workspace state; it reports its open state up instead.
     const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
 
-    // True whenever a modal dialog/overlay is open. Used to neutralize the
-    // skip-link: a focused skip-link targeting #main-content while a modal is up
-    // would scroll focus behind the modal (out of the focus trap), so we drop it
-    // from the tab order and disable its target. Every overlay that *traps focus*
-    // must be listed — the command palette (a Radix Dialog) and the shortcut cheat
-    // sheet (aria-modal="true") were both missing, and each left the escape hatch
-    // reachable. UndoHistoryPanel is deliberately absent: it renders as a non-modal
-    // absolutely-positioned utility panel with no focus trap, so there is nothing
-    // for the skip-link to escape and removing it would only cost a landmark jump.
-    const anyDialogOpen =
-        exportOpen ||
-        prefsOpen ||
-        showAlphaNotice ||
-        collaborationPanelOpen ||
-        branchManagerOpen ||
-        commandPaletteOpen ||
-        cheatSheetOpen ||
-        projectLoadFailure !== null;
+    // The onboarding tour is a full-screen aria-modal overlay that owns its own
+    // state; read it here so the skip-link can be suppressed while it is up.
+    const onboarding = useStore(onboardingStore, defaultOnboardingState);
 
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
@@ -475,6 +461,30 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setLaunchReady(true);
     }
 
+    // True whenever a modal dialog/overlay covers the app. Used to neutralize the
+    // skip-link: a focused skip-link targeting #main-content while an overlay is up
+    // moves focus behind it, into content `aria-modal="true"` has told AT does not
+    // exist. The set is every overlay that *covers the app*, not only the ones that
+    // trap focus — the untrapped ones are the dangerous ones, and the trapped ones
+    // (CommandPalette is a Radix Dialog with a real FocusScope) cost nothing to
+    // include and keep the rule simple. `showLaunch` matters most: it is up on every
+    // cold start for a new user, which makes it the app's most common state.
+    // UndoHistoryPanel is deliberately absent: it is a non-modal, absolutely
+    // positioned utility panel that does not cover the app, so removing the
+    // skip-link there would only cost a landmark jump. Declared here, below
+    // `showLaunch`, because it reads it.
+    const anyDialogOpen =
+        exportOpen ||
+        prefsOpen ||
+        showAlphaNotice ||
+        collaborationPanelOpen ||
+        branchManagerOpen ||
+        commandPaletteOpen ||
+        cheatSheetOpen ||
+        showLaunch ||
+        onboarding.active ||
+        projectLoadFailure !== null;
+
     useEffect(() => {
         if (!launchExiting) {
             return undefined;
@@ -551,7 +561,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <div
                 className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app"
                 data-testid="app-shell"
-                inert={projectLoadFailure !== null}
+                inert={projectLoadFailure !== null || cheatSheetOpen}
             >
                 {/* Skip-link is removed from the DOM while a modal dialog is open:
                     a focused skip-link targeting #main-content would otherwise
@@ -926,7 +936,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <MixAnalysisPanel />
                 <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
                 <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
-                <ShortcutCheatSheet onOpenChange={setCheatSheetOpen} />
 
                 <AlphaNoticeDialog
                     open={showAlphaNotice}
@@ -957,6 +966,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <NotificationToast />
             <ConfirmDialog />
             <PromptDialog />
+
+            {/* Also a sibling, for the same reason as the failure overlay below:
+                it declares `aria-modal="true"`, so the shell root goes `inert`
+                while it is open and it cannot be inside that subtree. */}
+            <ShortcutCheatSheet onOpenChange={setCheatSheetOpen} />
 
             {/* Terminal open failure: the previous session is gone and no
                 project replaced it. Gated on its own store rather than the

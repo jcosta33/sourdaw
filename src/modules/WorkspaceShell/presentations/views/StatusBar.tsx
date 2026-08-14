@@ -159,8 +159,11 @@ export const StatusBar = (): ReactElement => {
                         />
                     ) : null}
 
+                    {/* Not aria-hidden, unlike the meters above: the device sample
+                        rate is fixed for the session and output latency changes
+                        rarely, `updateTextNode` writes only on change, and this is
+                        the only place either value is exposed anywhere in the app. */}
                     <DawReadoutRow
-                        aria-hidden="true"
                         label="Rate"
                         value={
                             <span
@@ -174,7 +177,6 @@ export const StatusBar = (): ReactElement => {
                         labelClassName="text-muted-foreground/70"
                     />
                     <DawReadoutRow
-                        aria-hidden="true"
                         label="Latency"
                         value={
                             <span ref={latencyRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">

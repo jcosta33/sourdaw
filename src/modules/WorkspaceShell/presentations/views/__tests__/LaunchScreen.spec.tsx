@@ -163,12 +163,19 @@ describe('LaunchScreen', () => {
         render(<LaunchScreen exiting={false} />);
 
         const button = screen.getByRole('button', { name: /Import \.dawproject/ });
-        expect(button).not.toBeDisabled();
+        button.focus();
+        expect(button).toHaveFocus();
 
         fireEvent.click(button);
 
         const busyButton = await screen.findByRole('button', { name: /Importing \.dawproject/ });
-        expect(busyButton).toBeDisabled();
+        // `disabled` would blur this to <body> the instant the handler ran, so a
+        // keyboard user would have to Tab from the top of the launch screen after
+        // a picker that can stay up for minutes. `aria-disabled` keeps the element
+        // focusable and reachable, and re-entry is blocked by the handler's guard.
+        expect(busyButton).toHaveFocus();
+        expect(busyButton).not.toBeDisabled();
+        expect(busyButton).toHaveAttribute('aria-disabled', 'true');
         expect(busyButton).toHaveAttribute('aria-busy', 'true');
 
         // A second click while in flight must not start a second import.
@@ -180,7 +187,10 @@ describe('LaunchScreen', () => {
         });
 
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: /Import \.dawproject/ })).not.toBeDisabled();
+            expect(screen.getByRole('button', { name: /Import \.dawproject/ })).toHaveAttribute(
+                'aria-disabled',
+                'false'
+            );
         });
     });
 

@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { X } from 'lucide-react';
 
@@ -115,23 +115,45 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
 
 type ShortcutCheatSheetProps = {
     /**
-     * Notified whenever the sheet opens or closes. The sheet is an `aria-modal`
-     * overlay with a focus trap, so AppShell must know it is up in order to drop the
-     * skip-link from the tab order — otherwise a keyboard user can tab to
-     * "Skip to content" and jump to #main-content behind this dialog.
-     * This component is a leaf `presentations/components/`: it may not read workspace
-     * state or call use cases directly, so it reports upward instead.
+     * Notified whenever the sheet opens or closes. The sheet declares
+     * `aria-modal="true"`, which tells assistive tech the rest of the app does not
+     * exist; AppShell is what makes that true, by marking the shell root `inert`
+     * while the sheet is up. Without it, Tab walks straight out of the dialog into
+     * controls the virtual buffer says are not there. This component is a leaf
+     * `presentations/components/`: it may not read workspace state or call use cases
+     * directly, so it reports upward instead.
      */
     onOpenChange?: (open: boolean) => void;
 };
 
 export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {}): ReactElement | null => {
     const [open, setOpen] = useState(false);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const returnFocusRef = useRef<HTMLElement | null>(null);
 
     const setOpenAndReport = (next: boolean): void => {
         setOpen(next);
         onOpenChange?.(next);
     };
+
+    // Focus has to move into the dialog, or a screen reader is never told it
+    // opened and Tab continues from wherever the user already was. On close it
+    // goes back where it came from, because the shell root is `inert` while the
+    // sheet is up and a blurred-to-body focus would strand a keyboard user.
+    useEffect(() => {
+        if (!open) {
+            return undefined;
+        }
+
+        const activeElement = document.activeElement;
+        returnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+        panelRef.current?.focus();
+
+        return () => {
+            returnFocusRef.current?.focus();
+            returnFocusRef.current = null;
+        };
+    }, [open]);
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -161,7 +183,9 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
             onClick={() => setOpenAndReport(false)}
         >
             <DawUtilityPanel
-                className="w-[560px] max-h-[80vh]"
+                ref={panelRef}
+                tabIndex={-1}
+                className="w-[560px] max-h-[80vh] outline-none"
                 onClick={(event) => event.stopPropagation()}
                 role="dialog"
                 aria-label="Keyboard shortcuts"

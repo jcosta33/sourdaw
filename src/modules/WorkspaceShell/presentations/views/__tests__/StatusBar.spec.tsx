@@ -172,8 +172,21 @@ describe('StatusBar', () => {
 
             // useStatusBarMetrics rewrites these text nodes every frame; announcing
             // them drowns out anything the status region was meant to convey.
-            for (const readout of ['0%', '0 MB', '0kHz', '0.0ms', 'n/a']) {
+            for (const readout of ['0%', '0 MB', 'n/a']) {
                 expect(screen.getByText(readout).closest('[aria-hidden="true"]')).not.toBeNull();
+            }
+        });
+
+        it('keeps the stable device readouts exposed to the accessibility tree', () => {
+            renderWithTooltip(<StatusBar />);
+
+            // Sample rate is fixed for the session and output latency changes
+            // rarely, so neither is meter churn — and this is the only place
+            // either value appears in the app. Hiding them would delete the sole
+            // accessible copy. Dropping role="status" from the footer is what
+            // fixed the announcement problem; aria-hidden here is pure loss.
+            for (const readout of ['0kHz', '0.0ms']) {
+                expect(screen.getByText(readout).closest('[aria-hidden="true"]')).toBeNull();
             }
         });
     });

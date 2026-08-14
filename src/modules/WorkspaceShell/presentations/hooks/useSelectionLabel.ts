@@ -43,7 +43,8 @@ const getSnapshot = (): string => {
 
 /**
  * Derives a human-readable label for the current clip selection.
- * Subscribes to both clipSelectionStore and trackStore.
+ * Subscribes to clipSelectionStore, trackStore and transportStore — the last one
+ * because bar counts depend on the time signature.
  */
 export const useSelectionLabel = (): string => {
     return useSyncExternalStore(subscribe, getSnapshot);

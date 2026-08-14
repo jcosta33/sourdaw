@@ -19,10 +19,19 @@ const MOBILE_BREAKPOINT = 768;
  * a running shell and re-run its boot effects — and `loadProject` ends in
  * `clearUndoHistory()`, so the user's undo stack and non-CRDT module state would be
  * silently discarded. Ordinary desktop actions cross 768 CSS px mid-session: browser
- * zoom at 175–200%, docking DevTools to the side, dragging a Tauri window narrow. A
- * desktop user who narrows the window gets a cramped layout, which is recoverable;
- * losing the session is not. The mobile → desktop direction stays live because the
- * shell has not mounted yet, so a phone rotated into landscape still boots.
+ * zoom at 175–200%, docking DevTools to the side, dragging a Tauri window narrow. The
+ * mobile → desktop direction stays live because the shell has not mounted yet, so
+ * there is no session to lose and a window that starts narrow can still recover.
+ *
+ * The cost is not symmetric, and it is not trivial. A desktop user who narrows the
+ * window gets a cramped layout, which is recoverable. But every modern phone exceeds
+ * 768 CSS px in landscape — iPhone 15 is 852, 15 Pro Max 932, Pixel 8 about 892 — so
+ * one rotation mounts `AppShell` and boots the engine, project load, MIDI and autosave
+ * on a phone, and rotating back to portrait leaves an unusable full DAW at 393 px with
+ * no notice and no way back short of a reload. Before the gate owned the shell's mount
+ * it was reactive both ways and this could not happen. `(pointer: coarse)` is not the
+ * fix: it would gate an iPad mini in portrait at 744 px, and the notice copy explicitly
+ * supports tablets.
  */
 function useIsMobile(): boolean {
     const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.innerWidth >= MOBILE_BREAKPOINT);

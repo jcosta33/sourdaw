@@ -476,9 +476,15 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 type="button"
                                 id="launch-import-dawproject"
                                 onClick={handleImportDawProject}
-                                disabled={importingDawProject}
+                                // `aria-disabled`, not `disabled`: a focused element
+                                // that becomes `disabled` blurs to <body>, so a
+                                // keyboard user who activates this loses focus the
+                                // instant the handler runs and has to Tab from the
+                                // top after a slow picker. Re-entry is already
+                                // blocked by the guard in handleImportDawProject.
+                                aria-disabled={importingDawProject}
                                 aria-busy={importingDawProject}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer disabled:cursor-progress"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer aria-disabled:cursor-progress"
                             >
                                 <Upload className="size-3" aria-hidden="true" />
                                 {importingDawProject ? 'Importing .dawproject…' : 'Import .dawproject'}
