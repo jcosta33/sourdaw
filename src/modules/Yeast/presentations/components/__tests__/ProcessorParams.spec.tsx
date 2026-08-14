@@ -55,6 +55,20 @@ function selectOptionTexts(label: string): string[] {
 }
 
 describe('ProcessorParams', () => {
+    it('binds controls to stored params, falling back to compiled defaults', () => {
+        renderFor('arpeggiator', { params: { mode: 2, rate_denom: 16, gate: 1.2 } });
+
+        // The select is controlled by the stored param, not the literal 0.
+        expect(findSelectByLabelText('Mode').value).toBe('2');
+        expect(findSelectByLabelText('Mode').selectedOptions[0]?.textContent).toBe('Up-Down');
+
+        // Knobs expose the stored value through the slider role.
+        expect(screen.getByRole('slider', { name: 'Rate' })).toHaveAttribute('aria-valuenow', '16');
+        expect(screen.getByRole('slider', { name: 'Gate' })).toHaveAttribute('aria-valuenow', '1.2');
+        // swing has no stored value: the compiled default 0 shows through.
+        expect(screen.getByRole('slider', { name: 'Swing' })).toHaveAttribute('aria-valuenow', '0');
+    });
+
     it('renders the arpeggiator controls and routes mode changes', () => {
         const { onSetParam } = renderFor('arpeggiator');
         expect(screen.getByText('Mode')).toBeInTheDocument();
