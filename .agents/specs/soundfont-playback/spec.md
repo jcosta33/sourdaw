@@ -30,14 +30,14 @@ preset.
 A `SoundFontInstrument` node (via `rustysynth`) must play `.sf2` content; a C-major
 scale through the reference SoundFont produces per-note fundamentals within ±1 cent.
 
-Verify with: `cargo test -p daw-dsp soundfont_pitch_accuracy`
+Verify with: `pnpm cargo:test -- -p daw-dsp soundfont_pitch_accuracy`
 
 ### AC-002 — Bank/program change switches presets
 
 Bank/program-change messages must switch presets within ≤1 block without glitching held
 voices.
 
-Verify with: `cargo test -p daw-dsp soundfont_program_change`
+Verify with: `pnpm cargo:test -- -p daw-dsp soundfont_program_change`
 
 ### AC-003 — Browser indexes .sf2 presets
 
@@ -58,7 +58,7 @@ Verify with: `manual` — drag a GeneralUser GS preset onto a MIDI track and con
 `.sf2` files larger than a quarter of available RAM must stream from disk rather than
 fully load.
 
-Verify with: `cargo test -p daw-dsp soundfont_streaming`
+Verify with: `pnpm cargo:test -- -p daw-dsp soundfont_streaming`
 
 ## Open questions
 

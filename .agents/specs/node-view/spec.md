@@ -193,7 +193,7 @@ Verify with: `pnpm test:run -- nodeView` (assert tab order across nodes, Enter-t
   for this spec's per-track React Flow canvas; decide whether a per-track fps target and a Playwright
   perf capture apply here, and what node/edge count defines the reference case for a single track.
   (restored detail) The original design note's Tests section proposed a concrete per-track budget that
-  no requirement currently carries: with **50 nodes, initial render < 100 ms on a CI runner**, and
+  no requirement currently carries: with **50 nodes, initial render < 100 ms on the declared baseline machine**, and
   **drag at 60 fps** (snapshot timing). Decide whether to adopt these per-track numbers as the
   reference case or supersede them with the gap's interactive ≥ 30 fps bar.
 - [ ] Q-006 — Stray-edge / compaction path for sidechain routing (restored detail; forward gap).

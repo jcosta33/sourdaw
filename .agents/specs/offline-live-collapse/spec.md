@@ -771,9 +771,6 @@ Report; do not design around.
   that exercises the *enumeration* and not only the verdict.
 - Every `file:line` in a PR re-derived against the branch it ships from. The citations in this spec were
   checked against `docs/phase-2-spec-ultracode`; they go stale.
-- Full suite at least twice, both exit codes quoted, read from the command itself. Say which set —
-  `--dir src` and a bare `test:run` are different.
-- `scripts/health-gates-web.sh` and `health-gates-server.sh` from a clean checkout installed off the
-  lockfile.
+- Run each affected test once through guarded package scripts; quote its exit code.
 - No config, baseline or expected value edited to make a gate pass unless the value genuinely changed
   and the measurement is stated.

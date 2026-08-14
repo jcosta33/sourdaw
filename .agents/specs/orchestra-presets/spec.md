@@ -47,7 +47,7 @@ When a preset is applied, the audio thread must receive a handle to an
 already-validated state blob and swap pointers at a block boundary rather than
 parsing or allocating mid-block.
 
-Verify with: `cargo test -p daw-dsp levain::preset::block_boundary_swap`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::preset::block_boundary_swap`
 
 ### AC-004 — Mapping tables persist keyswitch, CC, and MPE assignments
 

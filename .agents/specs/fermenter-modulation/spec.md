@@ -32,35 +32,35 @@ ordering, and the unified Modulation Dock are the remaining work.
 When a modulation slot is enabled, the matrix must add the source value scaled by
 the slot amount and polarity to the destination's accumulated modulation.
 
-Verify with: `cargo test -p daw-dsp fermenter::mod_slot_routing`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::mod_slot_routing`
 
 ### AC-002 — Multiple slots to one destination sum
 
 When several enabled slots target the same destination, their contributions must
 sum before the destination's final value is computed.
 
-Verify with: `cargo test -p daw-dsp fermenter::mod_destination_sum`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::mod_destination_sum`
 
 ### AC-003 — A modulated value stays within its parameter range
 
 When modulation is applied, the destination's final value must be clamped to its
 parameter range.
 
-Verify with: `cargo test -p daw-dsp fermenter::mod_range_clamp`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::mod_range_clamp`
 
 ### AC-004 — Audio-rate sources update per sample
 
 When a source is in audio-rate mode, the matrix must compute its value per
 sample; control-rate sources update once per block with an optional ramp.
 
-Verify with: `cargo test -p daw-dsp fermenter::mod_audio_rate`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::mod_audio_rate`
 
 ### AC-005 — Meta-modulation routes are topologically ordered
 
 When a source modulates another source's depth, the matrix must evaluate sources
 in dependency order resolved at patch-compile time.
 
-Verify with: `cargo test -p daw-dsp fermenter::mod_meta_ordering`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::mod_meta_ordering`
 
 ### AC-006 — Hover preview routing applies at a block boundary
 

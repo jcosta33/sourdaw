@@ -106,8 +106,7 @@ function fakePort(input: FakeInput = {}) {
         localHead: () => 'head',
         localDirty: () => input.dirty ?? false,
         remoteBranchHead: () => 'base',
-        verify: (base, head, overrides) =>
-            calls.push(`verify:${base}:${head}:${overrides.e2eSpecs.join(',')}:${overrides.fullE2e}`),
+        verify: (base, head, overrides) => calls.push(`verify:${base}:${head}:${overrides.e2eSpecs.join(',')}`),
         merge: (number, head) => calls.push(`merge:${number}:${head}`),
         retarget: (number, base) => {
             calls.push(`retarget:${number}:${base}`);
@@ -130,14 +129,10 @@ describe('pull-request delivery', () => {
     it('verifies, merges the expected head, and retargets stable dependents', () => {
         const { port, calls } = fakePort();
 
-        deliverPullRequest(42, port, { e2eSpecs: ['tests/e2e/project.spec.ts'], fullE2e: false });
+        deliverPullRequest(42, port, { e2eSpecs: ['tests/e2e/project.spec.ts'] });
 
         expect(calls).toEqual(
-            expect.arrayContaining([
-                'verify:base:head:tests/e2e/project.spec.ts:false',
-                'merge:42:head',
-                'retarget:43:main',
-            ])
+            expect.arrayContaining(['verify:base:head:tests/e2e/project.spec.ts', 'merge:42:head', 'retarget:43:main'])
         );
         expect(calls.findIndex((call) => call.startsWith('verify:'))).toBeLessThan(
             calls.findIndex((call) => call.startsWith('merge:'))
@@ -234,24 +229,21 @@ describe('pull-request delivery', () => {
 });
 
 describe('delivery CLI', () => {
-    it('parses repeated targeted E2E specs and a full-E2E override', () => {
-        expect(
-            parseCliArgs(['42', '--e2e', 'tests/e2e/a.spec.ts', '--e2e', 'tests/e2e/b.spec.ts', '--full-e2e'])
-        ).toEqual({
+    it('parses repeated targeted E2E specs', () => {
+        expect(parseCliArgs(['42', '--e2e', 'tests/e2e/a.spec.ts', '--e2e', 'tests/e2e/b.spec.ts'])).toEqual({
             number: 42,
             overrides: {
                 e2eSpecs: ['tests/e2e/a.spec.ts', 'tests/e2e/b.spec.ts'],
-                fullE2e: true,
             },
             help: false,
         });
     });
 
     it.each([
-        [['42', '--e2e', '--full-e2e'], /requires a spec path/],
+        [['42', '--e2e', '--unknown'], /requires a spec path/],
         [['42', '--unknown'], /unknown option/],
         [['0'], /usage/],
-        [['--help', '--full-e2e'], /help takes no other arguments/],
+        [['--help', '--unknown'], /help takes no other arguments/],
     ])('rejects malformed arguments %#', (args, message) => {
         expect(() => parseCliArgs(args)).toThrow(message);
     });
@@ -310,7 +302,7 @@ describe('delivery shell boundary', () => {
         expect(port.reviewState(42, 'head')).toEqual({ currentHeadReviews: 1, unresolvedThreads: 0 });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
-        port.verify('base', 'head', { e2eSpecs: ['tests/e2e/a.spec.ts'], fullE2e: true });
+        port.verify('base', 'head', { e2eSpecs: ['tests/e2e/a.spec.ts'] });
         port.merge(42, 'head');
         port.retarget(43, 'main');
 
@@ -334,7 +326,7 @@ describe('delivery shell boundary', () => {
         });
         expect(runs).toContainEqual({
             command: 'pnpm',
-            args: ['verify:change', '--base', 'base', '--head', 'head', '--e2e', 'tests/e2e/a.spec.ts', '--full-e2e'],
+            args: ['verify:change', '--base', 'base', '--head', 'head', '--e2e', 'tests/e2e/a.spec.ts'],
         });
         expect(runs).toContainEqual({
             command: 'gh',

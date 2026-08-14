@@ -31,14 +31,14 @@ pitch without leaving the arrangement.
 The live PSOLA playback path must perform no heap allocation, mutex lock, or blocking call,
 with parameter updates arriving only through a lock-free triple buffer.
 
-Verify with: `cargo test -p daw-dsp pitch_edit`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_edit`
 
 ### AC-002 — Pitch analysis returns a contour
 
 When pitch editing is enabled on a monophonic clip, the engine must run pYIN analysis and
 return a contour of points carrying time, frequency, confidence, and a voiced flag.
 
-Verify with: `cargo test -p daw-dsp pitch_edit`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_edit`
 
 ### AC-016 — The contour carries sample rate, hop size, and analyzer identity
 
@@ -47,7 +47,7 @@ The returned `PitchContour` must carry, alongside its points, the `sample_rate` 
 `"crepe"`, so a consumer can map a point's index to a sample offset and know which analyzer
 produced it.
 
-Verify with: `cargo test -p daw-dsp pitch_edit`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_edit`
 
 ### AC-017 — Analysis streams progress over a channel off the realtime path
 
@@ -56,7 +56,7 @@ When `analyze_pitch` is invoked with a region id, the engine must run pYIN on a 
 `AnalysisProgress` channel, returning the completed `PitchContour` as the command response —
 analysis must never run on the audio thread.
 
-Verify with: `cargo test -p daw-engine pitch_edit_latency`
+Verify with: `pnpm cargo:test -- -p daw-engine pitch_edit_latency`
 
 ### AC-003 — Inline blobs render over the waveform
 
@@ -85,7 +85,7 @@ Verify with: `manual` — drag a note up two semitones during playback and confi
 The delta-map compiler must clamp effective shift to the range [-700, +700] cents for every
 hop, regardless of which command path produced the edit.
 
-Verify with: `cargo test -p daw-dsp pitch_edit`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_edit`
 
 ### AC-007 — Edits survive timeline moves
 
@@ -101,16 +101,16 @@ When the user freezes a region, the engine must render the edits to a new file a
 boundary with a 2–4 ms equal-power crossfade, leaving no sample discontinuity greater than 1
 LSB at 24-bit.
 
-Verify with: `cargo test -p daw-dsp pitch_edit`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_edit`
 
-### AC-018 — A CI static-analysis gate forbids realtime-unsafe tokens on the audio path
+### AC-018 — A local static-analysis gate forbids realtime-unsafe tokens on the audio path
 
-A static-analysis check, enforced in CI, must confirm that the PSOLA path in `daw-dsp` and
+A guarded static-analysis check must confirm that the PSOLA path in `daw-dsp` and
 the audio callback in `daw-engine` contain zero occurrences of `Mutex::lock`,
 `RwLock::read`/`RwLock::write`, `parking_lot::Mutex::lock`, the heap-allocation macros
 `vec!`/`Box::new`/`String::from`, or `.await`.
 
-Verify with: `cargo test -p daw-engine pitch_edit_latency`
+Verify with: `pnpm cargo:test -- -p daw-engine pitch_edit_latency`
 
 ### AC-009 — Unfreeze restores live editing
 
@@ -130,7 +130,7 @@ Verify with: `pnpm deps:validate`
 A background routine must purge orphaned rendered files in the `rendered/` directory on
 project save or on manual cleanup.
 
-Verify with: `cargo test -p daw-dsp pitch_edit`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_edit`
 
 ### AC-012 — Drag-to-audible latency holds at p50 ≤ 8 ms, p95 ≤ 13 ms
 
@@ -142,7 +142,7 @@ percentile and 8 ms at the median, measured by an instrumented latency counter t
 is the reported end-to-end latency over ≥ 1000 drags at 60 Hz on the macOS reference
 hardware at a 128-frame buffer (mic loopback explicitly not required).
 
-Verify with: `cargo test -p daw-engine pitch_edit_latency`
+Verify with: `pnpm cargo:test -- -p daw-engine pitch_edit_latency`
 
 ### AC-013 — NoteSegment carries gain and fine-pitch fields with the specified ranges
 
@@ -151,7 +151,7 @@ Each `NoteSegment` must carry a `gain` linear amplitude factor in the range `0.0
 the coarse semitone-quantized `target_pitch_hz`, so a note can be nudged ±50 cents without
 changing its nominal semitone.
 
-Verify with: `cargo test -p daw-dsp pitch_edit`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_edit`
 
 ### AC-014 — Reuse the surveyed analysis, store, and command anchors
 

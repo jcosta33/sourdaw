@@ -33,7 +33,7 @@ A `MtsEspMaster` service must call `MTS_RegisterMaster` on engine start,
 `MTS_DeregisterMaster` exactly once on shutdown (no "master still registered" warning on
 next launch).
 
-Verify with: `cargo test -p daw-engine mts_master_lifecycle`
+Verify with: `pnpm cargo:test -- -p daw-engine mts_master_lifecycle`
 
 ### AC-002 — Plugin latches on
 
@@ -54,7 +54,7 @@ Verify with: `manual` — switch to 31-EDO on the reference session; confirm all
 With another master already registered, Sourdaw must detect it (`MTS_HasMaster`) and run in
 client-mode indicator state instead of force-registering.
 
-Verify with: `cargo test -p daw-engine mts_single_master_guard`
+Verify with: `pnpm cargo:test -- -p daw-engine mts_single_master_guard`
 
 ### AC-005 — Client diagnostics panel
 

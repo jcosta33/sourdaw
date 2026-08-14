@@ -33,35 +33,35 @@ build-time FAUST→Rust pipeline for reference DSP.
 Zero-delay-feedback Moog and MS-20 ladder filter models (Newton-Raphson solved) must
 exist as DSP nodes without high-frequency cramping.
 
-Verify with: `cargo test -p daw-dsp zdf_ladder`
+Verify with: `pnpm cargo:test -- -p daw-dsp zdf_ladder`
 
 ### AC-002 — Analog envelope and oscillator primitives
 
 Capacitor-charge (RC) envelope curves and MinBLEP/PolyBLEP anti-aliased oscillators
 must be available as primitives.
 
-Verify with: `cargo test -p daw-dsp analog_primitives`
+Verify with: `pnpm cargo:test -- -p daw-dsp analog_primitives`
 
 ### AC-003 — One time-stretch trait, permissive license
 
 A single `TimeStretch` trait must be the sole entry point for warp/stretch; no GPL
 stretch dependency is imported for shipping code.
 
-Verify with: `cargo test -p daw-dsp time_stretch_trait`
+Verify with: `pnpm cargo:test -- -p daw-dsp time_stretch_trait`
 
 ### AC-004 — Shared pitch-detection primitive
 
 One pitch-detection implementation must be shared by Knead, legato heuristics, and
 tuning tools, with ≤3 cents median error on the reference vocal fixture.
 
-Verify with: `cargo test -p daw-dsp pitch_detection_accuracy`
+Verify with: `pnpm cargo:test -- -p daw-dsp pitch_detection_accuracy`
 
 ### AC-005 — Linear-phase EQ, convolution reverb, look-ahead limiter
 
 FFT-based linear-phase EQ, non-uniform partitioned-convolution reverb, and a
 look-ahead limiter must each exist and pass `assert_no_alloc` on the audio thread.
 
-Verify with: `cargo test -p daw-dsp dsp_primitives_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-dsp dsp_primitives_no_alloc`
 
 ### AC-006 — FAUST→Rust build pipeline
 

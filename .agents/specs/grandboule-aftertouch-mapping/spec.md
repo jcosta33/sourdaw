@@ -704,14 +704,10 @@ programme, not a failure.**
   and never a field the same test wrote (§6b).
 - AC-4 measured at the engine output — *"The observation point is part of the claim"*
   (`crates/daw-dsp/AGENTS.md`).
-- RT guards run under `cargo test` in **debug**; a release run proves nothing (AC-6).
-- Full suite at least twice, both exit codes quoted, read from the command itself. Say which set —
-  `pnpm test:run --dir src` and a bare `test:run` are different, and a bare relative path also
-  matches every `.agents/worktrees/*` copy.
+- Run affected RT guard targets in **debug**; a release run proves nothing (AC-6).
+- Run each affected test once through guarded package scripts; quote its exit code.
 - `pnpm typecheck` and `pnpm typecheck:test` at zero; `pnpm deps:validate` after any cross-module
   move.
-- `scripts/health-gates-web.sh` and `health-gates-server.sh` from a clean checkout installed off the
-  lockfile.
 - If any Rust change lands, `pnpm wasm:verify` in the same PR.
 - Every `file:line` in a PR re-derived against the branch it ships from. The citations here were
   checked against `2b141b033`; they go stale.

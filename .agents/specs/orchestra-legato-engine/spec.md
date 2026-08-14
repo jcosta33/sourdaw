@@ -33,14 +33,14 @@ When a new note arrives while a previous note is sustaining and a recorded
 transition exists for that interval, dynamic, and type, the engine must play the
 transition sample rather than re-attacking the new note.
 
-Verify with: `cargo test -p daw-dsp levain::legato::uses_recorded_transition`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::legato::uses_recorded_transition`
 
 ### AC-002 — Transition type is chosen from playing input
 
 When a legato transition fires, the engine must select slurred versus portamento
 from the configured velocity/CC criterion for the overlapping note.
 
-Verify with: `cargo test -p daw-dsp levain::legato::transition_type_select`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::legato::transition_type_select`
 
 ### AC-003 — Transition timing adapts to playing speed
 
@@ -48,7 +48,7 @@ When the time since the previous note-on is shorter, the engine must shorten the
 transition (full → standard → abbreviated) so fast passages use quick
 transitions and slow passages use longer ones.
 
-Verify with: `cargo test -p daw-dsp levain::legato::adaptive_speed`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::legato::adaptive_speed`
 
 ### AC-004 — Polyphonic legato re-triggers only the changed voice
 
@@ -56,7 +56,7 @@ When a held chord changes by one note, the engine must trigger a legato
 transition only for the nearest moving voice and leave the sustained voices
 unchanged.
 
-Verify with: `cargo test -p daw-dsp levain::legato::polyphonic_divisi`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::legato::polyphonic_divisi`
 
 ### AC-005 — Out-of-range intervals fall back to synthetic legato
 
@@ -64,14 +64,14 @@ When no recorded transition covers the interval, the engine must perform a
 synthetic legato — fade out the old note, pitch-slide to the new note, fade in —
 rather than a hard re-attack.
 
-Verify with: `cargo test -p daw-dsp levain::legato::synthetic_fallback`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::legato::synthetic_fallback`
 
 ### AC-006 — The transition tail crossfades into the sustain equal-power
 
 When the transition sample ends, the engine must crossfade its tail into the new
 note's sustain with an equal-power curve so there is no seam.
 
-Verify with: `cargo test -p daw-dsp levain::legato::tail_crossfade`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::legato::tail_crossfade`
 
 ## Open questions
 

@@ -44,7 +44,7 @@ Verify with: `pnpm test:run -- fermenterPatchSchema`
 When `process()` runs, the synth must perform no heap allocation, no lock
 acquisition, and no blocking call.
 
-Verify with: `cargo test -p daw-dsp fermenter::assert_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::assert_no_alloc`
 
 ### AC-003 — Parameter paths resolve to numeric IDs off the audio thread
 
@@ -52,14 +52,14 @@ When a parameter is set by path string, the resolution from path to numeric
 `ParamId` must happen on the control thread, and the audio thread must read only
 dense numeric-indexed arrays.
 
-Verify with: `cargo test -p daw-dsp fermenter::param_registry`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::param_registry`
 
 ### AC-004 — Parameter changes are smoothed to avoid zipper noise
 
 When a parameter target changes, its applied value must move toward the target
 via one-pole smoothing over the parameter's configured time rather than jumping.
 
-Verify with: `cargo test -p daw-dsp fermenter::param_smoothing`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::param_smoothing`
 
 ### AC-005 — A block is processed in the defined order
 
@@ -67,7 +67,7 @@ When a block is rendered, the synth must drain parameter changes, apply MIDI,
 allocate/steal voices, update modulators, render voices, process FX lanes, and
 mix to stereo — in that order.
 
-Verify with: `cargo test -p daw-dsp fermenter::block_order`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::block_order`
 
 ### AC-006 — Patch round-trip is byte-identical
 
@@ -81,14 +81,14 @@ Verify with: `pnpm test:run -- fermenterPatchRoundtrip`
 When the same patch and MIDI are rendered on native and on WASM, the outputs
 must match within WASM SIMD tolerance.
 
-Verify with: `cargo test -p daw-dsp fermenter::native_wasm_parity`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::native_wasm_parity`
 
 ### AC-008 — Generators are interchangeable in the signal chain
 
 When a voice is built, any generator engine must be placeable through the same
 trait-based generator interface without a fixed per-engine signal flow.
 
-Verify with: `cargo test -p daw-dsp fermenter::generator_dispatch`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::generator_dispatch`
 
 ### AC-009 — No cross-module internal imports
 
@@ -103,7 +103,7 @@ sequencers, random modulators (Lorenz/Perlin), audio follower, performance
 inputs, and the XY/Transform pad — must produce its specified output signal from
 its own parameters so any source can drive any routing.
 
-Verify with: `cargo test -p daw-dsp fermenter::modulation_source_contracts`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::modulation_source_contracts`
 
 ### AC-011 — Wavetable oscillators run the Serum-grade clean-oscillator path
 
@@ -112,21 +112,21 @@ oversampling before mip-map selection, offer a filtered-noise blend for
 transient "air," and support a "Fat" exponential unison detune curve
 `detune[i] = detune_max * (i / total)^2` for crisp, alias-free output.
 
-Verify with: `cargo test -p daw-dsp fermenter::serum_clean_oscillator`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::serum_clean_oscillator`
 
 ### AC-012 — Omnisphere-style enhancement is available
 
 When enabled, psychoacoustic harmonic enhancement must track the fundamental and
 add 2f/3f/4f content at -20 dB via a comb filter, for a richer cinematic timbre.
 
-Verify with: `cargo test -p daw-dsp fermenter::omnisphere_enhancement`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::omnisphere_enhancement`
 
 ### AC-013 — Massive-style scanning filter is available
 
 When enabled, a wavetable-position scan must pair with a dual filter (Ladder plus
 Lowpass) emphasizing different harmonics, for an aggressive timbre.
 
-Verify with: `cargo test -p daw-dsp fermenter::massive_scanning_filter`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::massive_scanning_filter`
 
 ### AC-014 — Alchemy-style spectral morphing is available
 
@@ -134,7 +134,7 @@ When enabled, spectral morphing must resynthesize additively (STFT plus partial
 tracking, interpolating partial amplitudes and frequencies directly), giving
 smooth professional-grade morphs.
 
-Verify with: `cargo test -p daw-dsp fermenter::alchemy_spectral_morph`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::alchemy_spectral_morph`
 
 ### AC-015 — Pigments-style multi-engine voices are available
 
@@ -142,7 +142,7 @@ When configured, a voice must run two completely different synthesis engines
 simultaneously with per-voice and per-step modulation (Pigments), for versatile
 timbres.
 
-Verify with: `cargo test -p daw-dsp fermenter::multi_engine_and_fft_osc`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::multi_engine_and_fft_osc`
 
 ### AC-016 — The remaining flagship-parity differentiators are honored
 
@@ -153,21 +153,21 @@ per-voice oscillator drift, filter-type-specific saturation in three places), an
 the Phase Plant architecture (trait-based generator/effect dispatch, per-voice FX
 with independent tails) must all be present for competitive sound parity.
 
-Verify with: `cargo test -p daw-dsp fermenter::flagship_parity_differentiators`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::flagship_parity_differentiators`
 
 ### AC-017 — Omnisphere-style Innerspace effect is available
 
 When enabled, the Innerspace effect must granularize the reverb tail while
 randomizing each grain's pitch by ±1 semitone, for a richer cinematic timbre.
 
-Verify with: `cargo test -p daw-dsp fermenter::omnisphere_enhancement`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::omnisphere_enhancement`
 
 ### AC-018 — Massive-style Dimension Expander is available
 
 When enabled, the Dimension Expander must run 8 very short delays (1–30 ms), each
 slightly different and subtly pitch-modulated, for a wide stereo image.
 
-Verify with: `cargo test -p daw-dsp fermenter::massive_scanning_filter`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::massive_scanning_filter`
 
 ### AC-019 — Alchemy-style Transform Pad is available
 
@@ -175,7 +175,7 @@ When enabled, the Transform Pad must bilinearly interpolate continuous parameter
 while crossfading between two instances for discrete ones, giving smooth
 professional-grade morphs.
 
-Verify with: `cargo test -p daw-dsp fermenter::alchemy_spectral_morph`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::alchemy_spectral_morph`
 
 ### AC-020 — Zebra-style FFT oscillator is available
 
@@ -183,7 +183,7 @@ When configured, an oscillator must support per-cycle IFFT resynthesis from a
 user-editable magnitude spectrum driven by a 2D X/Y modulation grid (Zebra), for
 spatial timbres.
 
-Verify with: `cargo test -p daw-dsp fermenter::multi_engine_and_fft_osc`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::multi_engine_and_fft_osc`
 
 ## Open questions
 

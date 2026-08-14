@@ -32,70 +32,70 @@ Ableton Drum Rack, and Battery 4, runs RT-safe on native and WASM, and shares DS
 Every pad must host one or more layers (sample player, multi-sample, or drum synth engines) with
 its own layer mixer, filter, insert FX, transient shaper, and output routing.
 
-Verify with: `cargo test -p daw-dsp drum_pad_channel`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_pad_channel`
 
 ### AC-002 — Inference-free audio thread is RT-safe
 
 `process()` must perform no allocation, no mutex locks, and no blocking on the audio thread, on
 both native and WASM, with all voices/buffers/delay-lines pre-allocated at init.
 
-Verify with: `cargo test -p daw-dsp drum_rt_safety`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_rt_safety`
 
 ### AC-003 — Purpose-built drum synth engines render their voices
 
 Dedicated engines (808 physically-informed kick, 909 kick, analog kick, snare, hi-hat/cymbal,
 clap, tom, modal percussion) must each synthesize their voice, not a generic osc+filter.
 
-Verify with: `cargo test -p daw-dsp drum_synth_engines`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_synth_engines`
 
 ### AC-004 — Sample player supports zones, round-robin, and interpolation
 
 The sample/multi-sample player must map velocity/note zones with round-robin and velocity
 crossfade, using cubic-Hermite interpolation and O(1) zone lookup.
 
-Verify with: `cargo test -p daw-dsp drum_sample_player`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_sample_player`
 
 ### AC-005 — The step sequencer drives per-step expression
 
 The integrated sequencer must support per-step probability, velocity, micro-timing, parameter
 locks, conditional triggers, and sound locks committed through the sequencer model.
 
-Verify with: `cargo test -p daw-dsp drum_step_sequencer`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_step_sequencer`
 
 ### AC-006 — Choke groups silence group members on trigger
 
 Triggering a pad must fast-fade (5–10 ms) other pads in the same choke group (e.g. closed hat
 chokes open hat).
 
-Verify with: `cargo test -p daw-dsp drum_choke_groups`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_choke_groups`
 
 ### AC-007 — Voice management steals and chokes correctly
 
 Voice allocation must steal same-pad-oldest then global-oldest within a shared 64–128 voice pool,
 with choke kills applied as immediate fast fades.
 
-Verify with: `cargo test -p daw-dsp drum_voice_manager`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_voice_manager`
 
 ### AC-008 — Per-pad chain routes to buses and sends
 
 Each pad must route through filter → insert FX → transient shaper to master/bus/direct-out with
 two global sends, per-pad send levels, and a per-pad mixer channel.
 
-Verify with: `cargo test -p daw-dsp drum_routing`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_routing`
 
 ### AC-009 — Lo-fi vintage mode applies character processing
 
 A vintage character mode must apply bit reduction (with TPDF dither), sample-rate reduction, and
 analog-style filtering modeled on SP-1200-class behavior.
 
-Verify with: `cargo test -p daw-dsp drum_lofi`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_lofi`
 
 ### AC-010 — Auto-slice maps a dropped loop to pads
 
 Dropping a drum loop must detect onsets, refine to zero-crossings, map slices to pads, and create
 a replay pattern preserving original timing.
 
-Verify with: `cargo test -p daw-dsp drum_auto_slice`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_auto_slice`
 
 ### AC-011 — Progressive-disclosure UI exposes five levels
 
@@ -116,14 +116,14 @@ The sequencer must provide a Euclidean generator `E(k, n, rotation)` that distri
 across `n` steps as evenly as possible via the Bjorklund recursive algorithm, with a rotation
 offset, committing the result as steps through the sequencer model.
 
-Verify with: `cargo test -p daw-dsp drum_euclidean_generator`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_euclidean_generator`
 
 ### AC-014 — Ratcheting emits sub-triggers within a step
 
 A step must be able to fire `ratchet_count` sub-triggers, each spaced at
 `sub_interval = step_duration / ratchet_count`, with each sub-trigger receiving a tapered velocity.
 
-Verify with: `cargo test -p daw-dsp drum_ratcheting`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_ratcheting`
 
 ### AC-015 — Pattern morph interpolates between two patterns
 
@@ -131,28 +131,28 @@ Pattern morph must interpolate between patterns A and B such that triggers cross
 probability, velocity interpolates linearly, micro-timing interpolates, and ratchets snap to the
 nearest integer.
 
-Verify with: `cargo test -p daw-dsp drum_pattern_morph`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_pattern_morph`
 
 ### AC-016 — 16 Levels remaps the grid to one pad's levels
 
 In 16 Levels mode (MPC-style) the entire pad grid must become 16 velocity/parameter levels of the
 single selected pad.
 
-Verify with: `cargo test -p daw-dsp drum_sixteen_levels`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_sixteen_levels`
 
 ### AC-017 — Note Repeat retriggers in sync with tempo
 
 Note Repeat must produce tempo-synced retriggers selectable from 1/4 to 1/32 (including triplet
 rates) while a pad is held, with velocity-ramp options.
 
-Verify with: `cargo test -p daw-dsp drum_note_repeat`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_note_repeat`
 
 ### AC-018 — Fill mode activates Fill-conditioned steps while held
 
 Holding Fill must activate steps whose conditional trigger is `Fill` (and suppress `NotFill`
 steps) only for the duration the control is held.
 
-Verify with: `cargo test -p daw-dsp drum_fill_mode`
+Verify with: `pnpm cargo:test -- -p daw-dsp drum_fill_mode`
 
 ## Open questions
 
