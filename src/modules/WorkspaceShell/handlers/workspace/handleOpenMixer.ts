@@ -1,10 +1,10 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
+import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 
 export const handleOpenMixer = createHandler<'openMixer'>({
     execute: () => {
-        toggleMixer();
+        openMixer();
     },
     describe: () => ({ label: 'Open mixer' }),
     undoable: false,

@@ -185,4 +185,15 @@ describe('CrustPanel', () => {
 
         expect(useCaseMocks.setCrustParamWithAudio).toHaveBeenCalledWith('crust-1', 'oversampling', 2);
     });
+
+    it('claims no contentinfo landmark for its control strip', () => {
+        render(<CrustPanel deviceId="crust-1" />);
+
+        // A device panel is not page footer content. As a <footer> with only <div>
+        // ancestors this strip mapped to `contentinfo` and collided with the app
+        // status bar, giving the page two of a landmark that must be unique.
+        expect(screen.queryByRole('contentinfo')).toBeNull();
+        // The controls it holds are still there — this is a tag change, not a delete.
+        expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
+    });
 });

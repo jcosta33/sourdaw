@@ -150,13 +150,13 @@ test.describe('Status bar live metrics', () => {
     });
 
     test('CPU metric renders a percentage or idle marker', async ({ page }) => {
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         const text = (await status.getByText(/CPU/i).locator('..').textContent()) ?? '';
         expect(text).toMatch(/\d+%|idle|N\/A/i);
     });
 
     test('Sample rate renders a kHz value', async ({ page }) => {
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         const text = (await status.getByText(/Rate/i).locator('..').textContent()) ?? '';
         expect(text).toMatch(/\d+\s*k?Hz/i);
     });

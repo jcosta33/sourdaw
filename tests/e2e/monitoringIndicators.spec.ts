@@ -52,7 +52,7 @@ test.describe('Monitoring status indicators', () => {
     });
 
     test('Control-room mono/dim commands surface a live status-bar badge', async ({ page }) => {
-        const statusBar = page.getByRole('status', { name: 'Application status' });
+        const statusBar = page.getByRole('contentinfo', { name: 'Application status' });
 
         // Invisibility evidence: nothing reflects monitoring state before the command runs.
         await expect(statusBar.getByLabel(/^Monitoring:/)).toHaveCount(0);
@@ -75,7 +75,7 @@ test.describe('Monitoring status indicators', () => {
     });
 
     test('Adding CV/Gate outputs surfaces a status-bar badge with a live count', async ({ page }) => {
-        const statusBar = page.getByRole('status', { name: 'Application status' });
+        const statusBar = page.getByRole('contentinfo', { name: 'Application status' });
 
         // Invisibility evidence: no CV/Gate reflection before any output is added.
         await expect(statusBar.getByLabel(/CV\/Gate output/)).toHaveCount(0);

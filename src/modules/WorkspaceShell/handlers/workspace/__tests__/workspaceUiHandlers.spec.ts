@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { defaultWorkspaceState, workspaceStore } from '../../../stores/workspaceStore';
 import { handleCloseMixer } from '../handleCloseMixer';
 import { handleOpenMixer } from '../handleOpenMixer';
 import { handleToggleChatPanel } from '../handleToggleChatPanel';
@@ -11,7 +12,6 @@ const mocks = vi.hoisted(() => ({
     toggleSidebar: vi.fn(),
     toggleInspector: vi.fn(),
     toggleChatPanel: vi.fn(),
-    toggleMixer: vi.fn(),
     zoomToFit: vi.fn(),
 }));
 
@@ -22,7 +22,6 @@ vi.mock('../../../useCases/togglePanel/panelToggles/toggleInspector', () => ({
 vi.mock('../../../useCases/togglePanel/panelToggles/toggleChatPanel', () => ({
     toggleChatPanel: mocks.toggleChatPanel,
 }));
-vi.mock('../../../useCases/togglePanel/panelToggles/toggleMixer', () => ({ toggleMixer: mocks.toggleMixer }));
 vi.mock('../../../useCases/togglePanel/zoomOperations/zoomToFit', () => ({ zoomToFit: mocks.zoomToFit }));
 
 describe('Workspace UI Handlers', () => {
@@ -45,18 +44,39 @@ describe('Workspace UI Handlers', () => {
         expect(mocks.toggleChatPanel).toHaveBeenCalled();
     });
 
-    it('handleOpenMixer should delegate to toggleMixer', () => {
-        void handleOpenMixer.execute({ type: 'openMixer' });
-        expect(mocks.toggleMixer).toHaveBeenCalled();
-    });
-
-    it('handleCloseMixer should delegate to toggleMixer', () => {
-        void handleCloseMixer.execute({ type: 'closeMixer' });
-        expect(mocks.toggleMixer).toHaveBeenCalled();
-    });
-
     it('handleZoomToFit should delegate to zoomToFit', () => {
         void handleZoomToFit.execute({ type: 'zoomToFit' });
         expect(mocks.zoomToFit).toHaveBeenCalled();
+    });
+});
+
+// The mixer handlers are asserted against the real workspace store rather than a
+// `toggleMixer` spy: the defect they carried (both handlers toggling) is invisible
+// to a delegation spy, which is green whichever use case is wired up.
+describe('Mixer open/close handlers — resulting mixerOpen state', () => {
+    beforeEach(() => {
+        workspaceStore.set({ ...defaultWorkspaceState, mixerOpen: false });
+    });
+
+    it('handleOpenMixer opens the mixer when it is closed', () => {
+        void handleOpenMixer.execute({ type: 'openMixer' });
+        expect(workspaceStore.value?.mixerOpen).toBe(true);
+    });
+
+    it('handleOpenMixer leaves the mixer open when it is already open', () => {
+        workspaceStore.set({ ...defaultWorkspaceState, mixerOpen: true });
+        void handleOpenMixer.execute({ type: 'openMixer' });
+        expect(workspaceStore.value?.mixerOpen).toBe(true);
+    });
+
+    it('handleCloseMixer closes the mixer when it is open', () => {
+        workspaceStore.set({ ...defaultWorkspaceState, mixerOpen: true });
+        void handleCloseMixer.execute({ type: 'closeMixer' });
+        expect(workspaceStore.value?.mixerOpen).toBe(false);
+    });
+
+    it('handleCloseMixer leaves the mixer closed when it is already closed', () => {
+        void handleCloseMixer.execute({ type: 'closeMixer' });
+        expect(workspaceStore.value?.mixerOpen).toBe(false);
     });
 });

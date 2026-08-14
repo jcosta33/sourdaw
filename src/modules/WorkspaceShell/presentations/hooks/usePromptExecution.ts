@@ -419,6 +419,14 @@ export const usePromptExecution = (): PromptExecutionState => {
                 signal: controller.signal,
                 successVerb: 'Confirmed',
             });
+        } catch (error) {
+            // `PromptBar` wires this straight to onClick, so a throw here (e.g. from
+            // waitForAutomergeSnapshotTransaction) becomes an unhandled rejection with no
+            // log and no user notice — on the path a *destructive* confirmed preset takes.
+            if (!controller.signal.aborted) {
+                logger.error(new Error('Confirmed preview execution failed', { cause: error }));
+                notifyAiChange('Command not executed: the confirmed changes could not be applied.', []);
+            }
         } finally {
             if (operationRef.current === controller) {
                 operationRef.current = null;

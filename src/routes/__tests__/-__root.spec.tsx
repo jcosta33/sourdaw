@@ -14,6 +14,7 @@ vi.mock('@tanstack/react-router', () => ({
 // Mock AppShell
 vi.mock('#/modules/WorkspaceShell/presentations/views', () => ({
     AppShell: ({ children }: { children: ReactNode }) => <div data-testid="app-shell">{children}</div>,
+    WorkspaceMobileGate: ({ children }: { children: ReactNode }) => <div data-testid="mobile-gate">{children}</div>,
 }));
 
 describe('RootLayout', () => {
@@ -21,6 +22,16 @@ describe('RootLayout', () => {
         render(<RootLayout />);
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         expect(screen.getByTestId('outlet')).toBeInTheDocument();
+    });
+
+    it('should mount AppShell inside the mobile gate, not beside it', () => {
+        render(<RootLayout />);
+
+        // The gate has to own the shell's mount: hooks cannot be conditional, so a
+        // viewport check inside AppShell still runs engine init, project load, MIDI
+        // start and autosave behind the "Desktop DAW" notice. Only being a descendant
+        // of the gate stops that.
+        expect(screen.getByTestId('app-shell').closest('[data-testid="mobile-gate"]')).not.toBeNull();
     });
 });
 

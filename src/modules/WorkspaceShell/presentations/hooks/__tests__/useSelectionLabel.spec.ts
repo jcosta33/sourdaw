@@ -10,6 +10,29 @@ const clipSelection = vi.hoisted(() => ({ value: null as ClipSelection | null })
 const trackState = vi.hoisted(() => ({ value: null as { tracks: TrackShape[] } | null }));
 const clipSubscribers = vi.hoisted(() => new Set<() => void>());
 const trackSubscribers = vi.hoisted(() => new Set<() => void>());
+const transportSubscribers = vi.hoisted(() => new Set<() => void>());
+const transportState = vi.hoisted(() => ({ value: null as { timeSignatureNumerator: number } | null }));
+
+vi.mock('#/modules/Transport/stores', () => ({
+    transportStore: {
+        get value() {
+            return transportState.value;
+        },
+        subscribe: vi.fn((cb: () => void) => {
+            transportSubscribers.add(cb);
+            return () => {
+                transportSubscribers.delete(cb);
+            };
+        }),
+        subscribeReact: vi.fn((cb: () => void) => {
+            transportSubscribers.add(cb);
+            return () => {
+                transportSubscribers.delete(cb);
+            };
+        }),
+        getSnapshot: () => transportState.value,
+    },
+}));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     clipSelectionStore: {
@@ -57,14 +80,19 @@ function notify(): void {
     for (const cb of trackSubscribers) {
         cb();
     }
+    for (const cb of transportSubscribers) {
+        cb();
+    }
 }
 
 describe('useSelectionLabel', () => {
     beforeEach(() => {
         clipSelection.value = null;
         trackState.value = null;
+        transportState.value = { timeSignatureNumerator: 4 };
         clipSubscribers.clear();
         trackSubscribers.clear();
+        transportSubscribers.clear();
     });
 
     it('returns an empty label when no clips are selected', () => {
@@ -135,6 +163,45 @@ describe('useSelectionLabel', () => {
         const { result } = renderHook(() => useSelectionLabel());
 
         expect(result.current).toBe('1 clip');
+    });
+
+    it('measures bars against the transport time signature, not a fixed 4 (3/4)', () => {
+        transportState.value = { timeSignatureNumerator: 3 };
+        clipSelection.value = { selectedClipIds: ['clip-e'] };
+        trackState.value = {
+            tracks: [{ clips: [{ id: 'clip-e', startBeat: 0, endBeat: 9 }] }],
+        };
+
+        const { result } = renderHook(() => useSelectionLabel());
+
+        // 9 beats in 3/4 is exactly 3 bars. Dividing by a literal 4 gives 2.25,
+        // which is not an integer and degrades to "1 clip · 9 beats".
+        expect(result.current).toBe('1 clip · 3 bars');
+    });
+
+    it('uses beats phrasing when the length is not a whole number of bars in 3/4', () => {
+        transportState.value = { timeSignatureNumerator: 3 };
+        clipSelection.value = { selectedClipIds: ['clip-f'] };
+        trackState.value = {
+            tracks: [{ clips: [{ id: 'clip-f', startBeat: 0, endBeat: 4 }] }],
+        };
+
+        const { result } = renderHook(() => useSelectionLabel());
+
+        // 4 beats is one whole bar in 4/4 but 1⅓ bars in 3/4.
+        expect(result.current).toBe('1 clip · 4 beats');
+    });
+
+    it('falls back to 4 beats per bar when transport state is unavailable', () => {
+        transportState.value = null;
+        clipSelection.value = { selectedClipIds: ['clip-g'] };
+        trackState.value = {
+            tracks: [{ clips: [{ id: 'clip-g', startBeat: 0, endBeat: 8 }] }],
+        };
+
+        const { result } = renderHook(() => useSelectionLabel());
+
+        expect(result.current).toBe('1 clip · 2 bars');
     });
 
     it('counts multiple selected clips', () => {

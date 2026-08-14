@@ -10,7 +10,7 @@ test.describe('Audio/MIDI Advanced & Misc', () => {
     });
 
     test('Status bar shows numeric performance metrics', async ({ page }) => {
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status).toBeVisible();
         await expect(status.getByText('CPU')).toBeVisible();
         const cpu_text = await status.getByText('CPU').locator('..').textContent();
@@ -19,7 +19,7 @@ test.describe('Audio/MIDI Advanced & Misc', () => {
     });
 
     test('Status bar has working help and collaboration toggles', async ({ page }) => {
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         const help = status.getByRole('button', { name: 'Help and Feedback' });
         const collab = status.getByRole('button', { name: 'Toggle collaboration panel' });
         await expect(help).toBeVisible();

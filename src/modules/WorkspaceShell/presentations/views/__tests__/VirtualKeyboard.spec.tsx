@@ -382,6 +382,23 @@ describe('VirtualKeyboard', () => {
         const onMock = vi.mocked(triggerLiveNoteOn);
         const offMock = vi.mocked(triggerLiveNoteOff);
 
+        /**
+         * jsdom implements no layout, so `document.elementFromPoint` does not exist on it
+         * at all. Install a stub that reports the key the cursor is notionally over —
+         * that is the hit-test the browser performs and the production code depends on.
+         */
+        const stubHitTestReturning = (element: Element): (() => void) => {
+            const hitTest = vi.fn(() => element);
+            Object.defineProperty(document, 'elementFromPoint', {
+                value: hitTest,
+                configurable: true,
+                writable: true,
+            });
+            return () => {
+                Reflect.deleteProperty(document, 'elementFromPoint');
+            };
+        };
+
         // Fix #4: dragging off a held key and re-entering it must sustain the note,
         // not re-trigger a fresh noteOff/noteOn for the note already sounding.
         it('does not re-trigger the note when re-entering the already-sounding key', () => {
@@ -396,6 +413,64 @@ describe('VirtualKeyboard', () => {
 
             // Drag still held (buttons=1) back onto the same key.
             fireEvent.pointerEnter(c4, { buttons: 1 });
+
+            expect(onMock).not.toHaveBeenCalled();
+            expect(offMock).not.toHaveBeenCalled();
+        });
+
+        // Fix (audit F1): a drag that STARTS on a white key calls setPointerCapture, and
+        // per W3C Pointer Events a captured pointer retargets boundary events to the
+        // capture element — so the neighbouring key never receives `pointerenter` and the
+        // glide was silently dead. jsdom models neither capture nor retargeting, so both
+        // are simulated explicitly: every move is dispatched on the *captured* key while
+        // `elementFromPoint` reports the key actually under the cursor.
+        it('glides to the neighbouring key when the drag started on a white key (captured pointer)', () => {
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+            const d4 = screen.getByLabelText('MIDI 62');
+
+            fireEvent.pointerDown(c4, { pointerId: 1 });
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+            onMock.mockClear();
+            offMock.mockClear();
+
+            const restoreHitTest = stubHitTestReturning(d4);
+            // Retargeted to c4 (the capture element) even though the cursor is over d4.
+            fireEvent.pointerMove(c4, { buttons: 1, clientX: 140, clientY: 40 });
+            restoreHitTest();
+
+            expect(offMock).toHaveBeenCalledWith(0, 60);
+            expect(onMock).toHaveBeenCalledWith(0, 62, 100);
+        });
+
+        it('does not re-trigger while a captured drag stays within the sounding key', () => {
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+
+            fireEvent.pointerDown(c4, { pointerId: 1 });
+            onMock.mockClear();
+            offMock.mockClear();
+
+            const restoreHitTest = stubHitTestReturning(c4);
+            fireEvent.pointerMove(c4, { buttons: 1, clientX: 100, clientY: 40 });
+            restoreHitTest();
+
+            expect(onMock).not.toHaveBeenCalled();
+            expect(offMock).not.toHaveBeenCalled();
+        });
+
+        it('ignores a captured move with no button held', () => {
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+            const d4 = screen.getByLabelText('MIDI 62');
+
+            fireEvent.pointerDown(c4, { pointerId: 1 });
+            onMock.mockClear();
+            offMock.mockClear();
+
+            const restoreHitTest = stubHitTestReturning(d4);
+            fireEvent.pointerMove(c4, { buttons: 0, clientX: 140, clientY: 40 });
+            restoreHitTest();
 
             expect(onMock).not.toHaveBeenCalled();
             expect(offMock).not.toHaveBeenCalled();

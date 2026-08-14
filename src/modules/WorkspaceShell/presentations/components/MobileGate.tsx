@@ -11,18 +11,52 @@ const DiscordIcon = ({ className }: { className?: string }): ReactElement => (
 
 const MOBILE_BREAKPOINT = 768;
 
+/**
+ * Reports whether the viewport is too small to run the DAW.
+ *
+ * The result is **monotonic**: it can go mobile → desktop, never back. This gate
+ * decides whether `AppShell` mounts at all, so flipping back to mobile would unmount
+ * a running shell and re-run its boot effects — and `loadProject` ends in
+ * `clearUndoHistory()`, so the user's undo stack and non-CRDT module state would be
+ * silently discarded. Ordinary desktop actions cross 768 CSS px mid-session: browser
+ * zoom at 175–200%, docking DevTools to the side, dragging a Tauri window narrow. The
+ * mobile → desktop direction stays live because the shell has not mounted yet, so
+ * there is no session to lose and a window that starts narrow can still recover.
+ *
+ * The cost is not symmetric, and it is not trivial. A desktop user who narrows the
+ * window gets a cramped layout, which is recoverable. But every modern phone exceeds
+ * 768 CSS px in landscape — iPhone 15 is 852, 15 Pro Max 932, Pixel 8 about 892 — so
+ * one rotation mounts `AppShell` and boots the engine, project load, MIDI and autosave
+ * on a phone, and rotating back to portrait leaves an unusable full DAW at 393 px with
+ * no notice and no way back short of a reload. Before the gate owned the shell's mount
+ * it was reactive both ways and this could not happen. `(pointer: coarse)` is not the
+ * fix: it would gate an iPad mini in portrait at 744 px, and the notice copy explicitly
+ * supports tablets.
+ */
 function useIsMobile(): boolean {
-    const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT);
+    const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.innerWidth >= MOBILE_BREAKPOINT);
 
     useEffect(() => {
-        const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-        const handler = (event: MediaQueryListEvent): void => setIsMobile(event.matches);
-        mq.addEventListener('change', handler);
-        setIsMobile(mq.matches);
-        return () => mq.removeEventListener('change', handler);
-    }, []);
+        if (isDesktopViewport) {
+            return undefined;
+        }
 
-    return isMobile;
+        const mq = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`);
+        if (mq.matches) {
+            setIsDesktopViewport(true);
+            return undefined;
+        }
+
+        const handler = (event: MediaQueryListEvent): void => {
+            if (event.matches) {
+                setIsDesktopViewport(true);
+            }
+        };
+        mq.addEventListener('change', handler);
+        return () => mq.removeEventListener('change', handler);
+    }, [isDesktopViewport]);
+
+    return !isDesktopViewport;
 }
 
 type MobileGateProps = {

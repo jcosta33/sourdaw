@@ -159,7 +159,7 @@ test.describe('Status Bar Deep', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status.getByText('CPU')).toBeVisible();
     });
 
@@ -167,7 +167,7 @@ test.describe('Status Bar Deep', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         const out = status.getByText(/Out/i).locator('..');
         const text = await out.textContent();
         expect(text).toMatch(/dB|inf|-|∞/i);
@@ -177,7 +177,7 @@ test.describe('Status Bar Deep', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status).toBeVisible();
     });
 });

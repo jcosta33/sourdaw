@@ -354,7 +354,11 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 </div>
             </div>
 
-            <footer className="crust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
+            {/* A plain <div>, not <footer>: this is a control strip inside a device
+                panel, not page footer content. As a <footer> whose ancestors are all
+                <div> it mapped to a second `contentinfo` landmark alongside the app
+                status bar, which is invalid and makes landmark navigation ambiguous. */}
+            <div className="crust-window flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-2">
                 <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
                     <span className="uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</span>
                     <DawCompactInput
@@ -417,7 +421,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         Reset
                     </DawPluginChip>
                 </div>
-            </footer>
+            </div>
         </div>
     );
 };

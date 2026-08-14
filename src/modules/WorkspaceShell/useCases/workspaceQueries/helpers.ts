@@ -18,10 +18,8 @@ export type {
     EditingTool,
 };
 
-export const TOOL_SHORTCUTS: Record<string, EditingTool> = {
-    s: 'select',
-    c: 'cut',
-    d: 'draw',
-    b: 'draw',
-    t: 'stretch',
-};
+// Re-exported, never redeclared. A second literal here silently diverged from
+// `models/EditingTool` and dropped `e: 'marquee'`, so the keyboard path (which
+// reads this copy through `useCases/index.ts`) could not reach a tool whose own
+// label advertises the shortcut.
+export { TOOL_SHORTCUTS } from '../../models/EditingTool';
