@@ -20,6 +20,7 @@ export type CommandBatchIdempotencyRepository = {
         projectId: string;
         idempotencyKey: string;
         contentHash: string;
+        reclaimPending?: boolean;
     }) => Promise<CommandBatchIdempotencyClaim>;
     complete: (input: {
         projectId: string;
@@ -27,6 +28,7 @@ export type CommandBatchIdempotencyRepository = {
         contentHash: string;
         serializedReceipt: string;
     }) => Promise<void>;
+    release?: (input: { projectId: string; idempotencyKey: string; contentHash: string }) => Promise<void>;
 };
 
 export type ProjectCommandBatchIdempotencyRecord = {

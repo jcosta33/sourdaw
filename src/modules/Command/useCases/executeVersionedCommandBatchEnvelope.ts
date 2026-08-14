@@ -43,6 +43,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (parsed.envelope.mode === 'preview') {
         return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
+    const requiresDurableExecutionAuthority = commandBatchIdempotencyPort.isConfigured();
     let observedBaseRevision: string | null = null;
     const receiptWarnings: string[] = [];
     try {
@@ -57,10 +58,11 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         );
     }
     let idempotencyContentHash: string | null = null;
+    let mayReclaimPendingClaim = false;
     const projectCommitRecovery: { receipt: ReturnType<typeof createVerifiedBatchReceipt> | null } = {
         receipt: null,
     };
-    if (commandBatchIdempotencyPort.isConfigured()) {
+    if (requiresDurableExecutionAuthority) {
         if (!commandBatchExecutionAuthorityPort.canExecute()) {
             const result = {
                 status: 'rejected' as const,
@@ -194,6 +196,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 }
                 return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
             }
+            mayReclaimPendingClaim = true;
             const prior = await commandBatchIdempotencyPort.lookup({
                 projectId: parsed.envelope.projectId,
                 idempotencyKey: parsed.envelope.idempotencyKey,
@@ -257,6 +260,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 projectId: parsed.envelope.projectId,
                 idempotencyKey: parsed.envelope.idempotencyKey,
                 contentHash: idempotencyContentHash,
+                reclaimPending: mayReclaimPendingClaim,
             });
             if (claim?.status === 'complete') {
                 const receipt = parseStoredVerifiedBatchReceipt({
@@ -329,6 +333,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         }
     }
     let result: Awaited<ReturnType<typeof executeVersionedCommandBatch>>;
+    const callerShouldExecute = input.options?.shouldExecute;
     try {
         result = await executeVersionedCommandBatch({
             commands: resolvedCommands.map((command) =>
@@ -339,6 +344,9 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             options: {
                 ...input.options,
                 groupId: parsed.envelope.batchId,
+                shouldExecute: () =>
+                    (!requiresDurableExecutionAuthority || commandBatchExecutionAuthorityPort.canExecute()) &&
+                    (callerShouldExecute?.() ?? true),
                 onProjectCommitPrepared: (committedResult) => {
                     if (idempotencyContentHash === null) {
                         return;
@@ -370,6 +378,13 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             },
         });
     } catch (error) {
+        if (idempotencyContentHash !== null) {
+            await commandBatchIdempotencyPort.release({
+                projectId: parsed.envelope.projectId,
+                idempotencyKey: parsed.envelope.idempotencyKey,
+                contentHash: idempotencyContentHash,
+            });
+        }
         activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
         throw error;
     }
@@ -398,6 +413,9 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (idempotencyContentHash !== null) {
         if (result.status === 'committed' || result.status === 'committed-with-warning') {
             try {
+                const hasPendingExternalEffect =
+                    result.status === 'committed-with-warning' &&
+                    result.warningDetails?.some(({ kind }) => kind === 'external-effect') === true;
                 const projectReceipt = createVerifiedBatchReceipt({
                     envelope: resolvedEnvelope,
                     observedBaseRevision,
@@ -409,7 +427,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     projectId: parsed.envelope.projectId,
                     idempotencyKey: parsed.envelope.idempotencyKey,
                     contentHash: idempotencyContentHash,
-                    state: 'complete',
+                    state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
                     serializedReceipt: JSON.stringify(projectReceipt),
                 });
                 finalized = { ...finalized, receipt: projectReceipt };

@@ -409,6 +409,120 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
     });
 
+    it('reclaims an orphaned pre-commit claim when project truth proves no commit occurred', async () => {
+        const claim = vi.fn((input: { reclaimPending?: boolean }) =>
+            Promise.resolve(input.reclaimPending ? ({ status: 'claimed' } as const) : ({ status: 'pending' } as const))
+        );
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'pending' }),
+            claim,
+            complete: () => Promise.resolve(),
+        });
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(claim).toHaveBeenCalledWith(expect.objectContaining({ reclaimPending: true }));
+        expect(mutationCount).toBe(2);
+        expect(runtimeEffectCount).toBe(1);
+    });
+
+    it('keeps a committed batch pending until its failed external effect reconciles on retry', async () => {
+        clearHandlerRegistry();
+        const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
+        expect(gainStorage.hydrate?.()).toBe(true);
+        let effectAttempts = 0;
+        registerHandlerMap({
+            setTrackGain: createHandler({
+                execute: () => {
+                    gainStorage.set({ value: 0.8 });
+                    const applyRuntimeEffect = () => {
+                        effectAttempts += 1;
+                        if (effectAttempts <= 2) {
+                            return Promise.reject(new Error('runtime strip unavailable'));
+                        }
+                        runtimeGain = 0.8;
+                        runtimeEffectCount += 1;
+                        return Promise.resolve();
+                    };
+                    return {
+                        status: 'written',
+                        afterCommit: applyRuntimeEffect,
+                        afterAmbiguousCommit: applyRuntimeEffect,
+                    };
+                },
+            }),
+        });
+        const batch = compileBatch();
+
+        const first = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        const retry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        const settledRetry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(first).toMatchObject({
+            status: 'committed-with-warning',
+            receipt: { outcome: 'partially-committed' },
+        });
+        expect(retry.status).toBe('idempotent-replay');
+        expect(settledRetry.status).toBe('idempotent-replay');
+        expect(effectAttempts).toBe(3);
+        expect(runtimeEffectCount).toBe(1);
+        expect(runtimeGain).toBe(0.8);
+        expect(mutationCount).toBe(3);
+    });
+
+    it('rechecks host authority after async claim admission and before project execution', async () => {
+        let resolveClaim!: () => void;
+        let markClaimStarted!: () => void;
+        const claimStarted = new Promise<void>((resolve) => {
+            markClaimStarted = resolve;
+        });
+        const claimGate = new Promise<void>((resolve) => {
+            resolveClaim = resolve;
+        });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: async () => {
+                markClaimStarted();
+                await claimGate;
+                return { status: 'claimed' };
+            },
+            complete: () => Promise.resolve(),
+        });
+        const batch = compileBatch();
+
+        const execution = executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        await claimStarted;
+        commandBatchExecutionAuthorityPort.setProvider(() => false);
+        resolveClaim();
+        const result = await execution;
+
+        expect(result.status).toBe('cancelled');
+        expect(mutationCount).toBe(0);
+        expect(runtimeEffectCount).toBe(0);
+    });
+
     it('admits one concurrent claim and prevents the retry from duplicating effects', async () => {
         const batch = compileBatch();
         let releaseRuntimeEffect!: () => void;

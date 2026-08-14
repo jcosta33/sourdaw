@@ -8,11 +8,15 @@ const STORAGE_KEY = 'sourdaw:command-batch-idempotency:v1';
 const MAX_RECORDS = 4_096;
 const MAX_RECEIPT_BYTES = 1_048_576;
 const LOCK_NAME = 'sourdaw:command-batch-idempotency';
+const CLAIM_LOCK_PREFIX = `${LOCK_NAME}:claim:`;
 
 type RequestExclusiveLock = <TResult>(task: () => TResult | Promise<TResult>) => Promise<TResult>;
+type ClaimLease = { release: () => void };
+type TryAcquireClaimLease = (name: string) => Promise<ClaimLease | null>;
 
 type CreateLocalStorageCommandBatchIdempotencyRepositoryInput = {
     requestExclusiveLock?: RequestExclusiveLock;
+    tryAcquireClaimLease?: TryAcquireClaimLease;
 };
 
 type StoredRecord = {
@@ -113,8 +117,40 @@ function findRecord(
     );
 }
 
+function recordKey(input: { projectId: string; idempotencyKey: string }): string {
+    return `${input.projectId}\u0000${input.idempotencyKey}`;
+}
+
+function claimLockName(input: { projectId: string; idempotencyKey: string }): string {
+    return `${CLAIM_LOCK_PREFIX}${JSON.stringify([input.projectId, input.idempotencyKey])}`;
+}
+
 async function requestBrowserExclusiveLock<TResult>(task: () => TResult | Promise<TResult>): Promise<TResult> {
     return navigator.locks.request(LOCK_NAME, { mode: 'exclusive' }, task);
+}
+
+function tryAcquireBrowserClaimLease(name: string): Promise<ClaimLease | null> {
+    return new Promise<ClaimLease | null>((resolve, reject) => {
+        let release!: () => void;
+        const hold = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let acquisitionSettled = false;
+        const request = navigator.locks.request(name, { mode: 'exclusive', ifAvailable: true }, async (lock) => {
+            acquisitionSettled = true;
+            if (lock === null) {
+                resolve(null);
+                return;
+            }
+            resolve({ release });
+            await hold;
+        });
+        void request.catch((error: unknown) => {
+            if (!acquisitionSettled) {
+                reject(error instanceof Error ? error : new Error(String(error)));
+            }
+        });
+    });
 }
 
 // This safety ledger intentionally uses fresh reads inside a cross-client Web
@@ -124,6 +160,19 @@ export function createLocalStorageCommandBatchIdempotencyRepository(
     input: CreateLocalStorageCommandBatchIdempotencyRepositoryInput = {}
 ): CommandBatchIdempotencyRepository {
     const requestExclusiveLock = input.requestExclusiveLock ?? requestBrowserExclusiveLock;
+    const tryAcquireClaimLease = input.tryAcquireClaimLease ?? tryAcquireBrowserClaimLease;
+    const claimLeases = new Map<string, ClaimLease>();
+
+    function releaseClaimLease(input: { projectId: string; idempotencyKey: string }): void {
+        const key = recordKey(input);
+        const lease = claimLeases.get(key);
+        if (!lease) {
+            return;
+        }
+        claimLeases.delete(key);
+        lease.release();
+    }
+
     return {
         lookup(input): Promise<CommandBatchIdempotencyLookup> {
             return requestExclusiveLock(() => {
@@ -141,12 +190,15 @@ export function createLocalStorageCommandBatchIdempotencyRepository(
                 return { status: 'pending' };
             });
         },
-        claim(input): Promise<CommandBatchIdempotencyClaim> {
-            return requestExclusiveLock(() => {
-                validateIdentity(input);
-                const records = decodeRecords(localStorage.getItem(STORAGE_KEY));
-                const existing = findRecord(records, input);
-                if (existing) {
+        async claim(input): Promise<CommandBatchIdempotencyClaim> {
+            const key = recordKey(input);
+            if (claimLeases.has(key)) {
+                return requestExclusiveLock(() => {
+                    validateIdentity(input);
+                    const existing = findRecord(decodeRecords(localStorage.getItem(STORAGE_KEY)), input);
+                    if (!existing) {
+                        throw new Error('The live idempotency claim has no durable record');
+                    }
                     if (existing.contentHash !== input.contentHash) {
                         return { status: 'conflict' };
                     }
@@ -154,44 +206,114 @@ export function createLocalStorageCommandBatchIdempotencyRepository(
                         return { status: 'complete', serializedReceipt: existing.serializedReceipt };
                     }
                     return { status: 'pending' };
+                });
+            }
+            const lease = await tryAcquireClaimLease(claimLockName(input));
+            if (!lease) {
+                return requestExclusiveLock(() => {
+                    validateIdentity(input);
+                    const existing = findRecord(decodeRecords(localStorage.getItem(STORAGE_KEY)), input);
+                    if (!existing) {
+                        return { status: 'pending' };
+                    }
+                    if (existing.contentHash !== input.contentHash) {
+                        return { status: 'conflict' };
+                    }
+                    if (existing.state === 'complete' && existing.serializedReceipt) {
+                        return { status: 'complete', serializedReceipt: existing.serializedReceipt };
+                    }
+                    return { status: 'pending' };
+                });
+            }
+            let retainLease = false;
+            try {
+                const result = await requestExclusiveLock(() => {
+                    validateIdentity(input);
+                    const records = decodeRecords(localStorage.getItem(STORAGE_KEY));
+                    const existing = findRecord(records, input);
+                    if (existing) {
+                        if (existing.contentHash !== input.contentHash) {
+                            return { status: 'conflict' } as const;
+                        }
+                        if (existing.state === 'complete' && existing.serializedReceipt) {
+                            return { status: 'complete', serializedReceipt: existing.serializedReceipt } as const;
+                        }
+                        if (input.reclaimPending !== true) {
+                            return { status: 'pending' } as const;
+                        }
+                        persistRecords(
+                            records.map((record) =>
+                                record === existing ? { ...existing, updatedAt: Date.now() } : record
+                            )
+                        );
+                        return { status: 'claimed' } as const;
+                    }
+                    if (records.length >= MAX_RECORDS) {
+                        throw new Error('The durable idempotency store reached its retention limit');
+                    }
+                    const claimed: StoredRecord[] = [
+                        ...records,
+                        {
+                            schemaVersion: 1,
+                            projectId: input.projectId,
+                            idempotencyKey: input.idempotencyKey,
+                            contentHash: input.contentHash,
+                            state: 'pending',
+                            updatedAt: Date.now(),
+                        },
+                    ];
+                    persistRecords(claimed);
+                    return { status: 'claimed' } as const;
+                });
+                if (result.status === 'claimed') {
+                    claimLeases.set(key, lease);
+                    retainLease = true;
                 }
-                if (records.length >= MAX_RECORDS) {
-                    throw new Error('The durable idempotency store reached its retention limit');
+                return result;
+            } finally {
+                if (!retainLease) {
+                    lease.release();
                 }
-                const claimed: StoredRecord[] = [
-                    ...records,
-                    {
-                        schemaVersion: 1,
-                        projectId: input.projectId,
-                        idempotencyKey: input.idempotencyKey,
-                        contentHash: input.contentHash,
-                        state: 'pending',
-                        updatedAt: Date.now(),
-                    },
-                ];
-                persistRecords(claimed);
-                return { status: 'claimed' };
-            });
+            }
         },
-        complete(input): Promise<void> {
-            return requestExclusiveLock(() => {
-                validateIdentity(input);
-                const records = decodeRecords(localStorage.getItem(STORAGE_KEY));
-                const existing = findRecord(records, input);
-                if (!existing || existing.contentHash !== input.contentHash) {
-                    throw new Error('The durable idempotency claim no longer matches the completed batch');
-                }
-                if (new TextEncoder().encode(input.serializedReceipt).byteLength > MAX_RECEIPT_BYTES) {
-                    throw new Error('The verified batch receipt exceeds the durable idempotency limit');
-                }
-                const completed: StoredRecord = {
-                    ...existing,
-                    state: 'complete',
-                    serializedReceipt: input.serializedReceipt,
-                    updatedAt: Date.now(),
-                };
-                persistRecords(records.map((record) => (record === existing ? completed : record)));
-            });
+        async complete(input): Promise<void> {
+            try {
+                await requestExclusiveLock(() => {
+                    validateIdentity(input);
+                    const records = decodeRecords(localStorage.getItem(STORAGE_KEY));
+                    const existing = findRecord(records, input);
+                    if (!existing || existing.contentHash !== input.contentHash) {
+                        throw new Error('The durable idempotency claim no longer matches the completed batch');
+                    }
+                    if (new TextEncoder().encode(input.serializedReceipt).byteLength > MAX_RECEIPT_BYTES) {
+                        throw new Error('The verified batch receipt exceeds the durable idempotency limit');
+                    }
+                    const completed: StoredRecord = {
+                        ...existing,
+                        state: 'complete',
+                        serializedReceipt: input.serializedReceipt,
+                        updatedAt: Date.now(),
+                    };
+                    persistRecords(records.map((record) => (record === existing ? completed : record)));
+                });
+            } finally {
+                releaseClaimLease(input);
+            }
+        },
+        async release(input): Promise<void> {
+            try {
+                await requestExclusiveLock(() => {
+                    validateIdentity(input);
+                    const records = decodeRecords(localStorage.getItem(STORAGE_KEY));
+                    const existing = findRecord(records, input);
+                    if (!existing || existing.contentHash !== input.contentHash || existing.state === 'complete') {
+                        return;
+                    }
+                    persistRecords(records.filter((record) => record !== existing));
+                });
+            } finally {
+                releaseClaimLease(input);
+            }
         },
     };
 }

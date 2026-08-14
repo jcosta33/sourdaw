@@ -18,6 +18,7 @@ export const commandBatchIdempotencyPort = {
         projectId: string;
         idempotencyKey: string;
         contentHash: string;
+        reclaimPending?: boolean;
     }): Promise<CommandBatchIdempotencyClaim> | null {
         return repository?.claim(input) ?? null;
     },
@@ -28,6 +29,9 @@ export const commandBatchIdempotencyPort = {
         serializedReceipt: string;
     }): Promise<void> | null {
         return repository?.complete(input) ?? null;
+    },
+    release(input: { projectId: string; idempotencyKey: string; contentHash: string }): Promise<void> | null {
+        return repository?.release?.(input) ?? null;
     },
     isConfigured(): boolean {
         return repository !== null;

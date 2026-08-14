@@ -9,6 +9,13 @@ const HASH_TWO = `sha256:${'2'.repeat(64)}`;
 type RequestExclusiveLock = NonNullable<
     NonNullable<Parameters<typeof createLocalStorageCommandBatchIdempotencyRepository>[0]>['requestExclusiveLock']
 >;
+type ClaimLease = { release: () => void };
+type TryAcquireClaimLease = (name: string) => Promise<ClaimLease | null>;
+type ExtendedRepositoryInput = NonNullable<
+    Parameters<typeof createLocalStorageCommandBatchIdempotencyRepository>[0]
+> & {
+    tryAcquireClaimLease?: TryAcquireClaimLease;
+};
 
 async function requestImmediately<TResult>(task: () => TResult | Promise<TResult>): Promise<TResult> {
     return task();
@@ -31,10 +38,39 @@ function createSerializedExclusiveLock(): RequestExclusiveLock {
     };
 }
 
-function createRepository(requestExclusiveLock: RequestExclusiveLock = requestImmediately) {
-    return createLocalStorageCommandBatchIdempotencyRepository({
+function createRepository(
+    requestExclusiveLock: RequestExclusiveLock = requestImmediately,
+    tryAcquireClaimLease?: TryAcquireClaimLease
+) {
+    const createRepositoryWithLease = createLocalStorageCommandBatchIdempotencyRepository as (
+        input: ExtendedRepositoryInput
+    ) => ReturnType<typeof createLocalStorageCommandBatchIdempotencyRepository>;
+    return createRepositoryWithLease({
         requestExclusiveLock,
+        tryAcquireClaimLease: tryAcquireClaimLease ?? (() => Promise.resolve({ release: vi.fn() })),
     });
+}
+
+function createClaimLeaseManager() {
+    let activeRelease: (() => void) | null = null;
+    const tryAcquireClaimLease = vi.fn<TryAcquireClaimLease>(() => {
+        if (activeRelease) {
+            return Promise.resolve(null);
+        }
+        const release = vi.fn(() => {
+            if (activeRelease === release) {
+                activeRelease = null;
+            }
+        });
+        activeRelease = release;
+        return Promise.resolve({ release });
+    });
+    return {
+        crashOwner: () => {
+            activeRelease = null;
+        },
+        tryAcquireClaimLease,
+    };
 }
 
 describe('createLocalStorageCommandBatchIdempotencyRepository', () => {
@@ -50,19 +86,26 @@ describe('createLocalStorageCommandBatchIdempotencyRepository', () => {
         const request = vi.fn((_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()));
         vi.stubGlobal('navigator', { ...navigator, locks: { request } });
         const repository = createLocalStorageCommandBatchIdempotencyRepository();
+        const claimInput = {
+            projectId: 'project-1',
+            idempotencyKey: 'request-1',
+            contentHash: HASH_ONE,
+        };
 
-        await expect(
-            repository.claim({
-                projectId: 'project-1',
-                idempotencyKey: 'request-1',
-                contentHash: HASH_ONE,
-            })
-        ).resolves.toEqual({ status: 'claimed' });
-        expect(request).toHaveBeenCalledExactlyOnceWith(
+        await expect(repository.claim(claimInput)).resolves.toEqual({ status: 'claimed' });
+        expect(request).toHaveBeenNthCalledWith(
+            1,
+            expect.stringContaining('sourdaw:command-batch-idempotency:claim:'),
+            { mode: 'exclusive', ifAvailable: true },
+            expect.any(Function)
+        );
+        expect(request).toHaveBeenNthCalledWith(
+            2,
             'sourdaw:command-batch-idempotency',
             { mode: 'exclusive' },
             expect.any(Function)
         );
+        await repository.release?.(claimInput);
     });
 
     it('survives repository recreation and returns the exact completed receipt', async () => {
@@ -152,6 +195,25 @@ describe('createLocalStorageCommandBatchIdempotencyRepository', () => {
                 contentHash: HASH_ONE,
             })
         ).resolves.toEqual({ status: 'claimed' });
+    });
+
+    it('keeps a live origin-wide claimant exclusive but reclaims its orphaned pre-commit record after restart', async () => {
+        const claimLeaseManager = createClaimLeaseManager();
+        const firstRepository = createRepository(requestImmediately, claimLeaseManager.tryAcquireClaimLease);
+        const retryInput = {
+            projectId: 'project-1',
+            idempotencyKey: 'request-restart',
+            contentHash: HASH_ONE,
+            reclaimPending: true,
+        };
+
+        await expect(firstRepository.claim(retryInput)).resolves.toEqual({ status: 'claimed' });
+        const concurrentRepository = createRepository(requestImmediately, claimLeaseManager.tryAcquireClaimLease);
+        await expect(concurrentRepository.claim(retryInput)).resolves.toEqual({ status: 'pending' });
+
+        claimLeaseManager.crashOwner();
+        const restartedRepository = createRepository(requestImmediately, claimLeaseManager.tryAcquireClaimLease);
+        await expect(restartedRepository.claim(retryInput)).resolves.toEqual({ status: 'claimed' });
     });
 
     it('serializes concurrent clients so only one can claim a project and key', async () => {
