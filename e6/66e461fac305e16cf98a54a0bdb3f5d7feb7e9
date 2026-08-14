@@ -1,0 +1,19 @@
+tests/e2e/setlistMoveReorder.spec.ts
+  s_ab5443e65c7fba::t_24ccdfbb411a6d 1-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e666e461fac305e16cf98a54a0bdb3f5d7feb7e9",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
