@@ -1,0 +1,19 @@
+tests/e2e/proofChamberWidthKnobTestId.spec.ts
+  s_0883c3db1c701a::t_e3d5de0efb035b 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "342003b7116f61f91d57755da3c220eae71d76be",
+  "prompts": {},
+  "sessions": {
+    "s_0883c3db1c701a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-adbb9f052822cd77e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
