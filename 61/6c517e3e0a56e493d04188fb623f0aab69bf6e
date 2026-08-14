@@ -1,0 +1,59 @@
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  s_62e9c3dc3ba52a::t_be32fa8240b83f 188-198
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_62e9c3dc3ba52a::t_3ddf3c8b5304f8 564
+  s_62e9c3dc3ba52a::t_383c9ef4515292 244-246
+  s_62e9c3dc3ba52a::t_b5397267b8ac87 38
+  s_62e9c3dc3ba52a::t_1f38d5ec432e7e 464-487
+  s_62e9c3dc3ba52a::t_5b7286d8560ec7 970-974
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_62e9c3dc3ba52a::t_fb038925b74dfd 166-167,172-178,190-193
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_62e9c3dc3ba52a::t_3427dd90e62647 162-165
+src/modules/WorkspaceShell/presentations/components/MobileGate.tsx
+  s_62e9c3dc3ba52a::t_d2bd3e81834810 22-34
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_62e9c3dc3ba52a::t_03873b4251eedb 175,179-189
+  s_62e9c3dc3ba52a::t_af8bc9db74303f 190-191
+src/modules/WorkspaceShell/presentations/components/__tests__/ShortcutCheatSheet.spec.tsx
+  s_62e9c3dc3ba52a::t_5b8d6b08d45765 56-77
+src/components/daw/DawUtilityPanel.tsx
+  s_62e9c3dc3ba52a::t_dd201dff217d90 1,5-10
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_62e9c3dc3ba52a::t_b843e227675cb7 357-361
+  s_62e9c3dc3ba52a::t_7050579917de33 424
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_62e9c3dc3ba52a::t_e2c7f316d0348b 479-485,487
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_62e9c3dc3ba52a::t_4c63d19fd95f8f 17
+  s_62e9c3dc3ba52a::t_a38ded0763bb3f 660-673,676-677,680-706
+  s_62e9c3dc3ba52a::t_43c17a9fead648 330-332
+  s_62e9c3dc3ba52a::t_0ddfdcafa88f9e 674-675,678-679
+  s_62e9c3dc3ba52a::t_6a927daa394ea0 816-818
+  s_62e9c3dc3ba52a::t_254ebb99dea3f4 307
+  s_62e9c3dc3ba52a::t_70ad031f17c109 289
+src/modules/WorkspaceShell/presentations/hooks/useSelectionLabel.ts
+  s_62e9c3dc3ba52a::t_18d138e15bd298 46-47
+src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx
+  s_62e9c3dc3ba52a::t_22e10e61d5d680 186-188
+  s_62e9c3dc3ba52a::t_81b9fffeb6c01c 118-124
+  s_62e9c3dc3ba52a::t_8d8e4cc17e1f6c 131-132,139-156
+  s_62e9c3dc3ba52a::t_9fe0d3b537a801 1
+  s_62e9c3dc3ba52a::t_db795e38ae8d74 157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "616c517e3e0a56e493d04188fb623f0aab69bf6e",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
