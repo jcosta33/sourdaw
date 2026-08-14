@@ -1,0 +1,25 @@
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_991f4a657b4217 234,244-247
+  s_a40848e8f8cca9::t_01156adb21380b 248-250
+  s_a40848e8f8cca9::t_e783dc3cf7d217 251
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_ebc4a900d0ecce 625-700
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_991f4a657b4217 14,86-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "49d5a4ee48ed0cc13a42b92004b8627ba8d6acd9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
