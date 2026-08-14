@@ -623,10 +623,20 @@ describe('command batch contract', () => {
 
     it('dispatches one admitted commit batch as one compensated command group', async () => {
         const executionOrder: string[] = [];
+        const trackValues = {
+            'track-guitar': { gain: 1, pan: 0 },
+            'track-vocal': { gain: 1, pan: 0 },
+        };
         registerHandlerMap({
             setTrackGain: {
-                execute: () => {
+                canReapplyAfterDivergence: () => true,
+                execute: (action) => {
+                    const track = trackValues[action.payload.trackId as keyof typeof trackValues];
+                    if (!track || track.gain !== action.payload.expectedGain) {
+                        return { status: 'conflict' };
+                    }
                     executionOrder.push('gain');
+                    track.gain = action.payload.gain;
                     return { status: 'written' };
                 },
                 describe: (action) => ({
@@ -641,10 +651,20 @@ describe('command batch contract', () => {
                     },
                 }),
                 undoable: true,
+                validate: (action) => {
+                    const track = trackValues[action.payload.trackId as keyof typeof trackValues];
+                    return track?.gain === action.payload.expectedGain;
+                },
             },
             setTrackPan: {
-                execute: () => {
+                canReapplyAfterDivergence: () => true,
+                execute: (action) => {
+                    const track = trackValues[action.payload.trackId as keyof typeof trackValues];
+                    if (!track || track.pan !== action.payload.expectedPan) {
+                        return { status: 'conflict' };
+                    }
                     executionOrder.push('pan');
+                    track.pan = action.payload.pan;
                     return { status: 'written' };
                 },
                 describe: (action) => ({
@@ -659,6 +679,10 @@ describe('command batch contract', () => {
                     },
                 }),
                 undoable: true,
+                validate: (action) => {
+                    const track = trackValues[action.payload.trackId as keyof typeof trackValues];
+                    return track?.pan === action.payload.expectedPan;
+                },
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -691,6 +715,10 @@ describe('command batch contract', () => {
             actions: [{ action: { type: 'setTrackGain' } }, { action: { type: 'setTrackPan' } }],
         });
         expect(executionOrder).toEqual(['gain', 'pan']);
+        expect(trackValues).toEqual({
+            'track-guitar': { gain: 1, pan: -0.2 },
+            'track-vocal': { gain: 0.8, pan: 0 },
+        });
     });
 
     it('requires confirmation when the application did not grant auto-commit', async () => {

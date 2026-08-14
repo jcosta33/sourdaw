@@ -61,7 +61,7 @@ Verify with: `pnpm test:run -- Slicer`
 
 Every slice boundary must snap to the nearest zero crossing so playback is click-free.
 
-Verify with: `cargo test -p daw-dsp slice_zero_crossing`
+Verify with: `pnpm cargo:test -- -p daw-dsp slice_zero_crossing`
 
 ### AC-007 — Choke group cutoff
 

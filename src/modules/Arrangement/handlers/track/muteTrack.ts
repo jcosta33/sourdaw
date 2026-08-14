@@ -5,6 +5,7 @@ import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleMuteTrack = createHandler<'muteTrack'>({
+    canReapplyAfterDivergence: () => true,
     validate: (action, context) => {
         const currentMuted = getPlannedTrackState(context, action.payload.trackId)?.muted;
         return currentMuted === action.payload.expectedMuted;

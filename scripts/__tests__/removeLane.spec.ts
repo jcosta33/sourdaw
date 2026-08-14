@@ -9,7 +9,6 @@ import {
     parseWorktrees,
     removeLane,
     shellPort,
-    type CampaignIssue,
     type LaneRemovalPort,
     type PullRequest,
     type ShellRunner,
@@ -41,17 +40,6 @@ function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
         headRefOid: 'head',
         headRepository: 'jcosta33/sourdaw',
         mergedAt: '2026-08-12T00:00:00Z',
-        body: 'Part of #7.',
-        ...overrides,
-    };
-}
-
-function campaign(overrides: Partial<CampaignIssue> = {}): CampaignIssue {
-    return {
-        number: 7,
-        state: 'CLOSED',
-        body: 'Merged in #42.',
-        labels: [{ name: 'epic' }],
         ...overrides,
     };
 }
@@ -66,7 +54,6 @@ type FakeInput = {
     operation?: string;
     remoteHead?: string | null;
     pullRequests?: PullRequest[];
-    campaigns?: CampaignIssue[];
 };
 
 function fakePort(input: FakeInput = {}) {
@@ -85,7 +72,6 @@ function fakePort(input: FakeInput = {}) {
         operation: () => input.operation,
         remoteHead: () => (input.remoteHead === null ? undefined : (input.remoteHead ?? 'head')),
         pullRequests: () => input.pullRequests ?? [pullRequest()],
-        campaignIssues: (numbers) => (numbers.length === 0 ? [] : (input.campaigns ?? [campaign()])),
         lock: (path) => {
             calls.push(`lock:${path}`);
             locked = true;
@@ -100,20 +86,12 @@ function fakePort(input: FakeInput = {}) {
 }
 
 describe('lane removal', () => {
-    it('removes a clean inactive campaign lane after two stable reads', () => {
+    it('removes a clean inactive lane after two stable reads', () => {
         const { port, calls } = fakePort();
 
         removeLane(target, port);
 
         expect(calls).toEqual(['fetch', `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
-    });
-
-    it('removes a lane whose campaign ledger is still open', () => {
-        const { port, calls } = fakePort({ campaigns: [campaign({ state: 'OPEN' })] });
-
-        removeLane(target, port);
-
-        expect(calls).toContain(`remove:${target}`);
     });
 
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
@@ -143,51 +121,6 @@ describe('lane removal', () => {
         ['open PR', target, { pullRequests: [pullRequest({ state: 'OPEN', mergedAt: null })] }, /still active/],
         ['foreign repository', target, { pullRequests: [pullRequest({ headRepository: 'jcosta33/fork' })] }, /foreign/],
         ['reused branch', target, { pullRequests: [pullRequest(), pullRequest({ number: 43 })] }, /one pull request/],
-        [
-            'unlinked campaign',
-            target,
-            { campaigns: [campaign({ body: 'Other work.' })] },
-            /is not named back by any epic ledger it references \(#7\)/,
-        ],
-        [
-            'bare-number campaign',
-            target,
-            { campaigns: [campaign({ body: 'Rebased onto 42 commits.' })] },
-            /is not named back by any epic ledger/,
-        ],
-        [
-            'foreign-repository record',
-            target,
-            { campaigns: [campaign({ body: 'Blocked on https://github.com/vitejs/vite/pull/42' })] },
-            /is not named back by any epic ledger/,
-        ],
-        [
-            'self-referencing pull request',
-            target,
-            {
-                pullRequests: [pullRequest({ body: 'Part of #7. This PR #42 closes phase 3.' })],
-                campaigns: [campaign({ body: 'Other work.' }), { ...campaign({ number: 42 }), body: 'This PR #42.' }],
-            },
-            /is not named back by any epic ledger it references \(#7\)/,
-        ],
-        [
-            'non-epic issue',
-            target,
-            { campaigns: [campaign({ labels: [{ name: 'bug' }] })] },
-            /references no epic-labelled ledger issue/,
-        ],
-        [
-            'foreign-tracker reference',
-            target,
-            { pullRequests: [pullRequest({ body: 'Part of https://github.com/other/repo/issues/7.' })] },
-            /references no epic-labelled ledger issue/,
-        ],
-        [
-            'two claiming ledgers',
-            target,
-            { campaigns: [campaign(), campaign({ number: 8 })] },
-            /claimed by epic ledgers #7, #8/,
-        ],
         ['moved remote', target, { remoteHead: 'moved' }, /ownership is unproven/],
     ])('rejects a %s lane', (_case, path, input, message) => {
         const { port, calls } = fakePort(input);
@@ -206,28 +139,6 @@ describe('lane removal', () => {
 
         expect(calls).toEqual(['fetch', `unlock:${target}`, `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
     });
-
-    it.each(['Part of (#7).', 'Part of https://github.com/jcosta33/sourdaw/issues/7.'])(
-        'accepts campaign reference form: %s',
-        (body) => {
-            const { port, calls } = fakePort({ pullRequests: [pullRequest({ body })] });
-
-            removeLane(target, port);
-
-            expect(calls).toContain(`remove:${target}`);
-        }
-    );
-
-    it.each(['Recorded: #42', 'Merged https://github.com/jcosta33/sourdaw/pull/42'])(
-        'accepts ledger record form: %s',
-        (body) => {
-            const { port, calls } = fakePort({ campaigns: [campaign({ body })] });
-
-            removeLane(target, port);
-
-            expect(calls).toContain(`remove:${target}`);
-        }
-    );
 });
 
 describe('worktree parser', () => {
@@ -270,7 +181,6 @@ describe('lane-removal shell boundary', () => {
                                     repo: { full_name: 'jcosta33/sourdaw' },
                                 },
                                 merged_at: '2026-08-12T00:00:00Z',
-                                body: 'Part of #7.',
                             },
                         ],
                     ]);
@@ -304,27 +214,6 @@ describe('lane-removal shell boundary', () => {
         expect(runs.at(-1)).toEqual({ command: 'git', args: ['worktree', 'remove', target] });
     });
 
-    it('drops a referenced number that GitHub resolves to a pull request', () => {
-        const shell: ShellRunner = {
-            capture: (command, args) => {
-                if (args.includes('nameWithOwner')) {
-                    return 'jcosta33/sourdaw';
-                }
-                const path = args[1] ?? '';
-                if (path === 'repos/jcosta33/sourdaw/issues/7') {
-                    return JSON.stringify({ ...campaign(), isPullRequest: false });
-                }
-                if (path === 'repos/jcosta33/sourdaw/issues/42') {
-                    return JSON.stringify({ ...campaign({ number: 42 }), isPullRequest: true });
-                }
-                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
-            },
-            run: () => undefined,
-        };
-
-        expect(shellPort(shell).campaignIssues([7, 42])).toEqual([{ ...campaign(), isPullRequest: false }]);
-    });
-
     it('preserves ignored data and removes disposable output in a real worktree', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-remove-'));
         const lane = join(repository, '.agents/worktrees/feature');
@@ -356,7 +245,6 @@ describe('lane-removal shell boundary', () => {
                 operation: () => undefined,
                 remoteHead: () => undefined,
                 pullRequests: () => [pullRequest({ headRefOid: head })],
-                campaignIssues: () => [campaign()],
                 lock: (path) => {
                     git(['worktree', 'lock', '--reason', 'test', path]);
                 },

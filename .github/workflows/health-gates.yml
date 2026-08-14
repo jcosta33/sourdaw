@@ -22,8 +22,8 @@ name: Health gates
 # Until then the same checks run locally, and the equivalents are:
 #
 #   pnpm test:health-gates
-#   ./scripts/health-gates-web.sh
-#   ./scripts/health-gates-server.sh
+#   pnpm health:web:full
+#   pnpm health:server:full
 #
 # `health-gates-server.sh` covers the collaboration server build *and* the Rust
 # workspace (clippy --all-targets, then cargo test in debug). It is one script
@@ -63,9 +63,7 @@ jobs:
         run: pnpm test:health-gates
 
       - name: Web health gates
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: ./scripts/health-gates-web.sh
+        run: pnpm health:web:full
 
   server:
     name: Collaboration server and Rust workspace health gates
@@ -80,6 +78,9 @@ jobs:
           node-version: 22.17.0
           cache: npm
           cache-dependency-path: server/package-lock.json
+
+      - name: Enable Corepack
+        run: corepack enable
 
       # daw-engine depends on cpal, whose Linux backend builds against ALSA.
       - name: Install ALSA development headers
@@ -109,7 +110,7 @@ jobs:
       # (clippy --all-targets, then cargo test in debug). One script so the
       # local run and the CI run cannot drift.
       - name: Server and Rust workspace health gates
-        run: ./scripts/health-gates-server.sh
+        run: pnpm health:server:full
 
   # E2E gate. Inert while this workflow is `workflow_dispatch`-only (Actions
   # billing is suspended — see the header comment). To activate, restore the
@@ -137,7 +138,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run Playwright E2E suite
-        run: npx playwright test --workers=1
+        run: pnpm test:e2e:full
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

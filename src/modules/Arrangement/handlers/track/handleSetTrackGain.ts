@@ -6,6 +6,7 @@ import { setTrackGain } from '../../useCases/setTrackGainPan/setTrackGain';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackGain = createHandler<'setTrackGain'>({
+    canReapplyAfterDivergence: () => true,
     validate: (action, context) => {
         const currentGain = getPlannedTrackState(context, action.payload.trackId)?.gain;
         return currentGain === action.payload.expectedGain;

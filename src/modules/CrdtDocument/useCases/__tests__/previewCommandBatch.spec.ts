@@ -391,31 +391,45 @@ describe('previewCommandBatch', () => {
         vi.restoreAllMocks();
     });
 
-    it('applies the commit handler to isolated CRDT state and releases its owned preview resource', async () => {
+    it('applies a guarded commit handler to isolated CRDT state and releases its owned preview resource', async () => {
         let ownedWorkspace: ReturnType<typeof createCommandPreviewWorkspace> | null = null;
         commandBatchPreviewPort.setProvider((baseRevision) => {
             ownedWorkspace = createCommandPreviewWorkspace(baseRevision);
             return ownedWorkspace;
         });
-        const tempoStore = createStore({
-            storage: createAutomergeStorage<{ bpm: number }>('root', 'tempo'),
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.previewGain = { gain: 1 };
         });
-        tempoStore.hydrate();
-        const execute = vi.fn((action: { payload: { bpm: number } }) => {
-            tempoStore.set({ bpm: action.payload.bpm });
+        const gainStore = createStore({
+            storage: createAutomergeStorage<{ gain: number }>('root', 'previewGain'),
+        });
+        gainStore.hydrate();
+        const execute = vi.fn((action: { payload: { expectedGain: number; gain: number } }) => {
+            if (gainStore.value?.gain !== action.payload.expectedGain) {
+                return { status: 'conflict' as const };
+            }
+            gainStore.set({ gain: action.payload.gain });
             return { status: 'written' as const };
         });
         registerHandlerMap({
-            setTempo: {
-                describe: () => ({
-                    inverseAction: { type: 'setTempo', payload: { bpm: tempoStore.value?.bpm ?? 100 } },
-                    label: 'Set tempo to 120 BPM',
+            setTrackGain: {
+                canReapplyAfterDivergence: () => true,
+                describe: (action) => ({
+                    inverseAction: {
+                        type: 'setTrackGain',
+                        payload: {
+                            trackId: action.payload.trackId,
+                            gain: gainStore.value?.gain ?? action.payload.expectedGain,
+                            expectedGain: action.payload.gain,
+                        },
+                    },
+                    label: 'Set preview track gain',
                 }),
                 execute,
                 previewExecution: 'isolated-project',
                 requiresAbortCompensation: false,
                 undoable: true,
-                validate: () => true,
+                validate: (action) => gainStore.value?.gain === action.payload.expectedGain,
             },
         });
         const inspectedDocuments: Array<Readonly<Record<string, unknown>> | undefined> = [];
@@ -428,54 +442,59 @@ describe('previewCommandBatch', () => {
                 lockedRanges: [],
                 projectId: 'project-preview',
                 projectInvariantsValid: true,
-                targetFingerprints: {},
+                targetFingerprints: { 'track-preview': 'fixture-track-preview' },
             };
         });
         const revision = captureProjectRevision();
         const command = createVersionedCommandEnvelope({
-            action: { type: 'setTempo', payload: { bpm: 120 } },
+            action: {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-preview', gain: 0.8, expectedGain: 1 },
+            },
             availableDeviceVersions: {},
-            expectedEffect: 'Tempo becomes 120 beats per minute.',
+            expectedEffect: 'Preview track gain becomes 0.8.',
             normalizedProjectRevision: revision,
-            objectReferences: [],
-            parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
-            reason: 'Preview a tempo change.',
+            objectReferences: [{ argument: 'trackId', id: 'track-preview', scope: 'stable' }],
+            parameterUnits: [
+                { argument: 'gain', unit: 'linear-gain' },
+                { argument: 'expectedGain', unit: 'linear-gain' },
+            ],
+            reason: 'Preview a guarded gain change.',
             time: [],
         });
         const previewBatch = compileVersionedCommandBatchEnvelope({
             baseRevision: revision,
             batchId: 'batch-preview',
             commands: [serializeVersionedCommandEnvelope(command)],
-            intent: 'Preview tempo change',
+            intent: 'Preview guarded gain change',
             mode: 'preview',
             projectId: 'project-preview',
             runId: 'run-preview',
         });
         const liveDocumentBefore = JSON.stringify(automergeRepository.getDoc<Record<string, unknown>>('root'));
         const liveHeadsBefore = automergeRepository.getHeads('root');
-        const observedLiveValues: Array<{ bpm: number } | null> = [];
-        const unsubscribe = tempoStore.subscribe((value) => observedLiveValues.push(value));
+        const observedLiveValues: Array<{ gain: number } | null> = [];
+        const unsubscribe = gainStore.subscribe((value) => observedLiveValues.push(value));
 
         const preview = await executeVersionedCommandBatchEnvelope({
             authority: previewBatch.authority,
             serialized: previewBatch.serialized,
             options: { skipUndo: true },
         });
-
         expect(preview).toMatchObject({
             status: 'previewed',
             audioGraphValid: true,
             baseRevision: revision,
-            projectDocument: { tempo: { bpm: 120 } },
+            projectDocument: { previewGain: { gain: 0.8 } },
             projectInvariantsValid: true,
         });
         expect(execute).toHaveBeenCalledTimes(1);
-        expect(tempoStore.value).toEqual({ bpm: 100 });
+        expect(gainStore.value).toEqual({ gain: 1 });
         expect(JSON.stringify(automergeRepository.getDoc('root'))).toBe(liveDocumentBefore);
         expect(automergeRepository.getHeads('root')).toEqual(liveHeadsBefore);
         expect(captureProjectRevision()).toBe(revision);
         expect(observedLiveValues).toEqual([]);
-        expect(inspectedDocuments).toEqual([undefined, expect.objectContaining({ tempo: { bpm: 120 } })]);
+        expect(inspectedDocuments).toEqual([undefined, expect.objectContaining({ previewGain: { gain: 0.8 } })]);
 
         if (preview.status !== 'previewed') {
             throw new Error('Expected a preview resource');
@@ -488,7 +507,7 @@ describe('previewCommandBatch', () => {
             baseRevision: revision,
             batchId: 'batch-commit',
             commands: [serializeVersionedCommandEnvelope(command)],
-            intent: 'Commit tempo change',
+            intent: 'Commit guarded gain change',
             mode: 'commit',
             projectId: 'project-preview',
             runId: 'run-commit',
@@ -502,7 +521,7 @@ describe('previewCommandBatch', () => {
 
         expect(committed.status, JSON.stringify(committed)).toBe('committed');
         expect(execute).toHaveBeenCalledTimes(2);
-        expect(tempoStore.value).toEqual({ bpm: 120 });
+        expect(gainStore.value).toEqual({ gain: 0.8 });
         unsubscribe();
     });
 

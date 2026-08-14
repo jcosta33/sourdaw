@@ -30,33 +30,33 @@ export. This is the shared loudness foundation other features build on.
 Loading the EBU R 128 `-23 LUFS` reference signal and playing must read short-term LUFS
 within ±0.1 LU of −23.0 on the metering UI.
 
-Verify with: `cargo test -p daw-dsp ebur128_short_term_accuracy`
+Verify with: `pnpm cargo:test -- -p daw-dsp ebur128_short_term_accuracy`
 
 ### AC-002 — True-peak detection
 
 True-peak measurement must flag inter-sample peaks above −1.0 dBTP on the reference
 true-peak fixture within one block of the peak.
 
-Verify with: `cargo test -p daw-dsp ebur128_true_peak`
+Verify with: `pnpm cargo:test -- -p daw-dsp ebur128_true_peak`
 
 ### AC-003 — Steady-rate metering channel
 
 The metering channel must deliver frames at 30 ± 3 Hz over a 60 s window while playing.
 
-Verify with: `cargo test -p daw-dsp ebur128_meter_rate_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-dsp ebur128_meter_rate_no_alloc`
 
 ### AC-004 — Loudness report on offline export
 
 Offline export must write a loudness report (integrated, short-term max, momentary max,
 true-peak) per delivered stem.
 
-Verify with: `cargo test -p daw-io export_loudness_report`
+Verify with: `pnpm cargo:test -- -p daw-io export_loudness_report`
 
 ### AC-005 — No-alloc audio thread
 
 The audio thread must perform zero allocations while feeding the analyser.
 
-Verify with: `cargo test -p daw-dsp ebur128_meter_rate_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-dsp ebur128_meter_rate_no_alloc`
 
 ## Open questions
 

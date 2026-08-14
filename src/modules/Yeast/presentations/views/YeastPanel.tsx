@@ -211,6 +211,7 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
             <ProcessorParams
                 processorId={processor.id}
                 processorType={processor.type}
+                params={processor.params}
                 onSetParam={handleSetYeastProcessorParam}
                 onCommand={sendYeastProcessorCommand}
                 grooveTemplates={grooveState.templates.map(({ id, name }) => ({ id, name }))}

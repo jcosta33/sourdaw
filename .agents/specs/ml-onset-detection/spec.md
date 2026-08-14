@@ -30,14 +30,14 @@ back to the existing spectral-flux detector where ML inference is unavailable.
 A small ONNX onset model must run via the existing `ort` runtime and expose a command
 returning onset events with frame position and confidence.
 
-Verify with: `cargo test -p daw-dsp detect_onsets_ml`
+Verify with: `pnpm cargo:test -- -p daw-dsp detect_onsets_ml`
 
 ### AC-002 — Accuracy beats spectral flux on the reference set
 
 The detector must place onsets on the reference drum-break fixture with >94% precision
 vs the hand-marked ground truth.
 
-Verify with: `cargo test -p daw-dsp onset_ml_precision`
+Verify with: `pnpm cargo:test -- -p daw-dsp onset_ml_precision`
 
 ### AC-003 — Spectral-flux fallback without ONNX
 

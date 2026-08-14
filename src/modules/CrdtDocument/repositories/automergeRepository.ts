@@ -271,6 +271,15 @@ class AutomergeRepository {
         return this.docs.get(id) as Doc<TDoc> | undefined;
     }
 
+    /** Read one historical document state without replacing current authority. */
+    getDocAtHeads<TDoc = AnyDoc>(id: DocId, heads: Heads): Doc<TDoc> | undefined {
+        const doc = this.docs.get(id);
+        if (!doc) {
+            return undefined;
+        }
+        return view(doc, heads) as Doc<TDoc>;
+    }
+
     /** Check if a document exists. */
     hasDoc(id: DocId): boolean {
         return this.docs.has(id);

@@ -62,7 +62,7 @@ When the subject is built with the project’s inject/container pattern, swap de
 pnpm test:run path/to/__tests__/file.spec.ts
 ```
 
-Never claim green without a run. Prefer the specific file over the full suite.
+Run the affected file. Never expand to the full suite.
 
 **Why:** an unrun test is not a test.
 

@@ -32,14 +32,14 @@ When a note triggers on native, the engine must play from a preloaded attack
 buffer while a background thread streams the remainder, performing no disk I/O on
 the audio thread.
 
-Verify with: `cargo test -p daw-dsp levain::lod::native_streaming_no_io`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::lod::native_streaming_no_io`
 
 ### AC-002 — Web preloads within a hard memory cap
 
 When running on the web/WASM backend, the engine must load samples into memory
 within the configured cap and never attempt disk streaming.
 
-Verify with: `cargo test -p daw-dsp levain::lod::wasm_within_cap`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::lod::wasm_within_cap`
 
 ### AC-003 — The quality governor sheds detail in a defined order
 
@@ -47,21 +47,21 @@ When the processing budget is exceeded, the governor must disable detail in the
 defined LOD order (ambient mics → velocity layers → round robins → interval
 transitions) rather than glitching.
 
-Verify with: `cargo test -p daw-dsp levain::lod::shed_order`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::lod::shed_order`
 
 ### AC-004 — Shedding and restoring detail is glitch-free
 
 When the governor changes LOD level mid-performance, it must transition without a
 discontinuity in the output.
 
-Verify with: `cargo test -p daw-dsp levain::lod::transition_glitch_free`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::lod::transition_glitch_free`
 
 ### AC-005 — Per-archetype voice budgets are enforced
 
 When voices for a patch archetype reach its budget, the engine must hold within
 that budget by stealing or shedding rather than exceeding it.
 
-Verify with: `cargo test -p daw-dsp levain::lod::voice_budget_enforced`
+Verify with: `pnpm cargo:test -- -p daw-dsp levain::lod::voice_budget_enforced`
 
 ## Open questions
 

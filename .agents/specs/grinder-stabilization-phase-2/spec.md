@@ -33,21 +33,21 @@ metal-voiced starting point.
 When overdrive is set to moderate values, the pedal output must remain within a sane
 loudness ratio relative to the bypassed path.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — Overdrive still changes tone audibly
 
 When overdrive is enabled, the recalibrated pedal must still audibly change the signal
 path and must not collapse into a no-op.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — Gate closes more decisively when enabled
 
 When the gate is enabled, the DSP gate must reach a substantially lower closed-gain
 floor than the prior soft-expander behavior, asserted directly via `NoiseGate::gain()`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Metal preset coverage exists
 
@@ -95,7 +95,7 @@ Verify with: `pnpm test:run -- grinderPresets GrinderPanel`
 When overdrive is set to low-drive settings, the pedal must permit near-unity output
 rather than only added boost.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ## Open questions
 

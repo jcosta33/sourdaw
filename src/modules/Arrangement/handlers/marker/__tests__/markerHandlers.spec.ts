@@ -294,7 +294,11 @@ describe('marker action handlers', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'setMarkerColor',
-            payload: { markerId: 'm1', color: '#old' },
+            payload: { markerId: 'm1', color: '#old', expectedColor: '#new' },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'setMarkerColor',
+            payload: { markerId: 'm1', color: '#new', expectedColor: '#old' },
         });
     });
 
@@ -305,6 +309,21 @@ describe('marker action handlers', () => {
         });
 
         expect(desc.inverseAction).toBeNull();
+    });
+
+    it('handleSetMarkerColor refuses a guarded inverse after a collaborator changes the color', () => {
+        mocks.getMarkerState.mockReturnValue({
+            markers: [{ id: 'm1', beat: 8, name: 'Verse', color: '#collaborator' }],
+            sections: [],
+        });
+
+        const result = handleSetMarkerColor.execute({
+            type: 'setMarkerColor',
+            payload: { markerId: 'm1', color: '#old', expectedColor: '#new' },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setMarkerColor).not.toHaveBeenCalled();
     });
 
     it('handleSetMarkerColor reports truthful no-write execution', () => {

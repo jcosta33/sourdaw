@@ -34,28 +34,28 @@ voice registry, render queue, and progress state.
 Given MIDI notes, lyrics, a voice model id, and a quality mode, `render_singing_phrase` must
 run phonemize → variance → acoustic → vocoder and return a path to a 44.1 kHz WAV.
 
-Verify with: `cargo test -p src-tauri singing_pipeline`
+Verify with: `pnpm cargo:test -- -p src-tauri singing_pipeline`
 
 ### AC-002 — Inference never touches the audio thread
 
 The pipeline must run on Tokio async tasks only; no ONNX inference, allocation, or blocking
 runs on the CPAL audio thread.
 
-Verify with: `cargo test -p daw-engine rt_safety`
+Verify with: `pnpm cargo:test -- -p daw-engine rt_safety`
 
 ### AC-003 — Model router dispatches by declared runtime
 
 The router must send `onnx-native` models to in-process `ort` and `python-sidecar` models to
 the stdin-JSON sidecar, selected from each model's `runtime` field.
 
-Verify with: `cargo test -p src-tauri model_router`
+Verify with: `pnpm cargo:test -- -p src-tauri model_router`
 
 ### AC-004 — Model registry downloads with SHA256 verification
 
 Voicebanks and vocoders must download through the existing `model_download` path with
 per-file SHA256 verification, persisting to the model cache across restarts.
 
-Verify with: `cargo test -p src-tauri model_registry`
+Verify with: `pnpm cargo:test -- -p src-tauri model_registry`
 
 ### AC-005 — Preview and final quality modes use distinct vocoders
 
@@ -68,7 +68,7 @@ Verify with: `pnpm test:run -- renderPhrase`
 Re-rendering a phrase whose MIDI, lyrics, voice, quality, steps, and seed are unchanged must
 return the cached WAV without running inference.
 
-Verify with: `cargo test -p src-tauri render_cache`
+Verify with: `pnpm cargo:test -- -p src-tauri render_cache`
 
 ### AC-007 — Edited phrases are marked stale
 
@@ -89,7 +89,7 @@ Verify with: `pnpm test:run -- renderQueue`
 When the Python sidecar is not installed, an RVC request must fail fast with a single
 user-visible error and must not degrade DiffSinger-only rendering.
 
-Verify with: `cargo test -p src-tauri rvc_sidecar_missing`
+Verify with: `pnpm cargo:test -- -p src-tauri rvc_sidecar_missing`
 
 ### AC-010 — No non-commercial weights are bundled or auto-downloaded
 
@@ -131,14 +131,14 @@ Verify with: `pnpm test:run -- renderProgress stageLabels`
 Each rendered phrase must store voice name, language, seed, render quality (preview/final),
 diffusion steps, model version, and render timestamp, retrievable from the frontend inspector.
 
-Verify with: `cargo test -p src-tauri provenance_metadata`
+Verify with: `pnpm cargo:test -- -p src-tauri provenance_metadata`
 
 ### AC-016 — RVC sidecar crash does not crash the app and re-spawns
 
 If the Python sidecar exits mid-job, the RVC job must fail with a user-visible error and the
 app must not crash.
 
-Verify with: `cargo test -p src-tauri rvc_sidecar_crash`
+Verify with: `pnpm cargo:test -- -p src-tauri rvc_sidecar_crash`
 
 ### AC-017 — Rendered WAV plays back on all three platforms unchanged
 
@@ -167,7 +167,7 @@ Verify with: `pnpm test:run -- renderProgress stageLabels`
 A new RVC request after a crash must re-spawn the sidecar with a single immediate retry (no
 exponential backoff in v1).
 
-Verify with: `cargo test -p src-tauri rvc_sidecar_crash`
+Verify with: `pnpm cargo:test -- -p src-tauri rvc_sidecar_crash`
 
 ### AC-021 — A single `invokeLlm` use case owns all LLM dispatch
 
@@ -189,7 +189,7 @@ validated against OpenUtau's output for the same inputs using reference test cas
 floating-point, tensor-padding, or phoneme-handling differences between the C# and Rust
 implementations must not produce divergent audio beyond a documented tolerance.
 
-Verify with: `cargo test -p src-tauri diffsinger_openutau_parity`
+Verify with: `pnpm cargo:test -- -p src-tauri diffsinger_openutau_parity`
 
 ### AC-022 — AI undo snapshots only the documents the edit touched
 

@@ -31,27 +31,27 @@ all within the audio thread's real-time constraints.
 The oscillator must convert a wavetable frame to its complex spectrum and back
 with round-trip error below an inaudible threshold.
 
-Verify with: `cargo test -p daw-dsp fermenter::frame_spectral_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::frame_spectral_roundtrip`
 
 ### AC-002 — Eleven Vital-style spectral transforms are available
 
 The `WarpMode` enum must expand to include 11 spectral transformations, each
 producing its defined effect on the spectrum.
 
-Verify with: `cargo test -p daw-dsp fermenter::spectral_transforms`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::spectral_transforms`
 
 ### AC-003 — Spectral synthesis is real-time safe
 
 Spectral processing must not allocate, lock, or block on the audio thread.
 
-Verify with: `cargo test -p daw-dsp fermenter::spectral_assert_no_alloc`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::spectral_assert_no_alloc`
 
 ### AC-004 — Spectral table updates run at a bounded cadence
 
 Recomputing the spectral table on a parameter change must occur at a bounded
 cadence (not every sample) so audio-rate processing stays within budget.
 
-Verify with: `cargo test -p daw-dsp fermenter::bounded_update_cadence`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::bounded_update_cadence`
 
 ### AC-005 — The TypeScript bridge exposes the spectral modes
 
@@ -84,7 +84,7 @@ the spectral engine and oscillator wiring living in the Fermenter DSP module
 `synth.rs` or `oscillator.rs` as candidates; `oscillator.rs` is the one that
 exists) — not as a time-domain approximation.
 
-Verify with: `cargo test -p daw-dsp fermenter::spectral_frequency_domain`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::spectral_frequency_domain`
 
 ## Open questions
 
