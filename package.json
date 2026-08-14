@@ -18,7 +18,6 @@
         "health:web": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- sh scripts/health-gates-web.sh",
         "health:server": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- sh scripts/health-gates-server.sh",
         "test:run": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused --require-target -- vitest run",
-        "test:related": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused --require-target -- vitest related",
         "test:full": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- vitest run",
         "test:collection-scope": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- node --experimental-strip-types scripts/checkVitestCollectionScope.ts",
         "test:command-schema": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node scripts/generateVersionedCommandArgumentSchemas.mjs --check",

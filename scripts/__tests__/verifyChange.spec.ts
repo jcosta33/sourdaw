@@ -34,25 +34,27 @@ describe('verify change planning', () => {
         }
     });
 
-    it('keeps a module change targeted and bounds every selected test runner', () => {
+    it('does not guess tests from a production file', () => {
         const checks = plan(['src/modules/Project/useCases/saveProject.ts']);
 
-        expect(checks.map((check) => check.id)).toContain('vitest-related-src');
+        expect(checks.map((check) => check.id)).not.toContain('vitest-changed-specs');
         expect(checks.map((check) => check.id)).not.toContain('e2e-targeted');
-        expect(checks.find((check) => check.id === 'vitest-related-src')?.args).toEqual([
-            'test:related',
-            'src/modules/Project/useCases/saveProject.ts',
-            '--run',
-            '--passWithNoTests',
-        ]);
     });
 
-    it('keeps shared web state on related tests', () => {
-        const checks = plan(['src/infra/storage/projectRepository.ts']);
-        const unit = checks.find((check) => check.id === 'vitest-related-src');
+    it('runs only changed spec files', () => {
+        const checks = plan([
+            'src/modules/Project/useCases/saveProject.ts',
+            'src/modules/Project/useCases/__tests__/saveProject.spec.ts',
+            'scripts/__tests__/verifyProject.spec.ts',
+        ]);
+        const unit = checks.find((check) => check.id === 'vitest-changed-specs');
 
         expect(unit).toMatchObject({ heavyweight: false });
-        expect(unit?.args).toContain('src/infra/storage/projectRepository.ts');
+        expect(unit?.args).toEqual([
+            'test:run',
+            'scripts/__tests__/verifyProject.spec.ts',
+            'src/modules/Project/useCases/__tests__/saveProject.spec.ts',
+        ]);
     });
 
     it('gives the web build its broad timeout profile', () => {
@@ -76,12 +78,10 @@ describe('verify change planning', () => {
         ).toContain('e2e-targeted');
     });
 
-    it('keeps script tests when shared web code changes in the same diff', () => {
+    it('does not infer script tests from tooling changes', () => {
         const checks = plan(['src/infra/storage/projectRepository.ts', 'scripts/verifyProject.ts']);
 
-        expect(checks.map((check) => check.id)).toEqual(
-            expect.arrayContaining(['vitest-related-src', 'vitest-related-scripts'])
-        );
+        expect(checks.map((check) => check.id)).not.toContain('vitest-changed-specs');
     });
 
     it('never passes a deleted source file to a file-taking check', () => {
@@ -91,7 +91,7 @@ describe('verify change planning', () => {
         });
 
         expect(checks.find((check) => check.id === 'lint-changed')).toBeUndefined();
-        expect(checks.map((check) => check.id)).not.toContain('vitest-related-src');
+        expect(checks.map((check) => check.id)).not.toContain('vitest-changed-specs');
     });
 
     it('checks the reverse Cargo dependency closure supplied by live metadata', () => {
@@ -157,8 +157,7 @@ describe('git change parsing', () => {
             expect(output).toContain('deleted: src/infra/old.ts');
             expect(output).toContain('present: src/modules/New/new.ts');
             expect(output).toContain('present: scripts/untracked.ts');
-            expect(output).toContain('vitest-related-src');
-            expect(output).toContain('vitest-related-scripts');
+            expect(output).not.toContain('vitest-changed-specs');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
