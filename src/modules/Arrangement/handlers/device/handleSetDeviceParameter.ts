@@ -152,6 +152,11 @@ function createRuntimeParameterRollbackFailure(input: {
 }
 
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
+    canReapplyAfterDivergence: (action) =>
+        action.payload.expectedTrackId !== undefined &&
+        action.payload.expectedDeviceType !== undefined &&
+        action.payload.expectedDeviceIds !== undefined &&
+        action.payload.expectedValuePresent !== undefined,
     validate: (action, context) => executionGuardsMatch(action, context),
     prepareAbort: (action) => {
         const rollbackAutomationRecording = captureAutomationRecordingRollback();

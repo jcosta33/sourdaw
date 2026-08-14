@@ -56,6 +56,13 @@ describe('master-gain guarded replay handlers', () => {
             payload: { expectedPercent: 65, replacementPercent: 80 },
         } satisfies Parameters<typeof handleRestoreMasterGain.execute>[0];
 
+        expect(handleRestoreMasterGain.canReapplyAfterDivergence?.(action)).toBe(true);
+        expect(
+            handleRestoreMasterGain.validate?.(action, {
+                actions: [action],
+                actionIndex: 0,
+            })
+        ).toBe(false);
         expect(handleRestoreMasterGain.execute(action)).toEqual({ status: 'conflict' });
         expect(mocks.replaceMasterGain).not.toHaveBeenCalled();
     });

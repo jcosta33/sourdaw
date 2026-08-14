@@ -26,7 +26,7 @@ export const createWarpMarker = (
     warpedBeat: number,
     options?: { origin?: WarpMarkerOrigin; confidence?: number; locked?: boolean }
 ): WarpMarker => ({
-    id: `warp-${crypto.randomUUID().slice(0, 8)}`,
+    id: `warp-${crypto.randomUUID()}`,
     originalBeat,
     warpedBeat,
     origin: options?.origin ?? 'user',

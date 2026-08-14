@@ -593,6 +593,54 @@ describe('usePromptExecution', () => {
         expect(result.current.preview).toBeNull();
     });
 
+    it('notifies the user when a confirmed destructive preview reports a failed execution', async () => {
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'removeAllTracks' }]);
+        const { result } = renderHook(() => usePromptExecution());
+
+        act(() => {
+            void result.current.executePreset(
+                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
+            );
+        });
+        expect(result.current.preview).not.toBeNull();
+
+        vi.mocked(executePlannedActions).mockResolvedValueOnce({ status: 'failed', reason: 'transaction rejected' });
+        await act(async () => {
+            await result.current.confirmPreview();
+        });
+
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Command not executed: transaction rejected', []);
+        expect(result.current.isProcessing).toBe(false);
+        expect(result.current.value).toBe('');
+    });
+
+    it('logs and notifies instead of leaving an unhandled rejection when confirming a preview throws', async () => {
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'removeAllTracks' }]);
+        const { result } = renderHook(() => usePromptExecution());
+
+        act(() => {
+            void result.current.executePreset(
+                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
+            );
+        });
+        expect(result.current.preview).not.toBeNull();
+
+        vi.mocked(executePlannedActions).mockRejectedValueOnce(new Error('snapshot transaction never settled'));
+        await act(async () => {
+            // Awaited directly: without the catch inside confirmPreview this rejects,
+            // which is the unhandled rejection the app would ship.
+            await result.current.confirmPreview();
+        });
+
+        expect(vi.mocked(logger.error)).toHaveBeenCalled();
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
+            'Command not executed: the confirmed changes could not be applied.',
+            []
+        );
+        expect(result.current.isProcessing).toBe(false);
+        expect(result.current.value).toBe('');
+    });
+
     it('flags willUseLlm only for non-empty, complex prompts', () => {
         vi.mocked(isComplexPrompt).mockImplementation((text: string) => text === 'complex query');
         const { result } = renderHook(() => usePromptExecution());

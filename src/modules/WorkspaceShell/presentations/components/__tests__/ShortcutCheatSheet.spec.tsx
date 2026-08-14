@@ -53,3 +53,25 @@ describe('ShortcutCheatSheet — shortcut groups rendered', () => {
         expect(screen.getByText('Undo')).toBeTruthy();
     });
 });
+
+describe('ShortcutCheatSheet — focus management', () => {
+    it('moves focus into the dialog on open and restores it on close', () => {
+        // `aria-modal="true"` tells assistive tech the rest of the app is gone. If
+        // focus never enters the dialog, a screen reader is not told it opened and
+        // Tab continues from wherever the user already was.
+        const opener = document.createElement('button');
+        document.body.append(opener);
+        opener.focus();
+        expect(document.activeElement).toBe(opener);
+
+        render(<ShortcutCheatSheet />);
+        fireEvent.keyDown(window, { key: '?' });
+
+        expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'Keyboard shortcuts' }));
+
+        fireEvent.keyDown(window, { key: 'Escape' });
+
+        expect(document.activeElement).toBe(opener);
+        opener.remove();
+    });
+});

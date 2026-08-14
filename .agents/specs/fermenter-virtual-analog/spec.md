@@ -31,34 +31,34 @@ behavior. The PolyBLEP path ships today.
 When a sawtooth plays, the oscillator must subtract a PolyBLEP residual at the
 wrap point so the reset produces no audible aliasing.
 
-Verify with: `cargo test -p daw-dsp fermenter::va_saw_blep`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::va_saw_blep`
 
 ### AC-002 — Pulse width is band-limited at both edges
 
 When a pulse waveform plays, both edges must be band-limited (difference of two
 band-limited saws) so a swept pulse width stays alias-free.
 
-Verify with: `cargo test -p daw-dsp fermenter::va_pulse_blep`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::va_pulse_blep`
 
 ### AC-003 — Each waveform produces its defined shape
 
 When a waveform is selected, the oscillator must produce that waveform's
 defined time-domain shape (saw, square, triangle, pulse, sine).
 
-Verify with: `cargo test -p daw-dsp fermenter::va_waveforms`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::va_waveforms`
 
 ### AC-004 — Hard sync resets the slave on master wrap
 
 When hard sync is enabled, the slave oscillator must reset its phase each time
 the master completes a cycle.
 
-Verify with: `cargo test -p daw-dsp fermenter::va_hard_sync`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::va_hard_sync`
 
 ### AC-005 — Phase reset mode is honoured at note-on
 
 When phase-reset-on-note is enabled, a new note must start at phase zero.
 
-Verify with: `cargo test -p daw-dsp fermenter::va_phase_reset`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::va_phase_reset`
 
 ### AC-006 — No cross-module internal imports
 
@@ -71,7 +71,7 @@ Verify with: `pnpm deps:validate`
 When phase-reset-on-note is disabled, the oscillator must keep its free-running
 phase across a new note.
 
-Verify with: `cargo test -p daw-dsp fermenter::va_phase_reset`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::va_phase_reset`
 
 ## Open questions
 

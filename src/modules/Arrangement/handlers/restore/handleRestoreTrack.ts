@@ -18,6 +18,7 @@ import { setTrackState } from '../../useCases/setTrackState';
  * `undoable: false` — invoked only by undo machinery; must not create new undo entries.
  */
 export const handleRestoreTrack = createHandler<'restoreTrack'>({
+    canReapplyAfterDivergence: () => true,
     validate: (action) => restoreStateMatches(action),
     execute: (alpha) => {
         const {

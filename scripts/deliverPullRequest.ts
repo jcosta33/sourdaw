@@ -30,11 +30,6 @@ export type StackedPullRequest = Pick<
     'number' | 'state' | 'headRefName' | 'headRefOid' | 'baseRefName'
 >;
 
-export type VerificationOverrides = {
-    e2eSpecs: string[];
-    fullE2e: boolean;
-};
-
 export type DeliveryPort = {
     fetch: () => void;
     pullRequest: (number: number) => PullRequestSnapshot;
@@ -44,7 +39,6 @@ export type DeliveryPort = {
     localHead: () => string;
     localDirty: () => boolean;
     remoteBranchHead: (branch: string) => string;
-    verify: (base: string, head: string, overrides: VerificationOverrides) => void;
     merge: (number: number, expectedHead: string) => void;
     retarget: (number: number, baseBranch: string) => void;
     log: (message: string) => void;
@@ -140,7 +134,7 @@ function validateStablePullRequest(before: PullRequestSnapshot, after: PullReque
     const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'baseRefOid', 'headRefName', 'baseRefName'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
-            fail(`PR #${before.number} ${field} changed during verification`);
+            fail(`PR #${before.number} ${field} changed during delivery`);
         }
     }
 }
@@ -160,7 +154,7 @@ function validateDependentSet(before: StackedPullRequest[], after: StackedPullRe
     const beforeByNumber = new Map(before.map((dependent) => [dependent.number, dependent]));
     const afterByNumber = new Map(after.map((dependent) => [dependent.number, dependent]));
     if (beforeByNumber.size !== afterByNumber.size) {
-        fail('stacked pull-request set changed during verification');
+        fail('stacked pull-request set changed during delivery');
     }
     for (const [number, expected] of beforeByNumber) {
         const current = afterByNumber.get(number);
@@ -171,7 +165,7 @@ function validateDependentSet(before: StackedPullRequest[], after: StackedPullRe
             current.headRefName !== expected.headRefName ||
             current.baseRefName !== expected.baseRefName
         ) {
-            fail(`stacked PR #${number} changed during verification`);
+            fail(`stacked PR #${number} changed during delivery`);
         }
     }
 }
@@ -190,11 +184,7 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
     }
 }
 
-export function deliverPullRequest(
-    number: number,
-    port: DeliveryPort,
-    overrides: VerificationOverrides = { e2eSpecs: [], fullE2e: false }
-): void {
+export function deliverPullRequest(number: number, port: DeliveryPort): void {
     port.fetch();
     const initial = port.pullRequest(number);
     if (initial.state === 'MERGED') {
@@ -213,22 +203,20 @@ export function deliverPullRequest(
     }
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
-    port.verify(initial.baseRefOid, initial.headRefOid, overrides);
-
     port.fetch();
-    const verified = port.pullRequest(number);
-    validatePullRequest(verified);
-    validateStablePullRequest(initial, verified);
-    validateLocalState(port, verified);
-    validateReview(number, port.reviewState(number, verified.headRefOid));
-    const verifiedDependents = port.dependents(verified.headRefName).filter((candidate) => candidate.number !== number);
-    validateDependentSet(dependents, verifiedDependents);
-    for (const dependent of verifiedDependents) {
+    const current = port.pullRequest(number);
+    validatePullRequest(current);
+    validateStablePullRequest(initial, current);
+    validateLocalState(port, current);
+    validateReview(number, port.reviewState(number, current.headRefOid));
+    const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
+    validateDependentSet(dependents, currentDependents);
+    for (const dependent of currentDependents) {
         validateDependent(port.pullRequest(dependent.number), dependent);
     }
 
-    port.merge(number, verified.headRefOid);
-    retargetDependents(verifiedDependents, verified.baseRefName, port);
+    port.merge(number, current.headRefOid);
+    retargetDependents(currentDependents, current.baseRefName, port);
 }
 
 function capture(command: string, args: string[]): string {
@@ -368,16 +356,6 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
         localHead: () => shell.capture('git', ['rev-parse', 'HEAD']),
         localDirty: () => shell.capture('git', ['status', '--porcelain=v1']) !== '',
         remoteBranchHead: (branch) => shell.capture('git', ['rev-parse', `refs/remotes/origin/${branch}`]),
-        verify: (base, head, overrides) =>
-            shell.run('pnpm', [
-                'verify:change',
-                '--base',
-                base,
-                '--head',
-                head,
-                ...overrides.e2eSpecs.flatMap((spec) => ['--e2e', spec]),
-                ...(overrides.fullE2e ? ['--full-e2e'] : []),
-            ]),
         merge: (number, expectedHead) => {
             const result = parseJson<{ merged: boolean; message: string }>(
                 shell.capture('gh', [
@@ -410,50 +388,35 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
     };
 }
 
-export function parseCliArgs(args: string[]): { number?: number; overrides: VerificationOverrides; help: boolean } {
-    const overrides: VerificationOverrides = { e2eSpecs: [], fullE2e: false };
+export function parseCliArgs(args: string[]): { number?: number; help: boolean } {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
-        return { overrides, help: true };
+        return { help: true };
     }
     const number = Number(args[0]);
     if (!Number.isSafeInteger(number) || number <= 0) {
         fail('usage: pnpm deliver <pr-number>');
     }
-    for (let index = 1; index < args.length; index += 1) {
-        const argument = args[index];
-        if (argument === '--full-e2e') {
-            overrides.fullE2e = true;
-            continue;
-        }
-        if (argument === '--e2e') {
-            const spec = args[index + 1];
-            if (spec === undefined || spec.startsWith('--')) {
-                fail('--e2e requires a spec path');
-            }
-            overrides.e2eSpecs.push(spec);
-            index += 1;
-            continue;
-        }
-        fail(`unknown option: ${argument ?? ''}`);
+    if (args.length !== 1) {
+        fail(`unknown option: ${args[1] ?? ''}`);
     }
-    return { number, overrides, help: false };
+    return { number, help: false };
 }
 
 function main(): number {
     try {
         const parsed = parseCliArgs(process.argv.slice(2));
         if (parsed.help) {
-            console.log('Usage: pnpm deliver <pr-number> [--e2e <spec>] [--full-e2e]');
+            console.log('Usage: pnpm deliver <pr-number>');
             return 0;
         }
         if (parsed.number === undefined) {
             fail('usage: pnpm deliver <pr-number>');
         }
         const repository = capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
-        deliverPullRequest(parsed.number, shellPort(repository), parsed.overrides);
+        deliverPullRequest(parsed.number, shellPort(repository));
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);

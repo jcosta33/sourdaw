@@ -23,7 +23,7 @@ export type CompRegion = {
 
 export function createTake(clipId: string, name: string, startBeat: number, endBeat: number): Take {
     return {
-        id: `take-${crypto.randomUUID().slice(0, 8)}`,
+        id: `take-${crypto.randomUUID()}`,
         clipId,
         name,
         startBeat,
@@ -34,7 +34,7 @@ export function createTake(clipId: string, name: string, startBeat: number, endB
 
 export function createTakeLane(trackId: string): TakeLane {
     return {
-        id: `take-lane-${crypto.randomUUID().slice(0, 8)}`,
+        id: `take-lane-${crypto.randomUUID()}`,
         trackId,
         takes: [],
         activeCompRegions: [],

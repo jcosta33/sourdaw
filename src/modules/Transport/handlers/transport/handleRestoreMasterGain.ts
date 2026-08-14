@@ -6,6 +6,8 @@ import { replaceMasterGain } from '../../useCases/replaceMasterGain';
 import { toMasterGainExecutionResult } from './toMasterGainExecutionResult';
 
 export const handleRestoreMasterGain = createHandler<'restoreMasterGain'>({
+    canReapplyAfterDivergence: () => true,
+    validate: (action) => transportStore.value?.masterGain === action.payload.expectedPercent,
     execute: (action) => {
         if (transportStore.value?.masterGain !== action.payload.expectedPercent) {
             return { status: 'conflict' };

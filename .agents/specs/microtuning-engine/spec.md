@@ -33,7 +33,7 @@ reads from.
 reference_note }` must be a fixed ~2 KB struct, both arrays pre-computed on every tuning
 change.
 
-Verify with: `cargo test -p daw-core tuning_table_size`
+Verify with: `pnpm cargo:test -- -p daw-core tuning_table_size`
 
 ### AC-002 — Lock-free triple-buffer delivery, no torn reads
 
@@ -41,7 +41,7 @@ Updates must flow UI→audio via `triple_buffer`; pushing 1000 updates/s must ne
 audio thread observe a torn table (CRC-checked stress test), with zero allocation on the
 read path.
 
-Verify with: `cargo test -p daw-engine tuning_table_no_tearing`
+Verify with: `pnpm cargo:test -- -p daw-engine tuning_table_no_tearing`
 
 ### AC-003 — 12-TET formula eliminated
 
@@ -54,21 +54,21 @@ Verify with: `rg "2.0_f64.powf.*/\s*12" crates/daw-engine crates/daw-dsp`
 
 `5/4` → cents must yield `386.3137138648348` and back to `1.25`, each within 1e-12.
 
-Verify with: `cargo test -p daw-core cents_ratio_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-core cents_ratio_roundtrip`
 
 ### AC-005 — Log2 interpolation for fractional notes
 
 Fractional MIDI note `60.5` must return the log2-space midpoint of table entries 60 and 61
 within 1e-9 Hz; portamento 60→72 is monotonic in log2 within 1e-9 of linear-in-log2.
 
-Verify with: `cargo test -p daw-core fractional_note_log2_interp`
+Verify with: `pnpm cargo:test -- -p daw-core fractional_note_log2_interp`
 
 ### AC-006 — Persisted pitch-bend mode
 
 A patch saved with `pitch_bend_mode = ScaleDegree` must round-trip through save/load
 bit-identically.
 
-Verify with: `cargo test -p daw-core pitch_bend_mode_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-core pitch_bend_mode_roundtrip`
 
 ## Open questions
 

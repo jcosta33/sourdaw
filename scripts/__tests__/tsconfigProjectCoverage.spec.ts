@@ -3,7 +3,7 @@
  *
  * A spec that vitest runs but no project includes is invisible to both gates
  * that claim to cover it. `pnpm typecheck:test` never type-checks it, and
- * `pnpm lint` cannot lint it at all — the type-aware parser fatals with
+ * `pnpm lint:full` cannot lint it at all — the type-aware parser fatals with
  * `"parserOptions.project" has been provided for @typescript-eslint/parser. The
  * file was not found in any of the provided project(s)`. The spec still runs in
  * CI, so it reads as covered while two of the three gates are blind to it.
@@ -20,7 +20,7 @@
  * Scope is `src/` and `scripts/`, which is the whole vitest-collected set: the
  * only other specs live under `tests/e2e/`, which `vite.config.ts` excludes from
  * vitest and Playwright owns. Those two trees are also exactly what
- * `pnpm lint` globs and what `tsconfig.test.json` / `tsconfig.eslint.json`
+ * `pnpm lint:full` globs and what `tsconfig.test.json` / `tsconfig.eslint.json`
  * include.
  *
  * Falsifiable per ADR 0015: restoring
@@ -88,7 +88,7 @@ describe('every collected spec is inside a tsconfig project', () => {
         expect(missingFrom('tsconfig.test.json', srcSpecs)).toEqual([]);
     });
 
-    it('lints every src and scripts spec under tsconfig.eslint.json (`pnpm lint`)', () => {
+    it('lints every src and scripts spec under tsconfig.eslint.json (`pnpm lint:full`)', () => {
         expect(missingFrom('tsconfig.eslint.json', [...srcSpecs, ...scriptSpecs])).toEqual([]);
     });
 

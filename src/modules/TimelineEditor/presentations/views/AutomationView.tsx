@@ -41,6 +41,7 @@ export const AutomationView = (): ReactElement => {
             deltaX: event.deltaX,
             deltaY: event.deltaY,
             shiftKey: event.shiftKey,
+            viewportHeight: event.currentTarget.clientHeight,
         });
     };
 

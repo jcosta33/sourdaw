@@ -49,7 +49,7 @@ Editable graph state must not be traversed on the audio thread; it must be compi
 non-RT path into a deterministic execution plan that is atomically swapped into the DSP
 engine.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Deterministic acyclic routing
 
@@ -62,7 +62,7 @@ Verify with: `pnpm test:run -- grinderRigGraph`
 Dynamic block identity and ordering must reach the DSP engine through a graph-aware
 load/update path, without relying on hardcoded `preX` / `postX` parameter names.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — Modular rig blocks
 
@@ -91,7 +91,7 @@ Verify with: `pnpm test:run -- grinderRigGraph`
 Users must be able to run two independent amp/cab or amp/capture branches in parallel and
 blend them before output, audibly differing from a single-amp equivalent.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-010 — Macros
 
@@ -141,7 +141,7 @@ or graph change (on the non-RT compile path), not per sample. This is a hard RT-
 constraint (CLAUDE.md: RT-audio code must not allocate or block) and binds the atomic
 swap described in AC-003.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-017 — Single logical graph contract across worklet and native paths
 
@@ -149,7 +149,7 @@ The browser/worklet path and the Tauri/native path must use the same logical gra
 contract even if the transport differs; both must reach the DSP engine through the same
 graph-aware load/update contract described in AC-005, not divergent per-platform shapes.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-018 — Graph truth lives in Grinder stores and use cases
 

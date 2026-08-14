@@ -51,6 +51,9 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
     const storageCandidate = options.storage;
     const storage = storageCandidate?.isSupported() ? storageCandidate : createMemoryStorage<TData>();
     const sanitize = options.sanitize;
+    if (sanitize) {
+        storage.registerInboundSanitizer?.(sanitize);
+    }
 
     /**
      * Write without letting a refused backing store unwind the caller.

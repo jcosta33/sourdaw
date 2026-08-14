@@ -95,4 +95,46 @@ describe('ResizeHandle — mouse drag interaction', () => {
         // Only the pre-mouseUp move should have fired.
         expect(onResize).toHaveBeenCalledTimes(1);
     });
+
+    // Ported from the byte-identical dead copy that used to sit in
+    // WorkspaceShell/presentations/components before it was deleted.
+    it('reports each move relative to the previous one, not to the drag origin', () => {
+        const onResize = vi.fn();
+        render(<ResizeHandle direction="vertical" onResize={onResize} />);
+
+        fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
+        fireEvent.mouseMove(document, { clientX: 10 });
+        fireEvent.mouseMove(document, { clientX: 25 });
+
+        expect(onResize).toHaveBeenNthCalledWith(1, 10);
+        expect(onResize).toHaveBeenNthCalledWith(2, 15);
+    });
+
+    it('does not call onResizeEnd on a mouseup that ends no drag', () => {
+        const onResizeEnd = vi.fn();
+        render(<ResizeHandle direction="vertical" onResize={vi.fn()} onResizeEnd={onResizeEnd} />);
+
+        fireEvent.mouseUp(document);
+
+        expect(onResizeEnd).not.toHaveBeenCalled();
+    });
+
+    it('ends a drag without throwing when onResizeEnd is omitted', () => {
+        render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+
+        fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
+
+        expect(() => fireEvent.mouseUp(document)).not.toThrow();
+    });
+
+    it('detaches its document listeners on unmount mid-drag', () => {
+        const onResize = vi.fn();
+        const { unmount } = render(<ResizeHandle direction="vertical" onResize={onResize} />);
+
+        fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
+        unmount();
+        fireEvent.mouseMove(document, { clientX: 999 });
+
+        expect(onResize).not.toHaveBeenCalled();
+    });
 });

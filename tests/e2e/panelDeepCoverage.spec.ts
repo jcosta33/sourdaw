@@ -136,7 +136,7 @@ test.describe('Status bar last-action text', () => {
         await add_track(page, 'MIDI');
         await page.waitForTimeout(500);
 
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status.getByText(/Last:/i)).toBeVisible();
         await expect(status.getByText(/Add midi track/i)).toBeVisible();
     });

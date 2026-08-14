@@ -8,8 +8,8 @@ test.describe('Status bar — test-id targeted', () => {
         await launch_new_project(page);
     });
 
-    test('status bar is present as a footer with role=status', async ({ page }) => {
-        const status = page.getByRole('status', { name: 'Application status' });
+    test('status bar is present as a labelled contentinfo footer', async ({ page }) => {
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         await expect(status).toBeAttached({ timeout: 10_000 });
     });
 
@@ -41,7 +41,7 @@ test.describe('Status bar — test-id targeted', () => {
     });
 
     test('status bar shows UI CPU and Latency metrics', async ({ page }) => {
-        const status = page.getByRole('status', { name: 'Application status' });
+        const status = page.getByRole('contentinfo', { name: 'Application status' });
         if (await status.isVisible().catch(() => false)) {
             const text = (await status.innerText()).trim();
             // The status bar shows UI CPU and Latency metrics.

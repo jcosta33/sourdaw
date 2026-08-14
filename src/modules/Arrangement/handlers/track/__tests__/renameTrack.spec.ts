@@ -49,8 +49,24 @@ describe('handleRenameTrack', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'renameTrack',
-            payload: { trackId: 't1', name: 'Old Name' },
+            payload: { trackId: 't1', name: 'Old Name', expectedName: 'Lead' },
         });
+        expect(desc.redoAction).toEqual({
+            type: 'renameTrack',
+            payload: { trackId: 't1', name: 'Lead', expectedName: 'Old Name' },
+        });
+    });
+
+    it('refuses a guarded compensating rename after a collaborator changes the name', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', name: 'Collaborator Name' }] });
+
+        const result = handleRenameTrack.execute({
+            type: 'renameTrack',
+            payload: { trackId: 't1', name: 'Old Name', expectedName: 'Lead' },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.renameTrack).not.toHaveBeenCalled();
     });
 
     it('is undoable', () => {

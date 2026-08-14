@@ -2,8 +2,25 @@ import { Component, type ReactNode } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
 
-type Props = { children: ReactNode };
+/**
+ * `page` fills the viewport — correct when the boundary is the app root.
+ * `inline` fills whatever height-constrained container it was dropped into, which is
+ * what every device-panel call site needs: a viewport-tall fallback inside a ~300px
+ * panel pushes "Try Again" and "Reload App" out of view, clipping the recovery path
+ * the boundary exists to provide.
+ */
+type ErrorBoundaryVariant = 'page' | 'inline';
+
+type Props = { children: ReactNode; variant?: ErrorBoundaryVariant };
 type State = { hasError: boolean; error: Error | null };
+
+// Sizing is an inline style rather than a Tailwind class so the variant is an
+// observable DOM property: jsdom compiles no Tailwind, so a class-based height
+// would be untestable — and asserting on class strings is disallowed anyway.
+const FALLBACK_HEIGHT: Record<ErrorBoundaryVariant, string> = {
+    page: '100vh',
+    inline: '100%',
+};
 
 export class ErrorBoundary extends Component<Props, State> {
     state: State = { hasError: false, error: null };
@@ -19,8 +36,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
     render(): ReactNode {
         if (this.state.hasError) {
+            const variant = this.props.variant ?? 'page';
             return (
-                <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background text-foreground">
+                <div
+                    className="flex min-h-0 flex-col items-center justify-center gap-4 overflow-auto bg-background text-foreground"
+                    style={{ height: FALLBACK_HEIGHT[variant] }}
+                >
                     <h1 className="text-xl font-bold">Something went wrong</h1>
                     <p className="text-sm text-muted-foreground max-w-md text-center">
                         {this.state.error?.message ?? 'An unexpected error occurred.'}

@@ -3,9 +3,19 @@
  * 2D top-down view with a draggable dot representing the audio source position.
  * Listener is at the center. Shows azimuth circle, distance rings, and L/R labels.
  */
-import { type ReactElement, type MouseEvent, useRef, useState, useEffect } from 'react';
+import {
+    type KeyboardEvent as ReactKeyboardEvent,
+    type MouseEvent,
+    type ReactElement,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { resolveToken } from '#/utils/UI/resolveToken';
+
+/** Keyboard azimuth step in degrees — the slider's aria contract is operable via arrows. */
+const AZIMUTH_KEYBOARD_STEP_DEGREES = 15;
 
 type SpatialPannerProps = {
     size?: number;
@@ -143,6 +153,23 @@ export const SpatialPanner = ({
         onChange?.(normalizedAz, newDist);
     };
 
+    const handleKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>): void => {
+        const isArrowKey = event.key.startsWith('Arrow');
+        if (!isArrowKey) {
+            return;
+        }
+        const direction = event.key === 'ArrowUp' || event.key === 'ArrowRight' ? 1 : -1;
+        // The slider exposes azimuth as aria-valuenow; consume the arrow keys so
+        // the canvas role="slider" stays keyboard-operable per the ARIA contract.
+        event.preventDefault();
+        const nextAzimuth = Math.min(180, Math.max(-180, azimuth + direction * AZIMUTH_KEYBOARD_STEP_DEGREES));
+        if (nextAzimuth === azimuth) {
+            return;
+        }
+        setAzimuth(nextAzimuth);
+        onChange?.(nextAzimuth, distance);
+    };
+
     return (
         <canvas
             ref={canvasRef}
@@ -154,6 +181,8 @@ export const SpatialPanner = ({
             aria-valuenow={azimuth}
             aria-valuemin={-180}
             aria-valuemax={180}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
             onMouseDown={(event) => {
                 dragging.current = true;
                 handlePointer(event);

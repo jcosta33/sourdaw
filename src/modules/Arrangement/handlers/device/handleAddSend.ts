@@ -6,6 +6,7 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleAddSend = createHandler<'addSend'>({
+    canReapplyAfterDivergence: (action) => action.payload.expectedAbsent === true,
     validate: (action, context) => {
         const track = getPlannedTrackState(context, action.payload.trackId);
         const target = getPlannedTrackState(context, action.payload.busId);

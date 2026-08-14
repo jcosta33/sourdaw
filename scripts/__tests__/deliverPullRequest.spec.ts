@@ -106,8 +106,6 @@ function fakePort(input: FakeInput = {}) {
         localHead: () => 'head',
         localDirty: () => input.dirty ?? false,
         remoteBranchHead: () => 'base',
-        verify: (base, head, overrides) =>
-            calls.push(`verify:${base}:${head}:${overrides.e2eSpecs.join(',')}:${overrides.fullE2e}`),
         merge: (number, head) => calls.push(`merge:${number}:${head}`),
         retarget: (number, base) => {
             calls.push(`retarget:${number}:${base}`);
@@ -127,52 +125,43 @@ function fakePort(input: FakeInput = {}) {
 }
 
 describe('pull-request delivery', () => {
-    it('verifies, merges the expected head, and retargets stable dependents', () => {
+    it('merges the expected head and retargets stable dependents', () => {
         const { port, calls } = fakePort();
 
-        deliverPullRequest(42, port, { e2eSpecs: ['tests/e2e/project.spec.ts'], fullE2e: false });
+        deliverPullRequest(42, port);
 
-        expect(calls).toEqual(
-            expect.arrayContaining([
-                'verify:base:head:tests/e2e/project.spec.ts:false',
-                'merge:42:head',
-                'retarget:43:main',
-            ])
-        );
-        expect(calls.findIndex((call) => call.startsWith('verify:'))).toBeLessThan(
-            calls.findIndex((call) => call.startsWith('merge:'))
-        );
+        expect(calls).toEqual(expect.arrayContaining(['merge:42:head', 'retarget:43:main']));
     });
 
-    it('rejects head drift after verification', () => {
+    it('rejects head drift during delivery', () => {
         const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest({ headRefOid: 'moved' })] });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/headRefOid changed/);
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects unresolved review before verification', () => {
+    it('rejects unresolved review before merge', () => {
         const { port, calls } = fakePort({ review: { currentHeadReviews: 3, unresolvedThreads: 1 } });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review/);
-        expect(calls.some((call) => call.startsWith('verify:'))).toBe(false);
+        expect(calls).not.toContain('merge:42:head');
     });
 
     it('rejects missing current-head review activity', () => {
         const { port, calls } = fakePort({ review: { currentHeadReviews: 0, unresolvedThreads: 0 } });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/no current-head review activity/);
-        expect(calls.some((call) => call.startsWith('verify:'))).toBe(false);
+        expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects a dirty worktree before verification', () => {
+    it('rejects a dirty worktree before merge', () => {
         const { port, calls } = fakePort({ dirty: true });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/working tree is dirty/);
-        expect(calls.some((call) => call.startsWith('verify:'))).toBe(false);
+        expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects dependent drift during verification', () => {
+    it('rejects dependent drift during delivery', () => {
         const before = stacked();
         const after = stacked({ headRefOid: 'moved' });
         const { port, calls } = fakePort({ dependentSets: [[before], [after]] });
@@ -181,7 +170,7 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects dependent-set additions during verification', () => {
+    it('rejects dependent-set additions during delivery', () => {
         const first = stacked();
         const added = stacked({ number: 44, headRefName: 'feat/other', headRefOid: 'other-head' });
         const { port, calls } = fakePort({ dependentSets: [[first], [first, added]] });
@@ -194,7 +183,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({ deletesMergedBranches: true });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/automatic merged-branch deletion/);
-        expect(calls.some((call) => call.startsWith('verify:'))).toBe(false);
+        expect(calls).not.toContain('merge:42:head');
     });
 
     it('repairs dependents after an interrupted post-merge retarget', () => {
@@ -229,29 +218,19 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({ primary: [pullRequest({ body: invalidBody })] });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/body/);
-        expect(calls.some((call) => call.startsWith('verify:'))).toBe(false);
+        expect(calls).not.toContain('merge:42:head');
     });
 });
 
 describe('delivery CLI', () => {
-    it('parses repeated targeted E2E specs and a full-E2E override', () => {
-        expect(
-            parseCliArgs(['42', '--e2e', 'tests/e2e/a.spec.ts', '--e2e', 'tests/e2e/b.spec.ts', '--full-e2e'])
-        ).toEqual({
-            number: 42,
-            overrides: {
-                e2eSpecs: ['tests/e2e/a.spec.ts', 'tests/e2e/b.spec.ts'],
-                fullE2e: true,
-            },
-            help: false,
-        });
+    it('parses one pull-request number', () => {
+        expect(parseCliArgs(['42'])).toEqual({ number: 42, help: false });
     });
 
     it.each([
-        [['42', '--e2e', '--full-e2e'], /requires a spec path/],
         [['42', '--unknown'], /unknown option/],
         [['0'], /usage/],
-        [['--help', '--full-e2e'], /help takes no other arguments/],
+        [['--help', '--unknown'], /help takes no other arguments/],
     ])('rejects malformed arguments %#', (args, message) => {
         expect(() => parseCliArgs(args)).toThrow(message);
     });
@@ -310,7 +289,6 @@ describe('delivery shell boundary', () => {
         expect(port.reviewState(42, 'head')).toEqual({ currentHeadReviews: 1, unresolvedThreads: 0 });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
-        port.verify('base', 'head', { e2eSpecs: ['tests/e2e/a.spec.ts'], fullE2e: true });
         port.merge(42, 'head');
         port.retarget(43, 'main');
 
@@ -331,10 +309,6 @@ describe('delivery shell boundary', () => {
                 '-f',
                 'merge_method=merge',
             ],
-        });
-        expect(runs).toContainEqual({
-            command: 'pnpm',
-            args: ['verify:change', '--base', 'base', '--head', 'head', '--e2e', 'tests/e2e/a.spec.ts', '--full-e2e'],
         });
         expect(runs).toContainEqual({
             command: 'gh',

@@ -38,7 +38,17 @@ export type {
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
-    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-synth')!;
+    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-synth');
+    if (!base) {
+        // A bare `.find(...)!` here used to fail as a generic
+        // `Cannot read properties of undefined` deep inside the spread below,
+        // the moment this module loaded — taking down every module that
+        // transitively imports the plugin catalog rather than naming the
+        // missing descriptor.
+        throw new Error(
+            "createSynthVariant: base descriptor 'builtin-synth' not found in BUILTIN_INSTRUMENT_DESCRIPTORS"
+        );
+    }
     // Spread the base rather than re-listing its fields. Re-listing silently
     // dropped every capability the base declared but the literal did not name:
     // the variants lost `tail`, so all four exported with a tail of zero while
@@ -97,7 +107,14 @@ const SYNTH_VARIANTS: PluginDescriptor[] = [
 
 // ── Drum variants (generated from builtin-drum-kit base) ──────────────────
 function createDrumVariant(id: string, name: string, kitIndex: number): PluginDescriptor {
-    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-drum-kit')!;
+    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-drum-kit');
+    if (!base) {
+        // Same rule as `createSynthVariant`: name the missing descriptor
+        // instead of crashing on a property access several lines away.
+        throw new Error(
+            "createDrumVariant: base descriptor 'builtin-drum-kit' not found in BUILTIN_INSTRUMENT_DESCRIPTORS"
+        );
+    }
     // Same inheritance rule as the synth variants: spread, never re-list.
     return {
         ...base,

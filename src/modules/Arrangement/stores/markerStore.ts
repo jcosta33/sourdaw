@@ -1,22 +1,14 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
+import { type ArrangementSection, type Marker } from '../models/Marker';
+
 const DOC_PREFIX_ROOT = 'root';
 
-export type Marker = {
-    id: string;
-    beat: number;
-    name: string;
-    color: string;
-};
-
-export type ArrangementSection = {
-    id: string;
-    startBeat: number;
-    endBeat: number;
-    name: string;
-    color: string;
-};
+// F14: `Marker`/`ArrangementSection` are the single source of truth in
+// `models/Marker.ts` — re-exported here (rather than redeclared) so a field
+// added to one no longer compiles independently of the other.
+export type { ArrangementSection, Marker };
 
 export type MarkerStoreState = {
     markers: Marker[];

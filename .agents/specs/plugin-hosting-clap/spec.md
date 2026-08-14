@@ -33,14 +33,14 @@ the cross-module contract.
 Native hosting must load and run CLAP plugins through a `clack-host`-style safe
 abstraction, replacing the custom VST3 wrapper as the primary path.
 
-Verify with: `cargo test -p daw-plugin-host clap_host`
+Verify with: `pnpm cargo:test -- -p daw-plugin-host clap_host`
 
 ### AC-002 — Out-of-process sandboxing
 
 Hosted plugins must run out-of-process such that a plugin crash surfaces an error and
 does not terminate the DAW process.
 
-Verify with: `cargo test -p daw-plugin-host sandbox_crash_isolation`
+Verify with: `pnpm cargo:test -- -p daw-plugin-host sandbox_crash_isolation`
 
 ### AC-003 — SAB audio transport, no per-block IPC
 
@@ -53,27 +53,27 @@ Verify with: `pnpm test:run -- nativePluginBridge`
 
 The plugin-host trait must not hard-code a CLAP/VST3-only format enum.
 
-Verify with: `cargo test -p daw-plugin-host host_trait_extensible`
+Verify with: `pnpm cargo:test -- -p daw-plugin-host host_trait_extensible`
 
 ### AC-005 — Real-time-safe disk streaming for large libraries
 
 Large sample libraries must stream from disk via a real-time-safe path (e.g. `creek`)
 rather than full in-memory load.
 
-Verify with: `cargo test -p daw-plugin-host streaming_load`
+Verify with: `pnpm cargo:test -- -p daw-plugin-host streaming_load`
 
 ### AC-006 — Audio thread elevated to real-time priority
 
 The CPAL audio thread must be promoted to real-time priority on macOS/Linux/Windows,
 falling back to default priority with a single warning on failure (never crashing).
 
-Verify with: `cargo test -p daw-engine audio_thread_priority`
+Verify with: `pnpm cargo:test -- -p daw-engine audio_thread_priority`
 
 ### AC-007 — Adding a backend is a localized change
 
 Adding a third backend variant to the plugin-host trait must be a localized change.
 
-Verify with: `cargo test -p daw-plugin-host host_trait_extensible`
+Verify with: `pnpm cargo:test -- -p daw-plugin-host host_trait_extensible`
 
 ### AC-008 — No AU crates in the v1 dependency tree
 

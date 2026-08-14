@@ -32,61 +32,61 @@ not a static low-pass glued onto the output.
 Under high gain, later-stage preamp output must retain less edge-heavy content in the
 later tail than during the earlier sustain window.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — Extreme-gain power-stage decay smooths after the attack
 
 Under high gain, later-stage power-amp output must retain less edge-heavy content in the
 later tail than during the earlier sustain window.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — Attack stays intact
 
 The smoothing pass must not dull the whole amp; the early attack must remain materially
 stronger/brighter than the later tail.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-004 — Existing family ordering survives
 
 Rectifier vs Lead JCM and 6L6 vs EL84 ordering regressions must remain green.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-005 — Behavior stays bounded
 
 The pass must read as later-stage damping/recovery (dynamic), not a blunt static low-pass
 cut on the output.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — RT safety is preserved
 
 No allocation or locking in sample processing; any new state must be preallocated.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-007 — Smoothing reuses existing later-stage structs and state
 
 The smoothing pass must reuse the existing later-stage structs and their state rather
 than introducing new parallel stage machinery.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-008 — High-gain families keep their denser feel
 
 Under high gain, rectifier/high-gain families must retain their characteristically
 denser feel and must not collapse into thin, fizzy tails after the smoothing pass.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-009 — Smoothing is materially effective
 
 The smoothing must measurably reduce later-tail edge energy under extreme-gain material,
 not merely perturb the DSP while leaving the user-facing fizz essentially intact.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ## Open questions
 

@@ -31,7 +31,7 @@ making the audio thread wait on the GPU. None of this is built yet.
 When GPU work is in flight, the audio thread must only write analysis taps to an
 SPSC ring buffer and must never wait on a GPU result.
 
-Verify with: `cargo test -p daw-dsp fermenter::gpu_audio_nonblocking`
+Verify with: `pnpm cargo:test -- -p daw-dsp fermenter::gpu_audio_nonblocking`
 
 ### AC-002 — Every GPU path falls back to CPU when WebGPU is absent
 

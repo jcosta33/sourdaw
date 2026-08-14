@@ -31,7 +31,7 @@ preroll. Stereo input must record stereo without downmixing.
 A 32-channel record pass on a Tauri build must write 32 individual WAV files with zero
 xruns at 48 kHz / 128-sample buffer on the reference machine.
 
-Verify with: `cargo test -p daw-io multitrack_record_no_xruns`
+Verify with: `pnpm cargo:test -- -p daw-io multitrack_record_no_xruns`
 
 ### AC-002 — Stereo input records stereo
 
@@ -52,7 +52,7 @@ Verify with: `pnpm test:run -- stepRecording`
 Count-in preroll (1–8 bars) must be sample-accurate: the first recorded sample aligns
 with the first beat of the post-count-in region within ≤1 sample.
 
-Verify with: `cargo test -p daw-io count_in_sample_accurate`
+Verify with: `pnpm cargo:test -- -p daw-io count_in_sample_accurate`
 
 ### AC-005 — Browser fallback preserved
 

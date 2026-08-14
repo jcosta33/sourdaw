@@ -39,12 +39,9 @@
         // files first came under any gate at all. Exact and reviewable, and the
         // same set `tsconfig.scripts.json` excludes. A list that only shrinks:
         // deleting an entry and fixing its errors is the intended move.
-        "scripts/__tests__/layoutPrimitivesCensus.spec.ts",
         "scripts/download-levain-samples-direct.ts",
         "scripts/download-levain-samples.ts",
-        "scripts/generate-missing-use-case-specs.ts",
-        "scripts/__tests__/check-dependency-boundaries.spec.ts",
-        "scripts/layoutPrimitivesCensus.ts"
+        "scripts/__tests__/check-dependency-boundaries.spec.ts"
     ],
     "rules": {
         // ── ESLint core (from eslint.config.mjs explicit config) ────────────
@@ -68,10 +65,7 @@
         "no-unused-labels": "error",
         "no-useless-concat": "error",
         "no-useless-escape": "error",
-        "no-useless-rename": [
-            "error",
-            { "ignoreDestructuring": false, "ignoreImport": false, "ignoreExport": false }
-        ],
+        "no-useless-rename": ["error", { "ignoreDestructuring": false, "ignoreImport": false, "ignoreExport": false }],
         "no-nested-ternary": "error",
         "no-unneeded-ternary": "error",
         "default-case-last": "error",

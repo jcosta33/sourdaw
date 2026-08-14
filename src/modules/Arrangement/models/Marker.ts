@@ -1,3 +1,5 @@
+import { MARKER_COLOR_PRESETS, SECTION_COLORS } from './ColorPalette';
+
 export type Marker = {
     id: string;
     beat: number;
@@ -15,19 +17,23 @@ export type ArrangementSection = {
 
 export function createMarker(beat: number, name: string): Marker {
     return {
-        id: `marker-${crypto.randomUUID().slice(0, 8)}`,
+        // F9: the full UUID, not a truncated 8-hex-char prefix — truncating
+        // invited birthday collisions for `clipIdCounter.ts`, and a warp
+        // marker id is on the same busy-session path.
+        id: `marker-${crypto.randomUUID()}`,
         beat,
         name,
-        color: 'oklch(0.40 0.07 200)',
+        // F14: sourced from the shared palette, not a private duplicate literal.
+        color: MARKER_COLOR_PRESETS[0],
     };
 }
 
 export function createSection(startBeat: number, endBeat: number, name: string): ArrangementSection {
     return {
-        id: `section-${crypto.randomUUID().slice(0, 8)}`,
+        id: `section-${crypto.randomUUID()}`,
         startBeat,
         endBeat,
         name,
-        color: 'oklch(0.35 0.06 260)',
+        color: SECTION_COLORS[0],
     };
 }

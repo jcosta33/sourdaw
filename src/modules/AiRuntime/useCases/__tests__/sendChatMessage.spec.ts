@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { createVerifiedBatchReceipt, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import {
+    commandBatchPreflightPort,
+    createVerifiedBatchReceipt,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
@@ -10,6 +14,8 @@ import { type ChatMessage, type ChatState } from '../../models/Chat';
 import { type IntentResult } from '../../models/IntentResult';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { type ProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
@@ -24,6 +30,10 @@ type MockWebLlmEngine = {
 };
 type ProposedConfirmationInput = {
     id: string;
+    risk?: {
+        level: string;
+        reason: string | null;
+    };
     commandBatch?: {
         serialized: string;
         authority: {
@@ -164,9 +174,19 @@ vi.mock('../../stores/chatStore', () => ({
     setActiveAborter: mocks.setActiveAborter,
 }));
 
-vi.mock('../../stores/pendingActionConfirmationStore', () => ({
-    proposePendingActionConfirmation: mocks.proposePendingActionConfirmation,
-}));
+vi.mock('../../stores/pendingActionConfirmationStore', async (import_original) => {
+    const original = await import_original<typeof import('../../stores/pendingActionConfirmationStore')>();
+    return {
+        ...original,
+        proposePendingActionConfirmation: (input: Parameters<typeof original.proposePendingActionConfirmation>[0]) => {
+            // Spy only: the retained confirmation comes from the real store so
+            // confirmPendingChatActions can replay the approved batch in the
+            // ADR-0033 confirmation-flow tests below.
+            mocks.proposePendingActionConfirmation(input);
+            return original.proposePendingActionConfirmation(input);
+        },
+    };
+});
 
 vi.mock('../../stores/aiActionHistoryStore', () => ({
     pushAiActionGroup: mocks.pushAiActionGroup,
@@ -178,7 +198,21 @@ describe('sendChatMessage injectables', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getTransportHandlers());
-        mocks.proposePendingActionConfirmation.mockImplementation(({ id }) => ({ id }));
+        // sendChatMessage compiles an agent-risk approval for every
+        // confirmation, which captures target fingerprints through the
+        // preflight port; this spec's CrdtDocument mock rules out the shared
+        // workflow fixture, so a local provider stands in with a projectId
+        // matching the (mocked) revision the envelope is compiled against.
+        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: mocks.projectRevision.value,
+            projectInvariantsValid: true,
+            targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, `fingerprint:${targetId}`])),
+        }));
+        clearPendingActionConfirmations();
         mocks.chatStoreValue.value = null;
         mocks.nativeEngineReady.value = true;
         mocks.backend.value = 'native';
@@ -266,6 +300,7 @@ describe('sendChatMessage injectables', () => {
     });
 
     afterEach(() => {
+        commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
     });
 
@@ -538,13 +573,12 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('binds validated provider actions and admission to one project revision', async () => {
+        // ADR 0033: multi-command batches must be confirmed, so the direct
+        // execution path is exercised with a single bounded-reversible action
+        // (the only shape that still auto-allows).
         const action = {
             type: 'muteTrack',
-            payload: { trackId: 'track-vocals', muted: true, expectedMuted: false },
-        } as const;
-        const secondAction = {
-            type: 'setTrackPan',
-            payload: { trackId: 'track-guitar', pan: -20, expectedPan: 0 },
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
         } as const;
         mocks.chatStoreValue.value = {
             messages: [],
@@ -553,23 +587,20 @@ describe('sendChatMessage injectables', () => {
             chatMode: 'prompt',
         };
         mocks.parsePromptToActions.mockResolvedValue({
-            actions: [action, secondAction],
-            rawText: 'mute vocals and pan guitar left',
+            actions: [action],
+            rawText: 'mute the vocals',
             requiresConfirmation: false,
             executionMode: 'atomic',
         });
         mocks.executeAppActionBatch.mockResolvedValue({
             status: 'committed',
-            actions: [
-                { action, label: 'Mute track' },
-                { action: secondAction, label: 'Set track pan' },
-            ],
+            actions: [{ action, label: 'Mute track' }],
         });
 
-        await sendChatMessage('mute vocals and pan guitar left');
+        await sendChatMessage('mute the vocals');
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
-            [action, secondAction],
+            [action],
             expect.objectContaining({
                 source: 'prompt',
                 requireCompensation: true,
@@ -585,10 +616,7 @@ describe('sendChatMessage injectables', () => {
         activeAborter.abort();
         expect(batchOptions.shouldExecute()).toBe(false);
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: mute vocals and pan guitar left', [
-            'muteTrack',
-            'setTrackPan',
-        ]);
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: mute the vocals', ['muteTrack']);
 
         mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
             mocks.projectRevision.value = 'revision-2';
@@ -596,7 +624,7 @@ describe('sendChatMessage injectables', () => {
             return Promise.resolve({ status: 'cancelled', reason: 'Execution authority revoked', actions: [] });
         });
 
-        await sendChatMessage('mute vocals and pan guitar left');
+        await sendChatMessage('mute the vocals');
 
         expect(mocks.pushAiActionGroup).toHaveBeenCalledTimes(1);
         expect(mocks.notifyAiChange).toHaveBeenCalledTimes(1);
@@ -866,7 +894,7 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('should update the existing executing row when a prompt action is not dispatched', async () => {
-        const missing_handler = new Error('No handler registered for action: removeTrack');
+        const missing_handler = new Error('No handler registered for action: muteTrack');
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -874,8 +902,8 @@ describe('sendChatMessage injectables', () => {
             chatMode: 'prompt',
         };
         mocks.parsePromptToActions.mockResolvedValue({
-            actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
-            rawText: 'delete drums',
+            actions: [{ type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } }],
+            rawText: 'mute the vocals',
             requiresConfirmation: false,
         });
         mocks.executeAppActionBatch.mockResolvedValueOnce({
@@ -884,7 +912,7 @@ describe('sendChatMessage injectables', () => {
             actions: [],
         });
 
-        await sendChatMessage('delete drums');
+        await sendChatMessage('mute the vocals');
 
         expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
@@ -902,7 +930,10 @@ describe('sendChatMessage injectables', () => {
 
     it('reports a committed prompt action with a distinct follow-up warning', async () => {
         const committedFailure = new Error('Transport synchronization failed');
-        const action = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -911,26 +942,26 @@ describe('sendChatMessage injectables', () => {
         };
         mocks.parsePromptToActions.mockResolvedValue({
             actions: [action],
-            rawText: 'delete drums',
+            rawText: 'mute the drums',
             requiresConfirmation: false,
         });
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'committed-with-warning',
-            actions: [{ action, label: 'Remove track' }],
+            actions: [{ action, label: 'Mute track' }],
             warning: committedFailure.message,
         });
 
-        await sendChatMessage('delete drums');
+        await sendChatMessage('mute the drums');
 
         expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
-                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+                actions: [{ kind: 'appAction', actionType: 'muteTrack', label: 'Mute track' }],
             })
         );
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(
-            'Executed: delete drums. Committed with follow-up warning: Transport synchronization failed',
-            ['removeTrack']
+            'Executed: mute the drums. Committed with follow-up warning: Transport synchronization failed',
+            ['muteTrack']
         );
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
         const committedUpdate = mocks.updateChatMessage.mock.lastCall;
@@ -940,7 +971,7 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('reports a runtime prompt action as executed rather than committed', async () => {
-        const action = { type: 'setPlayback', payload: { playing: true } } as const;
+        const action = { type: 'setMetronomeEnabled', payload: { enabled: true } } as const;
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -949,22 +980,22 @@ describe('sendChatMessage injectables', () => {
         };
         mocks.parsePromptToActions.mockResolvedValue({
             actions: [action],
-            rawText: 'start playback',
+            rawText: 'enable the metronome',
             requiresConfirmation: false,
         });
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'executed-with-warning',
-            actions: [{ action, label: 'Start playback' }],
+            actions: [{ action, label: 'Enable metronome' }],
             warning: 'transport event unavailable',
         });
 
-        await sendChatMessage('start playback');
+        await sendChatMessage('enable the metronome');
 
         expect(mocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppActionBatch).toHaveBeenCalledTimes(1);
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(
-            'Executed: start playback. Executed with follow-up warning: transport event unavailable',
-            ['setPlayback']
+            'Executed: enable the metronome. Executed with follow-up warning: transport event unavailable',
+            ['setMetronomeEnabled']
         );
         const assistantMessage = mocks.appendChatMessage.mock.calls[1]?.[0];
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
@@ -977,7 +1008,10 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('does not report execution failure when AI history reporting throws after commit', async () => {
-        const action = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -986,18 +1020,18 @@ describe('sendChatMessage injectables', () => {
         };
         mocks.parsePromptToActions.mockResolvedValue({
             actions: [action],
-            rawText: 'delete drums',
+            rawText: 'mute the drums',
             requiresConfirmation: false,
         });
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'committed',
-            actions: [{ action, label: 'Remove track' }],
+            actions: [{ action, label: 'Mute track' }],
         });
         mocks.pushAiActionGroup.mockImplementationOnce(() => {
             throw new Error('AI history unavailable');
         });
 
-        await sendChatMessage('delete drums');
+        await sendChatMessage('mute the drums');
 
         const assistantMessage = mocks.appendChatMessage.mock.calls[1]?.[0];
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
@@ -1026,13 +1060,29 @@ describe('sendChatMessage injectables', () => {
             rawText: 'delete drums and clip',
             requiresConfirmation: false,
         });
+
+        await sendChatMessage('delete drums and clip');
+
+        // ADR 0033: destructive multi-command work must be confirmed, so the
+        // destructive pair proposes instead of executing directly.
+        const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        if (!proposal?.id) {
+            throw new Error('Expected the destructive batch to require confirmation');
+        }
+        expect(proposal.risk).toEqual({
+            level: 'destructive-reversible',
+            reason: 'This action removes or replaces project content.',
+        });
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'failed',
             reason: later_failure.message,
             actions: [],
         });
 
-        await sendChatMessage('delete drums and clip');
+        await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toEqual({
+            status: 'failed',
+            reason: later_failure.message,
+        });
 
         expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
@@ -1042,7 +1092,7 @@ describe('sendChatMessage injectables', () => {
         expect(partialUpdate?.[0]).toBe(assistant_message?.id);
         expect(partialUpdate?.[1].error).toBe(later_failure.message);
         expect(partialUpdate?.[1].content).toBe(
-            `Failed to execute prompt command atomically: ${later_failure.message}`
+            `Failed to execute confirmed actions atomically:\n\n${later_failure.message}`
         );
     });
 
@@ -1063,13 +1113,23 @@ describe('sendChatMessage injectables', () => {
             rawText: 'delete drums and clip',
             requiresConfirmation: false,
         });
+
+        await sendChatMessage('delete drums and clip');
+
+        const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        if (!proposal?.id) {
+            throw new Error('Expected the destructive batch to require confirmation');
+        }
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'ambiguous',
             reason,
             actions: [],
         });
 
-        await sendChatMessage('delete drums and clip');
+        await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toEqual({
+            status: 'failed',
+            reason,
+        });
 
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
@@ -1099,6 +1159,13 @@ describe('sendChatMessage injectables', () => {
             rawText: 'delete drums and clip',
             requiresConfirmation: false,
         });
+
+        await sendChatMessage('delete drums and clip');
+
+        const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        if (!proposal?.id) {
+            throw new Error('Expected the destructive batch to require confirmation');
+        }
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'committed-with-warning',
             actions: [
@@ -1108,20 +1175,26 @@ describe('sendChatMessage injectables', () => {
             warning,
         });
 
-        await sendChatMessage('delete drums and clip');
+        await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toEqual({
+            status: 'executed',
+        });
 
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
                 actions: [
-                    { kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' },
-                    { kind: 'appAction', actionType: 'removeClip', label: 'Remove clip' },
+                    { kind: 'appAction', actionType: 'removeTrack', label: 'Remove track "Track 1"' },
+                    { kind: 'appAction', actionType: 'removeClip', label: 'Remove clip "Clip 1"' },
                 ],
             })
         );
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Confirmed: delete drums and clip', [
+            'removeTrack',
+            'removeClip',
+        ]);
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
         const combinedFailureUpdate = mocks.updateChatMessage.mock.lastCall;
         expect(combinedFailureUpdate?.[0]).toBe(assistant_message?.id);
-        expect(combinedFailureUpdate?.[1].error).toBe(`Post-commit project follow-up warning: ${warning}`);
-        expect(combinedFailureUpdate?.[1].content).toMatch(/post-commit project follow-up warning.*do not retry/is);
+        expect(combinedFailureUpdate?.[1].error).toBe(warning);
+        expect(combinedFailureUpdate?.[1].content).toMatch(/committed with a follow-up warning.*do not retry/is);
     });
 });

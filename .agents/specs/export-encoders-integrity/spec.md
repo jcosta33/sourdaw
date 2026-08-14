@@ -34,28 +34,28 @@ Offline export must support FLAC (lossless, bit-exact), MP3, Vorbis, and Opus on
 native and browser builds, with each lossy format within ≤0.5 dB RMS of source at
 nominal bitrate.
 
-Verify with: `cargo test -p daw-io encode_formats_roundtrip`
+Verify with: `pnpm cargo:test -- -p daw-io encode_formats_roundtrip`
 
 ### AC-002 — Streamed output, bounded memory
 
 Export must stream output chunks so a 64-track project uses peak working memory ≤2× the
 largest single-track render buffer, not the whole-project buffer.
 
-Verify with: `cargo test -p daw-io export_streaming_memory`
+Verify with: `pnpm cargo:test -- -p daw-io export_streaming_memory`
 
 ### AC-003 — TPDF dithering on bit-depth reduction
 
 Reducing bit depth (float → 16/24-bit PCM) must apply TPDF dither by default unless the
 user explicitly disables it.
 
-Verify with: `cargo test -p daw-io tpdf_dither_default`
+Verify with: `pnpm cargo:test -- -p daw-io tpdf_dither_default`
 
 ### AC-004 — Plugin delay compensation during offline render
 
 Stem export of a project containing a look-ahead limiter and a linear-phase EQ must
 align every stem with the master bounce within ≤1 sample (PDC applied offline).
 
-Verify with: `cargo test -p daw-io offline_pdc_alignment`
+Verify with: `pnpm cargo:test -- -p daw-io offline_pdc_alignment`
 
 ### AC-005 — Sidechain-aware stem export
 
@@ -64,7 +64,7 @@ kick-sidechained bass) must render the target stem with its sidechain input fed 
 source track's rendered output — not silence — so the audible pumping is preserved in the
 exported stem rather than rendering each track in isolation.
 
-Verify with: `cargo test -p daw-io sidechain_aware_stem_export`
+Verify with: `pnpm cargo:test -- -p daw-io sidechain_aware_stem_export`
 
 ## Open questions
 

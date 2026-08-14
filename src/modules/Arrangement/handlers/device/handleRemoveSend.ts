@@ -4,6 +4,8 @@ import { removeSend } from '../../useCases/device/sendManagement/removeSend';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleRemoveSend = createHandler<'removeSend'>({
+    canReapplyAfterDivergence: (action) =>
+        action.payload.expectedLevel !== undefined && action.payload.expectedPreFader !== undefined,
     validate: (action) => {
         const existing = getTrackStoreState()
             ?.tracks.find((track) => track.id === action.payload.trackId)

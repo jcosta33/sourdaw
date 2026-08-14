@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { MARKER_COLOR_PRESETS, SECTION_COLORS } from '../ColorPalette';
 import { createMarker, createSection } from '../Marker';
+
+// UUID v4 body, e.g. `123e4567-e89b-42d3-a456-426614174000` — the full form,
+// not the 8-hex-char prefix `crypto.randomUUID().slice(0, 8)` used to produce.
+const UUID_BODY = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
 describe('createMarker', () => {
     it('creates a marker with fixed theme color and incrementing id', () => {
@@ -8,8 +13,12 @@ describe('createMarker', () => {
         const buffer = createMarker(8, 'B');
         expect(alpha.beat).toBe(4);
         expect(alpha.name).toBe('A');
-        expect(alpha.color).toBe('oklch(0.40 0.07 200)');
-        expect(alpha.id).toMatch(/^marker-[a-f0-9]{8}$/i);
+        // F14: the default marker color must come from the shared
+        // `ColorPalette.ts` source of truth, not a private duplicated literal.
+        expect(alpha.color).toBe(MARKER_COLOR_PRESETS[0]);
+        // F9: a truncated 8-hex-char id invites birthday collisions across a
+        // long session — the id must carry the full UUID.
+        expect(alpha.id).toMatch(new RegExp(`^marker-${UUID_BODY}$`, 'i'));
         expect(buffer.id).not.toBe(alpha.id);
     });
 });
@@ -20,7 +29,10 @@ describe('createSection', () => {
         expect(state.startBeat).toBe(0);
         expect(state.endBeat).toBe(16);
         expect(state.name).toBe('Intro');
-        expect(state.color).toBe('oklch(0.35 0.06 260)');
-        expect(state.id).toMatch(/^section-[a-f0-9]{8}$/i);
+        // F14: the default section color must come from the shared
+        // `ColorPalette.ts` source of truth, not a private duplicated literal.
+        expect(state.color).toBe(SECTION_COLORS[0]);
+        // F9: same truncated-UUID defect as marker ids.
+        expect(state.id).toMatch(new RegExp(`^section-${UUID_BODY}$`, 'i'));
     });
 });

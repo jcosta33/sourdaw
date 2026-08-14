@@ -241,14 +241,12 @@ impl LevainInstance {
     /// loading calls this once per authored transition; the engine looks
     /// these up by (interval, dynamic, transition type) when a note-on
     /// overlaps a held note closely enough to classify as legato.
-    #[allow(clippy::too_many_arguments)]
     pub fn add_legato_transition(
         &mut self,
         interval: i8,
         transition_type: u8,
         dynamic: u8,
         sample_id: u32,
-        crossfade_in_ms: f32,
         crossfade_out_ms: f32,
     ) {
         use self::types::{Dynamic, LegatoTransition, TransitionType};
@@ -264,7 +262,6 @@ impl LevainInstance {
             transition_type,
             dynamic: Dynamic::from_index(dynamic),
             sample_id,
-            crossfade_in_ms,
             crossfade_out_ms,
         });
     }

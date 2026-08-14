@@ -32,14 +32,14 @@ response, instead of only updating patch metadata.
 When a built-in neural library entry is selected, it must change the neural DSP
 configuration rather than only changing patch metadata.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-002 — Built-in models sound distinct
 
 At least two built-in neural models must produce measurably different output for the same
 input stimulus.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-003 — Model selection is bridged end-to-end
 
@@ -60,7 +60,7 @@ Verify with: `pnpm test:run -- GrinderPanel`
 Model selection and processing must remain allocation-free in the audio callback path,
 with profiles preallocated inside `NeuralCapture`.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — Regression coverage exists for both bridge sync and DSP distinctness
 
@@ -68,7 +68,7 @@ Automated tests must explicitly prove both that the selected built-in model brid
 real DSP model-selection param and that two built-in models render distinct output, so
 neither half can regress silently.
 
-Verify with: `cargo test -p daw-dsp grinder::` and `pnpm test:run -- grinderParamBridge`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::` and `pnpm test:run -- grinderParamBridge`
 
 ## Open questions
 

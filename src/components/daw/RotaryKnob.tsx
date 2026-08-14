@@ -257,9 +257,18 @@ export const RotaryKnob = ({
         };
     }, []);
 
-    const clamp = (value1: number): number => {
+    // The snap-home dead-zone must stay smaller than one keyboard step of the
+    // active resolution. A fixed (max-min)*1% zone is wider than a step for
+    // bipolar fine-stepped knobs (e.g. -1..1, step 0.01 → ±0.02 zone), so an
+    // arrow keystroke computed the next value, the clamp snapped it straight
+    // back to the default, and the Object.is guard swallowed the change —
+    // keyboard alone could never leave the default. Half of the smaller of
+    // (step, 1% of range) still catches a pointer release that lands near the
+    // default, which is the gesture the snap exists for.
+    const clamp = (value1: number, currentStep: number = step): number => {
+        const snapZone = Math.min(currentStep, (max - min) * 0.01) / 2;
         let clamped = Math.max(min, Math.min(max, value1));
-        if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.01) {
+        if (bipolar && Math.abs(clamped - defaultValue) < snapZone) {
             clamped = defaultValue;
         }
         return clamped;
@@ -269,7 +278,7 @@ export const RotaryKnob = ({
         const safeStep = Math.max(Number.EPSILON, currentStep);
         const stepFromMin = Math.round((raw - min) / safeStep);
         const quantized = min + stepFromMin * safeStep;
-        return clamp(Number(quantized.toPrecision(15)));
+        return clamp(Number(quantized.toPrecision(15)), safeStep);
     };
 
     const resetToDefault = () => {

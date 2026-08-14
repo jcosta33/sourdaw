@@ -78,6 +78,8 @@ function lanesMatch(action: RemoveSendAutomationRangeAction): boolean {
 }
 
 export const handleRemoveSendAutomationRange = createHandler<'removeSendAutomationRange'>({
+    canReapplyAfterDivergence: () => true,
+    validate: (action) => lanesMatch(action),
     execute: (action) => {
         if (!lanesMatch(action)) {
             return { status: 'conflict' };

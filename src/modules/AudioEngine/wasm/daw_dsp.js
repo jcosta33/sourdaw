@@ -1484,11 +1484,10 @@ export class LevainInstance {
      * @param {number} transition_type
      * @param {number} dynamic
      * @param {number} sample_id
-     * @param {number} crossfade_in_ms
      * @param {number} crossfade_out_ms
      */
-    add_legato_transition(interval, transition_type, dynamic, sample_id, crossfade_in_ms, crossfade_out_ms) {
-        wasm.levaininstance_add_legato_transition(this.__wbg_ptr, interval, transition_type, dynamic, sample_id, crossfade_in_ms, crossfade_out_ms);
+    add_legato_transition(interval, transition_type, dynamic, sample_id, crossfade_out_ms) {
+        wasm.levaininstance_add_legato_transition(this.__wbg_ptr, interval, transition_type, dynamic, sample_id, crossfade_out_ms);
     }
     /**
      * Add a sample to the uniquely-owned loading bank. `data` is interleaved

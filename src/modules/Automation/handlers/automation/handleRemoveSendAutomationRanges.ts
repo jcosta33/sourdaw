@@ -102,6 +102,7 @@ function currentStateMatches(action: RemoveSendAutomationRangesAction): boolean 
 }
 
 export const handleRemoveSendAutomationRanges = createHandler<'removeSendAutomationRanges'>({
+    canReapplyAfterDivergence: () => true,
     validate: (action) => currentStateMatches(action),
     execute: (action) => {
         if (!currentStateMatches(action)) {

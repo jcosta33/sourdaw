@@ -53,6 +53,11 @@ function resolveRoute(action: RemoveSidechainRouteAction): RouteResolution {
 }
 
 export const handleRemoveSidechainRoute = createHandler<'removeSidechainRoute'>({
+    canReapplyAfterDivergence: (action) =>
+        action.payload.routeId !== undefined &&
+        action.payload.targetDeviceId !== undefined &&
+        action.payload.targetParameterId !== undefined &&
+        action.payload.gain !== undefined,
     validate: (action) => resolveRoute(action).status !== 'conflict',
     materializeCommandArguments: (action) => {
         if (resolveRoute(action).status === 'conflict') {

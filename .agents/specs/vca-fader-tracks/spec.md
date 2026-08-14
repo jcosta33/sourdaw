@@ -36,7 +36,7 @@ Verify with: `pnpm test:run -- AudioEngine vcaTrackMigration`
 A VCA track must have no input node, device chain, output routing, or meter feed in `AudioEngine`;
 bypassing it (unity gain) must leave the render bit-identical to removing it.
 
-Verify with: `cargo test -p daw-engine vca_no_audio_path`
+Verify with: `pnpm cargo:test -- -p daw-engine vca_no_audio_path`
 
 ### AC-003 — Post-fader sends scale by the VCA gain
 
@@ -44,7 +44,7 @@ The VCA multiplier must scale each assigned track's direct output and its post-f
 pre-fader sends unscaled, and be applied at the send-routing stage rather than by mutating the
 track's base gain.
 
-Verify with: `cargo test -p daw-engine vca_post_fader_send_scaling`
+Verify with: `pnpm cargo:test -- -p daw-engine vca_post_fader_send_scaling`
 
 ### AC-004 — Muting a VCA cascades to assigned tracks
 

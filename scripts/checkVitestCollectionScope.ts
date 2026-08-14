@@ -47,7 +47,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * the equality check enumerates; it is not a sample.
  *
  * `tests/e2e` is deliberately absent — those are Playwright specs, excluded by
- * `vite.config.ts` and run by `pnpm test:e2e`.
+ * `vite.config.ts` and run by `pnpm test:e2e <spec>`.
  */
 const collectableRoots = ['src', 'scripts'] as const;
 

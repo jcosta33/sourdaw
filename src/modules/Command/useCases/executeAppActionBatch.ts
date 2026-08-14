@@ -29,6 +29,7 @@ import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { getProjectMutationAdmissionFailure, PROJECT_REPAIR_REQUIRED_MESSAGE } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
@@ -534,6 +535,20 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
+                if (options?.requireCompensation && description?.inverseAction) {
+                    const inverseHandler = getCommandHandler(description.inverseAction);
+                    if (
+                        !inverseHandler?.validate ||
+                        inverseHandler.batchRestriction === 'missing-validation' ||
+                        inverseHandler.canReapplyAfterDivergence?.(description.inverseAction) !== true
+                    ) {
+                        return {
+                            status: 'rejected',
+                            reason: `Action compensation is not guarded inside an atomic batch: ${action.type}`,
+                            actions: [],
+                        };
+                    }
+                }
                 if (
                     suppliedEnvelope &&
                     (suppliedEnvelope.operation !== action.type ||
@@ -610,6 +625,14 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return executeRuntimeAction(runtimeAction, options?.source, options?.shouldExecute);
             }
 
+            if (getProjectMutationAdmissionFailure()) {
+                return {
+                    status: 'conflicted',
+                    reason: PROJECT_REPAIR_REQUIRED_MESSAGE,
+                    actions: [],
+                };
+            }
+
             const validationActions = preparedActions.map((prepared) => prepared.action);
             for (const [actionIndex, prepared] of preparedActions.entries()) {
                 if (
@@ -638,6 +661,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             const storageTransaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, (scope) =>
                 executePreparedBatch(preparedActions, scope, attemptedActions, options?.shouldExecute)
             );
+            storageTransaction.validateCommit(getProjectMutationAdmissionFailure);
             if (storageTransaction.status === 'threw') {
                 storageTransaction.abort();
                 clearBatchSemanticContext();

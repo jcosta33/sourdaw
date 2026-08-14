@@ -12,7 +12,7 @@ sources:
 
 ## Intent
 
-Establish a Playwright structure that serves both CI-bound E2E tests and ephemeral,
+Establish a Playwright structure that serves both maintained E2E tests and ephemeral,
 agent-authored scripts that drive the live app and scrape DOM/visual state to stdout — so
 agents can investigate the running UI, not only assert against it.
 
@@ -29,13 +29,13 @@ agents can investigate the running UI, not only assert against it.
 `playwright.config.ts` must boot and manage the local dev server via its `webServer`
 configuration.
 
-Verify with: `playwright test`
+Verify with: `pnpm test:e2e -- tests/e2e/smoke.spec.ts`
 
-### AC-002 — A CI smoke test passes in tests/e2e
+### AC-002 — A guarded smoke test passes in tests/e2e
 
 A smoke test under `tests/e2e/` must pass via the `test:e2e` script.
 
-Verify with: `playwright test`
+Verify with: `pnpm test:e2e -- tests/e2e/smoke.spec.ts`
 
 ### AC-003 — Agent scripts live in a separate directory
 
@@ -99,7 +99,7 @@ Verify with: `manual` — confirm the standard dev/test workflow runs unaffected
 ## Affected areas
 
 - `playwright.config.ts`
-- `tests/e2e/` (CI smoke test)
+- `tests/e2e/` (guarded smoke test)
 - `.agents/ui-scripts/utils.ts` (`setupAgentBrowser` helper + sample script)
 
 ## Dropped from sources

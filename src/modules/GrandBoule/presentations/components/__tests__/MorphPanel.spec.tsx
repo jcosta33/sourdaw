@@ -65,6 +65,14 @@ describe('MorphPanel — morph position readout', () => {
     });
 });
 
+describe('MorphPanel — knob accessible names', () => {
+    it('exposes the morph and balance knobs as named sliders', () => {
+        render(<MorphPanel {...defaultProps({ morph: morph({ enabled: true }) })} />);
+        expect(screen.getByRole('slider', { name: 'Morph' })).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Balance' })).toBeInTheDocument();
+    });
+});
+
 describe('MorphPanel — disabled state', () => {
     it('dims the knob area when morph is disabled', () => {
         const { container } = render(<MorphPanel {...defaultProps({ morph: morph({ enabled: false }) })} />);

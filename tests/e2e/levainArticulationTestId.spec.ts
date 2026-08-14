@@ -45,4 +45,45 @@ test.describe('Levain articulation & instrument panel', () => {
             expect(after).toBeGreaterThan(before);
         }
     });
+
+    test('selecting another articulation moves aria-pressed to the new chip', async ({ page }) => {
+        test.setTimeout(120000);
+        await openLevain(page);
+
+        // Scope to the articulation rail: the only section whose text includes
+        // its heading. Instrument rows, family filters, and the Desk toggles
+        // live in other sections, so every button inside is an articulation
+        // chip. DawPluginChip sets aria-pressed="true" when active and omits
+        // the attribute entirely when not, so the pressed selector is unique
+        // to the current articulation.
+        const rail = page.locator('section', { hasText: 'Articulation rail' });
+        await expect(rail).toBeVisible({ timeout: 10_000 });
+
+        const chips = rail.getByRole('button');
+        await expect(chips.first()).toBeVisible();
+        expect(await chips.count()).toBeGreaterThanOrEqual(2);
+
+        const activeChips = rail.locator('button[aria-pressed="true"]');
+        await expect(activeChips).toHaveCount(1);
+
+        // Default patch is violin-1 (strings) with currentArticulation
+        // 'sustain', whose display name is "Long" — the first chip.
+        const defaultChip = chips.first();
+        await expect(defaultChip).toContainText('Long');
+        await expect(defaultChip).toHaveAttribute('aria-pressed', 'true');
+
+        // A different articulation from the same strings set. "Staccato"
+        // matches exactly one chip ('staccatissimo' is not in the strings
+        // default set).
+        const staccato = chips.filter({ hasText: 'Staccato' });
+        await expect(staccato).toHaveCount(1);
+        await staccato.click();
+
+        // The new chip is pressed, the prior one is not, and exactly one
+        // pressed chip remains — the selection moved, it did not stack.
+        await expect(staccato).toHaveAttribute('aria-pressed', 'true');
+        await expect(defaultChip).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(activeChips).toHaveCount(1);
+        await expect(activeChips.first()).toContainText('Staccato');
+    });
 });

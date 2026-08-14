@@ -1007,7 +1007,12 @@ describe('backing-vocal plate workflow', () => {
 
         expect(confirmation.risk).toEqual({
             level: 'external-effect',
-            reason: 'This action affects resources or sessions outside the current project.',
+            // The risk policy accumulates the authority reasons of every
+            // operation in the batch, not just the highest-risk one.
+            reason:
+                'This action removes or replaces project content. ' +
+                'This action changes project-wide timing, gain, recording, or signal routing. ' +
+                'This action affects resources or sessions outside the current project.',
         });
         expect(confirmation.protectedUnchanged).toEqual([
             { id: 'track-lead-vocal', name: 'Lead Vocal' },

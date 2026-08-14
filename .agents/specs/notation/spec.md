@@ -155,7 +155,7 @@ The `NotationView` component must use no `forwardRef`, no `useMemo`/`useCallback
 (React Compiler), no namespace imports, SVG-only output, and viewport virtualization keeping no
 more than ~12 measure SVG groups in the DOM for a 200-measure score.
 
-Verify with: `pnpm lint` and `pnpm deps:validate` (architectural rules); `pnpm test:run -- Notation` (≤ ~12 measure groups during scroll)
+Verify with: `pnpm lint <changed-files>` and `pnpm deps:validate` (architectural rules); `pnpm test:run -- Notation` (≤ ~12 measure groups during scroll)
 
 ### AC-019 — Performance and licensing record (R1, constraints)
 

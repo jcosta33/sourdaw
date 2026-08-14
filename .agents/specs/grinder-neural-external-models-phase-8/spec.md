@@ -65,7 +65,7 @@ Verify with: `pnpm test:run -- grinderParamBridge`
 Different imported profiles must produce measurably different DSP output for the same
 input stimulus.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-006 — Imported entries are reusable
 
@@ -79,14 +79,14 @@ Verify with: `pnpm test:run -- neuralLibraryPersistence`
 Factory Neural library entries must continue to load their distinct built-in slots after
 the imported-model path lands.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-008 — RT safety is preserved
 
 Imported-profile application must not allocate inside the per-sample or per-block
 processing loop.
 
-Verify with: `cargo test -p daw-dsp grinder::`
+Verify with: `pnpm cargo:test -- -p daw-dsp grinder::`
 
 ### AC-009 — No cross-module internal imports
 

@@ -9,7 +9,6 @@ import {
     parseWorktrees,
     removeLane,
     shellPort,
-    type CampaignIssue,
     type LaneRemovalPort,
     type PullRequest,
     type ShellRunner,
@@ -41,17 +40,6 @@ function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
         headRefOid: 'head',
         headRepository: 'jcosta33/sourdaw',
         mergedAt: '2026-08-12T00:00:00Z',
-        body: 'Part of #7.',
-        ...overrides,
-    };
-}
-
-function campaign(overrides: Partial<CampaignIssue> = {}): CampaignIssue {
-    return {
-        number: 7,
-        state: 'CLOSED',
-        body: 'Merged in #42.',
-        labels: [{ name: 'epic' }],
         ...overrides,
     };
 }
@@ -66,7 +54,6 @@ type FakeInput = {
     operation?: string;
     remoteHead?: string | null;
     pullRequests?: PullRequest[];
-    campaigns?: CampaignIssue[];
 };
 
 function fakePort(input: FakeInput = {}) {
@@ -85,7 +72,6 @@ function fakePort(input: FakeInput = {}) {
         operation: () => input.operation,
         remoteHead: () => (input.remoteHead === null ? undefined : (input.remoteHead ?? 'head')),
         pullRequests: () => input.pullRequests ?? [pullRequest()],
-        campaignIssues: () => input.campaigns ?? [campaign()],
         lock: (path) => {
             calls.push(`lock:${path}`);
             locked = true;
@@ -100,7 +86,7 @@ function fakePort(input: FakeInput = {}) {
 }
 
 describe('lane removal', () => {
-    it('removes a clean inactive campaign lane after two stable reads', () => {
+    it('removes a clean inactive lane after two stable reads', () => {
         const { port, calls } = fakePort();
 
         removeLane(target, port);
@@ -135,13 +121,6 @@ describe('lane removal', () => {
         ['open PR', target, { pullRequests: [pullRequest({ state: 'OPEN', mergedAt: null })] }, /still active/],
         ['foreign repository', target, { pullRequests: [pullRequest({ headRepository: 'jcosta33/fork' })] }, /foreign/],
         ['reused branch', target, { pullRequests: [pullRequest(), pullRequest({ number: 43 })] }, /one pull request/],
-        ['open campaign', target, { campaigns: [campaign({ state: 'OPEN' })] }, /no closed campaign authority/],
-        [
-            'unlinked campaign',
-            target,
-            { campaigns: [campaign({ body: 'Other work.' })] },
-            /no closed campaign authority/,
-        ],
         ['moved remote', target, { remoteHead: 'moved' }, /ownership is unproven/],
     ])('rejects a %s lane', (_case, path, input, message) => {
         const { port, calls } = fakePort(input);
@@ -160,17 +139,6 @@ describe('lane removal', () => {
 
         expect(calls).toEqual(['fetch', `unlock:${target}`, `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
     });
-
-    it.each(['Part of (#7).', 'Part of https://github.com/jcosta33/sourdaw/issues/7.'])(
-        'accepts campaign reference form: %s',
-        (body) => {
-            const { port, calls } = fakePort({ pullRequests: [pullRequest({ body })] });
-
-            removeLane(target, port);
-
-            expect(calls).toContain(`remove:${target}`);
-        }
-    );
 });
 
 describe('worktree parser', () => {
@@ -213,7 +181,6 @@ describe('lane-removal shell boundary', () => {
                                     repo: { full_name: 'jcosta33/sourdaw' },
                                 },
                                 merged_at: '2026-08-12T00:00:00Z',
-                                body: 'Part of #7.',
                             },
                         ],
                     ]);
@@ -278,7 +245,6 @@ describe('lane-removal shell boundary', () => {
                 operation: () => undefined,
                 remoteHead: () => undefined,
                 pullRequests: () => [pullRequest({ headRefOid: head })],
-                campaignIssues: () => [campaign()],
                 lock: (path) => {
                     git(['worktree', 'lock', '--reason', 'test', path]);
                 },

@@ -131,7 +131,8 @@ function validateConditions(input: {
 }
 
 export function prepareCommandBatchPreflight(
-    envelope: VersionedCommandBatchEnvelope
+    envelope: VersionedCommandBatchEnvelope,
+    options: { allowCompatibleProjectDivergence?: boolean } = {}
 ): CommandBatchValidationPreparation {
     const targetIds = getRequiredTargetIds(envelope);
     const assetReferences = getAssetReferences(envelope);
@@ -154,8 +155,11 @@ export function prepareCommandBatchPreflight(
     if (!before.audioGraphValid) {
         return { status: 'rejected', reason: 'Command batch audio graph is invalid' };
     }
+    const preconditions = options.allowCompatibleProjectDivergence
+        ? envelope.preconditions.filter((condition) => condition.kind !== 'project-revision')
+        : envelope.preconditions;
     const conditionFailure = validateConditions({
-        conditions: envelope.preconditions,
+        conditions: preconditions,
         envelope,
         lockedRanges: before.lockedRanges,
         revision: commandProjectRevisionPort.isConfigured()

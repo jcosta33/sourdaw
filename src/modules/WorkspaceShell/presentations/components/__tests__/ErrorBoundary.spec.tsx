@@ -45,4 +45,31 @@ describe('ErrorBoundary', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
         expect(screen.getByText('recovered')).toBeInTheDocument();
     });
+
+    // The boundary wraps every device panel inside a height-constrained container.
+    // A viewport-tall fallback there clips Try Again / Reload App out of the panel.
+    it('sizes the fallback to the container, not the viewport, in the inline variant', () => {
+        render(
+            <div style={{ height: '300px' }}>
+                <ErrorBoundary variant="inline">
+                    <MaybeThrow />
+                </ErrorBoundary>
+            </div>
+        );
+
+        const fallback = screen.getByText('Something went wrong').parentElement;
+        expect(fallback?.style.height).toBe('100%');
+        expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Reload App' })).toBeInTheDocument();
+    });
+
+    it('sizes the fallback to the viewport by default', () => {
+        render(
+            <ErrorBoundary>
+                <MaybeThrow />
+            </ErrorBoundary>
+        );
+
+        expect(screen.getByText('Something went wrong').parentElement?.style.height).toBe('100vh');
+    });
 });

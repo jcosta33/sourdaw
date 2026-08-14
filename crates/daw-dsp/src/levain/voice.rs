@@ -302,6 +302,89 @@ impl SamplePlayback {
         self.speed = self.base_speed;
     }
 
+    /// Leave a sustain loop and let whatever remains of the recording play
+    /// out once.
+    ///
+    /// SFZ names the two loop behaviours separately, and this engine's forward
+    /// loop is the second of them. Under `loop_continuous` "the loop repeats if
+    /// the loop end is reached during the release phase"; under `loop_sustain`
+    /// the player "plays the loop while the note is held" and "during the
+    /// release phase, there's no looping" — playback runs on from wherever the
+    /// playhead is to the end of the sample, and whichever of the release
+    /// envelope or the sample data ends first ends the note. Every Levain bank
+    /// in this repo loops the *whole* sustain recording (`loopStart` 0,
+    /// `loopEnd` = frame count) with a zero-frame seam crossfade, so a release
+    /// that kept looping wraps the playhead straight back onto that
+    /// recording's own attack transient underneath the release fade.
+    ///
+    /// Audio-thread safe: field writes only.
+    #[inline]
+    pub fn exit_loop(&mut self) {
+        if self.loop_mode == LoopMode::NoLoop {
+            return;
+        }
+        self.loop_mode = LoopMode::NoLoop;
+        // Defensive, and narrower than it looks. `NoLoop` only ever ends a
+        // stream by reaching `end`, so a backwards playhead would never end.
+        // A `PingPong` reflection is the only thing that makes `speed`
+        // negative, and for `playback` and `crossfade_playback` this flip is
+        // redundant: `update_vibrato_block` runs for every active voice at the
+        // top of every block and calls `apply_pitch_mod`, which reassigns
+        // `speed` from the always-positive `base_speed` before any tick reads
+        // it. `layer_secondary` is never pitch-modulated, so there the flip is
+        // the only thing that turns the stream around. No shipped bank uses
+        // `pingpong` — the 18 banks here declare only `forward` and `none` —
+        // but the manifest schema and the worklet both accept it.
+        if self.speed < 0.0 {
+            self.speed = -self.speed;
+        }
+    }
+
+    /// Place the playhead at `position`, folded into this stream's own range.
+    ///
+    /// Used by crossfade legato to start the incoming zone where the outgoing
+    /// voice already is, rather than at the zone's first frame. `position` is
+    /// in frames of *this* stream, which is what makes it musically right:
+    /// wherever the held note had got to, the slurred note is at least that
+    /// far past its own recorded onset, so the transition adds no second
+    /// attack. Positions past the end fold back into the loop when there is
+    /// one; a target zone that does not loop is a short or percussive
+    /// articulation, where re-articulating from the start is the correct
+    /// reading of a slur into it.
+    ///
+    /// Known limit of the fold: sustain lengths vary widely inside one bank —
+    /// flute runs 5.99 s against violin's 15-16 s — so an outgoing playhead
+    /// past the incoming zone's length is routine, and `p % L` then lands
+    /// somewhere unrelated to where the player was, including the recording's
+    /// own frame 0. It never sounds *worse* than the retrigger this replaces
+    /// and costs nothing to compute, but it is arbitrary rather than musical.
+    /// Matching the elapsed *fraction* of each recording, or clamping into the
+    /// last loop iteration, would both be defensible; neither is implemented
+    /// here because no shipped bank has a recorded interval sample to compare
+    /// either against.
+    #[inline]
+    pub fn seek_to(&mut self, position: f64) {
+        let start = self.start as f64;
+        let end = self.end as f64;
+        if end <= start || position <= start {
+            self.position = start;
+            return;
+        }
+        if position < end {
+            self.position = position;
+            return;
+        }
+
+        let loop_start = self.loop_start as f64;
+        let loop_end = self.loop_end as f64;
+        let loop_span = loop_end - loop_start;
+        if self.loop_mode != LoopMode::NoLoop && loop_span > 0.0 {
+            self.position = loop_start + (position - loop_start) % loop_span;
+            return;
+        }
+        self.position = start;
+    }
+
     /// Read one sample with cubic Hermite interpolation.
     #[inline]
     pub fn read_sample(&mut self, pool: &SamplePool) -> f32 {
@@ -405,6 +488,40 @@ impl SamplePlayback {
 // ---------------------------------------------------------------------------
 // Levain voice
 // ---------------------------------------------------------------------------
+
+/// Per-sample increment for a crossfade that must span `crossfade_time_secs`.
+///
+/// The lower bound is the whole point. `tick` advances the crossfade by
+/// accumulating this into an `f32` in `[0, 1)`, and an `f32` add is a no-op
+/// once the addend falls below half the accumulator's ULP — which near 1.0 is
+/// 2.98e-8. A rate under that stalls the ramp *permanently*: the voice stays
+/// `crossfading`, never reaches its own zone at full level, and never runs the
+/// completion branch that frees `crossfade_playback`. Measured on this code:
+/// 300 s completes, 1000 s stops dead at `crossfade_amount == 0.5`, 3000 s at
+/// 0.125, 10000 s at 0.0625.
+///
+/// `f32::EPSILON` (1.19e-7) is the floor. It is deliberately one binade above
+/// the tightest correct bound rather than at it: the largest ULP in `[0, 1)`
+/// is 5.96e-8, so `2^-24` (EPSILON/2) is the smallest increment that still
+/// advances the accumulator everywhere, and EPSILON is twice that. The factor
+/// of two buys nothing musical and costs nothing — it caps a crossfade at
+/// ~175 s at 48 kHz instead of ~350 s, and every legato time this engine
+/// produces on its own is between 20 ms and 150 ms — so the rounder constant
+/// wins over the tighter one.
+///
+/// That ceiling is a representability limit, not a musical opinion. Only a
+/// value the arithmetic cannot express at all is bent, and it is bent to the
+/// longest fade that still completes rather than rejected.
+///
+/// Reachable from bank data: `crossfadeOutMs` is validated only as a
+/// non-negative finite `f32`, so a manifest may legitimately carry `1e9`.
+///
+/// Audio-thread safe: arithmetic only.
+#[inline]
+pub(super) fn crossfade_rate_for(crossfade_time_secs: f32, sample_rate: f32) -> f32 {
+    let samples = (crossfade_time_secs * sample_rate).max(1.0);
+    (1.0 / samples).max(f32::EPSILON)
+}
 
 /// A single levain voice that renders one active note.
 /// Heavier than a synth voice: may read from multiple mic streams,
@@ -617,12 +734,25 @@ impl LevainVoice {
 
     /// Start releasing this voice. The tail keeps sounding, but the voice is no
     /// longer held, so per-note expression stops addressing it (audit MD-2).
+    ///
+    /// Every stream leaves its sustain loop here: with no recorded release
+    /// sample to hand over to, the modelled release is the recording's own
+    /// remaining tail under the release envelope, which is only reachable once
+    /// the loop stops holding the playhead back. See `SamplePlayback::exit_loop`.
     pub fn release(&mut self) {
         self.held = false;
         self.amp_env.release();
+        self.playback.exit_loop();
+        self.crossfade_playback.exit_loop();
+        self.layer_secondary.exit_loop();
     }
 
-    /// Begin a crossfade to a new sample (for dynamic layer transitions or legato).
+    /// Begin a crossfade from this voice's current stream into `new_zone` —
+    /// the crossfade-legato fallback for a slur with no recorded interval
+    /// sample. `target_start_position` is where the incoming zone's playhead
+    /// starts, in that zone's own frames; the caller passes the outgoing
+    /// stream's position so the new zone enters past its recorded onset
+    /// instead of re-articulating it.
     pub fn start_crossfade(
         &mut self,
         new_zone: &Zone,
@@ -630,6 +760,7 @@ impl LevainVoice {
         crossfade_time_secs: f32,
         sample_rate: f32,
         pool: &SamplePool,
+        target_start_position: f64,
     ) {
         // Move current playback to crossfade slot.
         self.crossfade_playback = self.playback.clone();
@@ -639,10 +770,10 @@ impl LevainVoice {
             db_to_linear(new_zone.gain_db),
             pool,
         );
+        self.playback.seek_to(target_start_position);
 
         self.crossfade_amount = 0.0;
-        let samples = (crossfade_time_secs * sample_rate).max(1.0);
-        self.crossfade_rate = 1.0 / samples;
+        self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
         self.zone_id = new_zone.id;
     }
@@ -666,8 +797,7 @@ impl LevainVoice {
         self.crossfade_playback
             .configure_with_pool(transition_sample, note, 1.0, pool);
         self.crossfade_amount = 0.0;
-        let samples = (crossfade_time_secs * sample_rate).max(1.0);
-        self.crossfade_rate = 1.0 / samples;
+        self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
     }
 
@@ -771,7 +901,22 @@ impl LevainVoice {
             let secondary = self.crossfade_playback.read_sample(pool);
             self.crossfade_amount += self.crossfade_rate;
 
-            if self.crossfade_amount >= 1.0 {
+            // The hand-over is over as soon as either side is finished: the
+            // ramp reached the end, or the outgoing stream ran out of
+            // recording to hand over.
+            //
+            // That second case is not an edge case. A transition recording is
+            // a short gesture — the ones this engine synthesises for its own
+            // fallback are shorter still — and any fade longer than it leaves
+            // `gain_old` weighting a stream that reads 0.0 while `gain_new`
+            // holds the arriving note under unity for the rest of the ramp.
+            // Equal power is the right law for two live streams and the wrong
+            // one for a live stream against silence, where it is just
+            // attenuation: a 100 ms recording under a 30 s fade left the line
+            // 15 dB down for half a minute. Completing here keeps the sum of
+            // powers constant, which is what equal power is for.
+            let outgoing_finished = !self.crossfade_playback.active;
+            if self.crossfade_amount >= 1.0 || outgoing_finished {
                 self.crossfade_amount = 1.0;
                 self.crossfading = false;
                 self.crossfade_playback.active = false;
@@ -796,6 +941,20 @@ impl LevainVoice {
         // Check if sample playback is finished.
         if !self.playback.active && !self.crossfading {
             self.amp_env.release();
+            // ...and once no stream has anything left to read, free the slot
+            // rather than sit out the rest of the release envelope. Every
+            // `read_sample` above returns 0.0 from this point, so the voice can
+            // only emit zeros and nothing audible is lost — but the envelope
+            // does not reach the `1e-5` that idles it until 11.5 time
+            // constants have passed, which on a struck one-shot with a long
+            // modelled release is tens of seconds of pool held by silence.
+            // `VoicePool::allocate` cannot recover it either: `steal_priority`
+            // scores an inaudible release tail `1`, below every sounding
+            // voice, so the allocator steals the note still ringing instead.
+            let layer_still_sounding = self.layer_active && self.layer_secondary.active;
+            if !layer_still_sounding {
+                self.active = false;
+            }
         }
 
         // MPE timbre / CC74 (audit MD-2). A one-pole split gives the low band;

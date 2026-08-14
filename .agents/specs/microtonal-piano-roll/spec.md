@@ -58,7 +58,7 @@ Verify with: `pnpm test:run -- pianoRollControllerLayoutSwitch`
 Switching between 12-row and 53-row layouts must not breach the UI main-thread long-task
 budget.
 
-Verify with: `pnpm test:perf -- pianoRollLayoutSwitch`
+Verify with: `pnpm test:run -- pianoRollLayoutSwitch`
 
 ## Open questions
 
