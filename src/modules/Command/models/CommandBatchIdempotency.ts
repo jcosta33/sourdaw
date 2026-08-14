@@ -28,6 +28,11 @@ export type CommandBatchIdempotencyRepository = {
         contentHash: string;
         serializedReceipt: string;
     }) => Promise<void>;
+    tryAcquireRecoveryLease?: (input: {
+        projectId: string;
+        idempotencyKey: string;
+        contentHash: string;
+    }) => Promise<boolean>;
     release?: (input: { projectId: string; idempotencyKey: string; contentHash: string }) => Promise<void>;
 };
 

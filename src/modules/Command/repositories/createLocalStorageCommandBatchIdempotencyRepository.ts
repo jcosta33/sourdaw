@@ -300,6 +300,33 @@ export function createLocalStorageCommandBatchIdempotencyRepository(
                 releaseClaimLease(input);
             }
         },
+        async tryAcquireRecoveryLease(input): Promise<boolean> {
+            const key = recordKey(input);
+            if (claimLeases.has(key)) {
+                return false;
+            }
+            const lease = await tryAcquireClaimLease(claimLockName(input));
+            if (!lease) {
+                return false;
+            }
+            let retainLease = false;
+            try {
+                await requestExclusiveLock(() => {
+                    validateIdentity(input);
+                    const existing = findRecord(decodeRecords(localStorage.getItem(STORAGE_KEY)), input);
+                    if (existing && existing.contentHash !== input.contentHash) {
+                        throw new Error('The durable idempotency claim conflicts with project recovery');
+                    }
+                });
+                claimLeases.set(key, lease);
+                retainLease = true;
+                return true;
+            } finally {
+                if (!retainLease) {
+                    lease.release();
+                }
+            }
+        },
         async release(input): Promise<void> {
             try {
                 await requestExclusiveLock(() => {

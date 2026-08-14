@@ -216,6 +216,24 @@ describe('createLocalStorageCommandBatchIdempotencyRepository', () => {
         await expect(restartedRepository.claim(retryInput)).resolves.toEqual({ status: 'claimed' });
     });
 
+    it('serializes project-checkpoint recovery through the origin-wide claim lease', async () => {
+        const claimLeaseManager = createClaimLeaseManager();
+        const firstRepository = createRepository(requestImmediately, claimLeaseManager.tryAcquireClaimLease);
+        const secondRepository = createRepository(requestImmediately, claimLeaseManager.tryAcquireClaimLease);
+        const recoveryInput = {
+            projectId: 'project-1',
+            idempotencyKey: 'request-recovery',
+            contentHash: HASH_ONE,
+        };
+
+        await expect(firstRepository.tryAcquireRecoveryLease?.(recoveryInput)).resolves.toBe(true);
+        await expect(secondRepository.tryAcquireRecoveryLease?.(recoveryInput)).resolves.toBe(false);
+
+        await firstRepository.release?.(recoveryInput);
+        await expect(secondRepository.tryAcquireRecoveryLease?.(recoveryInput)).resolves.toBe(true);
+        await secondRepository.release?.(recoveryInput);
+    });
+
     it('serializes concurrent clients so only one can claim a project and key', async () => {
         const requestExclusiveLock = createSerializedExclusiveLock();
         const firstRepository = createRepository(requestExclusiveLock);

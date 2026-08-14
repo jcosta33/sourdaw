@@ -356,6 +356,8 @@ describe('command batch idempotency', () => {
             lookup: () => Promise.resolve({ status: 'missing' }),
             claim: () => Promise.resolve({ status: 'claimed' }),
             complete: () => Promise.resolve(),
+            tryAcquireRecoveryLease: () => Promise.resolve(true),
+            release: () => Promise.resolve(),
         });
         runtimeEffectCount = 0;
         runtimeGain = 1;
@@ -432,23 +434,57 @@ describe('command batch idempotency', () => {
         expect(runtimeEffectCount).toBe(1);
     });
 
-    it('keeps a committed batch pending until its failed external effect reconciles on retry', async () => {
+    it('serializes recovery while a committed batch reconciles its failed external effect', async () => {
         clearHandlerRegistry();
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
         let effectAttempts = 0;
+        let markRecoveryStarted!: () => void;
+        let releaseRecoveryEffect!: () => void;
+        const recoveryStarted = new Promise<void>((resolve) => {
+            markRecoveryStarted = resolve;
+        });
+        const recoveryEffectGate = new Promise<void>((resolve) => {
+            releaseRecoveryEffect = resolve;
+        });
+        let recoveryLeaseHeld = false;
+        const tryAcquireRecoveryLease = vi.fn(() => {
+            if (recoveryLeaseHeld) {
+                return Promise.resolve(false);
+            }
+            recoveryLeaseHeld = true;
+            return Promise.resolve(true);
+        });
+        const release = vi.fn(() => {
+            recoveryLeaseHeld = false;
+            return Promise.resolve();
+        });
+        const recoveryAwareRepository = {
+            lookup: () => Promise.resolve({ status: 'missing' as const }),
+            claim: () => Promise.resolve({ status: 'claimed' as const }),
+            complete: () => {
+                recoveryLeaseHeld = false;
+                return Promise.resolve();
+            },
+            release,
+            tryAcquireRecoveryLease,
+        };
+        commandBatchIdempotencyPort.setRepository(recoveryAwareRepository);
         registerHandlerMap({
             setTrackGain: createHandler({
                 execute: () => {
                     gainStorage.set({ value: 0.8 });
-                    const applyRuntimeEffect = () => {
+                    const applyRuntimeEffect = async () => {
                         effectAttempts += 1;
                         if (effectAttempts <= 2) {
-                            return Promise.reject(new Error('runtime strip unavailable'));
+                            throw new Error('runtime strip unavailable');
+                        }
+                        if (effectAttempts === 3) {
+                            markRecoveryStarted();
+                            await recoveryEffectGate;
                         }
                         runtimeGain = 0.8;
                         runtimeEffectCount += 1;
-                        return Promise.resolve();
                     };
                     return {
                         status: 'written',
@@ -465,11 +501,19 @@ describe('command batch idempotency', () => {
             confirmed: true,
             serialized: batch.serialized,
         });
-        const retry = await executeVersionedCommandBatchEnvelope({
+        const retryPromise = executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
         });
+        await recoveryStarted;
+        const concurrentRetry = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        releaseRecoveryEffect();
+        const retry = await retryPromise;
         const settledRetry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
@@ -481,7 +525,13 @@ describe('command batch idempotency', () => {
             receipt: { outcome: 'partially-committed' },
         });
         expect(retry.status).toBe('idempotent-replay');
+        expect(concurrentRetry).toMatchObject({
+            status: 'ambiguous',
+            reason: 'Command batch external-effect recovery is already in progress',
+        });
         expect(settledRetry.status).toBe('idempotent-replay');
+        expect(tryAcquireRecoveryLease).toHaveBeenCalledTimes(2);
+        expect(release).toHaveBeenCalledTimes(1);
         expect(effectAttempts).toBe(3);
         expect(runtimeEffectCount).toBe(1);
         expect(runtimeGain).toBe(0.8);

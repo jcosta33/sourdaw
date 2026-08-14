@@ -30,6 +30,13 @@ export const commandBatchIdempotencyPort = {
     }): Promise<void> | null {
         return repository?.complete(input) ?? null;
     },
+    tryAcquireRecoveryLease(input: {
+        projectId: string;
+        idempotencyKey: string;
+        contentHash: string;
+    }): Promise<boolean> | null {
+        return repository?.tryAcquireRecoveryLease?.(input) ?? null;
+    },
     release(input: { projectId: string; idempotencyKey: string; contentHash: string }): Promise<void> | null {
         return repository?.release?.(input) ?? null;
     },

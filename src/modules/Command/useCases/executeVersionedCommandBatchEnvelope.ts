@@ -156,45 +156,70 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         actions: [] as [],
                     };
                 }
-                const reconciliation = await reconcileProjectCommandBatchEffects({
-                    envelope: resolvedEnvelope,
-                    serializedReceipt: projectCheckpoint.serializedReceipt,
+                const recoveryLeaseAcquired = await commandBatchIdempotencyPort.tryAcquireRecoveryLease({
+                    projectId: parsed.envelope.projectId,
+                    idempotencyKey: parsed.envelope.idempotencyKey,
+                    contentHash: idempotencyContentHash,
                 });
-                if (reconciliation.status === 'failed') {
+                if (recoveryLeaseAcquired !== true) {
                     return {
                         status: 'ambiguous' as const,
-                        reason: reconciliation.reason,
+                        reason: 'Command batch external-effect recovery is already in progress',
                         actions: [] as [],
                         receipt,
                     };
                 }
                 try {
-                    persistProjectCommandBatchIdempotencyCheckpoint({
-                        projectId: parsed.envelope.projectId,
-                        idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
-                        state: 'complete',
+                    const reconciliation = await reconcileProjectCommandBatchEffects({
+                        envelope: resolvedEnvelope,
                         serializedReceipt: projectCheckpoint.serializedReceipt,
                     });
-                } catch (error) {
-                    return {
-                        status: 'ambiguous' as const,
-                        reason: `Idempotency checkpoint finalization failed: ${error instanceof Error ? error.message : String(error)}`,
-                        actions: [] as [],
-                        receipt,
-                    };
+                    if (reconciliation.status === 'failed') {
+                        return {
+                            status: 'ambiguous' as const,
+                            reason: reconciliation.reason,
+                            actions: [] as [],
+                            receipt,
+                        };
+                    }
+                    try {
+                        persistProjectCommandBatchIdempotencyCheckpoint({
+                            projectId: parsed.envelope.projectId,
+                            idempotencyKey: parsed.envelope.idempotencyKey,
+                            contentHash: idempotencyContentHash,
+                            state: 'complete',
+                            serializedReceipt: projectCheckpoint.serializedReceipt,
+                        });
+                    } catch (error) {
+                        return {
+                            status: 'ambiguous' as const,
+                            reason: `Idempotency checkpoint finalization failed: ${error instanceof Error ? error.message : String(error)}`,
+                            actions: [] as [],
+                            receipt,
+                        };
+                    }
+                    try {
+                        await commandBatchIdempotencyPort.complete({
+                            projectId: parsed.envelope.projectId,
+                            idempotencyKey: parsed.envelope.idempotencyKey,
+                            contentHash: idempotencyContentHash,
+                            serializedReceipt: projectCheckpoint.serializedReceipt,
+                        });
+                    } catch {
+                        // Project truth is the durable authority; the local cache may heal on a later retry.
+                    }
+                    return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+                } finally {
+                    try {
+                        await commandBatchIdempotencyPort.release({
+                            projectId: parsed.envelope.projectId,
+                            idempotencyKey: parsed.envelope.idempotencyKey,
+                            contentHash: idempotencyContentHash,
+                        });
+                    } catch {
+                        // The recovery outcome remains authoritative; repository release is best effort.
+                    }
                 }
-                try {
-                    await commandBatchIdempotencyPort.complete({
-                        projectId: parsed.envelope.projectId,
-                        idempotencyKey: parsed.envelope.idempotencyKey,
-                        contentHash: idempotencyContentHash,
-                        serializedReceipt: projectCheckpoint.serializedReceipt,
-                    });
-                } catch {
-                    // Project truth is the durable authority; the local cache may heal on a later retry.
-                }
-                return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
             }
             mayReclaimPendingClaim = true;
             const prior = await commandBatchIdempotencyPort.lookup({
