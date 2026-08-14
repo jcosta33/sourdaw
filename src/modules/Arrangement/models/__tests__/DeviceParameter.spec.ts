@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { BUILTIN_PLUGINS, getPluginById, isDeviceSupportedOnCurrentPlatform } from '../DeviceParameter';
 
@@ -36,5 +36,51 @@ describe('isDeviceSupportedOnCurrentPlatform', () => {
         } finally {
             delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
         }
+    });
+});
+
+describe('synth/drum variant base descriptor lookup', () => {
+    // `createSynthVariant`/`createDrumVariant` resolve their base descriptor by
+    // id when the module loads. A missing base used to be a bare `.find(...)!`,
+    // so a renamed or removed `builtin-synth`/`builtin-drum-kit` descriptor
+    // crashed the whole module import with a generic
+    // `Cannot read properties of undefined` deep inside a spread, rather than
+    // naming which descriptor id went missing.
+    it('throws a descriptive error, not a generic property-access crash, when builtin-synth is missing', async () => {
+        vi.resetModules();
+        vi.doMock('../PluginDescriptors/BuiltinInstrumentDescriptors', async () => {
+            const actual = await vi.importActual<{
+                BUILTIN_INSTRUMENT_DESCRIPTORS: unknown[];
+            }>('../PluginDescriptors/BuiltinInstrumentDescriptors');
+            return {
+                BUILTIN_INSTRUMENT_DESCRIPTORS: (actual.BUILTIN_INSTRUMENT_DESCRIPTORS as { id: string }[]).filter(
+                    (descriptor) => descriptor.id !== 'builtin-synth'
+                ),
+            };
+        });
+
+        await expect(import('../DeviceParameter')).rejects.toThrow('builtin-synth');
+
+        vi.doUnmock('../PluginDescriptors/BuiltinInstrumentDescriptors');
+        vi.resetModules();
+    });
+
+    it('throws a descriptive error, not a generic property-access crash, when builtin-drum-kit is missing', async () => {
+        vi.resetModules();
+        vi.doMock('../PluginDescriptors/BuiltinInstrumentDescriptors', async () => {
+            const actual = await vi.importActual<{
+                BUILTIN_INSTRUMENT_DESCRIPTORS: unknown[];
+            }>('../PluginDescriptors/BuiltinInstrumentDescriptors');
+            return {
+                BUILTIN_INSTRUMENT_DESCRIPTORS: (actual.BUILTIN_INSTRUMENT_DESCRIPTORS as { id: string }[]).filter(
+                    (descriptor) => descriptor.id !== 'builtin-drum-kit'
+                ),
+            };
+        });
+
+        await expect(import('../DeviceParameter')).rejects.toThrow('builtin-drum-kit');
+
+        vi.doUnmock('../PluginDescriptors/BuiltinInstrumentDescriptors');
+        vi.resetModules();
     });
 });

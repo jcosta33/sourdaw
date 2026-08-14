@@ -37,6 +37,99 @@ function createValidManifest() {
     };
 }
 
+describe('parseSampleManifest legato transitions', () => {
+    it('normalises a recorded transition and defaults a bank that authors none to an empty list', () => {
+        const withNone = parseSampleManifest(createValidManifest());
+        expect(withNone.legatoTransitions).toEqual([]);
+
+        const parsed = parseSampleManifest({
+            ...createValidManifest(),
+            legatoTransitions: [
+                {
+                    // Wider than an octave: `LegatoTransitionStore::find` has no
+                    // interval bound, so a recorded transition this wide does
+                    // play. Only the synthetic-glide fallback stops at 12.
+                    file: 'slur/up-2-mf.wav',
+                    interval: -13,
+                    transitionType: 'portamento',
+                    dynamic: 'ff',
+                    crossfadeOutMs: 80.5,
+                },
+            ],
+        });
+
+        expect(parsed.legatoTransitions).toEqual([
+            {
+                file: 'slur/up-2-mf.wav',
+                interval: -13,
+                transitionType: 'portamento',
+                dynamic: 'ff',
+                crossfadeOutMs: 80.5,
+            },
+        ]);
+    });
+
+    it('accepts a crossfade time right at the ceiling and rejects the next representable one', () => {
+        const atCeiling = parseSampleManifest({
+            ...createValidManifest(),
+            legatoTransitions: [
+                {
+                    file: 'slur.wav',
+                    interval: 2,
+                    transitionType: 'slurred',
+                    dynamic: 'mf',
+                    crossfadeOutMs: 5000,
+                },
+            ],
+        });
+        expect(atCeiling.legatoTransitions[0]?.crossfadeOutMs).toBe(5000);
+
+        expect(() =>
+            parseSampleManifest({
+                ...createValidManifest(),
+                legatoTransitions: [
+                    {
+                        file: 'slur.wav',
+                        interval: 2,
+                        transitionType: 'slurred',
+                        dynamic: 'mf',
+                        crossfadeOutMs: 5000.001,
+                    },
+                ],
+            })
+        ).toThrow(TypeError);
+    });
+
+    it.each([
+        ['a zero interval, which is not a transition', { interval: 0 }],
+        ['an interval no i8 lookup key could hold', { interval: 128 }],
+        ['a transition type the DSP has no discriminant for', { transitionType: 'scoop' }],
+        // The classifier only ever asks for `slurred` or `portamento`; a `rip`
+        // could be reached solely by the store's any-type fallback, in the
+        // context of a slur it was not recorded for.
+        ['a transition type the classifier can never request', { transitionType: 'rip' }],
+        ['a dynamic outside the six recorded layers', { dynamic: 'mff' }],
+        ['an absolute sample path', { file: '/etc/passwd' }],
+        ['a negative crossfade time', { crossfadeOutMs: -1 }],
+        // The engine renders 1e6 and 1e9 identically, so a typo here is
+        // invisible in the audio rather than obviously wrong.
+        ['a crossfade time no legato gesture could take', { crossfadeOutMs: 1_000_000 }],
+    ])('rejects %s', (_case, override) => {
+        const transition = {
+            file: 'slur.wav',
+            interval: 2,
+            transitionType: 'slurred',
+            dynamic: 'mf',
+            crossfadeOutMs: 80,
+            ...override,
+        };
+
+        expect(() => parseSampleManifest({ ...createValidManifest(), legatoTransitions: [transition] })).toThrow(
+            TypeError
+        );
+    });
+});
+
 describe('parseSampleManifest', () => {
     it('accepts every bundled Levain bank manifest', async () => {
         const root = path.join(process.cwd(), 'public/samples/levain');

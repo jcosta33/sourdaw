@@ -239,7 +239,7 @@ export function createTrack(input: {
         input.kind === 'midi'
             ? [
                   {
-                      id: input.initialDeviceId ?? `dev-synth-${crypto.randomUUID().slice(0, 8)}`,
+                      id: input.initialDeviceId ?? `dev-synth-${crypto.randomUUID()}`,
                       name: 'Synth',
                       type: 'builtin-synth',
                       bypassed: false,
@@ -248,9 +248,9 @@ export function createTrack(input: {
               ]
             : [];
 
-    const initialAltId = input.initialAlternativeId ?? `alt-${crypto.randomUUID().slice(0, 8)}`;
+    const initialAltId = input.initialAlternativeId ?? `alt-${crypto.randomUUID()}`;
     return {
-        id: input.id ?? (input.kind === 'master' ? 'master' : `track-${crypto.randomUUID().slice(0, 8)}`),
+        id: input.id ?? (input.kind === 'master' ? 'master' : `track-${crypto.randomUUID()}`),
         name: input.name,
         kind: input.kind,
         muted: false,

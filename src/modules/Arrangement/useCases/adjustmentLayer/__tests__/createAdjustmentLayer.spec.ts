@@ -69,4 +69,33 @@ describe('createAdjustmentLayer', () => {
 
         expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
+
+    // F13: `EFFECT_PRESETS[effectType]` is a shared module-level array of
+    // parameter objects. `[...EFFECT_PRESETS[type]]` only clones the outer
+    // array, so every layer created with the same effect type points at the
+    // SAME parameter objects — mutating one layer's parameter in place
+    // (e.g. a future `param.value = x`) would corrupt every other layer of
+    // that effect type, including ones created afterward.
+    it('gives each created layer its own parameter objects, not shared references to EFFECT_PRESETS', () => {
+        createAdjustmentLayer({ name: 'EQ One', effectType: 'eq', layerId: 'layer-a' });
+        const firstCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        const firstLayer = firstCall?.[0]?.layers[0];
+        if (!firstLayer) {
+            throw new Error('expected the first layer to have been created');
+        }
+        mocks.adjustmentLayerStoreValue.value = { layers: [firstLayer] };
+
+        createAdjustmentLayer({ name: 'EQ Two', effectType: 'eq', layerId: 'layer-b' });
+        const secondCall = mocks.adjustmentLayerStoreSet.mock.calls[1];
+        const secondLayer = secondCall?.[0]?.layers[1];
+        if (!secondLayer) {
+            throw new Error('expected the second layer to have been created');
+        }
+
+        expect(firstLayer.parameters[0]).not.toBe(secondLayer.parameters[0]);
+
+        // Mutating one layer's parameter in place must not leak into the other.
+        firstLayer.parameters[0]!.value = 9999;
+        expect(secondLayer.parameters[0]!.value).not.toBe(9999);
+    });
 });

@@ -769,9 +769,18 @@ function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
     const transient_state = get_current_track_transient_state();
     const snapshot_state = sanitizeTrackSnapshot(value);
 
+    // `sanitizeTrackSnapshot` already nulls a `selectedTrackId` that does not
+    // resolve against *its own* input, but that check ran against the CRDT
+    // payload, not against the live transient value merged in below. Without
+    // re-validating here, a track deleted by a collab peer (or dropped by
+    // malformed hydration) left `selectedTrackId` pointing at nothing.
+    const selected_track_still_exists = snapshot_state.tracks.some(
+        (track) => track.id === transient_state.selectedTrackId
+    );
+
     return {
         tracks: snapshot_state.tracks,
-        selectedTrackId: transient_state.selectedTrackId,
+        selectedTrackId: selected_track_still_exists ? transient_state.selectedTrackId : null,
         ghostClips: transient_state.ghostClips,
     };
 }

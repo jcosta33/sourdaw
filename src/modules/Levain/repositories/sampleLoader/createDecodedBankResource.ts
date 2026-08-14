@@ -1,7 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { fetchAndDecode } from './fetchAndDecode';
-import { parseSampleManifest, type ManifestZone, type SampleManifest } from './sampleManifest';
+import {
+    parseSampleManifest,
+    type ManifestLegatoTransition,
+    type ManifestZone,
+    type SampleManifest,
+} from './sampleManifest';
 
 import type { SampleLodConfig } from './helpers';
 
@@ -24,6 +29,12 @@ export type DecodedBank = {
     files: readonly string[];
     samples: ReadonlyMap<string, DecodedSample>;
     zones: readonly DecodedBankZone[];
+    /**
+     * Recorded interval samples, if the bank authors any. Their files are
+     * decoded alongside the zone files so the engine can be told about them
+     * before it needs them.
+     */
+    legatoTransitions: readonly ManifestLegatoTransition[];
     numArticulations: number;
     numMics: number;
     decodedByteLength: number;
@@ -523,6 +534,13 @@ export function createDecodedBankResource({
             seenFiles.add(zone.file);
             files.push(zone.file);
         }
+        for (const transition of manifest.legatoTransitions) {
+            if (seenFiles.has(transition.file)) {
+                continue;
+            }
+            seenFiles.add(transition.file);
+            files.push(transition.file);
+        }
 
         const samples = entry.samples;
         if (files.length === 0) {
@@ -569,6 +587,7 @@ export function createDecodedBankResource({
             files: Object.freeze(files),
             samples,
             zones: Object.freeze(zones),
+            legatoTransitions: manifest.legatoTransitions,
             numArticulations,
             numMics,
             decodedByteLength: entry.decodedBytes,
