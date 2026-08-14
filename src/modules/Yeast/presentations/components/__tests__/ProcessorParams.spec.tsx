@@ -55,6 +55,20 @@ function selectOptionTexts(label: string): string[] {
 }
 
 describe('ProcessorParams', () => {
+    it('binds controls to stored params, falling back to compiled defaults', () => {
+        renderFor('arpeggiator', { params: { mode: 2, rate_denom: 16, gate: 1.2 } });
+
+        // The select is controlled by the stored param, not the literal 0.
+        expect(findSelectByLabelText('Mode').value).toBe('2');
+        expect(findSelectByLabelText('Mode').selectedOptions[0]?.textContent).toBe('Up-Down');
+
+        // Knobs expose the stored value through the slider role.
+        expect(screen.getByRole('slider', { name: 'Rate' })).toHaveAttribute('aria-valuenow', '16');
+        expect(screen.getByRole('slider', { name: 'Gate' })).toHaveAttribute('aria-valuenow', '1.2');
+        // swing has no stored value: the compiled default 0 shows through.
+        expect(screen.getByRole('slider', { name: 'Swing' })).toHaveAttribute('aria-valuenow', '0');
+    });
+
     it('renders the arpeggiator controls and routes mode changes', () => {
         const { onSetParam } = renderFor('arpeggiator');
         expect(screen.getByText('Mode')).toBeInTheDocument();
@@ -228,11 +242,14 @@ describe('ProcessorParams', () => {
         fireEvent.pointerDown(amountSlider, { button: 0, pointerId: 1, clientY: 100 });
         fireEvent.pointerMove(amountSlider, { pointerId: 1, clientY: 80 });
 
-        expect(onSetParam).toHaveBeenCalledWith('groove-1', 'amount', expect.any(Number), true);
+        // Every move commits: K drops the transient flag so the controlled
+        // knob tracks the drag through the store (transient writes only
+        // apply an audio projection and would leave the knob frozen).
+        expect(onSetParam).toHaveBeenCalledWith('groove-1', 'amount', expect.any(Number));
 
         fireEvent.pointerUp(amountSlider, { pointerId: 1 });
 
-        expect(onSetParam).toHaveBeenLastCalledWith('groove-1', 'amount', expect.any(Number), false);
+        expect(onSetParam).toHaveBeenLastCalledWith('groove-1', 'amount', expect.any(Number));
         expect(onSetGrooveTemplate).toHaveBeenCalledWith('groove-1', 'pocket-1');
         expect(onSetParam).not.toHaveBeenCalledWith('groove-1', 'template', expect.any(Number));
     });
@@ -262,11 +279,11 @@ describe('ProcessorParams', () => {
     it('drives a knob via keyboard and routes the changed value through onSetParam', () => {
         // The real RotaryKnob is role=slider, keyboard-driven. ArrowUp changes
         // the value and forwards it through onChange, which the ProcessorParams
-        // K component routes to onSetParam(id, name, value, isTransient).
+        // K component routes to onSetParam as a committed (store-bound) write.
         const { onSetParam } = renderFor('transposer');
         const slider = screen.getByRole('slider', { name: 'Semi' });
         fireEvent.keyDown(slider, { key: 'ArrowUp' });
-        expect(onSetParam).toHaveBeenCalledWith('p1', 'semitones', expect.any(Number), expect.any(Boolean));
+        expect(onSetParam).toHaveBeenCalledWith('p1', 'semitones', expect.any(Number));
         expect(onSetParam.mock.calls[0]?.[1]).toBe('semitones');
     });
 });
