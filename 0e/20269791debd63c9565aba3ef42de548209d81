@@ -1,0 +1,366 @@
+scripts/deliverPullRequest.ts
+  s_0a3429e31e555d::t_7e177cd7e96545 412,443
+  s_0a3429e31e555d::t_222b6327da679f 195
+.agents/skills/tauri-platform/SKILL.md
+  s_0a3429e31e555d::t_635c0079df6e22 57
+AGENTS.md
+  s_0a3429e31e555d::t_d82904a4085895 1,3,5,7-10,13,15,17-24,26-29,31-72,74-102
+  s_0a3429e31e555d::t_773bde77773b5b 11-12,30,73
+  s_0a3429e31e555d::t_240443342efcb3 25
+scripts/__tests__/verifyChange.spec.ts
+  s_0a3429e31e555d::t_5ba04c25493174 8,10,21-34
+  s_0a3429e31e555d::t_df264cd901a89a 42-47,50,52,72-74
+  s_0a3429e31e555d::t_59fb89004bbc91 36,56-61
+  s_0a3429e31e555d::t_cbb6fa9e198954 35
+  s_0a3429e31e555d::t_5302030b66c53e 54-55
+  s_0a3429e31e555d::t_3dbdf85385d089 75-76
+  s_0a3429e31e555d::t_a43e8921f3f1fb 68,83,93-94,160
+.agents/specs/grandboule-aftertouch-mapping/spec.md
+  s_0a3429e31e555d::t_22cf921fc4dbb6 707-708
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_0a3429e31e555d::t_7e177cd7e96545 132,135,232
+  s_0a3429e31e555d::t_447cf417b9c0a2 233
+  s_0a3429e31e555d::t_3959d56af9c45d 109,243,246,305,329
+.agents/specs/microtonal-piano-roll/spec.md
+  s_0a3429e31e555d::t_7bc409df4bb418 61
+.agents/specs/waveform-peak-cache/spec.md
+  s_0a3429e31e555d::t_7bc409df4bb418 34,41,48,55
+src/modules/Collaboration/AGENTS.md
+  s_0a3429e31e555d::t_8e115d63d56e34 6
+scripts/resourceGuard.ts
+  s_0a3429e31e555d::t_c9a8f9b174ed2e 294-299,301,303,327,334-335,339-340,346,353,366-367,371-375
+  s_0a3429e31e555d::t_c0f9c890569332 39,56,58,71-74
+  s_0a3429e31e555d::t_3ed4329736b702 60,597
+  s_0a3429e31e555d::t_59a05e3c690c4c 402-414,424-426
+  s_0a3429e31e555d::t_fade4a6abba95e 1-10,12-38,40-55,59,61-70,75-143,161-202,216,218-219,221-231,241-281,283-286,288-290,292-293,302,304-326,329-333,341-345,347-352,356-358,368-370,376-401,420-422,427-429,437-457,470-472,482,484-491,498-504,509-513,529-530,532-533,535-544,548-560,566-567,573-576,580-582,584,589-590,592-594,611,615-621,641-690,706-710,715-769,772-780
+  s_0a3429e31e555d::t_47e5849f15a8c4 473-479,483
+  s_0a3429e31e555d::t_4a4e417a762206 562,564-565
+  s_0a3429e31e555d::t_5b7bfa0041668b 57,493-495,599
+  s_0a3429e31e555d::t_45e2241bbac7cb 705,711-713
+  s_0a3429e31e555d::t_b2978fce3a907c 492,496-497,505-508,514-528,547,579,587-588,595-596,598,600,603,609-610,612-614,638-639
+  s_0a3429e31e555d::t_5b54ff26dfe919 622,624,627,630-631,633-637
+  s_0a3429e31e555d::t_ff18ecc2f79d4f 691,770
+  s_0a3429e31e555d::t_f45c9e72a0f56c 481
+  s_0a3429e31e555d::t_63856ca3803707 11,354,415-419,423,531,534,561,563,569,583,623,625-626,628-629,632,640
+  s_0a3429e31e555d::t_f8ec78f67e9d41 144,150
+  s_0a3429e31e555d::t_87750a1af84b48 145-149,151-160,203-215,217,220,232-240
+  s_0a3429e31e555d::t_30afa15525d46f 282,287,291
+  s_0a3429e31e555d::t_8faf2ba70a48e1 336-338
+  s_0a3429e31e555d::t_894d0094e20abe 692-704
+  s_0a3429e31e555d::t_49d612a6de9490 771
+  s_0a3429e31e555d::t_3115617f5955ad 430-436,458-459,480
+  s_0a3429e31e555d::t_155b5562cc5998 362
+  s_0a3429e31e555d::t_8c65d0656309e4 714
+  s_0a3429e31e555d::t_48ec7989da9b57 460-469,545-546,568,570-572,577-578,585-586,591,601-602,604-608
+  s_0a3429e31e555d::t_9616b5f0691d15 300,328,355,359-361,363-365
+docs/06-testing.md
+  s_0a3429e31e555d::t_5a81fd5647465a 152,687-693,695-700
+  s_0a3429e31e555d::t_8e115d63d56e34 10
+  s_0a3429e31e555d::t_70add773098ccd 694
+  s_0a3429e31e555d::t_885ac975b15b59 61-63
+.agents/specs/node-view/spec.md
+  s_0a3429e31e555d::t_28f44652d3e23a 196
+.agents/specs/e2e-expansion/spec.md
+  s_0a3429e31e555d::t_50a280117498b4 17,31,38,44,50,57,59,61,63,71,78,85
+.agents/specs/rave-timbre-transfer/spec.md
+  s_0a3429e31e555d::t_28f44652d3e23a 157,264,735,749
+.agents/skills/testing-file-layout/SKILL.md
+  s_0a3429e31e555d::t_5a92fdeed8fc59 65
+.agents/specs/playwright-agent-ui-interaction/spec.md
+  s_0a3429e31e555d::t_8993ef85a75bd9 15,32,34,38
+  s_0a3429e31e555d::t_bc4fd65d65b7f7 102
+tsconfig.eslint.json
+  s_0a3429e31e555d::t_f8ec78f67e9d41 6
+  s_0a3429e31e555d::t_346555e5c2f502 3-5
+.node-version
+  s_0a3429e31e555d::t_a707cd2e648bff 1
+.agents/specs/dependency-boundary-validation/spec.md
+  s_0a3429e31e555d::t_28f44652d3e23a 59
+.agents/specs/bakery/spec.md
+  s_0a3429e31e555d::t_635c0079df6e22 54,61,72,79,86,93,100,107,143,157,177,185,195,214,232,238,245,252,259,287,296,312,320,329,344,352
+  s_0a3429e31e555d::t_12627ee7a6a7c2 182,243,261,264-265,267,333
+  s_0a3429e31e555d::t_22cf921fc4dbb6 372
+crates/daw-dsp/AGENTS.md
+  s_0a3429e31e555d::t_240443342efcb3 11
+  s_0a3429e31e555d::t_769a5daf3d20b6 23
+.agents/specs/scala-tuning-formats/spec.md
+  s_0a3429e31e555d::t_635c0079df6e22 34,41,48,55,60,63
+  s_0a3429e31e555d::t_bc4fd65d65b7f7 72
+.agents/specs/render-parity-instrumentation/spec.md
+  s_0a3429e31e555d::t_c7fee2562c8dda 122-124
+  s_0a3429e31e555d::t_22cf921fc4dbb6 103
+.agents/specs/dependency-boundary-validation/research.md
+  s_0a3429e31e555d::t_28f44652d3e23a 148,185
+docs/architecture/06-crdt-collaboration.md
+  s_0a3429e31e555d::t_8e115d63d56e34 75
+.agents/specs/chrome-first-capability/spec.md
+  s_0a3429e31e555d::t_12627ee7a6a7c2 117,143,225
+.agents/specs/midi-generation/spec.md
+  s_0a3429e31e555d::t_635c0079df6e22 36,43,49,56,84,91,98,105,111,125,132,139,148,159,165,172,179,185,193,200,214,220,227,234,241,247,254,263,272,280,289,298,306,314
+tsconfig.e2e.json
+  s_0a3429e31e555d::t_4a342d2a51a518 1-15
+.agents/specs/articulation-maps/spec.md
+  s_0a3429e31e555d::t_635c0079df6e22 64,71,78,85,93,102,110,125,150,158,203,219
+package.json
+  s_0a3429e31e555d::t_a4a73d9b9c6a67 7-9,13,15-20,22-27,31-38,40-45,48-51,53,59-62
+  s_0a3429e31e555d::t_8a58495f9ac251 55-58
+  s_0a3429e31e555d::t_885ac975b15b59 46-47
+  s_0a3429e31e555d::t_b056515ab3d5dc 21,39,54,64-65
+scripts/__tests__/tsconfigProjectCoverage.spec.ts
+  s_0a3429e31e555d::t_9ff58c542964b6 6,23,91
+.agents/specs/e2e-expansion-phase-2/spec.md
+  s_0a3429e31e555d::t_bc4fd65d65b7f7 17
+  s_0a3429e31e555d::t_516ad7784df36e 59,61
+vite.config.ts
+  s_0a3429e31e555d::t_05803409c677a5 46
+.agents/specs/notation/spec.md
+  s_0a3429e31e555d::t_22cf921fc4dbb6 158
+.agents/specs/parameter-automation-coverage/spec.md
+  s_0a3429e31e555d::t_22cf921fc4dbb6 146,149,632
+playwright.config.ts
+  s_0a3429e31e555d::t_05803409c677a5 21
+  s_0a3429e31e555d::t_83fee9ab0f79d5 2
+  s_0a3429e31e555d::t_a161b60fbf9e56 1,19-20,36
+  s_0a3429e31e555d::t_37da2590f4a170 5
+  s_0a3429e31e555d::t_f45c9e72a0f56c 6
+.github/workflows/health-gates.yml
+  s_0a3429e31e555d::t_a4a73d9b9c6a67 25-26,66,82-84,113,141
+.agents/specs/sample-player-sfz/spec.md
+  s_0a3429e31e555d::t_28f44652d3e23a 174
+docs/modern-primitives.md
+  s_0a3429e31e555d::t_769a5daf3d20b6 21-23,29
+.agents/specs/layout-components-migration/spec.md
+  s_0a3429e31e555d::t_22cf921fc4dbb6 77
+.agents/specs/offline-live-collapse/spec.md
+  s_0a3429e31e555d::t_22cf921fc4dbb6 774
+.agents/specs/clip-pitch-editing/spec.md
+  s_0a3429e31e555d::t_bc4fd65d65b7f7 106,108
+  s_0a3429e31e555d::t_14d2956fca6ffb 34,41,50,59,88,104,113,133,145,154
+scripts/__tests__/resourceGuard.spec.ts
+  s_0a3429e31e555d::t_dc38d3a537dfd7 47-51
+  s_0a3429e31e555d::t_372419d0d4c0ec 328-331,351
+  s_0a3429e31e555d::t_a3e1e04dbddbd0 332-350,352-356,377-385,389-410
+  s_0a3429e31e555d::t_ff18ecc2f79d4f 11,438-440,444-448
+  s_0a3429e31e555d::t_f6fa434695afed 223,240
+  s_0a3429e31e555d::t_12e0cffdd64079 232
+  s_0a3429e31e555d::t_76c42d24e3999d 269-270
+  s_0a3429e31e555d::t_f45c9e72a0f56c 30,60-62,272
+  s_0a3429e31e555d::t_543bfe49511e39 300-314
+  s_0a3429e31e555d::t_157712e6e6b858 121-144
+  s_0a3429e31e555d::t_d3fbf4ae5eaf35 1,34-46,52-59,63-66,198,218,248,251-252,254,264,271,274,279-280
+  s_0a3429e31e555d::t_894d0094e20abe 442
+  s_0a3429e31e555d::t_9ab726d56dd68c 413-417
+  s_0a3429e31e555d::t_51c33a4a25cdc4 372,386-387
+  s_0a3429e31e555d::t_b8d8e4474a7811 224-231,233-236,239,241-245,247
+  s_0a3429e31e555d::t_df9b0858440e37 2-10,12-21,24-29,31-33,67-120,145-173,175-187,189-197,199-208,210-211,214-215,217,219-222,249-250,253,255-263,265-268,273,275-276,278,281-291,293-299,315-320,322-327,357-371,373-376,388,411-412,418-437,449-453
+  s_0a3429e31e555d::t_68909a4ea05086 246
+  s_0a3429e31e555d::t_45e2241bbac7cb 441,443
+  s_0a3429e31e555d::t_1111808883fddd 22-23,174,188,209,292,321
+  s_0a3429e31e555d::t_0a69c831a28411 212-213,216,237-238,277
+.agents/specs/project-durability/spec.md
+  s_0a3429e31e555d::t_22cf921fc4dbb6 131
+scripts/verifyChange.ts
+  s_0a3429e31e555d::t_c542d32bcf563b 127,129,131-133,137,139,141-143
+  s_0a3429e31e555d::t_7685baeffefb0c 226-229,237-238
+  s_0a3429e31e555d::t_f45c9e72a0f56c 230
+  s_0a3429e31e555d::t_1f4ff288a94fbd 4,7-8,14,199,488-508,510
+  s_0a3429e31e555d::t_c4014afa5148bd 219,221-223,231,244-250,253-260,265-271
+  s_0a3429e31e555d::t_46d380543333d8 76,78
+  s_0a3429e31e555d::t_333af233280dd4 206,208,210,212
+  s_0a3429e31e555d::t_dd581e8a2928a0 236
+  s_0a3429e31e555d::t_7ff0e46d85ca26 233-234
+.agents/specs/performance-budgets-profiling/spec.md
+  s_0a3429e31e555d::t_bc4fd65d65b7f7 17,38,48,50,93
+  s_0a3429e31e555d::t_635c0079df6e22 40,46
+  s_0a3429e31e555d::t_7bc409df4bb418 53
+.agents/specs/plugin-identity/spec.md
+  s_0a3429e31e555d::t_925be179b59bc4 80
+README.md
+  s_62e9c3dc3ba52a::t_a54b9e2d34a10f 28
+docs/07-conventions.md
+  s_62e9c3dc3ba52a::t_c16abb22ebf8bd 9-12
+scripts/health-gates-web.sh
+  s_62e9c3dc3ba52a::t_e7558bee080288 13-14,18
+scripts/runLint.ts
+  s_62e9c3dc3ba52a::t_217412c4bc3d6e 1-93
+scripts/test-health-gate-scripts.sh
+  s_62e9c3dc3ba52a::t_fccb6dc9d9cdf1 24,72,75,85-86,99-100,104,123-124,146-147,170-171,268-269
+.agents/specs/ableton-link-sync/spec.md
+  s_0a3429e31e555d::t_76f4bfa81bf6a8 46
+.agents/specs/atmos/spec.md
+  s_0a3429e31e555d::t_45aef3bb2dcae6 49,56,64,71,79,86,94,101,108,159,199,228,261,272,308
+.agents/specs/audio-generation/spec.md
+  s_0a3429e31e555d::t_acb0a159c98fd4 37,44,51,58,71,92,134,141,170,192
+.agents/specs/constraint-composition/spec.md
+  s_0a3429e31e555d::t_4f6867df245337 56,63
+.agents/specs/dawproject-interchange/spec.md
+  s_0a3429e31e555d::t_be8cbcee24bccc 39,47,54
+.agents/specs/device-racks/spec.md
+  s_0a3429e31e555d::t_e421234c99cc57 41,48,62,69,90,112,131,140,148,157,177,208,216,225,254
+.agents/specs/drum-machine-groove-classifier/spec.md
+  s_0a3429e31e555d::t_15ec8c00222095 36,50
+.agents/specs/drum-machine-groove-templates/spec.md
+  s_0a3429e31e555d::t_d768500a767f5b 36,43,50,56,62,76
+.agents/specs/drum-machine-realism/spec.md
+  s_0a3429e31e555d::t_47ef7f2623b751 35,42,49,56,63,70,77,83,90,97,104,111,117,132,139,146,153,162,170,178,187,195,202,210,226,233
+.agents/specs/drum-machine/spec.md
+  s_0a3429e31e555d::t_2dc4227f2c57d4 35,42,49,56,63,70,77,84,91,98,119,126,134,141,148,155
+.agents/specs/dsp-library-expansion/spec.md
+  s_0a3429e31e555d::t_12ba619ae0a98f 36,43,50,57,64
+.agents/specs/effects-mastering-ui/spec.md
+  s_0a3429e31e555d::t_3444cb530e83c5 47,54,167,213,239,261
+.agents/specs/elastic-audio/spec.md
+  s_0a3429e31e555d::t_0a4996d8713e9b 40,54
+.agents/specs/export-encoders-integrity/spec.md
+  s_0a3429e31e555d::t_b3cb02a1e893b4 37,44,51,58,67
+.agents/specs/fermenter-additive/spec.md
+  s_0a3429e31e555d::t_d14fb5252745cf 33,40,47,54
+.agents/specs/fermenter-ai-presets/spec.md
+  s_0a3429e31e555d::t_3550389a8891a6 33,47,61
+.agents/specs/fermenter-effects/spec.md
+  s_0a3429e31e555d::t_1f3d8d7597f2c3 35,42,48,55,62,69,76,89
+.agents/specs/fermenter-filters/spec.md
+  s_0a3429e31e555d::t_adc90efebf5067 34,41,48,55,62,69,76
+.agents/specs/fermenter-fm-synthesis/spec.md
+  s_0a3429e31e555d::t_7cc88a4a93758b 34,41,48,55,62,69
+.agents/specs/fermenter-gpu-compute/spec.md
+  s_0a3429e31e555d::t_d0df8778f94538 34
+.agents/specs/fermenter-granular/spec.md
+  s_0a3429e31e555d::t_055424c5382788 33,40,47,54,61
+.agents/specs/fermenter-modulation/spec.md
+  s_0a3429e31e555d::t_4e87a56955802c 35,42,49,56,63
+.agents/specs/fermenter-noise/spec.md
+  s_0a3429e31e555d::t_6a0a4447eda4a3 32,39,46
+.agents/specs/fermenter-physical-modeling/spec.md
+  s_0a3429e31e555d::t_1d1c60f0532ffe 33,40,47,54
+.agents/specs/fermenter-sampler/spec.md
+  s_0a3429e31e555d::t_08e0b4bf5b9ae6 34,41,48,55,62,69
+.agents/specs/fermenter-spectral-warp/spec.md
+  s_0a3429e31e555d::t_53e8bfb5916562 34,41,47,54,87
+.agents/specs/fermenter-thermal-drift/spec.md
+  s_0a3429e31e555d::t_86e6ea9644502c 35,46,53,60,66,74,81,89,96,108
+.agents/specs/fermenter-virtual-analog/spec.md
+  s_0a3429e31e555d::t_d876db0bfb4ffe 34,41,48,55,61,74
+.agents/specs/fermenter-voice-management/spec.md
+  s_0a3429e31e555d::t_5510096cd4cf50 34,41,48,55,62,69
+.agents/specs/fermenter-wavetable/spec.md
+  s_0a3429e31e555d::t_572c9cbd4d0347 34,41,48,55,62,69,76
+.agents/specs/fermenter/spec.md
+  s_0a3429e31e555d::t_25fc16221ec098 47,55,62,70,84,91,106,115,122,129,137,145,156,163,170,178,186
+.agents/specs/grinder-amp-family-voicing-phase-11/spec.md
+  s_0a3429e31e555d::t_f6ce6e3fc7c8c1 35,42,49,56,63,72,79
+.agents/specs/grinder-cab-reality-phase-4/spec.md
+  s_0a3429e31e555d::t_e9a3bf60bc5de5 35,42,49,63,70,77,84,91
+.agents/specs/grinder-extreme-gain-decay-phase-13/spec.md
+  s_0a3429e31e555d::t_2cdfcc78e8f3d9 35,42,49,55,62,68,75,82,89
+.agents/specs/grinder-high-gain-phase-5/spec.md
+  s_0a3429e31e555d::t_3e542caf6ea1e8 36,43,50,57,64,71,79,94
+.agents/specs/grinder-input-conditioning-phase-12/spec.md
+  s_0a3429e31e555d::t_16daec37cc42f0 35,42,49,56,63
+.agents/specs/grinder-later-amp-stability-phase-6/spec.md
+  s_0a3429e31e555d::t_b69b7f3575bb2b 35,42,49,56,63,70,77,84
+.agents/specs/grinder-later-amp-voicing-phase-10/spec.md
+  s_0a3429e31e555d::t_d269388125ddfb 36,43,50,58,65,72,80
+.agents/specs/grinder-live-rig-basics-phase-3/spec.md
+  s_0a3429e31e555d::t_60f5770b0cb969 35,85
+.agents/specs/grinder-modular-rig-graph/spec.md
+  s_0a3429e31e555d::t_aacbe80d5ccdef 52,65,94,144,152
+.agents/specs/grinder-neural-builtins-phase-7/spec.md
+  s_0a3429e31e555d::t_3604eb754184d2 35,42,63,71
+.agents/specs/grinder-neural-external-models-phase-8/spec.md
+  s_0a3429e31e555d::t_00371c8fc00ca5 68,82,89
+.agents/specs/grinder-routing-cab-phase-9/spec.md
+  s_0a3429e31e555d::t_06f6deade67004 35,42,49,69
+.agents/specs/grinder-stabilization-phase-2/spec.md
+  s_0a3429e31e555d::t_7bd8a3f732578f 36,43,50,98
+.agents/specs/knead/spec.md
+  s_0a3429e31e555d::t_9747e177a20c06 37,43,49,55,62,69,76,83,90,97,104,111,137,143,149,155,161,167,173,179,185,191,197,203,209,215,227,233
+.agents/specs/loudness-metering-ebur128/spec.md
+  s_0a3429e31e555d::t_db1e406e2f7973 33,40,46,53,59
+.agents/specs/microtuning-engine/spec.md
+  s_0a3429e31e555d::t_7be380761c9a9f 36,44,57,64,71
+.agents/specs/midi-engine-primitives/spec.md
+  s_0a3429e31e555d::t_9665ea3a936a6a 34,40,48,55
+.agents/specs/ml-onset-detection/spec.md
+  s_0a3429e31e555d::t_4d44c78b52817b 33,40
+.agents/specs/mts-esp-host/spec.md
+  s_0a3429e31e555d::t_af26130f869e46 36,57
+.agents/specs/multi-resolution-sessions/spec.md
+  s_0a3429e31e555d::t_749f00146c1403 33,61,67
+.agents/specs/multitrack-recording-workflow/spec.md
+  s_0a3429e31e555d::t_881f4f01773a62 34,55
+.agents/specs/non-linear-clip-launcher/spec.md
+  s_0a3429e31e555d::t_0f43392b8da8fd 34,41,48,55,61,68,74,81,88,109,116,125,133,139,146,154,162,172,179,186,193,201,208,218,236,252,258,265,272,278,287,294,302
+.agents/specs/orchestra-articulation-system/spec.md
+  s_0a3429e31e555d::t_0f86d17caa99c1 35,42,49,56,63,71
+.agents/specs/orchestra-convolution-reverb/spec.md
+  s_0a3429e31e555d::t_7234fa187244c5 34,41,48,55,62
+.agents/specs/orchestra-expression-dynamics/spec.md
+  s_0a3429e31e555d::t_6beb155ba2b9c5 35,43,50,57,65,73,81
+.agents/specs/orchestra-gpu-visualization/spec.md
+  s_0a3429e31e555d::t_3c8e50dc62508f 35,56
+.agents/specs/orchestra-legato-engine/spec.md
+  s_0a3429e31e555d::t_d491688aab3bbc 36,43,51,59,67,74
+.agents/specs/orchestra-lod-governor/spec.md
+  s_0a3429e31e555d::t_dbc0ad741ba5be 35,42,50,57,64
+.agents/specs/orchestra-mic-mixing/spec.md
+  s_0a3429e31e555d::t_db9b79b92b1d04 35,42,49,57,64,72
+.agents/specs/orchestra-performance-intelligence/spec.md
+  s_0a3429e31e555d::t_8fe3773daf74b0 37,45,52,59,67
+.agents/specs/orchestra-physical-modeling/spec.md
+  s_0a3429e31e555d::t_edf3c5c65fcfba 38,45,52,60,67
+.agents/specs/orchestra-presets/spec.md
+  s_0a3429e31e555d::t_a8ea0fbc91e44a 50
+.agents/specs/orchestra-release-triggers/spec.md
+  s_0a3429e31e555d::t_93d5d9975887cd 35,42,49,56
+.agents/specs/orchestra-score-import/spec.md
+  s_0a3429e31e555d::t_748c5775e9a11d 35,42,50,57
+.agents/specs/orchestra-spectral-modeling/spec.md
+  s_0a3429e31e555d::t_ce2125b8239279 34,41,48,55
+.agents/specs/orchestra/spec.md
+  s_0a3429e31e555d::t_c766cc5f7cb779 39,47,54,62,70,77,84,91,98,106,113
+.agents/specs/piano-plugin/spec.md
+  s_0a3429e31e555d::t_45aa2b1afec053 42,49,55,62,69,76,83,90,96,103,110,117,143,150,157,163,172,195,211,219,227,244,253
+.agents/specs/plugin-hosting-clap/spec.md
+  s_0a3429e31e555d::t_52de1d06f7128a 36,43,56,63,70,76
+.agents/specs/retrospective-capture/spec.md
+  s_0a3429e31e555d::t_0358e792fce679 36,43,50,57,64,71,84,92,100,107,115,123,137,151
+.agents/specs/sample-library/spec.md
+  s_0a3429e31e555d::t_61947fe26ff119 35,42,49,56,69,75,81,87,113,119,129,136,143,163,169,176,183,196,203,210,217,225,232,239,247
+.agents/specs/scale-folding/spec.md
+  s_0a3429e31e555d::t_900a60831b1eab 34,40,46,53,60
+.agents/specs/scoring/spec.md
+  s_0a3429e31e555d::t_6a005053d0f5a0 46,60,108,114
+.agents/specs/slicer/spec.md
+  s_0a3429e31e555d::t_7e874690742fbc 64
+.agents/specs/soundfont-playback/spec.md
+  s_0a3429e31e555d::t_3adabb1a241d20 33,40,61
+.agents/specs/unified-sampler-suite/spec.md
+  s_0a3429e31e555d::t_3f497acf436f5c 32,39,46,53,71,79,86,93,120,129,136,143,151,168,175,182,190,198,205,211,218,225,233,241,249,255,279,285,291,299,309,319,329
+.agents/specs/vca-fader-tracks/spec.md
+  s_0a3429e31e555d::t_b9cb683c4f2594 39,47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0e20269791debd63c9565aba3ef42de548209d81",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
