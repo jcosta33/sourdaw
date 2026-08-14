@@ -1,0 +1,45 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_1f4bae0eb10bf2 3,407-418,420-421,423
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_a40848e8f8cca9::t_b6e583b4c02ce9 85
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_a40848e8f8cca9::t_0105c371363170 476-482,584-591
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_a40848e8f8cca9::t_3e23a4a69b947c 58
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  s_a40848e8f8cca9::t_e17a79c3350a5a 61
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_a40848e8f8cca9::t_cda95a8826ee4d 81
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_a40848e8f8cca9::t_7d6f7fe0797aec 116
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_a40848e8f8cca9::t_cbc22fe60e6244 15,75-81
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_9d2cdd278790af 55,61,70
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_a40848e8f8cca9::t_4427ea801fa7ac 61-64,67,75
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_a40848e8f8cca9::t_28a1e0092735ca 44
+src/modules/Toaster/stores/__tests__/toasterStore.spec.ts
+  s_a40848e8f8cca9::t_48a9617f15dc9d 9,150-241
+src/modules/Toaster/stores/index.ts
+  s_a40848e8f8cca9::t_10ae551cc32d1e 1
+src/modules/Toaster/stores/toasterStore.ts
+  s_a40848e8f8cca9::t_404b5231a8162b 45-61,79-81,91-101,111-126,170-171,173-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "86bc5ad8dd63d0f7159e84f2640be5fc14c5bd66",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
