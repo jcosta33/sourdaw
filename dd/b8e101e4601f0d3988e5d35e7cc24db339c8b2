@@ -1,0 +1,16 @@
+src/components/daw/RotaryKnob.tsx
+  h_1228e573df1f42 260-269,271,281
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  h_1228e573df1f42 498-536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ddb8e101e4601f0d3988e5d35e7cc24db339c8b2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
