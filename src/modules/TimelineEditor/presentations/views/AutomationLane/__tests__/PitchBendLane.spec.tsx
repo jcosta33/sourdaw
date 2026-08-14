@@ -49,6 +49,7 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
 }));
 
