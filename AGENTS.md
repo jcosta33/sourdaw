@@ -67,11 +67,11 @@ Run `pnpm deps:validate` after cross-module changes. Full rules:
 
 ## Worktrees
 
-Never implement or review mutable work in the shared root checkout. Create a dedicated lane from
-`origin/main` and lock it with
+One change, one worktree. Never implement or review mutable work in the shared root checkout.
+Create its lane from `origin/main` and lock it with
 `git worktree lock --reason active:<owner> <path>`. Touch only your lane. Never disturb another
-owner’s worktree or changes. When the task is finished, unlock the lane and run
-`pnpm lane:remove <path>` from elsewhere.
+owner’s worktree or changes. A merged PR means its worktree is dead: unlock it and immediately run
+`pnpm lane:remove <path>` from elsewhere. Delete the local branch if the remover leaves it behind.
 
 ## Artifacts
 
