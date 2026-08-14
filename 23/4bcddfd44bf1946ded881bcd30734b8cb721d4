@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_6062ab4f1810df::t_392223143889cc 20,131-141,157-160,178-181
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_6062ab4f1810df::t_72d39961c8c6ac 64-71,302-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "234bcddfd44bf1946ded881bcd30734b8cb721d4",
+  "prompts": {},
+  "sessions": {
+    "s_6062ab4f1810df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00223-b520-7562-9ffc-f4aa3ac4aa94",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
