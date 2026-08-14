@@ -1,0 +1,14 @@
+tests/e2e/crustRemainingKnobsTestId.spec.ts
+  h_1228e573df1f42 1-231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9d6b0de427897cdc3a44320a27fcd2c1f12a9487",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
