@@ -7,8 +7,8 @@ import { commandBatchPreviewPort } from './commandBatchPreviewPort';
 import { commandProjectDivergencePort } from './commandProjectDivergencePort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
-import { getCommandDivergenceTargetIds } from './getCommandDivergenceTargetIds';
 import { getCommandHandler } from './getCommandHandler';
+import { getVersionedCommandBatchDivergenceTargetIds } from './getVersionedCommandBatchDivergenceTargetIds';
 import { partialCommandBatchSelection } from './partialCommandBatchSelection';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 
@@ -22,7 +22,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
     const actions = envelope.commands.map(
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
-    const divergenceTargetIds = getCommandDivergenceTargetIds({ actions, targetIds: envelope.scope.targetIds });
+    const divergenceTargetIds = getVersionedCommandBatchDivergenceTargetIds(envelope);
     const observedRevision = commandProjectRevisionPort.isConfigured()
         ? commandProjectRevisionPort.capture()
         : envelope.baseRevision;

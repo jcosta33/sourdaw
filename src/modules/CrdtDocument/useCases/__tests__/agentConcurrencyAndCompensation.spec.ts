@@ -21,6 +21,7 @@ import {
     serializeVersionedCommandEnvelope,
     undo,
 } from '#/modules/Command/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -47,6 +48,7 @@ vi.mock('../projection/projectSlotProjections', () => ({
 }));
 
 type TargetState = {
+    color?: string;
     gain: number;
     id: string;
     name: string;
@@ -56,8 +58,15 @@ type TestProjectDocument = {
     audioGraphValid: boolean;
     binary: Uint8Array;
     projectInvariantsValid: boolean;
+    midi?: unknown;
     targets: Record<string, TargetState>;
-    transport: { masterGain: number; tempo: number };
+    transport: {
+        isLooping: boolean;
+        loopEnd: number;
+        loopStart: number;
+        masterGain: number;
+        tempo: number;
+    };
 };
 
 function inspectTestProject(input: {
@@ -76,6 +85,18 @@ function inspectTestProject(input: {
                 if (targetId === '@project/transport/master-gain') {
                     return [[targetId, JSON.stringify(document.transport.masterGain)]];
                 }
+                if (targetId === '@project/transport/loop') {
+                    return [
+                        [
+                            targetId,
+                            JSON.stringify({
+                                enabled: document.transport.isLooping,
+                                endBeat: document.transport.loopEnd,
+                                startBeat: document.transport.loopStart,
+                            }),
+                        ],
+                    ];
+                }
                 const target = document.targets[targetId];
                 return target ? [[targetId, JSON.stringify(target)]] : [];
             })
@@ -92,8 +113,9 @@ function seedProject(): void {
         draft.targets = {
             'track-bass': { gain: 0.8, id: 'track-bass', name: 'Bass' },
             'track-drums': { gain: 0.8, id: 'track-drums', name: 'Drums' },
+            'marker-verse': { color: '#0088ff', gain: 0, id: 'marker-verse', name: 'Verse' },
         };
-        draft.transport = { masterGain: 80, tempo: 120 };
+        draft.transport = { isLooping: false, loopEnd: 16, loopStart: 0, masterGain: 80, tempo: 120 };
     });
 }
 
@@ -576,6 +598,105 @@ describe('agent concurrency and compensation', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
+    it('does not reapply a stale marker mutation whose target rules are provider-empty', async () => {
+        seedProject();
+        registerCrdtStorageRuntime();
+        const execute = vi.fn();
+        registerHandlerMap({
+            setMarkerColor: {
+                describe: () => ({ inverseAction: null, label: 'Set marker color' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const baseRevision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: { type: 'setMarkerColor', payload: { markerId: 'marker-verse', color: '#ff8800' } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Set Verse marker color.',
+            normalizedProjectRevision: baseRevision,
+            objectReferences: [{ argument: 'markerId', id: 'marker-verse', scope: 'stable' }],
+            parameterUnits: [],
+            reason: 'Recolor Verse marker.',
+            time: [],
+        });
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.targets['marker-verse']!.color = '#44cc88';
+        });
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command)],
+            divergenceTargetIds: [],
+        });
+
+        expect(result).toMatchObject({
+            divergence: { kind: 'ambiguous-same-object', mayReapply: false, targetIds: ['marker-verse'] },
+            status: 'conflicted',
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('distinguishes unrelated edits from stale writes to a targetless durable transport slot', async () => {
+        seedProject();
+        registerCrdtStorageRuntime();
+        const execute = vi.fn();
+        registerHandlerMap({
+            setLoopEnabled: {
+                describe: () => ({ inverseAction: null, label: 'Enable loop' }),
+                execute,
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const createCommand = () =>
+            createVersionedCommandEnvelope({
+                action: { type: 'setLoopEnabled', payload: { enabled: true } },
+                availableDeviceVersions: {},
+                expectedEffect: 'Enable the loop region.',
+                normalizedProjectRevision: captureProjectRevision(),
+                objectReferences: [],
+                parameterUnits: [],
+                reason: 'Enable looping.',
+                time: [],
+            });
+        const unrelatedCommand = createCommand();
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.targets['track-drums']!.name = 'Live Drums';
+        });
+
+        await expect(
+            executeVersionedCommandBatch({
+                commands: [serializeVersionedCommandEnvelope(unrelatedCommand)],
+                divergenceTargetIds: [],
+            })
+        ).resolves.toMatchObject({
+            divergence: { kind: 'non-overlapping', mayReapply: true },
+            status: 'committed',
+        });
+        expect(execute).toHaveBeenCalledOnce();
+
+        execute.mockClear();
+        const staleLoopCommand = createCommand();
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.transport.isLooping = true;
+        });
+        await expect(
+            executeVersionedCommandBatch({
+                commands: [serializeVersionedCommandEnvelope(staleLoopCommand)],
+                divergenceTargetIds: [],
+            })
+        ).resolves.toMatchObject({
+            divergence: {
+                kind: 'ambiguous-same-object',
+                mayReapply: false,
+                targetIds: ['@project/transport/loop'],
+            },
+            status: 'conflicted',
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
     it('rejects ambiguous stale commands before any project write', async () => {
         const { command, targetStorage } = prepareTargetCommand();
 
@@ -656,6 +777,68 @@ describe('agent concurrency and compensation', () => {
             draft.projectInvariantsValid = true;
         });
         projectCrdtToStores();
+        expect(agentProjectRepairStateStore.value).toBeNull();
+        expect(projectionMocks.hydrate).toHaveBeenCalledOnce();
+    });
+
+    it('quarantines malformed raw MIDI rows instead of silently sanitizing them from the projection', () => {
+        void midiStore.value;
+        seedProject();
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.midi = {
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-midi': [
+                        {
+                            id: 'note-invalid',
+                            pitch: 60,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 100,
+                            collaboratorFieldThisBuildCannotProject: true,
+                        },
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+        });
+
+        projectCrdtToStores();
+
+        expect(automergeRepository.getDoc<TestProjectDocument>('root')?.midi).toMatchObject({
+            notesByClipId: {
+                'clip-midi': [expect.objectContaining({ collaboratorFieldThisBuildCannotProject: true })],
+            },
+        });
+        expect(projectionMocks.hydrate).not.toHaveBeenCalled();
+        expect(agentProjectRepairStateStore.value).toMatchObject({
+            rawProjectRetained: true,
+            repairCandidates: [
+                {
+                    kind: 'repair-project-invariants',
+                    targetIds: ['@project/raw/midi'],
+                },
+            ],
+            status: 'repair-required',
+        });
+    });
+
+    it('allows additive legacy MIDI defaults when projection preserves every raw field and row', () => {
+        void midiStore.value;
+        seedProject();
+        automergeRepository.changeDoc<TestProjectDocument>('root', (draft) => {
+            draft.midi = {
+                notesByClipId: {
+                    'clip-midi': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+        });
+
+        projectCrdtToStores();
+
         expect(agentProjectRepairStateStore.value).toBeNull();
         expect(projectionMocks.hydrate).toHaveBeenCalledOnce();
     });

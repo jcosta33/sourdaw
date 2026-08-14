@@ -13,6 +13,8 @@ export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBat
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 export { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
 export { captureCommandTargetFingerprints } from './captureCommandTargetFingerprints';
+export { getVersionedCommandBatchDivergenceTargetIds } from './getVersionedCommandBatchDivergenceTargetIds';
+export { refreshVersionedCommandBatchForApproval } from './refreshVersionedCommandBatchForApproval';
 export { getCommandDivergenceTargetIds } from './getCommandDivergenceTargetIds';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';

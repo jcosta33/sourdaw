@@ -221,6 +221,53 @@ const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
+const inboundSanitizersBySlot = new Map<string, (value: unknown) => unknown>();
+
+function getInboundSanitizerKey(docId: string, key: string): string {
+    return `${docId}\u0000${key}`;
+}
+
+function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean {
+    if (Object.is(raw, projected)) {
+        return true;
+    }
+    if (Array.isArray(raw)) {
+        return (
+            Array.isArray(projected) &&
+            projected.length >= raw.length &&
+            raw.every((item, index) => projectionPreservesRawValue(item, projected[index]))
+        );
+    }
+    if (typeof raw !== 'object' || raw === null || typeof projected !== 'object' || projected === null) {
+        return false;
+    }
+    const projectedRecord = projected as Readonly<Record<string, unknown>>;
+    return Object.entries(raw).every(
+        ([key, value]) =>
+            Object.hasOwn(projectedRecord, key) && projectionPreservesRawValue(value, projectedRecord[key])
+    );
+}
+
+export function findAutomergeStorageRawProjectionLosses(input: {
+    docId: string;
+    document: Readonly<Record<string, unknown>>;
+}): string[] {
+    const losses: string[] = [];
+    for (const [slot, rawValue] of Object.entries(input.document)) {
+        const sanitize = inboundSanitizersBySlot.get(getInboundSanitizerKey(input.docId, slot));
+        if (!sanitize) {
+            continue;
+        }
+        try {
+            if (!projectionPreservesRawValue(rawValue, sanitize(rawValue))) {
+                losses.push(slot);
+            }
+        } catch {
+            losses.push(slot);
+        }
+    }
+    return losses.toSorted();
+}
 
 function clonePreviewValue<Value>(value: Value): Value {
     return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as Value);
@@ -1110,6 +1157,12 @@ export const createAutomergeStorage = <TData>(
     };
 
     const adapter: StorageAdapter<TData> = {
+        registerInboundSanitizer(sanitize): void {
+            inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), (value) =>
+                sanitize(fromCrdt ? fromCrdt(value as TData) : value)
+            );
+        },
+
         get(): TData | null {
             if (activeAutomergeStoragePreview) {
                 return getPreviewValue(activeAutomergeStoragePreview);

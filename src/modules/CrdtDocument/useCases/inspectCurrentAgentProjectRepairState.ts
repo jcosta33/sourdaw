@@ -1,3 +1,5 @@
+import { findAutomergeStorageRawProjectionLosses } from '#/infra/store/storage/createAutomergeStorage';
+
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 import { type AgentProjectRepairState } from '../stores/agentProjectRepairStateStore';
@@ -15,6 +17,10 @@ export function inspectCurrentAgentProjectRepairState(): AgentProjectRepairState
         return null;
     }
     const conflicts = findAutomergeProjectConflicts({ document: projectDocument });
+    const rawProjectionLosses = findAutomergeStorageRawProjectionLosses({
+        docId: DOC_PREFIX_ROOT,
+        document: projectDocument,
+    });
     const inspection = (() => {
         try {
             return agentProjectInspectionPort.inspect({ projectDocument, targetIds: [] });
@@ -22,7 +28,12 @@ export function inspectCurrentAgentProjectRepairState(): AgentProjectRepairState
             return null;
         }
     })();
-    if (inspection?.projectInvariantsValid && inspection.audioGraphValid && conflicts.length === 0) {
+    if (
+        inspection?.projectInvariantsValid &&
+        inspection.audioGraphValid &&
+        conflicts.length === 0 &&
+        rawProjectionLosses.length === 0
+    ) {
         return null;
     }
     const conflictCandidates = conflicts.map((conflict) => ({
@@ -32,7 +43,12 @@ export function inspectCurrentAgentProjectRepairState(): AgentProjectRepairState
     const repairCandidates =
         conflictCandidates.length > 0
             ? conflictCandidates
-            : [{ kind: 'repair-project-invariants' as const, targetIds: [] }];
+            : [
+                  {
+                      kind: 'repair-project-invariants' as const,
+                      targetIds: rawProjectionLosses.map((slot) => `@project/raw/${slot}`),
+                  },
+              ];
     return {
         audioGraphValid: inspection?.audioGraphValid ?? false,
         detectedRevision: captureProjectRevision(),
