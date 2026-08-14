@@ -1,0 +1,36 @@
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_986530d48f0f44 412-525
+src/modules/Command/models/CommandBatchIdempotency.ts
+  s_a40848e8f8cca9::t_6e131ca07694fb 23,31
+src/modules/Command/useCases/commandBatchIdempotencyPort.ts
+  s_a40848e8f8cca9::t_6e131ca07694fb 21,33-34
+  s_a40848e8f8cca9::t_694eb7baec87ae 35
+src/modules/Command/repositories/__tests__/createLocalStorageCommandBatchIdempotencyRepository.spec.ts
+  s_a40848e8f8cca9::t_986530d48f0f44 12-13,17-18,41-48,54-75,200-217
+  s_a40848e8f8cca9::t_7a774f23e4e136 50,89-93,95-103,108
+  s_a40848e8f8cca9::t_5557869bc1dc3c 14-16
+  s_a40848e8f8cca9::t_4cd1e4b675aa21 218
+src/modules/Command/repositories/createLocalStorageCommandBatchIdempotencyRepository.ts
+  s_a40848e8f8cca9::t_6e131ca07694fb 11,14-15,19,120-127,132-134,137-155,163-175,193-218,226-270,272-275,277-294,296-301,303-316
+  s_a40848e8f8cca9::t_245a5771e2f784 135-136
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_a13ff038d02d35 263
+  s_a40848e8f8cca9::t_6832491a609b8d 46,65,348-349
+  s_a40848e8f8cca9::t_6e131ca07694fb 61,199,336,347,381-387,416-418,430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bc313c2fc8a1b8c56daf81fdc8e0adfc235cb3c8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
