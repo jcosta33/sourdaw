@@ -14,8 +14,9 @@ type WorkspaceMobileGateProps = {
  * project load, MIDI start, synth/effect registration, autosave interval) and only
  * swaps the rendered output. Wrapping the shell means that on a sub-768px viewport
  * `AppShell` never mounts and none of that work happens on a platform the app declares
- * unsupported. `MobileGate` keeps its media-query listener, so widening the window
- * mounts the shell and boots normally.
+ * unsupported. Widening past the breakpoint mounts the shell and boots normally; because
+ * the gate now owns the shell's mount rather than just its output, `MobileGate`'s
+ * viewport check is one-way — see the note on `useIsMobile`.
  */
 export const WorkspaceMobileGate = ({ children }: WorkspaceMobileGateProps): ReactElement => {
     return <MobileGate>{children}</MobileGate>;

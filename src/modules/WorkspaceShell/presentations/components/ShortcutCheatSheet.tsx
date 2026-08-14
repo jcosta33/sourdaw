@@ -172,7 +172,12 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
                     title="Keyboard Shortcuts"
                     titleClassName="text-[11px] text-foreground"
                     actions={
-                        <Button variant="ghost" size="icon-xs" onClick={() => setOpen(false)} aria-label="Close">
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => setOpenAndReport(false)}
+                            aria-label="Close"
+                        >
                             <X className="size-4" />
                         </Button>
                     }

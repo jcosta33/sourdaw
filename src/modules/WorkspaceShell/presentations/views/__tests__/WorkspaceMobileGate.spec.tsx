@@ -1,43 +1,65 @@
-import { useEffect, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { WorkspaceMobileGate } from '../WorkspaceMobileGate';
 
+const MOBILE_BREAKPOINT = 768;
+
 const childMounted = vi.fn();
 
 /**
- * Stands in for `AppShell`. The effect is the whole point: `AppShell` starts the
- * audio engine, loads the project, starts MIDI and installs the autosave interval
- * from mount effects, so "did the child mount" is exactly "did that work run".
+ * Stands in for `AppShell`. The mount effect is the whole point: `AppShell` starts the
+ * audio engine, loads the project, starts MIDI and installs the autosave interval from
+ * mount effects, so "did the child mount" is exactly "did that work run". The undo depth
+ * stands in for state a remount destroys — `loadProject` ends in `clearUndoHistory()`.
  */
 const ShellProbe = (): ReactElement => {
+    const [undoDepth, setUndoDepth] = useState(0);
+
     useEffect(() => {
         childMounted();
     }, []);
 
-    return <div data-testid="shell-probe">Shell</div>;
+    return (
+        <div data-testid="shell-probe">
+            <button type="button" onClick={() => setUndoDepth((depth) => depth + 1)}>
+                edit
+            </button>
+            <span data-testid="undo-depth">{undoDepth}</span>
+        </div>
+    );
 };
 
 const originalInnerWidth = window.innerWidth;
 const originalMatchMedia = window.matchMedia;
 
-type MediaListener = (event: MediaQueryListEvent) => void;
+type MediaSubscription = {
+    query: string;
+    listener: (event: MediaQueryListEvent) => void;
+};
 
-let mediaListeners: MediaListener[] = [];
+let mediaSubscriptions: MediaSubscription[] = [];
+
+const matchesQuery = (query: string, width: number): boolean => {
+    if (query.includes('min-width')) {
+        return width >= MOBILE_BREAKPOINT;
+    }
+    return width < MOBILE_BREAKPOINT;
+};
 
 const setViewportWidth = (width: number): void => {
     window.innerWidth = width;
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-        matches: width < 768,
+        matches: matchesQuery(query, width),
         media: query,
         onchange: null,
-        addEventListener: (_type: string, listener: MediaListener) => {
-            mediaListeners.push(listener);
+        addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
+            mediaSubscriptions.push({ query, listener });
         },
-        removeEventListener: (_type: string, listener: MediaListener) => {
-            mediaListeners = mediaListeners.filter((entry) => entry !== listener);
+        removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
+            mediaSubscriptions = mediaSubscriptions.filter((entry) => entry.listener !== listener);
         },
         addListener: vi.fn(),
         removeListener: vi.fn(),
@@ -45,17 +67,19 @@ const setViewportWidth = (width: number): void => {
     }));
 };
 
-const emitMediaChange = (matches: boolean): void => {
+/** Moves the viewport and notifies every live subscription the way a real resize does. */
+const resizeViewportTo = (width: number): void => {
+    setViewportWidth(width);
     act(() => {
-        for (const listener of [...mediaListeners]) {
-            listener({ matches } as MediaQueryListEvent);
+        for (const subscription of [...mediaSubscriptions]) {
+            subscription.listener({ matches: matchesQuery(subscription.query, width) } as MediaQueryListEvent);
         }
     });
 };
 
 describe('WorkspaceMobileGate', () => {
     beforeEach(() => {
-        mediaListeners = [];
+        mediaSubscriptions = [];
         childMounted.mockClear();
     });
 
@@ -102,9 +126,33 @@ describe('WorkspaceMobileGate', () => {
 
         expect(childMounted).not.toHaveBeenCalled();
 
-        emitMediaChange(false);
+        resizeViewportTo(1280);
 
         expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
+        expect(childMounted).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves shell state when a desktop window is resized below the breakpoint and back', () => {
+        // 200% browser zoom on a 1400px window, DevTools docked to the side, or a
+        // dragged-narrow Tauri window all put `innerWidth` under 768 mid-session.
+        setViewportWidth(1440);
+
+        render(
+            <WorkspaceMobileGate>
+                <ShellProbe />
+            </WorkspaceMobileGate>
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'edit' }));
+        fireEvent.click(screen.getByRole('button', { name: 'edit' }));
+        expect(screen.getByTestId('undo-depth')).toHaveTextContent('2');
+
+        resizeViewportTo(700);
+        resizeViewportTo(1440);
+
+        // Unmounting the shell here re-runs its boot effect, and `loadProject`
+        // ends in `clearUndoHistory()` — the user's session would be discarded.
+        expect(screen.getByTestId('undo-depth')).toHaveTextContent('2');
         expect(childMounted).toHaveBeenCalledTimes(1);
     });
 });

@@ -630,6 +630,27 @@ describe('AppShell', () => {
             });
             expect(screen.getByText('Skip to content')).toBeInTheDocument();
         });
+
+        it('restores the skip-link when the cheat sheet is dismissed with its Close button', () => {
+            render(<AppShell>Content</AppShell>);
+
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+
+            // The header Close button is a separate path from the '?' toggle,
+            // Escape and the backdrop. If it skips the report, AppShell keeps
+            // believing a modal is up and the skip-link never comes back.
+            fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+            expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).not.toBeInTheDocument();
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+        });
     });
 
     describe('launch overlay state', () => {
