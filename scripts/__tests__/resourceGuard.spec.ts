@@ -374,15 +374,7 @@ describe('resource CLI', () => {
             scripts: Record<string, string>;
         };
 
-        for (const script of [
-            'test:run',
-            'test:related',
-            'cargo:test',
-            'cargo:check',
-            'cargo:clippy',
-            'cargo:bench',
-            'cargo:fuzz',
-        ]) {
+        for (const script of ['test:run', 'cargo:test', 'cargo:check', 'cargo:clippy', 'cargo:bench', 'cargo:fuzz']) {
             expect(packageJson.scripts[script]).toContain('--require-target');
         }
         expect(() => parseCliArgs(['--profile', 'focused', '--require-target', '--', 'vitest', 'run'])).not.toThrow();
@@ -439,7 +431,6 @@ describe('resource CLI', () => {
             expect(hasExplicitTarget([directory])).toBe(true);
             expect(hasExplicitTarget(['run', '--', 'adjustmentLayerHandlers'])).toBe(true);
             expect(hasExplicitTarget(['test'])).toBe(false);
-            expect(hasExplicitTarget(['related'])).toBe(false);
             expect(hasExplicitTarget(['check', '-p', 'daw-dsp'])).toBe(true);
             expect(hasExplicitTarget(['-p', 'daw-dsp', 'grinder::'])).toBe(true);
             expect(hasExplicitTarget(['--bail', '1'])).toBe(false);

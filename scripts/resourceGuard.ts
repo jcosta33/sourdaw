@@ -685,19 +685,7 @@ export function emitGuardedResult(label: string, result: GuardedCommandResult, s
 }
 
 export function hasExplicitTarget(args: string[]): boolean {
-    const ignoredRoots = new Set([
-        '.',
-        'bench',
-        'check',
-        'clippy',
-        'fuzz',
-        'related',
-        'run',
-        'scripts',
-        'src',
-        'test',
-        'watch',
-    ]);
+    const ignoredRoots = new Set(['.', 'bench', 'check', 'clippy', 'fuzz', 'run', 'scripts', 'src', 'test', 'watch']);
     const scopedOptions = new Set(['--bench', '--bin', '--example', '--package', '--test', '-p']);
     return args.some((argument, index) => {
         if (argument === '--' || argument.startsWith('-') || ignoredRoots.has(argument)) {

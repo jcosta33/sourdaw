@@ -19,6 +19,7 @@ irreversible business direction. Present researched options and a recommendation
   Never bypass it with raw tool commands.
 - Run only checks that can fail because of the changed files. Never expand to repository-wide
   tests, lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
+- Name exact affected test files. Shared code never justifies guessed or expanded test scope.
 - Never use watch mode for verification. Start a server only when the task needs it.
 
 ## Checks

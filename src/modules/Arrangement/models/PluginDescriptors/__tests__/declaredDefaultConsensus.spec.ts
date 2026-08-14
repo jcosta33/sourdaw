@@ -354,7 +354,7 @@ function countResetLiterals(relativePath: string): number {
  * Scoped to the device modules `DEFAULT_SOURCES` names. A module with no
  * descriptor has no default to agree with, so its knobs are not evidence — and
  * scanning them made this plugin-descriptor spec red on a knob added to the
- * mixer strip, which is a red no `vitest related` run selects (the coupling is
+ * mixer strip, which import-derived test selection cannot see (the coupling is
  * `readFileSync`, not `import`) and which would therefore land on `main` and be
  * found by someone on an unrelated branch. That is how a guard earns deletion.
  */
@@ -953,8 +953,8 @@ const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [];
  * census actually reads. Pinning it everywhere meant a knob added anywhere in
  * the app reddened a plugin-descriptor spec while nothing the census can read
  * had changed. The developer would not see it either: this file couples through
- * `readFileSync`, not `import`, so no `vitest related` run selects it, and with
- * CI suspended the red lands on `main` for someone on an unrelated branch to
+ * `readFileSync`, not `import`, so dependency-derived selection cannot see it, and with CI
+ * suspended the red lands on `main` for someone on an unrelated branch to
  * find. A guard with that cost profile gets deleted rather than fixed.
  *
  * Count provenance: measured on `34896396b` by `defaultValue=` occurrences and
