@@ -127,6 +127,13 @@ describe('AutomationView', () => {
         expect(screen.getByTestId('track-section-track-2')).toBeInTheDocument();
     });
 
+    // F7: the wheel handler now reports its own scrollable container's real
+    // height (`event.currentTarget.clientHeight`) on every call, rather than
+    // letting the Arrangement use case clamp against an unrelated view's
+    // reported height. jsdom does no layout, so `clientHeight` is a defined
+    // property on the element that must be set explicitly to assert the
+    // value genuinely comes from the element — not a hardcoded 0, which
+    // would keep passing even if the production code stopped reading it.
     it('should route horizontal wheel movement through the Arrangement scroll use case', () => {
         vi.mocked(useTracks).mockReturnValue({
             tracks: [makeTrack({ id: 'track-1', name: 'Track 1', kind: 'audio' })],
@@ -134,6 +141,9 @@ describe('AutomationView', () => {
         });
 
         renderWithTooltip(<AutomationView />);
+        const scrollContainer = screen.getByTestId('track-section-track-1').parentElement as HTMLElement;
+        Object.defineProperty(scrollContainer, 'clientHeight', { value: 400, configurable: true });
+
         fireEvent.wheel(screen.getByTestId('track-section-track-1'), {
             deltaX: 32,
             deltaY: 4,
@@ -145,6 +155,7 @@ describe('AutomationView', () => {
             deltaX: 32,
             deltaY: 4,
             shiftKey: false,
+            viewportHeight: 400,
         });
     });
 
@@ -155,6 +166,9 @@ describe('AutomationView', () => {
         });
 
         renderWithTooltip(<AutomationView />);
+        const scrollContainer = screen.getByTestId('track-section-track-1').parentElement as HTMLElement;
+        Object.defineProperty(scrollContainer, 'clientHeight', { value: 400, configurable: true });
+
         fireEvent.wheel(screen.getByTestId('track-section-track-1'), {
             deltaX: 2,
             deltaY: 36,
@@ -166,6 +180,7 @@ describe('AutomationView', () => {
             deltaX: 2,
             deltaY: 36,
             shiftKey: false,
+            viewportHeight: 400,
         });
     });
 });

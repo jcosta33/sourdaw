@@ -8,6 +8,7 @@ import {
     scrollTimeline,
     setAutoScroll,
     setScrollY,
+    setTimelineViewportHeight,
     timelineViewStore,
 } from '../../stores/timelineViewStore';
 
@@ -51,12 +52,12 @@ export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | nul
                 }
             } else {
                 // Let setScrollY perform the single authoritative clamp using the
-                // real viewport height. Pre-clamping here against a separately
-                // computed maxY only to have setScrollY re-clamp against its
-                // hardcoded 200px default produced a wrong scroll ceiling.
+                // real viewport height. Report it first so the clamp uses this
+                // canvas's actual size rather than whatever another view last
+                // reported (or the store's cold-start default).
                 const currentY = timelineViewStore.value?.scrollY ?? 0;
-                const viewHeight = canvas.clientHeight;
-                setScrollY(currentY + event.deltaY, viewHeight);
+                setTimelineViewportHeight(canvas.clientHeight);
+                setScrollY(currentY + event.deltaY);
             }
         };
 

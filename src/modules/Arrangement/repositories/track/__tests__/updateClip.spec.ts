@@ -17,10 +17,22 @@ vi.mock('../../../stores/trackStore', () => {
     };
 });
 
+// F8 — `updateClip` is now a pure delegate to `stores/updateClipInStore.ts`
+// (see that file's own spec for the write-target/clamp behaviour coverage).
+// Spy on the real implementation (still called through, so the behavioural
+// tests below stay meaningful) to prove this file's only line is actually
+// reached, rather than re-testing `updateClipInStore`'s internals a second
+// time under a different name.
+vi.mock('../../../stores/updateClipInStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/updateClipInStore')>();
+    return { updateClipInStore: vi.fn(actual.updateClipInStore) };
+});
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip, type Track } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
+import { updateClipInStore } from '../../../stores/updateClipInStore';
 import { updateClip } from '../updateClip';
 
 function setRuntimeKind(track: Track, kind: string): Track {
@@ -75,5 +87,24 @@ describe('updateClip', () => {
         expect(updateClip('vca-clip', updater)).toBe(false);
         expect(updater).not.toHaveBeenCalled();
         expect(trackStore.set).not.toHaveBeenCalled();
+    });
+
+    it('delegates to stores/updateClipInStore with the same clipId, updater, and return value (F8)', () => {
+        // Proves `updateClip.ts` is reached and forwards its arguments, rather
+        // than exercising `updateClipInStore`'s own write logic (that behaviour
+        // is covered by `stores/__tests__/updateClipInStore.spec.ts`). Deleting
+        // `updateClip.ts`'s delegation line leaves every other test in this
+        // file green — this is the only one guarding it.
+        const clip = ClipDummy.create({ id: 'c1', trackId: 't1', name: 'Old' });
+        const track = TrackDummy.create({ id: 't1', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        vi.mocked(updateClipInStore).mockClear();
+        const updater = vi.fn((context: Clip) => ({ ...context, name: 'New' }));
+
+        const result = updateClip('c1', updater);
+
+        expect(updateClipInStore).toHaveBeenCalledTimes(1);
+        expect(updateClipInStore).toHaveBeenCalledWith('c1', updater);
+        expect(updateClipInStore).toHaveReturnedWith(result);
     });
 });

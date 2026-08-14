@@ -48,6 +48,15 @@ export function registerBuiltinFaustDSP(): void {
             step: 100,
             type: 'hslider',
         },
+        {
+            address: '/zita/dry_wet',
+            label: 'Dry/Wet',
+            min: 0,
+            max: 1,
+            defaultValue: 0.3,
+            step: 0.01,
+            type: 'hslider',
+        },
     ]);
 
     // ── 1176 compressor model ─────────────────────────────────
@@ -209,6 +218,15 @@ export function registerBuiltinFaustDSP(): void {
             min: 0,
             max: 0.95,
             defaultValue: 0.5,
+            step: 0.01,
+            type: 'hslider',
+        },
+        {
+            address: '/tape_delay/dry_wet',
+            label: 'Dry/Wet',
+            min: 0,
+            max: 1,
+            defaultValue: 0.3,
             step: 0.01,
             type: 'hslider',
         },

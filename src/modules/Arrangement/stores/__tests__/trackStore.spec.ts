@@ -95,11 +95,35 @@ describe('trackStore', () => {
             trackStore.hydrate();
         }).not.toThrow();
 
+        // `tracks` sanitizes to `[]` because the CRDT payload is malformed, so
+        // `track-live` no longer exists in the hydrated snapshot: the selection
+        // must null out rather than point at a track that is gone. `ghostClips`
+        // is untouched because it is not re-validated against `tracks`.
         expect(trackStore.value).toEqual({
             tracks: [],
-            selectedTrackId: 'track-live',
+            selectedTrackId: null,
             ghostClips: [live_ghost],
         });
+    });
+
+    it('should null out selectedTrackId when the previously selected track no longer exists after CRDT hydration', () => {
+        // Regression guard: `sanitize_track_store_state_from_crdt` used to merge
+        // the live transient `selectedTrackId` back in unconditionally after
+        // hydration, bypassing the null-out `sanitizeTrackSnapshot` already
+        // applies. A collab peer deleting the locally selected track (or any
+        // hydration that drops it) left `selectedTrackId` pointing at nothing.
+        const surviving_track = TrackDummy.create({ id: 'track-durable', name: 'Durable Track' });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-deleted', name: 'Deleted Track' })],
+            selectedTrackId: 'track-deleted',
+            ghostClips: [],
+        });
+        fake_doc.tracks = { tracks: [surviving_track] };
+
+        trackStore.hydrate();
+
+        expect(trackStore.value?.tracks).toEqual([normalizeTrack(surviving_track)]);
+        expect(trackStore.value?.selectedTrackId).toBeNull();
     });
 
     it('should drop malformed track rows while valid neighboring rows survive normalizeTrack defaults', () => {
@@ -218,12 +242,16 @@ describe('trackStore', () => {
     });
 
     it('should ignore legacy persisted transient fields while preserving cached live transients', () => {
+        // The live transient selection points at `track-durable`, which is also
+        // the track the CRDT hydration brings in below — so this pins
+        // "preserve the live selection" without relying on the F15 defect
+        // (merging a selection back in without checking it still exists).
         const live_ghost = create_valid_clip({ id: 'ghost-live', trackId: 'track-live' });
         const legacy_ghost = create_valid_clip({ id: 'ghost-legacy', trackId: 'track-legacy' });
         const durable_track = TrackDummy.create({ id: 'track-durable', name: 'Durable Track' });
         trackStore.set({
             tracks: [TrackDummy.create({ id: 'track-cached', name: 'Cached Track' })],
-            selectedTrackId: 'track-live',
+            selectedTrackId: 'track-durable',
             ghostClips: [live_ghost],
         });
         fake_doc.tracks = {
@@ -236,7 +264,7 @@ describe('trackStore', () => {
 
         expect(trackStore.value).toEqual({
             tracks: [normalizeTrack(durable_track)],
-            selectedTrackId: 'track-live',
+            selectedTrackId: 'track-durable',
             ghostClips: [live_ghost],
         });
     });

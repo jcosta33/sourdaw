@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     scrollTimeline: vi.fn<(...args: unknown[]) => void>(),
     setAutoScroll: vi.fn<(...args: unknown[]) => void>(),
     setScrollY: vi.fn<(...args: unknown[]) => void>(),
+    setTimelineViewportHeight: vi.fn<(...args: unknown[]) => void>(),
     timelineViewStoreValue: { value: { scrollY: 0 } },
     trackStoreValue: { value: { tracks: [] as { height: number }[] } },
     transportStoreValue: { value: { isPlaying: false } },
@@ -20,6 +21,7 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     scrollTimeline: mocks.scrollTimeline,
     setAutoScroll: mocks.setAutoScroll,
     setScrollY: mocks.setScrollY,
+    setTimelineViewportHeight: mocks.setTimelineViewportHeight,
     timelineViewStore: {
         get value() {
             return mocks.timelineViewStoreValue.value;
@@ -118,11 +120,11 @@ describe('useTimelineGestures', () => {
             });
         });
 
-        // The hook now forwards the raw scroll target plus the real viewport
-        // height (canvas.clientHeight) and lets setScrollY perform the single
-        // authoritative clamp — it no longer pre-clamps against a separately
-        // computed ceiling only to have setScrollY re-clamp against its 200px
-        // default.
-        expect(mocks.setScrollY).toHaveBeenCalledWith(150, 500);
+        // The hook reports the real viewport height (canvas.clientHeight) to the
+        // store first, then forwards the raw scroll target so setScrollY performs
+        // the single authoritative clamp against that height — it no longer
+        // pre-clamps against a separately computed ceiling or a 200px default.
+        expect(mocks.setTimelineViewportHeight).toHaveBeenCalledWith(500);
+        expect(mocks.setScrollY).toHaveBeenCalledWith(150);
     });
 });

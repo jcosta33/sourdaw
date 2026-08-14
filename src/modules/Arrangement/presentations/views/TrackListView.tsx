@@ -31,7 +31,7 @@ import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCas
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
-import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
+import { timelineViewStore, setScrollY, setTimelineViewportHeight } from '../../stores/timelineViewStore';
 import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folder/createFolder';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
@@ -101,6 +101,9 @@ export const TrackListView = ({
             if (!el) {
                 return;
             }
+            // Report this container's real height before clamping — it is the
+            // canonical scrollable track-list viewport.
+            setTimelineViewportHeight(el.clientHeight);
             setScrollY(el.scrollTop);
         });
     };

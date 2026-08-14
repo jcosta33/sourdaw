@@ -24,7 +24,7 @@ export function createScratchPadSection(
     order: number
 ): ScratchPadSection {
     return {
-        id: `scratch-${crypto.randomUUID().slice(0, 8)}`,
+        id: `scratch-${crypto.randomUUID()}`,
         startBeat,
         endBeat,
         name,

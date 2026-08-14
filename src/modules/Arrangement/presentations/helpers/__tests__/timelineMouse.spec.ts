@@ -82,6 +82,7 @@ describe('canvasXToBeat', () => {
             scrollY: 0,
             pixelsPerBeat: 12,
             autoScrollEnabled: true,
+            viewportHeight: 0,
         });
     });
 
