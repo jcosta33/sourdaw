@@ -352,7 +352,11 @@ describe('midiImportWorker', () => {
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
             const notes = firstTrack().notes;
             expect(notes).toHaveLength(2);
-            expect(notes.map((n) => ({ velocity: n.velocity, duration: n.duration })).sort((a, b) => a.duration - b.duration)).toEqual([
+            expect(
+                notes
+                    .map((n) => ({ velocity: n.velocity, duration: n.duration }))
+                    .sort((a, b) => a.duration - b.duration)
+            ).toEqual([
                 { velocity: 90, duration: 1 },
                 { velocity: 70, duration: 2 },
             ]);
@@ -601,6 +605,59 @@ describe('midiImportWorker', () => {
             ]);
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
             expect(firstNote().duration).toBeCloseTo(0.4, 10);
+        });
+    });
+
+    describe('malformed input', () => {
+        it('keeps the tracks it already parsed when a later chunk length overruns the buffer', () => {
+            // A partial download: two intact tracks, then a third whose declared
+            // length runs past the end of what arrived.
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const overrunning = [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, 0x01, 0xf4), 0x00, 0xff];
+            dispatchParse(toBuffer([...mThd(1, 3, 480), ...intact, ...intact, ...overrunning]));
+
+            const message = lastPosted();
+            expect(message.type).toBe('parsed');
+            expect(parsedTracks()).toHaveLength(2);
+        });
+
+        it('refuses a variable-length quantity longer than the four bytes SMF allows', () => {
+            // Five continuation bytes overflow a signed 32-bit shift into a
+            // negative delta, which places notes before beat 0 where nothing can
+            // reach them.
+            const body = [0xff, 0xff, 0xff, 0xff, 0x7f, 0x90, 60, 100, ...endOfTrack(0)];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+
+            const message = lastPosted();
+            expect(message.type).toBe('error');
+        });
+
+        it('does not let a desynced data byte above 127 collide with another channel', () => {
+            // `90 80 64` is a note-on whose pitch byte is 128. Unmasked its key
+            // is 1 * 128 + 0 — the key channel 1 pitch 0 owns — so the genuine
+            // channel 1 note-on below overwrites it and channel 1's note-off
+            // closes only one of the two. Both notes must survive.
+            const body = [
+                0x00,
+                0x90,
+                0x80,
+                0x64, // ch0 note-on, desynced pitch byte 128
+                0x00,
+                0x91,
+                0x00,
+                0x64, // ch1 note-on, pitch 0
+                0x60,
+                0x81,
+                0x00,
+                0x00, // ch1 note-off, pitch 0
+                ...endOfTrack(0),
+            ];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+
+            expect(firstTrack().notes).toHaveLength(2);
         });
     });
 

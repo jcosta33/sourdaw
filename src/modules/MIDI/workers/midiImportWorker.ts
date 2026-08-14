@@ -22,6 +22,9 @@ type ParsedTrack = {
     endTick: number;
 };
 
+const MAX_VAR_LEN_BYTES = 4;
+const CHUNK_HEADER_BYTES = 8;
+
 class MidiReader {
     private data: DataView;
     private pos = 0;
@@ -58,12 +61,23 @@ class MidiReader {
         return new TextDecoder().decode(bytes);
     }
 
+    /**
+     * SMF caps a variable-length quantity at four bytes (28 bits). Reading a
+     * fifth continuation byte shifts past bit 31, so `<<` turns the delta
+     * negative and places notes before beat 0 where nothing can reach them.
+     * Multiplying keeps the value off the sign bit; the cap refuses the file.
+     */
     readVarLen(): number {
         let value = 0;
         let byte: number;
+        let bytesRead = 0;
         do {
+            if (bytesRead === MAX_VAR_LEN_BYTES) {
+                throw new Error('Invalid MIDI file: variable-length quantity exceeds four bytes');
+            }
             byte = this.readUint8();
-            value = (value << 7) | (byte & 0x7f);
+            bytesRead++;
+            value = value * 128 + (byte & 0x7f);
         } while (byte & 0x80);
         return value;
     }
@@ -155,6 +169,14 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
     const parsedTracks: ParsedTrack[] = [];
 
     for (let time = 0; time < numTracks; time++) {
+        // The header's track count is a claim about a file that may have been
+        // truncated in transit. Reading a chunk id past the end throws out of
+        // the whole parse and loses every track already read, so stop here and
+        // return what did arrive.
+        if (reader.length - reader.position < CHUNK_HEADER_BYTES) {
+            break;
+        }
+
         const chunkType = reader.readString(4);
         const chunkLength = reader.readUint32();
 
@@ -163,96 +185,114 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
             continue;
         }
 
-        const chunkEnd = reader.position + chunkLength;
+        // A declared length that overruns the buffer must not become a read
+        // bound; clamp it so the event loop below stops at real data.
+        const chunkEnd = Math.min(reader.position + chunkLength, reader.length);
         let trackName = `Track ${time + 1}`;
         const activeNotes = new Map<number, { tick: number; velocity: number }>();
         const notes: ParsedNote[] = [];
         let tick = 0;
         let runningStatus = 0;
 
-        while (reader.position < chunkEnd) {
-            const delta = reader.readVarLen();
-            tick += delta;
+        try {
+            while (reader.position < chunkEnd) {
+                const delta = reader.readVarLen();
+                tick += delta;
 
-            let statusByte = reader.readUint8();
+                let statusByte = reader.readUint8();
 
-            if (statusByte === 0xff) {
-                const metaType = reader.readUint8();
-                const metaLen = reader.readVarLen();
-                const metaStart = reader.position;
+                if (statusByte === 0xff) {
+                    const metaType = reader.readUint8();
+                    const metaLen = reader.readVarLen();
+                    const metaStart = reader.position;
 
-                if (metaType === 0x03) {
-                    trackName = reader.readString(metaLen);
-                } else if (metaType === 0x51 && metaLen === 3) {
-                    const microsPerBeat = (reader.readUint8() << 16) | (reader.readUint8() << 8) | reader.readUint8();
-                    if (!tempoResolved && microsPerBeat > 0) {
-                        globalTempo = Math.round(60_000_000 / microsPerBeat);
-                        tempoResolved = true;
+                    if (metaType === 0x03) {
+                        trackName = reader.readString(metaLen);
+                    } else if (metaType === 0x51 && metaLen === 3) {
+                        const microsPerBeat =
+                            (reader.readUint8() << 16) | (reader.readUint8() << 8) | reader.readUint8();
+                        if (!tempoResolved && microsPerBeat > 0) {
+                            globalTempo = Math.round(60_000_000 / microsPerBeat);
+                            tempoResolved = true;
+                        }
                     }
-                }
 
-                reader.skip(Math.max(0, metaLen - (reader.position - metaStart)));
-                continue;
-            }
-
-            if (statusByte === 0xf0 || statusByte === 0xf7) {
-                const sysexLen = reader.readVarLen();
-                reader.skip(sysexLen);
-                continue;
-            }
-
-            // Everything left at or above 0xf1 is System Common or System
-            // Real-Time. Adopting one as running status and then reading a data
-            // byte for it consumes the next event's delta time.
-            if (statusByte >= 0xf1) {
-                reader.skip(systemCommonDataByteCount(statusByte));
-                if (statusByte <= 0xf6) {
-                    runningStatus = 0; // System Common cancels running status.
-                }
-                continue;
-            }
-
-            let data1: number;
-            let data2: number;
-
-            if (statusByte >= 0x80) {
-                runningStatus = statusByte;
-                data1 = reader.readUint8();
-            } else {
-                if (runningStatus === 0) {
-                    // A data byte with no established status byte cannot be
-                    // interpreted; consuming operands for it would desync.
+                    reader.skip(Math.max(0, metaLen - (reader.position - metaStart)));
                     continue;
                 }
-                data1 = statusByte;
-                statusByte = runningStatus;
-            }
 
-            const eventType = statusByte & 0xf0;
-
-            if (eventType === 0xc0 || eventType === 0xd0) {
-                data2 = 0;
-            } else {
-                data2 = reader.readUint8();
-            }
-
-            const channel = statusByte & 0x0f;
-            const key = activeNoteKey(channel, data1);
-
-            if (eventType === 0x90 && data2 > 0) {
-                activeNotes.set(key, { tick, velocity: data2 });
-            } else if (eventType === 0x80 || (eventType === 0x90 && data2 === 0)) {
-                const start = activeNotes.get(key);
-                if (start) {
-                    notes.push({
-                        id: crypto.randomUUID(),
-                        pitch: data1,
-                        startBeat: start.tick / ticksPerBeat,
-                        duration: Math.max(MIN_NOTE_DURATION_BEATS, (tick - start.tick) / ticksPerBeat),
-                        velocity: start.velocity,
-                    });
-                    activeNotes.delete(key);
+                if (statusByte === 0xf0 || statusByte === 0xf7) {
+                    const sysexLen = reader.readVarLen();
+                    reader.skip(sysexLen);
+                    continue;
                 }
+
+                // Everything left at or above 0xf1 is System Common or System
+                // Real-Time. Adopting one as running status and then reading a data
+                // byte for it consumes the next event's delta time.
+                if (statusByte >= 0xf1) {
+                    reader.skip(systemCommonDataByteCount(statusByte));
+                    if (statusByte <= 0xf6) {
+                        runningStatus = 0; // System Common cancels running status.
+                    }
+                    continue;
+                }
+
+                let data1: number;
+                let data2: number;
+
+                if (statusByte >= 0x80) {
+                    runningStatus = statusByte;
+                    data1 = reader.readUint8();
+                } else {
+                    if (runningStatus === 0) {
+                        // A data byte with no established status byte cannot be
+                        // interpreted; consuming operands for it would desync.
+                        continue;
+                    }
+                    data1 = statusByte;
+                    statusByte = runningStatus;
+                }
+
+                const eventType = statusByte & 0xf0;
+
+                if (eventType === 0xc0 || eventType === 0xd0) {
+                    data2 = 0;
+                } else {
+                    data2 = reader.readUint8();
+                }
+
+                const channel = statusByte & 0x0f;
+                // A data byte is seven bits. A desynced stream can put 128 here, and
+                // an unmasked 128 keys to `channel + 1` pitch 0 — so the phantom note
+                // collides with a genuine note one channel up and one of the two is
+                // never closed.
+                const pitch = data1 & 0x7f;
+                const key = activeNoteKey(channel, pitch);
+
+                if (eventType === 0x90 && data2 > 0) {
+                    activeNotes.set(key, { tick, velocity: data2 });
+                } else if (eventType === 0x80 || (eventType === 0x90 && data2 === 0)) {
+                    const start = activeNotes.get(key);
+                    if (start) {
+                        notes.push({
+                            id: crypto.randomUUID(),
+                            pitch,
+                            startBeat: start.tick / ticksPerBeat,
+                            duration: Math.max(MIN_NOTE_DURATION_BEATS, (tick - start.tick) / ticksPerBeat),
+                            velocity: start.velocity,
+                        });
+                        activeNotes.delete(key);
+                    }
+                }
+            }
+        } catch (error) {
+            // The last event of a truncated file runs off the end of the
+            // buffer. `DataView` reports that as a `RangeError`, and the notes
+            // read before it are still the notes the file asked for — so close
+            // the track here. Anything else is a real parse failure.
+            if (!(error instanceof RangeError)) {
+                throw error;
             }
         }
 

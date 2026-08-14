@@ -34,6 +34,7 @@ type TestAppendNote = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
 };
@@ -228,8 +229,21 @@ describe('appendMidiNotes', () => {
         }
     );
 
+    it('accepts a pasted note carrying the bend range recorded with it', () => {
+        // `handleWebMidiPitchBend` stamps `pitchBendRangeSemitones` onto a recorded
+        // note, `copySelectedNotes` clones it whole, and `pasteNotes` does not strip
+        // it — so refusing the key here throws on pasting any MPE-recorded note.
+        expect(() =>
+            appendMidiNotesUnchecked({
+                clipId: 'clip-1',
+                notes: [createAppendNote({ pitchBend: -4096, pitchBendRangeSemitones: 2 })],
+            })
+        ).not.toThrow();
+    });
+
     it.each([
         ['an unknown key', { ...createAppendNote(), unsupported: 1 }],
+        ['a non-numeric bend range', { ...createAppendNote(), pitchBendRangeSemitones: '2' }],
         ['a source id', { ...createAppendNote(), id: 'clipboard-id' }],
         ['a numeric-string required field', { ...createAppendNote(), pitch: '64' }],
         ['a null optional field', { ...createAppendNote(), pressure: null }],
