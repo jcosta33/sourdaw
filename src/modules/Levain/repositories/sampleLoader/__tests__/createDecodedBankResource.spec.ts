@@ -95,6 +95,7 @@ function createManifest({
                 zones: files.map(createZone),
             },
         ],
+        legatoTransitions: [],
     };
 }
 

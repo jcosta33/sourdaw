@@ -103,6 +103,11 @@ pub struct LevainEngine {
     tone: ToneTilt,
     /// Attack/Release macro scaling applied over each zone's own ADSR.
     envelope_scaling: EnvelopeScaling,
+    /// Modelled-release scaling for the loaded instrument's family, held apart
+    /// from `envelope_scaling` so the Release macro and the family model
+    /// compose instead of overwriting one another
+    /// (`InstrumentFamily::release_scale`).
+    family_release_scale: f32,
 
     /// Audio settings.
     sample_rate: f32,
@@ -149,6 +154,7 @@ impl LevainEngine {
             realism: RealismEngine::new(sample_rate),
             tone: ToneTilt::new(sample_rate),
             envelope_scaling: EnvelopeScaling::IDENTITY,
+            family_release_scale: 1.0,
             sample_rate,
             master_gain: 0.8,
             num_articulations: 1,
@@ -262,7 +268,7 @@ impl LevainEngine {
         self.num_articulations = pending.num_articulations;
         self.num_mics = pending.num_mics;
         self.mic_mixer = MicMixer::new(pending.num_mics);
-        self.realism.configure_for(&pending.instrument_id);
+        self.apply_instrument(&pending.instrument_id);
         self.fallback.enabled = false;
         self.expression
             .crossfader
@@ -303,8 +309,33 @@ impl LevainEngine {
     /// Tell the engine which instrument id (e.g. `violin-1`, `cello`,
     /// `trumpet`) is now loaded. The realism layer uses this to pick its
     /// body modes, sympathetic strings, and breath/bow noise colour.
+    /// It also selects the modelled release: with no recorded release samples
+    /// in any shipped bank, how a note stops has to come from somewhere, and
+    /// the instrument id is the only thing that knows a marimba from a horn.
     pub fn set_instrument(&mut self, instrument_id: &str) {
+        self.apply_instrument(instrument_id);
+    }
+
+    /// Everything the loaded instrument id decides. `commit_sample_bank` calls
+    /// this rather than `realism.configure_for` directly, because committing a
+    /// staged bank is the only route the worklet drives — nothing in `src/`
+    /// calls the `set_instrument` export, so anything wired only to that would
+    /// be dead on arrival.
+    fn apply_instrument(&mut self, instrument_id: &str) {
         self.realism.configure_for(instrument_id);
+        self.family_release_scale =
+            InstrumentFamily::from_instrument_id(instrument_id).release_scale();
+        self.voice_pool
+            .set_envelope_scaling(self.effective_envelope_scaling());
+    }
+
+    /// The Attack/Release macros and the family release model, composed into
+    /// the one scaling a voice applies over its zone's ADSR.
+    fn effective_envelope_scaling(&self) -> EnvelopeScaling {
+        EnvelopeScaling {
+            attack: self.envelope_scaling.attack,
+            release: self.envelope_scaling.release * self.family_release_scale,
+        }
     }
 
     /// Build the zone lookup table. Must be called after all zones and samples are loaded.
@@ -426,6 +457,7 @@ impl LevainEngine {
                 self.attach_dynamic_layer(voice_idx, art, note, zone_id, velocity);
             }
             LegatoResult::TrueTransition {
+                from_note,
                 from_voice,
                 transition,
                 crossfade_out,
@@ -435,7 +467,18 @@ impl LevainEngine {
                 // "into the transition" ramp `crossfade_in` names — this
                 // voice pool has no independent stream to apply a second,
                 // separately-timed crossfade to that departing voice.
-                if from_voice < self.voice_pool.voices.len() {
+                //
+                // `note == from_note` is what makes the stored index safe to
+                // act on. `LegatoEngine` remembers a voice index from when
+                // the held key went down, and the pool can recycle that slot
+                // underneath it — a voice whose recording has run dry frees
+                // itself with the key still held (`LevainVoice::tick`), so the
+                // next note-on takes the slot and the remembered index then
+                // addresses a different, sounding note. Releasing on a stale
+                // index cuts that note off mid-sound.
+                if self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
+                    voice.active && voice.note == from_note
+                }) {
                     self.voice_pool.voices[from_voice].release();
                 }
                 let voice = &mut self.voice_pool.voices[voice_idx];
@@ -468,22 +511,35 @@ impl LevainEngine {
                 );
             }
             LegatoResult::SyntheticGlide {
+                from_note,
                 from_voice,
                 glide_time,
-                ..
             } => {
                 // Reuse the existing voice and crossfade to the new zone.
                 // The reused voice keeps its existing vibrato state (it's
                 // a continuous slur, not a fresh attack).
-                if from_voice < self.voice_pool.voices.len()
-                    && self.voice_pool.voices[from_voice].active
-                {
+                //
+                // `active` alone is not enough to trust the remembered index:
+                // see the `TrueTransition` arm. A recycled slot is active and
+                // sounding *someone else's* note, and gliding it would drag
+                // that note to this pitch instead of slurring the one the
+                // player is actually holding.
+                if self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
+                    voice.active && voice.note == from_note
+                }) {
+                    // The incoming zone enters at the outgoing stream's own
+                    // playhead, so the slur adds no second attack. This is
+                    // the fallback for an interval the bank has no recorded
+                    // transition for; a registered transition takes the
+                    // `TrueTransition` arm above and never reaches here.
+                    let outgoing_position = self.voice_pool.voices[from_voice].playback.position;
                     self.voice_pool.voices[from_voice].start_crossfade(
                         &zone,
                         note,
                         glide_time,
                         self.sample_rate,
                         &self.sample_pool,
+                        outgoing_position,
                     );
                     self.voice_pool.voices[from_voice].note = note;
                     // A synthetic glide reuses the sounding voice, so it
@@ -687,11 +743,13 @@ impl LevainEngine {
             "tone" => self.tone.set_position(value),
             "attack" => {
                 self.envelope_scaling.attack = macro_time_scale(value);
-                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+                self.voice_pool
+                    .set_envelope_scaling(self.effective_envelope_scaling());
             }
             "release" => {
                 self.envelope_scaling.release = macro_time_scale(value);
-                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+                self.voice_pool
+                    .set_envelope_scaling(self.effective_envelope_scaling());
             }
 
             // ── Mic positions ─────────────────────────────────────────
@@ -1009,6 +1067,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::LevainEngine;
+    use crate::levain::voice::crossfade_rate_for;
     use crate::levain::types::{
         AdsrParams, Dynamic, KeyRange, LegatoTransition, LoopMode, SampleRef, TransitionType,
         VelRange, Zone, MAX_ARTICULATIONS,
@@ -1036,18 +1095,28 @@ mod tests {
                 sustain: 1.0,
                 release: 0.2,
             },
+            SAMPLE_FRAMES,
         )
     }
 
     /// The same single-zone sawtooth engine with a caller-chosen amplitude
-    /// envelope, so the Attack/Release macros have a per-zone ADSR to offset.
-    fn engine_with_sawtooth_envelope(max_voices: usize, amp_env: AdsrParams) -> LevainEngine {
+    /// envelope, so the Attack/Release macros have a per-zone ADSR to offset,
+    /// and a caller-chosen sample length. A released voice leaves its sustain
+    /// loop and plays out what is left of the recording (SFZ `loop_sustain`),
+    /// so a fixture that measures the *envelope's* fall has to hold enough
+    /// recording for the envelope, not the sample end, to be what ends the
+    /// note.
+    fn engine_with_sawtooth_envelope(
+        max_voices: usize,
+        amp_env: AdsrParams,
+        frames: u32,
+    ) -> LevainEngine {
         let mut engine = LevainEngine::new(SAMPLE_RATE, max_voices);
-        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+        let data: Vec<f32> = (0..frames)
             .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
             .collect();
         let sample_id = engine
-            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .add_sample(data, frames, 1, SAMPLE_RATE)
             .expect("test sample should fit the bank");
         engine.add_zone(Zone {
             id: 0,
@@ -1063,10 +1132,10 @@ mod tests {
                 root_key: 60,
                 tune_cents: 0,
                 start: 0,
-                end: SAMPLE_FRAMES,
+                end: frames,
                 loop_mode: LoopMode::Forward,
                 loop_start: 0,
-                loop_end: SAMPLE_FRAMES,
+                loop_end: frames,
                 loop_crossfade: 0,
             },
             amp_env,
@@ -1146,6 +1215,11 @@ mod tests {
     /// 12 ms rise is still resolved to a tenth of itself.
     const ENVELOPE_NOTE: u8 = 84;
     const ENVELOPE_WINDOW: usize = 60;
+    /// Two octaves up runs the sample at 4x, and the longest fall these tests
+    /// measure is a 0.1 s release stretched fourfold and followed to a tenth
+    /// of its held level — about 0.92 s, or 177 k sample frames. An exact
+    /// multiple of `PERIOD_FRAMES` so the loop stays click-free while held.
+    const ENVELOPE_SAMPLE_FRAMES: u32 = 240 * 833;
 
     fn window_peaks(samples: &[f32]) -> Vec<f32> {
         samples
@@ -1191,6 +1265,7 @@ mod tests {
                 sustain: 1.0,
                 release: 0.2,
             },
+            ENVELOPE_SAMPLE_FRAMES,
         );
         if let Some(value) = attack {
             engine.set_param("attack", value);
@@ -1208,6 +1283,7 @@ mod tests {
                 sustain: 1.0,
                 release: 0.1,
             },
+            ENVELOPE_SAMPLE_FRAMES,
         );
         if let Some(value) = release {
             engine.set_param("release", value);
@@ -1330,6 +1406,7 @@ mod tests {
                 sustain: 1.0,
                 release: 0.1,
             },
+            ENVELOPE_SAMPLE_FRAMES,
         );
         engine.note_on(ENVELOPE_NOTE, 100);
         render(&mut engine, 8);
@@ -1878,8 +1955,7 @@ mod tests {
             transition_type: TransitionType::Slurred,
             dynamic: Dynamic::MF, // cc1_to_dynamic(0.5), the engine's default
             sample_id: transition_sample,
-            crossfade_in_ms: 0.0,
-            crossfade_out_ms: 0.0,
+            crossfade_out_ms: 0.0, // unauthored: the adaptive default applies
         });
 
         // Hold 60, then slur into 64 well inside the legato engine's 100 ms
@@ -1899,6 +1975,333 @@ mod tests {
              slur; got {crossings} zero crossings in the first block, versus \
              roughly {self_crossfade_estimate} for a 200 Hz sustain zone \
              crossfaded against itself"
+        );
+    }
+
+    /// `crossfadeOutMs` is a manifest field this PR validates and documents,
+    /// so it has to reach the audio. The hand-over from the transition
+    /// recording into the new sustain zone is the one half of the authored
+    /// pair this voice pool can actually time; an authored value replaces the
+    /// speed-derived `crossfade_times` default, and `0.0` leaves that default
+    /// alone so every bank shipped today behaves exactly as before.
+    #[test]
+    fn an_authored_crossfade_out_lengthens_the_transition_hand_over() {
+        /// Blocks after the slur at which the 40 ms fast default is long over
+        /// (15 blocks) but a 200 ms authored fade is barely a quarter through.
+        const SETTLED_BLOCKS: usize = 20;
+
+        fn crossings_after_the_default_would_have_finished(crossfade_out_ms: f32) -> usize {
+            let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+
+            let sustain_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+                .collect();
+            let transition_period = 6u32;
+            let transition_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| {
+                    (frame % transition_period) as f32 / transition_period as f32 * 2.0 - 1.0
+                })
+                .collect();
+
+            let sustain_sample = engine
+                .add_sample(sustain_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("sustain sample should fit the bank");
+            let transition_sample = engine
+                .add_sample(transition_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("transition sample should fit the bank");
+
+            engine.add_zone(wide_zone(
+                0,
+                sustain_sample,
+                VelRange { lo: 0, hi: 127 },
+                false,
+            ));
+            engine
+                .build_zone_map(1, 1)
+                .expect("zone map should build");
+            engine.add_legato_transition(LegatoTransition {
+                interval: 4,
+                transition_type: TransitionType::Slurred,
+                dynamic: Dynamic::MF,
+                sample_id: transition_sample,
+                crossfade_out_ms,
+            });
+
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_on(64, 100);
+            render(&mut engine, SETTLED_BLOCKS);
+            zero_crossings(&render(&mut engine, 4))
+        }
+
+        // 0.0 is "unauthored": the fast-legato 40 ms default, finished well
+        // before the measurement window, so this reads as the 200 Hz sustain.
+        let default_fade = crossings_after_the_default_would_have_finished(0.0);
+        // 200 ms: still roughly three quarters weighted onto the 8 kHz
+        // transition recording when the window opens.
+        let authored_fade = crossings_after_the_default_would_have_finished(200.0);
+
+        assert!(
+            authored_fade > default_fade * 4,
+            "an authored crossfadeOutMs must lengthen the hand-over out of the \
+             transition recording: {authored_fade} zero crossings against \
+             {default_fade} for the speed-derived default, measured over the \
+             same window {SETTLED_BLOCKS} blocks after the slur"
+        );
+    }
+
+    /// End-to-end: no authored `crossfadeOutMs`, however absurd, may leave a
+    /// voice stuck part-way into its own zone. Two independent mechanisms now
+    /// hold this — the outgoing stream running dry completes the hand-over,
+    /// and `crossfade_rate_for` floors the ramp increment — and this asserts
+    /// the property rather than either mechanism, so it stays honest if one of
+    /// them is later replaced. The floor itself is pinned directly by
+    /// `a_crossfade_rate_always_advances_the_ramp`.
+    #[test]
+    fn an_absurd_authored_crossfade_out_still_completes() {
+        /// 1e9 ms — eleven days. Its unfloored rate is 2.08e-14, six orders of
+        /// magnitude under the ULP near 1.0, so the accumulator never moves.
+        const ABSURD_MS: f32 = 1_000_000_000.0;
+        /// 175 s at 48 kHz is the longest fade `f32::EPSILON` can express;
+        /// 200 s of rendering clears it with margin.
+        const BLOCKS: usize = 75_000;
+
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let sustain_data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let transition_data: Vec<f32> = (0..SAMPLE_FRAMES).map(|_| 0.5_f32).collect();
+        let sustain_sample = engine
+            .add_sample(sustain_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("sustain sample should fit the bank");
+        let transition_sample = engine
+            .add_sample(transition_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("transition sample should fit the bank");
+
+        engine.add_zone(wide_zone(
+            0,
+            sustain_sample,
+            VelRange { lo: 0, hi: 127 },
+            false,
+        ));
+        engine.build_zone_map(1, 1).expect("zone map should build");
+        engine.add_legato_transition(LegatoTransition {
+            interval: 4,
+            transition_type: TransitionType::Slurred,
+            dynamic: Dynamic::MF,
+            sample_id: transition_sample,
+            crossfade_out_ms: ABSURD_MS,
+        });
+
+        engine.note_on(60, 100);
+        render(&mut engine, 4);
+        engine.note_on(64, 100);
+        render(&mut engine, BLOCKS);
+
+        let slurred = engine
+            .voice_pool
+            .voices
+            .iter()
+            .find(|voice| voice.active && voice.note == 64)
+            .expect("the slurred note must still be sounding");
+        assert!(
+            !slurred.crossfading,
+            "an authored crossfade must finish: the voice is still crossfading \
+             after {} s of audio, stuck at crossfade_amount {}",
+            BLOCKS as f32 * 128.0 / SAMPLE_RATE,
+            slurred.crossfade_amount
+        );
+    }
+
+    /// Single-bin magnitude, so one note's fundamental can be tracked through
+    /// a texture without pulling in an FFT.
+    fn tone_magnitude(samples: &[f32], freq_hz: f32) -> f32 {
+        let omega = std::f32::consts::TAU * freq_hz / SAMPLE_RATE;
+        let coeff = 2.0 * omega.cos();
+        let mut s1 = 0.0_f32;
+        let mut s2 = 0.0_f32;
+        for &value in samples {
+            let s0 = value + coeff * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        (s1 * s1 + s2 * s2 - coeff * s1 * s2).abs().sqrt() / samples.len() as f32
+    }
+
+    /// `LegatoEngine` stores the voice index a held note was given when its key
+    /// went down, and the glide arm trusted that index on nothing but `active`.
+    /// Freeing a run-dry voice with the key still held made the index
+    /// recyclable *during* the hold: the next note-on takes the slot, and the
+    /// remembered index then addresses a different, sounding note. Gliding it
+    /// drags that note to the new pitch, so a slur silences an unrelated note
+    /// mid-sound. Reachable on shipped banks — a non-looping zone held past the
+    /// end of its recording is every `loopMode: "none"` percussion sustain and
+    /// every pizzicato or spiccato note written longer than its sample.
+    #[test]
+    fn a_slur_must_not_glide_a_voice_that_no_longer_holds_the_note_it_was_stored_for() {
+        /// 3 s at 48 kHz, long enough that the higher note is still ringing
+        /// throughout the measurement window after its own pitch-up speed.
+        const RING_FRAMES: u32 = 144_000;
+        /// Blocks of 128 frames. The first note's recording is dry by 3 s.
+        const BLOCKS_UNTIL_DRY: usize = 1_170; // 3.12 s
+        const BLOCKS_BETWEEN: usize = 38; // ~0.1 s
+        const BLOCKS_MEASURED: usize = 110; // ~0.29 s
+        /// 200 Hz at the root key, transposed by the zone's own pitch
+        /// correction: 13 semitones up for note 73, 2 for note 62.
+        const HIGH_HZ: f32 = 423.86;
+        const SLUR_HZ: f32 = 224.49;
+
+        // Choir scales release by 1.0, so the free timing is the only variable.
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank("soprano");
+        let data: Vec<f32> = (0..RING_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, RING_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.sample.end = RING_FRAMES;
+        zone.sample.loop_mode = LoopMode::NoLoop;
+        engine.add_zone(zone);
+        engine.build_zone_map(1, 1).expect("zone map should build");
+        engine.commit_sample_bank();
+
+        // Key down and never lifted. Its recording runs out underneath it.
+        engine.note_on(60, 100);
+        render(&mut engine, BLOCKS_UNTIL_DRY);
+
+        // Takes the slot note 60 just freed, and is 13 semitones away, so it
+        // is outside the glide interval and triggers as a normal note.
+        engine.note_on(73, 100);
+        let before = render(&mut engine, BLOCKS_BETWEEN);
+        let high_before = tone_magnitude(&before, HIGH_HZ);
+        assert!(
+            high_before > 1e-3,
+            "the high note must be audible before the slur for this to measure \
+             anything: magnitude {high_before}"
+        );
+
+        // Two semitones from the still-held note 60, so `find_closest_held`
+        // picks 60 over 73 and the glide arm gets 60's stale voice index.
+        engine.note_on(62, 100);
+        let after = render(&mut engine, BLOCKS_MEASURED);
+        let high_after = tone_magnitude(&after, HIGH_HZ);
+        let slur_after = tone_magnitude(&after, SLUR_HZ);
+
+        assert!(
+            slur_after > 1e-3,
+            "the slurred note must sound: magnitude {slur_after}"
+        );
+        assert!(
+            high_after > high_before * 0.5,
+            "the slur must leave the unrelated high note ringing: its \
+             fundamental fell from {high_before} to {high_after} \
+             ({:.1} dB) while the slurred note reads {slur_after}",
+            20.0 * (high_after / high_before).log10()
+        );
+    }
+
+    /// The RT invariant behind `crossfade_rate_for`, tested where it lives
+    /// rather than through the engine. Completing the crossfade when the
+    /// outgoing stream runs dry means an authored `crossfadeOutMs` can no
+    /// longer reach the stall through `start_legato_transition` — the
+    /// transition stream is always `NoLoop` and always ends — but the floor is
+    /// still what guarantees the ramp advances, and `start_crossfade` hands it
+    /// a stream that may loop indefinitely.
+    ///
+    /// The stall is not hypothetical: `tick` accumulates this rate into an
+    /// `f32` in `[0, 1)`, and an `f32` add is a no-op once the addend drops
+    /// below half the accumulator's ULP.
+    #[test]
+    fn a_crossfade_rate_always_advances_the_ramp() {
+        /// Requested fade lengths in seconds, spanning the built-in glide
+        /// times, plausible authored values, and lengths whose unfloored rate
+        /// underflows outright.
+        const REQUESTED_SECS: [f32; 8] =
+            [0.0, 0.02, 0.15, 5.0, 300.0, 1_000.0, 10_000.0, 1_000_000.0];
+
+        for requested in REQUESTED_SECS {
+            let rate = crossfade_rate_for(requested, SAMPLE_RATE);
+            // The binding case is an accumulator just under 1.0, where the ULP
+            // is largest. If the add moves the value there, it moves it
+            // everywhere below.
+            let worst_case = 1.0_f32 - f32::EPSILON;
+            assert!(
+                worst_case + rate > worst_case,
+                "a {requested} s crossfade produced rate {rate:e}, which does \
+                 not advance an f32 accumulator near 1.0 — the ramp would \
+                 stall there and the voice would never finish crossfading"
+            );
+        }
+    }
+
+    /// Equal power is the right law for two live streams and the wrong one for
+    /// a live stream against silence. A transition recording is a short
+    /// gesture, so any fade longer than it left `gain_old` weighting a stream
+    /// reading 0.0 while `gain_new` held the arriving note under unity for the
+    /// rest of the ramp — not a slow arrival but a hole in the line, measured
+    /// at 29 dB below the default with a 100 ms recording under a 30 s fade.
+    /// It bit the built-in 40-150 ms defaults too, wherever a bank's recording
+    /// was shorter than the fade.
+    #[test]
+    fn a_fade_longer_than_its_transition_recording_still_reaches_full_level() {
+        /// The transition recording is `SAMPLE_FRAMES` long — 100 ms, or 37
+        /// blocks — so this window opens well after it has run out.
+        const BLOCKS_AFTER_THE_RECORDING_ENDS: usize = 300;
+
+        fn line_level_once_the_recording_is_gone(crossfade_out_ms: f32) -> f32 {
+            let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+            let sustain_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+                .collect();
+            let transition_period = 6u32;
+            let transition_data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| {
+                    (frame % transition_period) as f32 / transition_period as f32 * 2.0 - 1.0
+                })
+                .collect();
+            let sustain_sample = engine
+                .add_sample(sustain_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("sustain sample should fit the bank");
+            let transition_sample = engine
+                .add_sample(transition_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("transition sample should fit the bank");
+            engine.add_zone(wide_zone(
+                0,
+                sustain_sample,
+                VelRange { lo: 0, hi: 127 },
+                false,
+            ));
+            engine.build_zone_map(1, 1).expect("zone map should build");
+            engine.add_legato_transition(LegatoTransition {
+                interval: 4,
+                transition_type: TransitionType::Slurred,
+                dynamic: Dynamic::MF,
+                sample_id: transition_sample,
+                crossfade_out_ms,
+            });
+
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_on(64, 100);
+            render(&mut engine, 37);
+            rms(&render(&mut engine, BLOCKS_AFTER_THE_RECORDING_ENDS))
+        }
+
+        // The 40 ms fast default finishes inside the recording, so this is the
+        // line at its intended level.
+        let default_fade = line_level_once_the_recording_is_gone(0.0);
+        // Five seconds: the recording is 100 ms, so the remaining 98% of the
+        // ramp used to run against silence.
+        let long_fade = line_level_once_the_recording_is_gone(5_000.0);
+
+        assert!(
+            long_fade > default_fade * 0.8,
+            "once the transition recording is gone the arriving note must be at \
+             its own level: RMS {long_fade} under a 5 s fade against \
+             {default_fade} under the default, {:.1} dB apart",
+            20.0 * (long_fade / default_fade).log10()
         );
     }
 
@@ -2022,5 +2425,366 @@ mod tests {
         render(&mut engine, 20);
         assert!(is_releasing(&engine, 62));
         assert!(is_releasing(&engine, 64));
+    }
+
+    // ── #1848: modelled release and crossfade legato, for banks that ship
+    //    no recorded release or interval samples ──────────────────────────
+
+    fn peak(samples: &[f32]) -> f32 {
+        samples
+            .iter()
+            .fold(0.0_f32, |acc, value| acc.max(value.abs()))
+    }
+
+    /// One zone whose sample is loud for `loud_frames` and then silent, looped
+    /// over its whole length — the shape every shipped Levain sustain zone has
+    /// (`loopStart` 0, `loopEnd` = frame count), with the silent half standing
+    /// in for the point past which there is nothing left to play.
+    fn engine_with_half_silent_loop(release: f32, loud_frames: u32) -> LevainEngine {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| {
+                if frame >= loud_frames {
+                    return 0.0;
+                }
+                (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0
+            })
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.amp_env.release = release;
+        engine.add_zone(zone);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+        engine
+    }
+
+    /// A forward loop is SFZ's `loop_sustain`, not `loop_continuous`: the loop
+    /// runs while the note is held, and "during the release phase, there's no
+    /// looping". Every shipped bank loops the *whole* sustain sample with a
+    /// zero-frame seam crossfade, so a release that kept looping wraps the
+    /// playhead back onto the recording's own attack under the release fade.
+    #[test]
+    fn release_leaves_the_sustain_loop_instead_of_wrapping_into_the_attack() {
+        // Loud for the first eighth of the sample, silent after. A note-off
+        // taken inside the silent part must stay silent; only a wrap back to
+        // frame 0 can make it sound again.
+        let loud_frames = SAMPLE_FRAMES / 8;
+        let mut engine = engine_with_half_silent_loop(5.0, loud_frames);
+
+        engine.note_on(60, 100);
+        let held = render(&mut engine, 4);
+        assert!(
+            peak(&held) > 0.1,
+            "the held note must sound before the release is measured; got {}",
+            peak(&held)
+        );
+
+        engine.note_off(60);
+        // Render past the loop end (SAMPLE_FRAMES = 4800 frames = 37.5 blocks),
+        // then measure the window a wrap would land the loud eighth in.
+        render(&mut engine, 34);
+        let after_the_loop_end = render(&mut engine, 4);
+
+        assert!(
+            peak(&after_the_loop_end) < peak(&held) * 0.02,
+            "a released voice must run out of the sustain loop and stop, not \
+             wrap back onto the sample's own attack: peak after the loop end \
+             is {} against {} while held",
+            peak(&after_the_loop_end),
+            peak(&held)
+        );
+    }
+
+    /// Crossfade legato with no interval sample: the incoming zone must enter
+    /// at the outgoing voice's own playhead, not at frame 0, or every slur
+    /// re-articulates the target zone's recorded onset.
+    #[test]
+    fn crossfade_legato_enters_the_new_zone_past_its_recorded_onset() {
+        // Loud onset over the first half, quiet body after — an exaggerated
+        // stand-in for a sustain sample's attack transient.
+        const ONSET_FRAMES: u32 = SAMPLE_FRAMES / 2;
+        const BODY_LEVEL: f32 = 0.15;
+
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| {
+                let level = if frame < ONSET_FRAMES { 1.0 } else { BODY_LEVEL };
+                ((frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0) * level
+            })
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        engine.add_zone(wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false));
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+
+        // Hold 60 until its playhead is well inside the quiet body (24 blocks
+        // = 3072 frames, past the 2400-frame onset).
+        engine.note_on(60, 100);
+        render(&mut engine, 20);
+        let body = render(&mut engine, 4);
+
+        // Slur to 64. No transition sample is registered, so this is the
+        // crossfade-legato fallback.
+        engine.note_on(64, 100);
+        // Eight blocks covers the 30 ms fast-legato crossfade almost entirely
+        // while leaving the matched playhead short of the loop end.
+        let slur = render(&mut engine, 8);
+
+        assert!(
+            peak(&slur) < peak(&body) * 3.0,
+            "a crossfade slur must not re-articulate the target zone's onset: \
+             peak across the transition is {} against {} for the body the \
+             outgoing voice was already sounding, and the onset in this sample \
+             is {:.1}x the body",
+            peak(&slur),
+            peak(&body),
+            1.0 / BODY_LEVEL
+        );
+    }
+
+    /// A long non-looping zone, so the release envelope — not the end of the
+    /// sample — is what the tail measures.
+    ///
+    /// Loaded through the staged-bank path (`begin_sample_bank` …
+    /// `commit_sample_bank`), because that is the only route the worklet
+    /// actually drives: nothing in `src/` calls `LevainInstance::set_instrument`,
+    /// so an instrument-derived behaviour wired only to that export would never
+    /// reach a player.
+    fn engine_with_long_dry_zone(instrument_id: &str) -> LevainEngine {
+        engine_with_dry_zone_of(instrument_id, 96_000) // 2 s at 48 kHz
+    }
+
+    fn engine_with_dry_zone_of(instrument_id: &str, long_frames: u32) -> LevainEngine {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank(instrument_id);
+        let data: Vec<f32> = (0..long_frames)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, long_frames, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.sample.end = long_frames;
+        zone.sample.loop_mode = LoopMode::NoLoop;
+        // The release every shipped manifest carries for a sustaining
+        // articulation, emitted by `scripts/download-levain-samples.ts` from
+        // articulation type alone.
+        zone.amp_env.release = 0.5;
+        engine.add_zone(zone);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+        assert!(
+            engine.commit_sample_bank(),
+            "the staged test bank should commit"
+        );
+        engine
+    }
+
+    /// A marimba is not a horn. Percussion and choir are the two families whose
+    /// realism preset is neutral (`Instrument::Other` — no body, sympathetic,
+    /// bow or breath contribution), so the difference between these two renders
+    /// is the modelled release and nothing else.
+    #[test]
+    fn release_time_follows_the_instrument_family() {
+        fn tail_rms(instrument_id: &str) -> f32 {
+            let mut engine = engine_with_long_dry_zone(instrument_id);
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_off(60);
+            render(&mut engine, 320); // ~0.85 s of release
+            rms(&render(&mut engine, 8))
+        }
+
+        let percussion = tail_rms("marimba");
+        let choir = tail_rms("soprano");
+
+        assert!(
+            percussion > choir * 3.0,
+            "an undamped percussion bar must ring on where a breath-stopped \
+             voice does not: marimba tail RMS {percussion} against soprano \
+             {choir} at the same point in the release"
+        );
+    }
+
+    /// Timpani is the one percussion instrument here whose note-off is a
+    /// physical damp — the player's hand on the head — where a marimba or
+    /// glockenspiel bar is undamped and rings on regardless. Folding it into
+    /// the struck-bar 4.6 would stretch every existing timpani part's note-off
+    /// from ~2.3 s to ~10.4 s of ring. Its own recordings already say it is the
+    /// shortest of the three (1.74 s against 2.31 and 2.50).
+    #[test]
+    fn timpani_damps_faster_than_an_undamped_struck_bar() {
+        /// 8 s, so the recording still has audio to shape 3 s into the release
+        /// and the voice is not freed by running dry instead.
+        const LONG_FRAMES: u32 = 384_000;
+        /// ~3 s of release at 128 frames a block, where a 1.75 s and a 2.3 s
+        /// time constant are 3.6 dB apart rather than the 1 dB they differ by
+        /// in the first second.
+        const RELEASE_BLOCKS: usize = 1_125;
+
+        fn tail_rms(instrument_id: &str) -> f32 {
+            let mut engine = engine_with_dry_zone_of(instrument_id, LONG_FRAMES);
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_off(60);
+            render(&mut engine, RELEASE_BLOCKS);
+            rms(&render(&mut engine, 8))
+        }
+
+        let timpani = tail_rms("timpani");
+        let marimba = tail_rms("marimba");
+        let choir = tail_rms("soprano");
+
+        assert!(
+            timpani < marimba * 0.8,
+            "a damped drum must stop sooner than an undamped bar: timpani tail \
+             RMS {timpani} against marimba {marimba} at the same point"
+        );
+        assert!(
+            timpani > choir * 10.0,
+            "it is still percussion, not the neutral default: timpani tail RMS \
+             {timpani} against soprano {choir}"
+        );
+    }
+
+    /// A struck bar: the whole natural ringdown is in the recording and there
+    /// is no loop. All three shipped percussion banks are exactly this —
+    /// marimba, glockenspiel and timpani each declare `sustain` zones with
+    /// `loopMode: "none"` and `release: 0.5`, so they take the family scale on
+    /// a zone whose sample stops of its own accord.
+    fn engine_with_percussion_one_shot(
+        instrument_id: &str,
+        max_voices: usize,
+        ring_frames: u32,
+    ) -> LevainEngine {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, max_voices);
+        engine.begin_sample_bank(instrument_id);
+        let data: Vec<f32> = (0..ring_frames)
+            .map(|frame| {
+                let ringdown = 1.0 - frame as f32 / ring_frames as f32;
+                ((frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0) * ringdown
+            })
+            .collect();
+        let sample_id = engine
+            .add_sample(data, ring_frames, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.sample.end = ring_frames;
+        zone.sample.loop_mode = LoopMode::NoLoop;
+        zone.amp_env.release = 0.5;
+        engine.add_zone(zone);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+        assert!(
+            engine.commit_sample_bank(),
+            "the staged test bank should commit"
+        );
+        engine
+    }
+
+    /// The family model has to survive on the shape it was measured from. All
+    /// three shipped percussion banks are non-looping one-shots, so a release
+    /// model that only reached looping zones would leave the 4.6 tuned against
+    /// recordings it can no longer affect. Freeing a run-dry voice does not
+    /// cost this: the slot is reclaimed only once the recording has nothing
+    /// left to read, which is after the whole window measured here.
+    #[test]
+    fn the_family_release_still_shapes_a_percussion_one_shot() {
+        const RING_FRAMES: u32 = 110_400; // 2.3 s, the measured marimba ringdown
+        const BLOCKS_AFTER_OFF: usize = 375; // 1.0 s, well inside the recording
+
+        fn tail_rms(instrument_id: &str) -> f32 {
+            let mut engine = engine_with_percussion_one_shot(instrument_id, 8, RING_FRAMES);
+            engine.note_on(60, 100);
+            render(&mut engine, 38);
+            engine.note_off(60);
+            render(&mut engine, BLOCKS_AFTER_OFF);
+            rms(&render(&mut engine, 8))
+        }
+
+        let percussion = tail_rms("marimba");
+        let choir = tail_rms("soprano");
+
+        assert!(
+            percussion > choir * 3.0,
+            "letting go of a mallet must not damp the bar: marimba one-shot \
+             tail RMS {percussion} against soprano {choir} one second after \
+             note-off, with the recording still playing in both"
+        );
+    }
+
+    /// A voice whose every stream has run dry can only emit zeros, so holding
+    /// the pool with it costs polyphony and buys nothing. `VoicePool::allocate`
+    /// cannot recover the slot either: `steal_priority` scores an inaudible
+    /// release tail `1`, the *minimum* among active voices, while any sounding
+    /// voice scores `2 + …` — so the allocator steals the note that is still
+    /// ringing and leaves the silence in place.
+    ///
+    /// Pinned on an ordinary part rather than a stress case: 4 notes a second,
+    /// each struck and let go like a mallet stroke.
+    #[test]
+    fn a_note_on_must_not_steal_a_sounding_voice_while_run_dry_ones_hold_the_pool() {
+        /// Well above the `1e-4` `steal_priority` itself treats as past
+        /// audibility, so nothing here turns on a borderline reading.
+        const AUDIBLE_ENERGY: f32 = 1e-3;
+        /// The pool `levainProcessor.ts` actually constructs. A smaller one
+        /// exhausts at any release length and would convict every family.
+        const POOL: usize = 64;
+        const ONSETS: u8 = 120;
+        const RING_FRAMES: u32 = 24_000; // 0.5 s at 48 kHz
+        const BLOCKS_PER_ONSET: usize = 94; // 0.25 s at 48 kHz in 128-frame blocks
+        const BLOCKS_HELD: usize = 38; // ~0.1 s, a struck bar released early
+
+        fn audible_steals_over_a_part(instrument_id: &str) -> (u32, f32, usize) {
+            let mut engine = engine_with_percussion_one_shot(instrument_id, POOL, RING_FRAMES);
+            let mut steals = 0_u32;
+            let mut worst_energy = 0.0_f32;
+
+            for index in 0..ONSETS {
+                let note = 60 + index % 12;
+                let victim = engine.voice_pool.allocate();
+                let voice = &engine.voice_pool.voices[victim];
+                if voice.active && voice.energy > AUDIBLE_ENERGY {
+                    steals += 1;
+                    worst_energy = worst_energy.max(voice.energy);
+                }
+                engine.note_on(note, 100);
+                render(&mut engine, BLOCKS_HELD);
+                engine.note_off(note);
+                render(&mut engine, BLOCKS_PER_ONSET - BLOCKS_HELD);
+            }
+
+            (steals, worst_energy, engine.voice_pool.active_count())
+        }
+
+        // Choir carries `release_scale() == 1.0`, so it is this same part
+        // through this same code with the family model contributing nothing.
+        // It is the control: if it ever stole, the fault would be the pool's
+        // rather than the release model's.
+        let (control_steals, _, control_active) = audible_steals_over_a_part("soprano");
+        assert_eq!(
+            control_steals, 0,
+            "the control must not steal, or this test convicts the voice pool \
+             rather than the release model: {control_steals} of {ONSETS} \
+             onsets, pool ended {control_active}/{POOL} active"
+        );
+
+        let (steals, worst_stolen_energy, active) = audible_steals_over_a_part("marimba");
+        assert_eq!(
+            steals, 0,
+            "a note-on must take a run-dry voice before a sounding one: \
+             {steals} of {ONSETS} onsets stole a voice that was still audible \
+             (worst energy stolen {worst_stolen_energy}), and the pool of \
+             {POOL} ended with {active} voices active"
+        );
     }
 }
