@@ -2,6 +2,15 @@
 
 `CLAUDE.md` points here. Nested `AGENTS.md` files override this file inside their subtrees.
 
+## Decision Authority
+
+Treat the user as CEO. Bring product decisions, not technical homework. Research technical doubt
+to closure through the code, primary sources, standards, and the best proven industry examples.
+Apply the strongest established answer. Never ask the user to resolve niche implementation details.
+
+Ask only when the choice changes product vision, UX, feature scope, policy, risk tolerance, or
+irreversible business direction. Present researched options and a recommendation.
+
 ## Resource Safety
 
 - Run repository commands sequentially. Never overlap tests, lint, typechecks, builds, Cargo,
