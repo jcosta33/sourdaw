@@ -1,0 +1,33 @@
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_6a1a7fd3a30da3 228-260
+src/modules/Command/useCases/__tests__/executeAppActionAsyncTransaction.spec.ts
+  s_a40848e8f8cca9::t_6a1a7fd3a30da3 10,115,121,143-178
+  s_a40848e8f8cca9::t_d956a70bce3ea6 179-180
+src/modules/Command/useCases/executeAppAction.ts
+  s_a40848e8f8cca9::t_afca81047dd9a1 25,137
+  s_a40848e8f8cca9::t_33c6619632cba7 198
+src/modules/Command/useCases/isProjectMutationAllowed.ts
+  s_a40848e8f8cca9::t_33c6619632cba7 3-6
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_afca81047dd9a1 32
+  s_a40848e8f8cca9::t_33c6619632cba7 628,631,664
+src/infra/store/storage/createAutomergeStorage.ts
+  s_a40848e8f8cca9::t_33c6619632cba7 178,462,510-515,543-547
+  s_a40848e8f8cca9::t_7d0e5752a64e68 548
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "18c015e1dfb48f6555f2bb0fca2508b29365c2bc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
