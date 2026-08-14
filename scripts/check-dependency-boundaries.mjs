@@ -2451,21 +2451,43 @@ function collectVendorModulesFromType(context, type, location, modules, seenType
     ].filter(Boolean)) {
         collectVendorModulesFromType(context, nestedType, location, modules, seenTypes, seenSymbols);
     }
-    for (const signature of [...(type.getCallSignatures?.() ?? []), ...(type.getConstructSignatures?.() ?? [])]) {
-        for (const parameter of signature.parameters) {
-            const parameterLocation = parameter.valueDeclaration ?? location;
-            collectTypeSafely(
+    // Signatures declared by a lib or vendor type can only mention that declaration's own types and
+    // the type arguments it was instantiated with, and those arguments are already walked above.
+    // Descending into them anyway walks every method of types like `Uint8Array<ArrayBufferLike>`,
+    // and `getTypeOfSymbolAtLocation` mints a fresh Type per parameter that `seenTypes` — keyed on
+    // object identity — can never match. That is unbounded: one repository export of a project type
+    // whose members are generic lib types took the pre-pass from 13s to hours and past 4 GB.
+    if (!isLibraryType && !isExternalType) {
+        for (const signature of [...(type.getCallSignatures?.() ?? []), ...(type.getConstructSignatures?.() ?? [])]) {
+            for (const parameter of signature.parameters) {
+                const parameterLocation = parameter.valueDeclaration ?? location;
+                collectTypeSafely(
+                    context,
+                    () => context.checker.getTypeOfSymbolAtLocation(parameter, parameterLocation),
+                    parameterLocation,
+                    modules,
+                    seenTypes,
+                    seenSymbols
+                );
+            }
+            collectVendorModulesFromType(
                 context,
-                () => context.checker.getTypeOfSymbolAtLocation(parameter, parameterLocation),
-                parameterLocation,
+                signature.getReturnType(),
+                location,
                 modules,
                 seenTypes,
                 seenSymbols
             );
-        }
-        collectVendorModulesFromType(context, signature.getReturnType(), location, modules, seenTypes, seenSymbols);
-        for (const typeParameter of signature.typeParameters ?? []) {
-            collectVendorModulesFromSymbol(context, typeParameter, locationFileName, modules, seenSymbols, seenTypes);
+            for (const typeParameter of signature.typeParameters ?? []) {
+                collectVendorModulesFromSymbol(
+                    context,
+                    typeParameter,
+                    locationFileName,
+                    modules,
+                    seenSymbols,
+                    seenTypes
+                );
+            }
         }
     }
     if (!isLibraryType && !isExternalType) {
