@@ -1,0 +1,62 @@
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_658c4be997081f 686,1764-1765
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_658c4be997081f 18,65
+src/modules/Command/useCases/getCommandDivergenceTargetIds.ts
+  s_a40848e8f8cca9::t_90d9346f663304 1-19
+src/modules/AiRuntime/errors/AiProposalInvalidatedError.ts
+  s_a40848e8f8cca9::t_0c68f9d7cb383a 2-3
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_a40848e8f8cca9::t_658c4be997081f 9
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_a40848e8f8cca9::t_76915604ee5b6b 13,31,60,73-75,93,128,174,199,402-439,441-503,601
+  s_a40848e8f8cca9::t_2ba454e34c9509 9,589-600
+  s_a40848e8f8cca9::t_00b0826ac9e4cd 125-126,440
+  s_a40848e8f8cca9::t_cd3f1f088d73ac 504
+  s_a40848e8f8cca9::t_0cc7c22147783d 602
+src/modules/Command/useCases/captureCommandTargetFingerprints.ts
+  s_a40848e8f8cca9::t_52ad36081316c6 1-2
+  s_a40848e8f8cca9::t_90d9346f663304 78-96
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_0c68f9d7cb383a 125-195,233-235
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_0c68f9d7cb383a 1,20-24
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_04dde77f39ce78 256-281
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_90d9346f663304 16
+src/modules/CrdtDocument/useCases/projection/projectProjection.ts
+  s_a40848e8f8cca9::t_0c68f9d7cb383a 25-27
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_04dde77f39ce78 7,14-17,30-37
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_90d9346f663304 10-11,85-87,89-94,120
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_a40848e8f8cca9::t_658c4be997081f 40-41
+src/modules/Arrangement/handlers/track/renameTrack.ts
+  s_a40848e8f8cca9::t_658c4be997081f 5,8-12,14-17,19-20,32-43
+  s_a40848e8f8cca9::t_2ba454e34c9509 21-26
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_9a28ee40398f93 96-120
+  s_a40848e8f8cca9::t_c424c2fc775f39 25-35,95,123-129
+  s_a40848e8f8cca9::t_c125a50fa84318 7-8,10,93-94,121-122,130,134,241
+  s_a40848e8f8cca9::t_b502996f632015 131
+src/modules/Arrangement/handlers/track/__tests__/renameTrack.spec.ts
+  s_a40848e8f8cca9::t_2ba454e34c9509 52,54-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0e65533c54f8514f374d381a109df556501ff41f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
