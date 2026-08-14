@@ -5,6 +5,7 @@ export { describeAction } from './actionLabels';
 export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { CommandEventBus, setCommandEventBus } from './commandEventBus';
 export { commandProjectRevisionPort } from './commandProjectRevisionPort';
+export { commandProjectDivergencePort } from './commandProjectDivergencePort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
