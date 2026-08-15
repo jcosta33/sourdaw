@@ -737,7 +737,6 @@ pub async fn schema_constrained_generation(
             }
         };
 
-        let mut total_tokens: u32 = 0;
         let mut completed = false;
 
         loop {
@@ -757,7 +756,6 @@ pub async fn schema_constrained_generation(
                     if let Some(choice) = resp.choices.first() {
                         if let Some(ref content) = choice.delta.content {
                             if !content.is_empty() {
-                                total_tokens += 1;
                                 let _ = on_event.send(LlmStreamEvent::Token {
                                     text: content.clone(),
                                 });
@@ -774,6 +772,11 @@ pub async fn schema_constrained_generation(
                         &choice.finish_reason,
                         "Native schema-constrained generation",
                     )?;
+                    let _ = on_event.send(LlmStreamEvent::Done {
+                        prompt_tokens: response.usage.prompt_tokens,
+                        completion_tokens: response.usage.completion_tokens,
+                        finish_reason: choice.finish_reason.clone(),
+                    });
                     completed = true;
                     break;
                 }
@@ -793,7 +796,6 @@ pub async fn schema_constrained_generation(
                     .to_string(),
             );
         }
-        let _ = on_event.send(LlmStreamEvent::Done { total_tokens });
         Ok(())
     }
     .await;
