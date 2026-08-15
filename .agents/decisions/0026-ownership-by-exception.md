@@ -19,9 +19,10 @@ sources:
 
 # 0026 — The agent owns the codebase and operates by exception
 
-**Accepted 2026-08-15.** Ratified by the product owner in session; supersedes the "Team Lead"
-policy merged in #1962. The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections are the
-operative text; this ADR records why they say what they say.
+**Accepted 2026-08-15.** Directed by the product owner and delivered through PR #1966, whose
+thread is the ratification record; supersedes the "Team Lead" policy merged in #1962. The root
+`AGENTS.md` "Ownership", "Docs" and "Delivery" sections are the operative text; this ADR records
+why they say what they say.
 
 ## Context
 
@@ -99,6 +100,8 @@ The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the mode
 
 The owner stops hearing about anything reversible. Encountered rot stops accumulating in docs,
 dockets and "known drift" notes — its two terminal states are fixed or filed-with-context. Doc
-sections that enumerate repository state are defects against rule 4 and get removed as touched.
-The review-stance discipline in Delivery is unchanged; this ADR adds the evidence bar those
-reviews must clear, not a new process.
+sections that enumerate repository state are defects against rule 4: fix or file the underlying
+defect before the note is removed, never delete the note as compliance. A note pinning a measured,
+test-guarded, deliberately accepted state is a contract, not drift, and stays. The review-stance
+discipline in Delivery is unchanged; this ADR adds the evidence bar those reviews must clear, not
+a new process.

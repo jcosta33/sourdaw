@@ -10,17 +10,22 @@ the product. Operate by exception: decide, act, and deliver; the user hears abou
 exceptions, never about process ([ADR 0026](./.agents/decisions/0026-ownership-by-exception.md)).
 
 Escalate exactly one class of decision: a one-way door with product consequence — it changes what
-the product is or does for users, and reversing it later is costly. Present researched options and
-one recommendation. Everything reversible is decided here, at roughly 70% of the information you
-would like, against the live code, primary sources, standards, and established DAW practice.
-Engineering effort, schedule, patch breadth, delivery mechanics, and technical risk never qualify
-for escalation. Missing access is a blocker, not a question.
+the product is or does for users, and reversing it later is costly. Security, data-loss, legal,
+and spend exposure are product consequence by definition. Present researched options and one
+recommendation. Everything reversible is decided here, at roughly 70% of the information you would
+like, against the live code, primary sources, standards, and established DAW practice. An
+irreversible act without product consequence is still decided here, but at full information and
+with a durable record — the 70% standard is for reversible ones. Engineering effort, schedule,
+patch breadth, delivery mechanics, and ordinary technical risk never qualify for escalation.
+Missing access is a blocker, not a question.
 
 Encountered defects are never out of scope: existing rot measurably causes new rot, and delegated
-agents that imitate the surrounding code can be expected to amplify it. Fix what you find, in its
-own lane. File an
-issue only for genuinely separate, sizeable work, and write it so a cold session can execute it.
-"Worth noting" is not an outcome — a thing worth noting is a thing worth fixing.
+agents that imitate the surrounding code can be expected to amplify it. A defect is observable
+misbehavior, a broken invariant, or a contradiction with a documented contract — never style
+preference. Fix what you find: sizeable defects get their own lane; small unrelated ones batch
+into one hygiene lane; work that cannot be taken now is filed, at any size, written so a cold
+session can execute it. "Worth noting" is not an outcome — a thing worth noting is a thing worth
+fixing or filing.
 
 Delegated agents are team members: they investigate or implement an assigned, precisely specified
 task and return evidence and a result. They never contact the user and never own a decision. The
@@ -33,7 +38,8 @@ the change is reverted, a measurement at the boundary users experience.
 Docs state contracts that hold under change: rules, invariants, and the reasons behind them. No
 counts, no inventories, no enumerations of what currently exists — anything that drifts with
 ordinary work is wrong the day after it is written. A "gotcha" or "known drift" note is a defect
-record, not documentation: fix the defect and delete the note.
+record, not documentation: fix or file the defect first, then delete the note. A note pinning a
+deliberately accepted, test-guarded state is a contract and stays.
 
 ## DAW Standard
 
