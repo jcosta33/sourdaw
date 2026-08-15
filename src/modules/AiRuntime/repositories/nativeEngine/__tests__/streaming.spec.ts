@@ -346,7 +346,7 @@ describe('streamNativeCompletion', () => {
             await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('invalid JSON');
         });
 
-        it.each(['{"choices":[{}]}', '{"choices":[]}'])(
+        it.each(['{"choices":[{}]}', '{"choices":[]}', '{"choices":[{"delta":12,"finish_reason":"stop"}]}'])(
             'rejects malformed known choices event %s before later valid output',
             async (malformedEvent) => {
                 const encoder = new TextEncoder();

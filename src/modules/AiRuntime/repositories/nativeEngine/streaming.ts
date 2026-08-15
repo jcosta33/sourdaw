@@ -267,15 +267,10 @@ export async function streamNativeCompletion(
                     }
                     const delta = firstChoice.delta;
                     const finishReason = firstChoice.finish_reason;
-                    if (!isRecord(delta) && typeof finishReason !== 'string') {
+                    if (!isRecord(delta)) {
                         throw new TypeError('Native completion stream returned an invalid choices event');
                     }
-                    if (
-                        isRecord(delta) &&
-                        'content' in delta &&
-                        delta.content !== null &&
-                        typeof delta.content !== 'string'
-                    ) {
+                    if ('content' in delta && delta.content !== null && typeof delta.content !== 'string') {
                         throw new TypeError('Native completion stream returned an invalid choices event');
                     }
                     if ('finish_reason' in firstChoice && finishReason !== null && typeof finishReason !== 'string') {
