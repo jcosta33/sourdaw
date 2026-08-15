@@ -455,6 +455,59 @@ describe('handleWebMidiNoteOff', () => {
         expect(create_midi_note).toHaveBeenCalledWith(60, 2, 2, 100);
     });
 
+    it('overdubs onto the later clip when the playhead sits on the seam between two clips', async () => {
+        // Two abutting clips share beat 8. An inclusive end bound makes both
+        // ranges match, so `find` returns whichever is first in array order —
+        // here the clip that has already ended.
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: { id: string } }) => void>();
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 0, duration: 2, velocity: 100 }));
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                createMidiNote: create_midi_note,
+                appendRecordedMidiNote: append_recorded_midi_note,
+                getTransportStoreValue: () => ({
+                    isRecording: true,
+                    overdubEnabled: true,
+                    isLooping: false,
+                    tempo: 120,
+                }),
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            armed: true,
+                            devices: [],
+                            clips: [
+                                { id: 'clip-early', type: 'midi', startBeat: 0, endBeat: 8 },
+                                { id: 'clip-late', type: 'midi', startBeat: 8, endBeat: 16 },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                playheadPositionRef: { current: 8 },
+            })
+        );
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 8, // timeline-absolute playhead beat at note-on
+        });
+
+        await fn(0, 60, 0);
+
+        expect(append_recorded_midi_note).toHaveBeenCalledWith(
+            expect.objectContaining({ clipId: 'clip-late' })
+        );
+        // Clip-relative origin follows the resolved clip: beat 8 minus the
+        // late clip's start (0), not minus the early clip's start (8).
+        expect(create_midi_note).toHaveBeenCalledWith(60, 0, expect.any(Number), 100);
+    });
+
     it('records MPE expression (pressure, slide, pitchBend) onto the captured note', async () => {
         mpe_enabled.value = true;
         const captured: Array<{ note: Record<string, unknown> }> = [];

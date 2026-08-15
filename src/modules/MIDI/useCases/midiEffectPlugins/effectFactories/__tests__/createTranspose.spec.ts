@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 
-import { type MidiNote } from '#/modules/MIDI/models/MidiEffectTypes';
-
+import { type MidiEffectNote } from '../../../../models/MidiEffectTypes';
 import { createTranspose } from '../createTranspose';
 
-function n(pitch: number): MidiNote {
+function n(pitch: number): MidiEffectNote {
     return {
         pitch,
         velocity: 100,

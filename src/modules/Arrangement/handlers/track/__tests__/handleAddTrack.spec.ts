@@ -27,14 +27,24 @@ describe('handleAddTrack', () => {
             type: 'addTrack',
             payload: { name: 'Bass', kind: 'audio', select: false },
         };
-        handleAddTrack.describe(action);
+        const described = handleAddTrack.describe(action);
         const trackId = action.payload.id;
         if (!trackId) {
             throw new Error('Expected describe to prepare a track id');
         }
-        mocks.addTrack.mockReturnValue({ id: trackId, name: 'Bass', kind: 'audio' });
+        const createdTrack = { id: trackId, name: 'Bass', kind: 'audio' };
+        mocks.addTrack.mockReturnValue(createdTrack);
 
         const result = await handleAddTrack.execute(action);
+
+        // Execute finalizes the guard embedded in the inverse: an
+        // unfinalized entityJson would make undo of addTrack conflict-fail
+        // against isGeneratedMidiStateCurrent.
+        const inverse = described?.inverseAction;
+        if (!inverse || inverse.type !== 'discardCreatedTrack') {
+            throw new Error('Expected a discardCreatedTrack inverse');
+        }
+        expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(createdTrack));
 
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
         expect(mocks.addTrack).toHaveBeenCalledWith({
@@ -113,10 +123,35 @@ describe('handleAddTrack', () => {
             label: 'Add midi track "Keys"',
             inverseAction: {
                 type: 'discardCreatedTrack',
-                payload: { trackId },
+                payload: {
+                    trackId,
+                    // The guard makes the discard inverse reapply-safe inside
+                    // atomic batches; execute finalizes entityJson once the
+                    // track lands.
+                    generatedMidiStateGuard: {
+                        entityJson: '',
+                        midiByClipIdJson: '{}',
+                    },
+                },
             },
         });
         expect(trackId).toMatch(/^track-ai-/);
+    });
+
+    it('describes an inverse whose compensation is guarded for atomic batches', () => {
+        // executeAppActionBatch's atomic guard requires the inverse handler's
+        // canReapplyAfterDivergence to hold; without the guard on the discard
+        // inverse, any atomic batch containing addTrack is rejected.
+        const action: Parameters<typeof handleAddTrack.describe>[0] = {
+            type: 'addTrack',
+            payload: { name: 'Keys', kind: 'midi' },
+        };
+        const described = handleAddTrack.describe(action);
+        const inverse = described.inverseAction;
+        if (!inverse || inverse.type !== 'discardCreatedTrack') {
+            throw new Error('Expected a discardCreatedTrack inverse');
+        }
+        expect(inverse.payload.generatedMidiStateGuard).toBeDefined();
     });
 
     it('does not claim compensation when the prepared id collides', () => {

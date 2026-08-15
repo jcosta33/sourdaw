@@ -38,6 +38,9 @@ export function splitNoteAtBeat(clipId: string, selectedIds: string[], beat: num
                 pressure: note.pressure,
                 slide: note.slide,
                 pitchBend: note.pitchBend,
+                pitchBendRangeSemitones: note.pitchBendRangeSemitones,
+                channel: note.channel,
+                articulation: note.articulation,
             });
         }
         return result;

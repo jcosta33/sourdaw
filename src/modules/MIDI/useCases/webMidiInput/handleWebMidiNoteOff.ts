@@ -35,7 +35,11 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
 
         if (transport.isRecording && transport.overdubEnabled) {
             const playhead = deps.playheadPositionRef.current;
-            const intersecting = midiClips.find((clip) => playhead >= clip.startBeat && playhead <= clip.endBeat);
+            // Half-open [startBeat, endBeat), matching every other clip range
+            // test in this module. An inclusive end makes the seam beat of two
+            // abutting clips satisfy both, so `find` files the note into
+            // whichever clip happens to come first in array order.
+            const intersecting = midiClips.find((clip) => playhead >= clip.startBeat && playhead < clip.endBeat);
             if (intersecting) {
                 return intersecting.id;
             }

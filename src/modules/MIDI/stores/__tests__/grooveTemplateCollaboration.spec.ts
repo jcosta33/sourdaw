@@ -15,6 +15,13 @@ import { type GrooveTemplateState } from '../grooveTemplateStore';
 type RootDocument = { grooveTemplates?: unknown };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
+// Automerge orders root conflicts by op id (`counter@actorId`), and the storage
+// adapter feeds the resolver in that order. Pinning the actor ids makes the
+// "first peer seen" deterministic, so a resolver that silently keeps whichever
+// peer arrives first is distinguishable from one that breaks the tie on content.
+const FIRST_SEEN_ACTOR_ID = '00000000000000000000000000000011';
+const LAST_SEEN_ACTOR_ID = '000000000000000000000000000000ff';
+
 function createTemplate(id: string): GrooveTemplate {
     return {
         id,
@@ -482,6 +489,95 @@ describe('groove template collaboration storage', () => {
                 templateId: 'shared-template',
                 amount: 0.8,
             });
+        }
+    );
+
+    it.each(['left-right', 'right-left'] as const)(
+        'resolves two concurrent renames of the same template on content, not arrival order $0',
+        (direction) => {
+            const legacyBaseline = from<RootDocument>({
+                grooveTemplates: {
+                    templates: [...createBuiltinGrooveTemplates(), createTemplate('contested-template')],
+                    assignments: [],
+                },
+            });
+            // The peer whose conflict entry is handed to the resolver first holds
+            // the name that loses the content tiebreak, so an arrival-order winner
+            // and a content winner are different values.
+            const leftPeer = createPeer(clone(legacyBaseline, FIRST_SEEN_ACTOR_ID));
+            const rightPeer = createPeer(clone(legacyBaseline, LAST_SEEN_ACTOR_ID));
+            const leftStorage = createGrooveTemplateAutomergeStorage();
+            const rightStorage = createGrooveTemplateAutomergeStorage();
+
+            configureAutomergeStoragePort(leftPeer.port);
+            expect(leftStorage.hydrate?.()).toBe(true);
+            leftStorage.set({
+                ...leftStorage.get()!,
+                templates: leftStorage
+                    .get()!
+                    .templates.map((template) =>
+                        template.id === 'contested-template' ? { ...template, name: 'Alpha rename' } : template
+                    ),
+            });
+            flushAutomergeStorageWrites();
+
+            configureAutomergeStoragePort(rightPeer.port);
+            expect(rightStorage.hydrate?.()).toBe(true);
+            rightStorage.set({
+                ...rightStorage.get()!,
+                templates: rightStorage
+                    .get()!
+                    .templates.map((template) =>
+                        template.id === 'contested-template' ? { ...template, name: 'Zulu rename' } : template
+                    ),
+            });
+            flushAutomergeStorageWrites();
+
+            const mergedState = mergePeers({ leftPeer, rightPeer, direction });
+            expect(mergedState.templates.find((template) => template.id === 'contested-template')?.name).toBe(
+                'Zulu rename'
+            );
+        }
+    );
+
+    it.each(['left-right', 'right-left'] as const)(
+        'keeps a deletion ahead of a concurrent rename of the same template $0',
+        (direction) => {
+            const legacyBaseline = from<RootDocument>({
+                grooveTemplates: {
+                    templates: [...createBuiltinGrooveTemplates(), createTemplate('contested-deleted-template')],
+                    assignments: [],
+                },
+            });
+            const leftPeer = createPeer(clone(legacyBaseline, FIRST_SEEN_ACTOR_ID));
+            const rightPeer = createPeer(clone(legacyBaseline, LAST_SEEN_ACTOR_ID));
+            const leftStorage = createGrooveTemplateAutomergeStorage();
+            const rightStorage = createGrooveTemplateAutomergeStorage();
+
+            configureAutomergeStoragePort(leftPeer.port);
+            expect(leftStorage.hydrate?.()).toBe(true);
+            leftStorage.set({
+                ...leftStorage.get()!,
+                templates: leftStorage
+                    .get()!
+                    .templates.filter((template) => template.id !== 'contested-deleted-template'),
+            });
+            flushAutomergeStorageWrites();
+
+            configureAutomergeStoragePort(rightPeer.port);
+            expect(rightStorage.hydrate?.()).toBe(true);
+            rightStorage.set({
+                ...rightStorage.get()!,
+                templates: rightStorage
+                    .get()!
+                    .templates.map((template) =>
+                        template.id === 'contested-deleted-template' ? { ...template, name: 'Zulu rename' } : template
+                    ),
+            });
+            flushAutomergeStorageWrites();
+
+            const mergedState = mergePeers({ leftPeer, rightPeer, direction });
+            expect(mergedState.templates.some((template) => template.id === 'contested-deleted-template')).toBe(false);
         }
     );
 });

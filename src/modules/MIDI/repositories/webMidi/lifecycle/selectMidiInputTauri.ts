@@ -1,5 +1,6 @@
 import { tauriInvoke } from '#/utils/tauriBridge';
 
+import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
 import { mapNativeMidiTimestamp } from '../mapNativeMidiTimestamp';
 import { resetNativeMidiTimeAnchor } from '../resetNativeMidiTimeAnchor';
@@ -63,10 +64,21 @@ function readNativeTimestampMicros(event: TauriMidiMessageEvent): number | undef
 
 type SelectMidiInputTauriInput = {
     portIndex: number;
-    onMidiMessage: (event: MIDIMessageEvent) => void;
+    onMidiMessage: (event: WebMidiInputMessage) => void;
 };
 
+/**
+ * Monotonic token for in-flight selections. The unlisten registry is read at
+ * call start but written three awaits later, so two overlapping selections
+ * would race: the earlier one could finish last and overwrite the newer
+ * registration, orphaning its listener on the shared `midi-message` channel.
+ */
+let selectionGeneration = 0;
+
 export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectMidiInputTauriInput): Promise<void> {
+    selectionGeneration += 1;
+    const generation = selectionGeneration;
+
     const currentUnlisten = getTauriEventUnlisten();
     if (currentUnlisten) {
         currentUnlisten();
@@ -74,6 +86,12 @@ export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectM
     }
 
     await tauriInvoke('open_midi_input', { portIndex });
+
+    if (generation !== selectionGeneration) {
+        // A newer selection started while the port was opening; it owns the
+        // registry from here.
+        return;
+    }
 
     resetNativeMidiTimeAnchor();
 
@@ -99,7 +117,16 @@ export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectM
         // event against it. Leave it out and they read the clock at
         // handler-run time instead, which measures main-thread jitter rather
         // than when the note was played.
-        onMidiMessage({ data: uint8, timeStamp } as MIDIMessageEvent);
+        onMidiMessage({ data: uint8, timeStamp });
     });
+
+    if (generation !== selectionGeneration) {
+        // Superseded while subscribing. Drop this listener instead of
+        // overwriting the newer one, or both stay subscribed and every note
+        // is delivered twice.
+        newUnlisten();
+        return;
+    }
+
     setTauriEventUnlisten(newUnlisten);
 }

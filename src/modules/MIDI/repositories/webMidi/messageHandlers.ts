@@ -4,6 +4,7 @@ import {
     MIDI_NOTE_OFF,
     MIDI_NOTE_ON,
     MIDI_PITCH_BEND,
+    type WebMidiInputMessage,
 } from '../../models/WebMidiTypes';
 
 type ParsedWebMidiMessageBody =
@@ -48,7 +49,7 @@ type ParsedWebMidiMessage = ParsedWebMidiMessageBody & {
     timeStamp: number | undefined;
 };
 
-export function parseWebMidiMessage(event: MIDIMessageEvent): ParsedWebMidiMessage | null {
+export function parseWebMidiMessage(event: WebMidiInputMessage): ParsedWebMidiMessage | null {
     const timeStamp = typeof event.timeStamp === 'number' ? event.timeStamp : undefined;
     const data = event.data;
     if (!data || data.length < 2) {

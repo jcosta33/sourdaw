@@ -105,10 +105,49 @@ describe('transformMidiGlobalTimeState', () => {
             pressure: 0.4,
             slide: undefined,
             pitchBend: undefined,
+            // The right half is rebuilt field by field, so every per-note
+            // expression field has to be named explicitly or it is lost.
+            channel: 9,
         });
         expect(result.state.notesByClipId).not.toHaveProperty('remove');
         expect(result.state.ccByClipId).not.toHaveProperty('remove');
         expect(result.state.pitchBendByClipId).not.toHaveProperty('remove');
+    });
+
+    it('carries the recorded bend range and articulation onto the split right half', () => {
+        // `pitchBendRangeSemitones` is the one MPE field the Web-MIDI recorder
+        // actually writes (handleWebMidiNoteOff), and it is what makes a stored
+        // `pitchBend` mean anything. Splitting must not strand it on the left.
+        const prepared = state({
+            notesByClipId: {
+                source: [
+                    {
+                        id: 'expressive',
+                        pitch: 72,
+                        startBeat: 0,
+                        duration: 4,
+                        velocity: 100,
+                        pitchBend: 0.25,
+                        pitchBendRangeSemitones: 48,
+                        articulation: 'legato',
+                    },
+                ],
+                right: [],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes' as const, sourceClipId: 'source', targetClipId: 'right', splitBeat: 2 }],
+            targetNoteIds: ['note-right'],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.notesByClipId.right?.[0]).toMatchObject({
+            pitchBend: 0.25,
+            pitchBendRangeSemitones: 48,
+            articulation: 'legato',
+        });
     });
 
     it('duplicates notes after the insert shift without copying CC or pitch bend', () => {
@@ -148,6 +187,7 @@ describe('transformMidiGlobalTimeState', () => {
                 velocity: 127,
                 probability: 45,
                 pressure: 0.5,
+                channel: 12,
             },
         ]);
         expect(result.state.ccByClipId).toBe(prepared.ccByClipId);

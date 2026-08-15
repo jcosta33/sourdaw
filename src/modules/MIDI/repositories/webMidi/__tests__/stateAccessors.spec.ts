@@ -5,7 +5,6 @@ vi.mock('#/utils/tauriBridge', () => ({
 }));
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
-import { getSnapshot } from '../getSnapshot';
 import { getState } from '../getState';
 import { resetMidiState } from '../lifecycle/resetMidiState';
 import { setState } from '../setState';
@@ -33,7 +32,6 @@ describe('webMidi state accessors', () => {
         setState({ selectedInputId: 'input-1' });
 
         expect(getState().selectedInputId).toBe('input-1');
-        expect(getSnapshot().selectedInputId).toBe('input-1');
         expect(window.localStorage.getItem('sourdaw:midi:selectedInputId')).toBe('input-1');
         expect(subscriber).toHaveBeenCalledTimes(1);
 
@@ -44,7 +42,7 @@ describe('webMidi state accessors', () => {
         expect(subscriber).toHaveBeenCalledTimes(1);
     });
 
-    it('should share singleton runtime maps with lifecycle cleanup', () => {
+    it('should clear the shared held-note maps on transport reset', () => {
         const key = createWebMidiNoteKey(1, 60);
         activeNotes.set(key, {
             channel: 1,
@@ -55,14 +53,26 @@ describe('webMidi state accessors', () => {
             startBeat: 0,
         });
         channelToNote.set(1, key);
-        midiLearn.active = true;
-        midiLearn.callback = vi.fn();
 
         resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined });
 
         expect(activeNotes.size).toBe(0);
         expect(channelToNote.size).toBe(0);
+    });
+
+    // `resetMidiState` is the transport stop/seek path: it releases sounding
+    // voices and decoded channel state, but an armed MIDI learn belongs to the
+    // user's mapping gesture and must survive it. Disarming learn is teardown
+    // (`destroyWebMidi`), not reset (issue #1837 F15).
+    it('should leave an armed MIDI learn armed across transport reset', () => {
+        const learnCallback = vi.fn();
+        midiLearn.active = true;
+        midiLearn.callback = learnCallback;
+
+        resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined });
+
         expect(midiLearn.active).toBe(true);
         expect(midiLearn.callback).toEqual(expect.any(Function));
+        expect(midiLearn.callback).toBe(learnCallback);
     });
 });

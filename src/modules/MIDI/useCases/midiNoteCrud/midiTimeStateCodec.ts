@@ -1,4 +1,4 @@
-import { sanitize_midi_store_state, type MidiStoreState } from '../../stores/midiStore';
+import { sanitizeMidiStoreState, type MidiStoreState } from '../../stores/midiStore';
 
 type NullNode = {
     type: 'null';
@@ -178,7 +178,7 @@ function isSupportedMidiStoreState(value: unknown): value is MidiStoreState {
         candidate[key] = descriptor.value;
     }
 
-    return sanitize_midi_store_state(candidate) === candidate;
+    return sanitizeMidiStoreState(candidate) === candidate;
 }
 
 function hasCanonicalMidiStoreStateKeys(value: MidiStoreState): boolean {
