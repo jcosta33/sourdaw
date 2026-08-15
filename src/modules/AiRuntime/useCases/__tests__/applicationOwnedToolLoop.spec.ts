@@ -466,6 +466,46 @@ describe('application-owned tool loop', () => {
         expect(result).toMatchObject({ status: 'complete', toolCalls: [] });
     });
 
+    it('retains bounded current-turn receipts when their combined provider context exceeds budget', async () => {
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'project-summary',
+            page: { offset: 0, limit: 20, total: 1 },
+            items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(11_000) }],
+            nextCursor: null,
+            warnings: [],
+        });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-turn-receipts',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn: vi.fn().mockResolvedValue({
+                status: 'complete',
+                toolCalls: Array.from({ length: 3 }, (_, index) => ({
+                    id: `query-turn-budget-${String(index)}`,
+                    name: 'project.query',
+                    arguments: { type: 'project-summary' },
+                })),
+            }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Application tool receipts exceeded the bounded context budget.',
+            receipts: [
+                { callId: 'query-turn-budget-0', status: 'success' },
+                { callId: 'query-turn-budget-1', status: 'success' },
+                { callId: 'query-turn-budget-2', status: 'success' },
+            ],
+        });
+        expect(querySemanticProject).toHaveBeenCalledTimes(3);
+    });
+
     it('honors cancellation before requesting or executing a tool turn', async () => {
         const controller = new AbortController();
         controller.abort();

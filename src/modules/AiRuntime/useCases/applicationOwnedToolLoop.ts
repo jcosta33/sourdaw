@@ -524,7 +524,7 @@ export async function runApplicationOwnedToolLoop(
             return {
                 status: 'rejected',
                 reason: 'Application tool receipts exceeded the bounded context budget.',
-                receipts,
+                receipts: [...receipts, ...turnReceipts],
                 turns: turn,
             };
         }
