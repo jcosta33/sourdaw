@@ -472,13 +472,33 @@ impl AudioScheduler {
             let plugin_id = bridge.plugin_id;
 
             // Find the matching plugin
+            if self.effects.iter().all(|effect| effect.id != plugin_id) {
+                // A bridge with no plugin behind it — registered on its own
+                // through `RegisterAudioBridge`, or outliving its plugin —
+                // used to be skipped entirely. Its input ring then filled and
+                // stayed full, so every later push was refused and the app was
+                // left on permanent dry fallback with nothing recorded. Return
+                // the blocks untouched instead: the app keeps its audio, the
+                // ring keeps moving, and the count says the plugin is missing.
+                let drain = bridge.drain_process(|left, right, frames| {
+                    let _ = (left, right, frames);
+                });
+                self.midi_rt_diagnostics
+                    .record_unmatched_bridge_blocks(drain.blocks_processed as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+                continue;
+            }
+
             if let Some(effect) = self.effects.iter_mut().find(|e| e.id == plugin_id) {
                 if effect.bypassed {
                     // Drain input without processing (passthrough)
-                    bridge.try_process(|left, right, n| {
+                    let drain = bridge.drain_process(|left, right, n| {
                         // output = input (already in the block)
                         let _ = (left, right, n);
                     });
+                    self.midi_rt_diagnostics
+                        .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
                     // A bypassed effect discards incoming MIDI rather than
                     // banking it: without this, notes queued via SendMidiNote
                     // while bypassed would accumulate toward the fixed
@@ -496,13 +516,28 @@ impl AudioScheduler {
                     let transport = self.transport;
                     let sample_rate = self.sample_rate;
 
-                    let processed = bridge.try_process(|left, right, num_samples| {
+                    let diagnostics = &mut self.midi_rt_diagnostics;
+                    // The MIDI chain belongs to the callback, not to the block.
+                    // Several blocks are normally waiting, and running the
+                    // chain per block would re-evaluate authored probability
+                    // and re-emit every queued note once per block — the same
+                    // note-on delivered to the plugin two, three, four times.
+                    // It runs on the first block of the pass, which is also the
+                    // earliest audio in the callback.
+                    let mut events_delivered = false;
+
+                    let drain = bridge.drain_process(|left, right, num_samples| {
+                        if events_delivered {
+                            plugin.process_bridged_audio(left, right, num_samples);
+                            return;
+                        }
+
                         probability_evaluator.process_midi_with_diagnostics(
                             pending_midi,
                             &transport,
                             sample_rate,
                             num_samples,
-                            &mut self.midi_rt_diagnostics,
+                            diagnostics,
                         );
                         for fx in midi_fx.iter_mut() {
                             fx.process_midi_with_diagnostics(
@@ -510,9 +545,10 @@ impl AudioScheduler {
                                 &transport,
                                 sample_rate,
                                 num_samples,
-                                &mut self.midi_rt_diagnostics,
+                                diagnostics,
                             );
                         }
+                        events_delivered = true;
 
                         if pending_midi.is_empty() {
                             plugin.process_bridged_audio(left, right, num_samples);
@@ -532,9 +568,11 @@ impl AudioScheduler {
                     // (the CPAL callback beating the worklet's push, guaranteed
                     // at bridge startup and on any cadence jitter), the events
                     // must survive to the next cycle rather than being dropped.
-                    if processed {
+                    if drain.blocks_processed > 0 {
                         pending_midi.clear();
                     }
+                    diagnostics
+                        .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
                 }
             }
         }
@@ -903,7 +941,7 @@ mod tests {
         // callback does every cycle: process_audio_bridges() first, then
         // process_block() over the standalone chain's zeroed scratch. The
         // CPAL callback beats the worklet's input push here — the bridge's
-        // input ring is empty, so try_process's closure never runs this
+        // input ring is empty, so drain_process's closure never runs this
         // cycle — and process_block must not wipe the note that
         // process_audio_bridges deliberately left queued for next cycle.
         scheduler.process_audio_bridges();
@@ -980,6 +1018,128 @@ mod tests {
         scheduler.process_block(&mut left, &mut right, 4);
 
         assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn one_callback_processes_every_block_the_app_queued_since_the_last_one() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        // The device buffer spans several render quanta — a 512-frame CPAL
+        // callback at 48 kHz covers four 128-frame worklet quanta — so four
+        // blocks are already waiting when the callback runs. Taking one per
+        // callback leaves the rest to fill the ring, after which the app's
+        // pushes are refused for good and the plugin hears a fraction of its
+        // input.
+        for _ in 0..4 {
+            assert!(handle.push_input(&[0.1; 128], &[0.1; 128]));
+        }
+
+        scheduler.process_audio_bridges();
+
+        let mut returned = 0;
+        while let Some(block) = handle.pop_output() {
+            assert_eq!(block.frames, 128);
+            assert_eq!(block.left[0], 0.25);
+            returned += 1;
+        }
+        assert_eq!(returned, 4, "a block left in the ring is lost audio");
+    }
+
+    #[test]
+    fn a_burst_of_blocks_delivers_each_queued_note_to_the_plugin_once() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+        let received_event_count = Arc::new(AtomicUsize::new(0));
+        let received_channel_sum = Arc::new(AtomicUsize::new(0));
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(MidiRecordingPlugin {
+                    received_event_count: Arc::clone(&received_event_count),
+                    received_channel_sum,
+                }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                42,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        for _ in 0..3 {
+            assert!(handle.push_input(&[0.0; 128], &[0.0; 128]));
+        }
+        scheduler.process_audio_bridges();
+
+        // The MIDI queue belongs to the callback, not to the block. Running
+        // the chain once per drained block would hand the plugin the same
+        // note-on three times — three stacked voices from one key press.
+        assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn blocks_on_a_bridge_with_no_plugin_are_returned_and_counted() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(77);
+
+        command_tx
+            .push(GraphCommand::RegisterAudioBridge(bridge))
+            .unwrap();
+        scheduler.update_graph();
+        assert!(scheduler.effects.is_empty());
+
+        // Fill the input ring the way a running worklet does.
+        let mut pushed = 0;
+        while handle.push_input(&[0.4; 64], &[0.4; 64]) {
+            pushed += 1;
+        }
+        assert!(pushed > 0);
+
+        scheduler.process_audio_bridges();
+
+        let mut returned = 0;
+        while let Some(block) = handle.pop_output() {
+            assert_eq!(block.left[0], 0.4, "an unprocessed block must be intact");
+            returned += 1;
+        }
+        assert_eq!(returned, pushed);
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmatched_bridge_blocks,
+            pushed as u64
+        );
+
+        // The ring keeps moving. Skipping the bridge left it full forever, so
+        // every later push was refused and the app never processed again.
+        assert!(handle.push_input(&[0.4; 64], &[0.4; 64]));
     }
 
     #[test]
