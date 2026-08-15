@@ -81,6 +81,7 @@ function isRejectedIpv4(hostname: string): boolean {
     }
     const a = bytes[0] ?? 256;
     const b = bytes[1] ?? 256;
+    const c = bytes[2] ?? 256;
     return (
         a === 0 ||
         a === 10 ||
@@ -90,7 +91,10 @@ function isRejectedIpv4(hostname: string): boolean {
         (a === 172 && b >= 16 && b <= 31) ||
         (a === 192 && b === 0) ||
         (a === 192 && b === 168) ||
+        (a === 192 && b === 88 && c === 99) ||
         (a === 198 && (b === 18 || b === 19)) ||
+        (a === 198 && b === 51 && c === 100) ||
+        (a === 203 && b === 0 && c === 113) ||
         a >= 224
     );
 }

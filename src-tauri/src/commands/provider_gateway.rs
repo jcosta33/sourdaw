@@ -53,6 +53,7 @@ fn ipv4_is_public_global(address: Ipv4Addr) -> bool {
         || (a == 172 && (16..=31).contains(&b))
         || (a == 192 && b == 0)
         || (a == 192 && b == 168)
+        || (a == 192 && b == 88 && c == 99)
         || (a == 192 && b == 0 && c == 2)
         || (a == 198 && (b == 18 || b == 19))
         || (a == 198 && b == 51 && c == 100)
@@ -322,6 +323,10 @@ mod tests {
         assert!(validate_resolved_addresses(&[private]).is_err());
         assert!(validate_resolved_addresses(&[metadata]).is_err());
         assert!(validate_resolved_addresses(&[public, private]).is_err());
+        for rejected in ["192.88.99.2:443", "198.51.100.1:443", "203.0.113.1:443"] {
+            let address: SocketAddr = rejected.parse().expect("IANA IPv4 fixture");
+            assert!(validate_resolved_addresses(&[address]).is_err());
+        }
     }
 
     #[test]

@@ -39,6 +39,8 @@ describe('provider adapter conformance', () => {
         ['credentials', { ...BASE_INSTALLATION, origin: 'https://secret@models.example.test' }],
         ['private destination', { ...BASE_INSTALLATION, origin: 'https://192.168.1.10:8443' }],
         ['metadata destination', { ...BASE_INSTALLATION, origin: 'https://169.254.169.254' }],
+        ['deprecated IPv4 relay', { ...BASE_INSTALLATION, origin: 'https://192.88.99.2' }],
+        ['IPv4 documentation range', { ...BASE_INSTALLATION, origin: 'https://198.51.100.1' }],
         ['IPv6 translation space', { ...BASE_INSTALLATION, origin: 'https://[64:ff9b:1::1]' }],
         ['IPv6 discard prefix', { ...BASE_INSTALLATION, origin: 'https://[100::1]' }],
         ['IPv6 documentation prefix', { ...BASE_INSTALLATION, origin: 'https://[3fff::1]' }],
