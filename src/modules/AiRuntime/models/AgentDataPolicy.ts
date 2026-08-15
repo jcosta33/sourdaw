@@ -27,6 +27,17 @@ export type AgentDataPolicyDecision = {
     retention: AgentDataRetention;
 };
 
+export const REMOTE_TEXT_AGENT_DATA_CATEGORIES: readonly AgentDataCategory[] = [
+    'system-instructions',
+    'prompt-text',
+    'project-context',
+    'metadata',
+    'midi',
+    'lyrics',
+    'filename',
+    'preset',
+];
+
 const REMOTE_BLOCKED_CATEGORIES = new Set<AgentDataCategory>([
     'microphone-audio',
     'raw-audio',

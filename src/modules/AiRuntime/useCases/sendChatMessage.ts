@@ -9,7 +9,11 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
-import { assertRemoteAgentDataPolicy, formatRemoteTransmissionDisclosure } from '../models/AgentDataPolicy';
+import {
+    assertRemoteAgentDataPolicy,
+    formatRemoteTransmissionDisclosure,
+    REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+} from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
 import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
@@ -56,6 +60,7 @@ import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
+import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { createModelProviderProtocol } from './modelProviderProtocol';
 import { planPromptActions } from './planPromptActions';
@@ -301,6 +306,15 @@ export async function sendChatMessage(
         });
 
         try {
+            if (getBackendChain({ operation: 'tools', modality: 'text', streaming: false }).includes('cloud')) {
+                assertRemoteAgentDataPolicy(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'assistant',
+                    content: formatRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                    timestamp: Date.now(),
+                });
+            }
             const { context, result, projectRevision } = await planPromptActions({
                 prompt: userText,
                 signal: aborter.signal,
@@ -1091,7 +1105,7 @@ export async function sendChatMessage(
                 throw createAiRuntimeError(nativeOutcome.finish.finish.failure.safeMessage);
             }
         } else if (backend === 'cloud') {
-            const remoteCategories = ['system-instructions', 'prompt-text', 'project-context'] as const;
+            const remoteCategories = REMOTE_TEXT_AGENT_DATA_CATEGORIES;
             assertRemoteAgentDataPolicy(remoteCategories);
             appendChatMessage({
                 id: `msg-${crypto.randomUUID()}`,

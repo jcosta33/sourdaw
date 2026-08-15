@@ -6,7 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
-import { assertRemoteAgentDataPolicy } from '../../models/AgentDataPolicy';
+import { assertRemoteAgentDataPolicy, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -398,7 +398,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 let outcome: ToolPlanningOutcome;
 
                 if (backend === 'cloud') {
-                    assertRemoteAgentDataPolicy(['system-instructions', 'prompt-text', 'project-context']);
+                    assertRemoteAgentDataPolicy(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
                     let cloudInference: Promise<ToolCallResult[]>;
                     if (signal === undefined) {
                         cloudInference = generateCloudToolCalls(
