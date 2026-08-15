@@ -61,8 +61,8 @@ function registerAgentRunTemporaryAssetCleanup(input: TemporaryAssetCleanupRegis
     const asset = agentRunLifecycle
         .get(input.runId)
         ?.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
-    if (!asset || asset.status !== 'live') {
-        throw new Error(`Agent temporary asset is not live: ${input.assetId}`);
+    if (!asset || (asset.status !== 'live' && asset.status !== 'cleanup-pending')) {
+        throw new Error(`Agent temporary asset is not available for cleanup: ${input.assetId}`);
     }
     if (asset.cleanupOwner !== input.cleanupOwner) {
         throw new Error(`Agent temporary asset cleanup owner does not match: ${input.assetId}`);
@@ -89,6 +89,40 @@ type CancelAgentRunResult =
 
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : 'Unknown cancellation owner failure';
+}
+
+function recordCancellationAcknowledgement(input: {
+    runId: string;
+    acknowledgement: CancellationAcknowledgement | void;
+    acknowledgedAt: number;
+}): void {
+    if (input.acknowledgement === 'transport' || input.acknowledgement === 'backend') {
+        agentRunLifecycle.acknowledgeCancellation({
+            runId: input.runId,
+            level: 'transport',
+            acknowledgedAt: input.acknowledgedAt,
+        });
+    }
+    if (input.acknowledgement === 'backend') {
+        agentRunLifecycle.acknowledgeCancellation({
+            runId: input.runId,
+            level: 'backend',
+            acknowledgedAt: input.acknowledgedAt,
+        });
+    }
+}
+
+function recordCancellationFailure(input: { runId: string; workId: string; error: unknown; occurredAt: number }): void {
+    agentRunLifecycle.recordError({
+        runId: input.runId,
+        error: {
+            code: 'work-cancellation-failed',
+            message: getErrorMessage(input.error),
+            occurredAt: input.occurredAt,
+            retriable: false,
+            workId: input.workId,
+        },
+    });
 }
 
 function bindAgentRunAbortController(input: {
@@ -145,8 +179,6 @@ async function cancelAgentRun(input: {
     }
 
     const cancelledWorkIds: string[] = [];
-    let transportAcknowledged = false;
-    let backendAcknowledged = false;
     for (const lease of activeLeases) {
         const registration = workCancellationRegistrations.get(lease.leaseId);
         if (
@@ -159,38 +191,40 @@ async function cancelAgentRun(input: {
         }
         workCancellationRegistrations.delete(lease.leaseId);
         try {
-            const acknowledgement = await registration.cancel();
+            const acknowledgement = registration.cancel();
             cancelledWorkIds.push(lease.workId);
-            transportAcknowledged =
-                transportAcknowledged || acknowledgement === 'transport' || acknowledgement === 'backend';
-            backendAcknowledged = backendAcknowledged || acknowledgement === 'backend';
+            if (acknowledgement instanceof Promise) {
+                void acknowledgement
+                    .then((value) => {
+                        recordCancellationAcknowledgement({
+                            runId: input.runId,
+                            acknowledgement: value,
+                            acknowledgedAt: requestedAt,
+                        });
+                    })
+                    .catch((error: unknown) => {
+                        recordCancellationFailure({
+                            runId: input.runId,
+                            workId: lease.workId,
+                            error,
+                            occurredAt: requestedAt,
+                        });
+                    });
+            } else {
+                recordCancellationAcknowledgement({
+                    runId: input.runId,
+                    acknowledgement,
+                    acknowledgedAt: requestedAt,
+                });
+            }
         } catch (error) {
-            agentRunLifecycle.recordError({
+            recordCancellationFailure({
                 runId: input.runId,
-                error: {
-                    code: 'work-cancellation-failed',
-                    message: getErrorMessage(error),
-                    occurredAt: requestedAt,
-                    retriable: false,
-                    workId: lease.workId,
-                },
+                workId: lease.workId,
+                error,
+                occurredAt: requestedAt,
             });
         }
-    }
-
-    if (transportAcknowledged) {
-        agentRunLifecycle.acknowledgeCancellation({
-            runId: input.runId,
-            level: 'transport',
-            acknowledgedAt: requestedAt,
-        });
-    }
-    if (backendAcknowledged) {
-        agentRunLifecycle.acknowledgeCancellation({
-            runId: input.runId,
-            level: 'backend',
-            acknowledgedAt: requestedAt,
-        });
     }
 
     const releasedAssetIds: string[] = [];

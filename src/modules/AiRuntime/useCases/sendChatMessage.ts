@@ -385,6 +385,16 @@ export async function sendChatMessage(
                     let preview: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
                     try {
                         preview = await executeVersionedCommandBatchEnvelope(commandBatch);
+                        if (preview.status === 'cancelled') {
+                            await agentRunCancellation.cancel({ runId, reason: preview.reason });
+                        } else if (
+                            (preview.status === 'rejected' ||
+                                preview.status === 'conflicted' ||
+                                preview.status === 'failed') &&
+                            captureProjectRevision() !== projectRevision
+                        ) {
+                            await agentRunCancellation.cancel({ runId, reason: preview.reason });
+                        }
                     } catch (error) {
                         trySettleAgentRunWorkLease(previewLeaseResult.lease, 'failed');
                         agentRunLifecycle.updateBatchStatus({

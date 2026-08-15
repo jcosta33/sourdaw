@@ -1019,6 +1019,40 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
+    it('revokes preview work before settling a revision-invalidated outcome', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'preview muting the vocals',
+            requiresConfirmation: false,
+        });
+        mocks.executeVersionedCommandBatchEnvelope.mockImplementationOnce(() => {
+            mocks.projectRevision.value = 'revision-2';
+            return Promise.resolve({ status: 'conflicted', reason: 'preview target changed', actions: [] });
+        });
+
+        await sendChatMessage('preview muting the vocals', { mode: 'preview' });
+
+        const [projection] = getAgentRunControlProjections();
+        expect(projection).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requested: true, acknowledgement: 'transport' },
+        });
+        expect(getAgentRun(projection!.runId)?.workLeases).toEqual([
+            expect.objectContaining({ workId: 'provider-planning', terminalState: 'completed' }),
+            expect.objectContaining({ cleanupOwner: 'command-preview', terminalState: 'cancelled' }),
+        ]);
+    });
+
     it('does not restore a stale backend after selection changes during generation', async () => {
         mocks.backend.value = 'cloud';
         mocks.cloudAvailable.value = true;

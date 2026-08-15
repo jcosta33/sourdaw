@@ -275,4 +275,85 @@ describe('cancelAgentRun', () => {
             expect.objectContaining({ assetId: 'temporary.wav', status: 'released' }),
         ]);
     });
+
+    it('lets the exact persisted cleanup owner reacquire a pending asset after restart', async () => {
+        createPlanningRun('run-restarted-cleanup');
+        agentRunLifecycle.registerTemporaryAsset({
+            runId: 'run-restarted-cleanup',
+            assetId: 'persisted.wav',
+            kind: 'render',
+            cleanupOwner: 'render-worker',
+            createdAt: 110,
+        });
+        agentRunLifecycle.cancel({ runId: 'run-restarted-cleanup', reason: 'Process stopped', requestedAt: 120 });
+        const cleanup = vi.fn();
+
+        expect(() =>
+            registerAgentRunTemporaryAssetCleanup({
+                runId: 'run-restarted-cleanup',
+                assetId: 'persisted.wav',
+                cleanupOwner: 'render-worker',
+                cleanup,
+            })
+        ).not.toThrow();
+        await cancelAgentRun({ runId: 'run-restarted-cleanup', reason: 'Resume cleanup', requestedAt: 130 });
+
+        expect(cleanup).toHaveBeenCalledOnce();
+        expect(agentRunLifecycle.get('run-restarted-cleanup')?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'persisted.wav', status: 'released' }),
+        ]);
+    });
+
+    it('does not let one unresolved cancellation promise block later owners or cleanup', async () => {
+        createPlanningRun('run-hung-owner');
+        const providerLease = claimWork({
+            runId: 'run-hung-owner',
+            workId: 'provider-1',
+            ownerKind: 'provider',
+            cleanupOwner: 'provider-adapter',
+        });
+        const renderLease = claimWork({
+            runId: 'run-hung-owner',
+            workId: 'render-1',
+            ownerKind: 'render',
+            cleanupOwner: 'render-worker',
+        });
+        agentRunLifecycle.registerTemporaryAsset({
+            runId: 'run-hung-owner',
+            assetId: 'preview.wav',
+            kind: 'render',
+            cleanupOwner: 'render-worker',
+            createdAt: 111,
+        });
+        let resolveProviderCancellation: ((acknowledgement: 'transport') => void) | undefined;
+        registerAgentRunWorkCancellation({
+            lease: providerLease,
+            cancel: () =>
+                new Promise<'transport'>((resolve) => {
+                    resolveProviderCancellation = resolve;
+                }),
+        });
+        const renderCancel = vi.fn(() => 'backend' as const);
+        const cleanup = vi.fn();
+        registerAgentRunWorkCancellation({ lease: renderLease, cancel: renderCancel });
+        registerAgentRunTemporaryAssetCleanup({
+            runId: 'run-hung-owner',
+            assetId: 'preview.wav',
+            cleanupOwner: 'render-worker',
+            cleanup,
+        });
+
+        const cancellation = cancelAgentRun({ runId: 'run-hung-owner', reason: 'User cancelled', requestedAt: 120 });
+        await Promise.resolve();
+        const laterOwnersRanBeforeProviderAcknowledged =
+            renderCancel.mock.calls.length === 1 && cleanup.mock.calls.length === 1;
+        resolveProviderCancellation?.('transport');
+        await cancellation;
+
+        expect(laterOwnersRanBeforeProviderAcknowledged).toBe(true);
+        expect(agentRunLifecycle.get('run-hung-owner')).toMatchObject({
+            phase: 'cancelled',
+            temporaryAssets: [{ assetId: 'preview.wav', status: 'released' }],
+        });
+    });
 });
