@@ -1427,7 +1427,10 @@ describe('scheduleMidiNotes', () => {
 
             // grand-boule velocityTransform divides by 127 → 1.0.
             expect(noteOn).toHaveBeenCalledWith(60, 1, expect.any(Number), 0);
-            expect(noteOff).toHaveBeenCalled();
+            // A note carrying no channel resolves to the base channel on the
+            // release as well as the attack. `toHaveBeenCalled()` alone was
+            // what let the slot the channel goes in stay wrong here.
+            expect(noteOff).toHaveBeenCalledWith(60, expect.any(Number), undefined, 0);
         });
 
         it('releases a grand-boule note on its member channel, not through the release-velocity slot', async () => {
