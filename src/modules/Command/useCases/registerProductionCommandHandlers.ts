@@ -1,4 +1,4 @@
-import { getHandlerMap, registerHandlerMap } from '../stores/handlerRegistry';
+import { registerHandlerMap } from '../stores/handlerRegistry';
 import { hydrateUndoStoreFromSession } from '../stores/undoStore';
 
 import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
@@ -9,8 +9,11 @@ export function registerProductionCommandHandlers(handlerMaps: readonly HandlerM
     for (const handlerMap of handlerMaps) {
         registerHandlerMap(handlerMap);
     }
-    for (const registration of getExecutableCommandRegistrations()) {
+    const registrations = getExecutableCommandRegistrations();
+    for (const registration of registrations) {
         void registration.handler;
     }
-    hydrateUndoStoreFromSession(Object.keys(getHandlerMap()));
+    hydrateUndoStoreFromSession(
+        registrations.map((registration) => [registration.actionType, registration.operationVersion] as const)
+    );
 }

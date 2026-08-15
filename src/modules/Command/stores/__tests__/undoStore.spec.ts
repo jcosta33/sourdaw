@@ -14,7 +14,7 @@ async function loadSubject() {
     vi.resetModules();
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');
     const undoStoreModule = await import('../undoStore');
-    undoStoreModule.hydrateUndoStoreFromSession(SUPPORTED_SESSION_ACTION_TYPES);
+    undoStoreModule.hydrateUndoStoreFromSession(SUPPORTED_SESSION_ACTION_TYPES.map((type) => [type, 1] as const));
     return {
         createUndoEntry: createUndoEntryModule.createUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
@@ -124,6 +124,9 @@ describe('undoStore / pushUndo', () => {
             label: 'persist',
             kind: 'action',
             redoAction,
+            actionOperationVersion: 1,
+            inverseActionOperationVersion: 1,
+            redoActionOperationVersion: 1,
         });
 
         const reloaded = await loadSubject();
@@ -259,6 +262,17 @@ describe('undoStore / pushUndo', () => {
                 action: { type: 'retiredFutureAction', payload: { value: 1 } },
                 inverseAction: { type: 'retiredFutureAction', payload: { value: 0 } },
                 timestamp: 2008,
+                source: 'ai',
+            },
+            {
+                id: 'undo-stale-operation-version',
+                kind: 'action',
+                label: 'Stale tempo action',
+                action: { type: 'setTempo', payload: { bpm: 128 } },
+                actionOperationVersion: 2,
+                inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                inverseActionOperationVersion: 2,
+                timestamp: 2009,
                 source: 'ai',
             },
         ];

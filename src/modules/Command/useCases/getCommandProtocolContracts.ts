@@ -2,11 +2,12 @@ import { VERSIONED_COMMAND_BATCH_SCHEMA_VERSION } from '../models/VersionedComma
 
 import { VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION } from './createVerifiedBatchReceipt';
 import { executableAppActionDescriptors } from './executableAppActionRegistry';
+import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
 
 export function getCommandProtocolContracts() {
     const operations = executableAppActionDescriptors.map((descriptor) => ({
         name: descriptor.actionType,
-        version: String('operationVersion' in descriptor ? descriptor.operationVersion : 1),
+        version: String(getExecutableAppActionOperationVersion(descriptor.actionType)),
         availability: 'available' as const,
     }));
 

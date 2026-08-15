@@ -52,6 +52,17 @@ describe('getProductionCommandHandlerMaps', () => {
                         timestamp: 2,
                         source: 'ai',
                     },
+                    {
+                        id: 'stale-current-action',
+                        kind: 'action',
+                        label: 'Stale current action',
+                        action: { type: 'setTempo', payload: { bpm: 140 } },
+                        actionOperationVersion: 2,
+                        inverseAction: { type: 'setTempo', payload: { bpm: 128 } },
+                        inverseActionOperationVersion: 2,
+                        timestamp: 3,
+                        source: 'ai',
+                    },
                 ],
                 future: [],
             })
