@@ -1,0 +1,155 @@
+src/modules/AiRuntime/repositories/__tests__/nativeModelProviderAdapter.spec.ts
+  s_a40848e8f8cca9::t_040db2d683732b 5,55-64
+  s_a40848e8f8cca9::t_ca2af8ac403889 175,182,216,223,285,292,310,317,350-353,366,373,388
+  s_a40848e8f8cca9::t_2bbe0604a53412 122-130,132-133
+  s_a40848e8f8cca9::t_2d2ed0870c409c 65-66
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_a40848e8f8cca9::t_de808402ca23b5 10
+  s_a40848e8f8cca9::t_cf7ff45b1a0b98 91,96,103-104,108,111,113,127,129
+  s_a40848e8f8cca9::t_369d2a05082b4b 15-17,65-67
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts
+  s_a40848e8f8cca9::t_5ad2dfddf449e9 19-28,39,51-54,82-84,132,139
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion.ts
+  s_a40848e8f8cca9::t_8d7614b81b4531 33,36-38,89-92,117-119,149,154,157-159,162-164,181-184,186-187
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_40335066e3dd32 4,18,33-34,52-53
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_86bdea76302284 375-388
+src/modules/AiRuntime/useCases/getAiRuntimeProtocolContracts.ts
+  s_a40848e8f8cca9::t_c31af13c624223 43-46,57
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_a40848e8f8cca9::t_94d99480c9c4f3 190-221,241-248,302-311,331-338
+  s_a40848e8f8cca9::t_85492cf448f8cd 23-25,28-30
+  s_a40848e8f8cca9::t_660bd12990ce9c 185,187-189,223,239,250,266,278-282,284,298-299,329-330,340
+  s_a40848e8f8cca9::t_2aca65b3091d26 3-8,12-22,26-27,31-33
+  s_a40848e8f8cca9::t_c31af13c624223 60,71-74,77-79,112
+  s_a40848e8f8cca9::t_1c28ee6a1c0e23 34
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_60d301023047ce 17,272-273,357
+  s_a40848e8f8cca9::t_f44004b5dd2789 158-159,166,170,174-175,177,182-186,189-190,193-194,247-248,250
+  s_a40848e8f8cca9::t_de808402ca23b5 34
+  s_a40848e8f8cca9::t_56acc99c133086 304,380,388,450,459,474,497,499,508,517
+  s_a40848e8f8cca9::t_f962c2de33e9d8 494
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_a40848e8f8cca9::t_490def91cafed5 364-369
+docs/architecture/decisions/0036-provider-stream-envelope.md
+  s_a40848e8f8cca9::t_1ed665613ab905 1-30
+src/modules/AiRuntime/repositories/providerGateway.ts
+  s_a40848e8f8cca9::t_88d69f11eced5e 15-16,54,59-68,82-86,91-93,104-105,112-116,145,174-176
+  s_a40848e8f8cca9::t_f99f921c29a139 11-14
+  s_a40848e8f8cca9::t_3d7789ebf2f8db 6-8,55,69-72,96,101-103,133-139
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_a40848e8f8cca9::t_17a5391c68b188 93,95-101
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_40335066e3dd32 9,114-115,226-227
+src/modules/AiRuntime/useCases/__tests__/modelStreamProtocol.spec.ts
+  s_a40848e8f8cca9::t_c31af13c624223 3,55,67
+  s_a40848e8f8cca9::t_36183f4ca81913 101-103,109-113,189-191
+  s_a40848e8f8cca9::t_a30662fcc6f020 1-2,4-5,8-23,27-54,56-66,68-100,104-108,114-129,131,138,157-168,170-174,178-188,192-194
+  s_a40848e8f8cca9::t_e5c212e22d23cd 130,132,139,141,148,150
+  s_a40848e8f8cca9::t_0272400c649427 133-137
+  s_a40848e8f8cca9::t_baa5ce0230c979 24-26,140,142-147,149,151-156
+  s_a40848e8f8cca9::t_e00a17014c7a95 6-7,169,175-177
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/schemaConstrainedGeneration.spec.ts
+  s_a40848e8f8cca9::t_7f4c5bd4d17e89 37-46,70-73,108-109,126-127
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_ddded0a952f82f 186,204,239,250
+  s_a40848e8f8cca9::t_fffd6ee819a89e 205,251
+  s_a40848e8f8cca9::t_9b2b044b666ded 310-315,323,345-347,353,398-400,403,696,700,751-753,769,821,823,835
+  s_a40848e8f8cca9::t_561dd4bfe1f225 127
+  s_a40848e8f8cca9::t_a27ffbe971896e 117
+  s_a40848e8f8cca9::t_18294052d55376 822
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_a40848e8f8cca9::t_34f908527ae3db 40-52,66,68-73,104-108,134-140,161,163
+  s_a40848e8f8cca9::t_98084529b364d9 218-235,250,289,293-305
+  s_a40848e8f8cca9::t_f04678812a4f9a 306
+docs/architecture/decisions/0013-client-side-hosted-llm-adapters.md
+  s_a40848e8f8cca9::t_1ed665613ab905 6
+src/modules/AiRuntime/useCases/__tests__/mixHealthAnalysis.spec.ts
+  s_a40848e8f8cca9::t_166701e500f1cd 40
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_a40848e8f8cca9::t_9fa7e2cfd0de6c 150-170,209-214,217-219,226-237,240-245,254-256,261-263,265-267,270-272
+  s_a40848e8f8cca9::t_e3e9cdf40bb017 110-149,171-174,202,206-208,215-216,220-225,238-239,246-253,257-260,264,268-269,273-282
+  s_a40848e8f8cca9::t_da439bf54d4300 351-355,370-372
+  s_a40848e8f8cca9::t_ac99dc3c3c2fe7 388-392,401-438,451-486
+  s_a40848e8f8cca9::t_ad23fc58c24481 439-450
+  s_a40848e8f8cca9::t_90b560017f5448 6,9,20-25
+  s_a40848e8f8cca9::t_7f7f9a3396a5ef 175-201,203-205
+  s_a40848e8f8cca9::t_c4a110b2453ccb 606-607,617,631-638
+  s_a40848e8f8cca9::t_d95b0ef95da1ec 26
+  s_a40848e8f8cca9::t_65223ae7f841b7 487
+src/modules/AiRuntime/repositories/nativeModelProviderAdapter.ts
+  s_a40848e8f8cca9::t_3e689a4375390d 6,9,23
+  s_a40848e8f8cca9::t_d16b594293a243 183,188-189,223,262,290
+  s_a40848e8f8cca9::t_4c95174c934145 124-148,151
+  s_a40848e8f8cca9::t_8406502a58ad4e 204,225,271,291,309,314
+  s_a40848e8f8cca9::t_784e7ad4ca517e 29-30,149-150,158,171,198,210,232,255,284,296,302,318
+src/modules/AiRuntime/useCases/createModelProviderStreamWriter.ts
+  s_a40848e8f8cca9::t_de808402ca23b5 1-44
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_a40848e8f8cca9::t_3ac47816682f21 292-298
+  s_a40848e8f8cca9::t_eb4443b47f70b8 59-67,85,87-93,95-97,99,261-268
+  s_a40848e8f8cca9::t_622c2837edfec7 319-350
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_3e13553e682489 1064-1065
+  s_a40848e8f8cca9::t_b941907aff2c09 20,1007,1038-1040,1084-1085,1088,1090,1206
+  s_a40848e8f8cca9::t_40335066e3dd32 309-313
+  s_a40848e8f8cca9::t_90a492be911c8c 52
+  s_a40848e8f8cca9::t_0b660787116078 1009,1055-1056,1074,1100,1108,1110,1151,1158,1166,1177,1232-1235,1289-1304
+src-tauri/src/commands/provider_gateway.rs
+  s_a40848e8f8cca9::t_f2b9d49b19f199 412-426
+  s_a40848e8f8cca9::t_0e3aeb661a7d6e 14-15,35-37,43-45,48-52,336,344-345,350,372-387,390-393
+  s_a40848e8f8cca9::t_7ede3325ad9960 406-407
+  s_a40848e8f8cca9::t_ffb52a582b4925 427
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_46d883994ddb1d 1039-1051
+  s_a40848e8f8cca9::t_a9284c48d8ddd3 15-20,39-62
+  s_a40848e8f8cca9::t_9e3a0dbb051454 1146
+  s_a40848e8f8cca9::t_2cd42da54990c0 1121
+  s_a40848e8f8cca9::t_e7da8ce76a71ba 668-673
+  s_a40848e8f8cca9::t_ca1ab05be764b9 289-291,994-996,1016-1019,1037-1038,1052
+src-tauri/src/commands/native_llm.rs
+  s_a40848e8f8cca9::t_48295b27afb222 17-20,749-753,774-775,784-785,804-815,817-818,821-822,837-838,848-849
+  s_a40848e8f8cca9::t_5a009d7e08f274 1124
+  s_a40848e8f8cca9::t_f2b9d49b19f199 1115-1123,1125-1129
+  s_a40848e8f8cca9::t_0b9766c646440f 62-64,68-70,76-78,494-495,504-505,524-535,537-538,541-542,554-555,565-566
+  s_a40848e8f8cca9::t_92abc8014aaabc 1114
+src/modules/AiRuntime/repositories/nativeEngine/schemaConstrainedGeneration.ts
+  s_a40848e8f8cca9::t_8230be620e5bf0 6-9,34-35,42,44,47-51,54-59,66-71,88,98-102,108-112,122-124,127,130,133-134,136
+  s_a40848e8f8cca9::t_52a6cd72bfca16 135
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  s_a40848e8f8cca9::t_ab8f07569c5d58 166,176-178,190-194,198-200,208-211,213-215,222,225,243-246,264-265
+  s_a40848e8f8cca9::t_416172d617d98e 38,45-50,56-65,70-73,75-76,83-84,107-108,112,132,143-144
+  s_a40848e8f8cca9::t_26a8c55bbc6bee 145
+  s_a40848e8f8cca9::t_b7ac1cafbbdc2a 266
+src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts
+  s_a40848e8f8cca9::t_182192216205d7 113-114
+  s_a40848e8f8cca9::t_028ee4caf846a2 4,32
+  s_a40848e8f8cca9::t_3e13553e682489 7,34
+  s_a40848e8f8cca9::t_35ee30185046da 65-83,88-91,126
+  s_a40848e8f8cca9::t_87679289377292 128-137
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_a40848e8f8cca9::t_bd46e67fb64a73 153
+src/modules/AiRuntime/models/ModelProviderProtocol.ts
+  s_a40848e8f8cca9::t_9c5c22537113c8 73-74
+  s_a40848e8f8cca9::t_a3e3d7850ed2bf 43-50,71-72,120-131,155-156
+  s_a40848e8f8cca9::t_c31af13c624223 1
+docs/architecture/decisions/0020-terminal-provider-planning-rejections.md
+  s_a40848e8f8cca9::t_1ed665613ab905 5-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "147bd57e7d1ae363d5781b29838103aa01e6715b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
