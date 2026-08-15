@@ -50,6 +50,7 @@ export { describePlannedAction } from './describePlannedAction';
 export { parsePromptToActions } from './parsePromptToActions';
 export { planPromptActions } from './planPromptActions';
 export { executePlannedActions } from './executePlannedActions';
+export { executePromptActionGroup } from './executePromptActionGroup';
 export { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 
 export { onPromptInjection } from './onPromptInjection';

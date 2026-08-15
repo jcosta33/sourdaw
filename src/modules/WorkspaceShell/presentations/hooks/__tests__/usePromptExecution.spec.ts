@@ -6,7 +6,6 @@ import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import { type describePlannedAction } from '#/modules/AiRuntime/useCases';
 import {
-    compilePlannedActionCommandBatch,
     executePlannedActions,
     getProjectContext,
     parsePromptToActions,
@@ -26,46 +25,20 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { usePromptExecution } from '../usePromptExecution';
 
+const executionUseCaseMocks = vi.hoisted(() => ({
+    executePlannedActions: vi.fn(),
+    executePromptActionGroup: vi.fn(),
+    notifyAiChange: vi.fn(),
+}));
+
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn() }));
 vi.mock('#/modules/AiRuntime/stores', () => ({ llmStatusStore: { value: { state: 'idle' } } }));
 vi.mock('#/modules/AiRuntime/useCases', () => ({
-    compilePlannedActionCommandBatch: vi.fn(() => ({
-        commandEnvelopes: ['command-envelope'],
-        commandBatch: {
-            serialized: 'command-batch',
-            authority: {
-                projectId: 'project-1',
-                baseRevision: 'revision-1',
-                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                grants: {
-                    allowedOperationPrefixes: ['togglePlayback'],
-                    create: false,
-                    delete: false,
-                    routing: false,
-                    tempo: false,
-                    master: false,
-                    file: false,
-                    audioUpload: false,
-                    remoteGeneration: false,
-                    autoCommit: true,
-                },
-                budgets: {
-                    maxCommands: 1,
-                    maxCreatedTracks: 0,
-                    maxDeletedObjects: 0,
-                    maxAffectedTracks: 0,
-                    maxAffectedClips: 0,
-                    maxAutomationPoints: 0,
-                    maxImportedAssets: 0,
-                    maxRenderJobs: 0,
-                },
-            },
-        },
-    })),
-    executePlannedActions: vi.fn(),
+    executePlannedActions: executionUseCaseMocks.executePlannedActions,
+    executePromptActionGroup: executionUseCaseMocks.executePromptActionGroup,
     describePlannedAction: vi.fn((input: Parameters<typeof describePlannedAction>[0]) => {
         const action = input.action;
         if (action.type === 'removeTrack') {
@@ -85,7 +58,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     getAvailablePresets: vi.fn(() => []),
     resolvePresetActions: vi.fn(() => []),
     onPromptInjection: vi.fn(() => () => {}),
-    notifyAiChange: vi.fn(),
+    notifyAiChange: executionUseCaseMocks.notifyAiChange,
     isLlmAvailable: vi.fn(() => false),
     initEngine: vi.fn().mockResolvedValue(undefined),
 }));
@@ -159,6 +132,35 @@ describe('usePromptExecution', () => {
                 actions.map((action) => action.actionType)
             );
             return Promise.resolve({ status: 'committed', actions });
+        });
+        executionUseCaseMocks.executePromptActionGroup.mockImplementation(async (input) => {
+            if (input.actions.some((action: AppAction) => action.type === 'removeAllTracks')) {
+                notifyAiChange(
+                    'Command not executed: one or more actions are not available through the approved command boundary.',
+                    []
+                );
+                return;
+            }
+            const execution = await vi.mocked(executePlannedActions)(input);
+            if (execution.status === 'committed' || execution.status === 'executed') {
+                return;
+            }
+            if (execution.status === 'invalidated' || execution.status === 'failed') {
+                notifyAiChange(`Command not executed: ${execution.reason}`, []);
+                return;
+            }
+            if (execution.status === 'ambiguous') {
+                notifyAiChange(
+                    `Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`,
+                    []
+                );
+                return;
+            }
+            if (execution.status === 'cancelled') {
+                notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
+                return;
+            }
+            notifyAiChange('No project changes were needed.', []);
         });
         vi.mocked(isComplexPrompt).mockReturnValue(false);
         vi.mocked(getAvailablePresets).mockReturnValue([]);
@@ -270,10 +272,6 @@ describe('usePromptExecution', () => {
                 projectRevision: 'revision-1',
                 signal: expect.any(AbortSignal),
             })
-        );
-        expect(vi.mocked(executePlannedActions).mock.calls.at(-1)?.[0].commandBatch?.serialized).toBe('command-batch');
-        expect(vi.mocked(compilePlannedActionCommandBatch)).toHaveBeenCalledWith(
-            expect.objectContaining({ actions: [playAction], autoCommit: true, projectRevision: 'revision-1' })
         );
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Play', ['togglePlayback']);
         expect(result.current.isProcessing).toBe(false);
