@@ -165,6 +165,7 @@ function retryAgentRunWorkLease(input: RetryAgentRunWorkLeaseInput): RetryAgentR
 type SettleAgentRunWorkLeaseInput = {
     runId: string;
     workId: string;
+    leaseId: string;
     cancellationGeneration: number;
     idempotencyKey: string;
     receiptIdentity: string;
@@ -183,13 +184,24 @@ function settleAgentRunWorkLease(input: SettleAgentRunWorkLeaseInput): SettleAge
     const settledAt = input.settledAt ?? Date.now();
     let result: SettleAgentRunWorkLeaseResult = { status: 'missing-run' };
     const updated = updateRun(input.runId, settledAt, (run) => {
-        const leaseIndex = run.workLeases.findLastIndex(
-            (lease) => lease.workId === input.workId && lease.terminalState === null
+        const leaseIndex = run.workLeases.findIndex(
+            (lease) => lease.workId === input.workId && lease.leaseId === input.leaseId && lease.terminalState === null
         );
         if (leaseIndex < 0) {
-            const settledLease = run.workLeases.findLast((lease) => lease.workId === input.workId);
+            const activeLease = run.workLeases.find(
+                (lease) => lease.workId === input.workId && lease.terminalState === null
+            );
+            if (activeLease) {
+                result = { status: 'stale' };
+                return run;
+            }
+            const settledLease = run.workLeases.findLast(
+                (lease) => lease.workId === input.workId && lease.leaseId === input.leaseId
+            );
             if (!settledLease) {
-                result = { status: 'missing-lease' };
+                result = run.workLeases.some((lease) => lease.workId === input.workId)
+                    ? { status: 'stale' }
+                    : { status: 'missing-lease' };
             } else if (
                 run.cancellation.generation !== input.cancellationGeneration ||
                 settledLease.cancellationGeneration !== input.cancellationGeneration ||

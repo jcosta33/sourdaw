@@ -86,6 +86,7 @@ const mocks = vi.hoisted(() => {
                     options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
                 ) => Promise<{ status: 'complete' } | { status: 'incomplete'; reason: string }>
             >(),
+        rejectPendingConfirmation: { value: false },
     };
 });
 
@@ -188,6 +189,10 @@ vi.mock('../../stores/pendingActionConfirmationStore', async (import_original) =
             // confirmPendingChatActions can replay the approved batch in the
             // ADR-0033 confirmation-flow tests below.
             mocks.proposePendingActionConfirmation(input);
+            if (mocks.rejectPendingConfirmation.value) {
+                input.resourceLease?.release();
+                return null;
+            }
             return original.proposePendingActionConfirmation(input);
         },
     };
@@ -225,6 +230,7 @@ describe('sendChatMessage injectables', () => {
         mocks.cloudAvailable.value = false;
         mocks.webLlmEngine.value = null;
         mocks.projectRevision.value = 'revision-1';
+        mocks.rejectPendingConfirmation.value = false;
         aiBackendPreferenceStore.set('auto');
         llmStatusStore.set({ state: 'idle' });
         mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
@@ -1346,6 +1352,35 @@ describe('sendChatMessage injectables', () => {
         expect(partialUpdate?.[1].content).toBe(
             `Failed to execute confirmed actions atomically:\n\n${later_failure.message}`
         );
+    });
+
+    it('terminalizes a run when its pending confirmation cannot be retained', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
+            rawText: 'delete the drums',
+            requiresConfirmation: false,
+        });
+        mocks.rejectPendingConfirmation.value = true;
+
+        await sendChatMessage('delete the drums');
+
+        const [projection] = getAgentRunControlProjections();
+        expect(projection).toMatchObject({
+            phase: 'failed',
+            errors: [
+                expect.objectContaining({
+                    code: 'confirmation-not-retained',
+                    retriable: true,
+                    workId: expect.any(String),
+                }),
+            ],
+        });
     });
 
     it('reports an ambiguous partial commit without creating AI history or suggesting retry', async () => {

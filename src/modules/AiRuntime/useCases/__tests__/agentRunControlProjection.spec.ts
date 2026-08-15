@@ -52,6 +52,7 @@ describe('agent run control projection', () => {
         settleAgentRunWorkLease({
             runId: 'run-controls',
             workId: 'analysis-1',
+            leaseId: 'run-controls:analysis-1:0',
             cancellationGeneration: 0,
             idempotencyKey: 'analysis-key',
             receiptIdentity: 'analysis-receipt',
@@ -112,6 +113,7 @@ describe('agent run control projection', () => {
         settleAgentRunWorkLease({
             runId: 'run-non-retriable',
             workId: 'batch-1',
+            leaseId: 'run-non-retriable:batch-1:0',
             cancellationGeneration: 0,
             idempotencyKey: 'batch-key',
             receiptIdentity: 'batch-receipt',

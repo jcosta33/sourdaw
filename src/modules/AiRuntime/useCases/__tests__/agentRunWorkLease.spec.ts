@@ -53,6 +53,7 @@ describe('agent run work leases', () => {
             settleAgentRunWorkLease({
                 runId: 'run-lease',
                 workId: 'render-1',
+                leaseId: 'run-lease:render-1:0',
                 cancellationGeneration: 1,
                 idempotencyKey: 'render-key',
                 receiptIdentity: 'render-receipt',
@@ -64,6 +65,7 @@ describe('agent run work leases', () => {
             settleAgentRunWorkLease({
                 runId: 'run-lease',
                 workId: 'render-1',
+                leaseId: 'run-lease:render-1:0',
                 cancellationGeneration: 0,
                 idempotencyKey: 'render-key',
                 receiptIdentity: 'render-receipt',
@@ -75,6 +77,7 @@ describe('agent run work leases', () => {
             settleAgentRunWorkLease({
                 runId: 'run-lease',
                 workId: 'render-1',
+                leaseId: 'run-lease:render-1:0',
                 cancellationGeneration: 0,
                 idempotencyKey: 'render-key',
                 receiptIdentity: 'render-receipt',
@@ -124,6 +127,7 @@ describe('agent run work leases', () => {
             settleAgentRunWorkLease({
                 runId: 'run-lease',
                 workId: 'analysis-1',
+                leaseId: 'run-lease:analysis-1:0',
                 cancellationGeneration: 0,
                 idempotencyKey: 'analysis-key',
                 receiptIdentity: 'analysis-receipt',
@@ -131,6 +135,70 @@ describe('agent run work leases', () => {
                 settledAt: 120,
             })
         ).toEqual({ status: 'stale' });
+    });
+
+    it('rejects a delayed callback from an earlier retry attempt', () => {
+        const firstAttempt = claimAgentRunWorkLease({
+            runId: 'run-lease',
+            workId: 'render-retry',
+            ownerKind: 'render',
+            cleanupOwner: 'render-worker',
+            idempotencyKey: 'render-key',
+            receiptIdentity: 'render-receipt',
+            idempotent: true,
+            retriable: true,
+            claimedAt: 110,
+        });
+        if (firstAttempt.status !== 'claimed') {
+            throw new Error('Expected the first render attempt to claim a lease');
+        }
+        expect(
+            settleAgentRunWorkLease({
+                runId: 'run-lease',
+                workId: 'render-retry',
+                leaseId: firstAttempt.lease.leaseId,
+                cancellationGeneration: 0,
+                idempotencyKey: 'render-key',
+                receiptIdentity: 'render-receipt',
+                terminalState: 'failed',
+                settledAt: 120,
+            })
+        ).toEqual({ status: 'settled' });
+        const retryAttempt = retryAgentRunWorkLease({
+            runId: 'run-lease',
+            workId: 'render-retry',
+            ownerKind: 'render',
+            cleanupOwner: 'render-worker',
+            claimedAt: 130,
+        });
+        if (retryAttempt.status !== 'retried') {
+            throw new Error('Expected the render work to retry');
+        }
+
+        expect(
+            settleAgentRunWorkLease({
+                runId: 'run-lease',
+                workId: 'render-retry',
+                leaseId: firstAttempt.lease.leaseId,
+                cancellationGeneration: 0,
+                idempotencyKey: 'render-key',
+                receiptIdentity: 'render-receipt',
+                terminalState: 'completed',
+                settledAt: 140,
+            })
+        ).toEqual({ status: 'stale' });
+        expect(
+            settleAgentRunWorkLease({
+                runId: 'run-lease',
+                workId: 'render-retry',
+                leaseId: retryAttempt.lease.leaseId,
+                cancellationGeneration: 0,
+                idempotencyKey: 'render-key',
+                receiptIdentity: 'render-receipt',
+                terminalState: 'completed',
+                settledAt: 141,
+            })
+        ).toEqual({ status: 'settled' });
     });
 
     it('never offers retry for work that was not declared idempotent', () => {
@@ -150,6 +218,7 @@ describe('agent run work leases', () => {
         settleAgentRunWorkLease({
             runId: 'run-lease',
             workId: 'provider-1',
+            leaseId: 'run-lease:provider-1:0',
             cancellationGeneration: 0,
             idempotencyKey: 'provider-key',
             receiptIdentity: 'provider-receipt',

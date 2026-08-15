@@ -133,6 +133,7 @@ function settleTrackedAgentRunWorkLease(
         const settlement = agentRunWorkLease.settle({
             runId: lease.runId,
             workId: lease.workId,
+            leaseId: lease.leaseId,
             cancellationGeneration: lease.cancellationGeneration,
             idempotencyKey: lease.idempotencyKey,
             receiptIdentity: lease.receiptIdentity,

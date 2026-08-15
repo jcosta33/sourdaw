@@ -114,6 +114,7 @@ function trySettleAgentRunWorkLease(
         const settlement = agentRunWorkLease.settle({
             runId: lease.runId,
             workId: lease.workId,
+            leaseId: lease.leaseId,
             cancellationGeneration: lease.cancellationGeneration,
             idempotencyKey: lease.idempotencyKey,
             receiptIdentity: lease.receiptIdentity,
@@ -208,6 +209,7 @@ export async function sendChatMessage(
             agentRunWorkLease.settle({
                 runId,
                 workId: providerWorkId,
+                leaseId: providerLease.leaseId,
                 cancellationGeneration: providerLease.cancellationGeneration,
                 idempotencyKey: providerLease.idempotencyKey,
                 receiptIdentity: providerLease.receiptIdentity,
@@ -383,6 +385,7 @@ export async function sendChatMessage(
                         const settlement = agentRunWorkLease.settle({
                             runId,
                             workId: previewWorkId,
+                            leaseId: previewLeaseResult.lease.leaseId,
                             cancellationGeneration: previewLeaseResult.lease.cancellationGeneration,
                             idempotencyKey: previewLeaseResult.lease.idempotencyKey,
                             receiptIdentity: previewLeaseResult.lease.receiptIdentity,
@@ -452,10 +455,27 @@ export async function sendChatMessage(
                         resourceLease: createStemImportConfirmationResourceLease(result.actions),
                     });
                     if (!confirmation) {
+                        const reason = 'Prepared action resources exceed the live confirmation limit.';
+                        agentRunLifecycle.updateBatchStatus({
+                            runId,
+                            batchId: parsedCommandBatch.envelope.batchId,
+                            status: 'failed',
+                        });
+                        agentRunLifecycle.recordError({
+                            runId,
+                            error: {
+                                code: 'confirmation-not-retained',
+                                message: reason,
+                                occurredAt: Date.now(),
+                                retriable: true,
+                                workId: parsedCommandBatch.envelope.batchId,
+                            },
+                            terminal: true,
+                        });
                         updateChatMessage(assistantMsgId, {
                             isStreaming: false,
                             pendingActionConfirmationStatus: 'failed',
-                            error: 'Prepared action resources exceed the live confirmation limit.',
+                            error: reason,
                             content:
                                 'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
                         });
@@ -954,6 +974,7 @@ export async function sendChatMessage(
         agentRunWorkLease.settle({
             runId,
             workId: providerWorkId,
+            leaseId: providerLease.leaseId,
             cancellationGeneration: providerLease.cancellationGeneration,
             idempotencyKey: providerLease.idempotencyKey,
             receiptIdentity: providerLease.receiptIdentity,
@@ -995,6 +1016,7 @@ export async function sendChatMessage(
             agentRunWorkLease.settle({
                 runId,
                 workId: providerWorkId,
+                leaseId: providerLease.leaseId,
                 cancellationGeneration: providerLease.cancellationGeneration,
                 idempotencyKey: providerLease.idempotencyKey,
                 receiptIdentity: providerLease.receiptIdentity,
