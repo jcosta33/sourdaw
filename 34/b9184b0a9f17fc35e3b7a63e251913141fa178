@@ -1,0 +1,33 @@
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_c51c566e043d99 229
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_c51c566e043d99 183,202-203,1283,1319
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts
+  s_a40848e8f8cca9::t_7ef08e1b210eac 53,62,91,101,104,107
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_a40848e8f8cca9::t_c51c566e043d99 162,169
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_7ef08e1b210eac 1281-1284
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts
+  s_a40848e8f8cca9::t_c51c566e043d99 135,147-150
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_a40848e8f8cca9::t_c51c566e043d99 116,119-123
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_c51c566e043d99 290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "34b9184b0a9f17fc35e3b7a63e251913141fa178",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
