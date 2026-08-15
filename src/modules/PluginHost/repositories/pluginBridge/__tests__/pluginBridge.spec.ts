@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke, tauriListen } from '#/utils/tauriBridge';
 
 import { loadPlugin } from '../loadPlugin';
@@ -16,6 +17,8 @@ vi.mock('#/utils/tauriBridge', () => ({
     tauriInvoke: vi.fn(),
     tauriListen: vi.fn(),
 }));
+
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: vi.fn() } }));
 
 describe('pluginBridge repository', () => {
     beforeEach(() => {
@@ -155,6 +158,49 @@ describe('pluginBridge repository', () => {
             });
 
             expect(result).toBeNull();
+        });
+
+        // Regression (F14): the failure used to be swallowed whole, so a stopped
+        // engine, an unresolved instance and a plugin that simply produced
+        // nothing were indistinguishable to anyone reading the app.
+        it('reports each distinct native failure once instead of swallowing it', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockRejectedValue(new Error('no audio bridge for plugin 17'));
+
+            await processAudioIPC({ instanceId: 'instance-17', audioBytes: new Uint8Array([1]) });
+
+            expect(logger.warn).toHaveBeenCalledWith(
+                'Native plugin audio processing failed: Error: no audio bridge for plugin 17'
+            );
+
+            // The relay issues hundreds of round trips a second: the same cause
+            // repeating must not be logged again.
+            await processAudioIPC({ instanceId: 'instance-17', audioBytes: new Uint8Array([1]) });
+            expect(logger.warn).toHaveBeenCalledTimes(1);
+
+            // A different cause is a different report.
+            vi.mocked(tauriInvoke).mockRejectedValue(new Error('Native engine not running'));
+            await processAudioIPC({ instanceId: 'instance-17', audioBytes: new Uint8Array([1]) });
+
+            expect(logger.warn).toHaveBeenCalledTimes(2);
+            expect(logger.warn).toHaveBeenLastCalledWith(
+                'Native plugin audio processing failed: Error: Native engine not running'
+            );
+        });
+
+        it('reports a failure again after the round trip recovers', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockRejectedValue(new Error('device disappeared'));
+            await processAudioIPC({ instanceId: 'instance-17', audioBytes: new Uint8Array([1]) });
+            expect(logger.warn).toHaveBeenCalledTimes(1);
+
+            vi.mocked(tauriInvoke).mockResolvedValue(new Uint8Array([1]));
+            await processAudioIPC({ instanceId: 'instance-17', audioBytes: new Uint8Array([1]) });
+
+            vi.mocked(tauriInvoke).mockRejectedValue(new Error('device disappeared'));
+            await processAudioIPC({ instanceId: 'instance-17', audioBytes: new Uint8Array([1]) });
+
+            expect(logger.warn).toHaveBeenCalledTimes(2);
         });
     });
 

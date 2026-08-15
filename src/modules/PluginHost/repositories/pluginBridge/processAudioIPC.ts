@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
 
 /**
@@ -35,6 +36,24 @@ function normalizeAudioBytes(response: unknown): Uint8Array | null {
     return null;
 }
 
+/**
+ * The last failure reported, so a backend that fails on every block logs once
+ * per distinct cause instead of once per render quantum. A relay running at 128
+ * frames issues hundreds of round trips a second, and a swallowed error and a
+ * flooded console are equally unreadable.
+ */
+let lastReportedFailure: string | null = null;
+
+function reportProcessAudioFailure(error: unknown): void {
+    const message = String(error);
+    if (message === lastReportedFailure) {
+        return;
+    }
+
+    lastReportedFailure = message;
+    logger.warn(`Native plugin audio processing failed: ${message}`);
+}
+
 export async function processAudioIPC(input: ProcessAudioIPCInput): ProcessAudioIPCOutput {
     if (!isTauri()) {
         return null;
@@ -46,8 +65,14 @@ export async function processAudioIPC(input: ProcessAudioIPCInput): ProcessAudio
             audioBytes: input.audioBytes,
         });
 
+        lastReportedFailure = null;
         return normalizeAudioBytes(response);
-    } catch {
+    } catch (error) {
+        // Still null: the relay must hand the worklet its buffer back, and a
+        // throw here would strand it. But the cause no longer disappears —
+        // an unresolved instance, a stopped engine and a missing bridge all
+        // used to look like a plugin that simply produced nothing.
+        reportProcessAudioFailure(error);
         return null;
     }
 }

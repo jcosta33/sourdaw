@@ -118,6 +118,47 @@ describe('activateExternalPlugin', () => {
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
     });
 
+    // Regression (F14): loading with no engine running returns success with a
+    // null engine id, and that used to reach the app as an ordinary active
+    // plugin — one that silently processes nothing.
+    it('records the degraded state when the plugin loaded with no engine attached', async () => {
+        mocks.loadPluginRepo.mockResolvedValueOnce({
+            instance_id: 'inst-1',
+            latency_samples: 0,
+            latency_ms: 0,
+            engine_plugin_id: null,
+        });
+
+        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+
+        await vi.waitFor(() =>
+            expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
+                status: 'active',
+                message: 'Loaded without a running native engine — this plugin processes no audio yet.',
+            })
+        );
+        // Degraded, not failed: the instance stays live so the legitimate
+        // load-before-engine-start flow is not retried into a duplicate load.
+        expect(loadedExternalInstances.has('inst-1')).toBe(true);
+        expect(mocks.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the activation entry unqualified when the plugin is engine-attached', async () => {
+        mocks.loadPluginRepo.mockResolvedValueOnce({
+            instance_id: 'inst-1',
+            latency_samples: 0,
+            latency_ms: 0,
+            engine_plugin_id: 1000,
+        });
+
+        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+
+        await vi.waitFor(() =>
+            expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' })
+        );
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
     it('publishes an error state when native activation fails', async () => {
         mocks.loadPluginRepo.mockRejectedValueOnce(new Error('unsupported plugin format'));
 

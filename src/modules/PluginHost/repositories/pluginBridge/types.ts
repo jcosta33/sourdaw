@@ -29,6 +29,17 @@ export type PluginInstance = {
     latency_samples: number;
     /** Latency in milliseconds, converted host-side at the activation sample rate. */
     latency_ms: number;
+    /**
+     * The id this instance was given inside the native audio engine, or `null`
+     * when the load succeeded but no engine was running to attach it to.
+     *
+     * `null` is a degraded load, not a failure: the plugin is instantiated and
+     * its state is restorable, but it is in no rendering graph, so it processes
+     * no audio until it is loaded again against a running engine. Loading before
+     * `start_native_engine` is a legitimate flow, which is why the host returns
+     * success — this field is how a caller tells the two apart.
+     */
+    engine_plugin_id: number | null;
 };
 
 /**

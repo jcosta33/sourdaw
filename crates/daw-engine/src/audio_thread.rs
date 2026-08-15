@@ -1,5 +1,6 @@
 //! Native OS Audio Thread using CPAL
 
+use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind};
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
@@ -7,7 +8,7 @@ use crate::scheduler::{
     AudioScheduler, GraphCommand, RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rtrb::{Consumer, RingBuffer};
+use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -15,6 +16,11 @@ use std::time::Duration;
 use triple_buffer::Input;
 
 pub(crate) const MAX_CALLBACK_FRAMES: usize = 4096;
+/// The period the engine asks a device for when the device lets it choose.
+/// 512 frames is the common professional default (Live, Logic, Reaper all ship
+/// a buffer of this order): low enough for playable monitoring latency, high
+/// enough that a bridged plugin chain is not woken more often than it can serve.
+const PREFERRED_BUFFER_FRAMES: cpal::FrameCount = 512;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -135,18 +141,25 @@ fn reclaim_retired<T>(retired: T) {
 
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
     let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
-    spawn_audio_thread_with_diagnostics(command_rx, diagnostics_tx)
+    let (engine_event_tx, _engine_event_rx) = engine_event_channel();
+    spawn_audio_thread_with_diagnostics(command_rx, diagnostics_tx, engine_event_tx)
 }
 
 pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    engine_event_tx: Producer<EngineEvent>,
 ) -> Result<AudioThreadHandle, String> {
     let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
     let reclaimer_shutdown_tx = spawn_retirement_reclaimer(retired_rx)?;
 
     spawn_owned_audio_stream(move || {
-        match build_audio_stream(command_rx, retired_tx, midi_rt_diagnostics_tx) {
+        match build_audio_stream(
+            command_rx,
+            retired_tx,
+            midi_rt_diagnostics_tx,
+            engine_event_tx,
+        ) {
             Ok(stream) => Ok(StreamWithReclaimerShutdown(
                 Some(stream),
                 reclaimer_shutdown_tx,
@@ -198,10 +211,34 @@ fn write_interleaved(
     }
 }
 
+/// Pick the period the engine asks the device for.
+///
+/// `BufferSize::Default` hands the choice to the device, and a device whose
+/// default period exceeds `MAX_CALLBACK_FRAMES` overruns the callback's fixed
+/// scratch and the bridge's reach, so bridged plugins stop being served. Asking
+/// for a period the device advertises removes that whole class of failure.
+///
+/// Falls back to `Default` only when the device advertises no usable range —
+/// either it reports nothing (`Unknown`), or its whole range sits above what the
+/// callback can carry, in which case there is nothing better to request.
+fn negotiated_buffer_size(supported: &cpal::SupportedBufferSize) -> cpal::BufferSize {
+    let cpal::SupportedBufferSize::Range { min, max } = *supported else {
+        return cpal::BufferSize::Default;
+    };
+
+    let ceiling = max.min(MAX_CALLBACK_FRAMES as cpal::FrameCount);
+    if min > ceiling {
+        return cpal::BufferSize::Default;
+    }
+
+    cpal::BufferSize::Fixed(PREFERRED_BUFFER_FRAMES.clamp(min, ceiling))
+}
+
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
     retired_tx: rtrb::Producer<RetiredGraphObjects>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    mut engine_event_tx: Producer<EngineEvent>,
 ) -> Result<cpal::Stream, String> {
     let host = cpal::default_host();
     let device = host
@@ -225,8 +262,23 @@ fn build_audio_stream(
         midi_rt_diagnostics_tx,
     );
 
-    // We strictly use f32 streams
-    let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+    // Ask the device for a period the callback and the plugin bridge can carry,
+    // rather than accepting whatever the device would default to.
+    let mut stream_config: cpal::StreamConfig = config.into();
+    stream_config.buffer_size = negotiated_buffer_size(config.buffer_size());
+
+    // We strictly use f32 streams.
+    //
+    // The host may run this on the audio thread, so publishing the event must
+    // not allocate: `EngineEvent` is `Copy` and the ring is preallocated. The
+    // stderr line stays for the case where nothing drains the ring, and a full
+    // ring drops the report rather than making the audio side wait.
+    let err_fn = move |err: cpal::Error| {
+        eprintln!("an error occurred on stream: {}", err);
+        let _ = engine_event_tx.push(EngineEvent::StreamError {
+            kind: StreamErrorKind::from(&err),
+        });
+    };
 
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => {
@@ -235,7 +287,7 @@ fn build_audio_stream(
 
             device
                 .build_output_stream(
-                    config.into(),
+                    stream_config,
                     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                         // 1. Process pending commands lock-free
                         scheduler.update_graph();
@@ -296,6 +348,7 @@ mod tests {
         spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
         spawn_retirement_reclaimer, AudioThreadHandle, StreamWithReclaimerShutdown,
     };
+    use cpal::{BufferSize, SupportedBufferSize};
     use rtrb::RingBuffer;
     use std::rc::Rc;
     use std::sync::mpsc;
@@ -340,6 +393,72 @@ mod tests {
             let _ = self.entered_tx.send(thread_name);
             let _ = self.release_rx.recv();
         }
+    }
+
+    #[test]
+    fn a_range_containing_the_preferred_period_is_negotiated_to_it() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range { min: 64, max: 2048 }),
+            BufferSize::Fixed(512)
+        );
+    }
+
+    #[test]
+    fn a_range_entirely_below_the_preferred_period_is_negotiated_to_its_maximum() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range { min: 32, max: 256 }),
+            BufferSize::Fixed(256)
+        );
+    }
+
+    #[test]
+    fn a_range_above_the_preferred_period_but_within_reach_is_negotiated_to_its_minimum() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 1024,
+                max: 4096
+            }),
+            BufferSize::Fixed(1024)
+        );
+    }
+
+    #[test]
+    fn a_range_wider_than_the_callback_can_carry_is_capped_at_the_callback_limit() {
+        // A device advertising an 8192-frame ceiling must still be asked for a
+        // period the fixed callback scratch can hold.
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 6144,
+                max: 8192
+            }),
+            BufferSize::Default
+        );
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 4096,
+                max: 8192
+            }),
+            BufferSize::Fixed(super::MAX_CALLBACK_FRAMES as u32)
+        );
+    }
+
+    #[test]
+    fn a_device_whose_minimum_period_exceeds_the_callback_limit_keeps_the_device_default() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 8192,
+                max: 16384
+            }),
+            BufferSize::Default
+        );
+    }
+
+    #[test]
+    fn a_device_advertising_no_buffer_range_keeps_the_device_default() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Unknown),
+            BufferSize::Default
+        );
     }
 
     #[test]

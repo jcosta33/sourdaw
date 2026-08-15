@@ -1,17 +1,19 @@
 pub mod audio_bridge;
 pub mod audio_thread;
+pub mod engine_events;
 pub mod midi;
 pub mod midi_fx;
 pub mod plugin_slot;
 pub mod scheduler;
 
 use audio_thread::{spawn_audio_thread_with_diagnostics, AudioThreadHandle};
+use engine_events::{engine_event_channel, EngineEvent};
 use midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
     ActiveMidiRtDiagnosticsSnapshot,
 };
 use plugin_slot::NativePlugin;
-use rtrb::{Producer, RingBuffer};
+use rtrb::{Consumer, Producer, RingBuffer};
 use scheduler::GraphCommand;
 
 pub struct EngineHandle {
@@ -19,6 +21,7 @@ pub struct EngineHandle {
     _audio_thread: AudioThreadHandle,
     next_plugin_id: usize,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
+    engine_events: Consumer<EngineEvent>,
 }
 
 impl EngineHandle {
@@ -26,19 +29,31 @@ impl EngineHandle {
     pub fn new() -> Result<Self, String> {
         let (tx, rx) = RingBuffer::new(256);
         let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
-        let thread_handle = spawn_audio_thread_with_diagnostics(rx, diagnostics_tx)?;
+        let (engine_event_tx, engine_event_rx) = engine_event_channel();
+        let thread_handle =
+            spawn_audio_thread_with_diagnostics(rx, diagnostics_tx, engine_event_tx)?;
 
         Ok(Self {
             command_tx: tx,
             _audio_thread: thread_handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             midi_rt_diagnostics: diagnostics_reader,
+            engine_events: engine_event_rx,
         })
     }
 
     /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
     pub fn midi_rt_diagnostics_snapshot(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
         self.midi_rt_diagnostics.snapshot()
+    }
+
+    /// Take every engine event published since the last drain.
+    ///
+    /// Consuming, not peeking: an event reported once is reported once. This
+    /// runs on the control side, never in the audio callback, so allocating the
+    /// `Vec` here is safe.
+    pub fn drain_engine_events(&mut self) -> Vec<EngineEvent> {
+        engine_events::drain_engine_events(&mut self.engine_events)
     }
 
     /// Add a built-in effect to the native rendering graph.
