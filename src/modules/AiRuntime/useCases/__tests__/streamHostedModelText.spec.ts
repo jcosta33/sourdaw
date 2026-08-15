@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
-import { discloseRemoteTransmission } from '../discloseRemoteTransmission';
 import { streamHostedModelText } from '../streamHostedModelText';
 
 const mocks = vi.hoisted(() => ({
@@ -37,7 +35,6 @@ describe('streamHostedModelText', () => {
             messages: [{ role: 'user', content: 'Analyze the mix.' }],
             maxOutputTokens: 1_000,
             onToken,
-            remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
         });
 
         expect(result.correlationId).toBe('mix-health-1');
@@ -68,7 +65,6 @@ describe('streamHostedModelText', () => {
             messages: [{ role: 'user', content: 'Analyze the mix.' }],
             maxOutputTokens: 1_000,
             onToken: vi.fn(),
-            remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
         });
 
         expect(result.usage).toMatchObject({

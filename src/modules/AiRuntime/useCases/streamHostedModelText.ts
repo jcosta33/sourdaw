@@ -9,6 +9,7 @@ import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInferen
 import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
 
 import { createModelProviderStreamWriter } from './createModelProviderStreamWriter';
+import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
 import { createModelProviderProtocol } from './modelProviderProtocol';
 
 type StreamHostedModelTextInput = {
@@ -62,6 +63,7 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
         provider: providerInfo.provider,
         model: providerInfo.model,
     });
+    const requestId = input.requestId ?? input.correlationId;
     const compiled = protocol.compileRequest({
         correlationId: input.correlationId,
         ...(input.runId === undefined ? {} : { runId: input.runId }),
@@ -80,7 +82,11 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
         },
         dataPolicy: 'remote-allowed',
         dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-        remoteDisclosure: input.remoteDisclosure,
+        remoteDisclosure: remoteTransmissionDisclosure.issue({
+            categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+            correlationId: input.correlationId,
+            requestId,
+        }),
     });
     if (compiled.status === 'unavailable') {
         return {

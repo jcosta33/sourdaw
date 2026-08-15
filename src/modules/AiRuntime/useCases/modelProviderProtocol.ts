@@ -18,6 +18,8 @@ import {
     type ModelProviderUsage,
 } from '../models/ModelProviderProtocol';
 
+import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
+
 const MAX_MODEL_PROVIDER_EVENT_BYTES = 64 * 1_024;
 const MAX_MODEL_PROVIDER_REQUEST_BYTES = 1_024 * 1_024;
 const MAX_MODEL_PROVIDER_STREAM_BYTES = 1_024 * 1_024;
@@ -445,11 +447,12 @@ function compileRequest(
         if (
             !Array.isArray(categories) ||
             categories.length === 0 ||
-            disclosure === undefined ||
-            disclosure.destination !== 'provider' ||
-            disclosure.disclosedAt > Date.now() ||
-            disclosure.categories.length !== categories.length ||
-            disclosure.categories.some((category, index) => category !== categories[index]) ||
+            !remoteTransmissionDisclosure.consume({
+                evidence: disclosure,
+                categories,
+                correlationId: input.correlationId,
+                requestId: input.requestId ?? input.correlationId,
+            }) ||
             classifyAgentDataPolicy({ destination: 'provider', categories }).transmission !== 'allowed'
         ) {
             return unavailable(

@@ -27,11 +27,8 @@ export type AgentDataPolicyDecision = {
     retention: AgentDataRetention;
 };
 
-export type RemoteTransmissionDisclosure = {
-    destination: 'provider';
-    categories: AgentDataCategory[];
-    disclosedAt: number;
-};
+declare const remoteTransmissionDisclosureBrand: unique symbol;
+export type RemoteTransmissionDisclosure = { readonly [remoteTransmissionDisclosureBrand]: true };
 
 export const REMOTE_TEXT_AGENT_DATA_CATEGORIES: readonly AgentDataCategory[] = [
     'system-instructions',
@@ -76,10 +73,6 @@ export function classifyAgentDataPolicy(input: {
         blockedCategories,
         retention: UNKNOWN_RETENTION,
     };
-}
-
-export function createRemoteTransmissionDisclosure(categories: readonly AgentDataCategory[]) {
-    return { destination: 'provider' as const, categories: [...categories], disclosedAt: Date.now() };
 }
 
 export function assertRemoteAgentDataPolicy(categories: readonly AgentDataCategory[]): void {

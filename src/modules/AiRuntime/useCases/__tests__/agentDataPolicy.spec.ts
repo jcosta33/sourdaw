@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyAgentDataPolicy, createRemoteTransmissionDisclosure } from '../../models/AgentDataPolicy';
+import { classifyAgentDataPolicy } from '../../models/AgentDataPolicy';
 
 describe('agent data policy', () => {
     it('keeps raw audio and generated media out of provider transmissions while disclosing admitted text', () => {
@@ -17,11 +17,6 @@ describe('agent data policy', () => {
             promptCache: 'unknown',
             safetyLegalException: 'unknown',
             unknown: 'unknown',
-        });
-        expect(createRemoteTransmissionDisclosure(['prompt-text', 'project-context'])).toMatchObject({
-            destination: 'provider',
-            categories: ['prompt-text', 'project-context'],
-            disclosedAt: expect.any(Number),
         });
     });
 

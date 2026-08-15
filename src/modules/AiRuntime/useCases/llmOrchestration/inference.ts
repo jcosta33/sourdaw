@@ -33,7 +33,7 @@ import {
     type ToolPlanningOutcome,
 } from '../../transformers/toolCallParser';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
-import { discloseRemoteTransmission } from '../discloseRemoteTransmission';
+import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
@@ -352,8 +352,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     provider: providerName,
                     model: getBackendModelId(backend),
                 });
+                const correlationId = `tool-planning-${crypto.randomUUID()}`;
+                const requestId = streamIdentity?.requestId ?? correlationId;
                 const compiledRequest = providerProtocol.compileRequest({
-                    correlationId: `tool-planning-${crypto.randomUUID()}`,
+                    correlationId,
                     ...(streamIdentity ?? {}),
                     operation: 'tools',
                     modality: 'text',
@@ -374,7 +376,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     ...(backend === 'cloud'
                         ? {
                               dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                              remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                              remoteDisclosure: remoteTransmissionDisclosure.issue({
+                                  categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                                  correlationId,
+                                  requestId,
+                              }),
                           }
                         : {}),
                 });

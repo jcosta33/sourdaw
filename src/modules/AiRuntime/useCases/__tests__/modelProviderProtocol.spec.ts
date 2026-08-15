@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createRemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
+import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type ModelProviderEvent,
     type ModelProviderFinish,
     type ModelProviderRequest,
 } from '../../models/ModelProviderProtocol';
+import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { getAiRuntimeProtocolContracts } from '../getAiRuntimeProtocolContracts';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
@@ -52,7 +53,11 @@ function compileTextRequest(provider: 'webllm' | 'openai-compatible' = 'webllm')
             ? {}
             : {
                   dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                  remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                  remoteDisclosure: remoteTransmissionDisclosure.issue({
+                      categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                      correlationId: 'request-1',
+                      requestId: 'request-1',
+                  }),
               }),
     });
     if (compiled.status !== 'ready') {
@@ -77,11 +82,7 @@ describe('modelProviderProtocol', () => {
             budget: { maxInputTokens: 100, maxOutputTokens: 64, maxTotalTokens: 164 },
             dataPolicy: 'remote-allowed',
             dataCategories: ['raw-audio'],
-            remoteDisclosure: {
-                destination: 'provider',
-                categories: ['raw-audio'],
-                disclosedAt: Date.now(),
-            },
+            remoteDisclosure: {} as never,
         });
 
         if (compiled.status === 'ready') {
@@ -90,6 +91,57 @@ describe('modelProviderProtocol', () => {
 
         expect(compiled).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
         expect(invokeProvider).not.toHaveBeenCalled();
+    });
+
+    it('rejects forged, mismatched, and replayed hosted disclosure evidence before invocation', () => {
+        const hosted = createModelProviderProtocol({ provider: 'openai-compatible', model: 'fixture-model' });
+        const base = {
+            operation: 'tools' as const,
+            modality: 'text' as const,
+            messages: [{ role: 'user' as const, content: 'Mute the drums.' }],
+            tools: [],
+            stream: false,
+            limits: { maxOutputTokens: 64 },
+            controls: { cache: 'provider-default' as const, reasoning: 'provider-default' as const },
+            budget: { maxInputTokens: 100, maxOutputTokens: 64, maxTotalTokens: 164 },
+            dataPolicy: 'remote-allowed' as const,
+            dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+        };
+        const forged = hosted.compileRequest({
+            ...base,
+            correlationId: 'forged',
+            remoteDisclosure: {} as never,
+        });
+        const mismatchedEvidence = remoteTransmissionDisclosure.issue({
+            categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+            correlationId: 'issued',
+            requestId: 'issued',
+        });
+        const mismatched = hosted.compileRequest({
+            ...base,
+            correlationId: 'different',
+            remoteDisclosure: mismatchedEvidence,
+        });
+        const replayedEvidence = remoteTransmissionDisclosure.issue({
+            categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+            correlationId: 'replay',
+            requestId: 'replay',
+        });
+        const firstUse = hosted.compileRequest({
+            ...base,
+            correlationId: 'replay',
+            remoteDisclosure: replayedEvidence,
+        });
+        const secondUse = hosted.compileRequest({
+            ...base,
+            correlationId: 'replay',
+            remoteDisclosure: replayedEvidence,
+        });
+
+        expect(forged).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
+        expect(mismatched).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
+        expect(firstUse).toMatchObject({ status: 'ready' });
+        expect(secondUse).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
     });
 
     it('publishes the complete provider-neutral protocol surface', () => {

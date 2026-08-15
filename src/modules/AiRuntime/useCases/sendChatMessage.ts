@@ -58,7 +58,7 @@ import { createModelProviderStreamWriter } from './createModelProviderStreamWrit
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
-import { discloseRemoteTransmission } from './discloseRemoteTransmission';
+import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -1055,7 +1055,11 @@ export async function sendChatMessage(
             ...(backend === 'cloud'
                 ? {
                       dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                      remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                      remoteDisclosure: remoteTransmissionDisclosure.issue({
+                          categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                          correlationId: providerReceiptIdentity,
+                          requestId: providerReceiptIdentity,
+                      }),
                   }
                 : {}),
         });

@@ -1,5 +1,3 @@
-import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
-import { discloseRemoteTransmission } from '../discloseRemoteTransmission';
 import { streamHostedModelText } from '../streamHostedModelText';
 
 type CloudChatCompletionOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
@@ -22,7 +20,6 @@ export async function streamCloudChatCompletion(
         temperature: options?.temperature,
         onToken,
         signal: options?.signal,
-        remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
     });
     if (result.status === 'complete') {
         return { status: 'complete' };
