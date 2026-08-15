@@ -114,6 +114,16 @@ function compileCanonicalPublicOrigin(value: string): string {
         throw new Error('Provider adapter origin must be a canonical HTTPS host-and-port origin');
     }
     const hostname = parsed.hostname.toLowerCase();
+    const ipv6Segments = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1).split(':') : null;
+    const firstIpv6Segment = ipv6Segments ? Number.parseInt(ipv6Segments[0] ?? '', 16) : null;
+    const secondIpv6Segment = ipv6Segments ? Number.parseInt(ipv6Segments[1] || '0', 16) : null;
+    const ipv6IsRejected =
+        firstIpv6Segment !== null &&
+        secondIpv6Segment !== null &&
+        (!(firstIpv6Segment >= 0x2000 && firstIpv6Segment <= 0x3fff) ||
+            (firstIpv6Segment === 0x2001 && secondIpv6Segment <= 0x01ff) ||
+            (firstIpv6Segment === 0x2001 && secondIpv6Segment === 0x0db8) ||
+            (firstIpv6Segment === 0x3fff && (secondIpv6Segment & 0xf000) === 0));
     if (
         hostname === 'localhost' ||
         hostname.endsWith('.localhost') ||
@@ -126,6 +136,7 @@ function compileCanonicalPublicOrigin(value: string): string {
         hostname.startsWith('[fe9') ||
         hostname.startsWith('[fea') ||
         hostname.startsWith('[feb') ||
+        ipv6IsRejected ||
         isRejectedIpv4(hostname)
     ) {
         throw new Error('Provider adapter origin must resolve only to public global addresses');

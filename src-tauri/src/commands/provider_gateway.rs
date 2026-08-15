@@ -65,12 +65,13 @@ fn ipv6_is_public_global(address: Ipv6Addr) -> bool {
         return ipv4_is_public_global(mapped);
     }
     let segments = address.segments();
-    !(address.is_unspecified()
-        || address.is_loopback()
-        || address.is_multicast()
-        || (segments[0] & 0xfe00) == 0xfc00
-        || (segments[0] & 0xffc0) == 0xfe80
-        || (segments[0] == 0x2001 && segments[1] == 0x0db8))
+    let first = segments[0];
+    let second = segments[1];
+    let is_global_unicast = (0x2000..=0x3fff).contains(&first);
+    let is_iana_protocol_assignment = first == 0x2001 && second <= 0x01ff;
+    let is_documentation =
+        (first == 0x2001 && second == 0x0db8) || (first == 0x3fff && (second & 0xf000) == 0);
+    is_global_unicast && !is_iana_protocol_assignment && !is_documentation
 }
 
 fn address_is_public_global(address: IpAddr) -> bool {
@@ -321,5 +322,26 @@ mod tests {
         assert!(validate_resolved_addresses(&[private]).is_err());
         assert!(validate_resolved_addresses(&[metadata]).is_err());
         assert!(validate_resolved_addresses(&[public, private]).is_err());
+    }
+
+    #[test]
+    fn provider_gateway_rejects_iana_non_global_ipv6_ranges() {
+        for rejected in [
+            "[64:ff9b:1::1]:443",
+            "[100::1]:443",
+            "[2001:db8::1]:443",
+            "[3fff::1]:443",
+            "[5f00::1]:443",
+        ] {
+            let address: SocketAddr = rejected.parse().expect("IPv6 fixture");
+            assert!(
+                validate_resolved_addresses(&[address]).is_err(),
+                "accepted {rejected}"
+            );
+        }
+        let public: SocketAddr = "[2606:4700:4700::1111]:443"
+            .parse()
+            .expect("public IPv6 fixture");
+        assert!(validate_resolved_addresses(&[public]).is_ok());
     }
 }
