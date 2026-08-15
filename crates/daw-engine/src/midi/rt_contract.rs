@@ -221,6 +221,8 @@ fn active_runtime_diagnostic_aggregation_saturates_every_counter() {
         unmapped_set_param_calls: u64::MAX,
         bridge_output_blocks_dropped: u64::MAX,
         unmatched_bridge_blocks: u64::MAX,
+        bridge_backlog_blocks_shed: u64::MAX,
+        callback_frames_over_bridge_reach: u64::MAX,
     };
     let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
@@ -238,6 +240,10 @@ fn active_runtime_diagnostic_aggregation_saturates_every_counter() {
     diagnostics.record_bridge_output_blocks_dropped(1);
     diagnostics.record_unmatched_bridge_blocks(u64::MAX);
     diagnostics.record_unmatched_bridge_blocks(1);
+    diagnostics.record_bridge_backlog_blocks_shed(u64::MAX);
+    diagnostics.record_bridge_backlog_blocks_shed(1);
+    diagnostics.record_callback_frames_over_bridge_reach(u64::MAX);
+    diagnostics.record_callback_frames_over_bridge_reach(1);
 
     assert_eq!(diagnostics.snapshot(), maximum);
 }

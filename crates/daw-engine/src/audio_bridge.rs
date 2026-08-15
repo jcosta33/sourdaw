@@ -101,9 +101,45 @@ pub struct BridgeDrain {
     /// Processed blocks the app never receives because its return ring was
     /// full. Audio that is computed and then thrown away.
     pub output_blocks_dropped: usize,
+    /// Stale blocks discarded to hold the round trip at its target depth.
+    pub blocks_shed: usize,
 }
 
 impl PluginAudioBridge {
+    /// Blocks in flight: queued for the plugin plus processed and waiting for
+    /// the app. This is the bridge's latency, in blocks.
+    #[inline]
+    fn depth(&self) -> usize {
+        let waiting_for_the_app = RING_CAPACITY.saturating_sub(self.output_tx.slots());
+        self.input_rx.slots() + waiting_for_the_app
+    }
+
+    /// Discard one stale block when the round trip is running deeper than it
+    /// needs to.
+    ///
+    /// Depth only ever grows on its own. The app pushes one block and pops one
+    /// block per render quantum, so a pop that finds the return ring empty —
+    /// an IPC call landing between the ring emptying and the next callback,
+    /// which happens on any phase slip — pushes without taking anything back
+    /// and leaves the round trip one block deeper for good. Nothing shortens
+    /// it again. Left alone the bridge drifts later and later against the rest
+    /// of the graph until it reaches the ring's capacity, and stays there:
+    /// ~99 ms of plugin latency that no amount of idle time recovers, wrecking
+    /// phase against every parallel path.
+    ///
+    /// Shedding the oldest block trades one quantum of dry signal for a round
+    /// trip that returns to its target. One block per pass keeps it gradual.
+    #[inline]
+    fn shed_stale_block(&mut self, target_depth_blocks: usize) -> usize {
+        if self.depth() <= target_depth_blocks {
+            return 0;
+        }
+
+        match self.input_rx.pop() {
+            Ok(_stale) => 1,
+            Err(_) => 0,
+        }
+    }
     /// Process the blocks queued for this callback, up to `frame_budget`.
     ///
     /// The audio thread runs on the device's buffer period while the app
@@ -128,13 +164,22 @@ impl PluginAudioBridge {
     /// full capacity — so a partial block cannot leak stale samples into the
     /// plugin. The ring's capacity is a second, absolute bound: a producer
     /// pushing throughout the pass cannot hold the audio callback open.
+    ///
+    /// `target_depth_blocks` is how deep the round trip needs to run to cover
+    /// the device period. One stale block per pass is shed above it, so the
+    /// bridge's latency settles at that depth instead of ratcheting up to the
+    /// ring's capacity over a session.
     #[inline]
     pub fn drain_process<F: FnMut(&mut [f32], &mut [f32], usize)>(
         &mut self,
         frame_budget: usize,
+        target_depth_blocks: usize,
         mut process_fn: F,
     ) -> BridgeDrain {
-        let mut drain = BridgeDrain::default();
+        let mut drain = BridgeDrain {
+            blocks_shed: self.shed_stale_block(target_depth_blocks),
+            ..BridgeDrain::default()
+        };
 
         for _ in 0..RING_CAPACITY {
             let Ok(mut block) = self.input_rx.pop() else {
@@ -196,11 +241,15 @@ mod tests {
 
         let mut observed_frames = 0;
         let mut observed_left_len = 0;
-        bridge.drain_process(RENDER_QUANTUM_FRAMES, |left, right, frames| {
-            observed_frames = frames;
-            observed_left_len = left.len();
-            assert_eq!(right.len(), 64);
-        });
+        bridge.drain_process(
+            RENDER_QUANTUM_FRAMES,
+            RING_CAPACITY,
+            |left, right, frames| {
+                observed_frames = frames;
+                observed_left_len = left.len();
+                assert_eq!(right.len(), 64);
+            },
+        );
 
         assert_eq!(observed_frames, 64);
         assert_eq!(observed_left_len, 64);
@@ -214,15 +263,19 @@ mod tests {
         // one. A design that processed the full capacity would hand the plugin
         // the previous block's tail; the closure must only ever see live frames.
         assert!(handle.push_input(&[1.0; 128], &[1.0; 128]));
-        bridge.drain_process(RENDER_QUANTUM_FRAMES, |_, _, _| {});
+        bridge.drain_process(RENDER_QUANTUM_FRAMES, RING_CAPACITY, |_, _, _| {});
         let _ = handle.pop_output();
 
         assert!(handle.push_input(&[0.0; 8], &[0.0; 8]));
         let mut tail_leaked = false;
-        bridge.drain_process(RENDER_QUANTUM_FRAMES, |left, _right, frames| {
-            assert_eq!(frames, 8);
-            tail_leaked = left.iter().any(|sample| *sample != 0.0);
-        });
+        bridge.drain_process(
+            RENDER_QUANTUM_FRAMES,
+            RING_CAPACITY,
+            |left, _right, frames| {
+                assert_eq!(frames, 8);
+                tail_leaked = left.iter().any(|sample| *sample != 0.0);
+            },
+        );
 
         assert!(!tail_leaked, "stale tail samples reached the plugin");
     }
@@ -232,7 +285,7 @@ mod tests {
         let (mut bridge, mut handle) = create_audio_bridge(1000);
         assert!(handle.push_input(&[0.75; 96], &[0.75; 96]));
 
-        bridge.drain_process(RENDER_QUANTUM_FRAMES, |left, right, _| {
+        bridge.drain_process(RENDER_QUANTUM_FRAMES, RING_CAPACITY, |left, right, _| {
             for sample in left.iter_mut().chain(right.iter_mut()) {
                 *sample *= 2.0;
             }
@@ -269,7 +322,7 @@ mod tests {
         // four blocks are waiting and all four belong to this callback. Taking
         // one leaves the rest to fill the ring, after which the app's pushes
         // are refused for good.
-        let drain = bridge.drain_process(4 * RENDER_QUANTUM_FRAMES, |_, _, _| {});
+        let drain = bridge.drain_process(4 * RENDER_QUANTUM_FRAMES, RING_CAPACITY, |_, _, _| {});
 
         assert_eq!(drain.blocks_processed, 4);
         assert_eq!(drain.frames_processed, 4 * RENDER_QUANTUM_FRAMES);
@@ -292,7 +345,7 @@ mod tests {
         // one callback is eight times the audio the device asked for, on the
         // thread with the deadline — an underrun in place of the loss this
         // drain removes. It is worked off a quantum at a time instead.
-        let drain = bridge.drain_process(2 * RENDER_QUANTUM_FRAMES, |_, _, _| {});
+        let drain = bridge.drain_process(2 * RENDER_QUANTUM_FRAMES, RING_CAPACITY, |_, _, _| {});
 
         assert_eq!(drain.blocks_processed, 2);
         let mut remaining = 0;
@@ -309,7 +362,7 @@ mod tests {
 
         // A quantum larger than the device period must still make progress:
         // a pass that took nothing would leave the block in the ring forever.
-        let drain = bridge.drain_process(64, |_, _, _| {});
+        let drain = bridge.drain_process(64, RING_CAPACITY, |_, _, _| {});
 
         assert_eq!(drain.blocks_processed, 1);
         assert_eq!(drain.frames_processed, 256);
@@ -325,7 +378,7 @@ mod tests {
         // the audio callback never returns; the budget alone does not stop it,
         // because the budget is generous here.
         let mut refills = RING_CAPACITY * 4;
-        let drain = bridge.drain_process(usize::MAX, |_, _, _| {
+        let drain = bridge.drain_process(usize::MAX, RING_CAPACITY, |_, _, _| {
             if refills > 0 {
                 refills -= 1;
                 assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
@@ -333,6 +386,53 @@ mod tests {
         });
 
         assert_eq!(drain.blocks_processed, RING_CAPACITY);
+    }
+
+    #[test]
+    fn the_round_trip_settles_at_its_target_depth_instead_of_ratcheting_up() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        // A 512-frame device period: four quanta, plus two blocks of slack.
+        let target_depth = 4 + 2;
+        let budget = 512 + RENDER_QUANTUM_FRAMES;
+
+        // The app pushes one block and pops one block per quantum. A pop that
+        // finds the return ring empty — any phase slip between the IPC call
+        // and the callback — pushes without taking anything back, so the round
+        // trip runs one block deeper from then on. Nothing shortens it again,
+        // and the depth is the plugin's latency against the rest of the graph.
+        for callback in 0..40 {
+            for _ in 0..4 {
+                assert!(
+                    handle.push_input(&[0.5; RENDER_QUANTUM_FRAMES], &[0.5; RENDER_QUANTUM_FRAMES])
+                );
+                // Every fourth callback the app pops nothing back.
+                if callback % 4 != 0 {
+                    let _ = handle.pop_output();
+                }
+            }
+            bridge.drain_process(budget, target_depth, |_, _, _| {});
+        }
+
+        let depth = bridge.depth();
+        assert!(
+            depth <= target_depth + 1,
+            "round trip settled at {depth} blocks against a target of {target_depth}"
+        );
+    }
+
+    #[test]
+    fn a_round_trip_already_at_its_target_sheds_nothing() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        for _ in 0..3 {
+            assert!(handle.push_input(&[0.5; RENDER_QUANTUM_FRAMES], &[0.5; RENDER_QUANTUM_FRAMES]));
+        }
+
+        // Shedding audio that is merely in flight, rather than piled up, would
+        // put a dropout into a bridge that is keeping up perfectly.
+        let drain = bridge.drain_process(4 * RENDER_QUANTUM_FRAMES, 6, |_, _, _| {});
+
+        assert_eq!(drain.blocks_shed, 0);
+        assert_eq!(drain.blocks_processed, 3);
     }
 
     #[test]
@@ -344,12 +444,12 @@ mod tests {
         for _ in 0..RING_CAPACITY {
             assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
         }
-        let filled = bridge.drain_process(usize::MAX, |_, _, _| {});
+        let filled = bridge.drain_process(usize::MAX, usize::MAX, |_, _, _| {});
         assert_eq!(filled.blocks_processed, RING_CAPACITY);
         assert_eq!(filled.output_blocks_dropped, 0);
 
         assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
-        let overflowed = bridge.drain_process(usize::MAX, |_, _, _| {});
+        let overflowed = bridge.drain_process(usize::MAX, usize::MAX, |_, _, _| {});
 
         assert_eq!(overflowed.blocks_processed, 1);
         assert_eq!(

@@ -4,6 +4,7 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_bridge::{PluginAudioBridge, RENDER_QUANTUM_FRAMES};
+use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
@@ -473,45 +474,74 @@ impl AudioScheduler {
     /// than rendered in one spike on the thread with the deadline.
     #[inline]
     pub fn process_audio_bridges(&mut self, callback_frames: usize) {
+        // A device period the bridge cannot carry would starve every plugin
+        // permanently rather than intermittently, so it is counted rather than
+        // left to look like ordinary jitter.
+        if callback_frames > MAX_CALLBACK_FRAMES {
+            self.midi_rt_diagnostics
+                .record_callback_frames_over_bridge_reach(1);
+        }
+        let callback_frames = callback_frames.min(MAX_CALLBACK_FRAMES);
         let frame_budget = callback_frames.saturating_add(RENDER_QUANTUM_FRAMES);
+        // Deep enough to cover the device period with a quantum of slack on
+        // either side of it, and no deeper: every block beyond that is plugin
+        // latency the user hears against the rest of the graph.
+        let target_depth_blocks = callback_frames.div_ceil(RENDER_QUANTUM_FRAMES) + 2;
 
         for bridge in &mut self.audio_bridges {
             let plugin_id = bridge.plugin_id;
 
-            // Find the plugin that can process this bridge's audio. Anything
-            // else — no effect under that id at all (a bridge registered on
-            // its own through `RegisterAudioBridge`, or outliving its plugin),
-            // or an effect with no bridged processing path — used to leave the
-            // bridge untouched. Its input ring then filled and stayed full, so
-            // every later push was refused and the app was left on permanent
-            // dry fallback with nothing recorded. Return the blocks untouched
-            // instead: the app keeps its audio, the ring keeps moving, and the
-            // count says no plugin took them.
-            let bridged_plugin = self
+            let effect = self
                 .effects
                 .iter_mut()
-                .find(|effect| effect.id == plugin_id)
-                .filter(|effect| matches!(effect.instance, PluginCore::Native(_)));
+                .find(|effect| effect.id == plugin_id);
 
-            let Some(effect) = bridged_plugin else {
-                let drain = bridge.drain_process(frame_budget, |left, right, frames| {
-                    let _ = (left, right, frames);
-                });
+            // A bridge with no plugin able to process its audio — no effect
+            // under that id at all (registered on its own through
+            // `RegisterAudioBridge`, or outliving its plugin), or an effect
+            // with no bridged path, such as a built-in Knead — used to be left
+            // untouched. Its input ring then filled and stayed full, so every
+            // later push was refused and the app was left on permanent dry
+            // fallback with nothing recorded. Return the blocks untouched
+            // instead: the app keeps its audio, the ring keeps moving, and the
+            // count says no plugin took them.
+            let unprocessable = match effect {
+                None => true,
+                Some(ref effect) => !matches!(effect.instance, PluginCore::Native(_)),
+            };
+
+            if unprocessable {
+                let drain =
+                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
+                        let _ = (left, right, n);
+                    });
                 self.midi_rt_diagnostics
                     .record_unmatched_bridge_blocks(drain.blocks_processed as u64);
                 self.midi_rt_diagnostics
                     .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
+                if let Some(effect) = effect {
+                    effect.pending_midi.clear();
+                }
+                continue;
+            }
+
+            let Some(effect) = effect else {
                 continue;
             };
 
             if effect.bypassed {
                 // Drain input without processing (passthrough)
-                let drain = bridge.drain_process(frame_budget, |left, right, n| {
-                    // output = input (already in the block)
-                    let _ = (left, right, n);
-                });
+                let drain =
+                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
+                        // output = input (already in the block)
+                        let _ = (left, right, n);
+                    });
                 self.midi_rt_diagnostics
                     .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
                 // A bypassed effect discards incoming MIDI rather than
                 // banking it: without this, notes queued via SendMidiNote
                 // while bypassed would accumulate toward the fixed
@@ -542,42 +572,46 @@ impl AudioScheduler {
             // callback.
             let mut events_delivered = false;
 
-            let drain = bridge.drain_process(frame_budget, |left, right, num_samples| {
-                if events_delivered {
-                    plugin.process_bridged_audio(left, right, num_samples);
-                    return;
-                }
+            let drain = bridge.drain_process(
+                frame_budget,
+                target_depth_blocks,
+                |left, right, num_samples| {
+                    if events_delivered {
+                        plugin.process_bridged_audio(left, right, num_samples);
+                        return;
+                    }
 
-                probability_evaluator.process_midi_with_diagnostics(
-                    pending_midi,
-                    &transport,
-                    sample_rate,
-                    num_samples,
-                    diagnostics,
-                );
-                for fx in midi_fx.iter_mut() {
-                    fx.process_midi_with_diagnostics(
+                    probability_evaluator.process_midi_with_diagnostics(
                         pending_midi,
                         &transport,
                         sample_rate,
                         num_samples,
                         diagnostics,
                     );
-                }
-                events_delivered = true;
+                    for fx in midi_fx.iter_mut() {
+                        fx.process_midi_with_diagnostics(
+                            pending_midi,
+                            &transport,
+                            sample_rate,
+                            num_samples,
+                            diagnostics,
+                        );
+                    }
+                    events_delivered = true;
 
-                if pending_midi.is_empty() {
-                    plugin.process_bridged_audio(left, right, num_samples);
-                } else {
-                    plugin.process_bridged_with_events(
-                        left,
-                        right,
-                        num_samples,
-                        pending_midi.as_slice(),
-                        &transport,
-                    );
-                }
-            });
+                    if pending_midi.is_empty() {
+                        plugin.process_bridged_audio(left, right, num_samples);
+                    } else {
+                        plugin.process_bridged_with_events(
+                            left,
+                            right,
+                            num_samples,
+                            pending_midi.as_slice(),
+                            &transport,
+                        );
+                    }
+                },
+            );
 
             // Only clear pending MIDI when the closure actually ran and
             // consumed it. When the input ring was empty this cycle (the
@@ -588,6 +622,7 @@ impl AudioScheduler {
                 pending_midi.clear();
             }
             diagnostics.record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+            diagnostics.record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
         }
     }
 
@@ -1143,14 +1178,17 @@ mod tests {
                 returned += 1;
             }
         }
-        assert_eq!(returned, pushed);
+
+        // A ring filled to capacity is deeper than the device period needs, so
+        // the oldest blocks are shed to bring the round trip back to its
+        // target. Every block is accounted for: returned or shed, none left
+        // sitting in a ring that never drains again.
+        let snapshot = scheduler.midi_rt_diagnostics.snapshot();
         assert_eq!(
-            scheduler
-                .midi_rt_diagnostics
-                .snapshot()
-                .unmatched_bridge_blocks,
+            returned as u64 + snapshot.bridge_backlog_blocks_shed,
             pushed as u64
         );
+        assert_eq!(snapshot.unmatched_bridge_blocks, returned as u64);
 
         // The ring keeps moving. Skipping the bridge left it full forever, so
         // every later push was refused and the app never processed again.
