@@ -1,0 +1,30 @@
+src/modules/AiRuntime/useCases/__tests__/modelStreamProtocol.spec.ts
+  s_a40848e8f8cca9::t_97df6af7a102a8 31-47,166-183,187-192,210-224
+src-tauri/src/commands/native_llm.rs
+  s_a40848e8f8cca9::t_3575a40b3f8a71 18,207-222,509,581,585,587,767,771,773,791,866,870,872
+  s_a40848e8f8cca9::t_97df6af7a102a8 1151-1163
+  s_a40848e8f8cca9::t_e9ee48fb757eb2 1150
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_97df6af7a102a8 160-178
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_a40848e8f8cca9::t_3575a40b3f8a71 14-17,98,100,102-107,109,168-178
+  s_a40848e8f8cca9::t_e6cd66045b8ead 179-180
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_a40848e8f8cca9::t_3575a40b3f8a71 21,175-192,218,221,265-270,390-396,666-668
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "af91bf016c443c03ed006d1777f3c3ac51fada77",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
