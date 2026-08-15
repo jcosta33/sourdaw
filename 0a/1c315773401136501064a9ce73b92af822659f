@@ -1,0 +1,41 @@
+docs/architecture/decisions/0013-client-side-hosted-llm-adapters.md
+  s_a40848e8f8cca9::t_a27c02bf93d193 20
+src-tauri/src/commands/native_llm.rs
+  s_a40848e8f8cca9::t_81261179aad049 2-3,68,269-374,643-645,650-654,883-885,890,892,894-899,1261-1338,1341-1344,1349-1363,1374,1377-1387,1390-1393,1398-1411,1414-1421,1426-1443,1446-1468,1473-1481,1484-1489
+  s_a40848e8f8cca9::t_1f65e91f736660 886-889
+  s_a40848e8f8cca9::t_cb762d55d3e282 646-649
+  s_a40848e8f8cca9::t_f462bdb04fd638 1339-1340,1345-1348,1364-1373,1375-1376,1388-1389,1394-1397,1412-1413,1422-1425,1444-1445,1469-1472,1482-1483
+  s_a40848e8f8cca9::t_4fbccb321ec787 1490
+crates/daw-engine/src/midi/rt_contract.rs
+  s_a40848e8f8cca9::t_a0dbae1cf1deb8 162-167
+crates/daw-engine/src/midi_fx.rs
+  s_a40848e8f8cca9::t_662e5e08830d65 254-263,266,273-277,296,299,307-308,317,327,336,351-357,363-364,375-376,378-426,472-476,489-492,495-501,506,508-510,513-541,547-556,565-571,577-584,678-715,738-940
+crates/daw-engine/src/scheduler.rs
+  s_a40848e8f8cca9::t_db9a37efa219a4 1406-1413
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_a40848e8f8cca9::t_20162e4a694544 23-27,33,205-222
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_a40848e8f8cca9::t_b644f8457dd976 46,229-239
+src/modules/Yeast/presentations/views/__tests__/YeastPanelGrooveAssignment.spec.tsx
+  s_a40848e8f8cca9::t_2d82f0d0f711ea 1-117
+tests/e2e/agentExecutionMode.spec.ts
+  s_a40848e8f8cca9::t_70f51162f0d842 1-62
+tests/e2e/grooveAssignRenameDelete.spec.ts
+  s_a40848e8f8cca9::t_987664afe9c1bc 1-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0a1c315773401136501064a9ce73b92af822659f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
