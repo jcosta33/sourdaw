@@ -38,6 +38,7 @@ import { proposePendingActionConfirmation } from '../stores/pendingActionConfirm
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
@@ -200,6 +201,12 @@ export async function sendChatMessage(
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
         setActiveAborter(aborter);
+        const releaseProviderCancellation = agentRunCancellation.bindAbortController({
+            runId,
+            lease: providerLease,
+            controller: aborter,
+            reason: 'User cancelled the run while provider planning was active.',
+        });
 
         try {
             const { context, result, projectRevision } = await planPromptActions({
@@ -366,6 +373,12 @@ export async function sendChatMessage(
                     }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'previewing', revision: projectRevision });
                     const resourceLease = createStemImportConfirmationResourceLease(result.actions);
+                    const releasePreviewCancellation = agentRunCancellation.bindAbortController({
+                        runId,
+                        lease: previewLeaseResult.lease,
+                        controller: aborter,
+                        reason: 'User cancelled the run while command preview was active.',
+                    });
                     let preview: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
                     try {
                         preview = await executeVersionedCommandBatchEnvelope(commandBatch);
@@ -378,6 +391,7 @@ export async function sendChatMessage(
                         });
                         throw error;
                     } finally {
+                        releasePreviewCancellation();
                         resourceLease?.release();
                     }
                     if (preview.status === 'previewed') {
@@ -519,12 +533,20 @@ export async function sendChatMessage(
                 if (commandLeaseResult.status !== 'claimed') {
                     throw new Error(`Agent command work could not be claimed: ${commandLeaseResult.status}`);
                 }
+                const releaseCommandCancellation = agentRunCancellation.bindAbortController({
+                    runId,
+                    lease: commandLeaseResult.lease,
+                    controller: aborter,
+                    reason: 'User cancelled the run while command execution was active.',
+                });
                 let execution: Awaited<ReturnType<typeof executePlannedActions>>;
                 try {
                     execution = await executePlannedActions({ ...executionInput, commandBatch });
                 } catch (error) {
                     trySettleAgentRunWorkLease(commandLeaseResult.lease, 'failed');
                     throw error;
+                } finally {
+                    releaseCommandCancellation();
                 }
                 let commandLeaseTerminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
                 if (
@@ -811,6 +833,7 @@ export async function sendChatMessage(
                 });
             }
         } finally {
+            releaseProviderCancellation();
             setActiveAborter(null);
             setChatGenerating(false);
         }
@@ -838,6 +861,12 @@ export async function sendChatMessage(
 
     const aborter = new AbortController();
     setActiveAborter(aborter);
+    const releaseProviderCancellation = agentRunCancellation.bindAbortController({
+        runId,
+        lease: providerLease,
+        controller: aborter,
+        reason: 'User cancelled the run while the provider response was active.',
+    });
     const previousLlmStatus = llmStatusStore.value;
     llmStatusStore.set({ state: 'generating' });
     // Incremental think-block parser: feeding each streamed token keeps the
@@ -1069,6 +1098,7 @@ export async function sendChatMessage(
             llmStatusStore.set({ state: 'error', message: errorMessage });
         }
     } finally {
+        releaseProviderCancellation();
         setActiveAborter(null);
         setChatGenerating(false);
     }

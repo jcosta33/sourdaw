@@ -734,6 +734,14 @@ describe('sendChatMessage injectables', () => {
         expect(mocks.appendChatMessage).not.toHaveBeenCalled();
         expect(mocks.updateChatMessage).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        const [projection] = getAgentRunControlProjections();
+        expect(projection).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requested: true, acknowledgement: 'transport' },
+        });
+        expect(getAgentRun(projection!.runId)?.workLeases).toEqual([
+            expect.objectContaining({ workId: 'provider-planning', terminalState: 'cancelled' }),
+        ]);
     });
 
     it('passes the active Stop signal to hosted chat before the first token', async () => {

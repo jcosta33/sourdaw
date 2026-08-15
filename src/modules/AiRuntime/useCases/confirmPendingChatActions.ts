@@ -31,6 +31,7 @@ import {
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
@@ -627,6 +628,14 @@ export async function confirmPendingChatActions(
     const aborter = new AbortController();
     setChatGenerating(true);
     setActiveAborter(aborter);
+    const releaseCommandCancellation = trackedWorkLease
+        ? agentRunCancellation.bindAbortController({
+              runId: confirmation.runId,
+              lease: trackedWorkLease,
+              controller: aborter,
+              reason: 'User cancelled the run while confirmed command execution was active.',
+          })
+        : null;
     let batchResult: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
     try {
         const executionOptions = {
@@ -701,6 +710,7 @@ export async function confirmPendingChatActions(
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         return { status: 'failed', reason };
     } finally {
+        releaseCommandCancellation?.();
         setActiveAborter(null);
         setChatGenerating(false);
     }

@@ -1,0 +1,236 @@
+import { type AgentRunPhase, type AgentRunWorkLease } from '../models/AgentRun';
+
+import { agentRunLifecycle } from './agentRunLifecycle';
+
+type CancellationAcknowledgement = 'transport' | 'backend';
+
+type WorkCancellationRegistration = {
+    lease: AgentRunWorkLease;
+    cancel: () => CancellationAcknowledgement | void | Promise<CancellationAcknowledgement | void>;
+};
+
+type TemporaryAssetCleanupRegistration = {
+    runId: string;
+    assetId: string;
+    cleanupOwner: string;
+    cleanup: () => void | Promise<void>;
+};
+
+const workCancellationRegistrations = new Map<string, WorkCancellationRegistration>();
+const temporaryAssetCleanupRegistrations = new Map<string, TemporaryAssetCleanupRegistration>();
+
+const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
+
+function temporaryAssetKey(runId: string, assetId: string): string {
+    return `${runId}\u0000${assetId}`;
+}
+
+function registerAgentRunWorkCancellation(input: WorkCancellationRegistration): () => void {
+    const run = agentRunLifecycle.get(input.lease.runId);
+    const activeLease = run?.workLeases.find(
+        (lease) =>
+            lease.leaseId === input.lease.leaseId &&
+            lease.workId === input.lease.workId &&
+            lease.cancellationGeneration === input.lease.cancellationGeneration &&
+            lease.terminalState === null
+    );
+    if (!activeLease) {
+        throw new Error(`Agent work lease is not active: ${input.lease.leaseId}`);
+    }
+    if (workCancellationRegistrations.has(input.lease.leaseId)) {
+        throw new Error(`Agent work lease already has a cancellation owner: ${input.lease.leaseId}`);
+    }
+    const registration = { lease: structuredClone(input.lease), cancel: input.cancel };
+    workCancellationRegistrations.set(input.lease.leaseId, registration);
+    return () => {
+        if (workCancellationRegistrations.get(input.lease.leaseId) === registration) {
+            workCancellationRegistrations.delete(input.lease.leaseId);
+        }
+    };
+}
+
+function registerAgentRunTemporaryAssetCleanup(input: TemporaryAssetCleanupRegistration): () => void {
+    const asset = agentRunLifecycle
+        .get(input.runId)
+        ?.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
+    if (!asset || asset.status !== 'live') {
+        throw new Error(`Agent temporary asset is not live: ${input.assetId}`);
+    }
+    const key = temporaryAssetKey(input.runId, input.assetId);
+    if (temporaryAssetCleanupRegistrations.has(key)) {
+        throw new Error(`Agent temporary asset already has a cleanup owner: ${input.assetId}`);
+    }
+    if (asset.cleanupOwner !== input.cleanupOwner) {
+        throw new Error(`Agent temporary asset cleanup owner does not match: ${input.assetId}`);
+    }
+    const registration = { ...input };
+    temporaryAssetCleanupRegistrations.set(key, registration);
+    return () => {
+        if (temporaryAssetCleanupRegistrations.get(key) === registration) {
+            temporaryAssetCleanupRegistrations.delete(key);
+        }
+    };
+}
+
+type CancelAgentRunResult =
+    | { status: 'missing' }
+    | { status: 'already-terminal'; phase: AgentRunPhase }
+    | {
+          status: 'cancelled';
+          phase: 'cancelled' | 'partially-completed';
+          cancelledWorkIds: string[];
+          cleanupPendingAssetIds: string[];
+          releasedAssetIds: string[];
+      };
+
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Unknown cancellation owner failure';
+}
+
+function bindAgentRunAbortController(input: {
+    runId: string;
+    lease: AgentRunWorkLease;
+    controller: AbortController;
+    reason: string;
+}): () => void {
+    const unregisterCancellation = registerAgentRunWorkCancellation({
+        lease: input.lease,
+        cancel: () => {
+            if (!input.controller.signal.aborted) {
+                input.controller.abort(new DOMException(input.reason, 'AbortError'));
+            }
+            return 'transport';
+        },
+    });
+    const cancelRun = () => {
+        void cancelAgentRun({ runId: input.runId, reason: input.reason }).catch(() => undefined);
+    };
+    input.controller.signal.addEventListener('abort', cancelRun, { once: true });
+    return () => {
+        input.controller.signal.removeEventListener('abort', cancelRun);
+        unregisterCancellation();
+    };
+}
+
+async function cancelAgentRun(input: {
+    runId: string;
+    reason: string;
+    requestedAt?: number;
+}): Promise<CancelAgentRunResult> {
+    const run = agentRunLifecycle.get(input.runId);
+    if (!run) {
+        return { status: 'missing' };
+    }
+    if (TERMINAL_PHASES.has(run.phase)) {
+        return { status: 'already-terminal', phase: run.phase };
+    }
+
+    const requestedAt = input.requestedAt ?? Date.now();
+    const activeLeases = run.workLeases.filter((lease) => lease.terminalState === null);
+    const liveAssets = run.temporaryAssets.filter((asset) => asset.status === 'live');
+
+    // Revoke durable authority before notifying any external owner. A callback
+    // that races this function can only present the now-stale generation.
+    agentRunLifecycle.cancel({ runId: input.runId, reason: input.reason, requestedAt });
+
+    const cancelledWorkIds: string[] = [];
+    let transportAcknowledged = false;
+    let backendAcknowledged = false;
+    for (const lease of activeLeases) {
+        const registration = workCancellationRegistrations.get(lease.leaseId);
+        if (
+            !registration ||
+            registration.lease.runId !== input.runId ||
+            registration.lease.workId !== lease.workId ||
+            registration.lease.cancellationGeneration !== lease.cancellationGeneration
+        ) {
+            continue;
+        }
+        workCancellationRegistrations.delete(lease.leaseId);
+        try {
+            const acknowledgement = await registration.cancel();
+            cancelledWorkIds.push(lease.workId);
+            transportAcknowledged =
+                transportAcknowledged || acknowledgement === 'transport' || acknowledgement === 'backend';
+            backendAcknowledged = backendAcknowledged || acknowledgement === 'backend';
+        } catch (error) {
+            agentRunLifecycle.recordError({
+                runId: input.runId,
+                error: {
+                    code: 'work-cancellation-failed',
+                    message: getErrorMessage(error),
+                    occurredAt: requestedAt,
+                    retriable: false,
+                    workId: lease.workId,
+                },
+            });
+        }
+    }
+
+    if (transportAcknowledged) {
+        agentRunLifecycle.acknowledgeCancellation({
+            runId: input.runId,
+            level: 'transport',
+            acknowledgedAt: requestedAt,
+        });
+    }
+    if (backendAcknowledged) {
+        agentRunLifecycle.acknowledgeCancellation({
+            runId: input.runId,
+            level: 'backend',
+            acknowledgedAt: requestedAt,
+        });
+    }
+
+    const releasedAssetIds: string[] = [];
+    for (const asset of liveAssets) {
+        const key = temporaryAssetKey(input.runId, asset.assetId);
+        const registration = temporaryAssetCleanupRegistrations.get(key);
+        if (!registration || registration.cleanupOwner !== asset.cleanupOwner) {
+            continue;
+        }
+        temporaryAssetCleanupRegistrations.delete(key);
+        try {
+            await registration.cleanup();
+            agentRunLifecycle.releaseTemporaryAsset({
+                runId: input.runId,
+                assetId: asset.assetId,
+                cleanupOwner: asset.cleanupOwner,
+                releasedAt: requestedAt,
+            });
+            releasedAssetIds.push(asset.assetId);
+        } catch (error) {
+            agentRunLifecycle.recordError({
+                runId: input.runId,
+                error: {
+                    code: 'temporary-asset-cleanup-failed',
+                    message: getErrorMessage(error),
+                    occurredAt: requestedAt,
+                    retriable: true,
+                    workId: null,
+                },
+            });
+        }
+    }
+
+    const finalRun = agentRunLifecycle.get(input.runId);
+    if (!finalRun || (finalRun.phase !== 'cancelled' && finalRun.phase !== 'partially-completed')) {
+        throw new Error(`Agent run cancellation did not reach a terminal phase: ${input.runId}`);
+    }
+    return {
+        status: 'cancelled',
+        phase: finalRun.phase,
+        cancelledWorkIds,
+        cleanupPendingAssetIds: finalRun.temporaryAssets
+            .filter((asset) => asset.status === 'cleanup-pending')
+            .map((asset) => asset.assetId),
+        releasedAssetIds,
+    };
+}
+
+export const agentRunCancellation = {
+    bindAbortController: bindAgentRunAbortController,
+    cancel: cancelAgentRun,
+    registerTemporaryAssetCleanup: registerAgentRunTemporaryAssetCleanup,
+    registerWorkCancellation: registerAgentRunWorkCancellation,
+} as const;
