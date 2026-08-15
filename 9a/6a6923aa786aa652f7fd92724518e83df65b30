@@ -1,0 +1,38 @@
+src/infra/store/createStore.ts
+  s_a40848e8f8cca9::t_d427900268ea54 119-124
+src/infra/store/storage/types.ts
+  s_a40848e8f8cca9::t_717c87a52c6800 49-52
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_717c87a52c6800 558
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_717c87a52c6800 160
+src/infra/store/storage/createLocalStorage.ts
+  s_a40848e8f8cca9::t_717c87a52c6800 36-48,63,134-141
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_c05dac94d85a96 1,281
+  s_a40848e8f8cca9::t_20013c5af0863d 222-251,253-276
+  s_a40848e8f8cca9::t_be70d0db32b2f3 277-280,282-287,291
+  s_a40848e8f8cca9::t_63ff5837c5f5d5 252
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_be70d0db32b2f3 517-532
+  s_a40848e8f8cca9::t_20013c5af0863d 39,62,560,598,603
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_717c87a52c6800 11-12
+  s_a40848e8f8cca9::t_5e031a40828e44 13-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9a6a6923aa786aa652f7fd92724518e83df65b30",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
