@@ -1,0 +1,50 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_0c34497dd424a5 15,68-75,874,879-955,1053-1062,1073-1080
+  s_a40848e8f8cca9::t_ce6a1a6ce490a8 600-602,863-864,871-872
+  s_a40848e8f8cca9::t_767285f0b77a3b 76-77
+  s_a40848e8f8cca9::t_6208f480b0e9d8 873
+  s_a40848e8f8cca9::t_31ce9db024b922 1081-1082
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_0c34497dd424a5 190,196
+src/modules/AiRuntime/useCases/__tests__/streamHostedModelText.spec.ts
+  s_a40848e8f8cca9::t_0c34497dd424a5 45-76
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_0c34497dd424a5 9,234-240,248-252
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_dc1e22cffec500 188-197,203-208,214-218,228-231
+  s_a40848e8f8cca9::t_ffa625431c88a2 198-202
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_81ed7ea114ff22 4,17,26-33,44-51
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_e13b5d973b302a 1194,1196,1219-1230
+  s_a40848e8f8cca9::t_dc1e22cffec500 173-176
+  s_a40848e8f8cca9::t_15a969f52dcd3e 238,251-254,329-331,401-403,801-803,829-831
+  s_a40848e8f8cca9::t_7f44b871a1d71e 1231
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_855581acd30caa 220,386,398,407,419,421,430,439
+  s_a40848e8f8cca9::t_36a39e1e5d3f40 11-15,221,417
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_81ed7ea114ff22 9,108-109,208-209
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_dc1e22cffec500 232-243
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_dc1e22cffec500 79-82
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_a40848e8f8cca9::t_c940df6732b4b4 172-173,175-178,181-182,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bb3bfdce4caed8a9448183771830e47a0a246434",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
