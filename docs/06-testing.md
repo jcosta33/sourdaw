@@ -690,7 +690,7 @@ Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in f
 | `pnpm test:e2e <spec>`                   | Run one affected Playwright spec                                         |
 | `pnpm test:e2e:full`                     | Full Playwright suite; run only when explicitly requested                |
 | `pnpm typecheck:test`                    | Spec-inclusive type check (`tsconfig.test.json`)                         |
-| `pnpm cargo:test -- -p <crate> <filter>` | Run affected Rust tests in debug mode                                    |
+| `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                |
 
 Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
 coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
