@@ -247,6 +247,8 @@ describe('ClipView', () => {
         expect(waveform).toHaveAttribute('data-clip-id', 'clip-audio');
         expect(waveform).toHaveAttribute('data-audio-buffer-id', 'buf-1');
         expect(screen.queryByTestId('knead-editor')).not.toBeInTheDocument();
+        // The note-count readout is a MIDI-clip surface: absent for audio.
+        expect(screen.queryByTestId('selected-clip-note-count')).not.toBeInTheDocument();
 
         const waveformButton = screen.getByText('Waveform');
         const pitchButton = screen.getByText('Knead (Pitch)');

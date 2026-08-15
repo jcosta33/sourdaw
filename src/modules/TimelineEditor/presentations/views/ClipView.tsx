@@ -176,7 +176,7 @@ export const ClipView = (): ReactElement => {
                     <span
                         className="text-[10px] text-muted-foreground/60"
                         data-testid="selected-clip-note-count"
-                        aria-label={`${selectedClipNoteCount} notes in ${selectedClip.name}`}
+                        aria-label={`${selectedClipNoteCount} note${selectedClipNoteCount === 1 ? '' : 's'} in ${selectedClip.name}`}
                     >
                         {selectedClipNoteCount} note{selectedClipNoteCount === 1 ? '' : 's'}
                     </span>
