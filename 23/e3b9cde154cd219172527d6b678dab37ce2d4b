@@ -1,0 +1,33 @@
+src/infra/store/__tests__/useStoreSelector.spec.tsx
+  s_ab5443e65c7fba::t_e2fd855b0eb42c 11,14-15,43-50,72-84
+src/infra/store/useStoreSelector.ts
+  s_a40848e8f8cca9::t_7249ec4a6b776a 23-24,33-36,50-54
+src/modules/TimelineEditor/presentations/views/ClipView.tsx
+  s_a40848e8f8cca9::t_c1023aaeff053b 179
+src/modules/TimelineEditor/presentations/views/__tests__/ClipView.spec.tsx
+  s_a40848e8f8cca9::t_3d938f5dce5b45 250-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "23e3b9cde154cd219172527d6b678dab37ce2d4b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
