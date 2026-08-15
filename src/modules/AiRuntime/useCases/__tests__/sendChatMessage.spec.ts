@@ -633,6 +633,25 @@ describe('sendChatMessage injectables', () => {
             rawText: 'save project',
             requiresConfirmation: false,
             rejectionReason: 'Recognized command failed runtime validation: saveProject',
+            applicationToolReceipts: [
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: 'query-rejected',
+                    toolName: 'project.query',
+                    turn: 1,
+                    status: 'failure',
+                    revision: 'revision-1',
+                    data: null,
+                    summary: 'Project query rejected by application authority.',
+                    warnings: [],
+                    error: {
+                        code: 'invalid-arguments',
+                        safeMessage: 'The project query arguments are invalid.',
+                        retryable: false,
+                    },
+                },
+            ],
         });
 
         await sendChatMessage('save project');
@@ -654,6 +673,16 @@ describe('sendChatMessage injectables', () => {
                 error: 'Recognized command failed runtime validation: saveProject',
             })
         );
+        const [rejectedProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(rejectedProjection!.runId)?.plan).toMatchObject({
+            applicationToolReceipts: [
+                expect.objectContaining({
+                    callId: 'query-rejected',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'invalid-arguments' }),
+                }),
+            ],
+        });
     });
 
     it('reports an empty provider plan as an unmatched command without executing', async () => {
@@ -667,6 +696,21 @@ describe('sendChatMessage injectables', () => {
             actions: [],
             rawText: 'do something unknown',
             requiresConfirmation: false,
+            applicationToolReceipts: [
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: 'query-noop',
+                    toolName: 'project.query',
+                    turn: 1,
+                    status: 'success',
+                    revision: 'revision-1',
+                    data: { queryType: 'project-summary' },
+                    summary: 'project-summary: 1 of 1 item(s)',
+                    warnings: [],
+                    error: null,
+                },
+            ],
         });
 
         await sendChatMessage('do something unknown');
@@ -679,6 +723,12 @@ describe('sendChatMessage injectables', () => {
         expect(assistantMessage?.role).toBe('assistant');
         expect(assistantMessage?.content).toBe('No actions were matched or executed for your command.');
         expect(assistantMessage?.error).toBe('No actions matched');
+        const [noOpProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(noOpProjection!.runId)?.plan).toMatchObject({
+            applicationToolReceipts: [
+                expect.objectContaining({ callId: 'query-noop', status: 'success', revision: 'revision-1' }),
+            ],
+        });
     });
 
     it('binds validated provider actions and admission to one project revision', async () => {
