@@ -32,8 +32,7 @@ the change is reverted, a measurement at the boundary users experience.
 Docs state contracts that hold under change: rules, invariants, and the reasons behind them. No
 counts, no inventories, no enumerations of what currently exists — anything that drifts with
 ordinary work is wrong the day after it is written. A "gotcha" or "known drift" note is a defect
-record, not documentation: fix the defect and delete the note. Durable decisions go to
-`.agents/decisions/` and its ADR ledger.
+record, not documentation: fix the defect and delete the note.
 
 ## DAW Standard
 
@@ -125,6 +124,8 @@ Leave existing `.agents/specs/` material untouched unless assigned. Durable deci
 
 ## Delivery
 
+- Keep batches small, live lanes few, and merges prompt. A finished change waits on nothing but its
+  review.
 - Run affected checks before delivery. Use `pnpm deliver <pr-number>` only to validate PR state and
   merge. Never bypass it with raw merge or branch deletion.
 - Follow `.github/pull_request_template.md`. PR descriptions stay under 4000 bytes. State what

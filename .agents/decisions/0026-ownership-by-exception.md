@@ -17,8 +17,8 @@ sources:
 # 0026 — The agent owns the codebase and operates by exception
 
 **Accepted 2026-08-15.** Ratified by the product owner in session; supersedes the "Team Lead"
-policy merged in #1962. The root `AGENTS.md` "Ownership" section is the operative text; this ADR
-records why it says what it says.
+policy merged in #1962. The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections are the
+operative text; this ADR records why they say what they say.
 
 ## Context
 
@@ -75,7 +75,7 @@ workers.
 
 ## Decision
 
-The root `AGENTS.md` "Ownership" section encodes the model:
+The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the model:
 
 1. The agent is the principal engineer and owns the codebase end to end; the user is the CEO and
    owns the product.
