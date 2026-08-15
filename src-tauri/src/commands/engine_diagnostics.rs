@@ -85,8 +85,14 @@ pub struct EngineRtDiagnostics {
 /// Returns the not-running shape rather than an error when no engine has been
 /// started: asking a stopped engine how it is doing is a legitimate poll, not a
 /// failure.
+///
+/// Declared `async` so it runs off the main thread, as `start_native_engine`
+/// does: a synchronous command takes the engine mutex on the thread Tauri also
+/// drives the webview from, and this one is polled every second for the life of
+/// the session. The guard is `std::sync::Mutex` and is held only for the
+/// snapshot and the drain, so there is no await under it.
 #[tauri::command]
-pub fn engine_rt_diagnostics(
+pub async fn engine_rt_diagnostics(
     state: tauri::State<'_, AppState>,
 ) -> Result<EngineRtDiagnostics, String> {
     let bridge_input_blocks_refused = state.bridge_input_blocks_refused.load(Ordering::Relaxed);
@@ -228,7 +234,8 @@ mod tests {
             .bridge_input_blocks_refused
             .store(3, std::sync::atomic::Ordering::Relaxed);
 
-        let diagnostics = engine_rt_diagnostics(state).expect("diagnostics should be readable");
+        let diagnostics = tauri::async_runtime::block_on(engine_rt_diagnostics(state))
+            .expect("diagnostics should be readable");
 
         assert!(!diagnostics.running);
         assert_eq!(diagnostics.bridge_input_blocks_refused, 3);

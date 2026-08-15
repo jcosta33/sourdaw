@@ -2,8 +2,6 @@ import { createStore } from '#/infra/store/createStore';
 
 import { type EngineEvent, type EngineRtDiagnostics } from '../models/EngineRtDiagnostics';
 
-export type { EngineEvent, EngineRtDiagnostics, EngineStreamErrorKind } from '../models/EngineRtDiagnostics';
-
 /**
  * How many engine events the store keeps. A stream failing every period repeats
  * itself, and the oldest reports are the ones that already explained the fault,

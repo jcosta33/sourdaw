@@ -10,14 +10,6 @@ export { audioGraphStore, defaultAudioGraphState } from './audioGraphStore';
 export type { AudioRecordingState } from './audioRecordingStore';
 export { audioRecordingStore } from './audioRecordingStore';
 
-export type {
-    EngineEvent,
-    EngineRtDiagnostics,
-    EngineRtDiagnosticsState,
-    EngineStreamErrorKind,
-} from './engineRtDiagnosticsStore';
-export { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from './engineRtDiagnosticsStore';
-
 export type { AdjustmentApplicationState } from './adjustmentApplicationStore';
 export { adjustmentApplicationStore } from './adjustmentApplicationStore';
 

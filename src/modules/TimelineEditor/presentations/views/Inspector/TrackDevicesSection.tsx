@@ -80,6 +80,21 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
             )
             .map((device) => device.id)
     );
+    // An activation can succeed and still be degraded: a plugin loaded before
+    // the native engine started is 'active' and processes no audio, and it
+    // records why on the entry. The rack discriminates on 'error' alone, so
+    // without this the degraded plugin renders as a healthy one.
+    const degradedExternalDeviceMessages = new Map<string, string>(
+        track.devices.flatMap((device): Array<[string, string]> => {
+            const activation = device.externalInstanceId
+                ? activationState.byInstanceId[device.externalInstanceId]
+                : undefined;
+            if (!activation || activation.status === 'error' || !activation.message) {
+                return [];
+            }
+            return [[device.id, activation.message]];
+        })
+    );
 
     useEffect(() => {
         if (!showDeviceMenu) {
@@ -243,6 +258,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         <ChoiceCard
                             key={device.id}
                             data-testid={`device-card-${device.id}`}
+                            title={degradedExternalDeviceMessages.get(device.id)}
                             className={cn(
                                 'flex items-center justify-between cursor-grab active:cursor-grabbing',
                                 device.bypassed || unavailableExternalDeviceIds.has(device.id) ? 'opacity-50' : ''

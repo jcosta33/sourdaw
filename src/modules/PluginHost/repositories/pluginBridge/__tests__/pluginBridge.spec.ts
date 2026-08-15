@@ -188,6 +188,57 @@ describe('pluginBridge repository', () => {
             );
         });
 
+        it('dedupes per instance, so a healthy relay neither silences nor un-silences a failing one', async () => {
+            // Regression: one shared latch made two live instances overwrite
+            // each other. The healthy instance's success cleared the failing
+            // one's latch, so the failure reported again on every block — the
+            // flood the dedupe exists to prevent.
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockImplementation((_command, args) => {
+                const instanceId = args?.instanceId;
+                if (typeof instanceId === 'string' && instanceId === 'failing-instance') {
+                    return Promise.reject(new Error('no audio bridge for the failing instance'));
+                }
+                return Promise.resolve(new Uint8Array([7]));
+            });
+
+            for (let block = 0; block < 4; block += 1) {
+                await processAudioIPC({ instanceId: 'failing-instance', audioBytes: new Uint8Array([1]) });
+                await processAudioIPC({ instanceId: 'healthy-instance', audioBytes: new Uint8Array([1]) });
+            }
+
+            expect(logger.warn).toHaveBeenCalledTimes(1);
+            expect(logger.warn).toHaveBeenCalledWith(
+                'Native plugin audio processing failed: Error: no audio bridge for the failing instance'
+            );
+        });
+
+        it('reports an unreadable non-null payload once instead of letting it look like silence', async () => {
+            // The invoke succeeded and the command answered with something that
+            // is not audio bytes. That is a boundary disagreement, and it is
+            // indistinguishable downstream from a plugin producing nothing.
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockResolvedValue({ notBytes: true });
+
+            expect(
+                await processAudioIPC({ instanceId: 'garbled-instance', audioBytes: new Uint8Array([1]) })
+            ).toBeNull();
+            await processAudioIPC({ instanceId: 'garbled-instance', audioBytes: new Uint8Array([1]) });
+
+            expect(logger.warn).toHaveBeenCalledTimes(1);
+            expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('garbled-instance'));
+        });
+
+        it('stays silent when the command answers with no output at all', async () => {
+            // Null is the legitimate "no output yet" answer, not a fault.
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockResolvedValue(null);
+
+            expect(await processAudioIPC({ instanceId: 'quiet-instance', audioBytes: new Uint8Array([1]) })).toBeNull();
+
+            expect(logger.warn).not.toHaveBeenCalled();
+        });
+
         it('reports a failure again after the round trip recovers', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
             vi.mocked(tauriInvoke).mockRejectedValue(new Error('device disappeared'));

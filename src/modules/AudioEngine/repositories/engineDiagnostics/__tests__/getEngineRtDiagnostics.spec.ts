@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { getEngineRtDiagnostics } from '../getEngineRtDiagnostics';
@@ -7,6 +8,10 @@ import { getEngineRtDiagnostics } from '../getEngineRtDiagnostics';
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
     tauriInvoke: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 /**
@@ -81,6 +86,24 @@ describe('getEngineRtDiagnostics', () => {
         const diagnostics = await getEngineRtDiagnostics();
 
         expect(diagnostics.events).toEqual([{ type: 'streamError', kind: 'backendSpecific' }]);
+    });
+
+    it('reports an event whose type this build does not know instead of dropping it silently', async () => {
+        // The union is hand-mirrored from Rust. An unmapped `type` cannot be
+        // turned into a typed event, but a native side that grew a variant this
+        // build never learned must not vanish without a trace.
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue({
+            ...nativePayload,
+            events: [{ type: 'xrunBurst', count: 4 }],
+        });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.events).toEqual([]);
+        expect(logger.warn).toHaveBeenCalledTimes(1);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('"type":"xrunBurst"'));
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('"count":4'));
     });
 
     it('falls back to the not-running shape when the native payload is not an object', async () => {

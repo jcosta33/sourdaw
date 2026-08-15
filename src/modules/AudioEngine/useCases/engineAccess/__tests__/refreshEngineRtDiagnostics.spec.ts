@@ -52,6 +52,44 @@ describe('refreshEngineRtDiagnostics', () => {
 
         expect(returned).toEqual(reading);
         expect(engineRtDiagnosticsStore.value?.latest).toEqual(reading);
+        expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('leaves the store alone and reports once when the read itself fails', async () => {
+        // The desktop command can reject. Publishing a not-running shape for a
+        // poll that reached nothing would erase the last real reading and the
+        // event history with it, so the failure owns nothing but the log — and
+        // the poll runs every second, so the same cause must report once.
+        const lastGoodReading = diagnostics({ unmappedSetParamCalls: 7 });
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(
+            diagnostics({ ...lastGoodReading, events: [{ type: 'streamError', kind: 'xrun' }] })
+        );
+        await refreshEngineRtDiagnostics();
+
+        vi.mocked(getEngineRtDiagnostics).mockRejectedValue(new Error('Failed to lock engine: poisoned'));
+
+        expect(await refreshEngineRtDiagnostics()).toBeNull();
+        expect(await refreshEngineRtDiagnostics()).toBeNull();
+
+        expect(engineRtDiagnosticsStore.value?.latest?.unmappedSetParamCalls).toBe(7);
+        expect(engineRtDiagnosticsStore.value?.events).toEqual([{ type: 'streamError', kind: 'xrun' }]);
+        expect(logger.error).toHaveBeenCalledTimes(1);
+        expect(logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({ message: expect.stringContaining('Failed to lock engine: poisoned') })
+        );
+    });
+
+    it('reports a read failure again after a successful read in between', async () => {
+        vi.mocked(getEngineRtDiagnostics).mockRejectedValue(new Error('engine mutex unavailable'));
+        await refreshEngineRtDiagnostics();
+        expect(logger.error).toHaveBeenCalledTimes(1);
+
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(diagnostics());
+        await refreshEngineRtDiagnostics();
+
+        await refreshEngineRtDiagnostics();
+
+        expect(logger.error).toHaveBeenCalledTimes(2);
     });
 
     it('starts with no reading rather than with a reading of all zeros', () => {
@@ -92,8 +130,9 @@ describe('refreshEngineRtDiagnostics', () => {
 
     it('logs every drained event once, so a report reaches the log without a diagnostics reader', async () => {
         // The engine hands each event out exactly once, so logging at ingestion
-        // cannot double-report — and nothing else logs it: the native error
-        // callback runs on the real-time thread and only pushes.
+        // cannot double-report on this side. The native drain writes the same
+        // event to stderr; that is the trace that survives without a webview,
+        // and this is the app-level report a user can reach.
         vi.mocked(getEngineRtDiagnostics).mockResolvedValue(
             diagnostics({
                 events: [

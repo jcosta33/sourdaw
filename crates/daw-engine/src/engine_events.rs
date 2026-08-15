@@ -74,8 +74,14 @@ pub(crate) fn engine_event_channel() -> (Producer<EngineEvent>, Consumer<EngineE
 /// Never called on the audio thread, which is what makes the reporting possible
 /// here: the `Vec` allocation and the global stderr lock `eprintln!` takes are
 /// both affordable on the control side and both forbidden in the callback that
-/// produced these events. Reporting is therefore this side's job — an event no
-/// other reader acts on still reaches the log exactly once.
+/// produced these events.
+///
+/// This stderr line is the native-side trace, not the only report. It is the one
+/// that survives with no webview attached — a headless host, a crashed
+/// front end, a session read from a log afterwards. The app-level report a user
+/// can reach is the frontend warn in `refreshEngineRtDiagnostics`, which logs
+/// each event as it ingests it. The ring hands an event out exactly once, so
+/// each side reports it exactly once.
 pub(crate) fn drain_engine_events(consumer: &mut Consumer<EngineEvent>) -> Vec<EngineEvent> {
     let mut events = Vec::new();
     while let Ok(event) = consumer.pop() {
