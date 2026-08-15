@@ -24,6 +24,7 @@ type GenerateNativeToolCallsInput = {
     tools: NativeToolDefinition[];
     temperature: number;
     signal?: AbortSignal;
+    timeoutMs?: number;
 };
 
 type GenerateNativeToolCallsOutput = Promise<NativeToolCallResult[] | null>;
@@ -42,7 +43,9 @@ export async function generateNativeToolCalls(input: GenerateNativeToolCallsInpu
             temperature: input.temperature,
         },
         signal: input.signal,
+        timeoutMs: input.timeoutMs,
         abortMessage: 'Native tool planning aborted',
+        timeoutMessage: `Native tool planning timed out after ${String(input.timeoutMs ?? 120_000)}ms`,
     });
 
     return narrowNativeToolCallingResponse(response);

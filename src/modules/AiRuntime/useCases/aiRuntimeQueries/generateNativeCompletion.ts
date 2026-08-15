@@ -1,4 +1,4 @@
-import { generateNativeCompletion as generateNativeEngineCompletion } from '../../repositories/nativeEngine/completions';
+import { runNativeModelProviderRequest } from '../../repositories/nativeModelProviderAdapter';
 
 import { runLocalModelTextCompletion } from './runLocalModelTextCompletion';
 
@@ -14,7 +14,11 @@ export async function generateNativeCompletion(
         userMessage,
         maxOutputTokens: options?.maxTokens ?? 2_048,
         signal: options?.signal,
-        execute: (compiledSystemPrompt, compiledUserMessage) =>
-            generateNativeEngineCompletion(compiledSystemPrompt, compiledUserMessage, options),
+        executeRequest: (request, onEvent) =>
+            runNativeModelProviderRequest({
+                request,
+                onEvent,
+                ...(options?.signal === undefined ? {} : { signal: options.signal }),
+            }),
     });
 }
