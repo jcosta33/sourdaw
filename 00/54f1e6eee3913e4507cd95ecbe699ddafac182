@@ -1,0 +1,65 @@
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 1,18-19
+src/modules/AiRuntime/transformers/strictToolPlanningParser.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 1,76,84-85,91-97
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_c00b30386cd00f 3,16-18,23,25,77,151-155,218-220,233-236,270,307,446
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_413d1eee10b963 20,404-412
+  s_a40848e8f8cca9::t_9af2676fa00046 389-403,413-444,492-499,501
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_9af2676fa00046 308,369
+src/modules/AiRuntime/repositories/nativeEngine/nativeToolCalling.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 16,90,103-109
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_73c295cd67cd29 1170,1175,1182,1186,1194,1196,1200,1206,1210
+src/modules/AiRuntime/transformers/toolCallParser.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 123-127
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_1366c28a737bda 232-243
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_19e4b07c4c9a7d 69
+  s_a40848e8f8cca9::t_1366c28a737bda 94,124,128-130,191-238
+  s_a40848e8f8cca9::t_3e36da5f49fa1b 239
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_9af2676fa00046 2
+  s_a40848e8f8cca9::t_9219c1e5c5f584 50
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 106-112,115
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 117
+src/modules/AiRuntime/models/ApplicationOwnedTool.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 2-19
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_413d1eee10b963 14
+  s_a40848e8f8cca9::t_9d80fd5a9546cf 176,194
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/nativeToolCalling.spec.ts
+  s_a40848e8f8cca9::t_73c295cd67cd29 93
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 76-83,203
+  s_a40848e8f8cca9::t_10c5f150957b6a 400,419-420
+  s_a40848e8f8cca9::t_5fb694779d4d17 405
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_82a82014aac708 149,224-227,230-235,243,255,267,279,294,302,313,322,331,339,378,395,410,428,437,446,459,468-470
+  s_a40848e8f8cca9::t_08bc58f23e56ee 471-473
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_4c6a7eed7a2868 353-367,393-395
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_a40848e8f8cca9::t_2fde0f44afc0bc 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0054f1e6eee3913e4507cd95ecbe699ddafac182",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
