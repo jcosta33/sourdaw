@@ -66,15 +66,23 @@ function readPrompts(request: ModelProviderRequest): { systemPrompt: string; use
 }
 
 function hasUnsupportedConversationHistory(request: ModelProviderRequest): boolean {
+    const hasSystemMessage = request.messages.some((message) => message.role === 'system');
+    const hasUserMessage = request.messages.some((message) => message.role === 'user');
+    if (!hasSystemMessage || !hasUserMessage) {
+        return false;
+    }
     return (
-        request.messages.length > 2 ||
-        request.messages.some((message) => message.role === 'assistant' || message.role === 'tool')
+        request.messages.length !== 2 || request.messages[0]?.role !== 'system' || request.messages[1]?.role !== 'user'
     );
 }
 
 function hasUnsupportedStreamHistory(request: ModelProviderRequest): boolean {
     const systemMessageCount = request.messages.filter((message) => message.role === 'system').length;
-    return systemMessageCount > 1 || request.messages.some((message) => message.role === 'tool');
+    return (
+        systemMessageCount > 1 ||
+        request.messages.some((message) => message.role === 'tool') ||
+        (systemMessageCount === 1 && request.messages[0]?.role !== 'system')
+    );
 }
 
 function parseStructuredOutput(value: string): unknown {
@@ -131,7 +139,7 @@ export async function runNativeModelProviderRequest(
                 status: 'available',
                 finish: errorFinish(
                     'native-conversation-history-unsupported',
-                    'The native model provider does not support multi-turn conversation history.',
+                    'The native model provider does not support this conversation history.',
                     false
                 ),
             };

@@ -134,34 +134,37 @@ describe('native model provider adapter', () => {
 
     it('fails closed instead of dropping normalized conversation history', async () => {
         const { request } = createFixture({ operation: 'text' });
+        const unsupportedMessages = [
+            [
+                { role: 'system' as const, content: 'You are a DAW assistant.' },
+                { role: 'user' as const, content: 'Describe the mix.' },
+                { role: 'assistant' as const, content: 'The drums are forward.' },
+                { role: 'user' as const, content: 'What should change next?' },
+            ],
+            [
+                { role: 'user' as const, content: 'Describe the mix.' },
+                { role: 'system' as const, content: 'You are a DAW assistant.' },
+            ],
+        ];
 
-        await expect(
-            runNativeModelProviderRequest(
-                {
-                    request: {
-                        ...request,
-                        messages: [
-                            { role: 'system', content: 'You are a DAW assistant.' },
-                            { role: 'user', content: 'Describe the mix.' },
-                            { role: 'assistant', content: 'The drums are forward.' },
-                            { role: 'user', content: 'What should change next?' },
-                        ],
+        for (const messages of unsupportedMessages) {
+            await expect(
+                runNativeModelProviderRequest(
+                    { request: { ...request, messages }, onEvent: vi.fn() },
+                    createDependencies()
+                )
+            ).resolves.toEqual({
+                status: 'available',
+                finish: {
+                    reason: 'error',
+                    failure: {
+                        code: 'native-conversation-history-unsupported',
+                        retryable: false,
+                        safeMessage: 'The native model provider does not support this conversation history.',
                     },
-                    onEvent: vi.fn(),
                 },
-                createDependencies()
-            )
-        ).resolves.toEqual({
-            status: 'available',
-            finish: {
-                reason: 'error',
-                failure: {
-                    code: 'native-conversation-history-unsupported',
-                    retryable: false,
-                    safeMessage: 'The native model provider does not support multi-turn conversation history.',
-                },
-            },
-        });
+            });
+        }
     });
 
     it('fails closed on streamed histories that the native bridge cannot preserve', async () => {
@@ -177,6 +180,11 @@ describe('native model provider adapter', () => {
                 { role: 'system' as const, content: 'Primary instructions.' },
                 { role: 'tool' as const, content: 'Tool result.' },
                 { role: 'user' as const, content: 'Describe the mix.' },
+            ],
+            [
+                { role: 'user' as const, content: 'Describe the mix.' },
+                { role: 'system' as const, content: 'Primary instructions.' },
+                { role: 'assistant' as const, content: 'The drums are forward.' },
             ],
         ];
 
