@@ -1,0 +1,21 @@
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/schemaConstrainedGeneration.spec.ts
+  s_ab5443e65c7fba::t_2e7957f31e8516 63-66
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_ab5443e65c7fba::t_3da0e4570a68f5 117-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1f88c35442fbc98e166d8fab848c01dc71297c6b",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
