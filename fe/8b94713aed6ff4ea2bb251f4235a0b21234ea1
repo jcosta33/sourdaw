@@ -1,0 +1,15 @@
+tests/e2e/agentExecutionMode.spec.ts
+  h_1228e573df1f42 1-32,42-62
+  h_1228e573df1f42 33-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fe8b94713aed6ff4ea2bb251f4235a0b21234ea1",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
