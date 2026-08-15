@@ -1,0 +1,63 @@
+src/modules/AiRuntime/repositories/nativeEngine/completions.ts
+  s_a40848e8f8cca9::t_a1d9fcbad0d875 58-61,64
+  s_a40848e8f8cca9::t_b3671368a0295a 39-44
+  s_a40848e8f8cca9::t_e4002089cd7ec3 13,57
+src/modules/AiRuntime/repositories/__tests__/nativeModelProviderAdapter.spec.ts
+  s_a40848e8f8cca9::t_33b8ba883573e0 1-2,5-14,16-98,100-148,179-180,187,205-235,237-253
+  s_a40848e8f8cca9::t_05cb5f21d72d38 3-4,149-178,181-186,188-204
+  s_a40848e8f8cca9::t_e4002089cd7ec3 15,99,236
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_2f894ba029dc16 7,483,498-504
+  s_a40848e8f8cca9::t_9a34f6d2a0c60c 179-181,185,211-217,219-240,247-252,254
+  s_a40848e8f8cca9::t_92a6fe6bac8029 169-177
+  s_a40848e8f8cca9::t_a9374d4bcdaee9 241-246
+  s_a40848e8f8cca9::t_cf7fbfd4495051 14,22,147,151-153,155-157,159-168,178,183-184,186-193,203,218,425
+  s_a40848e8f8cca9::t_41afe288395508 154
+  s_a40848e8f8cca9::t_907def6dcd30f2 505-506
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_a0d4f97a012540 31,1000,1046-1056,1059-1060,1069-1070,1078,1193
+  s_a40848e8f8cca9::t_1eed0c146d1127 1071-1077
+  s_a40848e8f8cca9::t_1390d5d77f4988 1061-1068
+src/modules/AiRuntime/useCases/aiRuntimeQueries/generateNativeCompletion.ts
+  s_a40848e8f8cca9::t_b35ce122999a47 1,17-20,22
+  s_a40848e8f8cca9::t_41afe288395508 21
+src/modules/AiRuntime/errors/ModelProviderFailureError.ts
+  s_a40848e8f8cca9::t_2f894ba029dc16 2,29-39
+  s_a40848e8f8cca9::t_8732ac4057f38e 40-41
+src/modules/AiRuntime/repositories/nativeEngine/nativeToolCalling.ts
+  s_a40848e8f8cca9::t_906c9c9e938f33 27,46,48
+src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts
+  s_a40848e8f8cca9::t_b35ce122999a47 2-8,11,20-37,66-68,70-81
+  s_a40848e8f8cca9::t_7cef516f6523fe 69
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_a9374d4bcdaee9 199-207,245-253,733,750,755,799,815,820
+  s_a40848e8f8cca9::t_7d92ce9a99c346 210-231
+  s_a40848e8f8cca9::t_f3563775de936e 208-209
+src/modules/AiRuntime/useCases/aiRuntimeQueries/__tests__/modelTextQueries.spec.ts
+  s_a40848e8f8cca9::t_8b253efc282fa0 11,23-24,56-59,82
+  s_a40848e8f8cca9::t_7cef516f6523fe 106-128
+src/modules/AiRuntime/repositories/nativeModelProviderAdapter.ts
+  s_a40848e8f8cca9::t_41afe288395508 133,162,191
+  s_a40848e8f8cca9::t_9a34f6d2a0c60c 205-218
+  s_a40848e8f8cca9::t_906c9c9e938f33 3-10,13-29,31-37,39-115,130,132,136-161,163-190,192-204,222-232
+  s_a40848e8f8cca9::t_92a6fe6bac8029 219-221
+  s_a40848e8f8cca9::t_e4002089cd7ec3 11,30,38,116-129,131,134-135
+  s_a40848e8f8cca9::t_7713110b7c14d4 1-2
+  s_a40848e8f8cca9::t_9e63a828584468 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4175a47207b7f21c5f043af1ce4e88dbfeeedcfa",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
