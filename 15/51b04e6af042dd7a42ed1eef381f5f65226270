@@ -1,0 +1,54 @@
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_a40848e8f8cca9::t_c579d2c8824714 317
+  s_a40848e8f8cca9::t_dc3ccc8aad3d79 342
+  s_a40848e8f8cca9::t_1bed3625386e40 308-316,318-341,343-386,549,749
+src/modules/AiRuntime/repositories/nativeEngine/schemaConstrainedGeneration.ts
+  s_a40848e8f8cca9::t_1bed3625386e40 1,37-45,48,53,57,66,69-73
+  s_a40848e8f8cca9::t_b5302b0182f044 74
+docs/architecture/decisions/0036-provider-stream-envelope.md
+  s_a40848e8f8cca9::t_1bed3625386e40 23
+docs/architecture/decisions/0013-client-side-hosted-llm-adapters.md
+  s_a40848e8f8cca9::t_1bed3625386e40 20
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_a40848e8f8cca9::t_b4aa3188f1a3e2 295-310,314-315,317-322,326-328
+  s_a40848e8f8cca9::t_b0838ba42eda11 311-313,323-325
+  s_a40848e8f8cca9::t_144d56f093f5de 316
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_a40848e8f8cca9::t_cab6ac80b7a816 353,394
+  s_a40848e8f8cca9::t_b4aa3188f1a3e2 351-352,354-393,395-396
+src/modules/AiRuntime/repositories/providerGateway.ts
+  s_a40848e8f8cca9::t_1bed3625386e40 133,141-149,158-159
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion.ts
+  s_a40848e8f8cca9::t_1bed3625386e40 34,107-123,130,168
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiCompatibleChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_389380c4edfcd9 106
+  s_a40848e8f8cca9::t_cab6ac80b7a816 86,122
+  s_a40848e8f8cca9::t_b4aa3188f1a3e2 80-85,87-105,107-121,123-143
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  s_a40848e8f8cca9::t_41b3237e1454cb 76-79,82-83,87,90-91,96-101,104,106-107,110-116,118-129,132,134-135
+  s_a40848e8f8cca9::t_1bed3625386e40 80-81,95,202,252-254,265-282,304
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/schemaConstrainedGeneration.spec.ts
+  s_a40848e8f8cca9::t_b4aa3188f1a3e2 126-130,133,140,143-145
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_a40848e8f8cca9::t_7392b95714e055 375
+  s_a40848e8f8cca9::t_b4aa3188f1a3e2 257-269,273-275,349-374,376-394,398-401
+  s_a40848e8f8cca9::t_cab6ac80b7a816 270-272
+  s_a40848e8f8cca9::t_b121d7dc71a28d 395-397
+  s_a40848e8f8cca9::t_35fc4050890701 402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1551b04e6af042dd7a42ed1eef381f5f65226270",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
