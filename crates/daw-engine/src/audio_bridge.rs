@@ -20,7 +20,19 @@ use rtrb::{Consumer, Producer, RingBuffer};
 /// push (visible) rather than silently truncated audio.
 pub const MAX_BLOCK_FRAMES: usize = 512;
 
-const RING_CAPACITY: usize = 8; // 8 blocks ≈ 21ms at 48kHz with a 128-frame quantum
+/// Web Audio's render quantum. The app pushes one block per quantum.
+pub const RENDER_QUANTUM_FRAMES: usize = 128;
+
+/// Blocks the ring holds.
+///
+/// The app queues one block per render quantum while the audio thread drains
+/// once per device period, so the ring has to span a whole device period or
+/// the app's pushes are refused partway through it — audio lost for exactly
+/// the reason the drain exists. Sized from the largest callback the engine
+/// accepts, plus four blocks of slack for ordinary jitter.
+///
+/// Each block is ~4 KiB, so the pair of rings costs ~288 KiB per plugin.
+const RING_CAPACITY: usize = crate::audio_thread::MAX_CALLBACK_FRAMES / RENDER_QUANTUM_FRAMES + 4;
 
 /// A stereo audio block. `frames` is authoritative; the arrays are capacity,
 /// not length, and samples past `frames` are undefined carry-over.
@@ -84,13 +96,15 @@ pub fn create_audio_bridge(plugin_id: usize) -> (PluginAudioBridge, PluginAudioB
 pub struct BridgeDrain {
     /// Blocks popped from the input ring and handed to the closure.
     pub blocks_processed: usize,
+    /// Live frames across those blocks — what the pass actually cost.
+    pub frames_processed: usize,
     /// Processed blocks the app never receives because its return ring was
     /// full. Audio that is computed and then thrown away.
     pub output_blocks_dropped: usize,
 }
 
 impl PluginAudioBridge {
-    /// Process every input block queued since the last callback.
+    /// Process the blocks queued for this callback, up to `frame_budget`.
     ///
     /// The audio thread runs on the device's buffer period while the app
     /// pushes one block per render quantum, so several blocks are normally
@@ -100,13 +114,24 @@ impl PluginAudioBridge {
     /// app fell back to dry input — a standing partial loss of the plugin's
     /// audio, not a startup transient.
     ///
+    /// The budget is what keeps that fix from becoming a different fault. A
+    /// pass that drained the whole ring would, after a main-thread stall,
+    /// render a ring's worth of audio inside one callback period — many times
+    /// real time, on the thread with the hard deadline. The caller budgets the
+    /// frames the device asked for plus one quantum of catch-up, so a backlog
+    /// is worked off over successive callbacks instead of in one spike, and
+    /// the pass never costs much more than the period it runs in.
+    ///
+    /// At least one block is always taken when one is queued, so a budget
+    /// smaller than a block still makes progress rather than wedging the ring.
     /// The closure receives exactly the live frames of each block — never the
     /// full capacity — so a partial block cannot leak stale samples into the
-    /// plugin. The pass is bounded by the ring's capacity so a producer that
-    /// keeps pushing cannot hold the audio callback open.
+    /// plugin. The ring's capacity is a second, absolute bound: a producer
+    /// pushing throughout the pass cannot hold the audio callback open.
     #[inline]
     pub fn drain_process<F: FnMut(&mut [f32], &mut [f32], usize)>(
         &mut self,
+        frame_budget: usize,
         mut process_fn: F,
     ) -> BridgeDrain {
         let mut drain = BridgeDrain::default();
@@ -122,8 +147,12 @@ impl PluginAudioBridge {
                 frames,
             );
             drain.blocks_processed += 1;
+            drain.frames_processed += frames;
             if self.output_tx.push(block).is_err() {
                 drain.output_blocks_dropped += 1;
+            }
+            if drain.frames_processed >= frame_budget {
+                break;
             }
         }
 
@@ -167,7 +196,7 @@ mod tests {
 
         let mut observed_frames = 0;
         let mut observed_left_len = 0;
-        bridge.drain_process(|left, right, frames| {
+        bridge.drain_process(RENDER_QUANTUM_FRAMES, |left, right, frames| {
             observed_frames = frames;
             observed_left_len = left.len();
             assert_eq!(right.len(), 64);
@@ -185,12 +214,12 @@ mod tests {
         // one. A design that processed the full capacity would hand the plugin
         // the previous block's tail; the closure must only ever see live frames.
         assert!(handle.push_input(&[1.0; 128], &[1.0; 128]));
-        bridge.drain_process(|_, _, _| {});
+        bridge.drain_process(RENDER_QUANTUM_FRAMES, |_, _, _| {});
         let _ = handle.pop_output();
 
         assert!(handle.push_input(&[0.0; 8], &[0.0; 8]));
         let mut tail_leaked = false;
-        bridge.drain_process(|left, _right, frames| {
+        bridge.drain_process(RENDER_QUANTUM_FRAMES, |left, _right, frames| {
             assert_eq!(frames, 8);
             tail_leaked = left.iter().any(|sample| *sample != 0.0);
         });
@@ -203,7 +232,7 @@ mod tests {
         let (mut bridge, mut handle) = create_audio_bridge(1000);
         assert!(handle.push_input(&[0.75; 96], &[0.75; 96]));
 
-        bridge.drain_process(|left, right, _| {
+        bridge.drain_process(RENDER_QUANTUM_FRAMES, |left, right, _| {
             for sample in left.iter_mut().chain(right.iter_mut()) {
                 *sample *= 2.0;
             }
@@ -230,15 +259,20 @@ mod tests {
     }
 
     #[test]
-    fn one_pass_takes_every_block_the_app_queued_since_the_last_callback() {
+    fn one_pass_takes_every_block_the_device_period_covers() {
         let (mut bridge, mut handle) = create_audio_bridge(1000);
         for _ in 0..4 {
-            assert!(handle.push_input(&[0.5; 128], &[0.5; 128]));
+            assert!(handle.push_input(&[0.5; RENDER_QUANTUM_FRAMES], &[0.5; RENDER_QUANTUM_FRAMES]));
         }
 
-        let drain = bridge.drain_process(|_, _, _| {});
+        // A 512-frame device buffer at 48 kHz covers four render quanta, so
+        // four blocks are waiting and all four belong to this callback. Taking
+        // one leaves the rest to fill the ring, after which the app's pushes
+        // are refused for good.
+        let drain = bridge.drain_process(4 * RENDER_QUANTUM_FRAMES, |_, _, _| {});
 
         assert_eq!(drain.blocks_processed, 4);
+        assert_eq!(drain.frames_processed, 4 * RENDER_QUANTUM_FRAMES);
         assert_eq!(drain.output_blocks_dropped, 0);
         let mut returned = 0;
         while handle.pop_output().is_some() {
@@ -248,19 +282,53 @@ mod tests {
     }
 
     #[test]
-    fn a_pass_cannot_run_longer_than_the_ring_even_while_the_app_keeps_pushing() {
+    fn a_pass_spends_its_budget_and_leaves_the_backlog_for_later_callbacks() {
         let (mut bridge, mut handle) = create_audio_bridge(1000);
-        for _ in 0..RING_CAPACITY {
-            assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
+        for _ in 0..8 {
+            assert!(handle.push_input(&[0.5; RENDER_QUANTUM_FRAMES], &[0.5; RENDER_QUANTUM_FRAMES]));
         }
 
-        // Refilling from inside the pass models the main thread pushing while
-        // the callback drains. The pass must still end: an unbounded loop here
-        // holds the audio callback open and underruns the device.
-        let mut refills = 0;
-        let drain = bridge.drain_process(|_, _, _| {
-            if refills < 4 {
-                refills += 1;
+        // A backlog left by a main-thread stall. Rendering all of it inside
+        // one callback is eight times the audio the device asked for, on the
+        // thread with the deadline — an underrun in place of the loss this
+        // drain removes. It is worked off a quantum at a time instead.
+        let drain = bridge.drain_process(2 * RENDER_QUANTUM_FRAMES, |_, _, _| {});
+
+        assert_eq!(drain.blocks_processed, 2);
+        let mut remaining = 0;
+        while handle.pop_output().is_some() {
+            remaining += 1;
+        }
+        assert_eq!(remaining, 2, "only the budgeted blocks were returned");
+    }
+
+    #[test]
+    fn a_pass_takes_one_block_even_when_the_budget_is_smaller_than_it() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        assert!(handle.push_input(&[0.5; 256], &[0.5; 256]));
+
+        // A quantum larger than the device period must still make progress:
+        // a pass that took nothing would leave the block in the ring forever.
+        let drain = bridge.drain_process(64, |_, _, _| {});
+
+        assert_eq!(drain.blocks_processed, 1);
+        assert_eq!(drain.frames_processed, 256);
+    }
+
+    #[test]
+    fn a_pass_cannot_outrun_the_ring_while_the_app_keeps_pushing() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
+
+        // The app pushes from inside the pass, the way the main thread does
+        // while the callback drains. With no ceiling this loop never ends and
+        // the audio callback never returns; the budget alone does not stop it,
+        // because the budget is generous here.
+        let mut refills = RING_CAPACITY * 4;
+        let drain = bridge.drain_process(usize::MAX, |_, _, _| {
+            if refills > 0 {
+                refills -= 1;
+                assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
             }
         });
 
@@ -276,11 +344,12 @@ mod tests {
         for _ in 0..RING_CAPACITY {
             assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
         }
-        let filled = bridge.drain_process(|_, _, _| {});
+        let filled = bridge.drain_process(usize::MAX, |_, _, _| {});
+        assert_eq!(filled.blocks_processed, RING_CAPACITY);
         assert_eq!(filled.output_blocks_dropped, 0);
 
         assert!(handle.push_input(&[0.5; 32], &[0.5; 32]));
-        let overflowed = bridge.drain_process(|_, _, _| {});
+        let overflowed = bridge.drain_process(usize::MAX, |_, _, _| {});
 
         assert_eq!(overflowed.blocks_processed, 1);
         assert_eq!(

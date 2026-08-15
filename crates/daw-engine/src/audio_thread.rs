@@ -14,7 +14,7 @@ use std::thread;
 use std::time::Duration;
 use triple_buffer::Input;
 
-const MAX_CALLBACK_FRAMES: usize = 4096;
+pub(crate) const MAX_CALLBACK_FRAMES: usize = 4096;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -243,7 +243,10 @@ fn build_audio_stream(
                         // 2. Process ring-buffer audio bridges (production path)
                         // Reads input from worklets via main thread, processes through
                         // CLAP/VST3, writes output back for main thread to return.
-                        scheduler.process_audio_bridges();
+                        // The device's frame count for this period is the budget:
+                        // a bridge may spend it plus one quantum of catch-up, so a
+                        // backlog never renders as one spike inside the deadline.
+                        scheduler.process_audio_bridges(data.len() / channels);
 
                         // 3. Process the native effects chain (for standalone native rendering).
                         // Scratch is fixed-size and captured by the callback, so no heap
