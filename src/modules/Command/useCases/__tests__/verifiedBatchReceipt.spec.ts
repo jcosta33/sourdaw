@@ -18,6 +18,8 @@ type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 type SetTrackPanAction = Extract<AppAction, { type: 'setTrackPan' }>;
 type RenderProjectSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
 type AddMarkerAction = Extract<AppAction, { type: 'addMarker' }>;
+type RemoveMarkerAction = Extract<AppAction, { type: 'removeMarker' }>;
+type RemoveRenderedProjectSectionsAction = Extract<AppAction, { type: 'removeRenderedProjectSections' }>;
 
 const GAIN_COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 const PAN_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
@@ -31,6 +33,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
+    agentProjectRepairStateStore: { value: null },
     clearSemanticContext: mocks.clearSemanticContext,
     setSemanticContext: mocks.setSemanticContext,
 }));
@@ -55,9 +58,11 @@ function createHandler<Action extends AppAction>(input: {
     validate?: ActionHandler<Action>['validate'];
 }): ActionHandler<Action> {
     return {
+        canReapplyAfterDivergence: () => true,
         execute: input.execute,
         describe: input.describe,
         isNoop: input.isNoop,
+        requiresAbortCompensation: false,
         validate: input.validate ?? (() => true),
         undoable: true,
     };
@@ -198,6 +203,14 @@ describe('verified batch receipt', () => {
                         payload: { sectionIds: ['section-verse'], jobs },
                     },
                 }),
+            }),
+            removeMarker: createHandler<RemoveMarkerAction>({
+                execute: () => markerStorage.set({ ids: [] }),
+                describe: () => ({ label: 'Remove render marker', inverseAction: markerAction }),
+            }),
+            removeRenderedProjectSections: createHandler<RemoveRenderedProjectSectionsAction>({
+                execute: () => renderedStorage.set({ jobIds: [] }),
+                describe: () => ({ label: 'Remove rendered Verse', inverseAction: renderAction }),
             }),
         });
         commandBatchPreflightPort.setProvider(() => ({
