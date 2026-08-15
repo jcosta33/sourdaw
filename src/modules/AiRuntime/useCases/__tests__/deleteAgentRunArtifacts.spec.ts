@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { deleteAgentRunArtifacts } from '../deleteAgentRunArtifacts';
 
 describe('deleteAgentRunArtifacts', () => {
@@ -9,7 +10,7 @@ describe('deleteAgentRunArtifacts', () => {
         agentRunLifecycle.clear();
     });
 
-    it('deletes derived artifacts without deleting the run receipt, plan, lease, usage, or committed evidence', () => {
+    it('deletes only owner-cleaned temporary resources while preserving durable run evidence', async () => {
         agentRunLifecycle.create({
             runId: 'run-artifacts',
             request: 'Render then analyze the chorus.',
@@ -75,6 +76,12 @@ describe('deleteAgentRunArtifacts', () => {
             kind: 'render',
             cleanupOwner: 'render-worker',
         });
+        agentRunCancellation.registerTemporaryAssetCleanup({
+            runId: 'run-artifacts',
+            assetId: 'render-preview.wav',
+            cleanupOwner: 'render-worker',
+            cleanup: () => undefined,
+        });
         expect(
             agentRunWorkLease.claim({
                 runId: 'run-artifacts',
@@ -89,13 +96,73 @@ describe('deleteAgentRunArtifacts', () => {
         ).toBe('claimed');
         const before = agentRunLifecycle.get('run-artifacts');
 
-        deleteAgentRunArtifacts('run-artifacts');
+        await expect(deleteAgentRunArtifacts('run-artifacts')).resolves.toEqual({
+            status: 'completed',
+            deletedAssetIds: ['render-preview.wav'],
+            failedAssetIds: [],
+        });
 
         const after = agentRunLifecycle.get('run-artifacts');
-        expect(after).toMatchObject({ renders: [], analyses: [], temporaryAssets: [] });
+        expect(after).toMatchObject({ temporaryAssets: [] });
+        expect(after?.renders).toEqual(before?.renders);
+        expect(after?.analyses).toEqual(before?.analyses);
         expect(after?.plan).toEqual(before?.plan);
         expect(after?.workLeases).toEqual(before?.workLeases);
         expect(after?.providerUsage).toEqual(before?.providerUsage);
         expect(after?.committedWork).toEqual(before?.committedWork);
+    });
+
+    it('retains failed and unowned resources for retry while deleting successful resources', async () => {
+        agentRunLifecycle.create({
+            runId: 'run-partial',
+            request: 'Clean previews.',
+            mode: 'plan',
+            createdRevision: 'r1',
+        });
+        for (const assetId of ['success.wav', 'retry.wav', 'unowned.wav']) {
+            agentRunLifecycle.registerTemporaryAsset({
+                runId: 'run-partial',
+                assetId,
+                kind: 'render',
+                cleanupOwner: `${assetId}-owner`,
+            });
+        }
+        agentRunCancellation.registerTemporaryAssetCleanup({
+            runId: 'run-partial',
+            assetId: 'success.wav',
+            cleanupOwner: 'success.wav-owner',
+            cleanup: () => undefined,
+        });
+        let shouldFail = true;
+        agentRunCancellation.registerTemporaryAssetCleanup({
+            runId: 'run-partial',
+            assetId: 'retry.wav',
+            cleanupOwner: 'retry.wav-owner',
+            cleanup: () => {
+                if (shouldFail) {
+                    throw new Error('disk busy');
+                }
+            },
+        });
+
+        await expect(deleteAgentRunArtifacts('run-partial')).resolves.toEqual({
+            status: 'partial',
+            deletedAssetIds: ['success.wav'],
+            failedAssetIds: ['retry.wav', 'unowned.wav'],
+        });
+        expect(agentRunLifecycle.get('run-partial')?.temporaryAssets.map((asset) => asset.assetId)).toEqual([
+            'retry.wav',
+            'unowned.wav',
+        ]);
+
+        shouldFail = false;
+        await expect(deleteAgentRunArtifacts('run-partial')).resolves.toEqual({
+            status: 'partial',
+            deletedAssetIds: ['retry.wav'],
+            failedAssetIds: ['unowned.wav'],
+        });
+        expect(agentRunLifecycle.get('run-partial')?.temporaryAssets.map((asset) => asset.assetId)).toEqual([
+            'unowned.wav',
+        ]);
     });
 });

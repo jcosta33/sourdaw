@@ -457,6 +457,32 @@ function releaseAgentRunTemporaryAsset(input: {
     });
 }
 
+function prepareAgentRunTemporaryAssetCleanup(input: {
+    runId: string;
+    assetId: string;
+    cleanupOwner: string;
+    preparedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.preparedAt ?? Date.now(), (run) => {
+        const asset = run.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
+        if (!asset) {
+            throw new Error(`Unknown temporary asset: ${input.assetId}`);
+        }
+        if (asset.cleanupOwner !== input.cleanupOwner) {
+            throw new Error(`Temporary asset cleanup owner changed: ${input.assetId}`);
+        }
+        if (asset.status === 'released') {
+            return run;
+        }
+        return {
+            ...run,
+            temporaryAssets: run.temporaryAssets.map((candidate) =>
+                candidate.assetId === input.assetId ? { ...candidate, status: 'cleanup-pending' } : candidate
+            ),
+        };
+    });
+}
+
 function requireAgentRunManualResume(input: {
     runId: string;
     reason: string;
@@ -546,6 +572,7 @@ export const agentRunLifecycle = {
     recordPlan: recordAgentRunPlan,
     recordProviderUsage: recordAgentRunProviderUsage,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
+    prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
     requireManualResume: requireAgentRunManualResume,
     transitionPhase: transitionAgentRunPhase,
