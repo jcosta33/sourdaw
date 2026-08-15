@@ -1,0 +1,34 @@
+src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts
+  s_a40848e8f8cca9::t_20634ac2585655 93-98
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts
+  s_a40848e8f8cca9::t_20634ac2585655 130-132
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_a40848e8f8cca9::t_132fdaf9235d72 236-256,303-308,313
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_132fdaf9235d72 1264-1321
+src/modules/AiRuntime/useCases/aiRuntimeQueries/__tests__/modelTextQueries.spec.ts
+  s_a40848e8f8cca9::t_132fdaf9235d72 126-133
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_20634ac2585655 1169,1171-1185,1187-1196
+  s_a40848e8f8cca9::t_e4521cf04cace2 1145,1151-1153,1170,1186,1224
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  s_a40848e8f8cca9::t_20634ac2585655 1,51-58,60,64,73,87-88,175
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestOpenAiCompatibleProvider.spec.ts
+  s_a40848e8f8cca9::t_132fdaf9235d72 1-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "194d37b98ee639c821387f9cc9e974f2c8dcc5fe",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
