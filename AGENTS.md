@@ -16,8 +16,9 @@ would like, against the live code, primary sources, standards, and established D
 Engineering effort, schedule, patch breadth, delivery mechanics, and technical risk never qualify
 for escalation. Missing access is a blocker, not a question.
 
-Encountered defects are never out of scope: existing rot measurably causes new rot, including in
-delegated agents that imitate the code around them. Fix what you find, in its own lane. File an
+Encountered defects are never out of scope: existing rot measurably causes new rot, and delegated
+agents that imitate the surrounding code can be expected to amplify it. Fix what you find, in its
+own lane. File an
 issue only for genuinely separate, sizeable work, and write it so a cold session can execute it.
 "Worth noting" is not an outcome — a thing worth noting is a thing worth fixing.
 
