@@ -1,0 +1,16 @@
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  h_1228e573df1f42 375-398
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  h_1228e573df1f42 303-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e1a960a3d6e25092ff42bd621675a50d4c393da6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
