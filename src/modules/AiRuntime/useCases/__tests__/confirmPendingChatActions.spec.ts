@@ -262,7 +262,11 @@ describe('confirmPendingChatActions transaction admission', () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
-        const execute = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
+        let observedSignal: AbortSignal | undefined;
+        const execute = vi.fn((action: SetTempoAction, context?: { signal?: AbortSignal }) => {
+            observedSignal = context?.signal;
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
         registerHandlerMap({
             setTempo: {
                 canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
@@ -313,6 +317,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             status: 'executed',
         });
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(observedSignal).toBeInstanceOf(AbortSignal);
+        expect(observedSignal?.aborted).toBe(false);
 
         proposePendingActionConfirmation({
             id: 'confirmation-batch-retry',

@@ -641,6 +641,7 @@ export async function confirmPendingChatActions(
     try {
         const executionOptions = {
             ...group,
+            signal: aborter.signal,
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
