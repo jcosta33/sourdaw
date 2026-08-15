@@ -1,0 +1,14 @@
+tests/e2e/mixerBusMasterChain.spec.ts
+  h_1228e573df1f42 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8b81df8d95b6a9d98568329fd386083baf1761c8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
