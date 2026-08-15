@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_4f8983346f9a2b 133-135,137-148,174,181
+  s_a40848e8f8cca9::t_1f90a510b0bb05 136
+  s_a40848e8f8cca9::t_db94839736e972 149-173,175-180,182-189
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_faec4f5b8ec731 41-54,427-440
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_faec4f5b8ec731 42-46,468-470
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_faec4f5b8ec731 48,186,315-322,900-902,906-908
+  s_a40848e8f8cca9::t_db94839736e972 903-905
+  s_a40848e8f8cca9::t_a96e2a1d73f06a 198
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_e89dd169197923 399
+  s_a40848e8f8cca9::t_faec4f5b8ec731 400-408
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_a4fd4c6be8521e 20,1317-1337,1348-1354
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_1f90a510b0bb05 610
+  s_a40848e8f8cca9::t_4f8983346f9a2b 604-609,611-631
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "33f4a2520c0c4fd125ba07c574e0ebf0f3a8cbda",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
