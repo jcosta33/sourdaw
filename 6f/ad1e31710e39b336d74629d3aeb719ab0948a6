@@ -1,0 +1,53 @@
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_6e00cd66b72ac8 125
+  s_a40848e8f8cca9::t_2cb4cc55e714c4 110-115,372-390
+  s_a40848e8f8cca9::t_61e66e6fc8bcff 1-5,7,9-99,101-102,104-109,116-118,120-121,123-124,392-393
+  s_a40848e8f8cca9::t_b68b6cdd6232ff 126-128,130-185,232-319,321-355
+  s_a40848e8f8cca9::t_439df102fa4498 186-231,356-371,391
+  s_a40848e8f8cca9::t_bc9a26545f5b5a 8,129
+  s_a40848e8f8cca9::t_93a8ab621b12ce 320
+  s_a40848e8f8cca9::t_4261813eba0a79 100,103,122
+  s_a40848e8f8cca9::t_6f4889b4b5aa82 6,119
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_bc9a26545f5b5a 10
+  s_a40848e8f8cca9::t_5da94609c35f0b 264-266,268-270,282-284,289-294
+src/modules/AiRuntime/models/ApplicationOwnedTool.ts
+  s_a40848e8f8cca9::t_bc9a26545f5b5a 1
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_0b7a07a8c532d0 441-444,446-450
+  s_a40848e8f8cca9::t_bc9a26545f5b5a 15,445
+  s_a40848e8f8cca9::t_3c9f0f6e90c5b2 451-453
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_7c807a9b1ddf3b 185-188,190-192,194-211,213-223
+  s_a40848e8f8cca9::t_4c45f68eafe1ce 212
+  s_a40848e8f8cca9::t_bc9a26545f5b5a 42,189
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_a31edcae5ddd89 5
+  s_a40848e8f8cca9::t_bc9a26545f5b5a 3,345-357,396-397,400-401
+  s_a40848e8f8cca9::t_e128c77f979005 222-225,310,318-320,358-382,384-390,392-394,415-420,433-435,525-533
+  s_a40848e8f8cca9::t_c2fe0980099248 1-2,4,6-18,23-67,69,72-221,226-230,232-278,280-304,306-309,311-315,317,321-344,391,395,398-399,402-414,421-432,436-454,476-492,499,508-509,511-524,534-541
+  s_a40848e8f8cca9::t_93a8ab621b12ce 456-472,493-498,500-507,510
+  s_a40848e8f8cca9::t_b1c4e6c22e4e56 231,383
+  s_a40848e8f8cca9::t_4c45f68eafe1ce 70-71,473-475
+  s_a40848e8f8cca9::t_4261813eba0a79 19-22,68,279,316,455
+  s_a40848e8f8cca9::t_2b6928ead7a00c 305
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_994d072962c1ca 322-323
+  s_a40848e8f8cca9::t_4c45f68eafe1ce 457-458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6fad1e31710e39b336d74629d3aeb719ab0948a6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
