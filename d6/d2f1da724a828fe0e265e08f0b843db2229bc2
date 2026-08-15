@@ -1,0 +1,14 @@
+src-tauri/src/commands/native_llm.rs
+  h_1228e573df1f42 775-779
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d6d2f1da724a828fe0e265e08f0b843db2229bc2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
