@@ -1,0 +1,70 @@
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_a40848e8f8cca9::t_c4abc1f961d7ed 73,162-164
+  s_a40848e8f8cca9::t_b5a788d7061bf7 54,57-58,62,65-66,71-72,74-84,95,158-161,165-167
+  s_a40848e8f8cca9::t_015d518ef8153e 168-169
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_d43dc5b49d40ea 12
+  s_a40848e8f8cca9::t_68ed92cca0d83a 251-253,266,381-382,390-393
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_a40848e8f8cca9::t_18ffc1e047cee0 282-287,311-316
+  s_a40848e8f8cca9::t_09abb9f5486a7f 217-218,221,225,232-235,246,251-252,256,260,270
+  s_a40848e8f8cca9::t_be7ba16a2c62f2 362-363,366,373,382,390-391,395,399,409,418-419,422,429,438
+  s_a40848e8f8cca9::t_b5a788d7061bf7 111,125-126,128
+  s_a40848e8f8cca9::t_ef2eb9de991d4a 280-281,291,309-310,320,341-345,348
+  s_a40848e8f8cca9::t_9aec08e259c2db 160,163-179
+src/modules/AiRuntime/useCases/getAgentExecutionModeFailure.ts
+  s_a40848e8f8cca9::t_10d06e9ae3b39a 2
+  s_a40848e8f8cca9::t_d43dc5b49d40ea 1
+src/modules/AiRuntime/useCases/getAgentExecutionModeAuthority.ts
+  s_a40848e8f8cca9::t_d43dc5b49d40ea 1
+src/modules/AiRuntime/presentations/components/ChatComposer.tsx
+  s_a40848e8f8cca9::t_4b078197502e5d 78
+  s_a40848e8f8cca9::t_68ed92cca0d83a 9,11-12,20,27-28,36,44,66,68-77,79-82
+  s_a40848e8f8cca9::t_d43dc5b49d40ea 8
+src/modules/AiRuntime/presentations/components/__tests__/ChatComposerBranches.spec.tsx
+  s_a40848e8f8cca9::t_68ed92cca0d83a 17-18,26,48-49,53-54,132-139,149,151
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_55644b2575874e 71-74,144-146,149,193,201
+  s_a40848e8f8cca9::t_b9a107256ce794 89-92
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_1d5d61cf13a439 250-263
+  s_a40848e8f8cca9::t_55644b2575874e 243,248-249,264
+  s_a40848e8f8cca9::t_553a7fa9fa8ca7 244-247
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_56322e2fdee412 616
+  s_a40848e8f8cca9::t_b9a107256ce794 70,104,141,170,207,216,293,301,309,318,394,571
+  s_a40848e8f8cca9::t_55644b2575874e 58-66
+  s_a40848e8f8cca9::t_10d06e9ae3b39a 7
+  s_a40848e8f8cca9::t_18ffc1e047cee0 230-232,258-260
+  s_a40848e8f8cca9::t_f4b7f96ebe8b0c 254,283
+src/modules/AiRuntime/useCases/__tests__/agentExecutionModes.spec.ts
+  s_a40848e8f8cca9::t_d43dc5b49d40ea 3
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  s_a40848e8f8cca9::t_d43dc5b49d40ea 4
+  s_a40848e8f8cca9::t_10d06e9ae3b39a 5
+src/modules/AiRuntime/useCases/resolveAgentExecutionMode.ts
+  s_a40848e8f8cca9::t_d43dc5b49d40ea 1
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_b5a788d7061bf7 624-626
+src/modules/AiRuntime/presentations/components/__tests__/ChatComposer.spec.tsx
+  s_a40848e8f8cca9::t_18ffc1e047cee0 3
+  s_a40848e8f8cca9::t_68ed92cca0d83a 13-14,22,29
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_33ef929f3d7b99 534,596-616,618,639,697
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bd618a5a79a2f1c4d5286a1f82a3a438b7313b49",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
