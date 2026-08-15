@@ -1,5 +1,7 @@
+import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
+import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
@@ -48,7 +50,17 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         }
         const guard = pendingDuplicateGuards.get(action);
         if (guard) {
-            guard.entityJson = JSON.stringify(track);
+            // Finalize from the committed store track: the use case's return
+            // value predates its own step that copies devices, sends, and
+            // clips, and isGeneratedMidiStateCurrent compares the guard
+            // against the store shape. Satellite state copied from the source
+            // (envelopes, warp, clip automation) makes the comparison fail —
+            // undo then refuses with a conflict instead of corrupting.
+            const committed = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
+            if (committed) {
+                guard.entityJson = JSON.stringify(committed);
+                guard.midiByClipIdJson = serializeMidiStateForClips(collectTrackClipIds(committed));
+            }
         }
         return {
             status: 'written',

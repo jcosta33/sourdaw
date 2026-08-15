@@ -37,17 +37,24 @@ describe('handleDuplicateTrack', () => {
         }
         const createdDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio' };
         mocks.duplicateTrack.mockReturnValue(createdDuplicate);
+        // The guard finalizes from the committed store track — the use case's
+        // return value predates its own copy steps.
+        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', clips: [] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],
+        });
 
         const result = await handleDuplicateTrack.execute(action);
 
-        // Execute finalizes the guard embedded in the inverse: an
-        // unfinalized entityJson would make undo of a duplicate conflict-fail
-        // against isGeneratedMidiStateCurrent.
+        // Execute finalizes the guard embedded in the inverse from the
+        // committed store shape; an unfinalized or stale entityJson would
+        // make undo of a duplicate conflict-fail against
+        // isGeneratedMidiStateCurrent.
         const inverse = described?.inverseAction;
         if (!inverse || inverse.type !== 'discardCreatedTrack') {
             throw new Error('Expected a discardCreatedTrack inverse');
         }
-        expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(createdDuplicate));
+        expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(committedDuplicate));
 
         expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1', {
             select: false,

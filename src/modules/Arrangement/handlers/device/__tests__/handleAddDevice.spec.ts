@@ -5,6 +5,7 @@ import { handleAddDevice } from '../handleAddDevice';
 const mocks = vi.hoisted(() => ({
     abortAddedDeviceRuntime: vi.fn(),
     addDevice: vi.fn(),
+    getTrackStoreState: vi.fn(),
 }));
 
 vi.mock('../../../useCases/device/abortAddedDeviceRuntime', () => ({
@@ -15,9 +16,36 @@ vi.mock('../../../useCases/device/addDevice', () => ({
     addDevice: mocks.addDevice,
 }));
 
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
 describe('handleAddDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    it('finalizes the bare chain from the actual post-add chain at execute', () => {
+        // The store as it stands after the add — including any chain mutations
+        // earlier batch actions made — is what undo's validation compares
+        // against, so that is what the inverse must carry.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'device-existing' }] }],
+        });
+        const action = { type: 'addDevice', payload: { trackId: 't1', deviceType: 'builtin-eq' } };
+        const desc = handleAddDevice.describe(action as never);
+        mocks.addDevice.mockReturnValue({ id: 'device-new' });
+
+        const result = handleAddDevice.execute(action as never);
+
+        expect(result).toEqual({ status: 'written' });
+        const inverse = desc?.inverseAction;
+        if (!inverse || inverse.type !== 'removeDevice') {
+            throw new Error('Expected a removeDevice inverse');
+        }
+        // Finalized from the store chain, not from the describe-time
+        // reserved id — proving the placeholder was filled at execute.
+        expect(inverse.payload.expectedDeviceIds).toEqual(['device-existing']);
     });
 
     it('executes addDevice with the provided payload', () => {
@@ -58,11 +86,12 @@ describe('handleAddDevice', () => {
             type: 'removeDevice',
             payload: {
                 deviceId: expect.stringMatching(/^device-/),
-                // A bare add appends, so the guarded chain is the current
-                // chain with the reserved id appended — the expecteds keep
-                // the inverse reapply-safe inside atomic batches.
+                // A bare add has no pre-declared chain: describe embeds an
+                // empty placeholder so the compensation is guarded for atomic
+                // batches, and execute finalizes it from the actual post-add
+                // chain (shared by reference with the inverse payload).
                 expectedTrackId: 't1',
-                expectedDeviceIds: [expect.stringMatching(/^device-/)],
+                expectedDeviceIds: [],
             },
         });
     });
