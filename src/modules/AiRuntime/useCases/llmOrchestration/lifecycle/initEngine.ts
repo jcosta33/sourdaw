@@ -13,7 +13,11 @@ import { getBackendChain } from '../backendResolution/getBackendChain';
  * Initialize the selected backend plan. Explicit preferences contain one
  * backend; automatic mode may contain ordered fallbacks.
  */
-export async function initEngine(modelId?: string): Promise<AiBackend> {
+type InitEngineOptions = {
+    webLlmDownloadConsent?: boolean;
+};
+
+export async function initEngine(modelId?: string, options: InitEngineOptions = {}): Promise<AiBackend> {
     const controller = engineInitializationState.begin();
     const backends = getBackendChain();
 
@@ -40,7 +44,10 @@ export async function initEngine(modelId?: string): Promise<AiBackend> {
                 }
 
                 if (backend === 'webllm') {
-                    await initWebLlmEngine(modelId, { signal: controller.signal });
+                    await initWebLlmEngine(modelId, {
+                        downloadConsent: options.webLlmDownloadConsent,
+                        signal: controller.signal,
+                    });
                     if (controller.signal.aborted) {
                         return 'none';
                     }

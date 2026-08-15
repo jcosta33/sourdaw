@@ -1,5 +1,7 @@
+import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
+import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
@@ -15,6 +17,11 @@ function ensureTargetTrackId(action: DuplicateTrackAction): string {
     action.payload.targetTrackId = targetTrackId;
     return targetTrackId;
 }
+
+// Guards for duplicates this handler creates, keyed by action so the
+// describe-time inverse is finalized with the created entity once execute
+// lands — the handleAddTrack/handleCreateBus pattern.
+const pendingDuplicateGuards = new WeakMap<object, { entityJson: string; midiByClipIdJson: string }>();
 
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
     materializeCommandArguments: (action) => {
@@ -40,6 +47,20 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         const track = duplicateTrack(action.payload.trackId, options);
         if (!track) {
             return { status: 'conflict' };
+        }
+        const guard = pendingDuplicateGuards.get(action);
+        if (guard) {
+            // Finalize from the committed store track: the use case's return
+            // value predates its own step that copies devices, sends, and
+            // clips, and isGeneratedMidiStateCurrent compares the guard
+            // against the store shape. Satellite state copied from the source
+            // (envelopes, warp, clip automation) makes the comparison fail —
+            // undo then refuses with a conflict instead of corrupting.
+            const committed = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
+            if (committed) {
+                guard.entityJson = JSON.stringify(committed);
+                guard.midiByClipIdJson = serializeMidiStateForClips(collectTrackClipIds(committed));
+            }
         }
         return {
             status: 'written',
@@ -68,12 +89,24 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         const source = tracks?.find((track) => track.id === action.payload.trackId);
         const sourceIsDuplicable = source ? duplicableTrackKinds.has(source.kind) : false;
         const targetExists = tracks?.some((track) => track.id === targetTrackId) ?? true;
+        if (!sourceIsDuplicable || targetExists) {
+            return { label: 'Duplicate track', inverseAction: null };
+        }
+        // The guard makes the discard inverse reapply-safe inside atomic
+        // batches (discardCreatedTrack's canReapplyAfterDivergence requires
+        // it) — same pattern as handleAddTrack. Execute finalizes entityJson
+        // once the duplicate lands.
+        const generatedMidiStateGuard = {
+            entityJson: '',
+            midiByClipIdJson: JSON.stringify({}),
+        };
+        pendingDuplicateGuards.set(action, generatedMidiStateGuard);
         return {
             label: 'Duplicate track',
-            inverseAction:
-                sourceIsDuplicable && !targetExists
-                    ? { type: 'discardCreatedTrack', payload: { trackId: targetTrackId } }
-                    : null,
+            inverseAction: {
+                type: 'discardCreatedTrack',
+                payload: { trackId: targetTrackId, generatedMidiStateGuard },
+            },
         };
     },
     isNoop: (action) => {

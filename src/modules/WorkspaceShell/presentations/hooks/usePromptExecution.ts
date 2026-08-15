@@ -429,7 +429,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     const handleLoadModel = (modelId?: string): void => {
         if (isLlmAvailable()) {
-            void initEngine(modelId);
+            void initEngine(modelId, { webLlmDownloadConsent: true });
         }
     };
 

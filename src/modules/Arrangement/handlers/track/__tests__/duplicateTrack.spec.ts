@@ -30,14 +30,31 @@ describe('handleDuplicateTrack', () => {
             type: 'duplicateTrack',
             payload: { trackId: 't1', select: false },
         };
-        handleDuplicateTrack.describe(action);
+        const described = handleDuplicateTrack.describe(action);
         const targetTrackId = action.payload.targetTrackId;
         if (!targetTrackId) {
             throw new Error('Expected describe to prepare a destination track id');
         }
-        mocks.duplicateTrack.mockReturnValue({ id: targetTrackId, name: 'Copy', kind: 'audio' });
+        const createdDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio' };
+        mocks.duplicateTrack.mockReturnValue(createdDuplicate);
+        // The guard finalizes from the committed store track — the use case's
+        // return value predates its own copy steps.
+        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', clips: [] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],
+        });
 
         const result = await handleDuplicateTrack.execute(action);
+
+        // Execute finalizes the guard embedded in the inverse from the
+        // committed store shape; an unfinalized or stale entityJson would
+        // make undo of a duplicate conflict-fail against
+        // isGeneratedMidiStateCurrent.
+        const inverse = described?.inverseAction;
+        if (!inverse || inverse.type !== 'discardCreatedTrack') {
+            throw new Error('Expected a discardCreatedTrack inverse');
+        }
+        expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(committedDuplicate));
 
         expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1', {
             select: false,
@@ -70,7 +87,16 @@ describe('handleDuplicateTrack', () => {
         expect(desc.label).toBe('Duplicate track');
         expect(desc.inverseAction).toEqual({
             type: 'discardCreatedTrack',
-            payload: { trackId: targetTrackId },
+            payload: {
+                trackId: targetTrackId,
+                // The guard keeps the discard inverse reapply-safe inside
+                // atomic batches; execute finalizes entityJson once the
+                // duplicate lands.
+                generatedMidiStateGuard: {
+                    entityJson: '',
+                    midiByClipIdJson: '{}',
+                },
+            },
         });
         expect(targetTrackId).toMatch(/^track-dup-/);
     });
