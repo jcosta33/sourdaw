@@ -1,0 +1,16 @@
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  h_1228e573df1f42 209-213,219-221
+src/modules/Yeast/presentations/views/__tests__/YeastPanelGrooveAssignment.spec.tsx
+  h_1228e573df1f42 95-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f47e0c435bed0629b32961582eef129beb35a090",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
