@@ -37,9 +37,12 @@ async function drawNotes(page: Page): Promise<void> {
         await page.waitForTimeout(500);
         const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
         if (await pianoRoll.isVisible().catch(() => false)) {
-            await pianoRoll.dblclick({ position: { x: 80, y: 120 } });
+            // A single click stamps a note (mousedown stashes a pending
+            // stamp; mouse-up commits it). A DOUBLE click would stamp and
+            // then hit-test-remove the fresh note — net zero notes.
+            await pianoRoll.click({ position: { x: 80, y: 120 } });
             await page.waitForTimeout(200);
-            await pianoRoll.dblclick({ position: { x: 160, y: 140 } });
+            await pianoRoll.click({ position: { x: 160, y: 140 } });
             await page.waitForTimeout(300);
             return;
         }
