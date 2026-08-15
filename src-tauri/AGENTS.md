@@ -7,7 +7,7 @@ Tauri 2 desktop shell (lib `sourdaw_lib`; `src/main.rs` → `sourdaw_lib::run()`
 - Every command is registered in the single `tauri::generate_handler!` in `src/lib.rs` and implemented under `src/commands/`, one file per domain. Managed state is registered in `src/lib.rs` alongside it.
 - Naming: snake_case; multi-command domains use a prefix (`collab_*`, `crumbs_*`, `link_*`).
 - Plugin hosting is CLAP only — VST3/AU are not advertised or loadable. Ableton Link is an unsupported capability surface; no native Link library is linked.
-- IPC payload types are hand-maintained on both sides — no binding generator runs. A command signature change must update `src/utils/tauriBridge.ts` types in the same change.
+- IPC payload types are hand-maintained on both sides — no binding generator runs. A command signature change must update the hand-written mirror types in the owning module's `repositories/` bridge (e.g. `PluginHost/repositories/pluginBridge/`) in the same change.
 - Frontend reaches commands **only** via `src/utils/tauriBridge.ts` from module-root `repositories/` (enforced by `tauri-ipc-only-in-repositories`). Bridge folders typically mirror command files (e.g. `PluginHost/repositories/pluginBridge/` ↔ `commands/plugins.rs`), but not every command file has a bridge.
 
 ## Real-time invariants (hard)
