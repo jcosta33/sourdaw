@@ -8,7 +8,11 @@ import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCalling
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
-import { type ModelProviderName, type ModelProviderSession } from '../../models/ModelProviderProtocol';
+import {
+    type ModelProviderName,
+    type ModelProviderResult,
+    type ModelProviderSession,
+} from '../../models/ModelProviderProtocol';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
@@ -213,7 +217,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         userMessage: string,
         toolSchemas?: readonly ToolSchema[],
         signal?: AbortSignal,
-        toolSelectionPrompt: string = userMessage
+        toolSelectionPrompt: string = userMessage,
+        onProviderResult?: (result: ModelProviderResult) => void
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain();
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
@@ -378,6 +383,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     }
                     const normalizedResult = providerSession.finish({ reason: 'stop' });
                     providerSessionSettled = true;
+                    onProviderResult?.(normalizedResult);
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
@@ -389,7 +395,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         })),
                     };
                 } else {
-                    providerSession.finish({
+                    const rejectedResult = providerSession.finish({
                         reason: 'error',
                         failure: {
                             code: 'tool-planning-rejected',
@@ -398,6 +404,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         },
                     });
                     providerSessionSettled = true;
+                    onProviderResult?.(rejectedResult);
                     logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
                 }
 
@@ -407,10 +414,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
                 if (providerSession !== null && !providerSessionSettled) {
+                    let failedResult: ModelProviderResult;
                     if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
-                        providerSession.finish({ reason: 'cancelled' });
+                        failedResult = providerSession.finish({ reason: 'cancelled' });
                     } else if (isTerminalModelRejection) {
-                        providerSession.finish({
+                        failedResult = providerSession.finish({
                             reason: 'error',
                             failure: {
                                 code: 'tool-planning-rejected',
@@ -419,7 +427,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     } else {
-                        providerSession.finish({
+                        failedResult = providerSession.finish({
                             reason: 'error',
                             failure: {
                                 code: 'provider-attempt-failed',
@@ -428,6 +436,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     }
+                    onProviderResult?.(failedResult);
                 }
                 if (isAiRuntimeConfigurationChangedError(error)) {
                     llmStatusStore.set({ state: 'idle' });

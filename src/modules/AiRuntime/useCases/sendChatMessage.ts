@@ -170,6 +170,10 @@ function recordModelProviderUsage(runId: string, result: ModelProviderResult): v
             inputTokens: result.usage.inputTokens,
             outputTokens: result.usage.outputTokens,
             provenance: result.usage.provenance,
+            correlationId: result.correlationId,
+            status: result.status,
+            retryable: result.failure?.retryable ?? null,
+            partialOutputDisposition: result.partialOutputDisposition,
         },
     });
 }
@@ -231,6 +235,7 @@ export async function sendChatMessage(
     if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
+        let promptProviderResultRecorded = false;
         setActiveAborter(aborter);
         const releaseProviderCancellation = agentRunCancellation.bindAbortController({
             runId,
@@ -243,6 +248,10 @@ export async function sendChatMessage(
             const { context, result, projectRevision } = await planPromptActions({
                 prompt: userText,
                 signal: aborter.signal,
+                onProviderResult: (providerResult) => {
+                    recordModelProviderUsage(runId, providerResult);
+                    promptProviderResultRecorded = true;
+                },
             });
             agentRunWorkLease.settle({
                 runId,
@@ -317,7 +326,9 @@ export async function sendChatMessage(
                         },
                         budgets: { limits: {}, consumed: {} },
                     });
-                    recordUnavailableProviderUsage(runId, backend);
+                    if (!promptProviderResultRecorded) {
+                        recordUnavailableProviderUsage(runId, backend);
+                    }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     createStemImportConfirmationResourceLease(result.actions)?.release();
                     updateChatMessage(assistantMsgId, {
@@ -387,7 +398,9 @@ export async function sendChatMessage(
                         receiptIdentity: null,
                     },
                 });
-                recordUnavailableProviderUsage(runId, backend);
+                if (!promptProviderResultRecorded) {
+                    recordUnavailableProviderUsage(runId, backend);
+                }
 
                 if (interactionMode === 'preview') {
                     const previewWorkId = `preview:${parsedCommandBatch.envelope.batchId}`;
@@ -785,7 +798,9 @@ export async function sendChatMessage(
                     });
                 }
             } else if (result.rejectionReason) {
-                recordUnavailableProviderUsage(runId, backend);
+                if (!promptProviderResultRecorded) {
+                    recordUnavailableProviderUsage(runId, backend);
+                }
                 agentRunLifecycle.recordError({
                     runId,
                     error: {
@@ -811,7 +826,9 @@ export async function sendChatMessage(
                     error: result.rejectionReason,
                 });
             } else {
-                recordUnavailableProviderUsage(runId, backend);
+                if (!promptProviderResultRecorded) {
+                    recordUnavailableProviderUsage(runId, backend);
+                }
                 agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
@@ -1174,21 +1191,9 @@ export async function sendChatMessage(
             }
             return 'An unknown error occurred during generation.';
         })();
-        if (isAiRuntimeConfigurationChangedError(error)) {
-            await agentRunCancellation.cancel({ runId, reason: errorMessage });
-            trySettleAgentRunWorkLease(providerLease, 'cancelled');
-            const parsed = thinkParser.snapshot();
-            updateChatMessage(assistantMsgId, {
-                isStreaming: false,
-                content: parsed.content,
-                reasoning: parsed.reasoning,
-                error: 'Hosted AI configuration changed; this response was cancelled.',
-            });
-            llmStatusStore.set({ state: 'idle' });
-            return undefined;
-        }
-
+        const configurationChanged = isAiRuntimeConfigurationChangedError(error);
         const wasAborted =
+            configurationChanged ||
             aborter.signal.aborted ||
             (error instanceof Error && error.name === 'AbortError') ||
             errorMessage === 'AbortedByUser' ||
@@ -1210,6 +1215,19 @@ export async function sendChatMessage(
         if (providerResult && !providerUsageRecorded) {
             recordModelProviderUsage(runId, providerResult);
             providerUsageRecorded = true;
+        }
+        if (configurationChanged) {
+            await agentRunCancellation.cancel({ runId, reason: errorMessage });
+            trySettleAgentRunWorkLease(providerLease, 'cancelled');
+            const parsed = thinkParser.snapshot();
+            updateChatMessage(assistantMsgId, {
+                isStreaming: false,
+                content: parsed.content,
+                reasoning: parsed.reasoning,
+                error: 'Hosted AI configuration changed; this response was cancelled.',
+            });
+            llmStatusStore.set({ state: 'idle' });
+            return undefined;
         }
         if (!wasAborted) {
             agentRunWorkLease.settle({

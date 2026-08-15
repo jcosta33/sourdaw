@@ -169,17 +169,22 @@ function readAnthropicUsageEvent(event: unknown): ModelProviderUsageEvent | null
     }
     const inputTokens = readNonNegativeInteger(usageContainer.input_tokens);
     const outputTokens = readNonNegativeInteger(usageContainer.output_tokens);
+    const cacheCreationInputTokens = readNonNegativeInteger(usageContainer.cache_creation_input_tokens);
+    const cacheReadInputTokens = readNonNegativeInteger(usageContainer.cache_read_input_tokens);
     const cachedInputTokens =
-        (readNonNegativeInteger(usageContainer.cache_creation_input_tokens) ?? 0) +
-        (readNonNegativeInteger(usageContainer.cache_read_input_tokens) ?? 0);
-    if (inputTokens === null && outputTokens === null && cachedInputTokens === 0) {
+        cacheCreationInputTokens === null && cacheReadInputTokens === null
+            ? null
+            : (cacheCreationInputTokens ?? 0) + (cacheReadInputTokens ?? 0);
+    if (inputTokens === null && outputTokens === null && cachedInputTokens === null) {
         return null;
     }
+    const totalInputTokens =
+        inputTokens === null && cachedInputTokens === null ? null : (inputTokens ?? 0) + (cachedInputTokens ?? 0);
     return {
         type: 'usage',
         mode: event.type === 'message_delta' ? 'final' : 'cumulative-snapshot',
         usage: {
-            inputTokens,
+            inputTokens: totalInputTokens,
             outputTokens,
             cachedInputTokens,
             reasoningTokens: null,

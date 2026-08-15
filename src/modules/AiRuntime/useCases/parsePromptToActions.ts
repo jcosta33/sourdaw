@@ -6,6 +6,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
+import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
@@ -104,7 +105,8 @@ export const parsePromptToActions = inject({ logger })(
             context: ProjectContext,
             signal?: AbortSignal,
             projectRevision?: string,
-            stemImportScope?: StemImportPromptScope
+            stemImportScope?: StemImportPromptScope,
+            onProviderResult?: (result: ModelProviderResult) => void
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
 
@@ -203,7 +205,8 @@ export const parsePromptToActions = inject({ logger })(
                         ...getExecutableAppActionToolSchemas(),
                     ],
                     signal,
-                    prompt
+                    prompt,
+                    onProviderResult
                 );
 
                 if (signal?.aborted) {

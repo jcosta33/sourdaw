@@ -185,12 +185,37 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         'versioned-estimate',
         'unavailable',
     ];
+    const correlationId = value.correlationId === undefined ? undefined : readString(value.correlationId);
+    const statuses: NonNullable<AgentRunProviderUsage['status']>[] = [
+        'complete',
+        'partial',
+        'failed',
+        'cancelled',
+        'unavailable',
+    ];
+    const status = value.status === undefined ? undefined : statuses.find((candidate) => candidate === value.status);
+    const retryableIsValid =
+        value.retryable === undefined || value.retryable === null || typeof value.retryable === 'boolean';
+    const retryable = retryableIsValid ? (value.retryable as boolean | null | undefined) : undefined;
+    const partialOutputDispositions: NonNullable<AgentRunProviderUsage['partialOutputDisposition']>[] = [
+        'none',
+        'preserve',
+        'discard',
+    ];
+    const partialOutputDisposition =
+        value.partialOutputDisposition === undefined
+            ? undefined
+            : partialOutputDispositions.find((candidate) => candidate === value.partialOutputDisposition);
     if (
         provider === null ||
         model === undefined ||
         (inputTokens === null && value.inputTokens !== null) ||
         (outputTokens === null && value.outputTokens !== null) ||
-        !provenances.some((provenance) => provenance === value.provenance)
+        !provenances.some((provenance) => provenance === value.provenance) ||
+        correlationId === null ||
+        (value.status !== undefined && status === undefined) ||
+        !retryableIsValid ||
+        (value.partialOutputDisposition !== undefined && partialOutputDisposition === undefined)
     ) {
         return null;
     }
@@ -200,6 +225,10 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         inputTokens,
         outputTokens,
         provenance: value.provenance as AgentRunProviderUsage['provenance'],
+        ...(correlationId === undefined ? {} : { correlationId }),
+        ...(status === undefined ? {} : { status }),
+        ...(retryable === undefined ? {} : { retryable }),
+        ...(partialOutputDisposition === undefined ? {} : { partialOutputDisposition }),
     };
 }
 

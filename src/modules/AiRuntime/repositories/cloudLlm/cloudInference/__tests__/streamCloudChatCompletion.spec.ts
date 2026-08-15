@@ -187,13 +187,13 @@ describe('streamCloudChatCompletion', () => {
         expect(onUsage).toHaveBeenNthCalledWith(1, {
             type: 'usage',
             mode: 'cumulative-snapshot',
-            usage: { inputTokens: 12, outputTokens: 0, cachedInputTokens: 5, reasoningTokens: null },
+            usage: { inputTokens: 17, outputTokens: 0, cachedInputTokens: 5, reasoningTokens: null },
             provenance: 'provider-reported',
         });
         expect(onUsage).toHaveBeenNthCalledWith(2, {
             type: 'usage',
             mode: 'final',
-            usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: 0, reasoningTokens: null },
+            usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
             provenance: 'provider-reported',
         });
     });

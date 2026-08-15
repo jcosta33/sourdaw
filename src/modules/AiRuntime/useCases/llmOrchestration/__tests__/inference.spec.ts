@@ -6,6 +6,7 @@ import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeCon
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { NativeToolCallingProtocolError } from '../../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import {
     createWorkflowCapabilityToolSchema,
@@ -230,9 +231,13 @@ describe('generateToolPlanningOutcome', () => {
         mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
         mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
 
-        await expect(generateToolCalls('sys', 'solo drums')).resolves.toEqual(
-            completePlan([{ name: 'soloTrack', arguments: {} }])
-        );
+        const providerResults: ModelProviderResult[] = [];
+
+        await expect(
+            generateToolCalls('sys', 'solo drums', undefined, undefined, undefined, (result) => {
+                providerResults.push(result);
+            })
+        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: {} }]));
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
@@ -240,6 +245,11 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(
             expect.objectContaining({ state: 'ready', backend: 'webllm' })
         );
+        expect(providerResults).toHaveLength(2);
+        expect(providerResults.map((result) => result.provider)).toEqual(['native', 'webllm']);
+        expect(providerResults.map((result) => result.status)).toEqual(['failed', 'complete']);
+        expect(providerResults[0]?.correlationId).not.toBe(providerResults[1]?.correlationId);
+        expect(providerResults[0]?.failure).toMatchObject({ retryable: true });
     });
 
     it('does not convert a malformed native DTO into a compatible empty plan', async () => {
