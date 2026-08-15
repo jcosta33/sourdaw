@@ -1,0 +1,66 @@
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_a40848e8f8cca9::t_5dc7122042b693 101-103,117-119,121,128-129,131-133,170-172
+  s_a40848e8f8cca9::t_97833eb9bf486d 1,16,19-24,81-83,130
+  s_a40848e8f8cca9::t_36952d96f0f303 120,122-127
+src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts
+  s_a40848e8f8cca9::t_efc7094a22ce35 25-37,41,49,54,74,88,90
+src/modules/AudioAnalysis/handlers/analysis/handleAnalyzeMix.ts
+  s_a40848e8f8cca9::t_efc7094a22ce35 8,15
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_da756ef5913fe2 210-226
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_a40848e8f8cca9::t_4305e5014dc9ba 287
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_fd8daf718523ce 376,386
+src/modules/AudioRendering/handlers/handleRenderProjectSections.ts
+  s_a40848e8f8cca9::t_97833eb9bf486d 61,69
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_a40848e8f8cca9::t_4305e5014dc9ba 9,20-22,31-34
+src/modules/AudioRendering/handlers/__tests__/handleRenderProjectSections.spec.ts
+  s_a40848e8f8cca9::t_7f79bd07b1e6dd 59-63,84,89
+  s_a40848e8f8cca9::t_3975d90c5db82f 64
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_30c7b4373d2693 88
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_4305e5014dc9ba 1042
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_141f79b7752672 4,11-14,30,33,36,43,51,58,65,68,71-74,79-85,88,97,109,118
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_fd8daf718523ce 621-623
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAnalyzeMix.spec.ts
+  s_a40848e8f8cca9::t_64055a4d2121f5 66-86
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_30c7b4373d2693 160-161,173-177,235-236,258,647,660-661,677-681,708-709
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+  s_a40848e8f8cca9::t_64055a4d2121f5 240-269
+src/modules/AiRuntime/useCases/cancelAgentRun.ts
+  s_a40848e8f8cca9::t_bbec61ebc9a7ec 128-161,273-284,287
+src/modules/AudioAnalysis/useCases/analyzeMix.ts
+  s_a40848e8f8cca9::t_efc7094a22ce35 37-38,48,78
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_a40848e8f8cca9::t_66a9a83c8f2cff 11,17,120-148
+  s_a40848e8f8cca9::t_1e158e3be571b1 149-150
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_f91b8343d80254 939
+src/modules/AiRuntime/useCases/__tests__/cancelAgentRun.spec.ts
+  s_a40848e8f8cca9::t_a97eabb3338862 406-410
+  s_a40848e8f8cca9::t_d812ce750448cc 366-405,411-421
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_30c7b4373d2693 1764-1765,1824-1825
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ce2ffea3fdf7c989e73a0053bd48d6eb193a9c18",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
