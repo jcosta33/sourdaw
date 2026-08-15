@@ -1,0 +1,23 @@
+crates/daw-core/src/ids.rs
+  s_ab5443e65c7fba::t_c4fbff2dcf7e5f 3,7,11,15,19
+src-tauri/src/commands/pitch_edit.rs
+  s_ab5443e65c7fba::t_de67581c2a8982 146,149,159,162,164
+crates/daw-plugin-host/src/params.rs
+  s_ab5443e65c7fba::t_237c3a9dceb6c7 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f146ad42467db69043f02c183862edb12532d7da",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
