@@ -545,6 +545,15 @@ export async function sendChatMessage(
                 let execution: Awaited<ReturnType<typeof executePlannedActions>>;
                 try {
                     execution = await executePlannedActions({ ...executionInput, commandBatch });
+                    if (execution.status === 'invalidated' || execution.status === 'cancelled') {
+                        await agentRunCancellation.cancel({
+                            runId,
+                            reason:
+                                execution.status === 'invalidated'
+                                    ? execution.reason
+                                    : 'User cancelled before the command committed.',
+                        });
+                    }
                 } catch (error) {
                     trySettleAgentRunWorkLease(commandLeaseResult.lease, 'failed');
                     throw error;

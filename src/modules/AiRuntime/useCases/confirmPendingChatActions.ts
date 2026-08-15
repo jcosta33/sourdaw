@@ -637,6 +637,7 @@ export async function confirmPendingChatActions(
           })
         : null;
     let batchResult: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
+    let cancellationTriggeredByInvalidation = false;
     try {
         const executionOptions = {
             ...group,
@@ -679,6 +680,17 @@ export async function confirmPendingChatActions(
             serialized: commandBatch.serialized,
             options: executionOptions,
         });
+        const failedBeforeCommit =
+            versionedResult.status === 'rejected' ||
+            versionedResult.status === 'conflicted' ||
+            versionedResult.status === 'failed';
+        if (
+            versionedResult.status === 'cancelled' ||
+            (failedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision)
+        ) {
+            cancellationTriggeredByInvalidation = !aborter.signal.aborted;
+            await agentRunCancellation.cancel({ runId: confirmation.runId, reason: versionedResult.reason });
+        }
         if (versionedResult.status === 'previewed') {
             versionedResult.resource.release();
             throw new Error('A confirmed command batch cannot execute in preview mode');
@@ -749,7 +761,7 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'cancelled') {
-        if (aborter.signal.aborted) {
+        if (aborter.signal.aborted && !cancellationTriggeredByInvalidation) {
             return cancelAcceptedConfirmation(confirmation);
         }
         return invalidatePendingConfirmation(confirmation);

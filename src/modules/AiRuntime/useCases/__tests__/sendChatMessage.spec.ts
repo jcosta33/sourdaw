@@ -709,6 +709,15 @@ describe('sendChatMessage injectables', () => {
             error: 'The project changed after this proposal was created. Review and submit the command again.',
             content: 'The project changed before this command could commit. Review it and submit the command again.',
         });
+        const invalidatedRun = getAgentRunControlProjections().find((projection) => projection.phase === 'cancelled');
+        expect(invalidatedRun).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requested: true, acknowledgement: 'transport' },
+        });
+        expect(getAgentRun(invalidatedRun!.runId)?.workLeases).toEqual([
+            expect.objectContaining({ workId: 'provider-planning', terminalState: 'completed' }),
+            expect.objectContaining({ ownerKind: 'command', terminalState: 'cancelled' }),
+        ]);
     });
 
     it('does not report a false command error when provider planning is stopped', async () => {
@@ -1513,6 +1522,50 @@ describe('sendChatMessage injectables', () => {
         expect(combinedFailureUpdate?.[0]).toBe(assistant_message?.id);
         expect(combinedFailureUpdate?.[1].error).toBe(warning);
         expect(combinedFailureUpdate?.[1].content).toMatch(/committed with a follow-up warning.*do not retry/is);
+    });
+
+    it('revokes a confirmed command lease before settling revision invalidation', async () => {
+        setProjectContextWithClip();
+        const action = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'delete drums',
+            requiresConfirmation: false,
+        });
+        await sendChatMessage('delete drums');
+        const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        if (!proposal?.id || !proposal.runId) {
+            throw new Error('Expected the destructive command to require confirmation');
+        }
+        mocks.executeAppActionBatch.mockImplementationOnce(() => {
+            mocks.projectRevision.value = 'revision-2';
+            return Promise.resolve({
+                status: 'cancelled',
+                reason: 'Batch execution authority was revoked',
+                actions: [],
+            });
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toMatchObject({
+            status: 'invalidated',
+        });
+        expect(getAgentRun(proposal.runId)).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { generation: 1 },
+            workLeases: [
+                { workId: 'provider-planning', terminalState: 'completed' },
+                { ownerKind: 'command', terminalState: 'cancelled' },
+            ],
+        });
+        expect(agentRunControls.get(proposal.runId)).toMatchObject({
+            cancellation: { requested: true, acknowledgement: 'transport' },
+        });
     });
 
     it('retains a late confirmed receipt without reopening a cancelled run', async () => {
