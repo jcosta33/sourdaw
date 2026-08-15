@@ -68,7 +68,6 @@ pub fn run() {
             commands::plugins::update_plugin_transport,
             commands::plugins::process_plugin_audio,
             // audio bridge
-            // commands::audio_ipc::audio_ipc, // TODO: re-add when audio_ipc module is implemented
             // Plugin GUI
             commands::plugin_gui::is_plugin_gui_supported,
             commands::plugin_gui::open_plugin_gui,

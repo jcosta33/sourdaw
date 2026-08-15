@@ -9,5 +9,4 @@ crate-type = ["rlib"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-specta = { version = "2.0.0-rc.25", features = ["derive"] }
 triple_buffer = "9.0.0"

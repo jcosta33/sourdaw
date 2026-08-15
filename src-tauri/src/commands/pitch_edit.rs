@@ -31,11 +31,10 @@ pub async fn analyze_pitch(
         let sample_rate = spec.sample_rate as f32;
         let channels = spec.channels as usize;
 
-        let mut samples: Vec<f32> = Vec::new();
-        match spec.sample_format {
+        let samples: Vec<f32> = match spec.sample_format {
             hound::SampleFormat::Float => {
                 let all: Vec<f32> = reader.samples::<f32>().filter_map(Result::ok).collect();
-                samples = all.into_iter().step_by(channels).collect();
+                all.into_iter().step_by(channels).collect()
             }
             hound::SampleFormat::Int => {
                 let max = match spec.bits_per_sample {
@@ -45,13 +44,12 @@ pub async fn analyze_pitch(
                     _ => 1.0,
                 };
                 let all: Vec<i32> = reader.samples::<i32>().filter_map(Result::ok).collect();
-                samples = all
-                    .into_iter()
+                all.into_iter()
                     .step_by(channels)
                     .map(|s| s as f32 / max)
-                    .collect();
+                    .collect()
             }
-        }
+        };
 
         let hop_size = 256;
         let frame_size = 2048;
@@ -145,11 +143,10 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
 
         // We only support mono or the left channel of stereo for the PSOLA processing
         // for now to keep things focused on the core feature.
-        let mut samples: Vec<f32> = Vec::new();
-        match spec.sample_format {
+        let samples: Vec<f32> = match spec.sample_format {
             hound::SampleFormat::Float => {
                 let all: Vec<f32> = reader.samples::<f32>().filter_map(Result::ok).collect();
-                samples = all.into_iter().step_by(channels).collect();
+                all.into_iter().step_by(channels).collect()
             }
             hound::SampleFormat::Int => {
                 let max = match spec.bits_per_sample {
@@ -159,13 +156,12 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
                     _ => 1.0,
                 };
                 let all: Vec<i32> = reader.samples::<i32>().filter_map(Result::ok).collect();
-                samples = all
-                    .into_iter()
+                all.into_iter()
                     .step_by(channels)
                     .map(|s| s as f32 / max)
-                    .collect();
+                    .collect()
             }
-        }
+        };
 
         let map = CompiledDeltaMap::compile(&request.segments, sample_rate, samples.len(), 256);
 
