@@ -1,0 +1,14 @@
+tests/e2e/recordEditPlayback.spec.ts
+  h_1228e573df1f42 10-19,24-27,40-42,54-55,63-69,71-72,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8e17c86d85a13d540c92fdeceb489c80695ac862",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
