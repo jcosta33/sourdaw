@@ -188,13 +188,11 @@ function recordApplicationToolOnlyPlan(input: {
     if (input.receipts.length === 0) {
         return;
     }
-    agentRunLifecycle.recordPlan({
+    agentRunLifecycle.recordApplicationToolEvidence({
         runId: input.runId,
         summary: input.receipts
             .map((receipt) => `${receipt.toolName} (${receipt.callId}) ${receipt.status}: ${receipt.summary}`)
             .join('\n'),
-        commandIds: [],
-        serializedBatchIdentity: null,
         applicationToolReceipts: [...input.receipts],
         revision: input.revision,
         scope: {

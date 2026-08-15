@@ -819,7 +819,26 @@ describe('sendChatMessage injectables', () => {
                     signal?.addEventListener(
                         'abort',
                         () => {
-                            resolve({ actions: [], rawText: '', requiresConfirmation: false });
+                            resolve({
+                                actions: [],
+                                rawText: '',
+                                requiresConfirmation: false,
+                                applicationToolReceipts: [
+                                    {
+                                        schema: 'sourdaw.application-tool-receipt',
+                                        schemaVersion: 1,
+                                        callId: 'query-before-stop',
+                                        toolName: 'project.query',
+                                        turn: 1,
+                                        status: 'success',
+                                        revision: 'revision-1',
+                                        data: { queryType: 'project-summary' },
+                                        summary: 'project-summary: 1 of 1 item(s)',
+                                        warnings: [],
+                                        error: null,
+                                    },
+                                ],
+                            });
                         },
                         { once: true }
                     );
@@ -841,6 +860,11 @@ describe('sendChatMessage injectables', () => {
         expect(projection).toMatchObject({
             phase: 'cancelled',
             cancellation: { requested: true, acknowledgement: 'transport' },
+        });
+        expect(getAgentRun(projection!.runId)?.cancellation.generation).toBe(1);
+        expect(getAgentRun(projection!.runId)?.plan).toMatchObject({
+            commandIds: [],
+            applicationToolReceipts: [expect.objectContaining({ callId: 'query-before-stop' })],
         });
         expect(getAgentRun(projection!.runId)?.workLeases).toEqual([
             expect.objectContaining({ workId: 'provider-planning', terminalState: 'cancelled' }),
