@@ -1,4 +1,4 @@
-import { renderOffline } from '#/modules/AudioEngine/useCases';
+import { cancelExport, renderOffline } from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
@@ -13,7 +13,14 @@ const PCM_SAMPLE_BYTE_SIZE = Float32Array.BYTES_PER_ELEMENT;
 type RenderAgentProjectSectionsInput = {
     jobs: readonly RenderProjectSectionJobSnapshot[];
     sourceRevision: string;
+    signal?: AbortSignal;
 };
+
+function createCancellationError(): Error {
+    const error = new Error('Agent section rendering was cancelled');
+    error.name = 'AbortError';
+    return error;
+}
 
 function jobMatchesArtifact(
     job: RenderProjectSectionJobSnapshot,
@@ -71,6 +78,9 @@ function retainArtifactsForIncoming(
 }
 
 export async function renderAgentProjectSections(input: RenderAgentProjectSectionsInput): Promise<void> {
+    if (input.signal?.aborted) {
+        throw createCancellationError();
+    }
     if (input.jobs.length > AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts) {
         throw new Error(
             `Section render artifact capacity exceeded: ${String(input.jobs.length)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts)}`
@@ -88,6 +98,9 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
     const protectedJobIds = new Set(input.jobs.map((job) => job.jobId));
     const failures: string[] = [];
     for (const job of input.jobs) {
+        if (input.signal?.aborted) {
+            throw createCancellationError();
+        }
         const existing = existingByJobId.get(job.jobId);
         if (existing) {
             if (existing.warnings.length > 0) {
@@ -101,13 +114,23 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (captureProjectRevision() !== input.sourceRevision) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
-            const buffer = await renderOffline({
-                durationBeats: job.endBeat - job.startBeat,
-                startBeat: job.startBeat,
-                sampleRate: job.sampleRate,
-                tailSeconds: job.tailSeconds,
-                onWarning: (warning) => warnings.push(warning),
-            });
+            const cancelActiveRender = () => cancelExport();
+            input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
+            let buffer: AudioBuffer;
+            try {
+                buffer = await renderOffline({
+                    durationBeats: job.endBeat - job.startBeat,
+                    startBeat: job.startBeat,
+                    sampleRate: job.sampleRate,
+                    tailSeconds: job.tailSeconds,
+                    onWarning: (warning) => warnings.push(warning),
+                });
+            } finally {
+                input.signal?.removeEventListener('abort', cancelActiveRender);
+            }
+            if (input.signal?.aborted) {
+                throw createCancellationError();
+            }
             if (captureProjectRevision() !== input.sourceRevision) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
@@ -144,6 +167,9 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
                 failures.push(`${job.jobId}: ${warnings.join('; ')}`);
             }
         } catch (error) {
+            if (input.signal?.aborted) {
+                throw createCancellationError();
+            }
             failures.push(`${job.jobId}: ${failureReason(error)}`);
         }
     }

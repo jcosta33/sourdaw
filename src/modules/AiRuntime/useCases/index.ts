@@ -65,6 +65,7 @@ export { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority
 export { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
 export { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 export { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
+export { agentRunCancellation } from './cancelAgentRun';
 export { agentRunLifecycle } from './agentRunLifecycle';
 export { recoverInterruptedAgentRuns } from './agentRunRecovery';
 export { agentRunWorkLease } from './agentRunWorkLease';

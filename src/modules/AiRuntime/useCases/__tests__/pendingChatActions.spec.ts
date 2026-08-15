@@ -373,7 +373,7 @@ describe('pending chat action confirmation', () => {
         expect(chatGenerationState.value).toBe(false);
     });
 
-    it('should cancel proposed actions without executing them', () => {
+    it('should cancel proposed actions without executing them', async () => {
         proposePendingActionConfirmation({
             id: 'confirm-1',
             prompt: 'delete drums',
@@ -383,7 +383,7 @@ describe('pending chat action confirmation', () => {
             projectRevision: 'revision-1',
         });
 
-        const result = cancelPendingChatActions({ confirmationId: 'confirm-1' });
+        const result = await cancelPendingChatActions({ confirmationId: 'confirm-1' });
 
         expect(result).toEqual({ status: 'cancelled' });
         expect(mocks.executeAppAction).not.toHaveBeenCalled();

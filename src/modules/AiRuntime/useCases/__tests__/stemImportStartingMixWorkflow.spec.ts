@@ -618,7 +618,9 @@ describe('stem import and starting mix workflow', () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
-        expect(cancelPendingChatActions({ confirmationId: confirmation!.id })).toEqual({ status: 'cancelled' });
+        await expect(cancelPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
+            status: 'cancelled',
+        });
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
         expect(mocks.releaseStagedAsset).toHaveBeenCalledTimes(6);

@@ -38,6 +38,7 @@ import { proposePendingActionConfirmation } from '../stores/pendingActionConfirm
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
@@ -200,6 +201,12 @@ export async function sendChatMessage(
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
         setActiveAborter(aborter);
+        const releaseProviderCancellation = agentRunCancellation.bindAbortController({
+            runId,
+            lease: providerLease,
+            controller: aborter,
+            reason: 'User cancelled the run while provider planning was active.',
+        });
 
         try {
             const { context, result, projectRevision } = await planPromptActions({
@@ -217,7 +224,10 @@ export async function sendChatMessage(
             });
 
             if (aborter.signal.aborted) {
-                agentRunLifecycle.cancel({ runId, reason: 'User cancelled the run before planning completed.' });
+                await agentRunCancellation.cancel({
+                    runId,
+                    reason: 'User cancelled the run before planning completed.',
+                });
                 return undefined;
             }
 
@@ -366,9 +376,25 @@ export async function sendChatMessage(
                     }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'previewing', revision: projectRevision });
                     const resourceLease = createStemImportConfirmationResourceLease(result.actions);
+                    const releasePreviewCancellation = agentRunCancellation.bindAbortController({
+                        runId,
+                        lease: previewLeaseResult.lease,
+                        controller: aborter,
+                        reason: 'User cancelled the run while command preview was active.',
+                    });
                     let preview: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
                     try {
                         preview = await executeVersionedCommandBatchEnvelope(commandBatch);
+                        if (preview.status === 'cancelled') {
+                            await agentRunCancellation.cancel({ runId, reason: preview.reason });
+                        } else if (
+                            (preview.status === 'rejected' ||
+                                preview.status === 'conflicted' ||
+                                preview.status === 'failed') &&
+                            captureProjectRevision() !== projectRevision
+                        ) {
+                            await agentRunCancellation.cancel({ runId, reason: preview.reason });
+                        }
                     } catch (error) {
                         trySettleAgentRunWorkLease(previewLeaseResult.lease, 'failed');
                         agentRunLifecycle.updateBatchStatus({
@@ -378,6 +404,7 @@ export async function sendChatMessage(
                         });
                         throw error;
                     } finally {
+                        releasePreviewCancellation();
                         resourceLease?.release();
                     }
                     if (preview.status === 'previewed') {
@@ -519,12 +546,29 @@ export async function sendChatMessage(
                 if (commandLeaseResult.status !== 'claimed') {
                     throw new Error(`Agent command work could not be claimed: ${commandLeaseResult.status}`);
                 }
+                const releaseCommandCancellation = agentRunCancellation.bindAbortController({
+                    runId,
+                    lease: commandLeaseResult.lease,
+                    controller: aborter,
+                    reason: 'User cancelled the run while command execution was active.',
+                });
                 let execution: Awaited<ReturnType<typeof executePlannedActions>>;
                 try {
                     execution = await executePlannedActions({ ...executionInput, commandBatch });
+                    if (execution.status === 'invalidated' || execution.status === 'cancelled') {
+                        await agentRunCancellation.cancel({
+                            runId,
+                            reason:
+                                execution.status === 'invalidated'
+                                    ? execution.reason
+                                    : 'User cancelled before the command committed.',
+                        });
+                    }
                 } catch (error) {
                     trySettleAgentRunWorkLease(commandLeaseResult.lease, 'failed');
                     throw error;
+                } finally {
+                    releaseCommandCancellation();
                 }
                 let commandLeaseTerminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
                 if (
@@ -625,16 +669,9 @@ export async function sendChatMessage(
 
                 if (execution.status === 'invalidated') {
                     if (commandLeaseSettlement.accepted) {
-                        agentRunLifecycle.recordError({
+                        await agentRunCancellation.cancel({
                             runId,
-                            error: {
-                                code: 'proposal-invalidated',
-                                message: execution.reason,
-                                occurredAt: Date.now(),
-                                retriable: true,
-                                workId: parsedCommandBatch.envelope.batchId,
-                            },
-                            terminal: true,
+                            reason: execution.reason,
                         });
                     }
                     updateChatMessage(assistantMsgId, {
@@ -648,7 +685,10 @@ export async function sendChatMessage(
 
                 if (execution.status === 'cancelled') {
                     if (commandLeaseSettlement.accepted) {
-                        agentRunLifecycle.cancel({ runId, reason: 'User cancelled before the command committed.' });
+                        await agentRunCancellation.cancel({
+                            runId,
+                            reason: 'User cancelled before the command committed.',
+                        });
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
@@ -761,20 +801,17 @@ export async function sendChatMessage(
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;
-            trySettleAgentRunWorkLease(
-                providerLease,
-                aborter.signal.aborted || configurationChanged ? 'cancelled' : 'failed'
-            );
-            if (aborter.signal.aborted || configurationChanged) {
-                agentRunLifecycle.cancel({ runId, reason });
+            if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
+                await agentRunCancellation.cancel({ runId, reason });
             } else {
+                trySettleAgentRunWorkLease(providerLease, 'failed');
                 agentRunLifecycle.recordError({
                     runId,
                     error: {
-                        code: proposalInvalidated ? 'proposal-invalidated' : 'prompt-run-failed',
+                        code: 'prompt-run-failed',
                         message: reason,
                         occurredAt: Date.now(),
-                        retriable: proposalInvalidated,
+                        retriable: false,
                         workId: null,
                     },
                     terminal: true,
@@ -811,6 +848,7 @@ export async function sendChatMessage(
                 });
             }
         } finally {
+            releaseProviderCancellation();
             setActiveAborter(null);
             setChatGenerating(false);
         }
@@ -838,6 +876,12 @@ export async function sendChatMessage(
 
     const aborter = new AbortController();
     setActiveAborter(aborter);
+    const releaseProviderCancellation = agentRunCancellation.bindAbortController({
+        runId,
+        lease: providerLease,
+        controller: aborter,
+        reason: 'User cancelled the run while the provider response was active.',
+    });
     const previousLlmStatus = llmStatusStore.value;
     llmStatusStore.set({ state: 'generating' });
     // Incremental think-block parser: feeding each streamed token keeps the
@@ -994,8 +1038,8 @@ export async function sendChatMessage(
             return 'An unknown error occurred during generation.';
         })();
         if (isAiRuntimeConfigurationChangedError(error)) {
+            await agentRunCancellation.cancel({ runId, reason: errorMessage });
             trySettleAgentRunWorkLease(providerLease, 'cancelled');
-            agentRunLifecycle.cancel({ runId, reason: errorMessage });
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
@@ -1024,7 +1068,7 @@ export async function sendChatMessage(
             });
         }
         if (wasAborted) {
-            agentRunLifecycle.cancel({ runId, reason: errorMessage });
+            await agentRunCancellation.cancel({ runId, reason: errorMessage });
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
@@ -1069,6 +1113,7 @@ export async function sendChatMessage(
             llmStatusStore.set({ state: 'error', message: errorMessage });
         }
     } finally {
+        releaseProviderCancellation();
         setActiveAborter(null);
         setChatGenerating(false);
     }

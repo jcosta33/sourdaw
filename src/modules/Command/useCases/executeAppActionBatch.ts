@@ -157,7 +157,8 @@ async function executeRuntimeAction(
     prepared: PreparedBatchAction,
     source: ExecuteOptions['source'] | undefined,
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined,
-    authorizeFirstHandler: (() => string | null) | undefined
+    authorizeFirstHandler: (() => string | null) | undefined,
+    signal: AbortSignal | undefined
 ): Promise<ExecuteAppActionBatchResult> {
     try {
         assertExecutionAuthorized(shouldExecute);
@@ -169,7 +170,11 @@ async function executeRuntimeAction(
             return { status: 'rejected', reason: approvalFailure, actions: [] };
         }
         traceAppAction(prepared.action.type, source ?? 'manual');
-        const result: HandlerExecutionResult | void = await prepared.handler.execute(prepared.action);
+        const result: HandlerExecutionResult | void = await prepared.handler.execute(prepared.action, {
+            actions: [prepared.action],
+            actionIndex: 0,
+            signal,
+        });
         if (result?.status === 'no-write') {
             return { status: 'no-op', actions: [] };
         }
@@ -227,7 +232,8 @@ async function executePreparedBatch(
     scope: AutomergeStorageTransactionScope,
     attemptedActions: PreparedBatchAction[],
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined,
-    authorizeFirstHandler: (() => string | null) | undefined
+    authorizeFirstHandler: (() => string | null) | undefined,
+    signal: AbortSignal | undefined
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
     let approvalConsumed = false;
@@ -249,6 +255,7 @@ async function executePreparedBatch(
             prepared.handler.execute(prepared.action, {
                 actions: preparedActions.map((candidate) => candidate.action),
                 actionIndex,
+                signal,
             })
         );
         if (result?.status === 'no-write' || result?.status === 'conflict') {
@@ -637,6 +644,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     !runtimeAction.handler.validate(runtimeAction.action, {
                         actions: [runtimeAction.action],
                         actionIndex: 0,
+                        signal: options?.signal,
                     })
                 ) {
                     return {
@@ -649,7 +657,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     runtimeAction,
                     options?.source,
                     options?.shouldExecute,
-                    options?.authorizeFirstHandler
+                    options?.authorizeFirstHandler,
+                    options?.signal
                 );
             }
 
@@ -665,7 +674,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             for (const [actionIndex, prepared] of preparedActions.entries()) {
                 if (
                     prepared.handler.validate &&
-                    !prepared.handler.validate(prepared.action, { actions: validationActions, actionIndex })
+                    !prepared.handler.validate(prepared.action, {
+                        actions: validationActions,
+                        actionIndex,
+                        signal: options?.signal,
+                    })
                 ) {
                     return {
                         status: 'conflicted',
@@ -692,7 +705,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     scope,
                     attemptedActions,
                     options?.shouldExecute,
-                    options?.authorizeFirstHandler
+                    options?.authorizeFirstHandler,
+                    options?.signal
                 )
             );
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);

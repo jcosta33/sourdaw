@@ -8,11 +8,13 @@ import { getAgentSectionRenderArtifacts } from '../getAgentSectionRenderArtifact
 import { renderAgentProjectSections } from '../renderAgentProjectSections';
 
 const mocks = vi.hoisted(() => ({
+    cancelExport: vi.fn(),
     captureProjectRevision: vi.fn(),
     renderOffline: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelExport: mocks.cancelExport,
     renderOffline: mocks.renderOffline,
 }));
 
@@ -113,6 +115,37 @@ describe('renderAgentProjectSections', () => {
 
         expect(mocks.renderOffline).toHaveBeenCalledOnce();
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(['render-chorus-one']);
+    });
+
+    it('cancels the active render and prevents later jobs or artifacts after its execution signal aborts', async () => {
+        const controller = new AbortController();
+        const jobs = [
+            createJob(),
+            createJob({
+                jobId: 'render-chorus-two',
+                sectionId: 'section-chorus-two',
+                sectionName: 'Chorus Two',
+                startBeat: 64,
+                endBeat: 96,
+            }),
+        ];
+        let finishActiveRender: ((buffer: ReturnType<typeof createAudioBuffer>) => void) | undefined;
+        mocks.renderOffline.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishActiveRender = resolve;
+                })
+        );
+
+        const rendering = renderAgentProjectSections({ jobs, sourceRevision: 'revision-a', signal: controller.signal });
+        await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
+        controller.abort();
+        expect(mocks.cancelExport).toHaveBeenCalledOnce();
+        finishActiveRender?.(createAudioBuffer());
+
+        await expect(rendering).rejects.toThrow(/cancel/i);
+        expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
     it('keeps successful artifacts and retries only unfinished jobs after a transient failure', async () => {

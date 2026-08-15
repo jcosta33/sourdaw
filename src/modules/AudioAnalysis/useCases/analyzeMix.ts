@@ -34,7 +34,8 @@ export type AnalyzeMixOutput = {
 };
 
 // eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers await this; will be async when real DSP analysis is added
-export async function analyzeMix(): Promise<AnalyzeMixOutput> {
+export async function analyzeMix(signal?: AbortSignal): Promise<AnalyzeMixOutput> {
+    signal?.throwIfAborted();
     const masterAnalyser = getMasterAnalyser();
     const masterLevels = readLevels(masterAnalyser);
     const frequencyBalance = readFrequencyBalance(masterAnalyser);
@@ -44,6 +45,7 @@ export async function analyzeMix(): Promise<AnalyzeMixOutput> {
     const trackLevels: AnalyzeMixOutput['trackLevels'] = [];
 
     for (const track of tracks) {
+        signal?.throwIfAborted();
         if (track.kind === 'folder' || track.kind === 'master') {
             continue;
         }
@@ -73,6 +75,7 @@ export async function analyzeMix(): Promise<AnalyzeMixOutput> {
         trackLevels,
         issues,
     });
+    signal?.throwIfAborted();
 
     return {
         timestamp: Date.now(),

@@ -85,6 +85,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         source: 'prompt' as const,
         requireCompensation: input.executionMode === 'atomic',
         shouldExecute,
+        signal: input.signal,
     };
     const batchResult = await executeVersionedCommandBatchEnvelope({
         ...input.commandBatch,

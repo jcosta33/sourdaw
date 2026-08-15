@@ -207,6 +207,23 @@ describe('executeAppActionBatch', () => {
         expect(secondEffect).not.toHaveBeenCalled();
     });
 
+    it('passes the exact execution signal through the command boundary to project handlers', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const controller = new AbortController();
+        const execute = vi.fn((_action: SetEditingToolAction, context?: { signal?: AbortSignal }) => {
+            expect(context?.signal).toBe(controller.signal);
+            return { status: 'written' as const };
+        });
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({ execute }),
+        });
+
+        await expect(executeAppActionBatch([action], { signal: controller.signal })).resolves.toMatchObject({
+            status: 'committed',
+        });
+        expect(execute).toHaveBeenCalledOnce();
+    });
+
     it('should block project batches before the first handler effect while project repair is required', async () => {
         const effect = vi.fn();
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };

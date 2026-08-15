@@ -1761,6 +1761,8 @@ export type HandlerExecutionResult = {
 export type HandlerValidationContext = {
     readonly actions: readonly AppAction[];
     readonly actionIndex: number;
+    /** Exact execution cancellation signal for long-running handler-owned follow-up work. */
+    readonly signal?: AbortSignal;
     /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
     readonly executionMode?: 'isolated-preview';
 };
@@ -1819,6 +1821,8 @@ export type ExecuteOptions = {
     groupLabel?: string;
     /** Recheck transient authority after queued CRDT work completes and before dispatch begins. */
     shouldExecute?: () => boolean;
+    /** Exact caller-owned cancellation signal propagated to handler execution and deferred effects. */
+    signal?: AbortSignal;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
     /**
      * When true, skip pushing an undo entry and action history entry — during

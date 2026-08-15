@@ -31,6 +31,7 @@ import {
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
@@ -627,10 +628,20 @@ export async function confirmPendingChatActions(
     const aborter = new AbortController();
     setChatGenerating(true);
     setActiveAborter(aborter);
+    const releaseCommandCancellation = trackedWorkLease
+        ? agentRunCancellation.bindAbortController({
+              runId: confirmation.runId,
+              lease: trackedWorkLease,
+              controller: aborter,
+              reason: 'User cancelled the run while confirmed command execution was active.',
+          })
+        : null;
     let batchResult: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
+    let cancellationTriggeredByInvalidation = false;
     try {
         const executionOptions = {
             ...group,
+            signal: aborter.signal,
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => {
@@ -670,6 +681,17 @@ export async function confirmPendingChatActions(
             serialized: commandBatch.serialized,
             options: executionOptions,
         });
+        const failedBeforeCommit =
+            versionedResult.status === 'rejected' ||
+            versionedResult.status === 'conflicted' ||
+            versionedResult.status === 'failed';
+        if (
+            versionedResult.status === 'cancelled' ||
+            (failedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision)
+        ) {
+            cancellationTriggeredByInvalidation = !aborter.signal.aborted;
+            await agentRunCancellation.cancel({ runId: confirmation.runId, reason: versionedResult.reason });
+        }
         if (versionedResult.status === 'previewed') {
             versionedResult.resource.release();
             throw new Error('A confirmed command batch cannot execute in preview mode');
@@ -701,6 +723,7 @@ export async function confirmPendingChatActions(
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         return { status: 'failed', reason };
     } finally {
+        releaseCommandCancellation?.();
         setActiveAborter(null);
         setChatGenerating(false);
     }
@@ -739,7 +762,7 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'cancelled') {
-        if (aborter.signal.aborted) {
+        if (aborter.signal.aborted && !cancellationTriggeredByInvalidation) {
             return cancelAcceptedConfirmation(confirmation);
         }
         return invalidatePendingConfirmation(confirmation);
@@ -956,15 +979,11 @@ function failApprovalPreflight(
     return { status: 'failed', reason };
 }
 
-function invalidatePendingConfirmation(
+async function invalidatePendingConfirmation(
     confirmation: PendingAppActionConfirmation
-): Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }> {
+): Promise<Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }>> {
     const reason = new AiProposalInvalidatedError().message;
-    recordTrackedAgentRunFailure(confirmation, {
-        code: 'proposal-invalidated',
-        message: reason,
-        retriable: true,
-    });
+    await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'invalidated',
@@ -980,20 +999,16 @@ function invalidatePendingConfirmation(
     return { status: 'invalidated', reason };
 }
 
-function invalidatePendingConfirmationForDivergence(
+async function invalidatePendingConfirmationForDivergence(
     confirmation: PendingAppActionConfirmation,
     divergence: ApprovalDivergence
-): Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }> {
+): Promise<Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }>> {
     const targetIds = divergence.targetIds.length > 0 ? divergence.targetIds.join(', ') : 'none';
     const candidates = divergence.repairCandidates
         .map((candidate) => `${candidate.kind}: ${candidate.targetIds.join(', ') || 'project'}`)
         .join('; ');
     const reason = `The approved command was not executed because project divergence is ${divergence.kind}.`;
-    recordTrackedAgentRunFailure(confirmation, {
-        code: 'proposal-diverged',
-        message: reason,
-        retriable: true,
-    });
+    await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'invalidated',
