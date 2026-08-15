@@ -251,16 +251,30 @@ pub enum ArpMode {
 }
 
 const ARPEGGIATOR_ACTIVE_NOTE_CAPACITY: usize = 16;
+pub const ARPEGGIATOR_MIN_RATE_BEATS: f64 = 1.0 / 64.0;
+pub const ARPEGGIATOR_MAX_RATE_BEATS: f64 = 16.0;
+pub const ARPEGGIATOR_MAX_OCTAVE_RANGE: u8 = 4;
+
+#[derive(Clone, Copy)]
+struct ActiveNote {
+    note: u8,
+    velocity: u8,
+    channel: i16,
+}
 
 struct ActiveNoteBuffer {
-    notes: [u8; ARPEGGIATOR_ACTIVE_NOTE_CAPACITY],
+    notes: [ActiveNote; ARPEGGIATOR_ACTIVE_NOTE_CAPACITY],
     len: usize,
 }
 
 impl ActiveNoteBuffer {
     fn new() -> Self {
         Self {
-            notes: [0; ARPEGGIATOR_ACTIVE_NOTE_CAPACITY],
+            notes: [ActiveNote {
+                note: 0,
+                velocity: 0,
+                channel: 0,
+            }; ARPEGGIATOR_ACTIVE_NOTE_CAPACITY],
             len: 0,
         }
     }
@@ -279,10 +293,10 @@ impl ActiveNoteBuffer {
     }
 
     fn contains(&self, note: &u8) -> bool {
-        self.notes[..self.len].contains(note)
+        self.notes[..self.len].iter().any(|held| held.note == *note)
     }
 
-    fn get(&self, index: usize) -> Option<u8> {
+    fn get(&self, index: usize) -> Option<ActiveNote> {
         if index >= self.len {
             return None;
         }
@@ -290,8 +304,8 @@ impl ActiveNoteBuffer {
         Some(self.notes[index])
     }
 
-    fn try_insert_sorted(&mut self, note: u8) -> bool {
-        if self.contains(&note) {
+    fn try_insert_sorted(&mut self, entry: ActiveNote) -> bool {
+        if self.contains(&entry.note) {
             return true;
         }
 
@@ -300,7 +314,7 @@ impl ActiveNoteBuffer {
         }
 
         let mut insert_index = 0;
-        while insert_index < self.len && self.notes[insert_index] < note {
+        while insert_index < self.len && self.notes[insert_index].note < entry.note {
             insert_index += 1;
         }
 
@@ -310,7 +324,7 @@ impl ActiveNoteBuffer {
             shift_index -= 1;
         }
 
-        self.notes[insert_index] = note;
+        self.notes[insert_index] = entry;
         self.len += 1;
         true
     }
@@ -319,7 +333,7 @@ impl ActiveNoteBuffer {
         let mut remove_index = None;
 
         for index in 0..self.len {
-            if self.notes[index] == note {
+            if self.notes[index].note == note {
                 remove_index = Some(index);
                 break;
             }
@@ -334,14 +348,21 @@ impl ActiveNoteBuffer {
     }
 }
 
+/// The pitch the arpeggiator most recently sounded and has not yet released.
+#[derive(Clone, Copy)]
+struct SoundingNote {
+    note: u8,
+    channel: i16,
+}
+
 pub struct Arpeggiator {
     pub mode: ArpMode,
     pub rate_beats: f64,
     pub octave_range: u8,
     active_notes: ActiveNoteBuffer,
-    current_step: usize,
+    sounding: Option<SoundingNote>,
+    steps_emitted: u64,
     last_beat_step: f64,
-    step_trigger_count: u64,
 }
 
 impl Default for Arpeggiator {
@@ -351,9 +372,58 @@ impl Default for Arpeggiator {
             rate_beats: 0.25, // 1/16th note
             octave_range: 1,
             active_notes: ActiveNoteBuffer::new(),
-            current_step: 0,
+            sounding: None,
+            steps_emitted: 0,
             last_beat_step: -1.0,
-            step_trigger_count: 0,
+        }
+    }
+}
+
+impl Arpeggiator {
+    /// Map the running step counter to an index into the octave-expanded
+    /// pattern. Every mode starts at its natural endpoint (Up and UpDown at
+    /// the lowest note, Down at the highest) on the first step after a reset.
+    fn pattern_index(&self, pattern_len: usize) -> usize {
+        let step = self.steps_emitted as usize;
+        match self.mode {
+            ArpMode::Up => step % pattern_len,
+            ArpMode::Down => pattern_len - 1 - (step % pattern_len),
+            ArpMode::UpDown => {
+                if pattern_len == 1 {
+                    return 0;
+                }
+                // Classic up-down without repeating the endpoints.
+                let cycle = pattern_len * 2 - 2;
+                let position = step % cycle;
+                if position < pattern_len {
+                    position
+                } else {
+                    cycle - position
+                }
+            }
+            // Deterministic by design: renders and automation replay
+            // identically, but the avalanche hash removes the audible
+            // fixed-stride cycling of a plain modulo sequence.
+            ArpMode::Random => {
+                avalanche(mix_u32(FNV_OFFSET_BASIS, self.steps_emitted as u32)) as usize
+                    % pattern_len
+            }
+        }
+    }
+
+    fn release_sounding(&mut self, events: &mut MidiEventBuffer) {
+        if let Some(sounding) = self.sounding.take() {
+            let _ = events.try_push(MidiNoteEvent {
+                note: sounding.note,
+                velocity: 0,
+                channel: sounding.channel,
+                is_note_on: false,
+                probability_cutoff: PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+            });
         }
     }
 }
@@ -399,7 +469,11 @@ impl MidiFx for Arpeggiator {
         for event in events.iter() {
             if event.is_note_on {
                 // Drop the newest active note when the fixed tracking buffer is full.
-                if !self.active_notes.try_insert_sorted(event.note) {
+                if !self.active_notes.try_insert_sorted(ActiveNote {
+                    note: event.note,
+                    velocity: event.velocity,
+                    channel: event.channel,
+                }) {
                     diagnostics.record_arpeggiator_active_note_exhaustion(1);
                 }
             } else {
@@ -412,76 +486,74 @@ impl MidiFx for Arpeggiator {
         events.clear();
 
         if self.active_notes.is_empty() {
-            self.reset();
+            // The chord was released: silence whatever the arp left sounding
+            // before dropping back to idle.
+            self.release_sounding(events);
+            self.reset_stepping();
             return;
         }
-        if self.current_step >= self.active_notes.len() {
-            self.current_step = self.active_notes.len() - 1;
+
+        if !transport.is_playing {
+            // The transport clock is the arp's only clock; while it is stopped
+            // no new step can be timed, so hold nothing over.
+            self.release_sounding(events);
+            self.reset_stepping();
+            return;
         }
 
         // 2. Determine if it's time for a new step
         let beat = transport.song_pos_beats;
-        let step_count_exact = beat / self.rate_beats;
-        let step_beat = step_count_exact.floor();
+        let step_beat = (beat / self.rate_beats).floor();
 
-        if step_beat > self.last_beat_step {
+        // A backwards move is a loop wrap or relocate: retrigger immediately
+        // instead of stalling until the playhead passes its old position.
+        if step_beat != self.last_beat_step {
             self.last_beat_step = step_beat;
-            self.step_trigger_count += 1;
 
-            // 3. Select next note based on mode
-            if !self.active_notes.is_empty() {
-                match self.mode {
-                    ArpMode::Up => {
-                        self.current_step = (self.current_step + 1) % self.active_notes.len();
-                    }
-                    ArpMode::Down => {
-                        if self.current_step == 0 {
-                            self.current_step = self.active_notes.len() - 1;
-                        } else {
-                            self.current_step -= 1;
-                        }
-                    }
-                    ArpMode::UpDown => {
-                        let n = self.active_notes.len();
-                        if n > 1 {
-                            let total_steps = n * 2 - 2;
-                            let i = (self.step_trigger_count as usize) % total_steps;
-                            if i < n {
-                                self.current_step = i;
-                            } else {
-                                self.current_step = total_steps - i;
-                            }
-                        } else {
-                            self.current_step = 0;
-                        }
-                    }
-                    ArpMode::Random => {
-                        self.current_step =
-                            (self.step_trigger_count as usize * 17) % self.active_notes.len();
-                    }
-                }
+            // 3. Select the note for this step from the octave-expanded pattern
+            let octave_count =
+                usize::from(self.octave_range.clamp(1, ARPEGGIATOR_MAX_OCTAVE_RANGE));
+            let pattern_len = self.active_notes.len() * octave_count;
+            let index = self.pattern_index(pattern_len);
+            let octave = (index / self.active_notes.len()) as u8;
+            let Some(held) = self.active_notes.get(index % self.active_notes.len()) else {
+                return;
+            };
+            let pitch = held.note.saturating_add(octave * 12).min(127);
 
-                // 4. Emit the note
-                if let Some(note) = self.active_notes.get(self.current_step) {
-                    let _ = events.try_push(MidiNoteEvent {
-                        note,
-                        velocity: 100, // Default for now
-                        channel: 0,
-                        is_note_on: true,
-                        probability_cutoff: PROBABILITY_CUTOFF_RANGE,
-                        project_probability_seed: 0,
-                        clip_id_hash: 0,
-                        event_id_hash: 0,
-                        absolute_occurrence_index: 0,
-                    });
-                }
-            }
+            // 4. Replace the previous step's note with this one
+            self.release_sounding(events);
+            let _ = events.try_push(MidiNoteEvent {
+                note: pitch,
+                velocity: held.velocity,
+                channel: held.channel,
+                is_note_on: true,
+                probability_cutoff: PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+            });
+            self.sounding = Some(SoundingNote {
+                note: pitch,
+                channel: held.channel,
+            });
+            self.steps_emitted += 1;
         }
     }
 
     fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "rate" => self.rate_beats = value as f64,
+            "rate" => {
+                // The step timer divides by this every block; zero, negative
+                // and non-finite rates must never reach it.
+                let rate = f64::from(value);
+                self.rate_beats = if rate.is_finite() {
+                    rate.clamp(ARPEGGIATOR_MIN_RATE_BEATS, ARPEGGIATOR_MAX_RATE_BEATS)
+                } else {
+                    self.rate_beats
+                };
+            }
             "mode" => {
                 self.mode = match value as i32 {
                     0 => ArpMode::Up,
@@ -490,15 +562,27 @@ impl MidiFx for Arpeggiator {
                     _ => ArpMode::Random,
                 };
             }
-            "octaves" => self.octave_range = value as u8,
+            "octaves" => {
+                self.octave_range = if value.is_finite() {
+                    (value as i32).clamp(1, i32::from(ARPEGGIATOR_MAX_OCTAVE_RANGE)) as u8
+                } else {
+                    self.octave_range
+                };
+            }
             _ => {}
         }
     }
 
     fn reset(&mut self) {
-        self.current_step = 0;
+        self.reset_stepping();
+        self.sounding = None;
+    }
+}
+
+impl Arpeggiator {
+    fn reset_stepping(&mut self) {
+        self.steps_emitted = 0;
         self.last_beat_step = -1.0;
-        self.step_trigger_count = 0;
     }
 }
 
@@ -591,6 +675,44 @@ mod velocity_scaler_tests {
 mod tests {
     use super::*;
 
+    fn playing_at(beat: f64) -> TransportState {
+        TransportState {
+            is_playing: true,
+            song_pos_beats: beat,
+            ..TransportState::default()
+        }
+    }
+
+    fn note_off(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            is_note_on: false,
+            ..note_on(note)
+        }
+    }
+
+    /// Advance the arp one block at the given beat with no new input and
+    /// return the emitted (note, is_note_on) pairs in order.
+    fn step_at(arpeggiator: &mut Arpeggiator, beat: f64) -> Vec<(u8, bool)> {
+        let mut events = MidiEventBuffer::new();
+        arpeggiator.process_midi(&mut events, &playing_at(beat), 48_000.0, 128);
+        events
+            .iter()
+            .map(|event| (event.note, event.is_note_on))
+            .collect()
+    }
+
+    fn hold_chord(arpeggiator: &mut Arpeggiator, notes: &[u8], beat: f64) -> Vec<(u8, bool)> {
+        let mut events = MidiEventBuffer::new();
+        for note in notes {
+            assert!(events.try_push(note_on(*note)));
+        }
+        arpeggiator.process_midi(&mut events, &playing_at(beat), 48_000.0, 128);
+        events
+            .iter()
+            .map(|event| (event.note, event.is_note_on))
+            .collect()
+    }
+
     #[test]
     fn scheduler_arpeggiator_drops_newest_active_notes_after_fixed_capacity() {
         let mut arpeggiator = Arpeggiator::default();
@@ -612,6 +734,209 @@ mod tests {
         );
         assert!(arpeggiator.active_notes.contains(&75));
         assert!(!arpeggiator.active_notes.contains(&76));
+    }
+
+    /// Regression (#1838 F7): the arp emitted note-ons and nothing else, so
+    /// every arpeggiated note sounded forever. Each step must first release
+    /// the previous step's pitch.
+    #[test]
+    fn each_step_releases_the_previous_pitch_before_sounding_the_next() {
+        let mut arpeggiator = Arpeggiator::default();
+
+        assert_eq!(
+            hold_chord(&mut arpeggiator, &[60, 64, 67], 0.0),
+            vec![(60, true)]
+        );
+        assert_eq!(
+            step_at(&mut arpeggiator, 0.25),
+            vec![(60, false), (64, true)]
+        );
+        assert_eq!(
+            step_at(&mut arpeggiator, 0.5),
+            vec![(64, false), (67, true)]
+        );
+    }
+
+    /// Regression (#1838 F7): Up incremented before the first emit and so
+    /// skipped the lowest held note.
+    #[test]
+    fn up_starts_at_the_lowest_held_note_and_down_at_the_highest() {
+        let mut up = Arpeggiator::default();
+        assert_eq!(hold_chord(&mut up, &[60, 64, 67], 0.0), vec![(60, true)]);
+
+        let mut down = Arpeggiator::default();
+        down.set_param("mode", 1.0);
+        assert_eq!(hold_chord(&mut down, &[60, 64, 67], 0.0), vec![(67, true)]);
+    }
+
+    #[test]
+    fn up_down_walks_the_pattern_without_repeating_endpoints() {
+        let mut arpeggiator = Arpeggiator::default();
+        arpeggiator.set_param("mode", 2.0);
+
+        let mut sequence = vec![hold_chord(&mut arpeggiator, &[60, 64, 67], 0.0)[0].0];
+        for step in 1..6 {
+            let emitted = step_at(&mut arpeggiator, 0.25 * f64::from(step));
+            sequence.push(emitted.last().expect("every step emits a note-on").0);
+        }
+
+        assert_eq!(sequence, vec![60, 64, 67, 64, 60, 64]);
+    }
+
+    /// Regression (#1838 F7): releasing the chord left the last arpeggiated
+    /// note sounding with no note-off ever coming.
+    #[test]
+    fn releasing_the_chord_releases_the_sounding_note() {
+        let mut arpeggiator = Arpeggiator::default();
+        assert_eq!(hold_chord(&mut arpeggiator, &[60], 0.0), vec![(60, true)]);
+
+        let mut events = MidiEventBuffer::new();
+        assert!(events.try_push(note_off(60)));
+        arpeggiator.process_midi(&mut events, &playing_at(0.1), 48_000.0, 128);
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|e| (e.note, e.is_note_on))
+                .collect::<Vec<_>>(),
+            vec![(60, false)]
+        );
+    }
+
+    /// Regression (#1838 F7): `transport.is_playing` was never consulted; a
+    /// stopped transport must silence the arp instead of freezing its last
+    /// note-on.
+    #[test]
+    fn stopping_the_transport_releases_the_sounding_note() {
+        let mut arpeggiator = Arpeggiator::default();
+        assert_eq!(hold_chord(&mut arpeggiator, &[60], 0.0), vec![(60, true)]);
+
+        let mut events = MidiEventBuffer::new();
+        arpeggiator.process_midi(&mut events, &TransportState::default(), 48_000.0, 128);
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|e| (e.note, e.is_note_on))
+                .collect::<Vec<_>>(),
+            vec![(60, false)]
+        );
+    }
+
+    #[test]
+    fn emitted_steps_inherit_the_held_notes_velocity_and_channel() {
+        let mut arpeggiator = Arpeggiator::default();
+        let mut events = MidiEventBuffer::new();
+        assert!(events.try_push(MidiNoteEvent {
+            velocity: 37,
+            channel: 5,
+            ..note_on(60)
+        }));
+
+        arpeggiator.process_midi(&mut events, &playing_at(0.0), 48_000.0, 128);
+
+        let emitted = events.as_slice()[0];
+        assert_eq!(
+            (
+                emitted.note,
+                emitted.velocity,
+                emitted.channel,
+                emitted.is_note_on
+            ),
+            (60, 37, 5, true)
+        );
+    }
+
+    /// Regression (#1838 F7): `"rate"` fed a division unvalidated; zero,
+    /// negative and non-finite values must clamp instead of poisoning the
+    /// step timer.
+    #[test]
+    fn rate_clamps_to_a_positive_finite_range() {
+        let mut arpeggiator = Arpeggiator::default();
+
+        arpeggiator.set_param("rate", 0.0);
+        assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MIN_RATE_BEATS);
+
+        arpeggiator.set_param("rate", -3.0);
+        assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MIN_RATE_BEATS);
+
+        arpeggiator.set_param("rate", f32::NAN);
+        assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MIN_RATE_BEATS);
+
+        arpeggiator.set_param("rate", 64.0);
+        assert_eq!(arpeggiator.rate_beats, ARPEGGIATOR_MAX_RATE_BEATS);
+    }
+
+    /// Regression (#1838 F7): `octave_range` was written by `set_param` and
+    /// never read; the pattern must actually span the configured octaves.
+    #[test]
+    fn octave_range_expands_the_pattern_upward() {
+        let mut arpeggiator = Arpeggiator::default();
+        arpeggiator.set_param("octaves", 2.0);
+
+        assert_eq!(hold_chord(&mut arpeggiator, &[60], 0.0), vec![(60, true)]);
+        assert_eq!(
+            step_at(&mut arpeggiator, 0.25),
+            vec![(60, false), (72, true)]
+        );
+        assert_eq!(
+            step_at(&mut arpeggiator, 0.5),
+            vec![(72, false), (60, true)]
+        );
+    }
+
+    /// Regression (#1838 F7): Random was `step * 17 % len` — a fixed-stride
+    /// rotation. It must stay deterministic for reproducible renders but
+    /// cover the held notes without an audible constant stride.
+    #[test]
+    fn random_is_deterministic_across_runs_and_covers_the_chord() {
+        let chord = [60u8, 64, 67, 71];
+        let sequence = |arpeggiator: &mut Arpeggiator| {
+            let mut emitted = vec![hold_chord(arpeggiator, &chord, 0.0)[0].0];
+            for step in 1..32 {
+                let step_events = step_at(arpeggiator, 0.25 * f64::from(step));
+                emitted.push(step_events.last().expect("step emits").0);
+            }
+            emitted
+        };
+
+        let mut first = Arpeggiator::default();
+        first.set_param("mode", 3.0);
+        let mut second = Arpeggiator::default();
+        second.set_param("mode", 3.0);
+
+        let first_run = sequence(&mut first);
+        assert_eq!(first_run, sequence(&mut second));
+        for note in chord {
+            assert!(first_run.contains(&note), "note {note} never played");
+        }
+
+        // The sequence is a replay contract: pinned literally so any change
+        // to the selection formula — including a revert to the old
+        // `step * 17 % len` rotation, whose output for this chord is the
+        // period-4 cycle starting 64,67,71,60 — fails here.
+        assert_eq!(
+            first_run,
+            vec![
+                71, 67, 67, 67, 71, 60, 60, 60, 64, 71, 71, 60, 60, 64, 60, 60, 71, 60, 67, 71, 67,
+                60, 71, 60, 60, 71, 60, 60, 60, 71, 71, 71
+            ]
+        );
+    }
+
+    /// Regression (#1838 F7 adjacent): a rewind (loop wrap or relocate) left
+    /// `last_beat_step` ahead of the playhead and the arp stalled silent
+    /// until the position was passed again.
+    #[test]
+    fn a_rewind_retriggers_instead_of_stalling() {
+        let mut arpeggiator = Arpeggiator::default();
+        assert_eq!(
+            hold_chord(&mut arpeggiator, &[60, 64], 4.0),
+            vec![(60, true)]
+        );
+
+        let emitted = step_at(&mut arpeggiator, 0.0);
+        assert_eq!(emitted, vec![(60, false), (64, true)]);
     }
 }
 

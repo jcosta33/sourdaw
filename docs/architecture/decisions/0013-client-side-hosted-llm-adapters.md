@@ -17,7 +17,7 @@ Browser-held API keys are inherently less protected than server-held credentials
 
 The volatile hosted-LLM session owns one discriminated provider runtime:
 
-- `anthropic`: Anthropic Messages API through a repository-owned, authenticated fetch/SSE transport with explicit request, response, event, and cancellation bounds.
+- `anthropic`: Anthropic Messages API through repository-owned transports: the official SDK for structured tool planning, and authenticated fetch/SSE with explicit request, response, event, and cancellation bounds for chat streaming.
 - `openai`: OpenAI Chat Completions through the official HTTPS endpoint.
 - `openai-compatible`: a user-supplied Chat Completions base URL and model.
 
