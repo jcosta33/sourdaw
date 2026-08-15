@@ -3,30 +3,33 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MixHealthDialog } from '../MixHealthDialog';
 
-type CloudChatOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
+type HostedTextResult = {
+    status: 'complete' | 'partial' | 'failed' | 'cancelled' | 'unavailable';
+    failure: { safeMessage: string } | null;
+};
 
 const mocks = vi.hoisted(() => ({
     mixHealthAnalysis: vi.fn<(input: { onToken: (text: string) => void; signal?: AbortSignal }) => Promise<void>>(),
-    streamCloudChatCompletion:
+    streamHostedModelText:
         vi.fn<
-            (
-                messages: Array<{ role: string; content: string }>,
-                onToken: (text: string) => void,
-                options?: { signal?: AbortSignal }
-            ) => Promise<CloudChatOutcome>
+            (input: {
+                messages: Array<{ role: string; content: string }>;
+                onToken: (text: string) => void;
+                signal?: AbortSignal;
+            }) => Promise<HostedTextResult>
         >(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     mixHealthAnalysis: mocks.mixHealthAnalysis,
-    streamCloudChatCompletion: mocks.streamCloudChatCompletion,
+    streamHostedModelText: mocks.streamHostedModelText,
 }));
 
 describe('MixHealthDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.mixHealthAnalysis.mockResolvedValue(undefined);
-        mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
+        mocks.streamHostedModelText.mockResolvedValue({ status: 'complete', failure: null });
     });
 
     it('does not run analysis or render dialog content while closed', () => {
@@ -79,9 +82,9 @@ describe('MixHealthDialog', () => {
             onToken('Technical report body.');
             return Promise.resolve();
         });
-        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
-            onToken('Simple explanation.');
-            return Promise.resolve({ status: 'complete' });
+        mocks.streamHostedModelText.mockImplementation((input) => {
+            input.onToken('Simple explanation.');
+            return Promise.resolve({ status: 'complete', failure: null });
         });
 
         render(<MixHealthDialog open onOpenChange={vi.fn()} />);
@@ -89,12 +92,12 @@ describe('MixHealthDialog', () => {
 
         fireEvent.click(screen.getByRole('button', { name: "Explain Like I'm 5" }));
 
-        expect(mocks.streamCloudChatCompletion).toHaveBeenCalledTimes(1);
-        const call = mocks.streamCloudChatCompletion.mock.calls[0];
+        expect(mocks.streamHostedModelText).toHaveBeenCalledTimes(1);
+        const call = mocks.streamHostedModelText.mock.calls[0];
         if (!call) {
-            throw new Error('streamCloudChatCompletion was not called');
+            throw new Error('streamHostedModelText was not called');
         }
-        const [messages] = call;
+        const [{ messages }] = call;
         expect(messages[0]).toEqual({ role: 'system', content: 'You are a patient music teacher for beginners.' });
         expect(messages[1]?.content).toContain('Technical report body.');
 
@@ -107,9 +110,12 @@ describe('MixHealthDialog', () => {
             onToken('Technical report body.');
             return Promise.resolve();
         });
-        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
-            onToken('Partial explanation.');
-            return Promise.resolve({ status: 'incomplete', reason: 'token limit' });
+        mocks.streamHostedModelText.mockImplementation((input) => {
+            input.onToken('Partial explanation.');
+            return Promise.resolve({
+                status: 'partial',
+                failure: { safeMessage: 'The model provider stopped at its output limit.' },
+            });
         });
 
         render(<MixHealthDialog open onOpenChange={vi.fn()} />);
@@ -118,7 +124,7 @@ describe('MixHealthDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: "Explain Like I'm 5" }));
 
         expect(await screen.findByText(/Partial explanation/)).toBeInTheDocument();
-        expect(await screen.findByText(/Hosted AI response incomplete: token limit/)).toBeInTheDocument();
+        expect(await screen.findByText(/stopped at its output limit/)).toBeInTheDocument();
     });
 
     it('disables the ELI5 button until a report exists, and Close notifies the caller', async () => {
@@ -165,10 +171,10 @@ describe('MixHealthDialog', () => {
             return Promise.resolve();
         });
         let eli5Signal: AbortSignal | undefined;
-        mocks.streamCloudChatCompletion.mockImplementation(
-            (_messages, _onToken, options) =>
-                new Promise<CloudChatOutcome>(() => {
-                    eli5Signal = options?.signal;
+        mocks.streamHostedModelText.mockImplementation(
+            (input) =>
+                new Promise<HostedTextResult>(() => {
+                    eli5Signal = input.signal;
                 })
         );
         const { rerender } = render(<MixHealthDialog open onOpenChange={vi.fn()} />);

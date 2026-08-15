@@ -77,6 +77,28 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         });
     });
 
+    it('surfaces unknown future events and continues to the terminal result', async () => {
+        const sse = [
+            'data: {"type":"response.telemetry","private":"not-forwarded"}\n\n',
+            'data: {"choices":[{"delta":{"content":"Done"}}]}\n\n',
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+            'data: [DONE]\n\n',
+        ].join('');
+        vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(sse, { status: 200 })));
+        const onUnknownEvent = vi.fn();
+
+        await expect(
+            streamOpenAiCompatibleChatCompletion({
+                runtime,
+                messages: [{ role: 'user', content: 'help' }],
+                onToken: vi.fn(),
+                onUnknownEvent,
+                signal: new AbortController().signal,
+            })
+        ).resolves.toBe('stop');
+        expect(onUnknownEvent).toHaveBeenCalledWith('openai-compatible:response.telemetry');
+    });
+
     it('rejects malformed streaming events', async () => {
         vi.stubGlobal(
             'fetch',

@@ -988,6 +988,8 @@ export async function sendChatMessage(
                     maxTokens: providerRequest.limits.maxOutputTokens,
                     signal: aborter.signal,
                     onUsage: (event) => providerSession?.push(event),
+                    onUnknownEvent: (providerEventType) =>
+                        providerSession?.push({ type: 'unknown', providerEventType }),
                 }
             );
         } else if (backend === 'cloud') {
@@ -1007,6 +1009,8 @@ export async function sendChatMessage(
                     maxTokens: providerRequest.limits.maxOutputTokens,
                     signal: aborter.signal,
                     onUsage: (event) => providerSession?.push(event),
+                    onUnknownEvent: (providerEventType) =>
+                        providerSession?.push({ type: 'unknown', providerEventType }),
                 }
             );
         } else {
@@ -1031,7 +1035,8 @@ export async function sendChatMessage(
                     max_tokens: providerRequest.limits.maxOutputTokens,
                     stream: true,
                 })) as AsyncIterable<{
-                    choices: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
+                    choices?: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
+                    type?: string;
                     usage?: {
                         prompt_tokens?: number;
                         completion_tokens?: number;
@@ -1044,6 +1049,19 @@ export async function sendChatMessage(
                 for await (const chunk of asyncChunkGenerator) {
                     if (aborter.signal.aborted) {
                         break;
+                    }
+                    if (!Array.isArray(chunk.choices)) {
+                        providerSession.push({
+                            type: 'unknown',
+                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                        });
+                        continue;
+                    }
+                    if (chunk.choices.length === 0 && !chunk.usage) {
+                        providerSession.push({
+                            type: 'unknown',
+                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                        });
                     }
                     const choice = chunk.choices[0];
                     const deltaDesc = choice?.delta.content;

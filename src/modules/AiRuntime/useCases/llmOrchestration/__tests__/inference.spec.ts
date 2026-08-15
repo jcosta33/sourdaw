@@ -47,6 +47,7 @@ const { mockLogger, mocks } = vi.hoisted(() => {
             llmStatusSet: vi.fn(),
             llmStatusValue,
             backendPreference,
+            providerFinishCalls: [] as unknown[],
         },
     };
 });
@@ -108,6 +109,28 @@ vi.mock('../../../transformers/toolCallParser', () => ({
     parseToolPlanningOutcome: mocks.parseToolPlanningOutcome,
 }));
 
+vi.mock('../../modelProviderProtocol', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../modelProviderProtocol')>();
+    return {
+        createModelProviderProtocol: (...args: Parameters<typeof original.createModelProviderProtocol>) => {
+            const protocol = original.createModelProviderProtocol(...args);
+            return {
+                ...protocol,
+                start: (request: Parameters<typeof protocol.start>[0]) => {
+                    const session = protocol.start(request);
+                    return {
+                        ...session,
+                        finish: (finish: Parameters<typeof session.finish>[0]) => {
+                            mocks.providerFinishCalls.push(finish);
+                            return session.finish(finish);
+                        },
+                    };
+                },
+            };
+        },
+    };
+});
+
 function completePlan<TToolCall>(toolCalls: TToolCall[]) {
     return { status: 'complete' as const, toolCalls };
 }
@@ -123,10 +146,27 @@ describe('generateToolPlanningOutcome', () => {
         mocks.getCloudProviderInfo.mockReturnValue(null);
         mocks.llmStatusValue.value = { state: 'ready', backend: 'webllm', modelId: 'test-model' };
         mocks.backendPreference.value = 'auto';
+        mocks.providerFinishCalls.length = 0;
     });
 
     it('should throw when no backend chain is available', async () => {
         await expect(generateToolCalls('sys', 'hello')).rejects.toThrow(/No AI backend available/);
+    });
+
+    it('terminates a thrown provider attempt through a typed neutral failure', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
+        mocks.generateCloudToolCalls.mockRejectedValue(new Error('private provider diagnostic'));
+
+        await expect(generateToolCalls('sys', 'mute drums')).rejects.toThrow('private provider diagnostic');
+        expect(mocks.providerFinishCalls).toContainEqual({
+            reason: 'error',
+            failure: {
+                code: 'provider-attempt-failed',
+                retryable: true,
+                safeMessage: 'The model provider request failed.',
+            },
+        });
     });
 
     it('should use repository-owned native structured tool calls before text fallback', async () => {

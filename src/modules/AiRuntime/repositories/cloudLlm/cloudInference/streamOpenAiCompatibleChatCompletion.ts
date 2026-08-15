@@ -10,6 +10,7 @@ type StreamOpenAiCompatibleChatCompletionInput = {
     signal: AbortSignal;
     maxTokens?: number;
     onUsage?: (event: ModelProviderUsageEvent) => void;
+    onUnknownEvent?: (providerEventType: string) => void;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -20,6 +21,7 @@ type ParsedStreamEvent = {
     text: string | null;
     finishReason: string | null;
     usage: ModelProviderUsageEvent['usage'] | null;
+    unknownEventType: string | null;
 };
 
 export type OpenAiCompatibleFinishReason = 'stop' | 'length';
@@ -29,13 +31,19 @@ type StreamState = {
 };
 
 function parseStreamEvent(event: unknown): ParsedStreamEvent {
-    if (!isRecord(event) || !Array.isArray(event.choices) || 'error' in event) {
+    if (!isRecord(event) || 'error' in event) {
+        throw new Error('Hosted AI returned an invalid streaming event');
+    }
+    if (!Array.isArray(event.choices)) {
+        if (typeof event.type === 'string') {
+            return { text: null, finishReason: null, usage: null, unknownEventType: event.type };
+        }
         throw new Error('Hosted AI returned an invalid streaming event');
     }
     const usage = readUsage(event.usage);
     if (event.choices.length === 0) {
         if (usage) {
-            return { text: null, finishReason: null, usage };
+            return { text: null, finishReason: null, usage, unknownEventType: null };
         }
         throw new Error('Hosted AI returned an invalid streaming event');
     }
@@ -61,6 +69,7 @@ function parseStreamEvent(event: unknown): ParsedStreamEvent {
         text: typeof content === 'string' ? content : null,
         finishReason: typeof finishReason === 'string' ? finishReason : null,
         usage,
+        unknownEventType: null,
     };
 }
 
@@ -68,6 +77,7 @@ function emitEventData(
     data: string,
     onToken: (text: string) => void,
     onUsage: ((event: ModelProviderUsageEvent) => void) | undefined,
+    onUnknownEvent: ((providerEventType: string) => void) | undefined,
     state: StreamState
 ): OpenAiCompatibleFinishReason | null {
     if (data === '[DONE]') {
@@ -83,6 +93,10 @@ function emitEventData(
         throw new Error('Hosted AI returned an invalid streaming event');
     }
     const event = parseStreamEvent(parsed);
+    if (event.unknownEventType !== null) {
+        onUnknownEvent?.(`openai-compatible:${event.unknownEventType}`);
+        return null;
+    }
     if (event.usage) {
         onUsage?.({ type: 'usage', mode: 'final', usage: event.usage, provenance: 'provider-reported' });
     }
@@ -105,6 +119,7 @@ export async function streamOpenAiCompatibleChatCompletion({
     signal,
     maxTokens,
     onUsage,
+    onUnknownEvent,
 }: StreamOpenAiCompatibleChatCompletionInput): Promise<OpenAiCompatibleFinishReason> {
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -153,7 +168,7 @@ export async function streamOpenAiCompatibleChatCompletion({
                 if (!line.startsWith('data:')) {
                     continue;
                 }
-                const finishReason = emitEventData(line.slice(5).trim(), onToken, onUsage, streamState);
+                const finishReason = emitEventData(line.slice(5).trim(), onToken, onUsage, onUnknownEvent, streamState);
                 if (finishReason !== null) {
                     await reader.cancel();
                     return finishReason;
@@ -163,7 +178,13 @@ export async function streamOpenAiCompatibleChatCompletion({
 
         const finalLine = buffer.trim();
         if (finalLine.startsWith('data:')) {
-            const finishReason = emitEventData(finalLine.slice(5).trim(), onToken, onUsage, streamState);
+            const finishReason = emitEventData(
+                finalLine.slice(5).trim(),
+                onToken,
+                onUsage,
+                onUnknownEvent,
+                streamState
+            );
             if (finishReason !== null) {
                 await reader.cancel();
                 return finishReason;

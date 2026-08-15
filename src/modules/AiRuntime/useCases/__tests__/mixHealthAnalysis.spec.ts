@@ -1,20 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type ModelProviderResult } from '../../models/ModelProviderProtocol';
 import { mixHealthAnalysis } from '../mixHealthAnalysis';
 
-type CloudChatOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
-
-const { streamCloudChatCompletionMock, summarizeFeaturesMock, mocks } = vi.hoisted(() => {
+const { streamHostedModelTextMock, summarizeFeaturesMock, mocks } = vi.hoisted(() => {
     const trackStore: { value: unknown } = { value: null };
 
     return {
-        streamCloudChatCompletionMock:
+        streamHostedModelTextMock:
             vi.fn<
-                (
-                    messages: unknown,
-                    onToken: (text: string) => void,
-                    options?: { maxTokens?: number; signal?: AbortSignal }
-                ) => Promise<CloudChatOutcome>
+                (input: {
+                    messages: unknown;
+                    onToken: (text: string) => void;
+                    signal?: AbortSignal;
+                }) => Promise<ModelProviderResult>
             >(),
         summarizeFeaturesMock: vi.fn(),
         mocks: {
@@ -32,15 +31,38 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     summarizeFeatures: summarizeFeaturesMock,
 }));
 
-vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
-    streamCloudChatCompletion: streamCloudChatCompletionMock,
+vi.mock('../streamHostedModelText', () => ({
+    streamHostedModelText: streamHostedModelTextMock,
 }));
+
+function createResult(overrides: Partial<ModelProviderResult> = {}): ModelProviderResult {
+    return {
+        schemaVersion: 1,
+        provider: 'anthropic',
+        model: 'model',
+        correlationId: 'mix-health-test',
+        status: 'complete',
+        output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+        usage: {
+            inputTokens: null,
+            outputTokens: null,
+            cachedInputTokens: null,
+            reasoningTokens: null,
+            provenance: 'unavailable',
+        },
+        finishReason: 'stop',
+        partialOutputDisposition: 'none',
+        failure: null,
+        ignoredProviderEvents: [],
+        ...overrides,
+    };
+}
 
 describe('mixHealthAnalysis', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.trackStore.value = null;
-        streamCloudChatCompletionMock.mockResolvedValue({ status: 'complete' });
+        streamHostedModelTextMock.mockResolvedValue(createResult());
     });
 
     it('short-circuits when no tracks', async () => {
@@ -48,22 +70,33 @@ describe('mixHealthAnalysis', () => {
         await mixHealthAnalysis({ onToken });
 
         expect(onToken).toHaveBeenCalledWith('No tracks found in the session to analyze.');
-        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
+        expect(streamHostedModelTextMock).not.toHaveBeenCalled();
     });
 
     it('rejects an incomplete hosted analysis after forwarding its partial output', async () => {
         mocks.trackStore.value = {
             tracks: [{ id: 'track-1', name: 'Lead', kind: 'audio', gain: 0.8, pan: 0, clips: [] }],
         };
-        streamCloudChatCompletionMock.mockImplementation((_messages, onToken) => {
-            onToken('Partial analysis');
-            return Promise.resolve({ status: 'incomplete', reason: 'max_tokens' });
+        streamHostedModelTextMock.mockImplementation((input) => {
+            input.onToken('Partial analysis');
+            return Promise.resolve(
+                createResult({
+                    status: 'partial',
+                    finishReason: 'length',
+                    partialOutputDisposition: 'preserve',
+                    failure: {
+                        code: 'output-limit',
+                        correlationId: 'mix-health-test',
+                        retryable: true,
+                        safeMessage: 'The model provider stopped at its output limit.',
+                        partialOutputDisposition: 'preserve',
+                    },
+                })
+            );
         });
         const onToken = vi.fn();
 
-        await expect(mixHealthAnalysis({ onToken })).rejects.toThrow(
-            'Hosted AI mix analysis was incomplete (max_tokens).'
-        );
+        await expect(mixHealthAnalysis({ onToken })).rejects.toThrow('stopped at its output limit');
         expect(onToken).toHaveBeenCalledWith('Partial analysis');
     });
 
@@ -75,6 +108,6 @@ describe('mixHealthAnalysis', () => {
 
         await mixHealthAnalysis({ onToken: vi.fn(), signal: controller.signal });
 
-        expect(streamCloudChatCompletionMock.mock.calls[0]?.[2]?.signal).toBe(controller.signal);
+        expect(streamHostedModelTextMock.mock.calls[0]?.[0].signal).toBe(controller.signal);
     });
 });

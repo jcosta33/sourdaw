@@ -210,11 +210,13 @@ function createSession(input: {
         provenance: ModelProviderUsage['provenance']
     ): void {
         if (mode === 'delta') {
+            const addCounter = (current: number | null, delta: number | null): number | null =>
+                delta === null ? current : (current ?? 0) + delta;
             usage = {
-                inputTokens: (usage.inputTokens ?? 0) + (next.inputTokens ?? 0),
-                outputTokens: (usage.outputTokens ?? 0) + (next.outputTokens ?? 0),
-                cachedInputTokens: (usage.cachedInputTokens ?? 0) + (next.cachedInputTokens ?? 0),
-                reasoningTokens: (usage.reasoningTokens ?? 0) + (next.reasoningTokens ?? 0),
+                inputTokens: addCounter(usage.inputTokens, next.inputTokens),
+                outputTokens: addCounter(usage.outputTokens, next.outputTokens),
+                cachedInputTokens: addCounter(usage.cachedInputTokens, next.cachedInputTokens),
+                reasoningTokens: addCounter(usage.reasoningTokens, next.reasoningTokens),
                 provenance,
             };
             return;

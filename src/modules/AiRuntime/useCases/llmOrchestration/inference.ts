@@ -8,7 +8,7 @@ import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCalling
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
-import { type ModelProviderName } from '../../models/ModelProviderProtocol';
+import { type ModelProviderName, type ModelProviderSession } from '../../models/ModelProviderProtocol';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
@@ -235,6 +235,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         let lastError: Error | null = null;
 
         for (const backend of chain) {
+            let providerSession: ModelProviderSession | null = null;
+            let providerSessionSettled = false;
             try {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
@@ -298,7 +300,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
                 }
                 const providerRequest = compiledRequest.request;
-                const providerSession = providerProtocol.start(providerRequest);
+                providerSession = providerProtocol.start(providerRequest);
                 const providerSystemPrompt = providerRequest.messages.find(
                     (message) => message.role === 'system'
                 )?.content;
@@ -306,6 +308,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     (message) => message.role === 'user'
                 )?.content;
                 if (providerSystemPrompt === undefined || providerUserMessage === undefined) {
+                    providerSession.finish({
+                        reason: 'error',
+                        failure: {
+                            code: 'invalid-provider-request',
+                            retryable: false,
+                            safeMessage: 'The model provider request is missing required messages.',
+                        },
+                    });
+                    providerSessionSettled = true;
                     return { status: 'rejected', reason: 'The model provider request is missing required messages.' };
                 }
                 let outcome: ToolPlanningOutcome;
@@ -366,6 +377,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         });
                     }
                     const normalizedResult = providerSession.finish({ reason: 'stop' });
+                    providerSessionSettled = true;
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
@@ -385,18 +397,42 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             safeMessage: outcome.reason,
                         },
                     });
+                    providerSessionSettled = true;
                     logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
                 }
 
                 llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                 return outcome;
             } catch (error) {
+                const isTerminalModelRejection = isToolPlanningRejectedError(error);
+                const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                if (providerSession !== null && !providerSessionSettled) {
+                    if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
+                        providerSession.finish({ reason: 'cancelled' });
+                    } else if (isTerminalModelRejection) {
+                        providerSession.finish({
+                            reason: 'error',
+                            failure: {
+                                code: 'tool-planning-rejected',
+                                retryable: false,
+                                safeMessage: 'The model provider rejected tool planning.',
+                            },
+                        });
+                    } else {
+                        providerSession.finish({
+                            reason: 'error',
+                            failure: {
+                                code: 'provider-attempt-failed',
+                                retryable: true,
+                                safeMessage: 'The model provider request failed.',
+                            },
+                        });
+                    }
+                }
                 if (isAiRuntimeConfigurationChangedError(error)) {
                     llmStatusStore.set({ state: 'idle' });
                     throw error;
                 }
-                const isTerminalModelRejection = isToolPlanningRejectedError(error);
-                const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
                 if (!isTerminalModelRejection && !isExplicitAbort) {
                     failedBackends.add(backend);
                 }

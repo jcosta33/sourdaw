@@ -10,7 +10,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
-import { streamCloudChatCompletion, mixHealthAnalysis } from '#/modules/AiRuntime/useCases';
+import { mixHealthAnalysis, streamHostedModelText } from '#/modules/AiRuntime/useCases';
 
 type MixHealthDialogProps = {
     open: boolean;
@@ -82,28 +82,30 @@ const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): 
         setReport(reportRef.current);
 
         try {
-            const outcome = await streamCloudChatCompletion(
-                [
+            const outcome = await streamHostedModelText({
+                correlationId: `mix-health-eli5-${crypto.randomUUID()}`,
+                messages: [
                     { role: 'system', content: 'You are a patient music teacher for beginners.' },
                     {
                         role: 'user',
                         content: `Here is a technical mix analysis:\n\n${originalReport}\n\nPlease explain this to me like I am a 5 year old beginner. Focus entirely on simple analogies.`,
                     },
                 ],
-                (token) => {
+                maxOutputTokens: 2_048,
+                onToken: (token) => {
                     if (controller.signal.aborted) {
                         return;
                     }
                     reportRef.current += token;
                     setReport(reportRef.current);
                 },
-                { signal: controller.signal }
-            );
+                signal: controller.signal,
+            });
             if (controller.signal.aborted) {
                 return;
             }
-            if (outcome.status === 'incomplete') {
-                reportRef.current += `\n[Hosted AI response incomplete: ${outcome.reason}]`;
+            if (outcome.status !== 'complete') {
+                reportRef.current += `\n[${outcome.failure?.safeMessage ?? 'Hosted AI response incomplete.'}]`;
                 setReport(reportRef.current);
             }
         } catch (error) {

@@ -3,6 +3,7 @@
 
 export { getAiOrganizationHandlers } from './getAiOrganizationHandlers';
 export { mixHealthAnalysis } from './mixHealthAnalysis';
+export { streamHostedModelText } from './streamHostedModelText';
 export { beginMixAnalysis } from './beginMixAnalysis';
 export { completeMixAnalysis } from './completeMixAnalysis';
 export { failMixAnalysis } from './failMixAnalysis';

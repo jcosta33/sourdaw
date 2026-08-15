@@ -43,6 +43,7 @@ type CompatibleStreamInput = {
     };
     messages: Array<{ role: string; content: string }>;
     onToken: (text: string) => void;
+    onUnknownEvent?: (providerEventType: string) => void;
     signal: AbortSignal;
     maxTokens?: number;
 };
@@ -195,6 +196,14 @@ describe('streamCloudChatCompletion', () => {
             usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: 0, reasoningTokens: null },
             provenance: 'provider-reported',
         });
+    });
+
+    it('surfaces unknown Anthropic events without exposing their payload', async () => {
+        const onUnknownEvent = vi.fn();
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn(), { onUnknownEvent });
+
+        expect(onUnknownEvent).toHaveBeenCalledWith('anthropic:other_event');
     });
 
     it('passes an abort signal so a revoked key can tear the stream down', async () => {

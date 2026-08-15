@@ -23,6 +23,7 @@ export async function streamCloudChatCompletion(
         maxTokens?: number;
         signal?: AbortSignal;
         onUsage?: (event: ModelProviderUsageEvent) => void;
+        onUnknownEvent?: (providerEventType: string) => void;
     }
 ): Promise<CloudChatCompletionOutcome> {
     const runtime = getCloudProviderRuntime();
@@ -53,6 +54,7 @@ export async function streamCloudChatCompletion(
                 signal: controller.signal,
                 maxTokens: options?.maxTokens,
                 onUsage: options?.onUsage,
+                onUnknownEvent: options?.onUnknownEvent,
             });
             controller.signal.throwIfAborted();
             if (finishReason === 'length') {
@@ -115,6 +117,14 @@ export async function streamCloudChatCompletion(
             }
             if (event.type === 'message_stop') {
                 sawMessageStop = true;
+                continue;
+            }
+            if (
+                event.type !== 'message_start' &&
+                event.type !== 'content_block_start' &&
+                event.type !== 'content_block_stop'
+            ) {
+                options?.onUnknownEvent?.(`anthropic:${event.type}`);
             }
         }
         controller.signal.throwIfAborted();

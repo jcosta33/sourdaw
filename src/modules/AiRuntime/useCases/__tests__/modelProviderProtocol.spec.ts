@@ -191,6 +191,26 @@ describe('modelProviderProtocol', () => {
         });
     });
 
+    it('preserves unavailable counters when a provider reports a sparse usage delta', () => {
+        const { protocol, request } = compileTextRequest();
+        const session = protocol.start(request);
+
+        session.push({
+            type: 'usage',
+            mode: 'delta',
+            usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
+            provenance: 'provider-reported',
+        });
+
+        expect(session.finish({ reason: 'stop' }).usage).toEqual({
+            inputTokens: null,
+            outputTokens: 4,
+            cachedInputTokens: null,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
     it('normalizes tools, structured output, reasoning, and unknown future events', () => {
         const protocol = createModelProviderProtocol({ provider: 'native', model: 'fixture-model' });
         const compiled = protocol.compileRequest({
