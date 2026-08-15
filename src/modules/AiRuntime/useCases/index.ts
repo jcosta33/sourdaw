@@ -71,3 +71,4 @@ export { agentRunLifecycle } from './agentRunLifecycle';
 export { recoverInterruptedAgentRuns } from './agentRunRecovery';
 export { agentRunWorkLease } from './agentRunWorkLease';
 export { agentRunControls } from './getAgentRunControlProjection';
+export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
