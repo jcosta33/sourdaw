@@ -55,6 +55,25 @@ describe('requestAnthropicStream', () => {
         expect(cancel).toHaveBeenCalledTimes(1);
     });
 
+    it('cancels an oversized declared response before creating its reader', async () => {
+        const cancel = vi.fn();
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(new ReadableStream<Uint8Array>({ cancel }), {
+                status: 200,
+                headers: { 'content-length': String(1_024 * 1_024 + 1) },
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        await expect(async () => {
+            for await (const _event of requestAnthropicStream(requestInput())) {
+                // The declared response bound rejects before any event exists.
+            }
+        }).rejects.toThrow(/response|size|limit/i);
+
+        expect(cancel).toHaveBeenCalledTimes(1);
+    });
+
     it('parses bounded Anthropic SSE data with the owned authenticated request', async () => {
         const event = { type: 'message_stop' };
         const fetchMock = vi

@@ -17,6 +17,10 @@ function encodedBytes(value: string): number {
     return new TextEncoder().encode(value).byteLength;
 }
 
+async function cancelResponseBody(response: Response): Promise<void> {
+    await response.body?.cancel().catch(() => undefined);
+}
+
 export async function* requestAnthropicStream({
     apiKey,
     model,
@@ -42,10 +46,12 @@ export async function* requestAnthropicStream({
         signal,
     });
     if (!response.ok) {
+        await cancelResponseBody(response);
         throw new Error(`Hosted AI chat request failed with status ${String(response.status)}`);
     }
     const contentLength = Number(response.headers.get('content-length'));
     if (Number.isFinite(contentLength) && contentLength > MAX_ANTHROPIC_RESPONSE_BYTES) {
+        await cancelResponseBody(response);
         throw new Error('Hosted AI chat response exceeded its size limit');
     }
     const reader = response.body?.getReader();
