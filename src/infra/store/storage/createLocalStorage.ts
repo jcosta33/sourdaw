@@ -39,7 +39,7 @@ type CreateLocalStorageOptions = {
      * sanitized projection to this build. Versioned stores use this to avoid
      * destroying state written by a newer application version.
      */
-    preserveSanitizedSource?: boolean;
+    preserveSanitizedSourceWhen?: (value: unknown) => boolean;
 };
 
 export const createLocalStorage = <TData>(
@@ -47,9 +47,13 @@ export const createLocalStorage = <TData>(
     options?: CreateLocalStorageOptions
 ): LocalStorageAdapter<TData> => {
     let cachedValue: TData | null | undefined = undefined;
+    let sanitizedSourcePreserved = false;
 
     /** Write through to the backing store, advancing the cache only once durable. */
     function persist(value: TData | null): void {
+        if (sanitizedSourcePreserved) {
+            throw new Error(`Local storage "${key}" contains a quarantined unsupported schema`);
+        }
         if (value === null) {
             window.localStorage.removeItem(key);
             cachedValue = null;
@@ -103,6 +107,9 @@ export const createLocalStorage = <TData>(
         // keeping the stale value instead would leave readers on data the
         // caller has already moved past.
         trySet(value: TData | null): boolean {
+            if (sanitizedSourcePreserved) {
+                return false;
+            }
             try {
                 persist(value);
                 return true;
@@ -121,6 +128,7 @@ export const createLocalStorage = <TData>(
         clear(): void {
             window.localStorage.removeItem(key);
             cachedValue = null;
+            sanitizedSourcePreserved = false;
         },
 
         isSupported(): boolean {
@@ -132,10 +140,12 @@ export const createLocalStorage = <TData>(
         },
     };
 
-    if (options?.preserveSanitizedSource === true) {
+    if (options?.preserveSanitizedSourceWhen) {
         adapter.setProjected = (value): void => {
             cachedValue = value;
+            sanitizedSourcePreserved = true;
         };
+        adapter.shouldProjectSanitizedSource = options.preserveSanitizedSourceWhen;
     }
 
     return adapter;

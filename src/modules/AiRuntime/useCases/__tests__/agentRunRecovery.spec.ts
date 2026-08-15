@@ -276,6 +276,23 @@ describe('agent run recovery', () => {
         });
     });
 
+    it('keeps a supported persisted schema writable after hydration', async () => {
+        window.localStorage.setItem('sourdaw-agent-runs', stringify({ schemaVersion: 1, runs: [] }));
+
+        vi.resetModules();
+        const { agentRunLifecycle: hydratedAgentRunLifecycle } = await import('../agentRunLifecycle');
+
+        expect(() =>
+            hydratedAgentRunLifecycle.create({
+                runId: 'current-build-run',
+                request: 'Run from the current build.',
+                mode: 'apply',
+                createdRevision: 'heads-current',
+            })
+        ).not.toThrow();
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('current-build-run');
+    });
+
     it('rejects unsupported persisted schema versions without overwriting their bytes', async () => {
         const futureState = { schemaVersion: 2, runs: [{ runId: 'future-run', futureReceipt: 'receipt-v2' }] };
         const rawFutureState = stringify(futureState);
@@ -283,11 +300,22 @@ describe('agent run recovery', () => {
 
         vi.resetModules();
         const { agentRunStore: futureAgentRunStore } = await import('../../stores/agentRunStore');
+        const { agentRunLifecycle: futureAgentRunLifecycle } = await import('../agentRunLifecycle');
 
         expect(futureAgentRunStore.value).toEqual({
             schemaVersion: 1,
             runs: [],
         });
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(rawFutureState);
+        expect(() =>
+            futureAgentRunLifecycle.create({
+                runId: 'older-build-run',
+                request: 'Run from the older build.',
+                mode: 'apply',
+                createdRevision: 'heads-old',
+            })
+        ).toThrow('Agent run state could not be persisted locally');
+        expect(futureAgentRunStore.value).toEqual({ schemaVersion: 1, runs: [] });
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(rawFutureState);
     });
 });

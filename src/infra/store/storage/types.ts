@@ -51,6 +51,10 @@ export type StorageAdapter<TData> = {
      *  must remain byte-for-byte available to the newer build that authored
      *  it, while this build exposes only a safe empty projection. */
     setProjected?(value: TData | null): void;
+    /** Decide whether one sanitizer input must be projected rather than
+     *  repaired. Shared adapters omit this and always project; versioned local
+     *  adapters use it to quarantine only explicit unsupported schemas. */
+    shouldProjectSanitizedSource?(value: unknown): boolean;
     /** Register the store's inbound sanitizer so shared raw CRDT content can
      *  be checked for projection loss before any read model is hydrated. */
     registerInboundSanitizer?(sanitize: (value: unknown) => unknown): void;

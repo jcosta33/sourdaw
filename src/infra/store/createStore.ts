@@ -143,7 +143,8 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
         }
 
         const setProjected = storage.setProjected;
-        if (setProjected) {
+        const shouldProject = storage.shouldProjectSanitizedSource?.(value) ?? true;
+        if (setProjected && shouldProject) {
             if (logger) {
                 logger.warn(
                     'Store content this build cannot read was quarantined: withheld from readers, left intact in shared storage.'
