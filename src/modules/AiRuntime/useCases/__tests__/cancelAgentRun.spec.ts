@@ -215,13 +215,17 @@ describe('cancelAgentRun', () => {
             cleanupOwner: 'render-worker',
             createdAt: 110,
         });
+        const cleanup = vi
+            .fn<() => void>()
+            .mockImplementationOnce(() => {
+                throw new Error('filesystem unavailable');
+            })
+            .mockImplementationOnce(() => undefined);
         registerAgentRunTemporaryAssetCleanup({
             runId: 'run-cleanup-failure',
             assetId: 'temporary.wav',
             cleanupOwner: 'render-worker',
-            cleanup: () => {
-                throw new Error('filesystem unavailable');
-            },
+            cleanup,
         });
         expect(() =>
             registerAgentRunTemporaryAssetCleanup({
@@ -251,5 +255,24 @@ describe('cancelAgentRun', () => {
                 },
             ],
         });
+        expect(() =>
+            registerAgentRunTemporaryAssetCleanup({
+                runId: 'run-cleanup-failure',
+                assetId: 'temporary.wav',
+                cleanupOwner: 'other-worker',
+                cleanup: vi.fn(),
+            })
+        ).toThrow('already has a cleanup owner');
+        await expect(
+            cancelAgentRun({ runId: 'run-cleanup-failure', reason: 'Retry pending cleanup', requestedAt: 130 })
+        ).resolves.toMatchObject({
+            status: 'cancelled',
+            cleanupPendingAssetIds: [],
+            releasedAssetIds: ['temporary.wav'],
+        });
+        expect(cleanup).toHaveBeenCalledTimes(2);
+        expect(agentRunLifecycle.get('run-cleanup-failure')?.temporaryAssets).toEqual([
+            expect.objectContaining({ assetId: 'temporary.wav', status: 'released' }),
+        ]);
     });
 });

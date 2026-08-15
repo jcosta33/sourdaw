@@ -224,7 +224,10 @@ export async function sendChatMessage(
             });
 
             if (aborter.signal.aborted) {
-                agentRunLifecycle.cancel({ runId, reason: 'User cancelled the run before planning completed.' });
+                await agentRunCancellation.cancel({
+                    runId,
+                    reason: 'User cancelled the run before planning completed.',
+                });
                 return undefined;
             }
 
@@ -647,16 +650,9 @@ export async function sendChatMessage(
 
                 if (execution.status === 'invalidated') {
                     if (commandLeaseSettlement.accepted) {
-                        agentRunLifecycle.recordError({
+                        await agentRunCancellation.cancel({
                             runId,
-                            error: {
-                                code: 'proposal-invalidated',
-                                message: execution.reason,
-                                occurredAt: Date.now(),
-                                retriable: true,
-                                workId: parsedCommandBatch.envelope.batchId,
-                            },
-                            terminal: true,
+                            reason: execution.reason,
                         });
                     }
                     updateChatMessage(assistantMsgId, {
@@ -670,7 +666,10 @@ export async function sendChatMessage(
 
                 if (execution.status === 'cancelled') {
                     if (commandLeaseSettlement.accepted) {
-                        agentRunLifecycle.cancel({ runId, reason: 'User cancelled before the command committed.' });
+                        await agentRunCancellation.cancel({
+                            runId,
+                            reason: 'User cancelled before the command committed.',
+                        });
                     }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
@@ -783,20 +782,17 @@ export async function sendChatMessage(
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;
-            trySettleAgentRunWorkLease(
-                providerLease,
-                aborter.signal.aborted || configurationChanged ? 'cancelled' : 'failed'
-            );
-            if (aborter.signal.aborted || configurationChanged) {
-                agentRunLifecycle.cancel({ runId, reason });
+            if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
+                await agentRunCancellation.cancel({ runId, reason });
             } else {
+                trySettleAgentRunWorkLease(providerLease, 'failed');
                 agentRunLifecycle.recordError({
                     runId,
                     error: {
-                        code: proposalInvalidated ? 'proposal-invalidated' : 'prompt-run-failed',
+                        code: 'prompt-run-failed',
                         message: reason,
                         occurredAt: Date.now(),
-                        retriable: proposalInvalidated,
+                        retriable: false,
                         workId: null,
                     },
                     terminal: true,
@@ -1024,7 +1020,7 @@ export async function sendChatMessage(
         })();
         if (isAiRuntimeConfigurationChangedError(error)) {
             trySettleAgentRunWorkLease(providerLease, 'cancelled');
-            agentRunLifecycle.cancel({ runId, reason: errorMessage });
+            await agentRunCancellation.cancel({ runId, reason: errorMessage });
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
@@ -1053,7 +1049,7 @@ export async function sendChatMessage(
             });
         }
         if (wasAborted) {
-            agentRunLifecycle.cancel({ runId, reason: errorMessage });
+            await agentRunCancellation.cancel({ runId, reason: errorMessage });
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {

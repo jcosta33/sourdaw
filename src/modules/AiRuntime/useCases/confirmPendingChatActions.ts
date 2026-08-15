@@ -966,15 +966,11 @@ function failApprovalPreflight(
     return { status: 'failed', reason };
 }
 
-function invalidatePendingConfirmation(
+async function invalidatePendingConfirmation(
     confirmation: PendingAppActionConfirmation
-): Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }> {
+): Promise<Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }>> {
     const reason = new AiProposalInvalidatedError().message;
-    recordTrackedAgentRunFailure(confirmation, {
-        code: 'proposal-invalidated',
-        message: reason,
-        retriable: true,
-    });
+    await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'invalidated',
@@ -990,20 +986,16 @@ function invalidatePendingConfirmation(
     return { status: 'invalidated', reason };
 }
 
-function invalidatePendingConfirmationForDivergence(
+async function invalidatePendingConfirmationForDivergence(
     confirmation: PendingAppActionConfirmation,
     divergence: ApprovalDivergence
-): Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }> {
+): Promise<Extract<ConfirmPendingChatActionsResult, { status: 'invalidated' }>> {
     const targetIds = divergence.targetIds.length > 0 ? divergence.targetIds.join(', ') : 'none';
     const candidates = divergence.repairCandidates
         .map((candidate) => `${candidate.kind}: ${candidate.targetIds.join(', ') || 'project'}`)
         .join('; ');
     const reason = `The approved command was not executed because project divergence is ${divergence.kind}.`;
-    recordTrackedAgentRunFailure(confirmation, {
-        code: 'proposal-diverged',
-        message: reason,
-        retriable: true,
-    });
+    await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: 'invalidated',

@@ -9,11 +9,15 @@ type WorkCancellationRegistration = {
     cancel: () => CancellationAcknowledgement | void | Promise<CancellationAcknowledgement | void>;
 };
 
-type TemporaryAssetCleanupRegistration = {
+type TemporaryAssetCleanupRegistrationInput = {
     runId: string;
     assetId: string;
     cleanupOwner: string;
     cleanup: () => void | Promise<void>;
+};
+
+type TemporaryAssetCleanupRegistration = TemporaryAssetCleanupRegistrationInput & {
+    inFlight: boolean;
 };
 
 const workCancellationRegistrations = new Map<string, WorkCancellationRegistration>();
@@ -49,24 +53,24 @@ function registerAgentRunWorkCancellation(input: WorkCancellationRegistration): 
     };
 }
 
-function registerAgentRunTemporaryAssetCleanup(input: TemporaryAssetCleanupRegistration): () => void {
+function registerAgentRunTemporaryAssetCleanup(input: TemporaryAssetCleanupRegistrationInput): () => void {
+    const key = temporaryAssetKey(input.runId, input.assetId);
+    if (temporaryAssetCleanupRegistrations.has(key)) {
+        throw new Error(`Agent temporary asset already has a cleanup owner: ${input.assetId}`);
+    }
     const asset = agentRunLifecycle
         .get(input.runId)
         ?.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
     if (!asset || asset.status !== 'live') {
         throw new Error(`Agent temporary asset is not live: ${input.assetId}`);
     }
-    const key = temporaryAssetKey(input.runId, input.assetId);
-    if (temporaryAssetCleanupRegistrations.has(key)) {
-        throw new Error(`Agent temporary asset already has a cleanup owner: ${input.assetId}`);
-    }
     if (asset.cleanupOwner !== input.cleanupOwner) {
         throw new Error(`Agent temporary asset cleanup owner does not match: ${input.assetId}`);
     }
-    const registration = { ...input };
+    const registration = { ...input, inFlight: false };
     temporaryAssetCleanupRegistrations.set(key, registration);
     return () => {
-        if (temporaryAssetCleanupRegistrations.get(key) === registration) {
+        if (temporaryAssetCleanupRegistrations.get(key) === registration && !registration.inFlight) {
             temporaryAssetCleanupRegistrations.delete(key);
         }
     };
@@ -121,17 +125,24 @@ async function cancelAgentRun(input: {
     if (!run) {
         return { status: 'missing' };
     }
-    if (TERMINAL_PHASES.has(run.phase)) {
+    const retryingPendingCleanup =
+        (run.phase === 'cancelled' || run.phase === 'partially-completed') &&
+        run.temporaryAssets.some((asset) => asset.status === 'cleanup-pending');
+    if (TERMINAL_PHASES.has(run.phase) && !retryingPendingCleanup) {
         return { status: 'already-terminal', phase: run.phase };
     }
 
     const requestedAt = input.requestedAt ?? Date.now();
     const activeLeases = run.workLeases.filter((lease) => lease.terminalState === null);
-    const liveAssets = run.temporaryAssets.filter((asset) => asset.status === 'live');
+    const cleanupAssets = run.temporaryAssets.filter(
+        (asset) => asset.status === 'live' || (retryingPendingCleanup && asset.status === 'cleanup-pending')
+    );
 
     // Revoke durable authority before notifying any external owner. A callback
     // that races this function can only present the now-stale generation.
-    agentRunLifecycle.cancel({ runId: input.runId, reason: input.reason, requestedAt });
+    if (!retryingPendingCleanup) {
+        agentRunLifecycle.cancel({ runId: input.runId, reason: input.reason, requestedAt });
+    }
 
     const cancelledWorkIds: string[] = [];
     let transportAcknowledged = false;
@@ -183,13 +194,13 @@ async function cancelAgentRun(input: {
     }
 
     const releasedAssetIds: string[] = [];
-    for (const asset of liveAssets) {
+    for (const asset of cleanupAssets) {
         const key = temporaryAssetKey(input.runId, asset.assetId);
         const registration = temporaryAssetCleanupRegistrations.get(key);
-        if (!registration || registration.cleanupOwner !== asset.cleanupOwner) {
+        if (!registration || registration.cleanupOwner !== asset.cleanupOwner || registration.inFlight) {
             continue;
         }
-        temporaryAssetCleanupRegistrations.delete(key);
+        registration.inFlight = true;
         try {
             await registration.cleanup();
             agentRunLifecycle.releaseTemporaryAsset({
@@ -199,7 +210,11 @@ async function cancelAgentRun(input: {
                 releasedAt: requestedAt,
             });
             releasedAssetIds.push(asset.assetId);
+            if (temporaryAssetCleanupRegistrations.get(key) === registration) {
+                temporaryAssetCleanupRegistrations.delete(key);
+            }
         } catch (error) {
+            registration.inFlight = false;
             agentRunLifecycle.recordError({
                 runId: input.runId,
                 error: {

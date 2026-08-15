@@ -557,6 +557,14 @@ describe('sendChatMessage injectables', () => {
             'The project changed after this proposal was created. Review and submit the command again.'
         );
         expect(invalidationMessage?.content).toContain('project changed while this command was being planned');
+        const [projection] = getAgentRunControlProjections();
+        expect(projection).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requested: true, acknowledgement: 'transport' },
+        });
+        expect(getAgentRun(projection!.runId)?.workLeases).toEqual([
+            expect.objectContaining({ workId: 'provider-planning', terminalState: 'cancelled' }),
+        ]);
     });
 
     it('lets prompt mode use provider fallback when the preferred native engine is not ready', async () => {
