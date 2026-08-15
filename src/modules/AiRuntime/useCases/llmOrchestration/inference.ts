@@ -6,7 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
-import { createRemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
+import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -33,6 +33,7 @@ import {
     type ToolPlanningOutcome,
 } from '../../transformers/toolCallParser';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
+import { discloseRemoteTransmission } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
@@ -373,7 +374,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     ...(backend === 'cloud'
                         ? {
                               dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                              remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                              remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
                           }
                         : {}),
                 });

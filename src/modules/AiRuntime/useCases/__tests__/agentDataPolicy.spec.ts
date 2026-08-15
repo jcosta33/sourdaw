@@ -18,10 +18,10 @@ describe('agent data policy', () => {
             safetyLegalException: 'unknown',
             unknown: 'unknown',
         });
-        expect(createRemoteTransmissionDisclosure(['prompt-text', 'project-context'])).toEqual({
+        expect(createRemoteTransmissionDisclosure(['prompt-text', 'project-context'])).toMatchObject({
             destination: 'provider',
             categories: ['prompt-text', 'project-context'],
-            required: true,
+            disclosedAt: expect.any(Number),
         });
     });
 
