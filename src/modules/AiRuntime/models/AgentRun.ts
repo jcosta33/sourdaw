@@ -87,7 +87,6 @@ export type AgentRunProviderUsage = {
     routeId?: string;
     executor?: RunnableAiBackend;
     fallbackReason?: string | null;
-    selected?: boolean;
 };
 
 export type AgentRunModelRoute = {

@@ -96,7 +96,6 @@ describe('agent run recovery', () => {
                 routeId: 'webllm:webllm:local-model',
                 executor: 'webllm',
                 fallbackReason: null,
-                selected: true,
             },
             recordedAt: 109,
         });

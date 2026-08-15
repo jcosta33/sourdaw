@@ -173,7 +173,6 @@ function recordUnavailableProviderUsage(runId: string, backend: RunnableAiBacken
             routeId: `${backend}:${backend}:${model}`,
             executor: backend,
             fallbackReason: 'backend-unavailable',
-            selected: false,
         },
     });
 }
@@ -181,12 +180,11 @@ function recordUnavailableProviderUsage(runId: string, backend: RunnableAiBacken
 function recordModelProviderUsage(
     runId: string,
     result: ModelProviderResult,
-    options: { partialIsSelected: boolean } = { partialIsSelected: false }
+    options: { terminal: boolean } = { terminal: false }
 ): void {
     const executor: RunnableAiBackend =
         result.provider === 'native' || result.provider === 'webllm' ? result.provider : 'cloud';
     const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
-    const selected = result.status === 'complete' || (result.status === 'partial' && options.partialIsSelected);
     agentRunLifecycle.recordProviderUsage({
         runId,
         usage: {
@@ -201,8 +199,8 @@ function recordModelProviderUsage(
             partialOutputDisposition: result.partialOutputDisposition,
             routeId,
             executor,
-            fallbackReason: selected ? null : (result.failure?.code ?? result.status),
-            selected,
+            fallbackReason:
+                options.terminal || result.status === 'complete' ? null : (result.failure?.code ?? result.status),
         },
     });
 }
@@ -1282,7 +1280,7 @@ export async function sendChatMessage(
             receiptIdentity: providerLease.receiptIdentity,
             terminalState: 'completed',
         });
-        recordModelProviderUsage(runId, providerResult, { partialIsSelected: true });
+        recordModelProviderUsage(runId, providerResult, { terminal: true });
         providerUsageRecorded = true;
         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
@@ -1318,7 +1316,7 @@ export async function sendChatMessage(
             );
         }
         if (providerResult && !providerUsageRecorded) {
-            recordModelProviderUsage(runId, providerResult, { partialIsSelected: true });
+            recordModelProviderUsage(runId, providerResult, { terminal: true });
             providerUsageRecorded = true;
         }
         if (configurationChanged) {

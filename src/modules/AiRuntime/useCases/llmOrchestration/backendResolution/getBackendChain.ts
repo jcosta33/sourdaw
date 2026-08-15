@@ -132,6 +132,7 @@ function createRouteCandidate(
  */
 export function getBackendChain(requirements: BackendChainRequirements = {}): RunnableAiBackend[] {
     const preference = aiBackendPreferenceStore.value ?? 'auto';
+    const permitsRemoteExecution = preference === 'cloud';
     const readyBackend = llmStatusStore.value?.state === 'ready' ? llmStatusStore.value.backend : null;
     const orderedBackends =
         preference !== 'auto' || readyBackend === null
@@ -143,9 +144,10 @@ export function getBackendChain(requirements: BackendChainRequirements = {}): Ru
             operation: requirements.operation ?? 'text',
             modality: requirements.modality ?? 'text',
             streaming: requirements.streaming ?? false,
-            allowedTrust: requirements.allowedTrust ?? ['release-owned-local', 'configured-remote'],
-            dataPolicy: requirements.dataPolicy ?? 'remote-allowed',
-            costPolicy: requirements.costPolicy ?? 'allow-paid-remote',
+            allowedTrust:
+                requirements.allowedTrust ?? (permitsRemoteExecution ? ['configured-remote'] : ['release-owned-local']),
+            dataPolicy: requirements.dataPolicy ?? (permitsRemoteExecution ? 'remote-allowed' : 'local-only'),
+            costPolicy: requirements.costPolicy ?? (permitsRemoteExecution ? 'allow-paid-remote' : 'local-only'),
             requireInstalledModel: requirements.requireInstalledModel ?? false,
         },
         candidates: orderedBackends.map(createRouteCandidate),

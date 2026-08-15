@@ -1053,7 +1053,6 @@ describe('sendChatMessage injectables', () => {
                 routeId: 'cloud:openai-compatible:cloud',
                 executor: 'cloud',
                 fallbackReason: null,
-                selected: true,
             },
         ]);
         expect(getAgentRun(usageProjection!.runId)?.modelRoute).toEqual({
@@ -1134,7 +1133,6 @@ describe('sendChatMessage injectables', () => {
                 routeId: 'native:native:native',
                 executor: 'native',
                 fallbackReason: 'provider-attempt-failed',
-                selected: false,
             }),
             expect.objectContaining({
                 attempt: 2,
@@ -1145,7 +1143,6 @@ describe('sendChatMessage injectables', () => {
                 routeId: 'webllm:webllm:webllm-model',
                 executor: 'webllm',
                 fallbackReason: null,
-                selected: true,
             }),
         ]);
         expect(run?.modelRoute).toEqual({
@@ -1281,6 +1278,10 @@ describe('sendChatMessage injectables', () => {
                 partialOutputDisposition: 'preserve',
             }),
         ]);
+        expect(getAgentRun(usageProjection!.runId)?.modelRoute).toEqual({
+            requestedRoute: 'auto',
+            selectedRouteId: 'cloud:openai-compatible:cloud',
+        });
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
         const [projection] = getAgentRunControlProjections();
         if (!projection) {

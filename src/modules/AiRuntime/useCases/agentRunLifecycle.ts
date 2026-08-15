@@ -287,9 +287,7 @@ function recordAgentRunProviderUsage(input: {
         return {
             ...run,
             modelRoute:
-                usage.selected === true && usage.routeId !== undefined
-                    ? { ...run.modelRoute, selectedRouteId: run.modelRoute.selectedRouteId ?? usage.routeId }
-                    : run.modelRoute,
+                usage.routeId !== undefined ? { ...run.modelRoute, selectedRouteId: usage.routeId } : run.modelRoute,
             providerUsage: [...run.providerUsage, usage],
         };
     });

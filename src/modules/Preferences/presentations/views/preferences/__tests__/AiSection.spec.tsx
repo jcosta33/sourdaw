@@ -113,9 +113,14 @@ describe('AiSection', () => {
         mockResolveBackend.mockReturnValue('native');
         render(<AiSection />);
 
-        expect(screen.getByRole('option', { name: 'Automatic failover' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Automatic local failover' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Native local' })).toBeInTheDocument();
         expect(screen.getByText('Native (in-process)')).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                'Automatic stays local and fails over between native local and WebLLM. Select Hosted provider explicitly to send prompts remotely.'
+            )
+        ).toBeInTheDocument();
     });
 
     it('shows the configured hosted provider when the backend resolves to cloud', () => {

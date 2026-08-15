@@ -213,7 +213,6 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
     const executor =
         value.executor === undefined ? undefined : executors.find((candidate) => candidate === value.executor);
     const fallbackReason = value.fallbackReason === undefined ? undefined : readNullableString(value.fallbackReason);
-    const selected = value.selected === undefined ? undefined : value.selected;
     if (
         provider === null ||
         (value.attempt !== undefined && (attempt === null || attempt === undefined || attempt < 1)) ||
@@ -227,8 +226,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         (value.partialOutputDisposition !== undefined && partialOutputDisposition === undefined) ||
         routeId === null ||
         (value.executor !== undefined && executor === undefined) ||
-        (value.fallbackReason !== undefined && fallbackReason === undefined) ||
-        (selected !== undefined && typeof selected !== 'boolean')
+        (value.fallbackReason !== undefined && fallbackReason === undefined)
     ) {
         return null;
     }
@@ -246,7 +244,6 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         ...(routeId === undefined ? {} : { routeId }),
         ...(executor === undefined ? {} : { executor }),
         ...(fallbackReason === undefined ? {} : { fallbackReason }),
-        ...(selected === undefined ? {} : { selected }),
     };
 }
 
