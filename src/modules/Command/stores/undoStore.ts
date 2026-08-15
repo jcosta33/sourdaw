@@ -5,7 +5,8 @@ import { type ActionUndoEntry, isActionEntry, type UndoEntry, type UndoSource } 
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
-const RETIRED_SESSION_ACTION_TYPES = new Set(['restoreDsoSnapshot']);
+
+let supportedSessionActionTypes: ReadonlySet<string> | null = null;
 
 export type UndoStoreState = {
     past: UndoEntry[];
@@ -20,11 +21,14 @@ function isUndoSource(value: unknown): value is UndoSource {
     return value === 'manual' || value === 'prompt' || value === 'voice' || value === 'ai';
 }
 
-function isSessionPersistableAppAction(value: unknown): value is AppAction {
+function isSessionPersistableAppAction(
+    value: unknown,
+    supportedActionTypes: ReadonlySet<string> | null = supportedSessionActionTypes
+): value is AppAction {
     if (!isRecord(value)) {
         return false;
     }
-    return typeof value.type === 'string' && value.type.length > 0 && !RETIRED_SESSION_ACTION_TYPES.has(value.type);
+    return typeof value.type === 'string' && supportedActionTypes?.has(value.type) === true;
 }
 
 function isSessionPersistableActionEntry(entry: UndoEntry): entry is ActionUndoEntry {
@@ -51,7 +55,7 @@ function getOptionalString(value: Record<string, unknown>, key: string): string 
     return maybeString;
 }
 
-function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
+function sanitizeStoredEntry(value: unknown, supportedActionTypes: ReadonlySet<string>): ActionUndoEntry | null {
     if (!isRecord(value)) {
         return null;
     }
@@ -66,17 +70,17 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
 
     const action = value.action;
-    if (!isSessionPersistableAppAction(action)) {
+    if (!isSessionPersistableAppAction(action, supportedActionTypes)) {
         return null;
     }
 
     const inverseAction = value.inverseAction;
-    if (inverseAction !== null && !isSessionPersistableAppAction(inverseAction)) {
+    if (inverseAction !== null && !isSessionPersistableAppAction(inverseAction, supportedActionTypes)) {
         return null;
     }
 
     const redoAction = value.redoAction;
-    if (redoAction !== undefined && !isSessionPersistableAppAction(redoAction)) {
+    if (redoAction !== undefined && !isSessionPersistableAppAction(redoAction, supportedActionTypes)) {
         return null;
     }
 
@@ -118,22 +122,22 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     return entry;
 }
 
-function sanitizeStoredEntries(values: unknown[]): ActionUndoEntry[] {
+function sanitizeStoredEntries(values: unknown[], supportedActionTypes: ReadonlySet<string>): ActionUndoEntry[] {
     return values.flatMap((value) => {
-        const entry = sanitizeStoredEntry(value);
+        const entry = sanitizeStoredEntry(value, supportedActionTypes);
         return entry === null ? [] : [entry];
     });
 }
 
-function loadFromSession(): UndoStoreState {
+function loadFromSession(supportedActionTypes: ReadonlySet<string>): UndoStoreState {
     try {
         const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
         if (raw) {
             const parsed: unknown = JSON.parse(raw);
             if (isRecord(parsed) && Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
                 return {
-                    past: sanitizeStoredEntries(parsed.past),
-                    future: sanitizeStoredEntries(parsed.future),
+                    past: sanitizeStoredEntries(parsed.past, supportedActionTypes),
+                    future: sanitizeStoredEntries(parsed.future, supportedActionTypes),
                 };
             }
         }
@@ -144,8 +148,18 @@ function loadFromSession(): UndoStoreState {
 }
 
 export const undoStore = createStore<UndoStoreState>({
-    initialData: loadFromSession(),
+    initialData: { past: [], future: [] },
 });
+
+/**
+ * Hydrates persisted undo history only after production handler registration
+ * has established the current executable action set. Unknown and retired
+ * actions never enter the live undo/redo stacks.
+ */
+export function hydrateUndoStoreFromSession(actionTypes: Iterable<string>): void {
+    supportedSessionActionTypes = new Set(actionTypes);
+    undoStore.set(loadFromSession(supportedSessionActionTypes));
+}
 
 // Coalesce persistence writes: prior to this, every pushUndo triggered
 // an immediate full JSON.stringify(trimmed) + sessionStorage write

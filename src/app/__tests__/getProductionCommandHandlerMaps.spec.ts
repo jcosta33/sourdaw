@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { clearHandlerRegistry } from '#/modules/Command/stores';
+import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
 import { getExecutableCommandRegistrations, registerProductionCommandHandlers } from '#/modules/Command/useCases';
 
 import { getProductionCommandHandlerMaps } from '../getProductionCommandHandlerMaps';
+
+const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
 function handlerCanJoinBatch(handler: unknown): boolean {
     if (typeof handler !== 'object' || handler === null) {
@@ -19,13 +21,41 @@ function handlerCanJoinBatch(handler: unknown): boolean {
 describe('getProductionCommandHandlerMaps', () => {
     beforeEach(() => {
         clearHandlerRegistry();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
     });
 
     afterEach(() => {
         clearHandlerRegistry();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
     });
 
     it('assembles the complete duplicate-free production handler set before canonical validation', () => {
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'current-action',
+                        kind: 'action',
+                        label: 'Current action',
+                        action: { type: 'setTempo', payload: { bpm: 128 } },
+                        inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                        timestamp: 1,
+                        source: 'manual',
+                    },
+                    {
+                        id: 'retired-action',
+                        kind: 'action',
+                        label: 'Retired action',
+                        action: { type: 'retiredFutureAction' },
+                        inverseAction: { type: 'retiredFutureAction' },
+                        timestamp: 2,
+                        source: 'ai',
+                    },
+                ],
+                future: [],
+            })
+        );
         const handlerMaps = getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true });
         const actionTypes = handlerMaps.flatMap((handlerMap) => Object.keys(handlerMap));
         const allHandlers = handlerMaps.flatMap((handlerMap) =>
@@ -39,6 +69,8 @@ describe('getProductionCommandHandlerMaps', () => {
         ).toEqual([]);
 
         registerProductionCommandHandlers(handlerMaps);
+
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
         expect(registrations).toHaveLength(97);

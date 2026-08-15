@@ -1,11 +1,20 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
+const SUPPORTED_SESSION_ACTION_TYPES = [
+    'replayGeneratedMidi',
+    'setMasterGain',
+    'setTempo',
+    'stopPlayback',
+    'toggleMetronome',
+    'togglePlayback',
+] as const;
 
 async function loadSubject() {
     vi.resetModules();
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');
     const undoStoreModule = await import('../undoStore');
+    undoStoreModule.hydrateUndoStoreFromSession(SUPPORTED_SESSION_ACTION_TYPES);
     return {
         createUndoEntry: createUndoEntryModule.createUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
@@ -241,6 +250,15 @@ describe('undoStore / pushUndo', () => {
                 action: { type: 'restoreDsoSnapshot', payload: { bundle: {} } },
                 inverseAction: { type: 'restoreDsoSnapshot', payload: { bundle: {} } },
                 timestamp: 2007,
+                source: 'ai',
+            },
+            {
+                id: 'undo-unknown-retired-action',
+                kind: 'action',
+                label: 'Unknown retired action',
+                action: { type: 'retiredFutureAction', payload: { value: 1 } },
+                inverseAction: { type: 'retiredFutureAction', payload: { value: 0 } },
+                timestamp: 2008,
                 source: 'ai',
             },
         ];
