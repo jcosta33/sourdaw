@@ -1,0 +1,28 @@
+src/modules/AiRuntime/repositories/__tests__/nativeModelProviderAdapter.spec.ts
+  s_a40848e8f8cca9::t_262ba221e6792e 167-203
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_262ba221e6792e 967-1017
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_20d6aefacf4199 1233,1236-1238,1241
+  s_a40848e8f8cca9::t_010ef7b432c38f 1234-1235
+  s_a40848e8f8cca9::t_0a0954257c60cb 1239
+src/modules/AiRuntime/repositories/nativeModelProviderAdapter.ts
+  s_a40848e8f8cca9::t_20d6aefacf4199 75,77-79,116-125
+  s_a40848e8f8cca9::t_0a0954257c60cb 76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "51e1e0163f816030d49843aee98de3c97aea6bef",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
