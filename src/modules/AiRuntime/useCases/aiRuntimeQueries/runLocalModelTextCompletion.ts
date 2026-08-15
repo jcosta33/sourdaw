@@ -1,8 +1,10 @@
 import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import {
     type ModelProviderEvent,
+    type ModelProviderEventEnvelope,
     type ModelProviderFailure,
     type ModelProviderFinish,
+    type ModelProviderFinishEnvelope,
     type ModelProviderName,
     type ModelProviderRequest,
 } from '../../models/ModelProviderProtocol';
@@ -27,9 +29,9 @@ type RunLocalModelTextCompletionInput = RunLocalModelTextCompletionBase &
               execute?: never;
               executeRequest: (
                   request: ModelProviderRequest,
-                  onEvent: (event: ModelProviderEvent) => void
+                  onEvent: (event: ModelProviderEventEnvelope) => void
               ) => Promise<
-                  | { status: 'available'; finish: ModelProviderFinish }
+                  | { status: 'available'; finish: ModelProviderFinishEnvelope }
                   | { status: 'unavailable'; failure: ModelProviderFailure }
               >;
           }
@@ -60,11 +62,33 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
     }
 
     const session = protocol.start(compiled.request);
+    let nextSequence = 0;
+    const eventEnvelope = (event: ModelProviderEvent) => ({
+        schemaVersion: compiled.request.schemaVersion,
+        runId: compiled.request.runId,
+        requestId: compiled.request.requestId,
+        correlationId: compiled.request.correlationId,
+        cancellationGeneration: compiled.request.cancellationGeneration,
+        sequence: nextSequence++,
+        event,
+    });
+    const finishEnvelope = (finish: ModelProviderFinish) => ({
+        schemaVersion: compiled.request.schemaVersion,
+        runId: compiled.request.runId,
+        requestId: compiled.request.requestId,
+        correlationId: compiled.request.correlationId,
+        cancellationGeneration: compiled.request.cancellationGeneration,
+        sequence: nextSequence++,
+        finish,
+    });
     let settled = false;
     try {
         input.signal?.throwIfAborted();
         if (input.executeRequest !== undefined) {
-            const outcome = await input.executeRequest(compiled.request, (event) => session.push(event));
+            const outcome = await input.executeRequest(compiled.request, (event) => {
+                session.push(event);
+                nextSequence = event.sequence + 1;
+            });
             if (outcome.status === 'unavailable') {
                 settled = true;
                 throw createModelProviderFailureError(outcome.failure);
@@ -86,8 +110,8 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
         }
         const text = await input.execute(systemPrompt, userMessage);
         input.signal?.throwIfAborted();
-        session.push({ type: 'text', mode: 'cumulative-snapshot', text });
-        const result = session.finish({ reason: 'stop' });
+        session.push(eventEnvelope({ type: 'text', mode: 'cumulative-snapshot', text }));
+        const result = session.finish(finishEnvelope({ reason: 'stop' }));
         settled = true;
         if (result.status !== 'complete') {
             if (result.failure !== null) {
@@ -99,16 +123,18 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
     } catch (error) {
         if (!settled) {
             if (input.signal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
-                session.finish({ reason: 'cancelled' });
+                session.finish(finishEnvelope({ reason: 'cancelled' }));
             } else {
-                const result = session.finish({
-                    reason: 'error',
-                    failure: {
-                        code: 'local-provider-failed',
-                        retryable: true,
-                        safeMessage: 'The local model provider request failed.',
-                    },
-                });
+                const result = session.finish(
+                    finishEnvelope({
+                        reason: 'error',
+                        failure: {
+                            code: 'local-provider-failed',
+                            retryable: true,
+                            safeMessage: 'The local model provider request failed.',
+                        },
+                    })
+                );
                 if (result.failure !== null) {
                     throw createModelProviderFailureError(result.failure, error);
                 }

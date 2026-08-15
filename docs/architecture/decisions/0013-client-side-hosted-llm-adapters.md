@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-27
 - Amended by: ADR 0035 for remote HTTPS OpenAI-compatible transport; loopback development remains browser-side.
+- Amended by: ADR 0036 for the provider-neutral ordered and bounded stream envelope.
 
 ## Context
 

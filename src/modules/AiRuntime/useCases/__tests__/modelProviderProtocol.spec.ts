@@ -1,7 +1,36 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+    MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+    type ModelProviderEvent,
+    type ModelProviderFinish,
+    type ModelProviderRequest,
+} from '../../models/ModelProviderProtocol';
 import { getAiRuntimeProtocolContracts } from '../getAiRuntimeProtocolContracts';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
+
+function createModelProviderStreamSource(request: ModelProviderRequest) {
+    let sequence = 0;
+    const identity = {
+        schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+        runId: request.runId,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        cancellationGeneration: request.cancellationGeneration,
+    } as const;
+    return {
+        push(event: ModelProviderEvent) {
+            const envelope = { ...identity, sequence, event };
+            sequence += 1;
+            return envelope;
+        },
+        finish(finish: ModelProviderFinish) {
+            const envelope = { ...identity, sequence, finish };
+            sequence += 1;
+            return envelope;
+        },
+    };
+}
 
 function compileTextRequest(provider: 'webllm' | 'openai-compatible' = 'webllm') {
     const protocol = createModelProviderProtocol({ provider, model: 'fixture-model' });
@@ -28,7 +57,7 @@ function compileTextRequest(provider: 'webllm' | 'openai-compatible' = 'webllm')
 describe('modelProviderProtocol', () => {
     it('publishes the complete provider-neutral protocol surface', () => {
         expect(getAiRuntimeProtocolContracts().providerProtocol).toMatchObject({
-            schemaVersion: 1,
+            schemaVersion: 2,
             capabilities: [
                 'provider-neutral-text-tools-and-structured-output',
                 'delta-snapshot-and-final-events',
@@ -39,11 +68,15 @@ describe('modelProviderProtocol', () => {
                 'fixed-unavailable-media-modalities',
                 'unknown-future-event-tolerance',
                 'stream-cancellation',
+                'run-request-call-sequence-and-cancellation-generation-correlation',
+                'bounded-events-buffers-and-payloads',
+                'schema-validated-complete-tool-arguments',
+                'exactly-one-terminal-and-late-event-rejection',
             ],
             operations: [
-                { name: 'text', version: '1', availability: 'available' },
-                { name: 'tools', version: '1', availability: 'available' },
-                { name: 'structured-output', version: '1', availability: 'available' },
+                { name: 'text', version: '2', availability: 'available' },
+                { name: 'tools', version: '2', availability: 'available' },
+                { name: 'structured-output', version: '2', availability: 'available' },
             ],
         });
     });
@@ -76,7 +109,7 @@ describe('modelProviderProtocol', () => {
         expect(text).toMatchObject({
             status: 'ready',
             request: {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 correlationId: 'request-text',
                 operation: 'text',
                 modality: 'text',
@@ -149,36 +182,45 @@ describe('modelProviderProtocol', () => {
     it('normalizes delta, cumulative-snapshot, and final usage without double-counting', () => {
         const { protocol, request } = compileTextRequest();
         const session = protocol.start(request);
+        const source = createModelProviderStreamSource(request);
 
-        session.push({ type: 'text', mode: 'delta', text: 'Hel' });
-        session.push({ type: 'text', mode: 'cumulative-snapshot', text: 'Hello' });
-        session.push({ type: 'text', mode: 'delta', text: '!' });
-        session.push({
-            type: 'usage',
-            mode: 'delta',
-            usage: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 0, reasoningTokens: 0 },
-            provenance: 'versioned-estimate',
-        });
-        session.push({
-            type: 'usage',
-            mode: 'cumulative-snapshot',
-            usage: { inputTokens: 12, outputTokens: 3, cachedInputTokens: 1, reasoningTokens: 0 },
-            provenance: 'provider-reported',
-        });
-        session.push({
-            type: 'usage',
-            mode: 'delta',
-            usage: { inputTokens: 1, outputTokens: 2, cachedInputTokens: 0, reasoningTokens: 1 },
-            provenance: 'provider-reported',
-        });
-        session.push({
-            type: 'usage',
-            mode: 'final',
-            usage: { inputTokens: 13, outputTokens: 5, cachedInputTokens: 1, reasoningTokens: 1 },
-            provenance: 'provider-reported',
-        });
+        session.push(source.push({ type: 'text', mode: 'delta', text: 'Hel' }));
+        session.push(source.push({ type: 'text', mode: 'cumulative-snapshot', text: 'Hello' }));
+        session.push(source.push({ type: 'text', mode: 'delta', text: '!' }));
+        session.push(
+            source.push({
+                type: 'usage',
+                mode: 'delta',
+                usage: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 0, reasoningTokens: 0 },
+                provenance: 'versioned-estimate',
+            })
+        );
+        session.push(
+            source.push({
+                type: 'usage',
+                mode: 'cumulative-snapshot',
+                usage: { inputTokens: 12, outputTokens: 3, cachedInputTokens: 1, reasoningTokens: 0 },
+                provenance: 'provider-reported',
+            })
+        );
+        session.push(
+            source.push({
+                type: 'usage',
+                mode: 'delta',
+                usage: { inputTokens: 1, outputTokens: 2, cachedInputTokens: 0, reasoningTokens: 1 },
+                provenance: 'provider-reported',
+            })
+        );
+        session.push(
+            source.push({
+                type: 'usage',
+                mode: 'final',
+                usage: { inputTokens: 13, outputTokens: 5, cachedInputTokens: 1, reasoningTokens: 1 },
+                provenance: 'provider-reported',
+            })
+        );
 
-        expect(session.finish({ reason: 'stop' })).toMatchObject({
+        expect(session.finish(source.finish({ reason: 'stop' }))).toMatchObject({
             status: 'complete',
             output: { text: 'Hello!' },
             usage: {
@@ -194,15 +236,18 @@ describe('modelProviderProtocol', () => {
     it('preserves unavailable counters when a provider reports a sparse usage delta', () => {
         const { protocol, request } = compileTextRequest();
         const session = protocol.start(request);
+        const source = createModelProviderStreamSource(request);
 
-        session.push({
-            type: 'usage',
-            mode: 'delta',
-            usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
-            provenance: 'provider-reported',
-        });
+        session.push(
+            source.push({
+                type: 'usage',
+                mode: 'delta',
+                usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
+                provenance: 'provider-reported',
+            })
+        );
 
-        expect(session.finish({ reason: 'stop' }).usage).toEqual({
+        expect(session.finish(source.finish({ reason: 'stop' })).usage).toEqual({
             inputTokens: null,
             outputTokens: 4,
             cachedInputTokens: null,
@@ -218,6 +263,7 @@ describe('modelProviderProtocol', () => {
             operation: 'structured-output',
             modality: 'text',
             messages: [{ role: 'user', content: 'Return a mix summary.' }],
+            tools: [{ name: 'analyzeMix', description: 'Analyze the mix.', parameters: { type: 'object' } }],
             responseSchema: { type: 'object', required: ['summary'] },
             stream: true,
             limits: { maxOutputTokens: 64 },
@@ -229,12 +275,13 @@ describe('modelProviderProtocol', () => {
             throw new Error(compiled.failure.safeMessage);
         }
         const session = protocol.start(compiled.request);
-        session.push({ type: 'reasoning', mode: 'delta', text: 'Checking levels.' });
-        session.push({ type: 'tool-call', call: { id: 'call-1', name: 'analyzeMix', arguments: {} } });
-        session.push({ type: 'structured-output', value: { summary: 'Balanced' } });
-        session.push({ type: 'unknown', providerEventType: 'future.telemetry.packet' });
+        const source = createModelProviderStreamSource(compiled.request);
+        session.push(source.push({ type: 'reasoning', mode: 'delta', text: 'Checking levels.' }));
+        session.push(source.push({ type: 'tool-call', call: { id: 'call-1', name: 'analyzeMix', arguments: {} } }));
+        session.push(source.push({ type: 'structured-output', value: { summary: 'Balanced' } }));
+        session.push(source.push({ type: 'unknown', providerEventType: 'future.telemetry.packet' }));
 
-        expect(session.finish({ reason: 'stop' })).toMatchObject({
+        expect(session.finish(source.finish({ reason: 'stop' }))).toMatchObject({
             status: 'complete',
             ignoredProviderEvents: ['future.telemetry.packet'],
             output: {
@@ -248,17 +295,20 @@ describe('modelProviderProtocol', () => {
     it('returns typed retryability, safe diagnostics, correlation, and partial-output disposition', () => {
         const { protocol, request } = compileTextRequest('openai-compatible');
         const session = protocol.start(request);
-        session.push({ type: 'text', mode: 'delta', text: 'Partial answer' });
+        const source = createModelProviderStreamSource(request);
+        session.push(source.push({ type: 'text', mode: 'delta', text: 'Partial answer' }));
 
         expect(
-            session.finish({
-                reason: 'error',
-                failure: {
-                    code: 'rate-limited',
-                    retryable: true,
-                    safeMessage: 'The provider is temporarily rate limited.',
-                },
-            })
+            session.finish(
+                source.finish({
+                    reason: 'error',
+                    failure: {
+                        code: 'rate-limited',
+                        retryable: true,
+                        safeMessage: 'The provider is temporarily rate limited.',
+                    },
+                })
+            )
         ).toMatchObject({
             status: 'partial',
             correlationId: 'request-1',
@@ -276,15 +326,18 @@ describe('modelProviderProtocol', () => {
     it('terminates over-budget output as typed partial output', () => {
         const { protocol, request } = compileTextRequest();
         const session = protocol.start(request);
-        session.push({ type: 'text', mode: 'delta', text: 'Bounded partial answer' });
-        session.push({
-            type: 'usage',
-            mode: 'final',
-            usage: { inputTokens: 100, outputTokens: 33, cachedInputTokens: 0, reasoningTokens: 0 },
-            provenance: 'provider-reported',
-        });
+        const source = createModelProviderStreamSource(request);
+        session.push(source.push({ type: 'text', mode: 'delta', text: 'Bounded partial answer' }));
+        session.push(
+            source.push({
+                type: 'usage',
+                mode: 'final',
+                usage: { inputTokens: 100, outputTokens: 33, cachedInputTokens: 0, reasoningTokens: 0 },
+                provenance: 'provider-reported',
+            })
+        );
 
-        expect(session.finish({ reason: 'stop' })).toMatchObject({
+        expect(session.finish(source.finish({ reason: 'stop' }))).toMatchObject({
             status: 'partial',
             partialOutputDisposition: 'preserve',
             failure: { code: 'budget-exhausted', retryable: false },

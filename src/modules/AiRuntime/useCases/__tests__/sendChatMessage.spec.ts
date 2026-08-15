@@ -12,7 +12,12 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ChatMessage, type ChatState } from '../../models/Chat';
 import { type IntentResult } from '../../models/IntentResult';
-import { type ModelProviderEvent, type ModelProviderResult } from '../../models/ModelProviderProtocol';
+import {
+    type ModelProviderEvent,
+    type ModelProviderFinish,
+    type ModelProviderRequest,
+    type ModelProviderResult,
+} from '../../models/ModelProviderProtocol';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
@@ -31,6 +36,30 @@ type ExecuteVersionedCommandBatchEnvelope =
 type RunNativeModelProviderRequest =
     (typeof import('../../repositories/nativeModelProviderAdapter'))['runNativeModelProviderRequest'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
+
+function providerEventEnvelope(request: ModelProviderRequest, sequence: number, event: ModelProviderEvent) {
+    return {
+        schemaVersion: request.schemaVersion,
+        runId: request.runId,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        cancellationGeneration: request.cancellationGeneration,
+        sequence,
+        event,
+    };
+}
+
+function providerFinishEnvelope(request: ModelProviderRequest, sequence: number, finish: ModelProviderFinish) {
+    return {
+        schemaVersion: request.schemaVersion,
+        runId: request.runId,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        cancellationGeneration: request.cancellationGeneration,
+        sequence,
+        finish,
+    };
+}
 const { clear: clearAgentRuns, get: getAgentRun } = agentRunLifecycle;
 const { list: getAgentRunControlProjections } = agentRunControls;
 type MockWebLlmEngine = {
@@ -257,9 +286,9 @@ describe('sendChatMessage injectables', () => {
         aiBackendPreferenceStore.set('auto');
         llmStatusStore.set({ state: 'idle' });
         mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
-        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent }) => {
-            onEvent({ type: 'text', mode: 'delta', text: 'Complete answer' });
-            return { status: 'available', finish: { reason: 'stop' } };
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent, request }) => {
+            onEvent(providerEventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'Complete answer' }));
+            return { status: 'available', finish: providerFinishEnvelope(request, 1, { reason: 'stop' }) };
         });
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.executeAppActionBatch.mockImplementation((actions: Parameters<ExecuteAppActionBatch>[0]) =>
@@ -636,7 +665,12 @@ describe('sendChatMessage injectables', () => {
             expect.any(AbortSignal),
             'revision-1',
             undefined,
-            expect.any(Function)
+            expect.any(Function),
+            expect.objectContaining({
+                cancellationGeneration: 0,
+                requestId: expect.stringMatching(/^provider:native:agent-run-/),
+                runId: expect.stringMatching(/^agent-run-/),
+            })
         );
     });
 
@@ -957,9 +991,9 @@ describe('sendChatMessage injectables', () => {
             enableReasoning: true,
             chatMode: 'chat',
         };
-        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent }) => {
-            onEvent({ type: 'text', mode: 'delta', text: 'Partial answer' });
-            return { status: 'available', finish: { reason: 'length' } };
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent, request }) => {
+            onEvent(providerEventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'Partial answer' }));
+            return { status: 'available', finish: providerFinishEnvelope(request, 1, { reason: 'length' }) };
         });
 
         await sendChatMessage('How should I mix this?');
@@ -979,7 +1013,10 @@ describe('sendChatMessage injectables', () => {
             enableReasoning: true,
             chatMode: 'chat',
         };
-        mocks.runNativeModelProviderRequest.mockResolvedValue({ status: 'available', finish: { reason: 'length' } });
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ request }) => ({
+            status: 'available',
+            finish: providerFinishEnvelope(request, 0, { reason: 'length' }),
+        }));
 
         await sendChatMessage('How should I mix this?');
 
@@ -997,20 +1034,22 @@ describe('sendChatMessage injectables', () => {
             enableReasoning: true,
             chatMode: 'chat',
         };
-        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent }) => {
-            onEvent({ type: 'text', mode: 'delta', text: 'Partial answer' });
-            onEvent({
-                type: 'usage',
-                mode: 'final',
-                usage: {
-                    inputTokens: 10,
-                    outputTokens: 2_049,
-                    cachedInputTokens: null,
-                    reasoningTokens: null,
-                },
-                provenance: 'provider-reported',
-            });
-            return { status: 'available', finish: { reason: 'stop' } };
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent, request }) => {
+            onEvent(providerEventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'Partial answer' }));
+            onEvent(
+                providerEventEnvelope(request, 1, {
+                    type: 'usage',
+                    mode: 'final',
+                    usage: {
+                        inputTokens: 10,
+                        outputTokens: 2_049,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                    },
+                    provenance: 'provider-reported',
+                })
+            );
+            return { status: 'available', finish: providerFinishEnvelope(request, 2, { reason: 'stop' }) };
         });
 
         await sendChatMessage('How should I mix this?');
@@ -1079,7 +1118,7 @@ describe('sendChatMessage injectables', () => {
         mocks.parsePromptToActions.mockImplementation(
             async (_prompt, _context, _signal, _projectRevision, _stemImportScope, onProviderResult) => {
                 onProviderResult?.({
-                    schemaVersion: 1,
+                    schemaVersion: 2,
                     provider: 'native',
                     model: 'native',
                     correlationId: 'attempt-native',
@@ -1104,7 +1143,7 @@ describe('sendChatMessage injectables', () => {
                     ignoredProviderEvents: [],
                 });
                 onProviderResult?.({
-                    schemaVersion: 1,
+                    schemaVersion: 2,
                     provider: 'webllm',
                     model: 'webllm-model',
                     correlationId: 'attempt-webllm',

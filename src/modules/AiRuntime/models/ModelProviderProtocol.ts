@@ -1,4 +1,4 @@
-export const MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION = 1 as const;
+export const MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION = 2 as const;
 
 export const MODEL_PROVIDER_NAMES = ['native', 'webllm', 'anthropic', 'openai', 'openai-compatible'] as const;
 export const MODEL_PROVIDER_OPERATIONS = ['text', 'tools', 'structured-output'] as const;
@@ -40,7 +40,14 @@ export type ModelProviderBudget = {
     maxTotalTokens: number;
 };
 
-export type ModelProviderRequestInput = {
+export type ModelProviderStreamIdentity = {
+    runId: string;
+    requestId: string;
+    correlationId: string;
+    cancellationGeneration: number;
+};
+
+export type ModelProviderRequestInput = Partial<Omit<ModelProviderStreamIdentity, 'correlationId'>> & {
     correlationId: string;
     operation: ModelProviderOperation;
     modality: ModelProviderModality;
@@ -61,9 +68,10 @@ export type ModelProviderRequestInput = {
     dataPolicy: 'local-only' | 'remote-allowed';
 };
 
-export type ModelProviderRequest = ModelProviderRequestInput & {
-    schemaVersion: typeof MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION;
-};
+export type ModelProviderRequest = Omit<ModelProviderRequestInput, keyof ModelProviderStreamIdentity> &
+    ModelProviderStreamIdentity & {
+        schemaVersion: typeof MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION;
+    };
 
 export type ModelProviderUsage = {
     inputTokens: number | null;
@@ -109,6 +117,18 @@ export type ModelProviderFinish =
           failure: Pick<ModelProviderFailure, 'code' | 'retryable' | 'safeMessage'>;
       };
 
+export type ModelProviderEventEnvelope = ModelProviderStreamIdentity & {
+    schemaVersion: typeof MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION;
+    sequence: number;
+    event: ModelProviderEvent;
+};
+
+export type ModelProviderFinishEnvelope = ModelProviderStreamIdentity & {
+    schemaVersion: typeof MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION;
+    sequence: number;
+    finish: ModelProviderFinish;
+};
+
 export type ModelProviderResult = {
     schemaVersion: typeof MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION;
     provider: ModelProviderName;
@@ -132,8 +152,8 @@ export type CompiledModelProviderRequest =
     { status: 'ready'; request: ModelProviderRequest } | { status: 'unavailable'; failure: ModelProviderFailure };
 
 export type ModelProviderSession = {
-    push: (event: ModelProviderEvent) => void;
-    finish: (finish: ModelProviderFinish) => ModelProviderResult;
+    push: (envelope: ModelProviderEventEnvelope) => void;
+    finish: (envelope: ModelProviderFinishEnvelope) => ModelProviderResult;
 };
 
 export type ModelProviderProtocol = {

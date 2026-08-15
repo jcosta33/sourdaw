@@ -34,6 +34,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function emitSchemaEvent(
+    channel: TestChannel,
+    args: Record<string, unknown>,
+    sequence: number,
+    event: string,
+    data: Record<string, unknown> = {}
+): void {
+    channel.onmessage?.({ event, data: { ...data, requestId: args.requestId, sequence } });
+}
+
 describe('generateSchemaConstrainedNativeCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -57,10 +67,10 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.isTauri.mockReturnValue(true);
         const channel: TestChannel = { onmessage: null };
         mocks.createChannel.mockResolvedValue(channel);
-        mocks.tauriInvoke.mockImplementation(() => {
-            channel.onmessage?.({ event: 'token', data: { text: '{"kind":' } });
-            channel.onmessage?.({ event: 'token', data: { text: '"edit_plan"}' } });
-            channel.onmessage?.({ event: 'done', data: { total_tokens: 2 } });
+        mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
+            emitSchemaEvent(channel, args, 0, 'token', { text: '{"kind":' });
+            emitSchemaEvent(channel, args, 1, 'token', { text: '"edit_plan"}' });
+            emitSchemaEvent(channel, args, 2, 'done');
             return Promise.resolve(undefined);
         });
         const onToken = vi.fn();
@@ -95,8 +105,8 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.isTauri.mockReturnValue(true);
         const channel: TestChannel = { onmessage: null };
         mocks.createChannel.mockResolvedValue(channel);
-        mocks.tauriInvoke.mockImplementation(() => {
-            channel.onmessage?.({ event: 'error', data: { message: 'schema failed' } });
+        mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
+            emitSchemaEvent(channel, args, 0, 'error', { message: 'schema failed' });
             return Promise.resolve(undefined);
         });
 
@@ -113,8 +123,8 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.isTauri.mockReturnValue(true);
         const channel: TestChannel = { onmessage: null };
         mocks.createChannel.mockResolvedValue(channel);
-        mocks.tauriInvoke.mockImplementation(() => {
-            channel.onmessage?.({ event: 'token', data: { text: 12 } });
+        mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
+            emitSchemaEvent(channel, args, 0, 'token', { text: 12 });
             return Promise.resolve(undefined);
         });
 

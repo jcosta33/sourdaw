@@ -17,6 +17,7 @@ import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import {
     type ModelProviderFinish,
+    type ModelProviderFinishEnvelope,
     type ModelProviderName,
     type ModelProviderResult,
     type ModelProviderSession,
@@ -48,6 +49,7 @@ import { agentRunWorkLease } from './agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
+import { createModelProviderStreamWriter } from './createModelProviderStreamWriter';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
@@ -303,6 +305,11 @@ export async function sendChatMessage(
                 signal: aborter.signal,
                 onProviderResult: (providerResult) => {
                     recordModelProviderUsage(runId, providerResult);
+                },
+                streamIdentity: {
+                    runId,
+                    requestId: providerReceiptIdentity,
+                    cancellationGeneration: providerLease.cancellationGeneration,
                 },
             });
             agentRunWorkLease.settle({
@@ -997,8 +1004,9 @@ export async function sendChatMessage(
     const thinkParser = createThinkBlockParser();
     let cloudOutcome: CloudChatCompletionOutcome | null = null;
     let webLlmIncompleteReason: string | null = null;
-    let nativeProviderFinish: ModelProviderFinish | null = null;
+    let nativeProviderTerminal: ModelProviderFinishEnvelope | null = null;
     let providerSession: ModelProviderSession | null = null;
+    let providerStreamWriter: ReturnType<typeof createModelProviderStreamWriter> | null = null;
     let providerResult: ModelProviderResult | null = null;
     let providerUsageRecorded = false;
 
@@ -1027,6 +1035,9 @@ export async function sendChatMessage(
         });
         const compiledProviderRequest = providerProtocol.compileRequest({
             correlationId: providerReceiptIdentity,
+            runId,
+            requestId: providerReceiptIdentity,
+            cancellationGeneration: providerLease.cancellationGeneration,
             operation: 'text',
             modality: 'text',
             messages: completionMessages,
@@ -1041,6 +1052,8 @@ export async function sendChatMessage(
         }
         const providerRequest = compiledProviderRequest.request;
         providerSession = providerProtocol.start(providerRequest);
+        const activeProviderStreamWriter = createModelProviderStreamWriter(providerRequest, providerSession);
+        providerStreamWriter = activeProviderStreamWriter;
 
         if (backend === 'native') {
             const nativeOutcome = await runNativeModelProviderRequest({
@@ -1048,8 +1061,8 @@ export async function sendChatMessage(
                 signal: aborter.signal,
                 onEvent: (event) => {
                     providerSession?.push(event);
-                    if (event.type === 'text') {
-                        const parsed = thinkParser.push(event.text);
+                    if (event.event.type === 'text') {
+                        const parsed = thinkParser.push(event.event.text);
                         updateChatMessage(assistantMsgId, {
                             content: parsed.content,
                             reasoning: parsed.reasoning,
@@ -1058,7 +1071,7 @@ export async function sendChatMessage(
                 },
             });
             if (nativeOutcome.status === 'unavailable') {
-                providerResult = providerSession.finish({
+                providerResult = activeProviderStreamWriter.finish({
                     reason: 'error',
                     failure: {
                         code: nativeOutcome.failure.code,
@@ -1068,14 +1081,14 @@ export async function sendChatMessage(
                 });
                 throw createAiRuntimeError(nativeOutcome.failure.safeMessage);
             }
-            if (nativeOutcome.finish.reason === 'cancelled') {
+            nativeProviderTerminal = nativeOutcome.finish;
+            if (nativeOutcome.finish.finish.reason === 'cancelled') {
                 throw new DOMException('Native model provider request cancelled', 'AbortError');
             }
-            if (nativeOutcome.finish.reason === 'error' || nativeOutcome.finish.reason === 'refusal') {
+            if (nativeOutcome.finish.finish.reason === 'error' || nativeOutcome.finish.finish.reason === 'refusal') {
                 providerResult = providerSession.finish(nativeOutcome.finish);
-                throw createAiRuntimeError(nativeOutcome.finish.failure.safeMessage);
+                throw createAiRuntimeError(nativeOutcome.finish.finish.failure.safeMessage);
             }
-            nativeProviderFinish = nativeOutcome.finish;
         } else if (backend === 'cloud') {
             // Cloud: streaming completion via Claude API
             cloudOutcome = await streamCloudChatCompletion(
@@ -1084,7 +1097,7 @@ export async function sendChatMessage(
                     if (aborter.signal.aborted) {
                         throw createAiRuntimeError('AbortedByUser');
                     }
-                    providerSession?.push({ type: 'text', mode: 'delta', text: token });
+                    activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: token });
                     const parsed = thinkParser.push(token);
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
@@ -1092,9 +1105,9 @@ export async function sendChatMessage(
                     temperature: 0.7,
                     maxTokens: providerRequest.limits.maxOutputTokens,
                     signal: aborter.signal,
-                    onUsage: (event) => providerSession?.push(event),
+                    onUsage: (event) => activeProviderStreamWriter.push(event),
                     onUnknownEvent: (providerEventType) =>
-                        providerSession?.push({ type: 'unknown', providerEventType }),
+                        activeProviderStreamWriter.push({ type: 'unknown', providerEventType }),
                 }
             );
         } else {
@@ -1135,14 +1148,14 @@ export async function sendChatMessage(
                         break;
                     }
                     if (!Array.isArray(chunk.choices)) {
-                        providerSession.push({
+                        activeProviderStreamWriter.push({
                             type: 'unknown',
                             providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
                         });
                         continue;
                     }
                     if (chunk.choices.length === 0 && !chunk.usage) {
-                        providerSession.push({
+                        activeProviderStreamWriter.push({
                             type: 'unknown',
                             providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
                         });
@@ -1150,7 +1163,7 @@ export async function sendChatMessage(
                     const choice = chunk.choices[0];
                     const deltaDesc = choice?.delta.content;
                     if (deltaDesc !== undefined) {
-                        providerSession.push({ type: 'text', mode: 'delta', text: deltaDesc });
+                        activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });
                         const parsed = thinkParser.push(deltaDesc);
                         updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                     }
@@ -1161,7 +1174,7 @@ export async function sendChatMessage(
                         }
                     }
                     if (chunk.usage) {
-                        providerSession.push({
+                        activeProviderStreamWriter.push({
                             type: 'usage',
                             mode: 'final',
                             usage: {
@@ -1190,7 +1203,7 @@ export async function sendChatMessage(
             throw aborter.signal.reason;
         }
 
-        let providerFinish: ModelProviderFinish = nativeProviderFinish ?? { reason: 'stop' };
+        let providerFinish: ModelProviderFinish = nativeProviderTerminal?.finish ?? { reason: 'stop' };
         if (cloudOutcome?.status === 'incomplete') {
             providerFinish =
                 cloudOutcome.reason === 'length' || cloudOutcome.reason === 'token limit'
@@ -1216,7 +1229,10 @@ export async function sendChatMessage(
                           },
                       };
         }
-        providerResult = providerSession.finish(providerFinish);
+        providerResult =
+            nativeProviderTerminal === null
+                ? activeProviderStreamWriter.finish(providerFinish)
+                : providerSession.finish(nativeProviderTerminal);
 
         // Strip <think>…</think> reasoning block before storing the final message.
         const { reasoning, content: cleanContent } = thinkParser.snapshot();
@@ -1270,19 +1286,22 @@ export async function sendChatMessage(
             (error instanceof Error && error.name === 'AbortError') ||
             errorMessage === 'AbortedByUser' ||
             errorMessage.includes('AbortError');
-        if (providerSession && !providerResult) {
-            providerResult = providerSession.finish(
-                wasAborted
-                    ? { reason: 'cancelled' }
-                    : {
-                          reason: 'error',
-                          failure: {
-                              code: 'provider-stream-failed',
-                              retryable: true,
-                              safeMessage: 'The model provider request failed.',
-                          },
-                      }
-            );
+        if (providerSession && providerStreamWriter && !providerResult) {
+            providerResult =
+                nativeProviderTerminal === null
+                    ? providerStreamWriter.finish(
+                          wasAborted
+                              ? { reason: 'cancelled' }
+                              : {
+                                    reason: 'error',
+                                    failure: {
+                                        code: 'provider-stream-failed',
+                                        retryable: true,
+                                        safeMessage: 'The model provider request failed.',
+                                    },
+                                }
+                      )
+                    : providerSession.finish(nativeProviderTerminal);
         }
         if (providerResult && !providerUsageRecorded) {
             recordModelProviderUsage(runId, providerResult, { terminal: true });

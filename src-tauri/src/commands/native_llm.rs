@@ -14,6 +14,10 @@ use tokio::sync::{watch, Mutex, RwLock};
 
 use super::model_download;
 
+const MAX_STREAM_EVENT_BYTES: usize = 64 * 1024;
+const MAX_STREAM_BYTES: usize = 1024 * 1024;
+const MAX_STREAM_EVENTS: u32 = 4096;
+
 // ── Managed state ────────────────────────────────────────────────────────
 
 pub struct NativeLlmState {
@@ -55,14 +59,23 @@ pub struct ChatMessage {
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum LlmStreamEvent {
     Token {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         text: String,
     },
     Done {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         prompt_tokens: usize,
         completion_tokens: usize,
         finish_reason: String,
     },
     Error {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         message: String,
     },
 }
@@ -478,6 +491,8 @@ pub async fn stream_native_completion(
                 stream.map_err(|e| {
                     let msg = format!("Stream init error: {e}");
                     let _ = on_event.send(LlmStreamEvent::Error {
+                        request_id: request_id.clone(),
+                        sequence: 0,
                         message: msg.clone(),
                     });
                     msg
@@ -486,6 +501,8 @@ pub async fn stream_native_completion(
         };
 
         let mut completed = false;
+        let mut sequence = 0u32;
+        let mut streamed_bytes = 0usize;
 
         loop {
             let chunk = tokio::select! {
@@ -504,9 +521,25 @@ pub async fn stream_native_completion(
                     if let Some(choice) = resp.choices.first() {
                         if let Some(ref content) = choice.delta.content {
                             if !content.is_empty() {
+                                if content.len() > MAX_STREAM_EVENT_BYTES
+                                    || streamed_bytes.saturating_add(content.len()) > MAX_STREAM_BYTES
+                                    || sequence >= MAX_STREAM_EVENTS
+                                {
+                                    let message = "Native completion stream exceeded its bounded protocol limits";
+                                    let _ = on_event.send(LlmStreamEvent::Error {
+                                        request_id: request_id.clone(),
+                                        sequence,
+                                        message: message.to_string(),
+                                    });
+                                    return Err(message.to_string());
+                                }
                                 let _ = on_event.send(LlmStreamEvent::Token {
+                                    request_id: request_id.clone(),
+                                    sequence,
                                     text: content.clone(),
                                 });
+                                sequence += 1;
+                                streamed_bytes += content.len();
                             }
                         }
                     }
@@ -518,6 +551,8 @@ pub async fn stream_native_completion(
                         .ok_or("No stream completion response")?;
                     validate_stream_finish_reason(&choice.finish_reason)?;
                     let _ = on_event.send(LlmStreamEvent::Done {
+                        request_id: request_id.clone(),
+                        sequence,
                         prompt_tokens: response.usage.prompt_tokens,
                         completion_tokens: response.usage.completion_tokens,
                         finish_reason: choice.finish_reason.clone(),
@@ -527,6 +562,8 @@ pub async fn stream_native_completion(
                 }
                 Response::ModelError(msg, _) => {
                     let _ = on_event.send(LlmStreamEvent::Error {
+                        request_id: request_id.clone(),
+                        sequence,
                         message: msg.to_string(),
                     });
                     return Err(msg.to_string());
@@ -709,7 +746,11 @@ pub async fn schema_constrained_generation(
         let model = get_model(&state).await?;
 
         let constraint = build_json_schema_constraint(&json_schema).map_err(|e| {
-            let _ = on_event.send(LlmStreamEvent::Error { message: e.clone() });
+            let _ = on_event.send(LlmStreamEvent::Error {
+                request_id: request_id.clone(),
+                sequence: 0,
+                message: e.clone(),
+            });
             e
         })?;
 
@@ -730,6 +771,8 @@ pub async fn schema_constrained_generation(
                 stream.map_err(|e| {
                     let msg = format!("Schema-constrained stream init error: {e}");
                     let _ = on_event.send(LlmStreamEvent::Error {
+                        request_id: request_id.clone(),
+                        sequence: 0,
                         message: msg.clone(),
                     });
                     msg
@@ -738,6 +781,8 @@ pub async fn schema_constrained_generation(
         };
 
         let mut completed = false;
+        let mut sequence = 0u32;
+        let mut streamed_bytes = 0usize;
 
         loop {
             let chunk = tokio::select! {
@@ -756,9 +801,25 @@ pub async fn schema_constrained_generation(
                     if let Some(choice) = resp.choices.first() {
                         if let Some(ref content) = choice.delta.content {
                             if !content.is_empty() {
+                                if content.len() > MAX_STREAM_EVENT_BYTES
+                                    || streamed_bytes.saturating_add(content.len()) > MAX_STREAM_BYTES
+                                    || sequence >= MAX_STREAM_EVENTS
+                                {
+                                    let message = "Native schema-constrained stream exceeded its bounded protocol limits";
+                                    let _ = on_event.send(LlmStreamEvent::Error {
+                                        request_id: request_id.clone(),
+                                        sequence,
+                                        message: message.to_string(),
+                                    });
+                                    return Err(message.to_string());
+                                }
                                 let _ = on_event.send(LlmStreamEvent::Token {
+                                    request_id: request_id.clone(),
+                                    sequence,
                                     text: content.clone(),
                                 });
+                                sequence += 1;
+                                streamed_bytes += content.len();
                             }
                         }
                     }
@@ -773,6 +834,8 @@ pub async fn schema_constrained_generation(
                         "Native schema-constrained generation",
                     )?;
                     let _ = on_event.send(LlmStreamEvent::Done {
+                        request_id: request_id.clone(),
+                        sequence,
                         prompt_tokens: response.usage.prompt_tokens,
                         completion_tokens: response.usage.completion_tokens,
                         finish_reason: choice.finish_reason.clone(),
@@ -782,6 +845,8 @@ pub async fn schema_constrained_generation(
                 }
                 Response::ModelError(msg, _) => {
                     let _ = on_event.send(LlmStreamEvent::Error {
+                        request_id: request_id.clone(),
+                        sequence,
                         message: msg.to_string(),
                     });
                     return Err(msg.to_string());
@@ -1044,6 +1109,22 @@ mod tests {
             .count();
 
         assert_eq!(tombstone_count, MAX_CANCELLATION_TOMBSTONES);
+    }
+
+    #[test]
+    fn should_serialize_correlated_native_stream_events() {
+        assert_eq!(
+            serde_json::to_value(LlmStreamEvent::Token {
+                request_id: "request-1".to_string(),
+                sequence: 4,
+                text: "hello".to_string(),
+            })
+            .expect("native stream event must serialize"),
+            serde_json::json!({
+                "event": "token",
+                "data": { "requestId": "request-1", "sequence": 4, "text": "hello" }
+            })
+        );
     }
 
     #[test]

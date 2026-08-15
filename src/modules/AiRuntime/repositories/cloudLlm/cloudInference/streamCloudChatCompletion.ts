@@ -90,7 +90,15 @@ export async function streamCloudChatCompletion(
         let incompleteReason: string | null = null;
         let sawTerminalDelta = false;
         let sawMessageStop = false;
+        let eventCount = 0;
         for await (const event of stream) {
+            eventCount += 1;
+            if (eventCount > 4_096) {
+                throw new Error('Hosted AI chat stream exceeded its event limit');
+            }
+            if (sawMessageStop || (sawTerminalDelta && event.type !== 'message_stop')) {
+                throw new Error('Hosted AI chat stream returned an event after completion');
+            }
             const usageEvent = readAnthropicUsageEvent(event);
             if (usageEvent) {
                 options?.onUsage?.(usageEvent);

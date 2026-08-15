@@ -1,7 +1,7 @@
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
-import { type ModelProviderResult } from '../models/ModelProviderProtocol';
+import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
@@ -15,6 +15,7 @@ type PlanPromptActionsInput = {
     prompt: string;
     signal?: AbortSignal;
     onProviderResult?: (result: ModelProviderResult) => void;
+    streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
 };
 
 export async function planPromptActions(input: PlanPromptActionsInput) {
@@ -29,7 +30,8 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             input.signal,
             projectRevision,
             undefined,
-            input.onProviderResult
+            input.onProviderResult,
+            input.streamIdentity
         );
         if (result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal);
@@ -47,7 +49,8 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 input.signal,
                 projectRevision,
                 stemImportScope,
-                input.onProviderResult
+                input.onProviderResult,
+                input.streamIdentity
             );
         }
     } catch (error) {

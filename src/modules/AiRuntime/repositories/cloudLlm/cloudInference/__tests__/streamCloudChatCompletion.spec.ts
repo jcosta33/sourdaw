@@ -372,6 +372,20 @@ describe('streamCloudChatCompletion', () => {
         );
     });
 
+    it('rejects an Anthropic event after its terminal outcome', async () => {
+        mocks.stream.mockReturnValue({
+            async *[Symbol.asyncIterator](): AsyncGenerator<CloudStreamEvent> {
+                yield { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null } };
+                yield { type: 'message_stop' };
+                yield { type: 'other_event' };
+            },
+        });
+
+        await expect(streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn())).rejects.toThrow(
+            'event after completion'
+        );
+    });
+
     it('rejects when configuration changes as an Anthropic stream completes', async () => {
         mocks.stream.mockReturnValue({
             async *[Symbol.asyncIterator](): AsyncGenerator<CloudStreamEvent> {

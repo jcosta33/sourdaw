@@ -30,7 +30,11 @@ export type OpenAiCompatibleFinishReason = 'stop' | 'length';
 
 type StreamState = {
     finishReason: OpenAiCompatibleFinishReason | null;
+    eventCount: number;
 };
+
+const MAX_STREAM_EVENT_BYTES = 64 * 1_024;
+const MAX_STREAM_EVENTS = 4_096;
 
 function parseStreamEvent(event: unknown): ParsedStreamEvent {
     if (!isRecord(event) || 'error' in event) {
@@ -82,6 +86,10 @@ function emitEventData(
     onUnknownEvent: ((providerEventType: string) => void) | undefined,
     state: StreamState
 ): OpenAiCompatibleFinishReason | null {
+    state.eventCount += 1;
+    if (state.eventCount > MAX_STREAM_EVENTS || new TextEncoder().encode(data).byteLength > MAX_STREAM_EVENT_BYTES) {
+        throw new Error('Hosted AI chat stream exceeded its event limit');
+    }
     if (data === '[DONE]') {
         if (state.finishReason === null) {
             throw new Error('Hosted AI chat stream ended before normal completion');
@@ -105,6 +113,9 @@ function emitEventData(
     if (event.finishReason !== null) {
         if (event.finishReason !== 'stop' && event.finishReason !== 'length') {
             throw new Error('Hosted AI chat stream ended before normal completion');
+        }
+        if (state.finishReason !== null) {
+            throw new Error('Hosted AI chat stream returned duplicate completion');
         }
         state.finishReason = event.finishReason;
     }
@@ -135,15 +146,21 @@ export async function streamOpenAiCompatibleChatCompletion({
     const decoder = new TextDecoder();
     let buffer = '';
     let completed: OpenAiCompatibleFinishReason | null = null;
-    const streamState: StreamState = { finishReason: null };
+    const streamState: StreamState = { finishReason: null, eventCount: 0 };
     const consumeLines = (): void => {
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
         for (const line of lines) {
-            if (!line.startsWith('data:') || completed !== null) {
+            if (!line.startsWith('data:')) {
                 continue;
             }
+            if (completed !== null) {
+                throw new Error('Hosted AI chat stream returned data after completion');
+            }
             completed = emitEventData(line.slice(5).trim(), onToken, onUsage, onUnknownEvent, streamState);
+        }
+        if (new TextEncoder().encode(buffer).byteLength > MAX_STREAM_EVENT_BYTES) {
+            throw new Error('Hosted AI chat stream exceeded its event limit');
         }
     };
     const response = await requestOpenAiCompatibleProvider({
@@ -161,8 +178,13 @@ export async function streamOpenAiCompatibleChatCompletion({
     buffer += decoder.decode();
     consumeLines();
     const finalLine = buffer.trim();
-    if (completed === null && finalLine.startsWith('data:')) {
+    if (finalLine.startsWith('data:')) {
+        if (completed !== null) {
+            throw new Error('Hosted AI chat stream returned data after completion');
+        }
         completed = emitEventData(finalLine.slice(5).trim(), onToken, onUsage, onUnknownEvent, streamState);
+    } else if (finalLine.length > 0) {
+        throw new Error('Hosted AI chat stream ended with an invalid event');
     }
     if (completed === null) {
         throw new Error('Hosted AI chat stream ended unexpectedly');

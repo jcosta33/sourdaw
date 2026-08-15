@@ -37,6 +37,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function emitNativeEvent(
+    channel: TestChannel,
+    invocationArgs: Record<string, unknown>,
+    sequence: number,
+    event: string,
+    data: Record<string, unknown>
+): void {
+    channel.onmessage?.({
+        event,
+        data: { ...data, requestId: invocationArgs.requestId, sequence },
+    });
+}
+
 describe('streamNativeCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -50,9 +63,14 @@ describe('streamNativeCompletion', () => {
         it('creates a channel and invokes streaming command', async () => {
             const mockChannel: TestChannel = { onmessage: null };
             mocks.createChannel.mockResolvedValue(mockChannel);
-            mocks.tauriInvoke.mockImplementation((command: string) => {
+            mocks.tauriInvoke.mockImplementation((command: string, args: Record<string, unknown>) => {
                 if (command === 'stream_native_completion') {
-                    mockChannel.onmessage?.({ event: 'token', data: { text: 'Hi' } });
+                    emitNativeEvent(mockChannel, args, 0, 'token', { text: 'Hi' });
+                    emitNativeEvent(mockChannel, args, 1, 'done', {
+                        promptTokens: 0,
+                        completionTokens: 1,
+                        finishReason: 'stop',
+                    });
                 }
                 return Promise.resolve(undefined);
             });
@@ -83,10 +101,11 @@ describe('streamNativeCompletion', () => {
         it('emits exact provider-reported final usage from the native done event', async () => {
             const mockChannel: TestChannel = { onmessage: null };
             mocks.createChannel.mockResolvedValue(mockChannel);
-            mocks.tauriInvoke.mockImplementation(() => {
-                mockChannel.onmessage?.({
-                    event: 'done',
-                    data: { promptTokens: 11, completionTokens: 17, finishReason: 'stop' },
+            mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
+                emitNativeEvent(mockChannel, args, 0, 'done', {
+                    promptTokens: 11,
+                    completionTokens: 17,
+                    finishReason: 'stop',
                 });
                 return Promise.resolve(undefined);
             });
@@ -112,9 +131,13 @@ describe('streamNativeCompletion', () => {
         it('surfaces unknown native events without exposing their payload', async () => {
             const mockChannel: TestChannel = { onmessage: null };
             mocks.createChannel.mockResolvedValue(mockChannel);
-            mocks.tauriInvoke.mockImplementation(() => {
-                mockChannel.onmessage?.({ event: 'future_native_event', data: { private: 'not-forwarded' } });
-                mockChannel.onmessage?.({ event: 'done', data: { totalTokens: 0 } });
+            mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
+                emitNativeEvent(mockChannel, args, 0, 'future_native_event', { private: 'not-forwarded' });
+                emitNativeEvent(mockChannel, args, 1, 'done', {
+                    promptTokens: 0,
+                    completionTokens: 0,
+                    finishReason: 'stop',
+                });
                 return Promise.resolve(undefined);
             });
             const onUnknownEvent = vi.fn();
@@ -135,9 +158,9 @@ describe('streamNativeCompletion', () => {
             // onmessage and SWALLOWS any throw, then the command resolves
             // normally. So a throw from onToken is lost unless streamNativeCompletion
             // captures it into streamState.error itself.
-            mocks.tauriInvoke.mockImplementation(() => {
+            mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
                 try {
-                    mockChannel.onmessage?.({ event: 'token', data: { text: 'partial' } });
+                    emitNativeEvent(mockChannel, args, 0, 'token', { text: 'partial' });
                 } catch {
                     // dispatcher swallows — exactly the production behavior we guard against
                 }
@@ -192,6 +215,24 @@ describe('streamNativeCompletion', () => {
             mockChannel.onmessage?.({ event: 'token', data: { text: 'late' } });
             expect(onToken).not.toHaveBeenCalled();
         });
+
+        it('rejects a cross-request event before exposing its token', async () => {
+            const mockChannel: TestChannel = { onmessage: null };
+            mocks.createChannel.mockResolvedValue(mockChannel);
+            mocks.tauriInvoke.mockImplementation(() => {
+                mockChannel.onmessage?.({
+                    event: 'token',
+                    data: { requestId: 'another-request', sequence: 0, text: 'private' },
+                });
+                return Promise.resolve(undefined);
+            });
+            const onToken = vi.fn();
+
+            await expect(streamNativeCompletion([{ role: 'user', content: 'hi' }], onToken)).rejects.toThrow(
+                'cross-request or out-of-order'
+            );
+            expect(onToken).not.toHaveBeenCalled();
+        });
     });
 
     describe('when running in browser (dev mode)', () => {
@@ -206,6 +247,7 @@ describe('streamNativeCompletion', () => {
             const mockReadChunks = [
                 encoder.encode('data: {"choices": [{"delta": {"content": "Hello"}}]}\n\n'),
                 encoder.encode('data: {"choices": [{"delta": {"content": " World"}}]}\n\n'),
+                encoder.encode('data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}\n\n'),
                 encoder.encode('data: [DONE]\n\n'),
             ];
 
@@ -244,8 +286,22 @@ describe('streamNativeCompletion', () => {
             });
 
             await expect(streamNativeCompletion([], vi.fn<(...args: unknown[]) => void>())).rejects.toThrow(
-                'llama-server error 404: Not Found'
+                'llama-server error 404'
             );
+        });
+
+        it('rejects malformed SSE instead of skipping it', async () => {
+            const encoder = new TextEncoder();
+            const mockReader = {
+                read: vi
+                    .fn()
+                    .mockResolvedValueOnce({ done: false, value: encoder.encode('data: {invalid}\n\n') })
+                    .mockResolvedValue({ done: true, value: undefined }),
+                cancel: vi.fn().mockResolvedValue(undefined),
+            };
+            mocks.fetch.mockResolvedValue({ ok: true, body: { getReader: () => mockReader } });
+
+            await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('invalid JSON');
         });
 
         it('throws if no body is returned', async () => {

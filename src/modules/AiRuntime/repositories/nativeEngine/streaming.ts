@@ -35,30 +35,53 @@ export async function streamNativeCompletion(
 ): Promise<void> {
     if (isTauri()) {
         const channel = await createChannel<unknown>();
+        const requestId = crypto.randomUUID();
 
         // Errors thrown inside onmessage (a synchronous callback) do not propagate
         // to the awaiting tauriInvoke call — capture and rethrow after the invoke.
         // This includes an abort thrown from inside `onToken` (e.g. the caller
         // checking signal.aborted): without this catch the throw escapes into the
         // Tauri channel dispatcher and is swallowed, so the stream keeps running.
-        const streamState = { error: null as Error | null };
+        const streamState = {
+            error: null as Error | null,
+            nextSequence: 0,
+            terminal: false,
+            bytes: 0,
+        };
         channel.onmessage = (event: unknown) => {
             if (options?.signal?.aborted) {
                 return;
             }
             if (!isRecord(event) || typeof event.event !== 'string' || !isRecord(event.data)) {
-                options?.onUnknownEvent?.('native:unknown');
+                streamState.error = new TypeError('Native provider returned an invalid stream envelope');
+                return;
+            }
+            if (
+                event.data.requestId !== requestId ||
+                event.data.sequence !== streamState.nextSequence ||
+                !Number.isSafeInteger(event.data.sequence) ||
+                streamState.terminal
+            ) {
+                streamState.error = new TypeError('Native provider returned a cross-request or out-of-order event');
                 return;
             }
             try {
                 if (event.event === 'token' && typeof event.data.text === 'string') {
+                    const eventBytes = new TextEncoder().encode(event.data.text).byteLength;
+                    if (eventBytes > 64 * 1_024 || streamState.bytes + eventBytes > 1_024 * 1_024) {
+                        throw new TypeError('Native provider stream exceeded its payload limit');
+                    }
                     onToken(event.data.text);
+                    streamState.bytes += eventBytes;
+                    streamState.nextSequence += 1;
                 }
             } catch (tokenError) {
                 streamState.error = tokenError instanceof Error ? tokenError : new Error(String(tokenError));
             }
             if (event.event === 'error' && typeof event.data.message === 'string') {
                 streamState.error = new Error(event.data.message);
+                streamState.terminal = true;
+                streamState.nextSequence += 1;
             }
             if (
                 event.event === 'done' &&
@@ -81,9 +104,12 @@ export async function streamNativeCompletion(
                     });
                 }
                 options?.onFinish?.(event.data.finishReason);
+                streamState.terminal = true;
+                streamState.nextSequence += 1;
             }
             if (event.event !== 'token' && event.event !== 'error' && event.event !== 'done') {
                 options?.onUnknownEvent?.(`native:${event.event}`);
+                streamState.nextSequence += 1;
             }
         };
 
@@ -103,6 +129,7 @@ export async function streamNativeCompletion(
                 },
                 timeoutMs,
                 signal: options?.signal,
+                requestId,
                 abortMessage: 'Native completion aborted',
                 timeoutMessage: `Native completion timed out after ${String(timeoutMs)}ms`,
             });
@@ -112,6 +139,9 @@ export async function streamNativeCompletion(
 
         if (streamState.error) {
             throw streamState.error;
+        }
+        if (!streamState.terminal) {
+            throw new Error('Native provider stream ended without one terminal event');
         }
         return;
     }
@@ -133,8 +163,7 @@ export async function streamNativeCompletion(
     });
 
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`llama-server error ${String(response.status)}: ${text}`);
+        throw new Error(`llama-server error ${String(response.status)}`);
     }
 
     const reader = response.body?.getReader();
@@ -144,6 +173,9 @@ export async function streamNativeCompletion(
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let streamBytes = 0;
+    let eventCount = 0;
+    let finishReasonSeen = false;
 
     try {
         // Stop pulling tokens the moment the caller aborts — previously the loop
@@ -155,9 +187,17 @@ export async function streamNativeCompletion(
                 break;
             }
 
+            streamBytes += value.byteLength;
+            if (!Number.isSafeInteger(streamBytes) || streamBytes > 1_024 * 1_024) {
+                throw new TypeError('Native completion stream exceeded its payload limit');
+            }
+
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop() ?? '';
+            if (new TextEncoder().encode(buffer).byteLength > 64 * 1_024) {
+                throw new TypeError('Native completion stream exceeded its event limit');
+            }
 
             for (const line of lines) {
                 const trimmed = line.trim();
@@ -165,18 +205,24 @@ export async function streamNativeCompletion(
                     continue;
                 }
                 const jsonStr = trimmed.slice(6);
+                eventCount += 1;
+                if (eventCount > 4_096 || new TextEncoder().encode(jsonStr).byteLength > 64 * 1_024) {
+                    throw new TypeError('Native completion stream exceeded its event limit');
+                }
                 if (jsonStr === '[DONE]') {
+                    if (!finishReasonSeen) {
+                        throw new TypeError('Native completion stream ended without a finish reason');
+                    }
                     return;
                 }
                 let chunk: unknown;
                 try {
                     chunk = JSON.parse(jsonStr) as unknown;
                 } catch {
-                    // Skip malformed SSE chunks
-                    continue;
+                    throw new TypeError('Native completion stream returned invalid JSON');
                 }
                 if (!isRecord(chunk)) {
-                    continue;
+                    throw new TypeError('Native completion stream returned an invalid event');
                 }
                 if (!Array.isArray(chunk.choices)) {
                     options?.onUnknownEvent?.(`native:${typeof chunk.type === 'string' ? chunk.type : 'unknown'}`);
@@ -194,6 +240,10 @@ export async function streamNativeCompletion(
                 }
                 const finishReason = isRecord(firstChoice) ? firstChoice.finish_reason : undefined;
                 if (finishReason === 'stop' || finishReason === 'length') {
+                    if (finishReasonSeen) {
+                        throw new TypeError('Native completion stream returned duplicate completion');
+                    }
+                    finishReasonSeen = true;
                     options?.onFinish?.(finishReason);
                 } else if (typeof finishReason === 'string') {
                     throw new TypeError(
@@ -210,6 +260,9 @@ export async function streamNativeCompletion(
                     });
                 }
             }
+        }
+        if (!signal?.aborted) {
+            throw new TypeError('Native completion stream ended without one terminal event');
         }
     } finally {
         // Release the underlying stream so an aborted/early-broken loop does not
