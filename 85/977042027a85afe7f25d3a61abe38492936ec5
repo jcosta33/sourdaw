@@ -1,0 +1,23 @@
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_a40848e8f8cca9::t_44c8eaec067904 351
+  s_a40848e8f8cca9::t_fd2c4f2ee9a2f4 349-350,352-374
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  s_a40848e8f8cca9::t_ba79e742e843a3 281
+  s_a40848e8f8cca9::t_29a515b4b368c5 258,260-280,282-284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "85977042027a85afe7f25d3a61abe38492936ec5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
