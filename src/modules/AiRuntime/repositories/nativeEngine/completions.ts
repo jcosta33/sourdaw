@@ -10,6 +10,7 @@ type GenerateNativeCompletionOptions = {
     maxTokens?: number;
     signal?: AbortSignal;
     requireComplete?: boolean;
+    timeoutMs?: number;
 };
 
 /**
@@ -35,6 +36,12 @@ export async function generateNativeCompletion(
             },
             signal: options?.signal,
             abortMessage: 'Native completion aborted',
+            ...(options?.timeoutMs === undefined
+                ? {}
+                : {
+                      timeoutMs: options.timeoutMs,
+                      timeoutMessage: `Native completion timed out after ${String(options.timeoutMs)}ms`,
+                  }),
         });
         if (typeof response !== 'string') {
             if (options?.requireComplete) {
@@ -47,9 +54,14 @@ export async function generateNativeCompletion(
         return response;
     }
 
+    const timeoutSignal = options?.timeoutMs === undefined ? undefined : AbortSignal.timeout(options.timeoutMs);
+    let requestSignal = timeoutSignal;
+    if (options?.signal !== undefined) {
+        requestSignal = timeoutSignal === undefined ? options.signal : AbortSignal.any([options.signal, timeoutSignal]);
+    }
     const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
         method: 'POST',
-        signal: options?.signal,
+        signal: requestSignal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             messages: [

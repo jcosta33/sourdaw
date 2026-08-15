@@ -54,9 +54,17 @@ pub struct ChatMessage {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum LlmStreamEvent {
-    Token { text: String },
-    Done { total_tokens: u32 },
-    Error { message: String },
+    Token {
+        text: String,
+    },
+    Done {
+        prompt_tokens: usize,
+        completion_tokens: usize,
+        finish_reason: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -215,6 +223,15 @@ fn validate_text_finish_reason(finish_reason: &str, context: &str) -> Result<(),
     }
     Err(format!(
         "{context} ended incompletely with finish reason {finish_reason}"
+    ))
+}
+
+fn validate_stream_finish_reason(finish_reason: &str) -> Result<(), String> {
+    if finish_reason == "stop" || finish_reason == "length" {
+        return Ok(());
+    }
+    Err(format!(
+        "Native completion stream ended with unsupported finish reason {finish_reason}"
     ))
 }
 
@@ -468,7 +485,6 @@ pub async fn stream_native_completion(
             }
         };
 
-        let mut total_tokens: u32 = 0;
         let mut completed = false;
 
         loop {
@@ -488,7 +504,6 @@ pub async fn stream_native_completion(
                     if let Some(choice) = resp.choices.first() {
                         if let Some(ref content) = choice.delta.content {
                             if !content.is_empty() {
-                                total_tokens += 1;
                                 let _ = on_event.send(LlmStreamEvent::Token {
                                     text: content.clone(),
                                 });
@@ -501,7 +516,12 @@ pub async fn stream_native_completion(
                         .choices
                         .first()
                         .ok_or("No stream completion response")?;
-                    validate_text_finish_reason(&choice.finish_reason, "Native completion stream")?;
+                    validate_stream_finish_reason(&choice.finish_reason)?;
+                    let _ = on_event.send(LlmStreamEvent::Done {
+                        prompt_tokens: response.usage.prompt_tokens,
+                        completion_tokens: response.usage.completion_tokens,
+                        finish_reason: choice.finish_reason.clone(),
+                    });
                     completed = true;
                     break;
                 }
@@ -518,7 +538,6 @@ pub async fn stream_native_completion(
         if !completed {
             return Err("Native completion stream ended without a terminal response".to_string());
         }
-        let _ = on_event.send(LlmStreamEvent::Done { total_tokens });
         Ok(())
     }
     .await;
@@ -1094,6 +1113,19 @@ mod tests {
         assert_eq!(
             validate_text_finish_reason("length", "Native test"),
             Err("Native test ended incompletely with finish reason length".to_string())
+        );
+    }
+
+    #[test]
+    fn should_preserve_supported_native_stream_finish_reasons() {
+        assert_eq!(validate_stream_finish_reason("stop"), Ok(()));
+        assert_eq!(validate_stream_finish_reason("length"), Ok(()));
+        assert_eq!(
+            validate_stream_finish_reason("content_filter"),
+            Err(
+                "Native completion stream ended with unsupported finish reason content_filter"
+                    .to_string()
+            )
         );
     }
 }
