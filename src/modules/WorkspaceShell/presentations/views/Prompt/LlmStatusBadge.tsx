@@ -146,7 +146,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             if (backend === 'native') {
                 return 'Start Native Engine';
             }
-            return `Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
+            return `Download & Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
         };
 
         return (
@@ -215,17 +215,24 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     Configured credentials are verified on the first request.
                                 </p>
                             ) : (
-                                <Button
-                                    size="sm"
-                                    className="w-full text-xs h-7 mt-1"
-                                    onClick={() => {
-                                        setShowPanel(false);
-                                        onLoad(backend === 'webllm' ? selectedModelId : undefined);
-                                    }}
-                                >
-                                    <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                                    {renderIife_3()}
-                                </Button>
+                                <>
+                                    {backend === 'webllm' ? (
+                                        <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
+                                            Downloads and verifies this model for private use in this browser.
+                                        </p>
+                                    ) : null}
+                                    <Button
+                                        size="sm"
+                                        className="w-full text-xs h-7 mt-1"
+                                        onClick={() => {
+                                            setShowPanel(false);
+                                            onLoad(backend === 'webllm' ? selectedModelId : undefined);
+                                        }}
+                                    >
+                                        <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
+                                        {renderIife_3()}
+                                    </Button>
+                                </>
                             )}
                         </div>
                     </DropdownPanel>
@@ -322,7 +329,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
             title={status.message}
         >
-            AI Error — retry
+            {backend === 'webllm' ? 'Retry Model Download' : 'AI Error — retry'}
         </Button>
     );
 };

@@ -25,6 +25,7 @@ export const engineState: {
     initWaiterCount: number;
     worker: Worker | null;
     activeModelId: string;
+    activeArtifactSetDigest: string | null;
 } = {
     engine: null,
     initPromise: null,
@@ -35,4 +36,5 @@ export const engineState: {
     initWaiterCount: 0,
     worker: null,
     activeModelId: DEFAULT_WEBLLM_MODEL_ID,
+    activeArtifactSetDigest: null,
 };

@@ -8,7 +8,8 @@ import { initEngine } from '../initEngine';
 const mocks = vi.hoisted(() => ({
     backendChain: { value: Array<'native' | 'webllm' | 'cloud'>() },
     initNativeEngine: vi.fn<(options?: { signal?: AbortSignal }) => Promise<void>>(),
-    initWebLlmEngine: vi.fn<(modelId?: string, options?: { signal?: AbortSignal }) => Promise<void>>(),
+    initWebLlmEngine:
+        vi.fn<(modelId?: string, options?: { downloadConsent?: boolean; signal?: AbortSignal }) => Promise<void>>(),
     getActiveModelId: vi.fn<() => string>(() => 'browser-model'),
     warn: vi.fn<(msg: string) => void>(),
 }));
@@ -133,9 +134,27 @@ describe('initEngine', () => {
         mocks.backendChain.value = ['webllm'];
         mocks.initWebLlmEngine.mockResolvedValue(undefined);
 
-        await initEngine('model-x');
+        await initEngine('model-x', { webLlmDownloadConsent: true });
 
-        expect(mocks.initWebLlmEngine.mock.calls[0]?.[0]).toBe('model-x');
+        expect(mocks.initWebLlmEngine).toHaveBeenCalledWith('model-x', {
+            downloadConsent: true,
+            signal: expect.any(AbortSignal),
+        });
+    });
+
+    it('does not force a cloud fallback when the explicit WebLLM backend rejects admission', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.initWebLlmEngine.mockRejectedValue(new Error('Explicit model-download consent is required'));
+
+        await expect(initEngine()).rejects.toThrow(
+            'AI engine failed to load: Explicit model-download consent is required'
+        );
+
+        expect(mocks.initWebLlmEngine).toHaveBeenCalledTimes(1);
+        expect(llmStatusStore.value).toEqual({
+            state: 'error',
+            message: 'AI engine failed to load: Explicit model-download consent is required',
+        });
     });
 
     it('does not publish native readiness after the backend changes during initialization', async () => {

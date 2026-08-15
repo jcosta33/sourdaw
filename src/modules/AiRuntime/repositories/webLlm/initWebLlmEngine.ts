@@ -5,15 +5,24 @@ import { llmStatusStore } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
 import { unloadWebLlmEngine } from './unloadWebLlmEngine';
+import { admitWebLlmModelArtifacts } from './webLlmArtifactAdmission';
+import { getWebLlmArtifactManifestModel } from './webLlmArtifactManifest';
 
 type InitWebLlmEngineOptions = {
+    downloadConsent?: boolean;
     signal?: AbortSignal;
 };
 
-export const initWebLlmEngine = inject({ logger })(
-    ({ logger }) =>
+export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
+    ({ logger, admitWebLlmModelArtifacts }) =>
         function initWebLlmEngine(modelId?: string, options: InitWebLlmEngineOptions = {}): Promise<WebLlmEngine> {
             const targetModel = modelId ?? engineState.activeModelId;
+            let targetArtifactSetDigest: string;
+            try {
+                targetArtifactSetDigest = getWebLlmArtifactManifestModel(targetModel).artifactSetDigest;
+            } catch (error) {
+                return Promise.reject(error);
+            }
             if (options.signal?.aborted) {
                 const reason: unknown = options.signal.reason;
                 return Promise.reject(
@@ -22,12 +31,20 @@ export const initWebLlmEngine = inject({ logger })(
             }
 
             // If already loaded with the same model, return immediately
-            if (engineState.engine && targetModel === engineState.activeModelId) {
+            if (
+                engineState.engine &&
+                targetModel === engineState.activeModelId &&
+                targetArtifactSetDigest === engineState.activeArtifactSetDigest
+            ) {
                 return Promise.resolve(engineState.engine);
             }
 
             // If switching models, unload the current one first
-            if (engineState.engine && targetModel !== engineState.activeModelId) {
+            if (
+                engineState.engine &&
+                (targetModel !== engineState.activeModelId ||
+                    targetArtifactSetDigest !== engineState.activeArtifactSetDigest)
+            ) {
                 unloadWebLlmEngine();
             }
 
@@ -74,55 +91,80 @@ export const initWebLlmEngine = inject({ logger })(
                     llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
                 }
 
-                // Dynamic import — avoids loading the 6.2MB WebLLM bundle at app startup.
-                // The bundle is only fetched when the user actually requests model loading.
-                const [{ CreateWebWorkerMLCEngine }, { default: LlmWorker }] = await Promise.all([
-                    import('@mlc-ai/web-llm'),
-                    import('../llmWorker?worker'),
-                ]);
+                let initializedEngine: WebLlmEngine | null = null;
+                const admission = await admitWebLlmModelArtifacts(targetModel, {
+                    consume: async (verifiedAdmission) => {
+                        // Dynamic import — avoids loading the 6.2MB WebLLM bundle at app startup.
+                        // The browser-wide admission lock stays held until the worker has consumed the verified set.
+                        const [{ CreateWebWorkerMLCEngine }, { default: LlmWorker }] = await Promise.all([
+                            import('@mlc-ai/web-llm'),
+                            import('../llmWorker?worker'),
+                        ]);
+                        attemptSignal.throwIfAborted();
+
+                        const worker = new LlmWorker();
+                        attemptWorker = worker;
+                        engineState.worker = worker;
+                        function handleAbort() {
+                            worker.terminate();
+                            if (engineState.worker === worker) {
+                                engineState.worker = null;
+                            }
+                        }
+                        attemptSignal.addEventListener('abort', handleAbort, { once: true });
+
+                        let created: Awaited<ReturnType<typeof CreateWebWorkerMLCEngine>>;
+                        try {
+                            created = await CreateWebWorkerMLCEngine(
+                                worker,
+                                targetModel,
+                                {
+                                    appConfig: verifiedAdmission.appConfig,
+                                    initProgressCallback: (report: { progress: number; text: string }) => {
+                                        if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
+                                            return;
+                                        }
+                                        llmStatusStore.set({
+                                            state: 'loading',
+                                            progress: report.progress,
+                                            text: report.text,
+                                        });
+                                    },
+                                },
+                                { context_window_size: 8192 }
+                            );
+                        } finally {
+                            attemptSignal.removeEventListener('abort', handleAbort);
+                        }
+                        attemptSignal.throwIfAborted();
+                        if (engineState.initAttemptId !== attemptId) {
+                            worker.terminate();
+                            throw new DOMException('WebLLM initialization superseded', 'AbortError');
+                        }
+
+                        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- WebWorkerMLCEngine and WebLlmEngine are structurally compatible subsets; cast required due to overloaded chat.completions.create signature
+                        initializedEngine = created as unknown as WebLlmEngine;
+                    },
+                    downloadConsent: options.downloadConsent,
+                    onProgress: (report) => {
+                        if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
+                            return;
+                        }
+                        llmStatusStore.set({
+                            state: 'loading',
+                            progress: report.progress,
+                            text: report.text,
+                        });
+                    },
+                    signal: attemptSignal,
+                });
                 attemptSignal.throwIfAborted();
-
-                const worker = new LlmWorker();
-                attemptWorker = worker;
-                engineState.worker = worker;
-                function handleAbort() {
-                    worker.terminate();
-                    if (engineState.worker === worker) {
-                        engineState.worker = null;
-                    }
-                }
-                attemptSignal.addEventListener('abort', handleAbort, { once: true });
-
-                let created: Awaited<ReturnType<typeof CreateWebWorkerMLCEngine>>;
-                try {
-                    created = await CreateWebWorkerMLCEngine(
-                        worker,
-                        targetModel,
-                        {
-                            initProgressCallback: (report: { progress: number; text: string }) => {
-                                if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
-                                    return;
-                                }
-                                llmStatusStore.set({
-                                    state: 'loading',
-                                    progress: report.progress,
-                                    text: report.text,
-                                });
-                            },
-                        },
-                        { context_window_size: 8192 }
-                    );
-                } finally {
-                    attemptSignal.removeEventListener('abort', handleAbort);
-                }
-                attemptSignal.throwIfAborted();
-                if (engineState.initAttemptId !== attemptId) {
-                    worker.terminate();
-                    throw new DOMException('WebLLM initialization superseded', 'AbortError');
+                if (!initializedEngine) {
+                    throw new Error('WebLLM artifact consumer did not initialize an engine');
                 }
 
-                // eslint-disable-next-line sourdaw/no-type-assertion-escape -- WebWorkerMLCEngine and WebLlmEngine are structurally compatible subsets; cast required due to overloaded chat.completions.create signature
-                engineState.engine = created as unknown as WebLlmEngine;
+                engineState.engine = initializedEngine;
+                engineState.activeArtifactSetDigest = admission.artifactSetDigest;
                 if (!attemptSignal.aborted) {
                     llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
@@ -155,6 +197,7 @@ export const initWebLlmEngine = inject({ logger })(
                 engineState.initSignal = null;
                 engineState.initWaiterCount = 0;
                 engineState.engine = null;
+                engineState.activeArtifactSetDigest = null;
             });
 
             return waitForWebLlmAttempt({

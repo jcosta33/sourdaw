@@ -4,7 +4,8 @@ import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
 import { unloadWebLlmEngine } from '../unloadWebLlmEngine';
 
-const { mockLogger, createWebWorkerEngineMock, terminateWorkerMock } = vi.hoisted(() => ({
+const { artifactAdmissionMock, mockLogger, createWebWorkerEngineMock, terminateWorkerMock } = vi.hoisted(() => ({
+    artifactAdmissionMock: vi.fn(),
     mockLogger: {
         info: vi.fn(),
         warn: vi.fn(),
@@ -17,6 +18,14 @@ const { mockLogger, createWebWorkerEngineMock, terminateWorkerMock } = vi.hoiste
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('@mlc-ai/web-llm', () => ({
     CreateWebWorkerMLCEngine: createWebWorkerEngineMock,
+}));
+vi.mock('../webLlmArtifactAdmission', () => ({
+    admitWebLlmModelArtifacts: artifactAdmissionMock,
+}));
+vi.mock('../webLlmArtifactManifest', () => ({
+    getWebLlmArtifactManifestModel: (modelId: string) => ({
+        artifactSetDigest: `digest:${modelId}`,
+    }),
 }));
 vi.mock('../../llmWorker?worker', () => ({
     default: class MockLlmWorker {
@@ -31,6 +40,8 @@ function ignoreEngine(_engine: unknown): void {}
 describe('WebLLM engineLifecycle injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        artifactAdmissionMock.mockReset();
+        createWebWorkerEngineMock.mockReset();
         engineState.engine = null;
         engineState.initPromise = null;
         engineState.initAttemptId = null;
@@ -39,6 +50,30 @@ describe('WebLLM engineLifecycle injectables', () => {
         engineState.initSignal = null;
         engineState.initWaiterCount = 0;
         engineState.worker = null;
+        engineState.activeArtifactSetDigest = null;
+        artifactAdmissionMock.mockImplementation(
+            async (modelId: string, options?: { consume?: (admission: unknown) => Promise<void> }) => {
+                const admission = {
+                    appConfig: {
+                        cacheBackend: 'cache',
+                        model_list: [
+                            {
+                                model: `https://models.invalid/${modelId}/`,
+                                model_id: modelId,
+                                model_lib: `https://models.invalid/${modelId}.wasm`,
+                            },
+                        ],
+                    },
+                    artifactSetDigest: `digest:${modelId}`,
+                };
+                await options?.consume?.(admission);
+                return admission;
+            }
+        );
+        createWebWorkerEngineMock.mockResolvedValue({
+            interruptGenerate: vi.fn(),
+            chat: { completions: { create: vi.fn() } },
+        });
         Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true, writable: true });
     });
 
@@ -76,6 +111,56 @@ describe('WebLLM engineLifecycle injectables', () => {
         await vi.waitFor(() => expect(engineState.initPromise).toBeNull());
         expect(engineState.engine).toBeNull();
         expect(engineState.worker).toBeNull();
+    });
+
+    it('waits for complete artifact admission before creating a worker and passes the immutable app config', async () => {
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+        let resolveAdmission: (value: {
+            appConfig: {
+                cacheBackend: 'cache';
+                model_list: Array<{ model: string; model_id: string; model_lib: string }>;
+            };
+            artifactSetDigest: string;
+        }) => void = ignoreEngine;
+        artifactAdmissionMock.mockImplementation(
+            async (_modelId: string, options?: { consume?: (admission: unknown) => Promise<void> }) => {
+                const admission = await new Promise<{
+                    appConfig: {
+                        cacheBackend: 'cache';
+                        model_list: Array<{ model: string; model_id: string; model_lib: string }>;
+                    };
+                    artifactSetDigest: string;
+                }>((resolve) => {
+                    resolveAdmission = resolve;
+                });
+                await options?.consume?.(admission);
+                return admission;
+            }
+        );
+        const pending = initWebLlmEngine('test-model', { downloadConsent: true });
+        await vi.waitFor(() => expect(artifactAdmissionMock).toHaveBeenCalledTimes(1));
+        expect(createWebWorkerEngineMock).not.toHaveBeenCalled();
+        const appConfig = {
+            cacheBackend: 'cache' as const,
+            model_list: [
+                {
+                    model: 'https://models.invalid/revision/',
+                    model_id: 'test-model',
+                    model_lib: 'https://models.invalid/revision/model.wasm',
+                },
+            ],
+        };
+        resolveAdmission({ appConfig, artifactSetDigest: 'digest:test-model' });
+
+        await pending;
+
+        expect(createWebWorkerEngineMock).toHaveBeenCalledWith(
+            expect.anything(),
+            'test-model',
+            expect.objectContaining({ appConfig }),
+            { context_window_size: 8192 }
+        );
+        expect(engineState.activeArtifactSetDigest).toBe('digest:test-model');
     });
 
     it('terminates the attempt-owned worker when initialization fails', async () => {

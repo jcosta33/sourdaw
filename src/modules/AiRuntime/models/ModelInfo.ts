@@ -23,7 +23,7 @@ export const WEBLLM_MODELS: ModelInfo[] = [
         displayName: 'Light',
         parameterCount: '1.7B',
         description: 'Fast responses, low resource usage. Best for simple edits.',
-        downloadSize: '~1.1 GB',
+        downloadSize: '~0.99 GB',
         ramUsage: '~1.8 GB',
     },
     {
@@ -31,7 +31,7 @@ export const WEBLLM_MODELS: ModelInfo[] = [
         displayName: 'Standard',
         parameterCount: '4B',
         description: 'Good quality with moderate resource usage. Recommended.',
-        downloadSize: '~2.5 GB',
+        downloadSize: '~2.28 GB',
         ramUsage: '~3.5 GB',
     },
     {
@@ -39,7 +39,7 @@ export const WEBLLM_MODELS: ModelInfo[] = [
         displayName: 'Pro',
         parameterCount: '8B',
         description: 'Best quality. Needs a capable GPU with 8 GB+ VRAM.',
-        downloadSize: '~5.0 GB',
+        downloadSize: '~4.63 GB',
         ramUsage: '~6.5 GB',
     },
 ];

@@ -18,6 +18,7 @@ export const unloadWebLlmEngine = inject({ logger })(
             engineState.initController = null;
             engineState.initSignal = null;
             engineState.initWaiterCount = 0;
+            engineState.activeArtifactSetDigest = null;
             logger.info('[AI Engine] WebLLM unloaded from memory');
         }
 );
