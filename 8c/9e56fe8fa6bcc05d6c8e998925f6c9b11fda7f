@@ -1,0 +1,14 @@
+tests/e2e/grandBouleMidiCalibration.spec.ts
+  h_1228e573df1f42 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8c9e56fe8fa6bcc05d6c8e998925f6c9b11fda7f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
