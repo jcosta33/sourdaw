@@ -1,0 +1,31 @@
+src/modules/Command/stores/undoStore.ts
+  s_a40848e8f8cca9::t_ab01909af3439a 9,24-27,31,58,73,78,83,125,127,132,139-140,151,154-162
+  s_a40848e8f8cca9::t_47fa423c8e6d40 8
+  s_a40848e8f8cca9::t_f47cbb18b497eb 163
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_a40848e8f8cca9::t_664522334558e0 255-262
+  s_a40848e8f8cca9::t_ab01909af3439a 4-11,17
+  s_a40848e8f8cca9::t_a0f482181e28a0 254
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_a40848e8f8cca9::t_ae20cf4aa5b377 3,8-9,24,29,33-58
+  s_a40848e8f8cca9::t_ebe2437beb969c 73
+  s_a40848e8f8cca9::t_cd58880c8a1e88 74
+src/modules/Command/useCases/registerProductionCommandHandlers.ts
+  s_a40848e8f8cca9::t_ab01909af3439a 1-2,15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f0de2d51ac4ab07746d5813e0aef981975e1d141",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
