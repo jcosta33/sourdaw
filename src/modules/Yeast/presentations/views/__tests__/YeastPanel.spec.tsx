@@ -43,6 +43,7 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('../../../useCases/getYeastGrooveAssignment', () => ({
     getYeastGrooveAssignment: () => ({ templateId: 'pocket-1', amount: 0.75 }),
+    YEAST_GROOVE_OWNER_ID: 'yeast-rack',
 }));
 
 vi.mock('../../../useCases/setYeastGrooveTemplate', () => ({
@@ -225,7 +226,17 @@ describe('YeastPanel', () => {
                     provenance: { type: 'user', sourceId: 'test' },
                 },
             ],
-            assignments: [],
+            // The panel derives the selected template from the subscribed
+            // groove state's assignments (not an impure helper read), so the
+            // mock state carries the binding directly.
+            assignments: [
+                {
+                    consumerType: 'yeast-processor',
+                    consumerId: 'groove-consumer:yeast-rack:groove-1',
+                    templateId: 'pocket-1',
+                    amount: 0.75,
+                },
+            ],
         };
 
         render(<YeastPanel />);
