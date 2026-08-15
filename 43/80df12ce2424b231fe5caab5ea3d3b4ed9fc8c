@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_ee09049725c0c3 9,36,377
+src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts
+  s_a40848e8f8cca9::t_aae71bae13c2c5 21,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4380df12ce2424b231fe5caab5ea3d3b4ed9fc8c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
