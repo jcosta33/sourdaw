@@ -66,6 +66,8 @@ type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>
 
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
+const AGENT_RUN_STALE_COMPLETION_WARNING =
+    'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
 
 function updateTrackedAgentRun(confirmation: PendingAppActionConfirmation, update: () => void): string | null {
     if (!agentRunLifecycle.get(confirmation.runId)) {
@@ -102,14 +104,15 @@ function recordTrackedAgentRunFailure(
 function recordTrackedAgentRunReceipt(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
-    revertGroupId?: string
+    input?: { revertGroupId?: string; completesRun?: boolean }
 ): string | null {
     return updateTrackedAgentRun(confirmation, () => {
         agentRunLifecycle.recordCommittedWork({
             runId: confirmation.runId,
             workId: receipt.batchId,
             receiptIdentity: `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`,
-            ...(revertGroupId ? { revertGroupId } : {}),
+            ...(input?.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
+            ...(input?.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
             committedRevision: captureProjectRevision(),
             renderJobIds: receipt.links.render.map((link) => link.jobId),
             analysisIds: receipt.links.analysis.map((link) => link.analysisId),
@@ -117,12 +120,17 @@ function recordTrackedAgentRunReceipt(
     });
 }
 
+type TrackedAgentRunWorkLeaseSettlement = {
+    accepted: boolean;
+    warning: string | null;
+};
+
 function settleTrackedAgentRunWorkLease(
     lease: AgentRunWorkLease,
     terminalState: AgentRunWorkTerminalState
-): string | null {
+): TrackedAgentRunWorkLeaseSettlement {
     try {
-        agentRunWorkLease.settle({
+        const settlement = agentRunWorkLease.settle({
             runId: lease.runId,
             workId: lease.workId,
             cancellationGeneration: lease.cancellationGeneration,
@@ -130,10 +138,13 @@ function settleTrackedAgentRunWorkLease(
             receiptIdentity: lease.receiptIdentity,
             terminalState,
         });
-        return null;
+        return {
+            accepted: settlement.status === 'settled',
+            warning: settlement.status === 'settled' ? null : AGENT_RUN_STALE_COMPLETION_WARNING,
+        };
     } catch (error) {
         logger.error(new Error('Agent run work lease settlement failed', { cause: error }));
-        return AGENT_RUN_PERSISTENCE_WARNING;
+        return { accepted: true, warning: AGENT_RUN_PERSISTENCE_WARNING };
     }
 }
 
@@ -141,12 +152,15 @@ function settleVerifiedBatchReplay(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     recoveredExternalEffects = false,
-    leasePersistenceWarning: string | null = null
+    leaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null }
 ): ConfirmPendingChatActionsResult {
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
-        const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, confirmation.groupId);
-        const runPersistenceWarning = receiptPersistenceWarning ?? leasePersistenceWarning;
+        const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, receipt, {
+            ...(replay.status === 'committed' && confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
+            completesRun: leaseSettlement.accepted,
+        });
+        const runPersistenceWarning = receiptPersistenceWarning ?? leaseSettlement.warning;
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
@@ -662,14 +676,17 @@ export async function confirmPendingChatActions(
         batchResult = versionedResult;
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        let canUpdateTrackedRun = true;
         if (trackedWorkLease) {
-            settleTrackedAgentRunWorkLease(trackedWorkLease, 'failed');
+            canUpdateTrackedRun = settleTrackedAgentRunWorkLease(trackedWorkLease, 'failed').accepted;
         }
-        recordTrackedAgentRunFailure(confirmation, {
-            code: 'confirmed-command-failed',
-            message: reason,
-            retriable: false,
-        });
+        if (canUpdateTrackedRun) {
+            recordTrackedAgentRunFailure(confirmation, {
+                code: 'confirmed-command-failed',
+                message: reason,
+                retriable: false,
+            });
+        }
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
@@ -687,7 +704,7 @@ export async function confirmPendingChatActions(
         setChatGenerating(false);
     }
 
-    let trackedLeasePersistenceWarning: string | null = null;
+    let trackedLeaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null };
     if (trackedWorkLease) {
         let terminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
         if (
@@ -702,7 +719,7 @@ export async function confirmPendingChatActions(
         } else if (batchResult.status === 'cancelled') {
             terminalState = 'cancelled';
         }
-        trackedLeasePersistenceWarning = settleTrackedAgentRunWorkLease(trackedWorkLease, terminalState);
+        trackedLeaseSettlement = settleTrackedAgentRunWorkLease(trackedWorkLease, terminalState);
     }
 
     if (batchResult.status === 'idempotent-replay') {
@@ -710,7 +727,7 @@ export async function confirmPendingChatActions(
             confirmation,
             batchResult.receipt,
             'recoveredExternalEffects' in batchResult && batchResult.recoveredExternalEffects === true,
-            trackedLeasePersistenceWarning
+            trackedLeaseSettlement
         );
     }
 
@@ -733,17 +750,14 @@ export async function confirmPendingChatActions(
         batchResult.status === 'executed' ||
         batchResult.status === 'executed-with-warning'
     ) {
-        const receiptPersistenceWarning = recordTrackedAgentRunReceipt(
-            confirmation,
-            batchResult.receipt,
-            group.groupId
-        );
-        const runPersistenceWarning = receiptPersistenceWarning ?? trackedLeasePersistenceWarning;
+        const executionKind =
+            batchResult.status === 'executed' || batchResult.status === 'executed-with-warning' ? 'runtime' : 'project';
+        const receiptPersistenceWarning = recordTrackedAgentRunReceipt(confirmation, batchResult.receipt, {
+            ...(executionKind === 'project' ? { revertGroupId: group.groupId } : {}),
+            completesRun: trackedLeaseSettlement.accepted,
+        });
+        const runPersistenceWarning = receiptPersistenceWarning ?? trackedLeaseSettlement.warning;
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
-        let executionKind: 'project' | 'runtime' = 'project';
-        if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
-            executionKind = 'runtime';
-        }
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(
             ({ action, label, receipt }, index) => {

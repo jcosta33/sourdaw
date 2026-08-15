@@ -948,6 +948,46 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
+    it('settles preview work when the command preview returns a non-preview outcome', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'preview muting the vocals',
+            requiresConfirmation: false,
+        });
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValueOnce({
+            status: 'rejected',
+            reason: 'preview rejected',
+            actions: [],
+        });
+
+        await sendChatMessage('preview muting the vocals', { mode: 'preview' });
+
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the rejected preview run to be retained');
+        }
+        expect(projection).toMatchObject({ phase: 'failed' });
+        expect(getAgentRun(projection.runId)?.workLeases).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    ownerKind: 'command',
+                    cleanupOwner: 'command-preview',
+                    terminalState: 'failed',
+                }),
+            ])
+        );
+    });
+
     it('does not restore a stale backend after selection changes during generation', async () => {
         mocks.backend.value = 'cloud';
         mocks.cloudAvailable.value = true;
@@ -1114,6 +1154,49 @@ describe('sendChatMessage injectables', () => {
                 content: expect.stringMatching(/runtime command executed.*do not retry/is),
             })
         );
+        const [projection] = getAgentRunControlProjections();
+        expect(projection?.committedReceipts).toEqual([expect.objectContaining({ revertGroupId: null })]);
+    });
+
+    it('does not reanimate a cancelled run when a committed callback arrives after lease cancellation', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'mute the drums',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppActionBatch.mockImplementationOnce(async () => {
+            const [projection] = getAgentRunControlProjections();
+            if (!projection) {
+                throw new Error('Expected an executing agent run');
+            }
+            agentRunLifecycle.cancel({
+                runId: projection.runId,
+                reason: 'Cancelled while command was in flight.',
+            });
+            return {
+                status: 'committed',
+                actions: [{ action, label: 'Mute track' }],
+            };
+        });
+
+        await sendChatMessage('mute the drums');
+
+        const [projection] = getAgentRunControlProjections();
+        expect(projection).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requested: true },
+            committedReceipts: [expect.objectContaining({ workId: expect.any(String) })],
+        });
     });
 
     it('does not report execution failure when AI history reporting throws after commit', async () => {
@@ -1379,6 +1462,51 @@ describe('sendChatMessage injectables', () => {
         expect(combinedFailureUpdate?.[0]).toBe(assistant_message?.id);
         expect(combinedFailureUpdate?.[1].error).toBe(warning);
         expect(combinedFailureUpdate?.[1].content).toMatch(/committed with a follow-up warning.*do not retry/is);
+    });
+
+    it('retains a late confirmed receipt without reopening a cancelled run', async () => {
+        setProjectContextWithClip();
+        const firstAction = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        const secondAction = { type: 'removeClip', payload: { clipId: 'clip-1' } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [firstAction, secondAction],
+            rawText: 'delete drums and clip',
+            requiresConfirmation: false,
+        });
+        await sendChatMessage('delete drums and clip');
+        const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        if (!proposal?.id || !proposal.runId) {
+            throw new Error('Expected the destructive batch to require confirmation');
+        }
+        const proposalRunId = proposal.runId;
+        mocks.executeAppActionBatch.mockImplementationOnce(async () => {
+            agentRunLifecycle.cancel({
+                runId: proposalRunId,
+                reason: 'Cancelled while the confirmed command was in flight.',
+            });
+            return {
+                status: 'committed',
+                actions: [
+                    { action: firstAction, label: 'Remove track' },
+                    { action: secondAction, label: 'Remove clip' },
+                ],
+            };
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(getAgentRun(proposalRunId)).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requestedAt: expect.any(Number) },
+            committedWork: [expect.objectContaining({ receiptIdentity: expect.any(String) })],
+        });
     });
 
     it('warns after confirmation when the committed run receipt cannot persist', async () => {

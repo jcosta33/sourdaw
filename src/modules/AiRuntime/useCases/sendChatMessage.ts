@@ -74,22 +74,26 @@ function getAgentRunReceiptIdentity(receipt: NonNullable<AgentApplyReceipt>): st
 
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
+const AGENT_RUN_STALE_COMPLETION_WARNING =
+    'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
 
 function tryRecordCommittedAgentRunWork(input: {
     runId: string;
     receipt: NonNullable<AgentApplyReceipt>;
-    revertGroupId: string;
+    revertGroupId?: string;
     committedRevision?: string;
+    completesRun?: boolean;
 }): string | null {
     try {
         agentRunLifecycle.recordCommittedWork({
             runId: input.runId,
             workId: input.receipt.batchId,
             receiptIdentity: getAgentRunReceiptIdentity(input.receipt),
-            revertGroupId: input.revertGroupId,
+            ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             renderJobIds: input.receipt.links.render.map((link) => link.jobId),
             analysisIds: input.receipt.links.analysis.map((link) => link.analysisId),
             ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
+            ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
         });
         return null;
     } catch {
@@ -97,9 +101,17 @@ function tryRecordCommittedAgentRunWork(input: {
     }
 }
 
-function trySettleAgentRunWorkLease(lease: AgentRunWorkLease, terminalState: AgentRunWorkTerminalState): string | null {
+type AgentRunWorkLeaseSettlement = {
+    accepted: boolean;
+    warning: string | null;
+};
+
+function trySettleAgentRunWorkLease(
+    lease: AgentRunWorkLease,
+    terminalState: AgentRunWorkTerminalState
+): AgentRunWorkLeaseSettlement {
     try {
-        agentRunWorkLease.settle({
+        const settlement = agentRunWorkLease.settle({
             runId: lease.runId,
             workId: lease.workId,
             cancellationGeneration: lease.cancellationGeneration,
@@ -107,9 +119,12 @@ function trySettleAgentRunWorkLease(lease: AgentRunWorkLease, terminalState: Age
             receiptIdentity: lease.receiptIdentity,
             terminalState,
         });
-        return null;
+        return {
+            accepted: settlement.status === 'settled',
+            warning: settlement.status === 'settled' ? null : AGENT_RUN_STALE_COMPLETION_WARNING,
+        };
     } catch {
-        return AGENT_RUN_PERSISTENCE_WARNING;
+        return { accepted: true, warning: AGENT_RUN_PERSISTENCE_WARNING };
     }
 }
 
@@ -392,6 +407,22 @@ export async function sendChatMessage(
                         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                         return undefined;
                     }
+                    const previewSettlement = trySettleAgentRunWorkLease(
+                        previewLeaseResult.lease,
+                        preview.status === 'cancelled' ? 'cancelled' : 'failed'
+                    );
+                    if (!previewSettlement.accepted) {
+                        const currentRun = agentRunLifecycle.get(runId);
+                        if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
+                            return undefined;
+                        }
+                        throw new Error('Agent preview work could not be settled after a non-preview outcome');
+                    }
+                    agentRunLifecycle.updateBatchStatus({
+                        runId,
+                        batchId: parsedCommandBatch.envelope.batchId,
+                        status: 'failed',
+                    });
                     throw new Error('reason' in preview ? preview.reason : 'Command preview did not produce a preview');
                 }
 
@@ -485,10 +516,11 @@ export async function sendChatMessage(
                 } else if (execution.status === 'cancelled') {
                     commandLeaseTerminalState = 'cancelled';
                 }
-                const commandLeasePersistenceWarning = trySettleAgentRunWorkLease(
+                const commandLeaseSettlement = trySettleAgentRunWorkLease(
                     commandLeaseResult.lease,
                     commandLeaseTerminalState
                 );
+                const commandLeasePersistenceWarning = commandLeaseSettlement.warning;
 
                 if (execution.status === 'committed') {
                     if (!execution.receipt) {
@@ -508,6 +540,7 @@ export async function sendChatMessage(
                         receipt: execution.receipt,
                         revertGroupId: commandGroup.groupId,
                         committedRevision: captureProjectRevision(),
+                        completesRun: commandLeaseSettlement.accepted,
                     });
                     if (runPersistenceWarning) {
                         receiptWarnings.push(runPersistenceWarning);
@@ -546,7 +579,7 @@ export async function sendChatMessage(
                     const runPersistenceWarning = tryRecordCommittedAgentRunWork({
                         runId,
                         receipt: execution.receipt,
-                        revertGroupId: commandGroup.groupId,
+                        completesRun: commandLeaseSettlement.accepted,
                     });
                     if (runPersistenceWarning) {
                         receiptWarnings.push(runPersistenceWarning);
@@ -571,17 +604,19 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'invalidated') {
-                    agentRunLifecycle.recordError({
-                        runId,
-                        error: {
-                            code: 'proposal-invalidated',
-                            message: execution.reason,
-                            occurredAt: Date.now(),
-                            retriable: true,
-                            workId: parsedCommandBatch.envelope.batchId,
-                        },
-                        terminal: true,
-                    });
+                    if (commandLeaseSettlement.accepted) {
+                        agentRunLifecycle.recordError({
+                            runId,
+                            error: {
+                                code: 'proposal-invalidated',
+                                message: execution.reason,
+                                occurredAt: Date.now(),
+                                retriable: true,
+                                workId: parsedCommandBatch.envelope.batchId,
+                            },
+                            terminal: true,
+                        });
+                    }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         error: execution.reason,
@@ -592,7 +627,9 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'cancelled') {
-                    agentRunLifecycle.cancel({ runId, reason: 'User cancelled before the command committed.' });
+                    if (commandLeaseSettlement.accepted) {
+                        agentRunLifecycle.cancel({ runId, reason: 'User cancelled before the command committed.' });
+                    }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: 'Command cancelled before it committed. No project changes were applied.',
@@ -601,12 +638,14 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'no-op') {
-                    agentRunLifecycle.updateBatchStatus({
-                        runId,
-                        batchId: parsedCommandBatch.envelope.batchId,
-                        status: 'no-op',
-                    });
-                    agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+                    if (commandLeaseSettlement.accepted) {
+                        agentRunLifecycle.updateBatchStatus({
+                            runId,
+                            batchId: parsedCommandBatch.envelope.batchId,
+                            status: 'no-op',
+                        });
+                        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
+                    }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: 'No project changes were needed.',
@@ -615,17 +654,19 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'ambiguous') {
-                    agentRunLifecycle.recordError({
-                        runId,
-                        error: {
-                            code: 'ambiguous-command-outcome',
-                            message: execution.reason,
-                            occurredAt: Date.now(),
-                            retriable: false,
-                            workId: parsedCommandBatch.envelope.batchId,
-                        },
-                        terminal: true,
-                    });
+                    if (commandLeaseSettlement.accepted) {
+                        agentRunLifecycle.recordError({
+                            runId,
+                            error: {
+                                code: 'ambiguous-command-outcome',
+                                message: execution.reason,
+                                occurredAt: Date.now(),
+                                retriable: false,
+                                workId: parsedCommandBatch.envelope.batchId,
+                            },
+                            terminal: true,
+                        });
+                    }
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         error: execution.reason,
@@ -639,17 +680,19 @@ export async function sendChatMessage(
                     error: execution.reason,
                     content: `Failed to execute prompt command atomically: ${execution.reason}`,
                 });
-                agentRunLifecycle.recordError({
-                    runId,
-                    error: {
-                        code: 'command-execution-failed',
-                        message: execution.reason,
-                        occurredAt: Date.now(),
-                        retriable: false,
-                        workId: parsedCommandBatch.envelope.batchId,
-                    },
-                    terminal: true,
-                });
+                if (commandLeaseSettlement.accepted) {
+                    agentRunLifecycle.recordError({
+                        runId,
+                        error: {
+                            code: 'command-execution-failed',
+                            message: execution.reason,
+                            occurredAt: Date.now(),
+                            retriable: false,
+                            workId: parsedCommandBatch.envelope.batchId,
+                        },
+                        terminal: true,
+                    });
+                }
             } else if (result.rejectionReason) {
                 recordUnavailableProviderUsage(runId, backend);
                 agentRunLifecycle.recordError({
