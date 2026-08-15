@@ -1,0 +1,28 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts
+  s_a40848e8f8cca9::t_87ce82a1ff407f 1-140
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_87ce82a1ff407f 7-8,10,12,58,81-84,136-138,241
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestAnthropicStream.spec.ts
+  s_a40848e8f8cca9::t_28a6ebda64c43a 1-72
+  s_a40848e8f8cca9::t_fa0f18c8da047c 73-75
+  s_a40848e8f8cca9::t_8300af1e557f96 76
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_a40848e8f8cca9::t_87ce82a1ff407f 11,71-78,95-97,116-121,123-125,133-138
+  s_a40848e8f8cca9::t_6d6b9cd5298cf7 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3c6776e15c98b91dc7aab45c2d1e3572c3ba3eaf",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
