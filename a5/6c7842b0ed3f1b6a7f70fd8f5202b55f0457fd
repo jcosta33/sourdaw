@@ -1,0 +1,19 @@
+crates/daw-engine/src/midi_fx.rs
+  s_ab5443e65c7fba::t_39e5ae427b18ad 921-922
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a56c7842b0ed3f1b6a7f70fd8f5202b55f0457fd",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
