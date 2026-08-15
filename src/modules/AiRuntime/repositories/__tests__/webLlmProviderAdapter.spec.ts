@@ -545,6 +545,50 @@ describe('WebLLM provider artifact admission', () => {
         expectFixtureCachesEmpty();
     });
 
+    it('serializes same-model restarts so aborted cleanup cannot purge the replacement admission', async () => {
+        const controller = new AbortController();
+        const baseDependencies = createAdmissionDependencies();
+        let rejectFirstFetch: (reason: unknown) => void = () => {};
+        let firstFetchPending = true;
+        let replacementFetchStarted = false;
+        const dependencies = createAdmissionDependencies({
+            fetchArtifact: vi.fn(async (url, signal) => {
+                if (firstFetchPending) {
+                    firstFetchPending = false;
+                    return new Promise<Response>((_resolve, reject) => {
+                        rejectFirstFetch = reject;
+                    });
+                }
+                replacementFetchStarted = true;
+                return baseDependencies.fetchArtifact(url, signal);
+            }),
+        });
+        const firstOutcome = admitWebLlmModelArtifacts(
+            fixtureModel.modelId,
+            { downloadConsent: true, signal: controller.signal },
+            dependencies
+        ).then(
+            () => null,
+            (error: unknown) => error
+        );
+        await vi.waitFor(() => expect(dependencies.fetchArtifact).toHaveBeenCalledTimes(1));
+
+        controller.abort(new DOMException('cancelled', 'AbortError'));
+        const replacement = admitWebLlmModelArtifacts(fixtureModel.modelId, { downloadConsent: true }, dependencies);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const replacementOverlappedCleanup = replacementFetchStarted;
+        rejectFirstFetch(controller.signal.reason);
+
+        await expect(firstOutcome).resolves.toMatchObject({ name: 'AbortError' });
+        await expect(replacement).resolves.toMatchObject({ artifactSetDigest: fixtureModel.artifactSetDigest });
+        expect(replacementOverlappedCleanup).toBe(false);
+        vi.mocked(dependencies.fetchArtifact).mockClear();
+        await expect(admitWebLlmModelArtifacts(fixtureModel.modelId, {}, dependencies)).resolves.toMatchObject({
+            artifactSetDigest: fixtureModel.artifactSetDigest,
+        });
+        expect(dependencies.fetchArtifact).not.toHaveBeenCalled();
+    });
+
     it('builds WebLLM configuration only from the immutable admitted model record', () => {
         const appConfig = createWebLlmAppConfig(fixtureModel);
         const modelRecord = appConfig.model_list[0];

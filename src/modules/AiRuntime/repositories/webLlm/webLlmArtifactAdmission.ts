@@ -15,6 +15,7 @@ const WEBLLM_CACHE_NAMES = {
     model: 'webllm/model',
     wasm: 'webllm/wasm',
 } as const;
+const admissionTailByModel = new Map<string, Promise<void>>();
 
 type WebLlmArtifactAdmissionOptions = {
     downloadConsent?: boolean;
@@ -424,7 +425,26 @@ async function promoteProvenance(
     );
 }
 
-export async function admitWebLlmModelArtifacts(
+async function runExclusiveModelAdmission<Result>(modelId: string, operation: () => Promise<Result>): Promise<Result> {
+    const previous = admissionTailByModel.get(modelId) ?? Promise.resolve();
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const tail = previous.catch(() => undefined).then(() => released);
+    admissionTailByModel.set(modelId, tail);
+    await previous.catch(() => undefined);
+    try {
+        return await operation();
+    } finally {
+        release();
+        if (admissionTailByModel.get(modelId) === tail) {
+            admissionTailByModel.delete(modelId);
+        }
+    }
+}
+
+async function admitWebLlmModelArtifactsExclusive(
     modelId: string,
     options: WebLlmArtifactAdmissionOptions = {},
     dependencies: WebLlmArtifactAdmissionDependencies = productionDependencies
@@ -481,4 +501,14 @@ export async function admitWebLlmModelArtifacts(
         appConfig: createWebLlmAppConfig(model),
         artifactSetDigest: model.artifactSetDigest,
     };
+}
+
+export function admitWebLlmModelArtifacts(
+    modelId: string,
+    options: WebLlmArtifactAdmissionOptions = {},
+    dependencies: WebLlmArtifactAdmissionDependencies = productionDependencies
+): Promise<WebLlmArtifactAdmission> {
+    return runExclusiveModelAdmission(modelId, () =>
+        admitWebLlmModelArtifactsExclusive(modelId, options, dependencies)
+    );
 }
