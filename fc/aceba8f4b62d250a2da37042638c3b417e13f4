@@ -1,0 +1,38 @@
+src/modules/AiRuntime/models/AgentDataPolicy.ts
+  s_a40848e8f8cca9::t_dd36b3254dbe75 2-10,12-16,31,34-37,40-44,47-55,57-61,70-72
+  s_a40848e8f8cca9::t_9d096be84d15b8 1,17-30,38-39,45-46,56,62-69,73-77
+  s_a40848e8f8cca9::t_0c407bb60ba732 11,32-33
+src/modules/AiRuntime/useCases/deleteAgentRunArtifacts.ts
+  s_a40848e8f8cca9::t_57162b82fa39a5 1-6
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_dc5eae635ee230 12
+  s_a40848e8f8cca9::t_c9fc90e806642d 1094-1101
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_57162b82fa39a5 74
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_e847a281b8e42c 261,401
+  s_a40848e8f8cca9::t_dc5eae635ee230 9
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_a40848e8f8cca9::t_6f760315e0a509 59
+  s_a40848e8f8cca9::t_dc5eae635ee230 2
+src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts
+  s_a40848e8f8cca9::t_690502feb1a5d3 3
+  s_a40848e8f8cca9::t_0c407bb60ba732 9,13
+  s_a40848e8f8cca9::t_6832eacc6de2b2 1-2,4-8,10-12,14-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fcaceba8f4b62d250a2da37042638c3b417e13f4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
