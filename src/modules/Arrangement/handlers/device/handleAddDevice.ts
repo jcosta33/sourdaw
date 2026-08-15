@@ -19,6 +19,26 @@ function ensureDeviceId(action: AddDeviceAction): string {
     return deviceId;
 }
 
+// Placeholder chains for bare adds (no pre-declared expecteds), keyed by
+// action; execute fills them with the actual post-add chain so the shared
+// inverse payload carried into history matches what undo will validate
+// against regardless of chain mutations by earlier batch actions or
+// afterDeviceId mid-chain insertion.
+const pendingBareChains = new WeakMap<object, string[]>();
+
+function finalizeBareChain(action: AddDeviceAction): void {
+    const expectedDeviceIds = pendingBareChains.get(action);
+    if (!expectedDeviceIds) {
+        return;
+    }
+    pendingBareChains.delete(action);
+    const chain =
+        getTrackStoreState()
+            ?.tracks.find((track) => track.id === action.payload.trackId)
+            ?.devices.map((device) => device.id) ?? [];
+    expectedDeviceIds.splice(0, expectedDeviceIds.length, ...chain);
+}
+
 function resolveDeviceIndex(action: AddDeviceAction, context?: HandlerValidationContext): DeviceIndexResolution {
     if (
         !action.payload.expectedDeviceIds &&
@@ -84,6 +104,9 @@ export const handleAddDevice = createHandler<'addDevice'>({
         } else {
             addedDevice = addDevice(action.payload.trackId, action.payload.deviceType, undefined, deviceId);
         }
+        if (addedDevice !== null) {
+            finalizeBareChain(action);
+        }
         return toHandlerExecutionResult(addedDevice !== null);
     },
     describe: (action) => {
@@ -103,6 +126,19 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 }
             }
             expectedDeviceIds.splice(deviceIndex, 0, deviceId);
+            inversePayload.expectedTrackId = action.payload.trackId;
+            inversePayload.expectedDeviceIds = expectedDeviceIds;
+        } else {
+            // Without expecteds, removeDevice's canReapplyAfterDivergence
+            // returns false and any atomic batch containing this action is
+            // rejected ("Action compensation is not guarded inside an atomic
+            // batch: addDevice"). A describe-time chain snapshot would be
+            // stale by undo time — earlier batch actions may have mutated the
+            // chain, and an afterDeviceId-only payload inserts mid-chain — so
+            // the placeholder is finalized from the actual post-add chain in
+            // execute (the array is shared by reference with the inverse).
+            const expectedDeviceIds: string[] = [];
+            pendingBareChains.set(action, expectedDeviceIds);
             inversePayload.expectedTrackId = action.payload.trackId;
             inversePayload.expectedDeviceIds = expectedDeviceIds;
         }
