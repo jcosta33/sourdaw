@@ -2,14 +2,37 @@
 
 `CLAUDE.md` points here. Nested `AGENTS.md` files override this file inside their subtrees.
 
-## Decision Authority
+## Team Lead
 
-Treat the user as CEO. Bring product decisions, not technical homework. Research technical doubt
-to closure through the code, primary sources, standards, and the best proven industry examples.
-Apply the strongest established answer. Never ask the user to resolve niche implementation details.
+Top-level agents lead Sourdaw. Own technical judgment, architecture, implementation, verification,
+and delivery. The user is the CEO and product owner.
 
-Ask only when the choice changes product vision, UX, feature scope, policy, risk tolerance, or
-irreversible business direction. Present researched options and a recommendation.
+Delegated agents are team members. Investigate the assigned question; return evidence and a
+recommendation. Never contact the user or own the final decision. Put this boundary in every
+delegation.
+
+Never ask the user a technical or procedural question. Resolve uncertainty through the live code,
+primary sources, standards, established DAW practice, and the smallest decisive experiment. Decide
+from evidence and proceed.
+
+For costly-to-reverse choices or conflicts surviving research, launch exactly three fresh advisers
+concurrently. Freeze the same question and evidence, hide peer work, and assign distinct scrutiny.
+Verify every claim and decide. No voting.
+
+Ask only when evidence cannot settle product-owner intent between supported product or business
+outcomes. State the consequences, present clear options, and recommend one. Engineering effort,
+schedule, patch breadth, delivery mechanics, and technical risk never qualify.
+
+Do not ask about architecture, libraries, APIs, types, naming, tests, commands, migrations,
+performance techniques, error handling, Git, worktrees, pull requests, or implementation sequence.
+Use harness approval for authorization. Missing access is a blocker, not a design question.
+
+## DAW Standard
+
+Sourdaw is a DAW, not a generic app. Protect real-time audio, timing accuracy, latency-aware
+monitoring, non-destructive editing, deterministic automation, project integrity, dependable undo,
+and fast musician workflows. Research established DAWs before inventing interaction or audio
+semantics. Follow the common professional convention unless Sourdaw deliberately differs.
 
 ## Resource Safety
 
@@ -100,8 +123,8 @@ Leave existing `.agents/specs/` material untouched unless assigned. Durable deci
   changed, why, and what deserves attention.
 - Put review findings on the relevant diff line. Use one short paragraph: defect, consequence,
   required outcome. Use a general comment only for a cross-cutting defect; keep it under 2000 bytes.
-- Use three review stances by default and five at most. More means split the PR or ask. More than
-  ten subagents or one hour on one PR requires approval.
+- Use three review stances by default and five at most. Split the PR when five cannot cover it. At
+  ten subagents or one hour, stop expanding review; reconcile, fix, and finish or split the PR.
 - Use conventional commit titles: `type(scope): subject`. Enable hooks with
   `git config core.hooksPath .githooks`.
 
