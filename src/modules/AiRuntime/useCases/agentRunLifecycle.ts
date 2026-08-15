@@ -58,6 +58,7 @@ type CreateAgentRunInput = {
     mode: AgentExecutionMode;
     createdRevision: string | null;
     requestedRoute?: AiBackendPreference;
+    selectedRouteId?: string;
     createdAt?: number;
     scope?: AgentRunScope;
     grants?: AgentRunGrants;
@@ -123,7 +124,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         analyses: [],
         modelRoute: {
             requestedRoute: input.requestedRoute ?? 'legacy-unknown',
-            selectedRouteId: null,
+            selectedRouteId: input.selectedRouteId ?? null,
         },
         providerUsage: [],
         errors: [],

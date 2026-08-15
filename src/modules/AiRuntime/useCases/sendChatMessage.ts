@@ -280,6 +280,7 @@ export async function sendChatMessage(
         mode: interactionMode,
         createdRevision: captureProjectRevision(),
         requestedRoute,
+        selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';

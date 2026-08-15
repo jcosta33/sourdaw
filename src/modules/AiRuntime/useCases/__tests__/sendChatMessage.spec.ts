@@ -1471,6 +1471,11 @@ describe('sendChatMessage injectables', () => {
 
         await sendChatMessage('mute the vocals');
 
+        const [projection] = getAgentRunControlProjections();
+        expect(getAgentRun(projection!.runId)?.modelRoute).toEqual({
+            requestedRoute: 'auto',
+            selectedRouteId: 'native:native:native',
+        });
         expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
             expect.objectContaining({
                 role: 'assistant',
