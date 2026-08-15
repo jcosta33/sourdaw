@@ -19,9 +19,11 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// A processed audio block the app never received because its return ring
     /// was full. The plugin's output for that block is gone.
     pub bridge_output_blocks_dropped: u64,
-    /// Audio blocks that arrived on a bridge with no plugin registered under
-    /// its id. They are returned to the app unprocessed rather than left to
-    /// fill the ring, which would refuse every later push for good.
+    /// Audio blocks drained from a bridge with no plugin registered under its
+    /// id. They are returned to the app unprocessed rather than left to fill
+    /// the ring, which would refuse every later push for good — except any the
+    /// pass shed to hold its depth, which are counted in
+    /// `bridge_backlog_blocks_shed`.
     pub unmatched_bridge_blocks: u64,
     /// Stale blocks discarded to hold a bridge's round trip at the depth the
     /// device period needs. Each one is a quantum of dry signal traded for

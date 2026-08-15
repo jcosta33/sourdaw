@@ -32,7 +32,8 @@ pub const RENDER_QUANTUM_FRAMES: usize = 128;
 /// accepts, plus four blocks of slack for ordinary jitter.
 ///
 /// Each block is ~4 KiB, so the pair of rings costs ~288 KiB per plugin.
-const RING_CAPACITY: usize = crate::audio_thread::MAX_CALLBACK_FRAMES / RENDER_QUANTUM_FRAMES + 4;
+pub(crate) const RING_CAPACITY: usize =
+    crate::audio_thread::MAX_CALLBACK_FRAMES / RENDER_QUANTUM_FRAMES + 4;
 
 /// A stereo audio block. `frames` is authoritative; the arrays are capacity,
 /// not length, and samples past `frames` are undefined carry-over.
@@ -101,7 +102,9 @@ pub struct BridgeDrain {
     /// Processed blocks the app never receives because its return ring was
     /// full. Audio that is computed and then thrown away.
     pub output_blocks_dropped: usize,
-    /// Stale blocks discarded to hold the round trip at its target depth.
+    /// Blocks processed but withheld from the return ring to hold the round
+    /// trip at its target depth. Counted in `blocks_processed` too — the
+    /// plugin saw them; only the app does not.
     pub blocks_shed: usize,
 }
 
@@ -114,8 +117,7 @@ impl PluginAudioBridge {
         self.input_rx.slots() + waiting_for_the_app
     }
 
-    /// Discard one stale block when the round trip is running deeper than it
-    /// needs to.
+    /// Whether this pass should shed a block to shorten the round trip.
     ///
     /// Depth only ever grows on its own. The app pushes one block and pops one
     /// block per render quantum, so a pop that finds the return ring empty —
@@ -127,18 +129,15 @@ impl PluginAudioBridge {
     /// ~99 ms of plugin latency that no amount of idle time recovers, wrecking
     /// phase against every parallel path.
     ///
-    /// Shedding the oldest block trades one quantum of dry signal for a round
-    /// trip that returns to its target. One block per pass keeps it gradual.
+    /// A shed block is still processed — only its return trip is skipped. The
+    /// input side is the plugin's only feed: the native sampler records from
+    /// exactly these buffers, so dropping a block before the plugin sees it
+    /// would splice a hole into an armed take rather than shorten a queue.
+    /// Processing it and then withholding it costs the app one quantum of
+    /// return audio and shortens the round trip by the same one block.
     #[inline]
-    fn shed_stale_block(&mut self, target_depth_blocks: usize) -> usize {
-        if self.depth() <= target_depth_blocks {
-            return 0;
-        }
-
-        match self.input_rx.pop() {
-            Ok(_stale) => 1,
-            Err(_) => 0,
-        }
+    fn should_shed(&self, target_depth_blocks: usize) -> bool {
+        self.depth() > target_depth_blocks
     }
     /// Process the blocks queued for this callback, up to `frame_budget`.
     ///
@@ -166,9 +165,10 @@ impl PluginAudioBridge {
     /// pushing throughout the pass cannot hold the audio callback open.
     ///
     /// `target_depth_blocks` is how deep the round trip needs to run to cover
-    /// the device period. One stale block per pass is shed above it, so the
-    /// bridge's latency settles at that depth instead of ratcheting up to the
-    /// ring's capacity over a session.
+    /// the device period. One block per pass is shed above it — processed as
+    /// usual, then withheld from the return ring — so the bridge's latency
+    /// settles at that depth instead of ratcheting up to the ring's capacity
+    /// over a session.
     #[inline]
     pub fn drain_process<F: FnMut(&mut [f32], &mut [f32], usize)>(
         &mut self,
@@ -176,10 +176,8 @@ impl PluginAudioBridge {
         target_depth_blocks: usize,
         mut process_fn: F,
     ) -> BridgeDrain {
-        let mut drain = BridgeDrain {
-            blocks_shed: self.shed_stale_block(target_depth_blocks),
-            ..BridgeDrain::default()
-        };
+        let mut drain = BridgeDrain::default();
+        let mut shed_remaining = usize::from(self.should_shed(target_depth_blocks));
 
         for _ in 0..RING_CAPACITY {
             let Ok(mut block) = self.input_rx.pop() else {
@@ -193,7 +191,10 @@ impl PluginAudioBridge {
             );
             drain.blocks_processed += 1;
             drain.frames_processed += frames;
-            if self.output_tx.push(block).is_err() {
+            if shed_remaining > 0 {
+                shed_remaining -= 1;
+                drain.blocks_shed += 1;
+            } else if self.output_tx.push(block).is_err() {
                 drain.output_blocks_dropped += 1;
             }
             if drain.frames_processed >= frame_budget {
@@ -433,6 +434,38 @@ mod tests {
 
         assert_eq!(drain.blocks_shed, 0);
         assert_eq!(drain.blocks_processed, 3);
+    }
+
+    #[test]
+    fn a_shed_block_still_reaches_the_plugin_and_only_its_return_trip_is_skipped() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        // Eight blocks in flight against a target of two: this pass sheds.
+        for block in 0..8u8 {
+            let sample = f32::from(block);
+            assert!(handle.push_input(
+                &[sample; RENDER_QUANTUM_FRAMES],
+                &[sample; RENDER_QUANTUM_FRAMES]
+            ));
+        }
+
+        let mut seen = Vec::new();
+        let drain = bridge.drain_process(usize::MAX, 2, |left, _, _| {
+            seen.push(left[0]);
+        });
+
+        assert_eq!(drain.blocks_shed, 1);
+        // The input ring is the plugin's only feed — the native sampler records
+        // from exactly these buffers. A shed that dropped the block before the
+        // closure would splice a hole into an armed take.
+        assert_eq!(seen, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        assert_eq!(drain.blocks_processed, 8);
+
+        // Seven come back; the shed one is the cost of shortening the round trip.
+        let mut returned = 0;
+        while handle.pop_output().is_some() {
+            returned += 1;
+        }
+        assert_eq!(returned, 7);
     }
 
     #[test]

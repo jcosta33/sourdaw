@@ -3,7 +3,7 @@
 //! Handles both built-in DSP effects (Knead) and external plugins (CLAP/VST3)
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
-use crate::audio_bridge::{PluginAudioBridge, RENDER_QUANTUM_FRAMES};
+use crate::audio_bridge::{PluginAudioBridge, RENDER_QUANTUM_FRAMES, RING_CAPACITY};
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
@@ -483,10 +483,20 @@ impl AudioScheduler {
         }
         let callback_frames = callback_frames.min(MAX_CALLBACK_FRAMES);
         let frame_budget = callback_frames.saturating_add(RENDER_QUANTUM_FRAMES);
-        // Deep enough to cover the device period with a quantum of slack on
-        // either side of it, and no deeper: every block beyond that is plugin
-        // latency the user hears against the rest of the graph.
-        let target_depth_blocks = callback_frames.div_ceil(RENDER_QUANTUM_FRAMES) + 2;
+        // Deep enough to cover the device period twice over, plus a quantum of
+        // slack either side. Nothing locks the app's IPC cadence to this
+        // callback, so the phase between them wanders across a full period;
+        // a target of one period would shed on every crossing, and each shed
+        // costs the app a quantum of return audio. Two periods absorbs the
+        // whole slip. Beyond that is plugin latency the user hears against the
+        // rest of the graph, so the target stays proportional to the period
+        // rather than growing to the ring's capacity.
+        // The clamp keeps the target meaningful: a period that already needs
+        // most of the ring cannot also carry twice itself, and a target above
+        // what the ring holds would never be crossed, which is the ratchet
+        // this shedding exists to stop.
+        let blocks_per_period = callback_frames.div_ceil(RENDER_QUANTUM_FRAMES);
+        let target_depth_blocks = (blocks_per_period * 2 + 2).min(RING_CAPACITY);
 
         for bridge in &mut self.audio_bridges {
             let plugin_id = bridge.plugin_id;
@@ -1188,7 +1198,7 @@ mod tests {
             returned as u64 + snapshot.bridge_backlog_blocks_shed,
             pushed as u64
         );
-        assert_eq!(snapshot.unmatched_bridge_blocks, returned as u64);
+        assert_eq!(snapshot.unmatched_bridge_blocks, pushed as u64);
 
         // The ring keeps moving. Skipping the bridge left it full forever, so
         // every later push was refused and the app never processed again.
