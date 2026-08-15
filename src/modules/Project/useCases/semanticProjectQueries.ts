@@ -5,6 +5,7 @@ import {
     MAX_SEMANTIC_QUERY_PAGE_SIZE,
     SEMANTIC_PROJECT_QUERY_SCHEMA,
     SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION,
+    SEMANTIC_PROJECT_QUERY_TYPES,
     type SemanticIndexEntity,
     type SemanticProjectIndexSnapshot,
     type SemanticProjectQueryFilters,
@@ -26,17 +27,6 @@ const MAX_VALUE_DEPTH = 6;
 const MAX_WARNINGS = 20;
 const MAX_FILTER_TEXT_LENGTH = 256;
 const MAX_REVISION_TOKEN_LENGTH = 65_536;
-const QUERY_TYPES = [
-    'project-summary',
-    'selection',
-    'object',
-    'routing-graph',
-    'section',
-    'tempo',
-    'history',
-    'diff',
-] as const;
-
 type RetainedSnapshot = Map<string, { item: SemanticIndexEntity; signature: string }>;
 
 const retainedSnapshots = new Map<string, RetainedSnapshot>();
@@ -52,7 +42,7 @@ function pushWarning(warnings: string[], warning: string): void {
 }
 
 function assertSemanticProjectQueryInput(input: SemanticProjectQueryInput): void {
-    if (!QUERY_TYPES.includes(input.type)) {
+    if (!SEMANTIC_PROJECT_QUERY_TYPES.includes(input.type)) {
         throw new Error('Unsupported semantic project query type');
     }
     if (input.page?.cursor !== undefined && typeof input.page.cursor !== 'string') {

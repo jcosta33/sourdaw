@@ -2,6 +2,7 @@ import { isTauri } from '#/utils/tauriBridge';
 
 import { NativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { PROVIDER_PROTOCOL_SCHEMA_VERSION } from '../../models/LlmOrchestrationTypes';
 
 import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 
@@ -47,7 +48,7 @@ export async function generateNativeToolCalls(input: GenerateNativeToolCallsInpu
 }
 
 function narrowNativeToolCallingResponse(response: unknown): NativeToolCallResult[] {
-    if (!isRecord(response) || response.protocolVersion !== 1) {
+    if (!isRecord(response) || response.protocolVersion !== PROVIDER_PROTOCOL_SCHEMA_VERSION) {
         throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
     }
     if (response.status === 'rejected') {

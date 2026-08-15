@@ -21,6 +21,7 @@ export { getProjectHandlers } from './getProjectHandlers';
 export { doesProductionBriefAllowActionBatch } from './doesProductionBriefAllowActionBatch';
 export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
+export { getProjectProtocolContracts } from './getProjectProtocolContracts';
 
 export { exportProjectFile } from './projectPersistence/fileIO/exportProjectFile';
 export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImportProjectFile';

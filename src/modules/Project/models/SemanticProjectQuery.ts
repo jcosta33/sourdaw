@@ -2,8 +2,18 @@ export const SEMANTIC_PROJECT_QUERY_SCHEMA = 'sourdaw.semantic-project-query';
 export const SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION = 1;
 export const MAX_SEMANTIC_QUERY_PAGE_SIZE = 50;
 
-export type SemanticProjectQueryType =
-    'project-summary' | 'selection' | 'object' | 'routing-graph' | 'section' | 'tempo' | 'history' | 'diff';
+export const SEMANTIC_PROJECT_QUERY_TYPES = [
+    'project-summary',
+    'selection',
+    'object',
+    'routing-graph',
+    'section',
+    'tempo',
+    'history',
+    'diff',
+] as const;
+
+export type SemanticProjectQueryType = (typeof SEMANTIC_PROJECT_QUERY_TYPES)[number];
 
 export type SemanticProjectQueryFilters = {
     stableId?: string;

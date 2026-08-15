@@ -94,6 +94,7 @@ export type ExecutableAppActionDirectionalIntent = {
 
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
+    operationVersion?: number;
     risk: ExecutableAppActionRisk;
     description: string;
     intentPhrases: readonly string[];

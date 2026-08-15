@@ -9,7 +9,7 @@ import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../
 import { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
 
-const VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION = 1 as const;
+export const VERIFIED_BATCH_RECEIPT_SCHEMA_VERSION = 1 as const;
 
 type BatchExecutionObservation = {
     status:

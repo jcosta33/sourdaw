@@ -1,6 +1,7 @@
 import { getHandlerByType } from '../stores/handlerRegistry';
 
 import { executableAppActionDescriptorByType, type ExecutableAppActionType } from './executableAppActionRegistry';
+import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
 import { getExecutableCommandConfirmation } from './getExecutableCommandConfirmation';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
@@ -20,6 +21,7 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
 
     return {
         actionType,
+        operationVersion: getExecutableAppActionOperationVersion(actionType),
         providerSchema: descriptor.parameters,
         runtimeSchema: {
             validate: (value: unknown) => validateVersionedCommandArguments(actionType, value),

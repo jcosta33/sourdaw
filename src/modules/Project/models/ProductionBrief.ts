@@ -1,4 +1,5 @@
 export const PRODUCTION_BRIEF_SCHEMA_VERSION = 1 as const;
+export const PRODUCTION_BRIEF_OPERATIONS = ['read', 'replace'] as const;
 
 export type ProductionBriefScope =
     | { kind: 'project' }

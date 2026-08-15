@@ -5,11 +5,18 @@ import { type ActionUndoEntry, isActionEntry, type UndoEntry, type UndoSource } 
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
-const RETIRED_SESSION_ACTION_TYPES = new Set(['restoreDsoSnapshot']);
+
+let supportedSessionActionVersions: ReadonlyMap<string, number> | null = null;
 
 export type UndoStoreState = {
     past: UndoEntry[];
     future: UndoEntry[];
+};
+
+type SerializedActionUndoEntry = ActionUndoEntry & {
+    actionOperationVersion: number;
+    inverseActionOperationVersion?: number;
+    redoActionOperationVersion?: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -20,24 +27,64 @@ function isUndoSource(value: unknown): value is UndoSource {
     return value === 'manual' || value === 'prompt' || value === 'voice' || value === 'ai';
 }
 
-function isSessionPersistableAppAction(value: unknown): value is AppAction {
+function getCurrentOperationVersion(
+    value: unknown,
+    supportedActionVersions: ReadonlyMap<string, number> | null = supportedSessionActionVersions
+): number | null {
     if (!isRecord(value)) {
-        return false;
+        return null;
     }
-    return typeof value.type === 'string' && value.type.length > 0 && !RETIRED_SESSION_ACTION_TYPES.has(value.type);
+    if (typeof value.type !== 'string') {
+        return null;
+    }
+    return supportedActionVersions?.get(value.type) ?? null;
 }
 
-function isSessionPersistableActionEntry(entry: UndoEntry): entry is ActionUndoEntry {
+function getStoredOperationVersion(value: Record<string, unknown>, key: string): number | null | undefined {
+    const version = value[key];
+    if (version === undefined) {
+        return undefined;
+    }
+    if (!Number.isSafeInteger(version) || (version as number) < 1) {
+        return null;
+    }
+    return version as number;
+}
+
+function actionMatchesStoredOperationVersion(
+    action: unknown,
+    storedVersion: number | undefined,
+    supportedActionVersions: ReadonlyMap<string, number>
+): action is AppAction {
+    const currentVersion = getCurrentOperationVersion(action, supportedActionVersions);
+    return currentVersion !== null && (storedVersion ?? 1) === currentVersion;
+}
+
+function serializeSessionActionEntry(entry: UndoEntry): SerializedActionUndoEntry | null {
     if (!isActionEntry(entry)) {
-        return false;
+        return null;
     }
-    if (!isSessionPersistableAppAction(entry.action)) {
-        return false;
+    const actionOperationVersion = getCurrentOperationVersion(entry.action);
+    if (actionOperationVersion === null) {
+        return null;
     }
-    if (entry.inverseAction !== null && !isSessionPersistableAppAction(entry.inverseAction)) {
-        return false;
+    const inverseActionOperationVersion =
+        entry.inverseAction === null ? null : getCurrentOperationVersion(entry.inverseAction);
+    if (entry.inverseAction !== null && inverseActionOperationVersion === null) {
+        return null;
     }
-    return entry.redoAction === undefined || isSessionPersistableAppAction(entry.redoAction);
+    const redoActionOperationVersion =
+        entry.redoAction === undefined ? null : getCurrentOperationVersion(entry.redoAction);
+    if (entry.redoAction !== undefined && redoActionOperationVersion === null) {
+        return null;
+    }
+
+    return {
+        ...entry,
+        actionOperationVersion,
+        ...(inverseActionOperationVersion === null ? {} : { inverseActionOperationVersion }),
+        ...(redoActionOperationVersion === null ? {} : { redoActionOperationVersion }),
+    };
 }
 
 function getOptionalString(value: Record<string, unknown>, key: string): string | null | undefined {
@@ -51,7 +98,10 @@ function getOptionalString(value: Record<string, unknown>, key: string): string 
     return maybeString;
 }
 
-function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
+function sanitizeStoredEntry(
+    value: unknown,
+    supportedActionVersions: ReadonlyMap<string, number>
+): ActionUndoEntry | null {
     if (!isRecord(value)) {
         return null;
     }
@@ -66,17 +116,49 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
 
     const action = value.action;
-    if (!isSessionPersistableAppAction(action)) {
+    const actionOperationVersion = getStoredOperationVersion(value, 'actionOperationVersion');
+    if (
+        actionOperationVersion === null ||
+        !actionMatchesStoredOperationVersion(action, actionOperationVersion, supportedActionVersions)
+    ) {
         return null;
     }
 
-    const inverseAction = value.inverseAction;
-    if (inverseAction !== null && !isSessionPersistableAppAction(inverseAction)) {
+    const storedInverseAction = value.inverseAction;
+    const inverseActionOperationVersion = getStoredOperationVersion(value, 'inverseActionOperationVersion');
+    if (inverseActionOperationVersion === null) {
+        return null;
+    }
+    let inverseAction: AppAction | null;
+    if (storedInverseAction === null) {
+        if (inverseActionOperationVersion !== undefined) {
+            return null;
+        }
+        inverseAction = null;
+    } else if (
+        actionMatchesStoredOperationVersion(storedInverseAction, inverseActionOperationVersion, supportedActionVersions)
+    ) {
+        inverseAction = storedInverseAction;
+    } else {
         return null;
     }
 
-    const redoAction = value.redoAction;
-    if (redoAction !== undefined && !isSessionPersistableAppAction(redoAction)) {
+    const storedRedoAction = value.redoAction;
+    const redoActionOperationVersion = getStoredOperationVersion(value, 'redoActionOperationVersion');
+    if (redoActionOperationVersion === null) {
+        return null;
+    }
+    let redoAction: AppAction | undefined;
+    if (storedRedoAction === undefined) {
+        if (redoActionOperationVersion !== undefined) {
+            return null;
+        }
+        redoAction = undefined;
+    } else if (
+        actionMatchesStoredOperationVersion(storedRedoAction, redoActionOperationVersion, supportedActionVersions)
+    ) {
+        redoAction = storedRedoAction;
+    } else {
         return null;
     }
 
@@ -118,22 +200,25 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     return entry;
 }
 
-function sanitizeStoredEntries(values: unknown[]): ActionUndoEntry[] {
+function sanitizeStoredEntries(
+    values: unknown[],
+    supportedActionVersions: ReadonlyMap<string, number>
+): ActionUndoEntry[] {
     return values.flatMap((value) => {
-        const entry = sanitizeStoredEntry(value);
+        const entry = sanitizeStoredEntry(value, supportedActionVersions);
         return entry === null ? [] : [entry];
     });
 }
 
-function loadFromSession(): UndoStoreState {
+function loadFromSession(supportedActionVersions: ReadonlyMap<string, number>): UndoStoreState {
     try {
         const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
         if (raw) {
             const parsed: unknown = JSON.parse(raw);
             if (isRecord(parsed) && Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
                 return {
-                    past: sanitizeStoredEntries(parsed.past),
-                    future: sanitizeStoredEntries(parsed.future),
+                    past: sanitizeStoredEntries(parsed.past, supportedActionVersions),
+                    future: sanitizeStoredEntries(parsed.future, supportedActionVersions),
                 };
             }
         }
@@ -144,8 +229,18 @@ function loadFromSession(): UndoStoreState {
 }
 
 export const undoStore = createStore<UndoStoreState>({
-    initialData: loadFromSession(),
+    initialData: { past: [], future: [] },
 });
+
+/**
+ * Hydrates persisted undo history only after production handler registration
+ * has established the current executable action set. Unknown and retired
+ * actions never enter the live undo/redo stacks.
+ */
+export function hydrateUndoStoreFromSession(actionVersions: Iterable<readonly [string, number]>): void {
+    supportedSessionActionVersions = new Map(actionVersions);
+    undoStore.set(loadFromSession(supportedSessionActionVersions));
+}
 
 // Coalesce persistence writes: prior to this, every pushUndo triggered
 // an immediate full JSON.stringify(trimmed) + sessionStorage write
@@ -166,9 +261,14 @@ undoStore.subscribe((value) => {
         }
         try {
             function serializableOnly(entries: UndoEntry[]) {
-                return entries.filter(isSessionPersistableActionEntry).slice(-MAX_UNDO_PERSIST);
+                return entries
+                    .flatMap((entry) => {
+                        const storedEntry = serializeSessionActionEntry(entry);
+                        return storedEntry === null ? [] : [storedEntry];
+                    })
+                    .slice(-MAX_UNDO_PERSIST);
             }
-            const trimmed: UndoStoreState = {
+            const trimmed = {
                 past: serializableOnly(current.past),
                 future: serializableOnly(current.future),
             };
