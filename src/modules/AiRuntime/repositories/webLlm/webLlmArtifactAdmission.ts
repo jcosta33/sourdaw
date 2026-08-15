@@ -15,7 +15,6 @@ const WEBLLM_CACHE_NAMES = {
     model: 'webllm/model',
     wasm: 'webllm/wasm',
 } as const;
-const admissionTailByModel = new Map<string, Promise<void>>();
 
 type WebLlmArtifactAdmissionOptions = {
     downloadConsent?: boolean;
@@ -35,6 +34,11 @@ export type WebLlmArtifactAdmissionDependencies = {
     fetchArtifact: (url: string, signal: AbortSignal | undefined) => Promise<Response>;
     getManifestModel: (modelId: string) => WebLlmArtifactManifestModel;
     openCache: (cacheName: string) => Promise<WebLlmArtifactCache>;
+    runExclusive: <Result>(
+        lockName: string,
+        signal: AbortSignal | undefined,
+        operation: () => Promise<Result>
+    ) => Promise<Result>;
     sha256: (bytes: ArrayBuffer) => Promise<string>;
 };
 
@@ -70,6 +74,17 @@ async function productionSha256(bytes: ArrayBuffer): Promise<string> {
         .join('');
 }
 
+async function runWithBrowserLock<Result>(
+    lockName: string,
+    signal: AbortSignal | undefined,
+    operation: () => Promise<Result>
+): Promise<Result> {
+    if (typeof navigator === 'undefined' || !navigator.locks) {
+        throw new TypeError('Browser Web Locks are required for verified WebLLM artifact admission');
+    }
+    return navigator.locks.request(lockName, { mode: 'exclusive', signal }, operation);
+}
+
 const productionDependencies: WebLlmArtifactAdmissionDependencies = {
     deleteCache: (cacheName) => requireCacheStorage().delete(cacheName),
     fetchArtifact: (url, signal) =>
@@ -89,6 +104,7 @@ const productionDependencies: WebLlmArtifactAdmissionDependencies = {
             put: (request, response) => cache.put(request, response),
         };
     },
+    runExclusive: runWithBrowserLock,
     sha256: productionSha256,
 };
 
@@ -425,25 +441,6 @@ async function promoteProvenance(
     );
 }
 
-async function runExclusiveModelAdmission<Result>(modelId: string, operation: () => Promise<Result>): Promise<Result> {
-    const previous = admissionTailByModel.get(modelId) ?? Promise.resolve();
-    let release: () => void = () => {};
-    const released = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    const tail = previous.catch(() => undefined).then(() => released);
-    admissionTailByModel.set(modelId, tail);
-    await previous.catch(() => undefined);
-    try {
-        return await operation();
-    } finally {
-        release();
-        if (admissionTailByModel.get(modelId) === tail) {
-            admissionTailByModel.delete(modelId);
-        }
-    }
-}
-
 async function admitWebLlmModelArtifactsExclusive(
     modelId: string,
     options: WebLlmArtifactAdmissionOptions = {},
@@ -508,7 +505,7 @@ export function admitWebLlmModelArtifacts(
     options: WebLlmArtifactAdmissionOptions = {},
     dependencies: WebLlmArtifactAdmissionDependencies = productionDependencies
 ): Promise<WebLlmArtifactAdmission> {
-    return runExclusiveModelAdmission(modelId, () =>
+    return dependencies.runExclusive(`sourdaw:webllm-admission-v1:${modelId}`, options.signal, () =>
         admitWebLlmModelArtifactsExclusive(modelId, options, dependencies)
     );
 }

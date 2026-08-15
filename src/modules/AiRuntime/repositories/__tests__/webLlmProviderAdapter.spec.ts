@@ -20,6 +20,8 @@ const { createWebWorkerEngineMock, terminateWorkerMock } = vi.hoisted(() => ({
 }));
 
 const cacheEntries = new Map<string, Map<string, Response>>();
+const exclusiveLockCalls: string[] = [];
+const exclusiveTailByName = new Map<string, Promise<void>>();
 const fixtureContents = new Map<string, string>([
     ['mlc-chat-config.json', JSON.stringify({ tokenizer_files: ['tokenizer.json'] })],
     ['tensor-cache.json', JSON.stringify({ records: [{ dataPath: 'params_shard_0.bin', nbytes: 7 }] })],
@@ -77,6 +79,39 @@ const fixtureModel: WebLlmArtifactManifestModel = {
     },
     artifacts: createFixtureArtifacts(),
 };
+
+async function runExclusiveForTests<Result>(
+    lockName: string,
+    signal: AbortSignal | undefined,
+    operation: () => Promise<Result>
+): Promise<Result> {
+    const previous = exclusiveTailByName.get(lockName) ?? Promise.resolve();
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const tail = previous.catch(() => undefined).then(() => released);
+    exclusiveTailByName.set(lockName, tail);
+    await previous.catch(() => undefined);
+    signal?.throwIfAborted();
+    try {
+        return await operation();
+    } finally {
+        release();
+        if (exclusiveTailByName.get(lockName) === tail) {
+            exclusiveTailByName.delete(lockName);
+        }
+    }
+}
+
+async function runExclusiveDependency<Result>(
+    lockName: string,
+    signal: AbortSignal | undefined,
+    operation: () => Promise<Result>
+): Promise<Result> {
+    exclusiveLockCalls.push(lockName);
+    return runExclusiveForTests(lockName, signal, operation);
+}
 
 function installCacheStorage(): void {
     Object.defineProperty(globalThis, 'caches', {
@@ -141,6 +176,7 @@ function createAdmissionDependencies(
                 },
             };
         },
+        runExclusive: runExclusiveDependency,
         sha256: vi.fn(async (bytes: ArrayBuffer) => {
             const content = decoder.decode(bytes);
             if (content === serializeWebLlmArtifactSet(fixtureModel)) {
@@ -184,11 +220,24 @@ describe('WebLLM provider artifact admission', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         Object.defineProperty(globalThis, 'navigator', {
-            value: { gpu: {} },
+            value: {
+                gpu: {},
+                locks: {
+                    request: vi.fn(
+                        async (
+                            name: string,
+                            _options: LockOptions,
+                            callback: (lock: Lock | null) => Promise<unknown>
+                        ) => callback({ name, mode: 'exclusive' })
+                    ),
+                },
+            },
             configurable: true,
             writable: true,
         });
         cacheEntries.clear();
+        exclusiveLockCalls.length = 0;
+        exclusiveTailByName.clear();
         installCacheStorage();
         createWebWorkerEngineMock.mockResolvedValue({
             interruptGenerate: vi.fn(),
@@ -344,6 +393,16 @@ describe('WebLLM provider artifact admission', () => {
 
         expect(dependencies.fetchArtifact).not.toHaveBeenCalled();
         expectFixtureCachesEmpty();
+    });
+
+    it('acquires browser-wide model admission ownership before reading or mutating shared caches', async () => {
+        const dependencies = createAdmissionDependencies();
+
+        await expect(admitWebLlmModelArtifacts(fixtureModel.modelId, {}, dependencies)).rejects.toThrow(
+            /explicit.*consent/i
+        );
+
+        expect(exclusiveLockCalls).toEqual([`sourdaw:webllm-admission-v1:${fixtureModel.modelId}`]);
     });
 
     it('revalidates an admitted cache without downloading the artifacts again', async () => {
@@ -550,8 +609,7 @@ describe('WebLLM provider artifact admission', () => {
         const baseDependencies = createAdmissionDependencies();
         let rejectFirstFetch: (reason: unknown) => void = () => {};
         let firstFetchPending = true;
-        let replacementFetchStarted = false;
-        const dependencies = createAdmissionDependencies({
+        const firstDependencies = createAdmissionDependencies({
             fetchArtifact: vi.fn(async (url, signal) => {
                 if (firstFetchPending) {
                     firstFetchPending = false;
@@ -559,34 +617,38 @@ describe('WebLLM provider artifact admission', () => {
                         rejectFirstFetch = reject;
                     });
                 }
-                replacementFetchStarted = true;
                 return baseDependencies.fetchArtifact(url, signal);
             }),
         });
+        const replacementDependencies = createAdmissionDependencies();
         const firstOutcome = admitWebLlmModelArtifacts(
             fixtureModel.modelId,
             { downloadConsent: true, signal: controller.signal },
-            dependencies
+            firstDependencies
         ).then(
             () => null,
             (error: unknown) => error
         );
-        await vi.waitFor(() => expect(dependencies.fetchArtifact).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(firstDependencies.fetchArtifact).toHaveBeenCalledTimes(1));
 
         controller.abort(new DOMException('cancelled', 'AbortError'));
-        const replacement = admitWebLlmModelArtifacts(fixtureModel.modelId, { downloadConsent: true }, dependencies);
+        const replacement = admitWebLlmModelArtifacts(
+            fixtureModel.modelId,
+            { downloadConsent: true },
+            replacementDependencies
+        );
         await new Promise((resolve) => setTimeout(resolve, 0));
-        const replacementOverlappedCleanup = replacementFetchStarted;
+        const replacementOverlappedCleanup = vi.mocked(replacementDependencies.fetchArtifact).mock.calls.length > 0;
         rejectFirstFetch(controller.signal.reason);
 
         await expect(firstOutcome).resolves.toMatchObject({ name: 'AbortError' });
         await expect(replacement).resolves.toMatchObject({ artifactSetDigest: fixtureModel.artifactSetDigest });
         expect(replacementOverlappedCleanup).toBe(false);
-        vi.mocked(dependencies.fetchArtifact).mockClear();
-        await expect(admitWebLlmModelArtifacts(fixtureModel.modelId, {}, dependencies)).resolves.toMatchObject({
-            artifactSetDigest: fixtureModel.artifactSetDigest,
-        });
-        expect(dependencies.fetchArtifact).not.toHaveBeenCalled();
+        vi.mocked(replacementDependencies.fetchArtifact).mockClear();
+        await expect(
+            admitWebLlmModelArtifacts(fixtureModel.modelId, {}, replacementDependencies)
+        ).resolves.toMatchObject({ artifactSetDigest: fixtureModel.artifactSetDigest });
+        expect(replacementDependencies.fetchArtifact).not.toHaveBeenCalled();
     });
 
     it('builds WebLLM configuration only from the immutable admitted model record', () => {
