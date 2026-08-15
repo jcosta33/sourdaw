@@ -70,6 +70,16 @@ export type DeviceNoteOnRequest = {
 export type DeviceNoteOffRequest = {
     readonly noteOrPad: number;
     readonly sampleFrame?: number;
+    /**
+     * MPE member channel to release. Omitted releases every voice at that
+     * pitch, which is what a device with no channel surface does anyway.
+     *
+     * A note-off that does not name its channel cannot tell two notes at the
+     * same pitch apart, so releasing one silences both. Live playback passes
+     * it; a bounce that dropped it disagreed with the session on exactly the
+     * overlapping unison MPE exists to voice separately.
+     */
+    readonly channel?: number;
 };
 
 export type AudioDeviceStrategy = {

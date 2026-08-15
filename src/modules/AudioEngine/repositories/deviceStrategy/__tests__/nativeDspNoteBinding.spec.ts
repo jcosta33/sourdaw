@@ -97,14 +97,30 @@ describe('native DSP note bindings map the named request onto each device own no
             const node = await buildNode(deviceType);
 
             node.noteOn?.({ noteOrPad: 60, velocity: 100, sampleFrame: 480, channel: 3 });
-            node.noteOff?.({ noteOrPad: 60, sampleFrame: 960 });
 
-            expect(recorded).toEqual([
-                { method: 'noteOn', args: [60, 100, 480, 3] },
-                { method: 'noteOff', args: [60, 960, undefined, undefined] },
-            ]);
+            expect(recorded).toEqual([{ method: 'noteOn', args: [60, 100, 480, 3] }]);
         }
     );
+
+    // `noteOff` is where the four melodic devices stop agreeing, and the slot a
+    // channel goes in is not the same one for all of them. Fermenter and Levain
+    // take `(note, sampleFrame?, channel?)`; Grand Boule puts a release velocity
+    // in slot 3 and its channel in slot 4; Crumbs has no channel at all. A
+    // release that misses its member channel releases every voice at that pitch,
+    // so an overlapping unison on two channels collapses on the first note-off —
+    // and only in the bounce, because live playback passes the channel.
+    it.each([
+        { deviceType: 'fermenter', expected: [60, 960, 3, undefined] },
+        { deviceType: 'levain', expected: [60, 960, 3, undefined] },
+        { deviceType: 'grand-boule', expected: [60, 960, undefined, 3] },
+        { deviceType: 'builtin-crumbs', expected: [60, 960, undefined, undefined] },
+    ])('$deviceType releases on its own channel slot', async ({ deviceType, expected }) => {
+        const node = await buildNode(deviceType);
+
+        node.noteOff?.({ noteOrPad: 60, sampleFrame: 960, channel: 3 });
+
+        expect(recorded).toEqual([{ method: 'noteOff', args: expected }]);
+    });
 
     it('levain receives per-note articulation in slot 5', async () => {
         const node = await buildNode('levain');

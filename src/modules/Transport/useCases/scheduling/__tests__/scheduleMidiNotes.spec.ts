@@ -1427,7 +1427,50 @@ describe('scheduleMidiNotes', () => {
 
             // grand-boule velocityTransform divides by 127 → 1.0.
             expect(noteOn).toHaveBeenCalledWith(60, 1, expect.any(Number), 0);
-            expect(noteOff).toHaveBeenCalled();
+            // A note carrying no channel resolves to the base channel on the
+            // release as well as the attack. `toHaveBeenCalled()` alone was
+            // what let the slot the channel goes in stay wrong here.
+            expect(noteOff).toHaveBeenCalledWith(60, expect.any(Number), undefined, 0);
+        });
+
+        it('releases a grand-boule note on its member channel, not through the release-velocity slot', async () => {
+            // Grand Boule is the one worklet synth whose `noteOff` reads a
+            // release velocity in slot 3 and its member channel in slot 4;
+            // Fermenter, Levain and Crumbs take the channel in slot 3. Calling
+            // the shared three-argument form put the channel index where the
+            // release dynamic goes and left the release unaddressed, so it
+            // silenced every voice at that pitch. All four control types accept
+            // three numbers, so nothing but this assertion sees it.
+            const noteOn = vi.fn();
+            const noteOff = vi.fn();
+            vi.mocked(ensureTrackStrip).mockImplementation(
+                () =>
+                    ({
+                        gainNode: {},
+                        preFaderTap: { connect: vi.fn() },
+                        deviceNodes: [
+                            {
+                                type: 'grand-boule',
+                                deviceId: 'gb-1',
+                                grandBouleControls: { noteOn, noteOff, noteExpression: vi.fn() },
+                            },
+                        ],
+                    }) as never
+            );
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'gb-1', type: 'grand-boule' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 127, channel: 3 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(noteOff).toHaveBeenCalledWith(60, expect.any(Number), undefined, 3);
         });
 
         it('routes through the default synth (scheduleNote) with MPE when a note carries expression', async () => {

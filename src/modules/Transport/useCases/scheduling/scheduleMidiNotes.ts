@@ -859,7 +859,26 @@ export async function scheduleMidiNotes(
                                 sampleFrame,
                                 bendRangeSemitones: noteBendRange,
                             });
-                            workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel);
+                            // Grand Boule is the one worklet synth whose
+                            // `noteOff` reads a release velocity in slot 3 and
+                            // its member channel in slot 4; Fermenter, Levain
+                            // and Crumbs take the channel in slot 3. The shared
+                            // three-argument call put the channel index where
+                            // the release dynamic goes and left the release
+                            // unaddressed, so it silenced every voice at that
+                            // pitch instead of the one held on that channel.
+                            // All four control types accept three numbers, so
+                            // the compiler had nothing to object to.
+                            if (workletSynthDevice?.type === 'grand-boule' && workletSynthNode?.grandBouleControls) {
+                                workletSynthNode.grandBouleControls.noteOff(
+                                    pitch,
+                                    endSampleFrame,
+                                    undefined,
+                                    noteChannel
+                                );
+                            } else {
+                                workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel);
+                            }
                         } else if (faustDevice) {
                             scheduleFaustNote(
                                 track.id,

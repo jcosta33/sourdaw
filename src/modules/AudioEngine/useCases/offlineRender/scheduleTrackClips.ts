@@ -445,6 +445,7 @@ export async function scheduleTrackClips({
         endSamples: number;
         toasterPadIndex: number;
         articulationId?: number;
+        channel?: number;
         pressure?: number;
         slide?: number;
         pitchBend?: number;
@@ -459,6 +460,7 @@ export async function scheduleTrackClips({
         duration: number;
         toasterPadIndex: number;
         articulationId?: number;
+        channel?: number;
     };
 
     function clampOptional(value: number | undefined, minimum: number, maximum: number): number | undefined {
@@ -573,6 +575,11 @@ export async function scheduleTrackClips({
                     toasterPadIndex = resolvedPad;
                 }
                 const instrumentPitch = isToaster ? TOASTER_NEUTRAL_MIDI_NOTE : note.pitch;
+                // Live playback resolves an absent channel to the base channel
+                // rather than leaving it unset, and the release is addressed to
+                // the same one. Matching that here is what keeps a bounce from
+                // releasing every voice at a pitch when the session releases one.
+                const noteChannel = note.channel ?? 0;
                 workletEvents.push({
                     time: startTime,
                     type: 'on',
@@ -581,6 +588,7 @@ export async function scheduleTrackClips({
                     duration,
                     toasterPadIndex,
                     articulationId: note.articulationId,
+                    channel: noteChannel,
                 });
                 if (!isToaster) {
                     workletEvents.push({
@@ -590,6 +598,7 @@ export async function scheduleTrackClips({
                         velocity: 0,
                         duration: 0,
                         toasterPadIndex,
+                        channel: noteChannel,
                     });
                 }
             } else if (kitDef) {
@@ -823,6 +832,7 @@ export async function scheduleTrackClips({
                         endSamples: endpoints.endSamples,
                         toasterPadIndex,
                         articulationId: getScheduledArticulationId(note.articulation),
+                        channel: note.channel,
                         pressure: note.pressure,
                         slide: note.slide,
                         pitchBend: note.pitchBend,
@@ -960,6 +970,9 @@ export async function scheduleTrackClips({
             };
             if (event.articulationId !== undefined) {
                 pendingEvent.articulationId = event.articulationId;
+            }
+            if (event.channel !== undefined) {
+                pendingEvent.channel = event.channel;
             }
             pendingWorkletEvents.push(pendingEvent);
         }

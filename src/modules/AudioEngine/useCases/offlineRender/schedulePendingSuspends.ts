@@ -1,7 +1,20 @@
 import { resolveToasterPadIndex } from '#/utils/toasterNoteProjection';
 
+import {
+    type DeviceNoteOffRequest,
+    type DeviceNoteOnRequest,
+} from '../../repositories/deviceStrategy/AudioDeviceStrategy';
+
 import { comparePendingWorkletEvents } from './comparePendingWorkletEvents';
 import { type PendingWorkletEvent } from './types';
+
+/**
+ * The request is assembled key by key so an absent channel or articulation is
+ * an absent key rather than an explicit `undefined`: a device that never had
+ * one must not be told it has one set to nothing.
+ */
+type MutableNoteOnRequest = { -readonly [K in keyof DeviceNoteOnRequest]: DeviceNoteOnRequest[K] };
+type MutableNoteOffRequest = { -readonly [K in keyof DeviceNoteOffRequest]: DeviceNoteOffRequest[K] };
 
 /**
  * Pre-queue all collected worklet note events to their respective DSP processors.
@@ -50,16 +63,14 @@ export function schedulePendingSuspends(
                     sampleFrame,
                 });
             } else {
-                if (evt.articulationId !== undefined) {
-                    evt.instrumentControls.noteOn({
-                        noteOrPad: evt.pitch,
-                        velocity: evt.velocity,
-                        sampleFrame,
-                        articulationId: evt.articulationId,
-                    });
-                } else {
-                    evt.instrumentControls.noteOn({ noteOrPad: evt.pitch, velocity: evt.velocity, sampleFrame });
+                const request: MutableNoteOnRequest = { noteOrPad: evt.pitch, velocity: evt.velocity, sampleFrame };
+                if (evt.channel !== undefined) {
+                    request.channel = evt.channel;
                 }
+                if (evt.articulationId !== undefined) {
+                    request.articulationId = evt.articulationId;
+                }
+                evt.instrumentControls.noteOn(request);
             }
         } else {
             if (evt.isToaster) {
@@ -69,7 +80,11 @@ export function schedulePendingSuspends(
                 }
                 evt.instrumentControls.noteOff({ noteOrPad: pad, sampleFrame });
             } else {
-                evt.instrumentControls.noteOff({ noteOrPad: evt.pitch, sampleFrame });
+                const request: MutableNoteOffRequest = { noteOrPad: evt.pitch, sampleFrame };
+                if (evt.channel !== undefined) {
+                    request.channel = evt.channel;
+                }
+                evt.instrumentControls.noteOff(request);
             }
         }
     }

@@ -1,40 +1,19 @@
-const LEVAIN_ARTICULATION_IDS: Readonly<Record<string, number>> = {
-    sustain: 0,
-    'sustain-non-vib': 1,
-    'con-sordino': 2,
-    flautando: 3,
-    'sul-tasto': 4,
-    'sul-ponticello': 5,
-    harmonics: 6,
-    spiccato: 7,
-    staccato: 8,
-    staccatissimo: 9,
-    pizzicato: 10,
-    'bartok-pizz': 11,
-    'col-legno': 12,
-    tremolo: 13,
-    'trill-half': 14,
-    'trill-whole': 15,
-    legato: 16,
-    'legato-portamento': 17,
-    marcato: 18,
-    sforzando: 19,
-    'flutter-tongue': 20,
-    'muted-straight': 21,
-    'muted-cup': 22,
-    'muted-harmon': 23,
-    'muted-plunger': 24,
-    crescendo: 25,
-    decrescendo: 26,
-    runs: 27,
-};
+import { getLevainArticulationId } from '#/modules/Levain/useCases';
 
 type ResolveMidiNoteArticulationIdInput = {
     deviceType: string;
     articulation: string | undefined;
 };
 
-/** Canonical project-articulation projection for instruments with a per-note runtime surface. */
+/**
+ * Canonical project-articulation projection for instruments with a per-note
+ * runtime surface.
+ *
+ * The name-to-id table is Levain's and is read through its `useCases` barrel
+ * rather than copied here. A second copy of it drifts silently: the ids are a
+ * wire contract with the DSP engine, so a name added or renumbered in one copy
+ * and not the other voices the wrong articulation with nothing to fail.
+ */
 export function resolveMidiNoteArticulationId({
     deviceType,
     articulation,
@@ -42,5 +21,5 @@ export function resolveMidiNoteArticulationId({
     if (deviceType !== 'levain' || articulation === undefined) {
         return null;
     }
-    return LEVAIN_ARTICULATION_IDS[articulation] ?? null;
+    return getLevainArticulationId(articulation);
 }

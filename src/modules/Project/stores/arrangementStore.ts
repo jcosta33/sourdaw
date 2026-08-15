@@ -301,6 +301,9 @@ export type ProjectMidiNote = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    pitchBendRangeSemitones?: number;
+    channel?: number;
+    articulation?: string;
 };
 
 export type ProjectMidiCC = {

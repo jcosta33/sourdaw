@@ -50,18 +50,37 @@ export type NativeDspNode = {
 type NoteBoundNode<TNode> = Omit<TNode, 'noteOn' | 'noteOff'> & Required<Pick<NativeDspNode, 'noteOn' | 'noteOff'>>;
 
 /**
- * The melodic instruments — Fermenter, Levain, Grand Boule — all publish
- * `(note, velocity, sampleFrame?, channel?)`. Grand Boule's `noteOff` carries a
- * release velocity in slot 3, which this path has no value for and omits.
+ * The melodic instruments — Fermenter, Levain, Grand Boule, Crumbs — all publish
+ * `noteOn` as `(note, velocity, sampleFrame?, channel?)`.
+ *
+ * Their `noteOff` signatures do not agree, so there is one binder per shape
+ * rather than one for all four. Fermenter and Levain take
+ * `(note, sampleFrame?, channel?)`; Grand Boule puts a release velocity in slot
+ * 3 and its channel in slot 4; Crumbs has no channel surface. Binding them all
+ * through a single `(note, sampleFrame?)` adapter compiled — the trailing
+ * parameters are optional — and silently dropped the member channel, so an
+ * offline release could not tell two notes at the same pitch apart.
  */
-type MelodicNoteNode = {
-    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+type MelodicNoteOn = (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+
+type ChannelReleaseNoteNode = {
+    noteOn: MelodicNoteOn;
+    noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
+};
+
+type PlainReleaseNoteNode = {
+    noteOn: MelodicNoteOn;
     noteOff: (note: number, sampleFrame?: number) => void;
+};
+
+type ReleaseVelocityNoteNode = {
+    noteOn: MelodicNoteOn;
+    noteOff: (note: number, sampleFrame?: number, releaseVelocity?: number, channel?: number) => void;
 };
 
 type ArticulatedMelodicNoteNode = {
     noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number, articulationId?: number) => void;
-    noteOff: (note: number, sampleFrame?: number) => void;
+    noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
 };
 
 /** Toaster is pad-addressed: `(pad, velocity, midiNote?, sampleFrame?)`. */
@@ -70,7 +89,7 @@ type PadNoteNode = {
     noteOff: (pad: number, sampleFrame?: number) => void;
 };
 
-function bindMelodicNotes<TNode extends MelodicNoteNode>(node: TNode): NoteBoundNode<TNode> {
+function bindMelodicNotes<TNode extends PlainReleaseNoteNode>(node: TNode): NoteBoundNode<TNode> {
     return {
         ...node,
         noteOn: ({ noteOrPad, velocity, sampleFrame, channel }) =>
@@ -79,12 +98,32 @@ function bindMelodicNotes<TNode extends MelodicNoteNode>(node: TNode): NoteBound
     };
 }
 
+function bindChannelReleaseMelodicNotes<TNode extends ChannelReleaseNoteNode>(node: TNode): NoteBoundNode<TNode> {
+    return {
+        ...node,
+        noteOn: ({ noteOrPad, velocity, sampleFrame, channel }) =>
+            node.noteOn(noteOrPad, velocity, sampleFrame, channel),
+        noteOff: ({ noteOrPad, sampleFrame, channel }) => node.noteOff(noteOrPad, sampleFrame, channel),
+    };
+}
+
+function bindReleaseVelocityMelodicNotes<TNode extends ReleaseVelocityNoteNode>(node: TNode): NoteBoundNode<TNode> {
+    return {
+        ...node,
+        noteOn: ({ noteOrPad, velocity, sampleFrame, channel }) =>
+            node.noteOn(noteOrPad, velocity, sampleFrame, channel),
+        // Slot 3 is the release velocity this path has no value for; the
+        // channel belongs in slot 4.
+        noteOff: ({ noteOrPad, sampleFrame, channel }) => node.noteOff(noteOrPad, sampleFrame, undefined, channel),
+    };
+}
+
 function bindArticulatedMelodicNotes<TNode extends ArticulatedMelodicNoteNode>(node: TNode): NoteBoundNode<TNode> {
     return {
         ...node,
         noteOn: ({ noteOrPad, velocity, sampleFrame, channel, articulationId }) =>
             node.noteOn(noteOrPad, velocity, sampleFrame, channel, articulationId),
-        noteOff: ({ noteOrPad, sampleFrame }) => node.noteOff(noteOrPad, sampleFrame),
+        noteOff: ({ noteOrPad, sampleFrame, channel }) => node.noteOff(noteOrPad, sampleFrame, channel),
     };
 }
 
@@ -123,7 +162,7 @@ function createRuntimeFailureChannel(): RuntimeFailureChannel {
 async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
     const runtimeFailure = createRuntimeFailureChannel();
     const node = await createFermenterNode(ctx, undefined, runtimeFailure.report);
-    return { ...bindMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
+    return { ...bindChannelReleaseMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
 }
 
 async function createLevainOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
@@ -142,7 +181,7 @@ async function createGrandBouleOfflineNode(ctx: BaseAudioContext): Promise<Nativ
     const runtimeFailure = createRuntimeFailureChannel();
     const node = await createGrandBouleNode(ctx, undefined, runtimeFailure.report);
     return {
-        ...bindMelodicNotes(node),
+        ...bindReleaseVelocityMelodicNotes(node),
         runtimeFailure: runtimeFailure.promise,
         runtimeHealthCheck: node.runtimeHealthCheck,
     };
@@ -180,9 +219,10 @@ type NativeDspDeviceFactory = {
  * The note-voicing entries wrap their node in the adapter for that device's own
  * note API. This is the only place a positional note call is still written, and
  * each one sits beside the device whose signature it encodes. The compiler will
- * not catch an entry bound to the wrong adapter — the two adapter parameter
- * types are mutually assignable — so `nativeDspNoteBinding.spec.ts` asserts the
- * slots each of these five bindings actually produces.
+ * not catch an entry bound to the wrong adapter — every adapter's parameter
+ * types are mutually assignable, since each slot is `number | undefined` and
+ * names carry no weight — so `nativeDspNoteBinding.spec.ts` asserts the slots
+ * each of these five bindings actually produces, for release as well as attack.
  */
 export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     {
