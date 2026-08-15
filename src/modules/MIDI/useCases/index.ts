@@ -143,6 +143,7 @@ export { setStepRecordBeat } from './stepRecording/setStepRecordBeat';
 export { toggleStepRecordingForClip } from './stepRecording/toggleStepRecordingForClip';
 
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
+export { getMidiTransformProtocolContract } from './getMidiTransformProtocolContract';
 export { getMidiGrooveHandlers } from './getMidiGrooveHandlers';
 
 // ── Pattern Instances ─────────────────────────────────────────────────────────

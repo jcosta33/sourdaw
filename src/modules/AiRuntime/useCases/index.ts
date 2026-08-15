@@ -30,6 +30,7 @@ export { removeCloudApi } from './cloudApiManagement/removeCloudApi';
 export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
 export { getProjectContext } from './getProjectContext';
+export { getAiRuntimeProtocolContracts } from './getAiRuntimeProtocolContracts';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 export { isNativeAiRuntimeAvailable } from './llmOrchestration/backendResolution/isNativeAiRuntimeAvailable';
