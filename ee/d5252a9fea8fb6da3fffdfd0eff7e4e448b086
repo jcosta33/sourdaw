@@ -1,0 +1,66 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_fd2caffb3011cf 269
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_e0410a1f85dc46 60,124-127,289,292
+  s_a40848e8f8cca9::t_6b15935b230d8d 285-286,290-291,293
+  s_a40848e8f8cca9::t_f7ab7f455239a5 15
+src/modules/AiRuntime/useCases/resolveModelRoute.ts
+  s_a40848e8f8cca9::t_ff8bf1f030f473 1-42,45-58,60-90,93-94,98-132,145-146,148-149,151,153-170
+  s_a40848e8f8cca9::t_5b3de021e9431b 43,141-144
+  s_a40848e8f8cca9::t_eccede2f662b95 44,91-92,95-97,133-140,147,150,152
+  s_a40848e8f8cca9::t_e4d7f9edcd5c4f 59
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/helpers.ts
+  s_a40848e8f8cca9::t_fd2caffb3011cf 15-16
+  s_a40848e8f8cca9::t_4730fe26d38c96 1,3
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts
+  s_a40848e8f8cca9::t_2c5a7ed29b3b23 110-119,131-132
+  s_a40848e8f8cca9::t_7db2c91532ae76 10-12,14,22-25,47,120-130
+  s_a40848e8f8cca9::t_c2115f922f5923 133-144
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_f1fc3251939408 527-528,531,535-536
+  s_a40848e8f8cca9::t_23583eeefe4e59 231
+  s_a40848e8f8cca9::t_6b15935b230d8d 181
+  s_a40848e8f8cca9::t_82fec32e3936ec 211-216,219,227-230,247-249,525-526,529-530,532-534,537-539
+  s_a40848e8f8cca9::t_3b7fc01a2dbea1 246
+  s_a40848e8f8cca9::t_ea591eb263c00e 236,580,640
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_a40848e8f8cca9::t_93ade4a54b8f63 36,96-99,154-165,201
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_3dd6d0876fb666 1080-1081,1132
+  s_a40848e8f8cca9::t_f2068098a0537a 1043,1053-1056,1059-1062,1126-1127,1129,1134-1137,1140,1145-1148,1151-1154
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts
+  s_a40848e8f8cca9::t_b94fb2aa329936 67-76,111
+  s_a40848e8f8cca9::t_4730fe26d38c96 12,80,103-105,112,116-121,123,125-128,137,140-142,150-153
+  s_a40848e8f8cca9::t_e4d7f9edcd5c4f 43-55,122
+  s_a40848e8f8cca9::t_fd2caffb3011cf 23-32,133,143-149
+  s_a40848e8f8cca9::t_ed43580b83415d 2-7,11,56-66,77-79,82-102,106-110,113-115
+  s_a40848e8f8cca9::t_c2115f922f5923 81,124
+src/modules/AiRuntime/useCases/__tests__/resolveModelRoute.spec.ts
+  s_a40848e8f8cca9::t_5b3de021e9431b 85-99,138-142
+  s_a40848e8f8cca9::t_eccede2f662b95 100-114
+  s_a40848e8f8cca9::t_0fde218a9472c5 152-154
+  s_a40848e8f8cca9::t_437ceeec330df6 1-84,115-137,143-151,155-189
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_3dd6d0876fb666 181-185,189,1285,1321
+  s_a40848e8f8cca9::t_fd2caffb3011cf 257-261
+  s_a40848e8f8cca9::t_6b15935b230d8d 164,169,173-176,186-188,202-205,251,284
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_e0410a1f85dc46 3,87-95,186
+  s_a40848e8f8cca9::t_6b15935b230d8d 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "eed5252a9fea8fb6da3fffdfd0eff7e4e448b086",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
