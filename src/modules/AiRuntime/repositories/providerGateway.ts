@@ -86,9 +86,11 @@ export async function runProviderGatewayRequest(
     }
 
     const channel = await dependencies.createChannel<ProviderGatewayWireEvent>();
+    request.signal.throwIfAborted();
     let eventError: unknown = null;
+    let acceptsEvents = true;
     channel.onmessage = (event) => {
-        if (eventError !== null) {
+        if (!acceptsEvents || request.signal.aborted || eventError !== null) {
             return;
         }
         try {
@@ -120,6 +122,8 @@ export async function runProviderGatewayRequest(
             throw new Error('Provider gateway event handling failed');
         }
     } finally {
+        acceptsEvents = false;
+        channel.onmessage = () => undefined;
         request.signal.removeEventListener('abort', cancel);
     }
 }

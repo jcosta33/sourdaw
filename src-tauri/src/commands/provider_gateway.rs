@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 use tokio::sync::{watch, Mutex};
 
@@ -11,10 +12,17 @@ const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_API_KEY_BYTES: usize = 16 * 1024;
 const MAX_CANCELLATION_ENTRIES: usize = 256;
+const CANCELLATION_TOMBSTONE_TTL: Duration = Duration::from_secs(30);
+
+struct ProviderGatewayCancellation {
+    sender: watch::Sender<bool>,
+    registered: bool,
+    created_at: Instant,
+}
 
 #[derive(Default)]
 pub struct ProviderGatewayState {
-    cancellations: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
+    cancellations: Arc<Mutex<HashMap<String, ProviderGatewayCancellation>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -125,14 +133,76 @@ async fn register_cancellation(
 ) -> Result<watch::Receiver<bool>, String> {
     let mut cancellations = state.cancellations.lock().await;
     if let Some(existing) = cancellations.get(request_id) {
-        return Ok(existing.subscribe());
+        if existing.registered {
+            return Err("Provider gateway request ID is already active".to_string());
+        }
     }
+    if let Some(existing) = cancellations.get_mut(request_id) {
+        existing.registered = true;
+        return Ok(existing.sender.subscribe());
+    }
+    prune_cancellation_tombstones(&mut cancellations);
+    evict_oldest_cancellation_tombstone_if_full(&mut cancellations);
     if cancellations.len() >= MAX_CANCELLATION_ENTRIES {
         return Err("Provider gateway has too many pending cancellation records".to_string());
     }
     let (sender, receiver) = watch::channel(false);
-    cancellations.insert(request_id.to_string(), sender);
+    cancellations.insert(
+        request_id.to_string(),
+        ProviderGatewayCancellation {
+            sender,
+            registered: true,
+            created_at: Instant::now(),
+        },
+    );
     Ok(receiver)
+}
+
+fn prune_cancellation_tombstones(cancellations: &mut HashMap<String, ProviderGatewayCancellation>) {
+    cancellations.retain(|_, cancellation| {
+        cancellation.registered || cancellation.created_at.elapsed() < CANCELLATION_TOMBSTONE_TTL
+    });
+}
+
+fn evict_oldest_cancellation_tombstone_if_full(
+    cancellations: &mut HashMap<String, ProviderGatewayCancellation>,
+) {
+    if cancellations.len() < MAX_CANCELLATION_ENTRIES {
+        return;
+    }
+    let oldest_request_id = cancellations
+        .iter()
+        .filter(|(_, cancellation)| !cancellation.registered)
+        .min_by_key(|(_, cancellation)| cancellation.created_at)
+        .map(|(request_id, _)| request_id.clone());
+    if let Some(request_id) = oldest_request_id {
+        cancellations.remove(&request_id);
+    }
+}
+
+async fn request_cancellation(
+    state: &ProviderGatewayState,
+    request_id: &str,
+) -> Result<(), String> {
+    let mut cancellations = state.cancellations.lock().await;
+    prune_cancellation_tombstones(&mut cancellations);
+    if let Some(cancellation) = cancellations.get(request_id) {
+        cancellation.sender.send_replace(true);
+        return Ok(());
+    }
+    evict_oldest_cancellation_tombstone_if_full(&mut cancellations);
+    if cancellations.len() >= MAX_CANCELLATION_ENTRIES {
+        return Err("Provider gateway has too many pending cancellation records".to_string());
+    }
+    cancellations.insert(
+        request_id.to_string(),
+        ProviderGatewayCancellation {
+            sender: watch::channel(true).0,
+            registered: false,
+            created_at: Instant::now(),
+        },
+    );
+    Ok(())
 }
 
 async fn wait_for_cancellation(cancellation: &mut watch::Receiver<bool>) {
@@ -152,19 +222,7 @@ pub async fn cancel_provider_gateway_request(
     state: tauri::State<'_, ProviderGatewayState>,
 ) -> Result<(), String> {
     validate_request_id(&request_id)?;
-    let mut cancellations = state.cancellations.lock().await;
-    if !cancellations.contains_key(&request_id) {
-        if cancellations.len() >= MAX_CANCELLATION_ENTRIES {
-            return Err("Provider gateway has too many pending cancellation records".to_string());
-        }
-        let (sender, _receiver) = watch::channel(true);
-        cancellations.insert(request_id, sender);
-        return Ok(());
-    }
-    if let Some(sender) = cancellations.get(&request_id) {
-        let _ = sender.send(true);
-    }
-    Ok(())
+    request_cancellation(&state, &request_id).await
 }
 
 #[tauri::command]
@@ -296,8 +354,13 @@ pub async fn provider_gateway_request(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_canonical_origin, validate_resolved_addresses};
+    use super::{
+        parse_canonical_origin, register_cancellation, request_cancellation,
+        validate_resolved_addresses, ProviderGatewayState, CANCELLATION_TOMBSTONE_TTL,
+        MAX_CANCELLATION_ENTRIES,
+    };
     use std::net::SocketAddr;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn provider_gateway_accepts_only_canonical_https_origins() {
@@ -350,5 +413,62 @@ mod tests {
             .parse()
             .expect("public IPv6 fixture");
         assert!(validate_resolved_addresses(&[public]).is_ok());
+    }
+
+    #[tokio::test]
+    async fn provider_gateway_rejects_duplicate_live_request_ids() {
+        let state = ProviderGatewayState::default();
+        let _first = register_cancellation(&state, "duplicate-live")
+            .await
+            .expect("first registration");
+
+        assert!(register_cancellation(&state, "duplicate-live")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn provider_gateway_tombstones_cannot_exhaust_live_registration() {
+        let state = ProviderGatewayState::default();
+        for index in 0..=MAX_CANCELLATION_ENTRIES {
+            request_cancellation(&state, &format!("late-cancel-{index}"))
+                .await
+                .expect("bounded late cancellation");
+        }
+        let tombstone_count = state
+            .cancellations
+            .lock()
+            .await
+            .values()
+            .filter(|cancellation| !cancellation.registered)
+            .count();
+        assert_eq!(tombstone_count, MAX_CANCELLATION_ENTRIES);
+
+        assert!(register_cancellation(&state, "new-live").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn provider_gateway_expires_unknown_tombstones_but_preserves_the_matching_race() {
+        let state = ProviderGatewayState::default();
+        request_cancellation(&state, "expired")
+            .await
+            .expect("initial tombstone");
+        state
+            .cancellations
+            .lock()
+            .await
+            .get_mut("expired")
+            .expect("stored tombstone")
+            .created_at = Instant::now() - (CANCELLATION_TOMBSTONE_TTL + Duration::from_secs(1));
+
+        request_cancellation(&state, "pre-registration")
+            .await
+            .expect("pre-registration cancellation");
+        assert!(!state.cancellations.lock().await.contains_key("expired"));
+
+        let receiver = register_cancellation(&state, "pre-registration")
+            .await
+            .expect("matching registration consumes tombstone");
+        assert!(*receiver.borrow());
     }
 }

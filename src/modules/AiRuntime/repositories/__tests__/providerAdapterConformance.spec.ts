@@ -73,12 +73,13 @@ describe('provider adapter conformance', () => {
             }
             return Promise.resolve(undefined);
         });
-        const channel = { id: 1, onmessage: () => undefined, toJSON: () => '__CHANNEL__:1' };
+        const channel = { id: 1, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:1' };
         const dependencies: ProviderGatewayDependencies = {
             createChannel: async () => channel,
             invoke,
         };
         const controller = new AbortController();
+        const onBodyChunk = vi.fn();
         const pending = runProviderGatewayRequest(
             {
                 requestId: 'request-1',
@@ -88,11 +89,12 @@ describe('provider adapter conformance', () => {
                 body: '{"model":"studio-model-v1"}',
                 signal: controller.signal,
                 onResponseStart: () => undefined,
-                onBodyChunk: () => undefined,
+                onBodyChunk,
             },
             dependencies
         );
         await vi.waitFor(() => expect(resolveRequest).toBeTypeOf('function'));
+        const queuedLateEvent = channel.onmessage;
         controller.abort();
         resolveRequest?.();
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
@@ -106,6 +108,42 @@ describe('provider adapter conformance', () => {
             onEvent: channel,
         });
         expect(invoke).toHaveBeenCalledWith('cancel_provider_gateway_request', { requestId: 'request-1' });
+        queuedLateEvent({ event: 'body-chunk', data: { bytes: [123] } });
+        expect(onBodyChunk).not.toHaveBeenCalled();
+    });
+
+    it('does not dispatch after aborting during channel creation', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(async () => undefined);
+        const channel = { id: 4, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:4' };
+        let resolveChannel: ((value: typeof channel) => void) | undefined;
+        const createChannel = vi.fn(
+            () =>
+                new Promise<typeof channel>((resolve) => {
+                    resolveChannel = resolve;
+                })
+        );
+        const controller = new AbortController();
+        const pending = runProviderGatewayRequest(
+            {
+                requestId: 'request-channel-race',
+                adapter,
+                operation: 'request',
+                apiKey: 'stale-secret',
+                body: '{"stale":true}',
+                signal: controller.signal,
+                onResponseStart: () => undefined,
+                onBodyChunk: () => undefined,
+            },
+            { createChannel, invoke }
+        );
+
+        await vi.waitFor(() => expect(resolveChannel).toBeTypeOf('function'));
+        controller.abort();
+        resolveChannel?.(channel);
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(invoke).not.toHaveBeenCalled();
     });
 
     it('maps bounded gateway events without exposing provider bodies in failures', async () => {
