@@ -1,0 +1,23 @@
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_ab5443e65c7fba::t_e9934ed90327be 23-27,33,205-216
+tests/e2e/grooveAssignRenameDelete.spec.ts
+  s_ab5443e65c7fba::t_375f78993a3a9e 1-102
+src/modules/Yeast/presentations/views/__tests__/YeastPanelGrooveAssignment.spec.tsx
+  s_ab5443e65c7fba::t_422066fe850ec5 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3b09eea1c0210d478e4874dd5f7e4bb54c5ff1e3",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
