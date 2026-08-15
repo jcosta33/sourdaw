@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/ClipView.tsx
+  s_cfdd884c3b4933::t_cd3983f99f72ea 9,12,35-48,175-183
+src/modules/TimelineEditor/presentations/views/__tests__/ClipView.spec.tsx
+  s_cfdd884c3b4933::t_fba04cdde37de6 230-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5f53b17c65193016821001168196ed4b15b9b2f8",
+  "prompts": {},
+  "sessions": {
+    "s_cfdd884c3b4933": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0066b-c588-7d03-af95-8e11e012edb7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
