@@ -103,6 +103,7 @@ export async function runNativeModelProviderRequest(
         input.signal?.throwIfAborted();
         if (input.request.operation === 'text') {
             if (input.request.stream) {
+                let finishReason: 'stop' | 'length' = 'stop';
                 await dependencies.streamCompletion(
                     input.request.messages,
                     (text) => input.onEvent({ type: 'text', mode: 'delta', text }),
@@ -112,8 +113,12 @@ export async function runNativeModelProviderRequest(
                         ...(input.signal === undefined ? {} : { signal: input.signal }),
                         onUsage: input.onEvent,
                         onUnknownEvent: (providerEventType) => input.onEvent({ type: 'unknown', providerEventType }),
+                        onFinish: (reason) => {
+                            finishReason = reason;
+                        },
                     }
                 );
+                return { status: 'available', finish: { reason: finishReason } };
             } else {
                 const prompts = readPrompts(input.request);
                 if (prompts === null) {
@@ -221,6 +226,10 @@ export async function runNativeModelProviderRequest(
             return { status: 'available', finish: { reason: 'cancelled' } };
         }
         const isTimeout = error instanceof Error && (error.name === 'TimeoutError' || /timed out/i.test(error.message));
+        const isLength = error instanceof Error && /finish reason length/i.test(error.message);
+        if (isLength) {
+            return { status: 'available', finish: { reason: 'length' } };
+        }
         return {
             status: 'available',
             finish: errorFinish(

@@ -250,4 +250,18 @@ describe('native model provider adapter', () => {
             },
         });
     });
+
+    it('normalizes a native output limit as length instead of provider failure', async () => {
+        const { request } = createFixture({ operation: 'text', stream: true });
+        await expect(
+            runNativeModelProviderRequest(
+                { request, onEvent: vi.fn() },
+                createDependencies({
+                    streamCompletion: vi.fn(async () => {
+                        throw new Error('Native completion stream ended incompletely with finish reason length');
+                    }),
+                })
+            )
+        ).resolves.toEqual({ status: 'available', finish: { reason: 'length' } });
+    });
 });
