@@ -51,19 +51,25 @@ describe('WebLLM engineLifecycle injectables', () => {
         engineState.initWaiterCount = 0;
         engineState.worker = null;
         engineState.activeArtifactSetDigest = null;
-        artifactAdmissionMock.mockImplementation(async (modelId: string) => ({
-            appConfig: {
-                cacheBackend: 'cache',
-                model_list: [
-                    {
-                        model: `https://models.invalid/${modelId}/`,
-                        model_id: modelId,
-                        model_lib: `https://models.invalid/${modelId}.wasm`,
+        artifactAdmissionMock.mockImplementation(
+            async (modelId: string, options?: { consume?: (admission: unknown) => Promise<void> }) => {
+                const admission = {
+                    appConfig: {
+                        cacheBackend: 'cache',
+                        model_list: [
+                            {
+                                model: `https://models.invalid/${modelId}/`,
+                                model_id: modelId,
+                                model_lib: `https://models.invalid/${modelId}.wasm`,
+                            },
+                        ],
                     },
-                ],
-            },
-            artifactSetDigest: `digest:${modelId}`,
-        }));
+                    artifactSetDigest: `digest:${modelId}`,
+                };
+                await options?.consume?.(admission);
+                return admission;
+            }
+        );
         createWebWorkerEngineMock.mockResolvedValue({
             interruptGenerate: vi.fn(),
             chat: { completions: { create: vi.fn() } },
@@ -117,10 +123,19 @@ describe('WebLLM engineLifecycle injectables', () => {
             artifactSetDigest: string;
         }) => void = ignoreEngine;
         artifactAdmissionMock.mockImplementation(
-            () =>
-                new Promise((resolve) => {
+            async (_modelId: string, options?: { consume?: (admission: unknown) => Promise<void> }) => {
+                const admission = await new Promise<{
+                    appConfig: {
+                        cacheBackend: 'cache';
+                        model_list: Array<{ model: string; model_id: string; model_lib: string }>;
+                    };
+                    artifactSetDigest: string;
+                }>((resolve) => {
                     resolveAdmission = resolve;
-                })
+                });
+                await options?.consume?.(admission);
+                return admission;
+            }
         );
         const pending = initWebLlmEngine('test-model', { downloadConsent: true });
         await vi.waitFor(() => expect(artifactAdmissionMock).toHaveBeenCalledTimes(1));

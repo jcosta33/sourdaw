@@ -405,6 +405,67 @@ describe('WebLLM provider artifact admission', () => {
         expect(exclusiveLockCalls).toEqual([`sourdaw:webllm-admission-v1:${fixtureModel.modelId}`]);
     });
 
+    it('retains browser-wide ownership while the verified artifact set is consumed', async () => {
+        const dependencies = createAdmissionDependencies();
+        const replacementModel: WebLlmArtifactManifestModel = {
+            ...fixtureModel,
+            artifactSetDigest: 'd'.repeat(64),
+            modelSource: {
+                ...fixtureModel.modelSource,
+                revision: 'c'.repeat(40),
+            },
+        };
+        const replacementBaseDependencies = createAdmissionDependencies();
+        const replacementDependencies = createAdmissionDependencies({
+            fetchArtifact: vi.fn(async (url) => {
+                const artifact = replacementModel.artifacts.find(
+                    (candidate) => getWebLlmArtifactUrl(replacementModel, candidate) === url
+                );
+                const content = artifact ? fixtureContents.get(artifact.path) : undefined;
+                return content ? new Response(content) : new Response(null, { status: 404 });
+            }),
+            getManifestModel: () => replacementModel,
+            sha256: vi.fn(async (bytes) => {
+                if (new TextDecoder().decode(bytes) === serializeWebLlmArtifactSet(replacementModel)) {
+                    return replacementModel.artifactSetDigest;
+                }
+                return replacementBaseDependencies.sha256(bytes);
+            }),
+        });
+        let consumerStarted = false;
+        let releaseConsumer: () => void = () => {};
+        const consumerFinished = new Promise<void>((resolve) => {
+            releaseConsumer = resolve;
+        });
+
+        const admission = admitWebLlmModelArtifacts(
+            fixtureModel.modelId,
+            {
+                downloadConsent: true,
+                consume: async () => {
+                    consumerStarted = true;
+                    await consumerFinished;
+                },
+            },
+            dependencies
+        );
+        await vi.waitFor(() => expect(consumerStarted).toBe(true));
+        const competingAdmission = admitWebLlmModelArtifacts(
+            replacementModel.modelId,
+            { downloadConsent: true },
+            replacementDependencies
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(exclusiveLockCalls).toHaveLength(2);
+        expect(replacementDependencies.fetchArtifact).not.toHaveBeenCalled();
+        releaseConsumer();
+        await expect(admission).resolves.toMatchObject({ artifactSetDigest: fixtureModel.artifactSetDigest });
+        await expect(competingAdmission).resolves.toMatchObject({
+            artifactSetDigest: replacementModel.artifactSetDigest,
+        });
+    });
+
     it('revalidates an admitted cache without downloading the artifacts again', async () => {
         const dependencies = createAdmissionDependencies();
         await admitWebLlmModelArtifacts(fixtureModel.modelId, { downloadConsent: true }, dependencies);

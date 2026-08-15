@@ -17,6 +17,7 @@ const WEBLLM_CACHE_NAMES = {
 } as const;
 
 type WebLlmArtifactAdmissionOptions = {
+    consume?: (admission: WebLlmArtifactAdmission) => Promise<void>;
     downloadConsent?: boolean;
     onProgress?: (report: { progress: number; text: string }) => void;
     signal?: AbortSignal;
@@ -505,7 +506,9 @@ export function admitWebLlmModelArtifacts(
     options: WebLlmArtifactAdmissionOptions = {},
     dependencies: WebLlmArtifactAdmissionDependencies = productionDependencies
 ): Promise<WebLlmArtifactAdmission> {
-    return dependencies.runExclusive(`sourdaw:webllm-admission-v1:${modelId}`, options.signal, () =>
-        admitWebLlmModelArtifactsExclusive(modelId, options, dependencies)
-    );
+    return dependencies.runExclusive(`sourdaw:webllm-admission-v1:${modelId}`, options.signal, async () => {
+        const admission = await admitWebLlmModelArtifactsExclusive(modelId, options, dependencies);
+        await options.consume?.(admission);
+        return admission;
+    });
 }
