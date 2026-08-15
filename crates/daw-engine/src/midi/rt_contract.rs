@@ -159,6 +159,12 @@ fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
     command_tx
         .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
         .expect("MIDI FX command should fit");
+    command_tx
+        .push(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }))
+        .expect("transport command should fit");
     for note in 60..=76 {
         command_tx
             .push(GraphCommand::SendMidiNote(7, note_on(note, 0)))
