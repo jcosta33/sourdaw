@@ -11,7 +11,6 @@ import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigu
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import {
     assertRemoteAgentDataPolicy,
-    createRemoteTransmissionDisclosure,
     formatRemoteTransmissionDisclosure,
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
@@ -59,6 +58,7 @@ import { createModelProviderStreamWriter } from './createModelProviderStreamWrit
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
+import { discloseRemoteTransmission } from './discloseRemoteTransmission';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
@@ -309,6 +309,7 @@ export async function sendChatMessage(
         try {
             if (getBackendChain({ operation: 'tools', modality: 'text', streaming: false }).includes('cloud')) {
                 assertRemoteAgentDataPolicy(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
+                discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
                     role: 'assistant',
@@ -1065,7 +1066,7 @@ export async function sendChatMessage(
             ...(backend === 'cloud'
                 ? {
                       dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                      remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                      remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
                   }
                 : {}),
         });

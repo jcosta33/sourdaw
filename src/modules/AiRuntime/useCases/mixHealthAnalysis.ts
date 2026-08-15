@@ -2,6 +2,8 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 
 import { streamHostedModelText } from './streamHostedModelText';
+import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
+import { discloseRemoteTransmission } from './discloseRemoteTransmission';
 
 /**
  * LLM-backed mix health report. Lives in AiRuntime because the primary
@@ -75,6 +77,7 @@ Keep your response concise. Do not mention the raw numbers heavily unless necess
         maxOutputTokens: 1_000,
         onToken,
         signal,
+        remoteDisclosure: discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
     });
     if (outcome.status !== 'complete') {
         throw new Error(outcome.failure?.safeMessage ?? 'Hosted AI mix analysis did not complete.');

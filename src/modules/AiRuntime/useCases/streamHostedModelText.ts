@@ -1,5 +1,5 @@
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
-import { createRemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
+import { type RemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type ModelProviderMessage,
@@ -21,6 +21,7 @@ type StreamHostedModelTextInput = {
     temperature?: number;
     onToken: (text: string) => void;
     signal?: AbortSignal;
+    remoteDisclosure?: RemoteTransmissionDisclosure;
 };
 
 function unavailableResult(input: StreamHostedModelTextInput): ModelProviderResult {
@@ -79,7 +80,7 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
         },
         dataPolicy: 'remote-allowed',
         dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-        remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+        remoteDisclosure: input.remoteDisclosure,
     });
     if (compiled.status === 'unavailable') {
         return {
