@@ -15,9 +15,9 @@ Never ask the user a technical or procedural question. Resolve uncertainty throu
 primary sources, standards, established DAW practice, and the smallest decisive experiment. Decide
 from evidence and proceed.
 
-For costly-to-reverse choices or conflicts surviving research, launch exactly three fresh advisers
-concurrently. Freeze the same question and evidence, hide peer work, and assign distinct scrutiny.
-Verify every claim and decide. No voting.
+For costly-to-reverse choices or conflicts surviving research, use the smallest panel that covers
+every material perspective unless the user sets the count. Freeze the same question and evidence,
+hide peer work, verify every claim, and decide. No voting.
 
 Ask only when evidence cannot settle product-owner intent between supported product or business
 outcomes. State the consequences, present clear options, and recommend one. Engineering effort,
