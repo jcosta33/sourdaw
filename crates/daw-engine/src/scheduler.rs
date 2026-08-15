@@ -1403,6 +1403,14 @@ mod tests {
         command_tx
             .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
             .unwrap();
+        // The arp is silent while the transport is stopped; without this the
+        // zero-event assertion would hold even with the probability gate broken.
+        command_tx
+            .push(GraphCommand::SetTransport(TransportState {
+                is_playing: true,
+                ..TransportState::default()
+            }))
+            .unwrap();
         command_tx
             .push(GraphCommand::SendMidiNote(
                 7,

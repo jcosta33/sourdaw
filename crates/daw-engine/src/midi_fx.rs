@@ -911,13 +911,16 @@ mod tests {
             assert!(first_run.contains(&note), "note {note} never played");
         }
 
-        let strides: Vec<i16> = first_run
-            .windows(2)
-            .map(|pair| i16::from(pair[1]) - i16::from(pair[0]))
-            .collect();
-        assert!(
-            strides.windows(2).any(|pair| pair[0] != pair[1]),
-            "random mode degenerated into a constant stride"
+        // The sequence is a replay contract: pinned literally so any change
+        // to the selection formula — including a revert to the old
+        // `step * 17 % len` rotation, whose output for this chord is the
+        // period-4 cycle starting 64,67,71,60 — fails here.
+        assert_eq!(
+            first_run,
+            vec![
+                71, 67, 67, 67, 71, 60, 60, 60, 64, 71, 71, 60, 60, 64, 60, 60, 71, 60, 67, 71,
+                67, 60, 71, 60, 60, 71, 60, 60, 60, 71, 71, 71
+            ]
         );
     }
 
