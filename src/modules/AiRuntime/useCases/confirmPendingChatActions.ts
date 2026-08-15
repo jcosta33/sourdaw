@@ -582,7 +582,7 @@ export async function confirmPendingChatActions(
             idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
             receiptIdentity,
             idempotent: true,
-            retriable: true,
+            retriable: false,
         });
         if (leaseResult.status !== 'claimed') {
             return failApprovalPreflight(

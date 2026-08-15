@@ -11,6 +11,7 @@ const {
     create: createAgentRun,
     get: getAgentRun,
     recordCommittedWork: recordAgentRunCommittedWork,
+    recordError: recordAgentRunError,
     requireManualResume: requireAgentRunManualResume,
 } = agentRunLifecycle;
 const { claim: claimAgentRunWorkLease, settle: settleAgentRunWorkLease } = agentRunWorkLease;
@@ -73,7 +74,7 @@ describe('agent run control projection', () => {
             phase: 'paused',
             request: 'Render and analyze the chorus before applying it.',
             cancellation: { requested: false, acknowledgement: 'none' },
-            allowedActions: { cancel: true, resume: true, retryWorkIds: ['analysis-1'] },
+            allowedActions: { cancel: true, resume: false, retryWorkIds: ['analysis-1'] },
             manualResumeReason: 'Analysis failed after the project batch committed.',
             committedReceipts: [
                 {
@@ -87,6 +88,53 @@ describe('agent run control projection', () => {
         expect(projection).not.toHaveProperty('workLeases');
         expect(projection).not.toHaveProperty('plan');
         expect(projection).not.toHaveProperty('grants');
+    });
+
+    it('revokes persisted retry eligibility when the terminal outcome forbids retry', () => {
+        createAgentRun({
+            runId: 'run-non-retriable',
+            request: 'Apply the approved command.',
+            mode: 'apply',
+            createdRevision: 'heads-a',
+            createdAt: 100,
+        });
+        claimAgentRunWorkLease({
+            runId: 'run-non-retriable',
+            workId: 'batch-1',
+            ownerKind: 'command',
+            cleanupOwner: 'command-executor',
+            idempotencyKey: 'batch-key',
+            receiptIdentity: 'batch-receipt',
+            idempotent: true,
+            retriable: true,
+            claimedAt: 110,
+        });
+        settleAgentRunWorkLease({
+            runId: 'run-non-retriable',
+            workId: 'batch-1',
+            cancellationGeneration: 0,
+            idempotencyKey: 'batch-key',
+            receiptIdentity: 'batch-receipt',
+            terminalState: 'failed',
+            settledAt: 120,
+        });
+        recordAgentRunError({
+            runId: 'run-non-retriable',
+            error: {
+                code: 'ambiguous-command-outcome',
+                message: 'Do not retry this command.',
+                occurredAt: 130,
+                retriable: false,
+                workId: 'batch-1',
+            },
+            terminal: true,
+        });
+
+        expect(getAgentRunControlProjection('run-non-retriable')).toMatchObject({
+            phase: 'failed',
+            allowedActions: { retryWorkIds: [] },
+        });
+        expect(getAgentRun('run-non-retriable')?.retriableWork).toEqual([]);
     });
 
     it('reports consumer, transport, and backend cancellation acknowledgement without claiming more', () => {

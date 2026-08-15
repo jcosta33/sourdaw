@@ -51,7 +51,8 @@ export type AgentRunPlan = {
 export type AgentRunBatch = {
     batchId: string;
     commandIds: string[];
-    status: 'planned' | 'waiting-for-approval' | 'executing' | 'committed' | 'no-op' | 'failed' | 'cancelled';
+    status:
+        'planned' | 'waiting-for-approval' | 'previewed' | 'executing' | 'committed' | 'no-op' | 'failed' | 'cancelled';
     receiptIdentity: string | null;
 };
 

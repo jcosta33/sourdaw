@@ -26,7 +26,7 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             ),
             manualResume: {
                 required: true,
-                reason: 'The application restarted while run work was active.',
+                reason: 'The application restarted before this run finished. Its exact continuation is unavailable; start a new run from the retained request and receipts.',
                 workIds: orphanedWorkIds,
                 requiredAt: recoveredAt,
             },

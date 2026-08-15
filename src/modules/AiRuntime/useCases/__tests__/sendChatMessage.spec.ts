@@ -899,6 +899,53 @@ describe('sendChatMessage injectables', () => {
             })
         );
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the cancelled explain run to be retained');
+        }
+        expect(projection).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requested: true, acknowledgement: 'consumer-only' },
+        });
+        expect(getAgentRun(projection.runId)?.workLeases).toMatchObject([
+            { workId: 'provider-response', terminalState: 'cancelled' },
+        ]);
+    });
+
+    it('claims and settles durable preview work around the isolated command preview', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'preview muting the vocals',
+            requiresConfirmation: false,
+        });
+        mocks.executeVersionedCommandBatchEnvelope.mockRejectedValueOnce(new Error('preview stopped'));
+
+        await sendChatMessage('preview muting the vocals', { mode: 'preview' });
+
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the failed preview run to be retained');
+        }
+        expect(projection).toMatchObject({ phase: 'failed' });
+        expect(getAgentRun(projection.runId)?.workLeases).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    ownerKind: 'command',
+                    cleanupOwner: 'command-preview',
+                    terminalState: 'failed',
+                }),
+            ])
+        );
     });
 
     it('does not restore a stale backend after selection changes during generation', async () => {

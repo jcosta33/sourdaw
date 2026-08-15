@@ -332,13 +332,59 @@ export async function sendChatMessage(
                 recordUnavailableProviderUsage(runId, backend);
 
                 if (interactionMode === 'preview') {
+                    const previewWorkId = `preview:${parsedCommandBatch.envelope.batchId}`;
+                    const previewReceiptIdentity = `preview:${runId}:${parsedCommandBatch.envelope.batchId}`;
+                    const previewLeaseResult = agentRunWorkLease.claim({
+                        runId,
+                        workId: previewWorkId,
+                        ownerKind: 'command',
+                        cleanupOwner: 'command-preview',
+                        idempotencyKey: previewReceiptIdentity,
+                        receiptIdentity: previewReceiptIdentity,
+                        idempotent: true,
+                        retriable: false,
+                    });
+                    if (previewLeaseResult.status !== 'claimed') {
+                        throw new Error(`Agent preview work could not be claimed: ${previewLeaseResult.status}`);
+                    }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'previewing', revision: projectRevision });
                     const resourceLease = createStemImportConfirmationResourceLease(result.actions);
-                    const preview = await executeVersionedCommandBatchEnvelope(commandBatch).finally(() =>
-                        resourceLease?.release()
-                    );
+                    let preview: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
+                    try {
+                        preview = await executeVersionedCommandBatchEnvelope(commandBatch);
+                    } catch (error) {
+                        trySettleAgentRunWorkLease(previewLeaseResult.lease, 'failed');
+                        agentRunLifecycle.updateBatchStatus({
+                            runId,
+                            batchId: parsedCommandBatch.envelope.batchId,
+                            status: 'failed',
+                        });
+                        throw error;
+                    } finally {
+                        resourceLease?.release();
+                    }
                     if (preview.status === 'previewed') {
                         preview.resource.release();
+                        const settlement = agentRunWorkLease.settle({
+                            runId,
+                            workId: previewWorkId,
+                            cancellationGeneration: previewLeaseResult.lease.cancellationGeneration,
+                            idempotencyKey: previewLeaseResult.lease.idempotencyKey,
+                            receiptIdentity: previewLeaseResult.lease.receiptIdentity,
+                            terminalState: 'completed',
+                        });
+                        if (settlement.status !== 'settled') {
+                            const currentRun = agentRunLifecycle.get(runId);
+                            if (currentRun?.phase === 'cancelled' || currentRun?.phase === 'partially-completed') {
+                                return undefined;
+                            }
+                            throw new Error(`Agent preview work could not be settled: ${settlement.status}`);
+                        }
+                        agentRunLifecycle.updateBatchStatus({
+                            runId,
+                            batchId: parsedCommandBatch.envelope.batchId,
+                            status: 'previewed',
+                        });
                         updateChatMessage(assistantMsgId, {
                             isStreaming: false,
                             content: `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
@@ -417,7 +463,7 @@ export async function sendChatMessage(
                     idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
                     receiptIdentity: commandReceiptIdentity,
                     idempotent: true,
-                    retriable: true,
+                    retriable: false,
                 });
                 if (commandLeaseResult.status !== 'claimed') {
                     throw new Error(`Agent command work could not be claimed: ${commandLeaseResult.status}`);
@@ -652,14 +698,10 @@ export async function sendChatMessage(
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;
-            agentRunWorkLease.settle({
-                runId,
-                workId: providerWorkId,
-                cancellationGeneration: providerLease.cancellationGeneration,
-                idempotencyKey: providerLease.idempotencyKey,
-                receiptIdentity: providerLease.receiptIdentity,
-                terminalState: 'failed',
-            });
+            trySettleAgentRunWorkLease(
+                providerLease,
+                aborter.signal.aborted || configurationChanged ? 'cancelled' : 'failed'
+            );
             if (aborter.signal.aborted || configurationChanged) {
                 agentRunLifecycle.cancel({ runId, reason });
             } else {
@@ -888,6 +930,8 @@ export async function sendChatMessage(
             return 'An unknown error occurred during generation.';
         })();
         if (isAiRuntimeConfigurationChangedError(error)) {
+            trySettleAgentRunWorkLease(providerLease, 'cancelled');
+            agentRunLifecycle.cancel({ runId, reason: errorMessage });
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,

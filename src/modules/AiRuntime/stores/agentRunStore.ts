@@ -121,6 +121,7 @@ function readBatch(value: unknown): AgentRunBatch | null {
     const statuses: AgentRunBatch['status'][] = [
         'planned',
         'waiting-for-approval',
+        'previewed',
         'executing',
         'committed',
         'no-op',

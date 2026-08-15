@@ -74,7 +74,7 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
         },
         allowedActions: {
             cancel: !TERMINAL_PHASES.has(run.phase),
-            resume: run.phase === 'paused' && run.manualResume.required,
+            resume: false,
             retryWorkIds,
         },
         manualResumeReason: run.manualResume.reason,

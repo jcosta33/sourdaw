@@ -270,6 +270,10 @@ function recordAgentRunError(input: {
                   )
                 : run.batches,
             errors: [...run.errors, structuredClone(input.error)],
+            retriableWork:
+                !input.error.retriable && input.error.workId
+                    ? run.retriableWork.filter((work) => work.workId !== input.error.workId)
+                    : run.retriableWork,
         };
     });
 }
@@ -379,19 +383,6 @@ function requireAgentRunManualResume(input: {
     });
 }
 
-function resumeAgentRun(input: { runId: string; resumedAt?: number }): AgentRun {
-    return updateAgentRun(input.runId, input.resumedAt ?? Date.now(), (run) => {
-        if (run.phase !== 'paused' || !run.manualResume.required) {
-            throw new Error(`Agent run is not waiting for manual resume: ${run.runId}`);
-        }
-        return {
-            ...run,
-            phase: 'planning',
-            manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
-        };
-    });
-}
-
 function cancelAgentRun(input: { runId: string; reason: string; requestedAt?: number }): AgentRun {
     const requestedAt = input.requestedAt ?? Date.now();
     return updateAgentRun(input.runId, requestedAt, (run) => {
@@ -457,7 +448,6 @@ export const agentRunLifecycle = {
     recordProviderUsage: recordAgentRunProviderUsage,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
     requireManualResume: requireAgentRunManualResume,
-    resume: resumeAgentRun,
     transitionPhase: transitionAgentRunPhase,
     updateBatchStatus: updateAgentRunBatchStatus,
 } as const;
