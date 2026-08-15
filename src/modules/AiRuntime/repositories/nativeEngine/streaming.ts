@@ -300,6 +300,11 @@ export async function streamNativeCompletion(
                     }
                     throw new TypeError('Native completion stream returned data after completion');
                 }
+                if (typeof finishReason === 'string' && finishReason !== 'stop' && finishReason !== 'length') {
+                    throw new TypeError(
+                        `Native completion stream ended with unsupported finish reason ${finishReason}`
+                    );
+                }
                 if (content) {
                     onToken(content);
                 }
@@ -309,10 +314,6 @@ export async function streamNativeCompletion(
                     }
                     finishReasonSeen = true;
                     options?.onFinish?.(finishReason);
-                } else if (typeof finishReason === 'string') {
-                    throw new TypeError(
-                        `Native completion stream ended with unsupported finish reason ${finishReason}`
-                    );
                 }
                 if (usage) {
                     options?.onUsage?.({

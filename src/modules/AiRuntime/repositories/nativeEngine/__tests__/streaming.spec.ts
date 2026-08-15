@@ -372,6 +372,30 @@ describe('streamNativeCompletion', () => {
             }
         );
 
+        it('rejects an unsupported browser-native finish reason before exposing same-event text', async () => {
+            const encoder = new TextEncoder();
+            const reader = {
+                read: vi
+                    .fn()
+                    .mockResolvedValueOnce({
+                        done: false,
+                        value: encoder.encode(
+                            'data: {"choices":[{"delta":{"content":"must-not-be-exposed"},"finish_reason":"content_filter"}]}\n\n'
+                        ),
+                    })
+                    .mockResolvedValue({ done: true, value: undefined }),
+                cancel: vi.fn().mockResolvedValue(undefined),
+            };
+            mocks.fetch.mockResolvedValue({ ok: true, body: { getReader: () => reader } });
+            const onToken = vi.fn();
+
+            await expect(streamNativeCompletion([], onToken)).rejects.toThrow(
+                'unsupported finish reason content_filter'
+            );
+            expect(onToken).not.toHaveBeenCalled();
+            expect(reader.cancel).toHaveBeenCalledTimes(1);
+        });
+
         it('rejects browser-native text after the first finish reason before exposing it', async () => {
             const encoder = new TextEncoder();
             const chunks = [
