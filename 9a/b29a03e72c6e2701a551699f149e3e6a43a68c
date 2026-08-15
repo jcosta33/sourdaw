@@ -1,0 +1,49 @@
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_598aea158c29d2 6-9,82-83,95,142,175-177
+  s_a40848e8f8cca9::t_b9c88d27313ec1 143-163
+  s_a40848e8f8cca9::t_480c3f4f29ea22 102-108
+  s_a40848e8f8cca9::t_4c026beae85e0e 5,132-140,186
+  s_a40848e8f8cca9::t_8829b97c485659 14,17,29,49,76-81,84-94,96-101,109-116,188
+  s_a40848e8f8cca9::t_361177b9e2b1ee 354
+  s_a40848e8f8cca9::t_06dbbe9d82a30b 3
+  s_a40848e8f8cca9::t_7e820eb583b44d 1,185,187
+  s_a40848e8f8cca9::t_7776b1dd1ed4ed 2
+  s_a40848e8f8cca9::t_59280cad905782 4
+  s_a40848e8f8cca9::t_55277627215ccd 178
+  s_a40848e8f8cca9::t_06585c3543a10a 189
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_a40848e8f8cca9::t_a0e962eafec00e 17-20
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_ab7f0ac8dd1f6c 510-511,513-516
+  s_a40848e8f8cca9::t_a0e962eafec00e 168-180,476,506-509,517-527
+  s_a40848e8f8cca9::t_e74c06cc818e9c 558-560
+  s_a40848e8f8cca9::t_71f19e9bffb1f8 555-557
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_a40848e8f8cca9::t_0c36d6925db35f 238-248
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_0c36d6925db35f 186,225-226,228
+  s_a40848e8f8cca9::t_8665f3d47242d7 102,122-137,142,144-145,147
+  s_a40848e8f8cca9::t_e74c06cc818e9c 231-256
+  s_a40848e8f8cca9::t_f83796c6c3ecc2 229-230
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_a40848e8f8cca9::t_bda203087de3ca 74,115-123
+  s_a40848e8f8cca9::t_6e0a305f17c0ea 124-127
+  s_a40848e8f8cca9::t_480c3f4f29ea22 160-166
+  s_a40848e8f8cca9::t_2739b292ac106d 9-10,12,32,153-159,167-177,184-185,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9ab29a03e72c6e2701a551699f149e3e6a43a68c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
