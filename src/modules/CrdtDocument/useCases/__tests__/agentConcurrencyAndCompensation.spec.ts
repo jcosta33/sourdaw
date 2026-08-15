@@ -19,6 +19,7 @@ import {
     executeAppAction,
     executeVersionedCommandBatch,
     executeVersionedCommandBatchEnvelope,
+    issueCommandApprovalBinding,
     serializeVersionedCommandEnvelope,
     undo,
 } from '#/modules/Command/useCases';
@@ -398,8 +399,11 @@ describe('agent concurrency and compensation', () => {
             runId: 'run-compatible-reapply',
         });
         const result = await executeVersionedCommandBatchEnvelope({
+            approvalBinding: issueCommandApprovalBinding({
+                ...compiled,
+                validate: () => ({ status: 'valid' }),
+            }),
             authority: compiled.authority,
-            confirmed: true,
             serialized: compiled.serialized,
         });
 

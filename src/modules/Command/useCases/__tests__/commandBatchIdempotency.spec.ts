@@ -18,9 +18,10 @@ import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
-import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
 import { getCommandBatchContentHash } from '../getCommandBatchContentHash';
 import { persistProjectCommandBatchIdempotencyCheckpoint } from '../persistProjectCommandBatchIdempotencyCheckpoint';
+
+import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 
@@ -418,7 +419,7 @@ describe('command batch idempotency', () => {
 
         expect(unconfirmed).toMatchObject({
             status: 'rejected',
-            reason: 'Commit batch requires confirmation or the auto-commit grant',
+            reason: 'Commit batch requires an exact approval binding',
         });
         expect(confirmed.status).toBe('committed');
         expect(mutationCount).toBe(2);

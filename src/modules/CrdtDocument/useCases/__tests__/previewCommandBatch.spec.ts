@@ -14,6 +14,7 @@ import {
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
     executeVersionedCommandBatchEnvelope,
+    issueCommandApprovalBinding,
     parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
@@ -513,8 +514,11 @@ describe('previewCommandBatch', () => {
             runId: 'run-commit',
         });
         const committed = await executeVersionedCommandBatchEnvelope({
+            approvalBinding: issueCommandApprovalBinding({
+                ...commitBatch,
+                validate: () => ({ status: 'valid' }),
+            }),
             authority: commitBatch.authority,
-            confirmed: true,
             serialized: commitBatch.serialized,
             options: { skipUndo: true },
         });

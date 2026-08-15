@@ -12,7 +12,8 @@ import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
-import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
+
+import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
 type SetTrackPanAction = Extract<AppAction, { type: 'setTrackPan' }>;

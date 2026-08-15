@@ -60,3 +60,8 @@ export { runAiActionWithToast } from './runAiActionWithToast';
 export { isVoiceInputAvailable } from './voiceInput/isVoiceInputAvailable';
 export { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
 export { setVoiceToggleEventBus } from './voiceToggle/voiceToggleEventBus';
+export { AGENT_EXECUTION_MODES, AGENT_TRUST_CEILINGS } from './agentExecutionModes';
+export { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority';
+export { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
+export { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
+export { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';

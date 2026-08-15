@@ -7,6 +7,7 @@ import {
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
     getVersionedCommandBatchIdempotentReplay,
+    issueCommandApprovalBinding,
     parseVersionedCommandEnvelope,
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
@@ -31,6 +32,7 @@ import {
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
+import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -507,9 +509,26 @@ export async function confirmPendingChatActions(
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (commandBatch) {
+            const approved = confirmation.approvalSnapshot.agentApproval;
+            const approvalBinding = (() => {
+                if (hasPriorVerifiedBatchReceipt) {
+                    return undefined;
+                }
+                if (approved) {
+                    return issueAgentCommandApprovalBinding({ approval: approved, commandBatch });
+                }
+                return issueCommandApprovalBinding({
+                    authority: commandBatch.authority,
+                    serialized: commandBatch.serialized,
+                    validate: () =>
+                        isConfirmationExecutionAuthorized(confirmation, aborter.signal)
+                            ? { status: 'valid' }
+                            : { status: 'invalid', reason: 'Confirmation execution authority was revoked' },
+                });
+            })();
             const versionedResult = await executeVersionedCommandBatchEnvelope({
                 authority: commandBatch.authority,
-                confirmed: true,
+                ...(approvalBinding ? { approvalBinding } : {}),
                 serialized: commandBatch.serialized,
                 options: executionOptions,
             });

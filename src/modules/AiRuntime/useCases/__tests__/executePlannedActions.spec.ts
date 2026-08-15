@@ -24,6 +24,36 @@ vi.mock('../recordAiActionGroup', () => ({ recordAiActionGroup: vi.fn() }));
 
 const action = { type: 'togglePlayback' } as const;
 const runtimeAction = { type: 'setPlayback', payload: { playing: true } } as const;
+const commandBatch = {
+    authority: {
+        projectId: 'project-1',
+        baseRevision: 'revision-1',
+        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        grants: {
+            allowedOperationPrefixes: [],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        },
+        budgets: {
+            maxCommands: 1,
+            maxCreatedTracks: 0,
+            maxDeletedObjects: 0,
+            maxAffectedTracks: 0,
+            maxAffectedClips: 0,
+            maxAutomationPoints: 0,
+            maxImportedAssets: 0,
+            maxRenderJobs: 0,
+        },
+    },
+    serialized: '{}',
+} as const;
 
 type ReplayOutcome =
     | 'committed'
@@ -117,47 +147,41 @@ describe('executePlannedActions', () => {
     });
 
     it('returns a durable idempotent replay without duplicating AI history or notifications', async () => {
-        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue(idempotentReplayResult('committed'));
+        const replayResult = idempotentReplayResult('committed');
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue(replayResult);
 
         const result = await executePlannedActions({
-            commandBatch: {
-                authority: {
-                    projectId: 'project-1',
-                    baseRevision: 'revision-1',
-                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                    grants: {
-                        allowedOperationPrefixes: [],
-                        create: false,
-                        delete: false,
-                        routing: false,
-                        tempo: false,
-                        master: false,
-                        file: false,
-                        audioUpload: false,
-                        remoteGeneration: false,
-                        autoCommit: false,
-                    },
-                    budgets: {
-                        maxCommands: 1,
-                        maxCreatedTracks: 0,
-                        maxDeletedObjects: 0,
-                        maxAffectedTracks: 0,
-                        maxAffectedClips: 0,
-                        maxAutomationPoints: 0,
-                        maxImportedAssets: 0,
-                        maxRenderJobs: 0,
-                    },
-                },
-                serialized: '{}',
-            },
+            commandBatch,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
         });
 
-        expect(result).toEqual({ status: 'committed', actions: [] });
+        expect(result).toEqual({ status: 'committed', actions: [], receipt: replayResult.receipt });
         expect(recordAiActionGroup).not.toHaveBeenCalled();
         expect(notifyAiChange).not.toHaveBeenCalled();
+    });
+
+    it('returns the verified receipt from a fresh apply commit', async () => {
+        const receipt = idempotentReplayResult('committed').receipt;
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'committed',
+            actions: [{ action, label: 'Toggle playback' }],
+            receipt,
+        });
+
+        const result = await executePlannedActions({
+            commandBatch,
+            prompt: 'Mute vocals',
+            actions: [action],
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toEqual({
+            status: 'committed',
+            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            receipt,
+        });
     });
 
     it.each([
@@ -177,36 +201,7 @@ describe('executePlannedActions', () => {
             );
 
             const result = await executePlannedActions({
-                commandBatch: {
-                    authority: {
-                        projectId: 'project-1',
-                        baseRevision: 'revision-1',
-                        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                        grants: {
-                            allowedOperationPrefixes: [],
-                            create: false,
-                            delete: false,
-                            routing: false,
-                            tempo: false,
-                            master: false,
-                            file: false,
-                            audioUpload: false,
-                            remoteGeneration: false,
-                            autoCommit: false,
-                        },
-                        budgets: {
-                            maxCommands: 1,
-                            maxCreatedTracks: 0,
-                            maxDeletedObjects: 0,
-                            maxAffectedTracks: 0,
-                            maxAffectedClips: 0,
-                            maxAutomationPoints: 0,
-                            maxImportedAssets: 0,
-                            maxRenderJobs: 0,
-                        },
-                    },
-                    serialized: '{}',
-                },
+                commandBatch,
                 prompt: 'Mute vocals',
                 actions: [action],
                 projectRevision: 'revision-1',

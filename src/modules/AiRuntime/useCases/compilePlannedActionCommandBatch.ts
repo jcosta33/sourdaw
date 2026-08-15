@@ -13,8 +13,10 @@ type CompilePlannedActionCommandBatchInput = {
     actions: readonly AppAction[];
     actionLabels: readonly string[];
     autoCommit: boolean;
+    autoCommitApproval?: Parameters<typeof compileVersionedCommandBatchEnvelope>[0]['autoCommitApproval'];
     group: { groupId: string; groupLabel: string };
     intent: string;
+    mode?: 'commit' | 'preview';
     projectRevision: string;
     protectedTargetIds?: readonly string[];
     runId: string;
@@ -334,11 +336,13 @@ export function compilePlannedActionCommandBatch(input: CompilePlannedActionComm
     return {
         commandEnvelopes,
         commandBatch: compileVersionedCommandBatchEnvelope({
+            autoCommitApproval: input.autoCommitApproval,
             runId: input.runId,
             batchId: input.group.groupId,
             projectId: input.projectRevision,
             baseRevision: input.projectRevision,
             intent: input.intent,
+            mode: input.mode,
             commands: commandEnvelopes,
             protectedTargetIds: input.protectedTargetIds,
             autoCommit: input.autoCommit,

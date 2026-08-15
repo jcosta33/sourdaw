@@ -1,5 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { generateGroupId } from '#/modules/Command/useCases';
+import { executeVersionedCommandBatchEnvelope, generateGroupId } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -28,6 +28,7 @@ import {
 import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
+import { type AgentExecutionMode, type AgentTrustCeiling } from './agentExecutionModes';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
@@ -37,6 +38,7 @@ import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { planPromptActions } from './planPromptActions';
+import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
     if (backend === 'native') {
@@ -48,32 +50,38 @@ function getBackendModelId(backend: RunnableAiBackend): string {
     return getActiveModelId();
 }
 
-export async function sendChatMessage(userText: string): Promise<void> {
+type SendChatMessageOptions = {
+    mode?: AgentExecutionMode;
+    trustCeiling?: AgentTrustCeiling;
+};
+
+export async function sendChatMessage(userText: string, options?: SendChatMessageOptions): Promise<void> {
     const backend = resolveBackend();
     const state = chatStore.value;
     if (!state || state.isGenerating) {
         return;
     }
+    const interactionMode = resolveAgentExecutionMode({ chatMode: state.chatMode, requestedMode: options?.mode });
 
     // Regular chat streams from one selected backend. Prompt mode delegates
     // readiness and provider fallback to generateToolCalls.
     if (backend === 'none') {
         throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
     }
-    if (state.chatMode !== 'prompt' && backend === 'native' && !isNativeEngineReady()) {
+    if (interactionMode === 'explain' && backend === 'native' && !isNativeEngineReady()) {
         throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
     }
-    if (state.chatMode !== 'prompt' && backend === 'webllm' && !getLlmEngine()) {
+    if (interactionMode === 'explain' && backend === 'webllm' && !getLlmEngine()) {
         throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
     }
-    if (state.chatMode !== 'prompt' && backend === 'cloud' && !isCloudAvailable()) {
+    if (interactionMode === 'explain' && backend === 'cloud' && !isCloudAvailable()) {
         throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
     }
 
     setChatGenerating(true);
 
     // ── Prompt Command Mode ──────────────────────────────────────────────
-    if (state.chatMode === 'prompt') {
+    if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
         setActiveAborter(aborter);
@@ -116,6 +124,14 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
+                if (interactionMode === 'plan') {
+                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        content: `Planned without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                    });
+                    return;
+                }
                 const commandGroup = generateGroupId(userText);
                 const compiledActionExecution = compileAgentActionExecution({
                     actions: result.actions,
@@ -126,9 +142,27 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     projectRevision,
                     requiresConfirmation: result.requiresConfirmation,
                     runId: assistantMsgId,
+                    mode: interactionMode,
                     protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                    trustCeiling: options?.trustCeiling,
                 });
                 const { commandEnvelopes, commandBatch } = compiledActionExecution;
+
+                if (interactionMode === 'preview') {
+                    const resourceLease = createStemImportConfirmationResourceLease(result.actions);
+                    const preview = await executeVersionedCommandBatchEnvelope(commandBatch).finally(() =>
+                        resourceLease?.release()
+                    );
+                    if (preview.status === 'previewed') {
+                        preview.resource.release();
+                        updateChatMessage(assistantMsgId, {
+                            isStreaming: false,
+                            content: `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                        });
+                        return;
+                    }
+                    throw new Error('reason' in preview ? preview.reason : 'Command preview did not produce a preview');
+                }
 
                 if (compiledActionExecution.requiresConfirmation) {
                     const { agentApproval } = compiledActionExecution;

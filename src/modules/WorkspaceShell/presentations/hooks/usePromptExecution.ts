@@ -245,6 +245,10 @@ export const usePromptExecution = (): PromptExecutionState => {
                   actions: input.actions,
                   actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
                   autoCommit: true,
+                  autoCommitApproval: () =>
+                      captureProjectRevision() === input.projectRevision
+                          ? { status: 'valid' }
+                          : { status: 'invalid', reason: 'The command-palette source revision is stale.' },
                   context,
                   group,
                   intent: input.prompt,

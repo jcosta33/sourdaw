@@ -18,6 +18,7 @@ type ExecuteVersionedCommandBatchInput = {
     divergenceTargetIds?: readonly string[];
     normalizedProjectRevision?: string;
     options?: ExecuteOptions & {
+        authorizeFirstHandler?: () => string | null;
         onProjectCommitPrepared?: (result: {
             status: 'committed';
             actions: readonly { action: AppAction; label: string; receipt?: VersionedCommandReceipt }[];
