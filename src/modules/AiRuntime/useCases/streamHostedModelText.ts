@@ -13,6 +13,7 @@ type StreamHostedModelTextInput = {
     correlationId: string;
     messages: ModelProviderMessage[];
     maxOutputTokens: number;
+    temperature?: number;
     onToken: (text: string) => void;
     signal?: AbortSignal;
 };
@@ -89,6 +90,7 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
             },
             {
                 maxTokens: compiled.request.limits.maxOutputTokens,
+                temperature: input.temperature,
                 signal: input.signal,
                 onUsage: (event) => session.push(event),
                 onUnknownEvent: (providerEventType) => session.push({ type: 'unknown', providerEventType }),
