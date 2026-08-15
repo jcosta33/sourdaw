@@ -49,6 +49,34 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         expect(body).toMatchObject({ model: 'local-model', stream: true, max_tokens: 100 });
     });
 
+    it('normalizes the usage-only terminal event without double-emitting text', async () => {
+        const sse = [
+            'data: {"choices":[{"delta":{"content":"Done"}}]}\n\n',
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+            'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":4,"prompt_tokens_details":{"cached_tokens":3},"completion_tokens_details":{"reasoning_tokens":2}}}\n\n',
+            'data: [DONE]\n\n',
+        ].join('');
+        vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(sse, { status: 200 })));
+        const onToken = vi.fn();
+        const onUsage = vi.fn();
+
+        await streamOpenAiCompatibleChatCompletion({
+            runtime,
+            messages: [{ role: 'user', content: 'help' }],
+            onToken,
+            onUsage,
+            signal: new AbortController().signal,
+        });
+
+        expect(onToken).toHaveBeenCalledOnce();
+        expect(onUsage).toHaveBeenCalledWith({
+            type: 'usage',
+            mode: 'final',
+            usage: { inputTokens: 11, outputTokens: 4, cachedInputTokens: 3, reasoningTokens: 2 },
+            provenance: 'provider-reported',
+        });
+    });
+
     it('rejects malformed streaming events', async () => {
         vi.stubGlobal(
             'fetch',

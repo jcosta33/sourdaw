@@ -10,8 +10,23 @@ type CloudStreamInput = {
 };
 
 type CloudStreamEvent =
+    | {
+          type: 'message_start';
+          message: {
+              usage: {
+                  input_tokens: number;
+                  output_tokens: number;
+                  cache_creation_input_tokens?: number;
+                  cache_read_input_tokens?: number;
+              };
+          };
+      }
     | { type: 'content_block_delta'; delta: { type: 'text_delta'; text: string } }
-    | { type: 'message_delta'; delta: { stop_reason: string | null; stop_sequence: null } }
+    | {
+          type: 'message_delta';
+          delta: { stop_reason: string | null; stop_sequence: null };
+          usage?: { output_tokens: number };
+      }
     | { type: 'message_stop' }
     | { type: 'other_event' };
 
@@ -139,6 +154,47 @@ describe('streamCloudChatCompletion', () => {
         expect(tokens).toHaveLength(2);
         expect(tokens).toEqual(['Hello', ' World']);
         expect(outcome).toEqual({ status: 'complete' });
+    });
+
+    it('normalizes Anthropic usage snapshots and final totals', async () => {
+        mocks.stream.mockReturnValue({
+            async *[Symbol.asyncIterator](): AsyncGenerator<CloudStreamEvent> {
+                yield {
+                    type: 'message_start',
+                    message: {
+                        usage: {
+                            input_tokens: 12,
+                            output_tokens: 0,
+                            cache_creation_input_tokens: 3,
+                            cache_read_input_tokens: 2,
+                        },
+                    },
+                };
+                yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } };
+                yield {
+                    type: 'message_delta',
+                    delta: { stop_reason: 'end_turn', stop_sequence: null },
+                    usage: { output_tokens: 4 },
+                };
+                yield { type: 'message_stop' };
+            },
+        });
+        const onUsage = vi.fn();
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn(), { onUsage });
+
+        expect(onUsage).toHaveBeenNthCalledWith(1, {
+            type: 'usage',
+            mode: 'cumulative-snapshot',
+            usage: { inputTokens: 12, outputTokens: 0, cachedInputTokens: 5, reasoningTokens: null },
+            provenance: 'provider-reported',
+        });
+        expect(onUsage).toHaveBeenNthCalledWith(2, {
+            type: 'usage',
+            mode: 'final',
+            usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: 0, reasoningTokens: null },
+            provenance: 'provider-reported',
+        });
     });
 
     it('passes an abort signal so a revoked key can tear the stream down', async () => {

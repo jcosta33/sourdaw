@@ -80,6 +80,30 @@ describe('streamNativeCompletion', () => {
             expect(onToken).toHaveBeenCalledWith('Hi');
         });
 
+        it('emits provider-reported final usage from the native done event', async () => {
+            const mockChannel: TestChannel = { onmessage: null };
+            mocks.createChannel.mockResolvedValue(mockChannel);
+            mocks.tauriInvoke.mockImplementation(() => {
+                mockChannel.onmessage?.({ event: 'done', data: { totalTokens: 17 } });
+                return Promise.resolve(undefined);
+            });
+            const onUsage = vi.fn();
+
+            await streamNativeCompletion([{ role: 'user', content: 'hi' }], vi.fn(), { onUsage });
+
+            expect(onUsage).toHaveBeenCalledWith({
+                type: 'usage',
+                mode: 'final',
+                usage: {
+                    inputTokens: null,
+                    outputTokens: 17,
+                    cachedInputTokens: null,
+                    reasoningTokens: null,
+                },
+                provenance: 'provider-reported',
+            });
+        });
+
         it('propagates an abort thrown from inside onToken instead of swallowing it', async () => {
             // Regression: when onToken throws (e.g. the caller checks an abort
             // signal and throws), the throw escapes the Tauri channel dispatcher

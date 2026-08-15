@@ -12,6 +12,7 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ChatMessage, type ChatState } from '../../models/Chat';
 import { type IntentResult } from '../../models/IntentResult';
+import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
@@ -22,6 +23,7 @@ import { type ProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
 type MockBackend = 'native' | 'cloud' | 'webllm' | 'none';
+type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type ExecuteVersionedCommandBatchEnvelope =
     (typeof import('#/modules/Command/useCases'))['executeVersionedCommandBatchEnvelope'];
@@ -78,14 +80,18 @@ const mocks = vi.hoisted(() => {
         webLlmEngine,
         webLlmCreate: vi.fn<(payload: Record<string, unknown>) => Promise<unknown>>(),
         webLlmInterrupt: vi.fn(),
-        streamCloudChatCompletion:
-            vi.fn<
-                (
-                    messages: Array<{ role: string; content: string }>,
-                    onToken: (text: string) => void,
-                    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
-                ) => Promise<{ status: 'complete' } | { status: 'incomplete'; reason: string }>
-            >(),
+        streamCloudChatCompletion: vi.fn<
+            (
+                messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void,
+                options?: {
+                    temperature?: number;
+                    maxTokens?: number;
+                    signal?: AbortSignal;
+                    onUsage?: (event: ModelProviderUsageEvent) => void;
+                }
+            ) => Promise<{ status: 'complete' } | { status: 'incomplete'; reason: string }>
+        >(),
         rejectPendingConfirmation: { value: false },
     };
 });
@@ -819,6 +825,40 @@ describe('sendChatMessage injectables', () => {
         );
         expect(completionUpdate?.[1].isStreaming).toBe(false);
         expect(completionUpdate?.[1].content).toContain('Response incomplete');
+    });
+
+    it('records normalized provider-reported usage on the agent run', async () => {
+        mocks.backend.value = 'cloud';
+        mocks.cloudAvailable.value = true;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.streamCloudChatCompletion.mockImplementation(async (_messages, onToken, options) => {
+            onToken('Complete answer');
+            options?.onUsage?.({
+                type: 'usage',
+                mode: 'final',
+                usage: { inputTokens: 11, outputTokens: 4, cachedInputTokens: 3, reasoningTokens: 2 },
+                provenance: 'provider-reported',
+            });
+            return { status: 'complete' };
+        });
+
+        await sendChatMessage('How should I mix this?');
+
+        const [projection] = getAgentRunControlProjections();
+        expect(getAgentRun(projection!.runId)?.providerUsage).toEqual([
+            {
+                provider: 'openai-compatible',
+                model: 'cloud',
+                inputTokens: 11,
+                outputTokens: 4,
+                provenance: 'provider-reported',
+            },
+        ]);
     });
 
     it('interrupts active WebLLM generation when Stop is requested', async () => {
