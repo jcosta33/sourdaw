@@ -6,8 +6,10 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
 import { selectClip } from '#/modules/Arrangement/useCases';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
 import { useTracks } from '../hooks/useTracks';
@@ -30,6 +32,20 @@ export const ClipView = (): ReactElement => {
 
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
 
+    // Hooks must precede the no-track early return; the selected-clip
+    // derivation is pure, so it moves up with them.
+    const selectedClip =
+        selectedTrack?.clips.find((context) => context.id === clipSelection.selectedClipId) ??
+        selectedTrack?.clips[0] ??
+        null;
+
+    // Live note count for the selected MIDI clip — the dock's only DOM
+    // readout of clip content, so recording and editing flows are observable
+    // outside the canvas.
+    const selectedClipNoteCount = useStoreSelector(midiStore, (state: MidiStoreState | null) =>
+        selectedClip?.type === 'midi' ? (state?.notesByClipId[selectedClip.id]?.length ?? 0) : 0
+    );
+
     if (!selectedTrack) {
         return (
             <div className="flex h-full p-4">
@@ -48,11 +64,6 @@ export const ClipView = (): ReactElement => {
             </div>
         );
     }
-
-    const selectedClip =
-        selectedTrack.clips.find((context) => context.id === clipSelection.selectedClipId) ??
-        selectedTrack.clips[0] ??
-        null;
 
     // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
     const openedClipIds: string[] | undefined = (() => {
@@ -161,6 +172,15 @@ export const ClipView = (): ReactElement => {
                 >
                     {selectedTrack.clips.length} clip{selectedTrack.clips.length === 1 ? '' : 's'}
                 </span>
+                {selectedClip?.type === 'midi' ? (
+                    <span
+                        className="text-[10px] text-muted-foreground/60"
+                        data-testid="selected-clip-note-count"
+                        aria-label={`${selectedClipNoteCount} note${selectedClipNoteCount === 1 ? '' : 's'} in ${selectedClip.name}`}
+                    >
+                        {selectedClipNoteCount} note{selectedClipNoteCount === 1 ? '' : 's'}
+                    </span>
+                ) : null}
                 {selectedTrack.clips.length > 1 ? (
                     <div className="flex items-center gap-1 ml-2">
                         {selectedTrack.clips.map((clip) => (

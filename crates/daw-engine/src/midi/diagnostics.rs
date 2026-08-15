@@ -16,6 +16,22 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// target effect (either the effect is not a built-in with a mapped
     /// parameter table, or the name itself is unrecognized).
     pub unmapped_set_param_calls: u64,
+    /// A processed audio block the app never received because its return ring
+    /// was full. The plugin's output for that block is gone.
+    pub bridge_output_blocks_dropped: u64,
+    /// Audio blocks drained from a bridge with no plugin registered under its
+    /// id. They are returned to the app unprocessed rather than left to fill
+    /// the ring, which would refuse every later push for good — except any the
+    /// pass shed to hold its depth, which are counted in
+    /// `bridge_backlog_blocks_shed`.
+    pub unmatched_bridge_blocks: u64,
+    /// Stale blocks discarded to hold a bridge's round trip at the depth the
+    /// device period needs. Each one is a quantum of dry signal traded for
+    /// latency that would otherwise never come back down.
+    pub bridge_backlog_blocks_shed: u64,
+    /// Callbacks asking for more frames than the bridge can carry in one pass.
+    /// Above that the app's pushes are refused every period, not occasionally.
+    pub callback_frames_over_bridge_reach: u64,
 }
 
 pub(crate) struct ActiveMidiRtDiagnosticsReader {
@@ -49,6 +65,10 @@ impl ActiveMidiRtDiagnostics {
                 effect_id_collisions: 0,
                 unsupported_effect_additions: 0,
                 unmapped_set_param_calls: 0,
+                bridge_output_blocks_dropped: 0,
+                unmatched_bridge_blocks: 0,
+                bridge_backlog_blocks_shed: 0,
+                callback_frames_over_bridge_reach: 0,
             },
         }
     }
@@ -86,6 +106,32 @@ impl ActiveMidiRtDiagnostics {
     pub fn record_unmapped_set_param_call(&mut self, count: u64) {
         self.snapshot.unmapped_set_param_calls =
             self.snapshot.unmapped_set_param_calls.saturating_add(count);
+    }
+
+    pub fn record_bridge_output_blocks_dropped(&mut self, count: u64) {
+        self.snapshot.bridge_output_blocks_dropped = self
+            .snapshot
+            .bridge_output_blocks_dropped
+            .saturating_add(count);
+    }
+
+    pub fn record_unmatched_bridge_blocks(&mut self, count: u64) {
+        self.snapshot.unmatched_bridge_blocks =
+            self.snapshot.unmatched_bridge_blocks.saturating_add(count);
+    }
+
+    pub fn record_bridge_backlog_blocks_shed(&mut self, count: u64) {
+        self.snapshot.bridge_backlog_blocks_shed = self
+            .snapshot
+            .bridge_backlog_blocks_shed
+            .saturating_add(count);
+    }
+
+    pub fn record_callback_frames_over_bridge_reach(&mut self, count: u64) {
+        self.snapshot.callback_frames_over_bridge_reach = self
+            .snapshot
+            .callback_frames_over_bridge_reach
+            .saturating_add(count);
     }
 }
 
