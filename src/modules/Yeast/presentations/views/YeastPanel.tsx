@@ -206,13 +206,19 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
     // store read: React Compiler memoizes getYeastGrooveAssignment(processor.id)
     // as pure (its only input is the id), so a store write never invalidates
     // the cached null and the panel kept rendering the straight template
-    // after an assignment landed.
+    // after an assignment landed. The legacy un-scoped consumer id is probed
+    // second, matching getScopedGrooveAssignment: pre-scoping builds wrote
+    // assignments keyed by the raw processor id, and nothing re-scopes them
+    // on load — without the fallback the runtime would apply such a groove
+    // while the panel showed Straight.
     const scopedConsumerId = getScopedGrooveConsumerId({
         ownerId: YEAST_GROOVE_OWNER_ID,
         localId: processor.id,
     });
     const assignment = grooveState.assignments.find(
-        (candidate) => candidate.consumerType === 'yeast-processor' && candidate.consumerId === scopedConsumerId
+        (candidate) =>
+            candidate.consumerType === 'yeast-processor' &&
+            (candidate.consumerId === scopedConsumerId || candidate.consumerId === processor.id)
     );
     const selectedGrooveTemplateId = assignment?.templateId ?? getStraightGrooveTemplateId();
     const selectedGrooveTemplate = grooveState.templates.find((template) => template.id === selectedGrooveTemplateId);

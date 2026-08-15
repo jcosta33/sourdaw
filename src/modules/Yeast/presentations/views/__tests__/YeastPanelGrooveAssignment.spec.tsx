@@ -92,4 +92,26 @@ describe('YeastPanel groove assignment reactivity', () => {
         expect(combobox.value).toBe(USER_TEMPLATE_ID);
         expect(screen.getByRole('textbox', { name: 'Groove template name' })).toHaveValue('User pocket');
     });
+
+    it('a legacy un-scoped assignment still binds (pre-scoping persisted state)', () => {
+        const state = grooveTemplateStore.value;
+        grooveTemplateStore.set({
+            ...(state ?? defaultGrooveTemplateState),
+            assignments: [
+                {
+                    consumerType: 'yeast-processor',
+                    // Pre-scoping builds keyed assignments by the raw id.
+                    consumerId: GROOVE_PROCESSOR_ID,
+                    templateId: USER_TEMPLATE_ID,
+                    amount: 0.5,
+                },
+            ],
+        });
+
+        render(<YeastPanel />);
+        expandGrooveRow();
+        const combobox = screen.getByRole('combobox', { name: 'Groove template' }) as HTMLSelectElement;
+        expect(combobox.value).toBe(USER_TEMPLATE_ID);
+        expect(screen.getByRole('textbox', { name: 'Groove template name' })).toHaveValue('User pocket');
+    });
 });
