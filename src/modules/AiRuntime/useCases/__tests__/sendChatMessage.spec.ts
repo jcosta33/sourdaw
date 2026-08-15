@@ -350,6 +350,21 @@ describe('sendChatMessage injectables', () => {
             actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
             rawText: 'plan removing track 1',
             requiresConfirmation: true,
+            applicationToolReceipts: [
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: 'query-1',
+                    toolName: 'project.query',
+                    turn: 1,
+                    status: 'success',
+                    revision: 'revision-1',
+                    data: { queryType: 'project-summary' },
+                    summary: 'project-summary: 1 of 1 item(s)',
+                    warnings: [],
+                    error: null,
+                },
+            ],
         });
 
         await sendChatMessage('plan removing track 1', { mode: 'plan' });
@@ -375,6 +390,9 @@ describe('sendChatMessage injectables', () => {
             summary: 'Remove track "Track 1"',
             commandIds: [],
             serializedBatchIdentity: null,
+            applicationToolReceipts: [
+                expect.objectContaining({ callId: 'query-1', toolName: 'project.query', revision: 'revision-1' }),
+            ],
         });
         expect(getAgentRun(projection.runId)?.workLeases).toMatchObject([
             { workId: 'provider-planning', ownerKind: 'provider', terminalState: 'completed' },

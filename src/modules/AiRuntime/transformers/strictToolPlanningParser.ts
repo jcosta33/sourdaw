@@ -1,4 +1,4 @@
-export type ToolCallResult = { name: string; arguments: Record<string, unknown> };
+export type ToolCallResult = { id?: string; name: string; arguments: Record<string, unknown> };
 export type ToolPlanningOutcome =
     { status: 'complete'; toolCalls: ToolCallResult[] } | { status: 'rejected'; reason: string };
 const MALFORMED_REASON = 'Model returned a malformed tool-call batch.';
@@ -73,7 +73,7 @@ function parseCall(value: unknown): ToolCallResult | null {
         return null;
     }
     const hasUnknownKey = Object.keys(value).some(
-        (key) => key !== 'name' && key !== 'arguments' && key !== 'parameters'
+        (key) => key !== 'id' && key !== 'name' && key !== 'arguments' && key !== 'parameters'
     );
     const argumentKeys = ['arguments', 'parameters'].filter((key) => Object.hasOwn(value, key));
     if (
@@ -81,13 +81,20 @@ function parseCall(value: unknown): ToolCallResult | null {
         !Object.hasOwn(value, 'name') ||
         typeof value.name !== 'string' ||
         value.name.length === 0 ||
-        argumentKeys.length > 1
+        argumentKeys.length > 1 ||
+        (Object.hasOwn(value, 'id') && (typeof value.id !== 'string' || value.id.length === 0))
     ) {
         return null;
     }
     const argumentKey = argumentKeys[0];
     const argumentsValue = argumentKey === undefined ? {} : value[argumentKey];
-    return isRecord(argumentsValue) ? { name: value.name, arguments: argumentsValue } : null;
+    return isRecord(argumentsValue)
+        ? {
+              ...(typeof value.id === 'string' ? { id: value.id } : {}),
+              name: value.name,
+              arguments: argumentsValue,
+          }
+        : null;
 }
 function tryParseJson(content = ''): unknown {
     try {

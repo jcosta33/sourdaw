@@ -1,6 +1,6 @@
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
-import { PROJECT_QUERY_TOOL_NAME } from '../models/ApplicationOwnedTool';
+import { type ApplicationToolReceipt, PROJECT_QUERY_TOOL_NAME } from '../models/ApplicationOwnedTool';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -13,30 +13,16 @@ const DEFAULT_LIMITS = {
     maxTotalReceiptBytes: 65_536,
 } as const;
 const MAX_CALL_ID_LENGTH = 256;
+const MAX_FILTER_STRING_LENGTH = 256;
+const MAX_CURSOR_LENGTH = 256;
+const MAX_REVISION_LENGTH = 65_536;
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
 type QueryFilters = NonNullable<QueryInput['filters']>;
-type ApplicationToolCall = ToolCallResult & { id?: string };
 type ApplicationToolPlanningOutcome =
-    { status: 'complete'; toolCalls: ApplicationToolCall[] } | { status: 'rejected'; reason: string };
+    { status: 'complete'; toolCalls: ToolCallResult[] } | { status: 'rejected'; reason: string };
 
-export type ApplicationToolReceipt = {
-    schema: 'sourdaw.application-tool-receipt';
-    schemaVersion: 1;
-    callId: string;
-    toolName: string;
-    turn: number;
-    status: 'success' | 'failure';
-    revision: string | null;
-    data: unknown;
-    summary: string;
-    warnings: string[];
-    error: null | {
-        code: string;
-        safeMessage: string;
-        retryable: boolean;
-    };
-};
+export type { ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 
 export type ApplicationOwnedToolLoopOutcome =
     | {
@@ -66,8 +52,6 @@ type RunApplicationOwnedToolLoopInput = {
         };
     }) => Promise<ApplicationToolPlanningOutcome>;
     terminalToolNames: ReadonlySet<string>;
-    /** Terminal action calls may be admitted by the existing app-owned action bridge after the read loop. */
-    deferTerminalAdmission?: boolean;
     signal?: AbortSignal;
     limits?: ToolLoopLimits;
 };
@@ -90,7 +74,7 @@ function isQueryType(value: unknown): value is QueryInput['type'] {
 }
 
 function parseStringFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (typeof value !== 'string') {
+    if (typeof value !== 'string' || value.length > MAX_FILTER_STRING_LENGTH) {
         return false;
     }
     switch (key) {
@@ -164,7 +148,11 @@ function parseBooleanFilter(filters: QueryFilters, key: string, value: unknown):
 }
 
 function parseNumberFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    if (
+        typeof value !== 'number' ||
+        !Number.isFinite(value) ||
+        (key === 'minInferredConfidence' && (value < 0 || value > 1))
+    ) {
         return false;
     }
     switch (key) {
@@ -227,8 +215,9 @@ function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): Pa
         const limit = argumentsValue.page.limit;
         const cursor = argumentsValue.page.cursor;
         if (
-            (limit !== undefined && (typeof limit !== 'number' || !Number.isInteger(limit))) ||
-            (cursor !== undefined && typeof cursor !== 'string')
+            (limit !== undefined &&
+                (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 50)) ||
+            (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > MAX_CURSOR_LENGTH))
         ) {
             return { status: 'invalid', reason: 'project.query page does not match the strict query contract' };
         }
@@ -241,7 +230,10 @@ function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): Pa
         }
     }
     if (argumentsValue.sinceRevision !== undefined) {
-        if (typeof argumentsValue.sinceRevision !== 'string') {
+        if (
+            typeof argumentsValue.sinceRevision !== 'string' ||
+            argumentsValue.sinceRevision.length > MAX_REVISION_LENGTH
+        ) {
             return { status: 'invalid', reason: 'project.query revision does not match the strict query contract' };
         }
         input.sinceRevision = argumentsValue.sinceRevision;
@@ -275,7 +267,7 @@ function failureReceipt(input: {
     };
 }
 
-function executeProjectQuery(call: ApplicationToolCall, callId: string, turn: number): ApplicationToolReceipt {
+function executeProjectQuery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
     const parsed = parseProjectQueryArguments(call.arguments);
     if (parsed.status === 'invalid') {
         return failureReceipt({
@@ -312,7 +304,7 @@ function executeProjectQuery(call: ApplicationToolCall, callId: string, turn: nu
     }
 }
 
-function resolveCallId(call: ApplicationToolCall, loopId: string, turn: number, index: number): string | null {
+function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
     const callId = call.id ?? `${loopId}:${String(turn)}:${String(index)}`;
     return callId.length > 0 && callId.length <= MAX_CALL_ID_LENGTH && /^[A-Za-z0-9._:-]+$/.test(callId)
         ? callId
@@ -451,7 +443,7 @@ export async function runApplicationOwnedToolLoop(
             };
         }
 
-        const identifiedCalls: Array<{ call: ApplicationToolCall; callId: string }> = [];
+        const identifiedCalls: Array<{ call: ToolCallResult; callId: string }> = [];
         for (const [index, call] of outcome.toolCalls.entries()) {
             const callId = resolveCallId(call, input.loopId, turn, index);
             if (callId === null || seenCallIds.has(callId)) {
@@ -468,9 +460,7 @@ export async function runApplicationOwnedToolLoop(
 
         const queryCalls = identifiedCalls.filter(({ call }) => call.name === PROJECT_QUERY_TOOL_NAME);
         const terminalCalls = identifiedCalls.filter(
-            ({ call }) =>
-                call.name !== PROJECT_QUERY_TOOL_NAME &&
-                (input.deferTerminalAdmission === true || input.terminalToolNames.has(call.name))
+            ({ call }) => call.name !== PROJECT_QUERY_TOOL_NAME && input.terminalToolNames.has(call.name)
         );
         if (queryCalls.length + terminalCalls.length !== outcome.toolCalls.length) {
             return {

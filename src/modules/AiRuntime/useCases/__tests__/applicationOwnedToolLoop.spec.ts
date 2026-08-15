@@ -66,6 +66,7 @@ const context: ProjectContext = {
 describe('application-owned tool loop', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockBridgeGroundedLlmToolCalls.mockReset();
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
         vi.mocked(tryCompoundFastPath).mockReturnValue(null);
@@ -90,6 +91,7 @@ describe('application-owned tool loop', () => {
                 status: 'complete',
                 toolCalls: [
                     {
+                        id: 'provider-query-1',
                         name: 'project.query',
                         arguments: { type: 'project-summary' },
                     },
@@ -119,10 +121,13 @@ describe('application-owned tool loop', () => {
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
         const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1];
-        expect(continuationMessage).toMatch(/"callId":"planning-[^"]+:1:0"/);
+        expect(continuationMessage).toContain('"callId":"provider-query-1"');
         expect(continuationMessage).toContain('revision-2');
         expect(continuationMessage).toContain('project-summary');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
+        expect(result.applicationToolReceipts).toMatchObject([
+            { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
+        ]);
     });
 
     it('publishes data-only schemas and rejects unavailable tools before local execution', async () => {
@@ -181,6 +186,55 @@ describe('application-owned tool loop', () => {
             status: 'complete',
             receipts: [{ callId: 'query-invalid', status: 'failure' }],
         });
+    });
+
+    it.each([
+        { label: 'page limit', arguments: { type: 'project-summary', page: { limit: 51 } } },
+        {
+            label: 'string length',
+            arguments: { type: 'project-summary', filters: { stableId: 'x'.repeat(257) } },
+        },
+        {
+            label: 'confidence range',
+            arguments: { type: 'project-summary', filters: { minInferredConfidence: 1.01 } },
+        },
+        { label: 'revision length', arguments: { type: 'project-summary', sinceRevision: 'x'.repeat(65_537) } },
+    ])('classifies a published $label bound violation as invalid arguments', async ({ arguments: queryArguments }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'bounded-query', name: 'project.query', arguments: queryArguments }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-bounds',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).not.toHaveBeenCalled();
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('invalid-tool-arguments');
+        expect(result).toMatchObject({
+            status: 'complete',
+            receipts: [{ callId: 'bounded-query', status: 'failure', error: { code: 'invalid-tool-arguments' } }],
+        });
+    });
+
+    it('rejects an unavailable terminal tool through the production parser before bridge grounding', async () => {
+        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ id: 'unavailable-1', name: 'internal.getStore', arguments: {} }],
+        });
+
+        const result = await parsePromptToActions('inspect internal state', context, undefined, 'revision-2');
+
+        expect(result).toMatchObject({
+            actions: [],
+            rejectionReason: 'Provider planning rejected: Provider requested an unavailable application tool.',
+        });
+        expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 
     it('assigns missing call identities and rejects mixed read/action turns before execution', async () => {

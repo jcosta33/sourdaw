@@ -229,6 +229,18 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
+    it('preserves provider tool-call identities through production normalization', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue(
+            completePlan([{ id: 'provider-call-1', name: 'project.query', arguments: { type: 'project-summary' } }])
+        );
+
+        await expect(generateToolCalls('sys', 'inspect project', APPLICATION_OWNED_TOOL_SCHEMAS)).resolves.toEqual(
+            completePlan([{ id: 'provider-call-1', name: 'project.query', arguments: { type: 'project-summary' } }])
+        );
+    });
+
     it('does not bypass a rejected native invoke outcome through text or provider fallback', async () => {
         mocks.backendChain.value = ['native', 'webllm'];
         mocks.nativeEngineReady.value = true;

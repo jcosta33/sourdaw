@@ -1167,51 +1167,47 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
-                { name: 'saveProject', arguments: {} },
+                { name: 'setTempo', arguments: { bpm: 128 } },
             ])
         );
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }],
-            rejections: [{ index: 1, name: 'saveProject', reason: 'Tool is not allowlisted' }],
+            rejections: [{ index: 1, name: 'setTempo', reason: 'Action is not grounded in the request' }],
         });
 
         const result = await parsePromptToActions('mute the vocals and save the project', baseContext);
 
         expect(result.actions).toEqual([]);
         expect(mockLogger.warn).toHaveBeenCalledWith(
-            '[AI] Rejected tool call 1 (saveProject): Tool is not allowlisted'
+            '[AI] Rejected tool call 1 (setTempo): Action is not grounded in the request'
         );
     });
 
-    it('returns the provider bridge rejection reason without producing actions', async () => {
+    it('rejects a provider tool that was not advertised before bridge grounding', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
-        mockBridgeGroundedLlmToolCalls.mockReturnValue({
-            actions: [],
-            rejections: [{ index: 0, name: 'saveProject', reason: 'Tool is not allowlisted' }],
-        });
-
         const result = await parsePromptToActions('save the project', baseContext);
 
         expect(result).toEqual({
             actions: [],
             rawText: 'save the project',
             requiresConfirmation: false,
-            rejectionReason: 'Provider action rejected: saveProject: Tool is not allowlisted',
+            rejectionReason: 'Provider planning rejected: Provider requested an unavailable application tool.',
         });
+        expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 
     it('returns a rejection when runtime validation filters a provider batch', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'saveProject' }],
             rejections: [],
         });
 
-        const result = await parsePromptToActions('save the project', baseContext);
+        const result = await parsePromptToActions('set tempo to 128', baseContext);
 
         expect(result).toEqual({
             actions: [],
-            rawText: 'save the project',
+            rawText: 'set tempo to 128',
             requiresConfirmation: false,
             rejectionReason: 'Provider action failed runtime validation: saveProject',
         });

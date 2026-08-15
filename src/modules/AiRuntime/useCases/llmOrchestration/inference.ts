@@ -73,7 +73,14 @@ function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutc
         ) {
             return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
         }
-        toolCalls.push({ name: call.name, arguments: Object.fromEntries(Object.entries(call.arguments)) });
+        if (call.id !== undefined && (typeof call.id !== 'string' || call.id.length === 0)) {
+            return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
+        }
+        toolCalls.push({
+            ...(typeof call.id === 'string' ? { id: call.id } : {}),
+            name: call.name,
+            arguments: Object.fromEntries(Object.entries(call.arguments)),
+        });
     }
     return { status: 'complete', toolCalls };
 }
@@ -193,7 +200,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             'Available tools:',
             toolDescriptions,
             '',
-            'Respond with a JSON array of tool calls: [{"name":"tool_name","arguments":{...}}]',
+            'Respond with a JSON array of tool calls: [{"id":"unique_call_id","name":"tool_name","arguments":{...}}]',
             'Output only valid JSON. Do not include prose or markdown.',
         ].join('\n');
         let nativeCompletion: Promise<string>;
@@ -390,11 +397,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 }
 
                 if (outcome.status === 'complete') {
+                    const providerCallIds = outcome.toolCalls.map((call) => call.id);
                     for (const [index, call] of outcome.toolCalls.entries()) {
                         providerSession.push({
                             type: 'tool-call',
                             call: {
-                                id: `${providerRequest.correlationId}:${String(index)}`,
+                                id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
                                 name: call.name,
                                 arguments: call.arguments,
                             },
@@ -408,7 +416,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     );
                     outcome = {
                         status: 'complete',
-                        toolCalls: normalizedResult.output.toolCalls.map((call) => ({
+                        toolCalls: normalizedResult.output.toolCalls.map((call, index) => ({
+                            ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
                             name: call.name,
                             arguments: call.arguments,
                         })),

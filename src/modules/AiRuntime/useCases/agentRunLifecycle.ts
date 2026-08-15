@@ -11,6 +11,7 @@ import {
     type AgentRunProviderUsage,
     type AgentRunScope,
 } from '../models/AgentRun';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 
 const DEFAULT_SCOPE: AgentRunScope = {
@@ -172,6 +173,7 @@ function recordAgentRunPlan(input: {
     summary: string;
     commandIds: string[];
     serializedBatchIdentity: string | null;
+    applicationToolReceipts?: ApplicationToolReceipt[];
     revision: string;
     scope: AgentRunScope;
     grants: AgentRunGrants;
@@ -189,6 +191,7 @@ function recordAgentRunPlan(input: {
             summary: input.summary,
             commandIds: [...input.commandIds],
             serializedBatchIdentity: input.serializedBatchIdentity,
+            applicationToolReceipts: structuredClone(input.applicationToolReceipts ?? []),
         },
     }));
 }

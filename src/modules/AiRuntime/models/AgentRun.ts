@@ -1,4 +1,5 @@
 import { type AgentExecutionMode } from './AgentExecutionMode';
+import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 
 export const AGENT_RUN_SCHEMA_VERSION = 1 as const;
 
@@ -46,6 +47,7 @@ export type AgentRunPlan = {
     summary: string;
     commandIds: string[];
     serializedBatchIdentity: string | null;
+    applicationToolReceipts?: ApplicationToolReceipt[];
 };
 
 export type AgentRunBatch = {

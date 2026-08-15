@@ -13,6 +13,7 @@ type NativeToolDefinition = {
 };
 
 type NativeToolCallResult = {
+    id?: string;
     name: string;
     arguments: Record<string, unknown>;
 };
@@ -86,6 +87,7 @@ function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] 
 
         const name = item.name;
         const args = item.arguments;
+        const id = item.id;
 
         if (typeof name !== 'string' || name.length === 0) {
             throw new NativeToolCallingProtocolError(
@@ -98,7 +100,13 @@ function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] 
             );
         }
 
-        return { name, arguments: args };
+        if (id !== undefined && (typeof id !== 'string' || id.length === 0)) {
+            throw new NativeToolCallingProtocolError(
+                `Invalid native_tool_calling response: item ${String(index)} has invalid id`
+            );
+        }
+
+        return { ...(typeof id === 'string' ? { id } : {}), name, arguments: args };
     });
 }
 

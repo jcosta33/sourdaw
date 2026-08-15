@@ -146,6 +146,7 @@ export const parsePromptToActions = inject({ logger })(
 
             // 5. Provider-neutral LLM path. This only proposes typed actions;
             // sendChatMessage remains responsible for confirmation and execution.
+            let applicationToolReceiptFields: Pick<IntentResult, 'applicationToolReceipts'> = {};
             try {
                 const drumRoutingScope = getDrumRoutingPromptScope(context, projectRevision);
                 const drumRenderComparisonScope = getDrumRenderComparisonPromptScope(context, projectRevision);
@@ -209,7 +210,6 @@ export const parsePromptToActions = inject({ logger })(
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     loopId: `planning-${crypto.randomUUID()}`,
                     terminalToolNames,
-                    deferTerminalAdmission: true,
                     signal,
                     requestTurn: async ({ receiptContext }) =>
                         generateToolPlanningOutcome(
@@ -221,9 +221,18 @@ export const parsePromptToActions = inject({ logger })(
                             onProviderResult
                         ),
                 });
+                applicationToolReceiptFields =
+                    planningOutcome.receipts.length === 0
+                        ? {}
+                        : { applicationToolReceipts: [...planningOutcome.receipts] };
 
                 if (signal?.aborted) {
-                    return { actions: [], rawText: prompt, requiresConfirmation: false };
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                    };
                 }
 
                 if (planningOutcome.status === 'rejected') {
@@ -231,6 +240,7 @@ export const parsePromptToActions = inject({ logger })(
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
                     };
                 }
@@ -242,6 +252,7 @@ export const parsePromptToActions = inject({ logger })(
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
                         rejectionReason: 'Provider selected more than one specialized workflow.',
                     };
                 }
@@ -253,6 +264,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason:
                                 'Provider must select a specialized workflow before proposing its actions.',
                         };
@@ -264,6 +276,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: 'Provider selected an unavailable specialized workflow.',
                         };
                     }
@@ -278,6 +291,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: 'Stem files must be selected before the provider can plan their import.',
                         };
                     }
@@ -285,6 +299,7 @@ export const parsePromptToActions = inject({ logger })(
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
                         preparationRequest: 'stem-import',
                     };
                 }
@@ -295,6 +310,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: `Provider action rejected: importStemSet: ${stemImport.reason}`,
                         };
                     }
@@ -303,6 +319,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: 'Provider action failed runtime validation: importStemSet',
                         };
                     }
@@ -311,6 +328,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
@@ -318,6 +336,7 @@ export const parsePromptToActions = inject({ logger })(
                         actions: [stemImport.action],
                         rawText: prompt,
                         requiresConfirmation: true,
+                        ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
                     };
@@ -356,6 +375,7 @@ export const parsePromptToActions = inject({ logger })(
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
                         rejectionReason: `Provider action rejected: ${reason}`,
                     };
                 }
@@ -372,6 +392,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: `Provider action failed runtime validation: ${rejectedTypes}`,
                         };
                     }
@@ -386,6 +407,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: `Provider action identity rejected: ${materialized.reason}`,
                         };
                     }
@@ -403,6 +425,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: `Provider action state binding rejected: ${guarded.reason}`,
                         };
                     }
@@ -411,6 +434,7 @@ export const parsePromptToActions = inject({ logger })(
                             actions: [],
                             rawText: prompt,
                             requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
@@ -419,6 +443,7 @@ export const parsePromptToActions = inject({ logger })(
                         actions: guarded.actions,
                         rawText: prompt,
                         requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
+                        ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
                     };
@@ -431,6 +456,7 @@ export const parsePromptToActions = inject({ logger })(
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
                         rejectionReason: reason,
                     };
                 }
@@ -439,7 +465,12 @@ export const parsePromptToActions = inject({ logger })(
                     throw error;
                 }
                 if (signal?.aborted) {
-                    return { actions: [], rawText: prompt, requiresConfirmation: false };
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                    };
                 }
                 const reason = error instanceof Error ? error.message : String(error);
                 logger.warn(`[AI] Provider tool planning failed: ${reason}`);
@@ -447,12 +478,13 @@ export const parsePromptToActions = inject({ logger })(
                     actions: [],
                     rawText: prompt,
                     requiresConfirmation: false,
+                    ...applicationToolReceiptFields,
                     rejectionReason: `Provider planning failed: ${reason}`,
                 };
             }
 
             // An empty provider plan is a no-op; there is no alternate mutation path.
 
-            return { actions: [], rawText: prompt, requiresConfirmation: false };
+            return { actions: [], rawText: prompt, requiresConfirmation: false, ...applicationToolReceiptFields };
         }
 );

@@ -114,6 +114,7 @@ export const generateCloudToolCalls = inject({ logger })(
                         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
                     }
                     results.push({
+                        ...(typeof block.id === 'string' && block.id.length > 0 ? { id: block.id } : {}),
                         name: block.name,
                         arguments: block.input,
                     });

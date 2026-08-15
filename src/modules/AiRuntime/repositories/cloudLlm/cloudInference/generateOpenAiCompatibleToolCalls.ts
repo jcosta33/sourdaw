@@ -103,10 +103,16 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
         }
         const name = rawCall.function.name;
         const arguments_ = parseArguments(rawCall.function.arguments);
-        if (typeof name !== 'string' || name.length === 0 || !arguments_) {
+        const id = rawCall.id;
+        if (
+            typeof name !== 'string' ||
+            name.length === 0 ||
+            !arguments_ ||
+            (id !== undefined && (typeof id !== 'string' || id.length === 0))
+        ) {
             throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
         }
-        results.push({ name, arguments: arguments_ });
+        results.push({ ...(typeof id === 'string' ? { id } : {}), name, arguments: arguments_ });
     }
     if (finishReason === 'tool_calls' && results.length === 0) {
         throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');

@@ -305,6 +305,7 @@ export async function sendChatMessage(
                         summary: confirmationDescription.actionLabels.join('\n'),
                         commandIds: [],
                         serializedBatchIdentity: null,
+                        applicationToolReceipts: result.applicationToolReceipts ?? [],
                         revision: projectRevision,
                         scope: {
                             targetIds: confirmationDescription.affectedIds,
@@ -365,6 +366,7 @@ export async function sendChatMessage(
                     summary: confirmationDescription.actionLabels.join('\n'),
                     commandIds,
                     serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
+                    applicationToolReceipts: result.applicationToolReceipts ?? [],
                     revision: projectRevision,
                     scope: {
                         targetIds: [...commandBatch.authority.scope.targetIds],
