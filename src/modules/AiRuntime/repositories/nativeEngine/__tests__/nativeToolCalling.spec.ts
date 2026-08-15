@@ -90,7 +90,7 @@ describe('generateNativeToolCalls', () => {
             requestId: invocationArgs.requestId,
         });
         expect(typeof invocationArgs.requestId).toBe('string');
-        expect(result).toEqual([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]);
+        expect(result).toEqual([{ id: 'call-1', name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]);
     });
 
     it('should reject malformed native_tool_calling payloads before use cases consume them', async () => {

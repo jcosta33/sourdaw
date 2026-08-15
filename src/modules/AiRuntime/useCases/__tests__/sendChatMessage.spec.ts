@@ -17,6 +17,7 @@ import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore'
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { agentRunControls } from '../getAgentRunControlProjection';
 import { type ProjectContext } from '../getProjectContext';
@@ -350,6 +351,21 @@ describe('sendChatMessage injectables', () => {
             actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
             rawText: 'plan removing track 1',
             requiresConfirmation: true,
+            applicationToolReceipts: [
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: 'query-1',
+                    toolName: 'project.query',
+                    turn: 1,
+                    status: 'success',
+                    revision: 'revision-1',
+                    data: { queryType: 'project-summary' },
+                    summary: 'project-summary: 1 of 1 item(s)',
+                    warnings: [],
+                    error: null,
+                },
+            ],
         });
 
         await sendChatMessage('plan removing track 1', { mode: 'plan' });
@@ -375,6 +391,9 @@ describe('sendChatMessage injectables', () => {
             summary: 'Remove track "Track 1"',
             commandIds: [],
             serializedBatchIdentity: null,
+            applicationToolReceipts: [
+                expect.objectContaining({ callId: 'query-1', toolName: 'project.query', revision: 'revision-1' }),
+            ],
         });
         expect(getAgentRun(projection.runId)?.workLeases).toMatchObject([
             { workId: 'provider-planning', ownerKind: 'provider', terminalState: 'completed' },
@@ -615,6 +634,25 @@ describe('sendChatMessage injectables', () => {
             rawText: 'save project',
             requiresConfirmation: false,
             rejectionReason: 'Recognized command failed runtime validation: saveProject',
+            applicationToolReceipts: [
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: 'query-rejected',
+                    toolName: 'project.query',
+                    turn: 1,
+                    status: 'failure',
+                    revision: 'revision-1',
+                    data: null,
+                    summary: 'Project query rejected by application authority.',
+                    warnings: [],
+                    error: {
+                        code: 'invalid-arguments',
+                        safeMessage: 'The project query arguments are invalid.',
+                        retryable: false,
+                    },
+                },
+            ],
         });
 
         await sendChatMessage('save project');
@@ -636,6 +674,16 @@ describe('sendChatMessage injectables', () => {
                 error: 'Recognized command failed runtime validation: saveProject',
             })
         );
+        const [rejectedProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(rejectedProjection!.runId)?.plan).toMatchObject({
+            applicationToolReceipts: [
+                expect.objectContaining({
+                    callId: 'query-rejected',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'invalid-arguments' }),
+                }),
+            ],
+        });
     });
 
     it('reports an empty provider plan as an unmatched command without executing', async () => {
@@ -649,6 +697,21 @@ describe('sendChatMessage injectables', () => {
             actions: [],
             rawText: 'do something unknown',
             requiresConfirmation: false,
+            applicationToolReceipts: [
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: 'query-noop',
+                    toolName: 'project.query',
+                    turn: 1,
+                    status: 'success',
+                    revision: 'revision-1',
+                    data: { queryType: 'project-summary' },
+                    summary: 'project-summary: 1 of 1 item(s)',
+                    warnings: [],
+                    error: null,
+                },
+            ],
         });
 
         await sendChatMessage('do something unknown');
@@ -661,6 +724,12 @@ describe('sendChatMessage injectables', () => {
         expect(assistantMessage?.role).toBe('assistant');
         expect(assistantMessage?.content).toBe('No actions were matched or executed for your command.');
         expect(assistantMessage?.error).toBe('No actions matched');
+        const [noOpProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(noOpProjection!.runId)?.plan).toMatchObject({
+            applicationToolReceipts: [
+                expect.objectContaining({ callId: 'query-noop', status: 'success', revision: 'revision-1' }),
+            ],
+        });
     });
 
     it('binds validated provider actions and admission to one project revision', async () => {
@@ -750,7 +819,26 @@ describe('sendChatMessage injectables', () => {
                     signal?.addEventListener(
                         'abort',
                         () => {
-                            resolve({ actions: [], rawText: '', requiresConfirmation: false });
+                            resolve({
+                                actions: [],
+                                rawText: '',
+                                requiresConfirmation: false,
+                                applicationToolReceipts: [
+                                    {
+                                        schema: 'sourdaw.application-tool-receipt',
+                                        schemaVersion: 1,
+                                        callId: 'query-before-stop',
+                                        toolName: 'project.query',
+                                        turn: 1,
+                                        status: 'success',
+                                        revision: 'revision-1',
+                                        data: { queryType: 'project-summary' },
+                                        summary: 'project-summary: 1 of 1 item(s)',
+                                        warnings: [],
+                                        error: null,
+                                    },
+                                ],
+                            });
                         },
                         { once: true }
                     );
@@ -772,6 +860,11 @@ describe('sendChatMessage injectables', () => {
         expect(projection).toMatchObject({
             phase: 'cancelled',
             cancellation: { requested: true, acknowledgement: 'transport' },
+        });
+        expect(getAgentRun(projection!.runId)?.cancellation.generation).toBe(1);
+        expect(getAgentRun(projection!.runId)?.plan).toMatchObject({
+            commandIds: [],
+            applicationToolReceipts: [expect.objectContaining({ callId: 'query-before-stop' })],
         });
         expect(getAgentRun(projection!.runId)?.workLeases).toEqual([
             expect.objectContaining({ workId: 'provider-planning', terminalState: 'cancelled' }),
@@ -1245,7 +1338,27 @@ describe('sendChatMessage injectables', () => {
             enableReasoning: true,
             chatMode: 'prompt',
         };
-        mocks.parsePromptToActions.mockRejectedValue(new AiRuntimeConfigurationChangedError());
+        mocks.parsePromptToActions.mockRejectedValue(
+            new ApplicationOwnedToolLoopRequestError(
+                new AiRuntimeConfigurationChangedError(),
+                [
+                    {
+                        schema: 'sourdaw.application-tool-receipt',
+                        schemaVersion: 1,
+                        callId: 'query-before-reconfiguration',
+                        toolName: 'project.query',
+                        turn: 1,
+                        status: 'success',
+                        revision: 'revision-1',
+                        data: { queryType: 'project-summary' },
+                        summary: 'project-summary: 1 of 1 item(s)',
+                        warnings: [],
+                        error: null,
+                    },
+                ],
+                2
+            )
+        );
 
         await sendChatMessage('mute the vocals');
 
@@ -1256,6 +1369,13 @@ describe('sendChatMessage injectables', () => {
                 error: 'AI configuration changed while the request was running',
             })
         );
+        const [cancelledProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(cancelledProjection!.runId)?.plan).toMatchObject({
+            commandIds: [],
+            applicationToolReceipts: [
+                expect.objectContaining({ callId: 'query-before-reconfiguration', revision: 'revision-1' }),
+            ],
+        });
     });
 
     it('should update the existing executing row when a prompt action is not dispatched', async () => {

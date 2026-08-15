@@ -11,6 +11,7 @@ import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigu
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
 import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
@@ -44,6 +45,7 @@ import { proposePendingActionConfirmation } from '../stores/pendingActionConfirm
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
@@ -178,6 +180,43 @@ function recordModelProviderUsage(runId: string, result: ModelProviderResult): v
     });
 }
 
+function recordApplicationToolOnlyPlan(input: {
+    runId: string;
+    revision: string;
+    receipts: readonly ApplicationToolReceipt[];
+}): void {
+    if (input.receipts.length === 0) {
+        return;
+    }
+    agentRunLifecycle.recordApplicationToolEvidence({
+        runId: input.runId,
+        summary: input.receipts
+            .map((receipt) => `${receipt.toolName} (${receipt.callId}) ${receipt.status}: ${receipt.summary}`)
+            .join('\n'),
+        applicationToolReceipts: [...input.receipts],
+        revision: input.revision,
+        scope: {
+            targetIds: [],
+            targetRanges: [],
+            protectedTargetIds: [],
+            protectedRanges: [],
+        },
+        grants: {
+            allowedOperationPrefixes: [],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        },
+        budgets: { limits: {}, consumed: {} },
+    });
+}
+
 export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
@@ -263,6 +302,14 @@ export async function sendChatMessage(
                 terminalState: 'completed',
             });
 
+            if (result.actions.length === 0) {
+                recordApplicationToolOnlyPlan({
+                    runId,
+                    revision: projectRevision,
+                    receipts: result.applicationToolReceipts ?? [],
+                });
+            }
+
             if (aborter.signal.aborted) {
                 await agentRunCancellation.cancel({
                     runId,
@@ -305,6 +352,7 @@ export async function sendChatMessage(
                         summary: confirmationDescription.actionLabels.join('\n'),
                         commandIds: [],
                         serializedBatchIdentity: null,
+                        applicationToolReceipts: result.applicationToolReceipts ?? [],
                         revision: projectRevision,
                         scope: {
                             targetIds: confirmationDescription.affectedIds,
@@ -365,6 +413,7 @@ export async function sendChatMessage(
                     summary: confirmationDescription.actionLabels.join('\n'),
                     commandIds,
                     serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
+                    applicationToolReceipts: result.applicationToolReceipts ?? [],
                     revision: projectRevision,
                     scope: {
                         targetIds: [...commandBatch.authority.scope.targetIds],
@@ -846,6 +895,15 @@ export async function sendChatMessage(
                 });
             }
         } catch (error) {
+            if (error instanceof ApplicationOwnedToolLoopRequestError && error.receipts.length > 0) {
+                recordApplicationToolOnlyPlan({
+                    runId,
+                    revision:
+                        error.receipts.find((receipt) => receipt.revision !== null)?.revision ??
+                        captureProjectRevision(),
+                    receipts: error.receipts,
+                });
+            }
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;

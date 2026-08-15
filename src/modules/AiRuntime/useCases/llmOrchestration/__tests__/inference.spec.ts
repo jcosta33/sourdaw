@@ -12,6 +12,7 @@ import {
     createWorkflowCapabilityToolSchema,
     WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
 } from '../../../models/WorkflowCapability';
+import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../applicationOwnedToolLoop';
 import { generateToolCalls as generateCompatibleToolCalls } from '../generateToolCalls';
 import { generateToolPlanningOutcome as generateToolCalls } from '../inference';
 
@@ -228,6 +229,18 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
+    it('preserves provider tool-call identities through production normalization', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue(
+            completePlan([{ id: 'provider-call-1', name: 'project.query', arguments: { type: 'project-summary' } }])
+        );
+
+        await expect(generateToolCalls('sys', 'inspect project', APPLICATION_OWNED_TOOL_SCHEMAS)).resolves.toEqual(
+            completePlan([{ id: 'provider-call-1', name: 'project.query', arguments: { type: 'project-summary' } }])
+        );
+    });
+
     it('does not bypass a rejected native invoke outcome through text or provider fallback', async () => {
         mocks.backendChain.value = ['native', 'webllm'];
         mocks.nativeEngineReady.value = true;
@@ -437,6 +450,19 @@ describe('generateToolPlanningOutcome', () => {
         expect(selectedTools?.length).toBeLessThanOrEqual(30);
     });
 
+    it('always retains the application-owned project query inside the bounded WebLLM tool set', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
+        const tools = [...APPLICATION_OWNED_TOOL_SCHEMAS, ...getExecutableAppActionToolSchemas()];
+
+        await generateToolCalls('sys', 'inspect the project before editing', tools);
+
+        const selectedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] as ToolSchema[] | undefined;
+        expect(selectedTools?.map((tool) => tool.function.name)).toContain('project.query');
+        expect(selectedTools?.length).toBeLessThanOrEqual(30);
+    });
+
     it('retains a specialized legacy tool selected by its schema metadata', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.isWebLlmLoaded.mockReturnValue(true);
@@ -573,6 +599,34 @@ describe('generateToolPlanningOutcome', () => {
         await generateToolCalls('sys', 'mute drums', tools, controller.signal);
 
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledWith('sys', 'mute drums', tools, controller.signal);
+    });
+
+    it('rejects a WebLLM call whose registered tool was not advertised for this request', async () => {
+        const tools: ToolSchema[] = Array.from({ length: 35 }, (_, index) => ({
+            type: 'function',
+            function: {
+                name: `action${String(index)}`,
+                description: `Action ${String(index)}`,
+                parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+            },
+        }));
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockImplementation(
+            async (_systemPrompt: string, _userMessage: string, advertisedTools: ToolSchema[]) => {
+                const advertisedNames = new Set(advertisedTools.map((tool) => tool.function.name));
+                const omittedTool = tools.find((tool) => !advertisedNames.has(tool.function.name));
+                if (!omittedTool) {
+                    throw new Error('Expected prompt tool selection to omit at least one registered tool');
+                }
+                return completePlan([{ id: 'unadvertised-call', name: omittedTool.function.name, arguments: {} }]);
+            }
+        );
+
+        await expect(generateToolCalls('sys', 'use the appropriate action', tools)).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Provider requested a tool that was not advertised for this request.',
+        });
     });
 
     it('passes cancellation into WebLLM initialization', async () => {

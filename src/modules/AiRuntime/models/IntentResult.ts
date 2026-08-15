@@ -1,3 +1,4 @@
+import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
@@ -14,4 +15,6 @@ export type IntentResult = {
     wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     preparationRequest?: 'stem-import';
     workflowCapabilityId?: WorkflowCapabilityId;
+    /** Correlated, bounded receipts produced by application-owned read tools during provider planning. */
+    applicationToolReceipts?: ApplicationToolReceipt[];
 };

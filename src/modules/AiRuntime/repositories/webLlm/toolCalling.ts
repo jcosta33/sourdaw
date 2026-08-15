@@ -34,7 +34,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
                 'Available tools:',
                 toolDescriptions,
                 '',
-                'Respond with a JSON array of tool calls: [{"name":"tool_name","arguments":{...}}]',
+                'Respond with a JSON array of tool calls: [{"id":"unique_call_id","name":"tool_name","arguments":{...}}]',
                 'Output ONLY valid JSON. No markdown, no explanation.',
             ].join('\n');
 

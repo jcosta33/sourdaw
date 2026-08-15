@@ -120,7 +120,11 @@ function coerceToolCall(raw: unknown): ToolCallResult | null {
         return null;
     }
     const args = (obj.arguments ?? obj.parameters ?? {}) as Record<string, unknown>;
-    return { name, arguments: args };
+    const id = obj.id;
+    if (id !== undefined && (typeof id !== 'string' || id.length === 0)) {
+        return null;
+    }
+    return { ...(typeof id === 'string' ? { id } : {}), name, arguments: args };
 }
 
 function tryParseToolCallJson(jsonStr: string | undefined): ToolCallResult | null {

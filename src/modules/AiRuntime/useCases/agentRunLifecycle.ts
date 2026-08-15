@@ -11,6 +11,7 @@ import {
     type AgentRunProviderUsage,
     type AgentRunScope,
 } from '../models/AgentRun';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 
 const DEFAULT_SCOPE: AgentRunScope = {
@@ -172,6 +173,7 @@ function recordAgentRunPlan(input: {
     summary: string;
     commandIds: string[];
     serializedBatchIdentity: string | null;
+    applicationToolReceipts?: ApplicationToolReceipt[];
     revision: string;
     scope: AgentRunScope;
     grants: AgentRunGrants;
@@ -189,8 +191,46 @@ function recordAgentRunPlan(input: {
             summary: input.summary,
             commandIds: [...input.commandIds],
             serializedBatchIdentity: input.serializedBatchIdentity,
+            applicationToolReceipts: structuredClone(input.applicationToolReceipts ?? []),
         },
     }));
+}
+
+function recordAgentRunApplicationToolEvidence(input: {
+    runId: string;
+    summary: string;
+    applicationToolReceipts: ApplicationToolReceipt[];
+    revision: string;
+    scope: AgentRunScope;
+    grants: AgentRunGrants;
+    budgets: AgentRunBudgets;
+    recordedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
+        const plan =
+            run.plan === null
+                ? {
+                      summary: input.summary,
+                      commandIds: [],
+                      serializedBatchIdentity: null,
+                      applicationToolReceipts: structuredClone(input.applicationToolReceipts),
+                  }
+                : {
+                      ...run.plan,
+                      applicationToolReceipts: structuredClone(input.applicationToolReceipts),
+                  };
+        if (run.plan !== null) {
+            return { ...run, plan };
+        }
+        return {
+            ...run,
+            revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
+            scope: structuredClone(input.scope),
+            grants: structuredClone(input.grants),
+            budgets: structuredClone(input.budgets),
+            plan,
+        };
+    });
 }
 
 function recordAgentRunBatch(input: { runId: string; batch: AgentRunBatch; recordedAt?: number }): AgentRun {
@@ -491,6 +531,7 @@ export const agentRunLifecycle = {
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,
     recordError: recordAgentRunError,
+    recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
     recordProviderUsage: recordAgentRunProviderUsage,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,

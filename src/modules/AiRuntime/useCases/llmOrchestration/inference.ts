@@ -7,6 +7,7 @@ import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
@@ -72,7 +73,14 @@ function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutc
         ) {
             return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
         }
-        toolCalls.push({ name: call.name, arguments: Object.fromEntries(Object.entries(call.arguments)) });
+        if (call.id !== undefined && (typeof call.id !== 'string' || call.id.length === 0)) {
+            return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
+        }
+        toolCalls.push({
+            ...(typeof call.id === 'string' ? { id: call.id } : {}),
+            name: call.name,
+            arguments: Object.fromEntries(Object.entries(call.arguments)),
+        });
     }
     return { status: 'complete', toolCalls };
 }
@@ -192,7 +200,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             'Available tools:',
             toolDescriptions,
             '',
-            'Respond with a JSON array of tool calls: [{"name":"tool_name","arguments":{...}}]',
+            'Respond with a JSON array of tool calls: [{"id":"unique_call_id","name":"tool_name","arguments":{...}}]',
             'Output only valid JSON. Do not include prose or markdown.',
         ].join('\n');
         let nativeCompletion: Promise<string>;
@@ -260,8 +268,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const workflowSelectionTools = availableTools.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
+                    const applicationTools = availableTools.filter(
+                        (tool) => tool.function.name === PROJECT_QUERY_TOOL_NAME
+                    );
                     const actionTools = availableTools.filter(
-                        (tool) => tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME
+                        (tool) =>
+                            tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
+                            tool.function.name !== PROJECT_QUERY_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
@@ -273,15 +286,19 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
                             : [];
                     const mandatoryToolNames = new Set(
-                        [...workflowSelectionTools, ...workflowActionTools].map((tool) => tool.function.name)
+                        [...workflowSelectionTools, ...applicationTools, ...workflowActionTools].map(
+                            (tool) => tool.function.name
+                        )
                     );
                     const promptActionTools = selectedActionTools.filter(
                         (tool) => !mandatoryToolNames.has(tool.function.name)
                     );
-                    providerTools = [...workflowSelectionTools, ...workflowActionTools, ...promptActionTools].slice(
-                        0,
-                        30
-                    );
+                    providerTools = [
+                        ...workflowSelectionTools,
+                        ...applicationTools,
+                        ...workflowActionTools,
+                        ...promptActionTools,
+                    ].slice(0, 30);
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
                     );
@@ -379,12 +396,23 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     );
                 }
 
+                if (backend === 'webllm' && outcome.status === 'complete') {
+                    const advertisedToolNames = new Set(providerTools.map((tool) => tool.function.name));
+                    if (outcome.toolCalls.some((call) => !advertisedToolNames.has(call.name))) {
+                        outcome = {
+                            status: 'rejected',
+                            reason: 'Provider requested a tool that was not advertised for this request.',
+                        };
+                    }
+                }
+
                 if (outcome.status === 'complete') {
+                    const providerCallIds = outcome.toolCalls.map((call) => call.id);
                     for (const [index, call] of outcome.toolCalls.entries()) {
                         providerSession.push({
                             type: 'tool-call',
                             call: {
-                                id: `${providerRequest.correlationId}:${String(index)}`,
+                                id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
                                 name: call.name,
                                 arguments: call.arguments,
                             },
@@ -398,7 +426,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     );
                     outcome = {
                         status: 'complete',
-                        toolCalls: normalizedResult.output.toolCalls.map((call) => ({
+                        toolCalls: normalizedResult.output.toolCalls.map((call, index) => ({
+                            ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
                             name: call.name,
                             arguments: call.arguments,
                         })),

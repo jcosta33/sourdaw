@@ -17,6 +17,7 @@ import {
     type AgentRunTemporaryAsset,
     type AgentRunWorkLease,
 } from '../models/AgentRun';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 
 const MAX_RUNS = 50;
 const MAX_COLLECTION_LENGTH = 256;
@@ -385,6 +386,62 @@ function readCollection<TItem>(value: unknown, readItem: (candidate: unknown) =>
     return result;
 }
 
+function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | null {
+    if (
+        !isRecord(value) ||
+        value.schema !== 'sourdaw.application-tool-receipt' ||
+        value.schemaVersion !== 1 ||
+        (value.status !== 'success' && value.status !== 'failure')
+    ) {
+        return null;
+    }
+    const callId = readString(value.callId);
+    const toolName = readString(value.toolName);
+    const turn = readNonNegativeInteger(value.turn);
+    const revision = readNullableString(value.revision);
+    const summary = readString(value.summary);
+    const warnings = readStringArray(value.warnings);
+    if (
+        callId === null ||
+        toolName === null ||
+        turn === null ||
+        turn < 1 ||
+        revision === undefined ||
+        summary === null ||
+        warnings === null
+    ) {
+        return null;
+    }
+    let error: ApplicationToolReceipt['error'] = null;
+    if (value.error !== null) {
+        if (!isRecord(value.error)) {
+            return null;
+        }
+        const code = readString(value.error.code);
+        const safeMessage = readString(value.error.safeMessage);
+        if (code === null || safeMessage === null || typeof value.error.retryable !== 'boolean') {
+            return null;
+        }
+        error = { code, safeMessage, retryable: value.error.retryable };
+    }
+    if ((value.status === 'success' && error !== null) || (value.status === 'failure' && error === null)) {
+        return null;
+    }
+    return {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId,
+        toolName,
+        turn,
+        status: value.status,
+        revision,
+        data: structuredClone(value.data),
+        summary,
+        warnings,
+        error,
+    };
+}
+
 function readAgentRun(value: unknown): AgentRun | null {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION) {
         return null;
@@ -432,9 +489,16 @@ function readAgentRun(value: unknown): AgentRun | null {
         const summary = readString(value.plan.summary);
         const commandIds = readStringArray(value.plan.commandIds);
         const serializedBatchIdentity = readNullableString(value.plan.serializedBatchIdentity);
-        return summary === null || commandIds === null || serializedBatchIdentity === undefined
+        const applicationToolReceipts =
+            value.plan.applicationToolReceipts === undefined
+                ? []
+                : readCollection(value.plan.applicationToolReceipts, readApplicationToolReceipt);
+        return summary === null ||
+            commandIds === null ||
+            serializedBatchIdentity === undefined ||
+            applicationToolReceipts === null
             ? undefined
-            : { summary, commandIds, serializedBatchIdentity };
+            : { summary, commandIds, serializedBatchIdentity, applicationToolReceipts };
     })();
     const batches = readCollection(value.batches, readBatch);
     const receipts = readCollection(value.receipts, readReceipt);
