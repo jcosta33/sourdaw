@@ -1158,12 +1158,6 @@ export async function sendChatMessage(
                         });
                         continue;
                     }
-                    if (chunk.choices.length === 0 && !chunk.usage) {
-                        activeProviderStreamWriter.push({
-                            type: 'unknown',
-                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
-                        });
-                    }
                     const choice = chunk.choices[0];
                     const deltaDesc = choice?.delta.content;
                     if (sawTerminalReason) {
@@ -1193,6 +1187,12 @@ export async function sendChatMessage(
                             throw new Error('WebLLM stream returned duplicate completion');
                         }
                         throw new Error('WebLLM stream returned an event after completion');
+                    }
+                    if (chunk.choices.length === 0 && !chunk.usage) {
+                        activeProviderStreamWriter.push({
+                            type: 'unknown',
+                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                        });
                     }
                     if (deltaDesc !== undefined) {
                         activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });

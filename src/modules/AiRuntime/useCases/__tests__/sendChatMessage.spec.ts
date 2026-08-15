@@ -121,6 +121,7 @@ const mocks = vi.hoisted(() => {
         webLlmEngine,
         webLlmCreate: vi.fn<(payload: Record<string, unknown>) => Promise<unknown>>(),
         webLlmInterrupt: vi.fn(),
+        providerStreamPush: vi.fn(),
         streamCloudChatCompletion: vi.fn<
             (
                 messages: Array<{ role: string; content: string }>,
@@ -179,6 +180,23 @@ vi.mock('../../repositories/nativeEngine/isNativeEngineReady', () => ({
 vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
     isCloudAvailable: vi.fn(() => mocks.cloudAvailable.value),
 }));
+
+vi.mock('../createModelProviderStreamWriter', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../createModelProviderStreamWriter')>();
+    return {
+        ...actual,
+        createModelProviderStreamWriter: (...args: Parameters<typeof actual.createModelProviderStreamWriter>) => {
+            const writer = actual.createModelProviderStreamWriter(...args);
+            return {
+                ...writer,
+                push(event: Parameters<typeof writer.push>[0]) {
+                    mocks.providerStreamPush(event);
+                    return writer.push(event);
+                },
+            };
+        },
+    };
+});
 
 vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
     streamCloudChatCompletion: mocks.streamCloudChatCompletion,
@@ -1317,6 +1335,37 @@ describe('sendChatMessage injectables', () => {
             expect.any(String),
             expect.objectContaining({ error: 'WebLLM stream returned duplicate completion' })
         );
+    });
+
+    it('rejects a post-terminal WebLLM event before recording it as ignored', async () => {
+        mocks.backend.value = 'webllm';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.webLlmCreate.mockResolvedValue({
+            async *[Symbol.asyncIterator]() {
+                yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
+                yield { choices: [], type: 'late-event' };
+            },
+        });
+        mocks.webLlmEngine.value = {
+            interruptGenerate: mocks.webLlmInterrupt,
+            chat: { completions: { create: mocks.webLlmCreate } },
+        };
+
+        await sendChatMessage('How should I mix this?');
+
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ error: 'WebLLM stream returned an event after completion' })
+        );
+        expect(mocks.providerStreamPush).not.toHaveBeenCalledWith({
+            type: 'unknown',
+            providerEventType: 'webllm:late-event',
+        });
     });
 
     it('preserves partial hosted output when the network stream fails', async () => {
