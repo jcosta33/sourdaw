@@ -55,11 +55,11 @@ describe('backendResolution helpers', () => {
             expect(resolveBackend()).toBe('webllm');
         });
 
-        it('returns cloud if cloud is available and others are not', () => {
+        it('does not export an automatic request when only cloud is available', () => {
             mocks.isNativeAiRuntimeAvailable.mockReturnValue(false);
             mocks.isCloudAvailable.mockReturnValue(true);
 
-            expect(resolveBackend()).toBe('cloud');
+            expect(resolveBackend()).toBe('none');
         });
 
         it('returns none if no backend is available', () => {
@@ -82,7 +82,7 @@ describe('backendResolution helpers', () => {
             expect(resolveBackend()).toBe('cloud');
         });
 
-        it('reports the actual ready backend in automatic mode', () => {
+        it('ignores a ready cloud backend in automatic local mode', () => {
             mocks.isNativeAiRuntimeAvailable.mockReturnValue(true);
             mocks.isCloudAvailable.mockReturnValue(true);
             mocks.runtimeStatus.value = {
@@ -91,7 +91,7 @@ describe('backendResolution helpers', () => {
                 modelId: 'hosted-model',
             };
 
-            expect(resolveBackend()).toBe('cloud');
+            expect(resolveBackend()).toBe('native');
         });
     });
 });
