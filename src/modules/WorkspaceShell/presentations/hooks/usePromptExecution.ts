@@ -240,25 +240,28 @@ export const usePromptExecution = (): PromptExecutionState => {
         const context = getProjectContext();
         const group = generateGroupId(input.prompt);
         const usesVersionedBatch = input.actions.every((action) => isExecutableAppActionType(action.type));
-        const commandBatch = usesVersionedBatch
-            ? compilePlannedActionCommandBatch({
-                  actions: input.actions,
-                  actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
-                  autoCommit: true,
-                  autoCommitApproval: () =>
-                      captureProjectRevision() === input.projectRevision
-                          ? { status: 'valid' }
-                          : { status: 'invalid', reason: 'The command-palette source revision is stale.' },
-                  context,
-                  group,
-                  intent: input.prompt,
-                  projectRevision: input.projectRevision,
-                  runId: `prompt-execution-${crypto.randomUUID()}`,
-              }).commandBatch
-            : undefined;
-        const execution = commandBatch
-            ? await executePlannedActions({ ...input, group, commandBatch })
-            : await executePlannedActions({ ...input, group, legacyExecution: true });
+        if (!usesVersionedBatch) {
+            notifyAiChange(
+                'Command not executed: one or more actions are not available through the approved command boundary.',
+                []
+            );
+            return;
+        }
+        const commandBatch = compilePlannedActionCommandBatch({
+            actions: input.actions,
+            actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
+            autoCommit: true,
+            autoCommitApproval: () =>
+                captureProjectRevision() === input.projectRevision
+                    ? { status: 'valid' }
+                    : { status: 'invalid', reason: 'The command-palette source revision is stale.' },
+            context,
+            group,
+            intent: input.prompt,
+            projectRevision: input.projectRevision,
+            runId: `prompt-execution-${crypto.randomUUID()}`,
+        }).commandBatch;
+        const execution = await executePlannedActions({ ...input, group, commandBatch });
         if (execution.status === 'committed' || execution.status === 'executed') {
             return;
         }

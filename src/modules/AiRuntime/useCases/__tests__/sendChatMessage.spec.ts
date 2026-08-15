@@ -621,7 +621,9 @@ describe('sendChatMessage injectables', () => {
             actions: [{ action, label: 'Mute track' }],
         });
 
-        await sendChatMessage('mute the vocals');
+        const receipt = await sendChatMessage('mute the vocals');
+
+        expect(receipt?.outcome).toBe('committed');
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
             [action],

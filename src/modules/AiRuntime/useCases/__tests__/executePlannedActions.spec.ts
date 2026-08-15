@@ -108,7 +108,7 @@ describe('executePlannedActions', () => {
         vi.mocked(captureProjectRevision).mockReturnValue('revision-1');
     });
 
-    it('commits the complete batch and records one truthful AI action group', async () => {
+    it('rejects legacy execution instead of dispatching an unbound action batch', async () => {
         vi.mocked(executeAppActionBatch).mockResolvedValue({
             status: 'committed',
             actions: [{ action, label: 'Toggle playback' }],
@@ -119,31 +119,13 @@ describe('executePlannedActions', () => {
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
-            executionMode: 'atomic',
         });
 
-        expect(vi.mocked(executeAppActionBatch)).toHaveBeenCalledWith(
-            [action],
-            expect.objectContaining({
-                groupId: 'group-1',
-                source: 'prompt',
-                requireCompensation: true,
-            })
-        );
-        const options = vi.mocked(executeAppActionBatch).mock.calls[0]?.[1];
-        expect(typeof options?.shouldExecute).toBe('function');
-        expect(options?.shouldExecute?.()).toBe(true);
-        expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith({
-            prompt: 'Mute vocals',
-            groupId: 'group-1',
-            executionKind: 'project',
-            actions: [{ kind: 'appAction', actionType: 'togglePlayback', label: 'Toggle playback' }],
-        });
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['togglePlayback']);
         expect(result).toEqual({
-            status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            status: 'failed',
+            reason: 'Legacy planned-action execution is not authorized',
         });
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('returns a durable idempotent replay without duplicating AI history or notifications', async () => {
@@ -175,8 +157,26 @@ describe('executePlannedActions', () => {
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
+            executionMode: 'atomic',
         });
 
+        expect(vi.mocked(executeVersionedCommandBatchEnvelope)).toHaveBeenCalledWith({
+            ...commandBatch,
+            options: expect.objectContaining({
+                groupId: 'group-1',
+                source: 'prompt',
+                requireCompensation: true,
+            }),
+        });
+        const options = vi.mocked(executeVersionedCommandBatchEnvelope).mock.calls[0]?.[0].options;
+        expect(options?.shouldExecute?.()).toBe(true);
+        expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith({
+            prompt: 'Mute vocals',
+            groupId: 'group-1',
+            executionKind: 'project',
+            actions: [{ kind: 'appAction', actionType: 'togglePlayback', label: 'Toggle playback' }],
+        });
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['togglePlayback']);
         expect(result).toEqual({
             status: 'committed',
             actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
@@ -214,23 +214,25 @@ describe('executePlannedActions', () => {
     );
 
     it('reports a runtime-only command as executed rather than committed', async () => {
-        vi.mocked(executeAppActionBatch).mockResolvedValue({
+        const receipt = idempotentReplayResult('executed').receipt;
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'executed',
             actions: [{ action: runtimeAction, label: 'Start playback' }],
+            receipt,
         });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Start playback',
             actions: [runtimeAction],
             projectRevision: 'revision-1',
             executionMode: 'atomic',
         });
 
-        expect(vi.mocked(executeAppActionBatch)).toHaveBeenCalledWith(
-            [runtimeAction],
-            expect.objectContaining({ requireCompensation: true })
-        );
+        expect(vi.mocked(executeVersionedCommandBatchEnvelope)).toHaveBeenCalledWith({
+            ...commandBatch,
+            options: expect.objectContaining({ requireCompensation: true }),
+        });
         expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith({
             prompt: 'Start playback',
             groupId: 'group-1',
@@ -241,18 +243,21 @@ describe('executePlannedActions', () => {
         expect(result).toEqual({
             status: 'executed',
             actions: [{ actionType: 'setPlayback', label: 'Start playback' }],
+            receipt,
         });
     });
 
     it('uses executed wording when a runtime follow-up reports a warning', async () => {
-        vi.mocked(executeAppActionBatch).mockResolvedValue({
+        const receipt = idempotentReplayResult('executed-with-warning').receipt;
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'executed-with-warning',
             actions: [{ action: runtimeAction, label: 'Start playback' }],
             warning: 'setPlayback follow-up effect failed: transport unavailable',
+            receipt,
         });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Start playback',
             actions: [runtimeAction],
             projectRevision: 'revision-1',
@@ -262,6 +267,7 @@ describe('executePlannedActions', () => {
             status: 'executed',
             actions: [{ actionType: 'setPlayback', label: 'Start playback' }],
             executionWarning: 'setPlayback follow-up effect failed: transport unavailable',
+            receipt,
         });
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
             'Executed: Start playback. Executed with follow-up warning: setPlayback follow-up effect failed: transport unavailable',
@@ -271,13 +277,18 @@ describe('executePlannedActions', () => {
 
     it('reports invalidation when the project revision changes before admission', async () => {
         vi.mocked(captureProjectRevision).mockReturnValue('revision-2');
-        vi.mocked(executeAppActionBatch).mockImplementation((_actions, options) => {
-            expect(options?.shouldExecute?.()).toBe(false);
-            return Promise.resolve({ status: 'cancelled', reason: 'authority revoked', actions: [] });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation((input) => {
+            expect(input.options?.shouldExecute?.()).toBe(false);
+            return Promise.resolve({
+                status: 'cancelled',
+                reason: 'authority revoked',
+                actions: [],
+                receipt: idempotentReplayResult('cancelled').receipt,
+            });
         });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -295,13 +306,18 @@ describe('executePlannedActions', () => {
         const controller = new AbortController();
         controller.abort();
         vi.mocked(captureProjectRevision).mockReturnValue('revision-2');
-        vi.mocked(executeAppActionBatch).mockImplementation((_actions, options) => {
-            expect(options?.shouldExecute?.()).toBe(false);
-            return Promise.resolve({ status: 'cancelled', reason: 'authority revoked', actions: [] });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation((input) => {
+            expect(input.options?.shouldExecute?.()).toBe(false);
+            return Promise.resolve({
+                status: 'cancelled',
+                reason: 'authority revoked',
+                actions: [],
+                receipt: idempotentReplayResult('cancelled').receipt,
+            });
         });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -322,10 +338,14 @@ describe('executePlannedActions', () => {
         // been dispatched while nothing in the project had changed.
         const refusal =
             'Cannot set 111 BPM here: the playhead is inside a tempo ramp, where no single tempo event carries the tempo in force.';
-        vi.mocked(executeAppActionBatch).mockResolvedValue({ status: 'failed', reason: refusal, actions: [] });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'failed',
+            reason: refusal,
+            actions: [],
+        });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Set the tempo to 111',
             actions: [{ type: 'setTempo', payload: { bpm: 111 } }],
             projectRevision: 'revision-1',
@@ -339,16 +359,18 @@ describe('executePlannedActions', () => {
     });
 
     it('preserves a committed result when post-commit reporting fails', async () => {
-        vi.mocked(executeAppActionBatch).mockResolvedValue({
+        const receipt = idempotentReplayResult('committed').receipt;
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
             actions: [{ action, label: 'Toggle playback' }],
+            receipt,
         });
         vi.mocked(recordAiActionGroup).mockImplementation(() => {
             throw new Error('history unavailable');
         });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -357,6 +379,7 @@ describe('executePlannedActions', () => {
         expect(result).toEqual({
             status: 'committed',
             actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            receipt,
             reportingWarning: 'history: history unavailable',
         });
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['togglePlayback']);
@@ -364,14 +387,16 @@ describe('executePlannedActions', () => {
     });
 
     it('distinguishes a committed post-commit effect warning from reporting failures', async () => {
-        vi.mocked(executeAppActionBatch).mockResolvedValue({
+        const receipt = idempotentReplayResult('committed-with-warning').receipt;
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed-with-warning',
             actions: [{ action, label: 'Toggle playback' }],
             warning: 'togglePlayback post-commit effect failed: transport unavailable',
+            receipt,
         });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -381,6 +406,7 @@ describe('executePlannedActions', () => {
             status: 'committed',
             actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
             commitWarning: 'togglePlayback post-commit effect failed: transport unavailable',
+            receipt,
         });
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
             'Executed: Mute vocals. Committed with follow-up warning: togglePlayback post-commit effect failed: transport unavailable',
@@ -389,16 +415,18 @@ describe('executePlannedActions', () => {
     });
 
     it('preserves a committed result when the success notification throws', async () => {
-        vi.mocked(executeAppActionBatch).mockResolvedValue({
+        const receipt = idempotentReplayResult('committed').receipt;
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
             status: 'committed',
             actions: [{ action, label: 'Toggle playback' }],
+            receipt,
         });
         vi.mocked(notifyAiChange).mockImplementation(() => {
             throw new Error('toast unavailable');
         });
 
         const result = await executePlannedActions({
-            legacyExecution: true,
+            commandBatch,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -407,6 +435,7 @@ describe('executePlannedActions', () => {
         expect(result).toEqual({
             status: 'committed',
             actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
+            receipt,
             reportingWarning: 'notification: toast unavailable',
         });
         expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalled();

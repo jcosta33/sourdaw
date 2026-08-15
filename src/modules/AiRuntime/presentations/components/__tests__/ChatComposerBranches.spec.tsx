@@ -14,7 +14,8 @@ import { ChatComposer } from '../ChatComposer';
 
 function defaultProps(overrides: Record<string, unknown> = {}) {
     return {
-        chatMode: 'chat' as const,
+        executionMode: 'explain' as const,
+        executionModes: ['explain', 'plan', 'preview', 'apply', 'macro'] as const,
         enableReasoning: false,
         isGenerating: false,
         inputValue: '',
@@ -22,7 +23,7 @@ function defaultProps(overrides: Record<string, unknown> = {}) {
         textareaRef: createRef<HTMLTextAreaElement>(),
         onChange: vi.fn(),
         onKeyDown: vi.fn(),
-        onToggleMode: vi.fn(),
+        onExecutionModeChange: vi.fn(),
         onToggleReasoning: vi.fn(),
         onSend: vi.fn(),
         onStop: vi.fn(),
@@ -44,13 +45,13 @@ describe('ChatComposer — placeholder text', () => {
         expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'AI is thinking...');
     });
 
-    it('shows command-mode placeholder when chatMode is prompt and not generating', () => {
-        render(<ChatComposer {...defaultProps({ chatMode: 'prompt' })} />);
+    it('shows command-mode placeholder for a write-capable mode', () => {
+        render(<ChatComposer {...defaultProps({ executionMode: 'apply' })} />);
         expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Type a command to execute or generate...');
     });
 
-    it('generating placeholder takes priority over chatMode', () => {
-        render(<ChatComposer {...defaultProps({ isGenerating: true, chatMode: 'prompt' })} />);
+    it('generating placeholder takes priority over execution mode', () => {
+        render(<ChatComposer {...defaultProps({ isGenerating: true, executionMode: 'apply' })} />);
         expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'AI is thinking...');
     });
 });
@@ -128,12 +129,14 @@ describe('ChatComposer — action button (Send/Stop)', () => {
     });
 });
 
-describe('ChatComposer — toggle buttons', () => {
-    it('Command Mode toggle fires onToggleMode', () => {
-        const onToggleMode = vi.fn();
-        render(<ChatComposer {...defaultProps({ onToggleMode })} />);
-        fireEvent.click(screen.getByRole('button', { name: /command mode/i }));
-        expect(onToggleMode).toHaveBeenCalledTimes(1);
+describe('ChatComposer — mode and toggle controls', () => {
+    it('reports an explicit execution mode selection', () => {
+        const onExecutionModeChange = vi.fn();
+        render(<ChatComposer {...defaultProps({ onExecutionModeChange })} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Agent execution mode' }), {
+            target: { value: 'preview' },
+        });
+        expect(onExecutionModeChange).toHaveBeenCalledWith('preview');
     });
 
     it('Think toggle fires onToggleReasoning', () => {
@@ -143,9 +146,9 @@ describe('ChatComposer — toggle buttons', () => {
         expect(onToggleReasoning).toHaveBeenCalledTimes(1);
     });
 
-    it('Command Mode toggle is disabled when generating', () => {
+    it('execution mode selection is disabled when generating', () => {
         render(<ChatComposer {...defaultProps({ isGenerating: true })} />);
-        expect(screen.getByRole('button', { name: /command mode/i })).toBeDisabled();
+        expect(screen.getByRole('combobox', { name: 'Agent execution mode' })).toBeDisabled();
     });
 
     it('Think toggle is disabled when generating', () => {

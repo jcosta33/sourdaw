@@ -1,7 +1,8 @@
 import { compileVersionedCommandBatchEnvelope, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
-import { type AgentExecutionMode, type AgentTrustCeiling } from './agentExecutionModes';
+import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
+
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';

@@ -1,6 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
 import {
-    executeAppActionBatch,
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
     type createVerifiedBatchReceipt,
@@ -69,6 +68,10 @@ function failureReason(error: unknown): string {
 }
 
 export async function executePlannedActions(input: ExecutePlannedActionsInput): Promise<ExecutePlannedActionsResult> {
+    if (input.legacyExecution) {
+        return { status: 'failed', reason: 'Legacy planned-action execution is not authorized' };
+    }
+
     const group = input.group ?? generateGroupId(input.prompt);
     let revisionInvalidated = false;
 
@@ -83,10 +86,10 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         requireCompensation: input.executionMode === 'atomic',
         shouldExecute,
     };
-    const versionedResult = input.commandBatch
-        ? await executeVersionedCommandBatchEnvelope({ ...input.commandBatch, options: executionOptions })
-        : null;
-    const batchResult = versionedResult ?? (await executeAppActionBatch(input.actions, executionOptions));
+    const batchResult = await executeVersionedCommandBatchEnvelope({
+        ...input.commandBatch,
+        options: executionOptions,
+    });
 
     if (batchResult.status === 'previewed') {
         batchResult.resource.release();
@@ -138,9 +141,12 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     if (!isCommitted && !isExecuted) {
         return { status: 'failed', reason: batchResult.reason };
     }
+    if (!('receipt' in batchResult)) {
+        return { status: 'failed', reason: 'Versioned command execution did not return a verified receipt' };
+    }
 
     const actions = batchResult.actions.map(({ action, label }) => ({ actionType: action.type, label }));
-    const receipt = versionedResult && 'receipt' in versionedResult ? versionedResult.receipt : undefined;
+    const receipt = batchResult.receipt;
     const commitWarning = batchResult.status === 'committed-with-warning' ? batchResult.warning : undefined;
     const executionWarning = batchResult.status === 'executed-with-warning' ? batchResult.warning : undefined;
     const reportingFailures: string[] = [];
@@ -184,7 +190,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
             status: 'executed',
             actions,
             ...(executionWarning ? { executionWarning } : {}),
-            ...(receipt ? { receipt } : {}),
+            receipt,
             ...(reportingWarning ? { reportingWarning } : {}),
         };
     }
@@ -192,7 +198,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         status: 'committed',
         actions,
         ...(commitWarning ? { commitWarning } : {}),
-        ...(receipt ? { receipt } : {}),
+        receipt,
         ...(reportingWarning ? { reportingWarning } : {}),
     };
 }

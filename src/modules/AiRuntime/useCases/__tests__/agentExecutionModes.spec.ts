@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AGENT_EXECUTION_MODES } from '../agentExecutionModes';
+import { AGENT_EXECUTION_MODES } from '../../models/AgentExecutionMode';
 import { getAgentExecutionModeAuthority } from '../getAgentExecutionModeAuthority';
 import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
 import { resolveAgentExecutionMode } from '../resolveAgentExecutionMode';

@@ -531,7 +531,7 @@ describe('usePromptExecution', () => {
     });
 
     it('confirms an immutable preview once, exposes Stop while committing, and still cancels an idle preview', async () => {
-        const action: AppAction = { type: 'removeAllTracks' };
+        const action: AppAction = { type: 'togglePlayback' };
         vi.mocked(executePlannedActions).mockImplementationOnce((input) => {
             return new Promise((resolve) => {
                 input.signal?.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true });
@@ -593,8 +593,29 @@ describe('usePromptExecution', () => {
         expect(result.current.preview).toBeNull();
     });
 
+    it('refuses a preview action that cannot use the approved command boundary', async () => {
+        const action: AppAction = { type: 'removeAllTracks' };
+        vi.mocked(resolvePresetActions).mockReturnValue([action]);
+        const { result } = renderHook(() => usePromptExecution());
+
+        act(() => {
+            void result.current.executePreset(
+                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
+            );
+        });
+        await act(async () => {
+            await result.current.confirmPreview();
+        });
+
+        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
+            'Command not executed: one or more actions are not available through the approved command boundary.',
+            []
+        );
+    });
+
     it('notifies the user when a confirmed destructive preview reports a failed execution', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'removeAllTracks' }]);
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
         const { result } = renderHook(() => usePromptExecution());
 
         act(() => {
@@ -615,7 +636,7 @@ describe('usePromptExecution', () => {
     });
 
     it('logs and notifies instead of leaving an unhandled rejection when confirming a preview throws', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'removeAllTracks' }]);
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
         const { result } = renderHook(() => usePromptExecution());
 
         act(() => {
@@ -673,7 +694,7 @@ describe('usePromptExecution', () => {
         });
         expect(result.current.value).toBe('play stop');
 
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'removeAllTracks' }]);
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
         act(() => {
             void result.current.executePreset(
                 fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))

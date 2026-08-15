@@ -1,4 +1,4 @@
-import { type AgentExecutionMode } from './agentExecutionModes';
+import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 
 const executionAuthority = {
     explain: {

@@ -1,4 +1,5 @@
-import { AGENT_EXECUTION_MODES, AGENT_TRUST_CEILINGS, type AgentTrustCeiling } from './agentExecutionModes';
+import { AGENT_EXECUTION_MODES, AGENT_TRUST_CEILINGS, type AgentTrustCeiling } from '../models/AgentExecutionMode';
+
 import { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority';
 
 const trustRank = Object.fromEntries(AGENT_TRUST_CEILINGS.map((mode, index) => [mode, index])) as Record<

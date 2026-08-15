@@ -1,4 +1,4 @@
-import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from './agentExecutionModes';
+import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from '../models/AgentExecutionMode';
 
 export function resolveAgentExecutionMode(input: {
     chatMode: 'chat' | 'prompt';
