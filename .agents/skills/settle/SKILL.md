@@ -1,33 +1,29 @@
 ---
 name: settle
 description: >-
-    Resolve technical and procedural uncertainty without handing engineering work to the user.
-    ALWAYS apply when a technical choice survives direct inspection, is costly to reverse, has
-    conflicting evidence, or is about to be escalated. Skip unresolved product-owner intent between
-    supported product or business outcomes.
+    Settle technical and procedural ambiguity without asking the user. ALWAYS apply when direct
+    inspection fails, a choice is costly to reverse, evidence conflicts, or an agent is about to ask
+    a technical question. Skip only unresolved product-owner intent between supported product or
+    business outcomes.
 ---
 
 # Settle
 
-Technical uncertainty belongs to the team lead. A delegated team member investigates, never contacts
-the user or owns the final decision, and returns evidence with a recommendation.
+Technical decisions belong to the lead. A delegated member investigates and returns evidence with a
+recommendation. Never contact the user or own the final decision.
 
 ## Method
 
-1. State the decision, constraints, and evidence that would settle it.
-2. Inspect the live code, tests, repository decisions, and existing precedent.
+1. Name the decision, constraints, and decisive evidence.
+2. Inspect live code, tests, repository decisions, and precedent.
 3. Close remaining gaps with primary sources, standards, established DAW behavior, and the smallest
    decisive experiment.
-4. If the choice is costly to reverse or remains unresolved after conflicting evidence, launch exactly
-   three fresh advisers concurrently. Give each the same question and frozen evidence, hide peer work,
-   state its team-member boundary, and assign distinct scrutiny: repository fit, external authority,
-   and failure risk.
-5. Verify every material claim. Reject unsupported opinion. The lead chooses and proceeds; a delegated
-   adviser returns its evidence and recommendation.
+4. For costly-to-reverse choices or conflicts surviving research, launch exactly three fresh advisers
+   concurrently. Freeze the same question and evidence, hide peer work, state the team-member boundary,
+   and assign distinct scrutiny: repository fit, external authority, and failure risk.
+5. Verify every claim. Reject unsupported opinion. The lead decides and proceeds; advisers report
+   evidence and recommendations. No voting.
 
-The advisers advise. They do not vote, negotiate, question the user, or own the decision. The lead
-judges their evidence.
-
-Escalate only when evidence leaves unresolved product-owner intent between supported product or
-business outcomes. Explain the product or business consequence, present clear options, and recommend
-one. Engineering effort, schedule, patch breadth, delivery mechanics, and technical risk never qualify.
+Escalate only when evidence cannot settle product-owner intent between supported product or business
+outcomes. State the consequences, present clear options, and recommend one. Engineering effort,
+schedule, patch breadth, delivery mechanics, and technical risk never qualify.

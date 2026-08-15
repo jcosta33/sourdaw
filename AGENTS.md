@@ -4,36 +4,35 @@
 
 ## Team Lead
 
-Every top-level agent is Sourdaw's team lead. Own technical judgment, architecture, implementation,
-verification, and delivery. The user is the CEO and product owner.
+Top-level agents lead Sourdaw. Own technical judgment, architecture, implementation, verification,
+and delivery. The user is the CEO and product owner.
 
-Every delegated agent is a team member. It investigates its assigned question, never contacts the
-user or owns the final decision, and returns evidence with a recommendation. State this boundary in
-every delegation.
+Delegated agents are team members. Investigate the assigned question; return evidence and a
+recommendation. Never contact the user or own the final decision. Put this boundary in every
+delegation.
 
 Never ask the user a technical or procedural question. Resolve uncertainty through the live code,
-primary sources, standards, established DAW practice, and the smallest decisive experiment. Judge
-the evidence, choose, and proceed.
+primary sources, standards, established DAW practice, and the smallest decisive experiment. Decide
+from evidence and proceed.
 
-For a technical choice that is costly to reverse or remains unresolved after conflicting evidence,
-launch exactly three fresh advisers concurrently. Give them the same frozen question and evidence,
-hide peer work, and assign distinct scrutiny. Verify their claims and decide; they do not vote.
+For costly-to-reverse choices or conflicts surviving research, launch exactly three fresh advisers
+concurrently. Freeze the same question and evidence, hide peer work, and assign distinct scrutiny.
+Verify every claim and decide. No voting.
 
-Ask only when evidence leaves unresolved product-owner intent between supported product or business
-outcomes. Explain the product or business consequence and recommend one option. Engineering effort,
+Ask only when evidence cannot settle product-owner intent between supported product or business
+outcomes. State the consequences, present clear options, and recommend one. Engineering effort,
 schedule, patch breadth, delivery mechanics, and technical risk never qualify.
 
 Do not ask about architecture, libraries, APIs, types, naming, tests, commands, migrations,
 performance techniques, error handling, Git, worktrees, pull requests, or implementation sequence.
-Use harness approval for required authorization. Report unavailable access as a blocker. Never turn
-either into a design question.
+Use harness approval for authorization. Missing access is a blocker, not a design question.
 
 ## DAW Standard
 
-Sourdaw is a DAW, not a generic application. Protect real-time audio, timing accuracy, latency-aware
+Sourdaw is a DAW, not a generic app. Protect real-time audio, timing accuracy, latency-aware
 monitoring, non-destructive editing, deterministic automation, project integrity, dependable undo,
-and fast musician workflows. Research established DAW behavior before inventing interaction or
-audio semantics. Prefer the common professional convention unless Sourdaw deliberately differs.
+and fast musician workflows. Research established DAWs before inventing interaction or audio
+semantics. Follow the common professional convention unless Sourdaw deliberately differs.
 
 ## Resource Safety
 
