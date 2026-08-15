@@ -191,6 +191,24 @@ describe('generateToolPlanningOutcome', () => {
         expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]));
     });
 
+    it('does not retry a successful provider when result persistence throws', async () => {
+        mocks.backendChain.value = ['native', 'webllm'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateNativeToolCalls.mockResolvedValue([
+            { name: 'mute_track', arguments: { track_id: 'track-1', muted: true } },
+        ]);
+
+        await expect(
+            generateToolCalls('sys', 'mute drums', undefined, undefined, undefined, () => {
+                throw new Error('provider usage persistence failed');
+            })
+        ).resolves.toEqual(completePlan([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]));
+        expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            '[AI Engine] Provider result observer failed: provider usage persistence failed'
+        );
+    });
+
     it('preserves a terminal native structured no-op without retrying through text', async () => {
         mocks.backendChain.value = ['native'];
         mocks.nativeEngineReady.value = true;
@@ -250,6 +268,26 @@ describe('generateToolPlanningOutcome', () => {
         expect(providerResults.map((result) => result.status)).toEqual(['failed', 'complete']);
         expect(providerResults[0]?.correlationId).not.toBe(providerResults[1]?.correlationId);
         expect(providerResults[0]?.failure).toMatchObject({ retryable: true });
+    });
+
+    it('continues provider fallback when failed-attempt persistence throws', async () => {
+        mocks.backendChain.value = ['native', 'webllm'];
+        mocks.nativeEngineReady.value = true;
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateNativeToolCalls.mockRejectedValue(
+            new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
+        );
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
+
+        await expect(
+            generateToolCalls('sys', 'solo drums', undefined, undefined, undefined, () => {
+                throw new Error('provider usage persistence failed');
+            })
+        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: {} }]));
+        expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            '[AI Engine] Provider result observer failed: provider usage persistence failed'
+        );
     });
 
     it('does not convert a malformed native DTO into a compatible empty plan', async () => {

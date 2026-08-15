@@ -222,6 +222,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain();
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
+        const reportProviderResult = (result: ModelProviderResult): void => {
+            try {
+                onProviderResult?.(result);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                logger.warn(`[AI Engine] Provider result observer failed: ${message}`);
+            }
+        };
 
         if (signal?.aborted) {
             throw createToolPlanningAbortError();
@@ -383,7 +391,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     }
                     const normalizedResult = providerSession.finish({ reason: 'stop' });
                     providerSessionSettled = true;
-                    onProviderResult?.(normalizedResult);
+                    reportProviderResult(normalizedResult);
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
@@ -404,7 +412,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         },
                     });
                     providerSessionSettled = true;
-                    onProviderResult?.(rejectedResult);
+                    reportProviderResult(rejectedResult);
                     logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
                 }
 
@@ -436,7 +444,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     }
-                    onProviderResult?.(failedResult);
+                    reportProviderResult(failedResult);
                 }
                 if (isAiRuntimeConfigurationChangedError(error)) {
                     llmStatusStore.set({ state: 'idle' });
