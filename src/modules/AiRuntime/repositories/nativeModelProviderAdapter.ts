@@ -103,7 +103,7 @@ export async function runNativeModelProviderRequest(
         input.signal?.throwIfAborted();
         if (input.request.operation === 'text') {
             if (input.request.stream) {
-                let finishReason: 'stop' | 'length' = 'stop';
+                let finishReason: 'stop' | 'length' | undefined;
                 await dependencies.streamCompletion(
                     input.request.messages,
                     (text) => input.onEvent({ type: 'text', mode: 'delta', text }),
@@ -118,6 +118,15 @@ export async function runNativeModelProviderRequest(
                         },
                     }
                 );
+                if (finishReason === undefined) {
+                    return {
+                        status: 'available',
+                        finish: errorFinish(
+                            'native-stream-incomplete',
+                            'The native model provider stream ended without a terminal event.'
+                        ),
+                    };
+                }
                 return { status: 'available', finish: { reason: finishReason } };
             } else {
                 const prompts = readPrompts(input.request);

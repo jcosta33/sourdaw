@@ -72,6 +72,7 @@ describe('native model provider adapter', () => {
                         },
                         provenance: 'provider-reported',
                     });
+                    options.onFinish?.('stop');
                 }),
             })
         );
@@ -88,6 +89,31 @@ describe('native model provider adapter', () => {
             output: { text: 'solid mix' },
             usage: { inputTokens: 12, outputTokens: 2, provenance: 'provider-reported' },
             ignoredProviderEvents: ['native:future-event'],
+        });
+    });
+
+    it('rejects streamed text without a provider terminal event', async () => {
+        const { request } = createFixture({ operation: 'text', stream: true });
+
+        await expect(
+            runNativeModelProviderRequest(
+                { request, onEvent: vi.fn() },
+                createDependencies({
+                    streamCompletion: vi.fn(async (_messages, onToken) => {
+                        onToken('partial output');
+                    }),
+                })
+            )
+        ).resolves.toEqual({
+            status: 'available',
+            finish: {
+                reason: 'error',
+                failure: {
+                    code: 'native-stream-incomplete',
+                    retryable: true,
+                    safeMessage: 'The native model provider stream ended without a terminal event.',
+                },
+            },
         });
     });
 
