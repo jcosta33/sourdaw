@@ -483,6 +483,19 @@ function prepareAgentRunTemporaryAssetCleanup(input: {
     });
 }
 
+function forgetAgentRunTemporaryAsset(input: { runId: string; assetId: string; cleanupOwner: string }): AgentRun {
+    return updateAgentRun(input.runId, Date.now(), (run) => {
+        const asset = run.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
+        if (!asset || asset.cleanupOwner !== input.cleanupOwner) {
+            throw new Error(`Temporary asset cannot be forgotten: ${input.assetId}`);
+        }
+        return {
+            ...run,
+            temporaryAssets: run.temporaryAssets.filter((candidate) => candidate.assetId !== input.assetId),
+        };
+    });
+}
+
 function requireAgentRunManualResume(input: {
     runId: string;
     reason: string;
@@ -564,6 +577,7 @@ export const agentRunLifecycle = {
     clear: clearAgentRuns,
     create: createAgentRun,
     get: getAgentRun,
+    forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,

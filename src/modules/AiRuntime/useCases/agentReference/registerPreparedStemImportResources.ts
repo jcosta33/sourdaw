@@ -5,8 +5,13 @@ import { agentRunCancellation } from '../cancelAgentRun';
 import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
 
 const CLEANUP_OWNER = 'stem-import-preparation';
+const registrations = new Map<string, () => void>();
 
-export function registerPreparedStemImportResources(input: {
+function key(runId: string, assetId: string): string {
+    return `${runId}\u0000${assetId}`;
+}
+
+function registerPreparedStemImportResources(input: {
     runId: string;
     stems: StemImportPromptScope['actionSeed']['stems'];
 }): void {
@@ -17,11 +22,32 @@ export function registerPreparedStemImportResources(input: {
             kind: 'import',
             cleanupOwner: CLEANUP_OWNER,
         });
-        agentRunCancellation.registerTemporaryAssetCleanup({
+        const unregister = agentRunCancellation.registerTemporaryAssetCleanup({
             runId: input.runId,
             assetId: stem.audioBufferId,
             cleanupOwner: CLEANUP_OWNER,
             cleanup: () => discardPreparedStemImportResources([stem]),
         });
+        registrations.set(key(input.runId, stem.audioBufferId), unregister);
     }
 }
+
+function releasePreparedStemImportResources(input: {
+    runId: string;
+    stems: StemImportPromptScope['actionSeed']['stems'];
+}): void {
+    for (const stem of input.stems) {
+        registrations.get(key(input.runId, stem.audioBufferId))?.();
+        registrations.delete(key(input.runId, stem.audioBufferId));
+        agentRunLifecycle.forgetTemporaryAsset({
+            runId: input.runId,
+            assetId: stem.audioBufferId,
+            cleanupOwner: CLEANUP_OWNER,
+        });
+    }
+}
+
+export const preparedStemImportResources = {
+    register: registerPreparedStemImportResources,
+    release: releasePreparedStemImportResources,
+};

@@ -8,7 +8,7 @@ import { createStemImportPromptScope } from './agentReference/createStemImportPr
 import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { prepareStemImport } from './agentReference/prepareStemImport';
-import { registerPreparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
+import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { getProjectContext } from './getProjectContext';
 import { parsePromptToActions } from './parsePromptToActions';
 
@@ -45,7 +45,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             }
             stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
             if (input.streamIdentity !== undefined) {
-                registerPreparedStemImportResources({
+                preparedStemImportResources.register({
                     runId: input.streamIdentity.runId,
                     stems: stemImportScope.actionSeed.stems,
                 });

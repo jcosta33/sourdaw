@@ -29,6 +29,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentRunCancellation } from './cancelAgentRun';
@@ -118,6 +119,12 @@ function recordTrackedAgentRunReceipt(
             renderJobIds: receipt.links.render.map((link) => link.jobId),
             analysisIds: receipt.links.analysis.map((link) => link.analysisId),
         });
+        const importedStems = confirmation.actions.flatMap((action) =>
+            action.type === 'importStemSet' ? action.payload.stems : []
+        );
+        if (importedStems.length > 0) {
+            preparedStemImportResources.release({ runId: confirmation.runId, stems: importedStems });
+        }
     });
 }
 
