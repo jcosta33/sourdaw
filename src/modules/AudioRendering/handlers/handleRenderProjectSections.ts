@@ -58,7 +58,7 @@ export const handleRenderProjectSections = createHandler<'renderProjectSections'
         const jobs = getJobs(action);
         return jobs !== null && artifactsDoNotConflict(jobs);
     },
-    execute: (action) => {
+    execute: (action, context) => {
         const jobs = getJobs(action);
         if (!jobs || !artifactsDoNotConflict(jobs)) {
             return { status: 'conflict' };
@@ -66,7 +66,7 @@ export const handleRenderProjectSections = createHandler<'renderProjectSections'
         let sourceRevision: string | null = null;
         const render = () => {
             sourceRevision ??= captureProjectRevision();
-            return renderAgentProjectSections({ jobs, sourceRevision });
+            return renderAgentProjectSections({ jobs, sourceRevision, signal: context?.signal });
         };
         return { status: 'written', afterCommit: render, afterAmbiguousCommit: render };
     },

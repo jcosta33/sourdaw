@@ -284,7 +284,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     };
 
     const handleCancelPendingActions = (confirmationId: string): void => {
-        cancelPendingChatActions({ confirmationId });
+        void cancelPendingChatActions({ confirmationId });
     };
 
     if (!chatState) {

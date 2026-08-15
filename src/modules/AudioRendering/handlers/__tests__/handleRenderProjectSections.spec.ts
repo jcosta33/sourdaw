@@ -56,7 +56,12 @@ describe('handleRenderProjectSections', () => {
 
     it('defers rendering until commit and reuses one post-commit revision for reconciliation', async () => {
         const action = createAction();
-        const result = await handleRenderProjectSections.execute(action);
+        const controller = new AbortController();
+        const result = await handleRenderProjectSections.execute(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: controller.signal,
+        });
 
         if (!result) {
             throw new Error('Expected renderProjectSections to return an execution result');
@@ -76,10 +81,12 @@ describe('handleRenderProjectSections', () => {
         expect(mocks.renderAgentProjectSections).toHaveBeenNthCalledWith(1, {
             jobs: action.payload.jobs,
             sourceRevision: 'revision-after-commit',
+            signal: controller.signal,
         });
         expect(mocks.renderAgentProjectSections).toHaveBeenNthCalledWith(2, {
             jobs: action.payload.jobs,
             sourceRevision: 'revision-after-commit',
+            signal: controller.signal,
         });
         expect(handleRenderProjectSections.requiresAbortCompensation).toBe(false);
     });

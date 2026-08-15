@@ -5,14 +5,14 @@ import { analyzeMix } from '../../useCases/analyzeMix';
 import { mixAnalysisDisplayLifecycle } from '../../useCases/mixAnalysisDisplayLifecycle';
 
 export const handleAnalyzeMix = createHandler<'analyzeMix'>({
-    execute: async () => {
+    execute: async (_action, context) => {
         const token = mixAnalysisDisplayLifecycle.begin();
         if (token === null) {
             return;
         }
 
         try {
-            const result = await analyzeMix();
+            const result = await analyzeMix(context?.signal);
             mixAnalysisDisplayLifecycle.complete({ token, result });
         } catch (error) {
             // A thrown analysis failure (e.g. an unusable master analyser node) must not be

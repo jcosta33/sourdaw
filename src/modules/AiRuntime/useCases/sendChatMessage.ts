@@ -1038,8 +1038,8 @@ export async function sendChatMessage(
             return 'An unknown error occurred during generation.';
         })();
         if (isAiRuntimeConfigurationChangedError(error)) {
-            trySettleAgentRunWorkLease(providerLease, 'cancelled');
             await agentRunCancellation.cancel({ runId, reason: errorMessage });
+            trySettleAgentRunWorkLease(providerLease, 'cancelled');
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,

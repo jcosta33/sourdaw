@@ -936,7 +936,7 @@ describe('sendChatMessage injectables', () => {
         }
         expect(projection).toMatchObject({
             phase: 'cancelled',
-            cancellation: { requested: true, acknowledgement: 'consumer-only' },
+            cancellation: { requested: true, acknowledgement: 'transport' },
         });
         expect(getAgentRun(projection.runId)?.workLeases).toMatchObject([
             { workId: 'provider-response', terminalState: 'cancelled' },

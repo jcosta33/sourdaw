@@ -363,4 +363,60 @@ describe('cancelAgentRun', () => {
             temporaryAssets: [{ assetId: 'preview.wav', status: 'released' }],
         });
     });
+
+    it('does not let one unresolved cleanup promise block later asset cleanup or cancellation return', async () => {
+        createPlanningRun('run-hung-cleanup');
+        for (const assetId of ['hung.wav', 'later.wav']) {
+            agentRunLifecycle.registerTemporaryAsset({
+                runId: 'run-hung-cleanup',
+                assetId,
+                kind: 'render',
+                cleanupOwner: `${assetId}-owner`,
+                createdAt: 110,
+            });
+        }
+        let resolveHungCleanup: (() => void) | undefined;
+        const hungCleanup = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveHungCleanup = resolve;
+                })
+        );
+        const laterCleanup = vi.fn();
+        registerAgentRunTemporaryAssetCleanup({
+            runId: 'run-hung-cleanup',
+            assetId: 'hung.wav',
+            cleanupOwner: 'hung.wav-owner',
+            cleanup: hungCleanup,
+        });
+        registerAgentRunTemporaryAssetCleanup({
+            runId: 'run-hung-cleanup',
+            assetId: 'later.wav',
+            cleanupOwner: 'later.wav-owner',
+            cleanup: laterCleanup,
+        });
+
+        const cancellation = cancelAgentRun({
+            runId: 'run-hung-cleanup',
+            reason: 'User cancelled',
+            requestedAt: 120,
+        });
+        await Promise.resolve();
+        const laterCleanupRanBeforeHungOwnerSettled = laterCleanup.mock.calls.length === 1;
+        let cancellationSettledBeforeHungOwner = false;
+        void cancellation.then(() => {
+            cancellationSettledBeforeHungOwner = true;
+        });
+        await vi.waitFor(() => expect(cancellationSettledBeforeHungOwner).toBe(true));
+        resolveHungCleanup?.();
+        await cancellation;
+
+        expect(laterCleanupRanBeforeHungOwnerSettled).toBe(true);
+        await vi.waitFor(() =>
+            expect(agentRunLifecycle.get('run-hung-cleanup')?.temporaryAssets).toEqual([
+                expect.objectContaining({ assetId: 'hung.wav', status: 'released' }),
+                expect.objectContaining({ assetId: 'later.wav', status: 'released' }),
+            ])
+        );
+    });
 });

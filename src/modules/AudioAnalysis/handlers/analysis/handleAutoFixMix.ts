@@ -22,12 +22,23 @@ const DEFAULT_TRACK_GAIN = 0.8;
  */
 const ANALYSER_SETTLE_MS = 250;
 
-function settleDelay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+function settleDelay(ms: number, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            signal?.removeEventListener('abort', abort);
+            resolve();
+        }, ms);
+        const abort = () => {
+            clearTimeout(timeout);
+            reject(signal?.reason instanceof Error ? signal.reason : new Error('Mix analysis was cancelled'));
+        };
+        signal?.addEventListener('abort', abort, { once: true });
+    });
 }
 
 export const handleAutoFixMix = createHandler<'autoFixMix'>({
-    execute: async () => {
+    execute: async (_action, context) => {
         const token = mixAnalysisDisplayLifecycle.begin();
         if (token === null) {
             return;
@@ -35,11 +46,12 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
 
         let did_apply_write = false;
         try {
-            const result = await analyzeMix();
+            const result = await analyzeMix(context?.signal);
             mixAnalysisDisplayLifecycle.complete({ token, result });
 
             const tracks = getTrackStoreState()?.tracks ?? [];
             for (const tl of result.trackLevels) {
+                context?.signal?.throwIfAborted();
                 if (tl.isClipping) {
                     // Reduce the track *relative to its current fader*, not by
                     // deriving an absolute gain from the measured peak. The
@@ -59,6 +71,7 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
                 }
             }
 
+            context?.signal?.throwIfAborted();
             if (result.overallLevel.peakDb > -3) {
                 const reductionDb = result.overallLevel.peakDb + 6;
                 const currentMasterLinear = 10 ** (result.overallLevel.peakDb / 20);
@@ -72,9 +85,9 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             // analysers, so re-reading immediately would capture pre-change
             // samples. Wait for the ramps/analysers to settle before the refresh
             // so the snapshot reflects the corrected mix.
-            await settleDelay(ANALYSER_SETTLE_MS);
+            await settleDelay(ANALYSER_SETTLE_MS, context?.signal);
 
-            const refreshed = await analyzeMix();
+            const refreshed = await analyzeMix(context?.signal);
             mixAnalysisDisplayLifecycle.complete({ token, result: refreshed });
         } catch (error) {
             // Surface the failure instead of swallowing it — a thrown analysis/fix error would

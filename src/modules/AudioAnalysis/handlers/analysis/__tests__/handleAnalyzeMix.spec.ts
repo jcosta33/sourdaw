@@ -63,6 +63,27 @@ describe('handleAnalyzeMix', () => {
         expect(mocks.completeLifecycle).toHaveBeenCalledWith({ token: 7, result });
     });
 
+    it('passes the command cancellation signal into analysis work', async () => {
+        const action = { type: 'analyzeMix', payload: undefined } as const;
+        const controller = new AbortController();
+        vi.mocked(analyzeMix).mockResolvedValue({
+            timestamp: 1,
+            overallLevel: { peakDb: -6, rmsDb: -12 },
+            frequencyBalance: { sub: 0, bass: 0, lowMid: 0, mid: 0, highMid: 0, high: 0 },
+            trackLevels: [],
+            issues: [],
+            suggestions: [],
+        });
+
+        await handleAnalyzeMix.execute(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: controller.signal,
+        });
+
+        expect(analyzeMix).toHaveBeenCalledExactlyOnceWith(controller.signal);
+    });
+
     it('no-ops when mix analysis store is missing', async () => {
         mocks.beginLifecycle.mockReturnValue(null);
 

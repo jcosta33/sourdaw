@@ -237,6 +237,36 @@ describe('handleAutoFixMix', () => {
         }
     });
 
+    it('stops before the delayed refresh when the command signal aborts', async () => {
+        vi.useFakeTimers();
+        const action = { type: 'autoFixMix' } as const;
+        const controller = new AbortController();
+        vi.mocked(analyzeMix).mockResolvedValue(create_analysis_result());
+
+        const execution = handleAutoFixMix.execute(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: controller.signal,
+        });
+        let settled = false;
+        const outcome = Promise.resolve(execution).then(
+            () => undefined,
+            (error: unknown) => error
+        );
+        void outcome.then(() => {
+            settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        controller.abort();
+        await vi.advanceTimersByTimeAsync(0);
+        const stoppedBeforeSettleDelay = settled;
+        await vi.advanceTimersByTimeAsync(250);
+        await outcome;
+
+        expect(stoppedBeforeSettleDelay).toBe(true);
+        expect(analyzeMix).toHaveBeenCalledOnce();
+    });
+
     it('should log the error and reset analyzing state on error', async () => {
         const failure = new Error('crash');
         vi.mocked(analyzeMix).mockRejectedValue(failure);

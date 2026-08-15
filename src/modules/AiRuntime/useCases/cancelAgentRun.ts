@@ -125,6 +125,40 @@ function recordCancellationFailure(input: { runId: string; workId: string; error
     });
 }
 
+function finishTemporaryAssetCleanup(input: {
+    key: string;
+    registration: TemporaryAssetCleanupRegistration;
+    releasedAt: number;
+}): void {
+    agentRunLifecycle.releaseTemporaryAsset({
+        runId: input.registration.runId,
+        assetId: input.registration.assetId,
+        cleanupOwner: input.registration.cleanupOwner,
+        releasedAt: input.releasedAt,
+    });
+    if (temporaryAssetCleanupRegistrations.get(input.key) === input.registration) {
+        temporaryAssetCleanupRegistrations.delete(input.key);
+    }
+}
+
+function recordTemporaryAssetCleanupFailure(input: {
+    registration: TemporaryAssetCleanupRegistration;
+    error: unknown;
+    occurredAt: number;
+}): void {
+    input.registration.inFlight = false;
+    agentRunLifecycle.recordError({
+        runId: input.registration.runId,
+        error: {
+            code: 'temporary-asset-cleanup-failed',
+            message: getErrorMessage(input.error),
+            occurredAt: input.occurredAt,
+            retriable: true,
+            workId: null,
+        },
+    });
+}
+
 function bindAgentRunAbortController(input: {
     runId: string;
     lease: AgentRunWorkLease;
@@ -236,29 +270,21 @@ async function cancelAgentRun(input: {
         }
         registration.inFlight = true;
         try {
-            await registration.cleanup();
-            agentRunLifecycle.releaseTemporaryAsset({
-                runId: input.runId,
-                assetId: asset.assetId,
-                cleanupOwner: asset.cleanupOwner,
-                releasedAt: requestedAt,
-            });
-            releasedAssetIds.push(asset.assetId);
-            if (temporaryAssetCleanupRegistrations.get(key) === registration) {
-                temporaryAssetCleanupRegistrations.delete(key);
+            const cleanup = registration.cleanup();
+            if (cleanup instanceof Promise) {
+                void cleanup
+                    .then(() => {
+                        finishTemporaryAssetCleanup({ key, registration, releasedAt: requestedAt });
+                    })
+                    .catch((error: unknown) => {
+                        recordTemporaryAssetCleanupFailure({ registration, error, occurredAt: requestedAt });
+                    });
+            } else {
+                finishTemporaryAssetCleanup({ key, registration, releasedAt: requestedAt });
+                releasedAssetIds.push(asset.assetId);
             }
         } catch (error) {
-            registration.inFlight = false;
-            agentRunLifecycle.recordError({
-                runId: input.runId,
-                error: {
-                    code: 'temporary-asset-cleanup-failed',
-                    message: getErrorMessage(error),
-                    occurredAt: requestedAt,
-                    retriable: true,
-                    workId: null,
-                },
-            });
+            recordTemporaryAssetCleanupFailure({ registration, error, occurredAt: requestedAt });
         }
     }
 
