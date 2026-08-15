@@ -1,6 +1,6 @@
-import { streamHostedModelText } from '../streamHostedModelText';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { discloseRemoteTransmission } from '../discloseRemoteTransmission';
+import { streamHostedModelText } from '../streamHostedModelText';
 
 type CloudChatCompletionOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
 

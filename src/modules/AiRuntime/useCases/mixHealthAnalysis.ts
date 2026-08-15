@@ -1,9 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 
-import { streamHostedModelText } from './streamHostedModelText';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
+
 import { discloseRemoteTransmission } from './discloseRemoteTransmission';
+import { streamHostedModelText } from './streamHostedModelText';
 
 /**
  * LLM-backed mix health report. Lives in AiRuntime because the primary

@@ -61,7 +61,6 @@ import { describePendingActionConfirmation } from './describePendingActionConfir
 import { discloseRemoteTransmission } from './discloseRemoteTransmission';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
-import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { createModelProviderProtocol } from './modelProviderProtocol';
 import { planPromptActions } from './planPromptActions';
@@ -307,16 +306,6 @@ export async function sendChatMessage(
         });
 
         try {
-            if (getBackendChain({ operation: 'tools', modality: 'text', streaming: false }).includes('cloud')) {
-                assertRemoteAgentDataPolicy(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
-                discloseRemoteTransmission(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'assistant',
-                    content: formatRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
-                    timestamp: Date.now(),
-                });
-            }
             const { context, result, projectRevision } = await planPromptActions({
                 prompt: userText,
                 signal: aborter.signal,

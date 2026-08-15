@@ -1,3 +1,4 @@
+import { classifyAgentDataPolicy } from '../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type CompiledModelProviderRequest,
@@ -16,7 +17,6 @@ import {
     type ModelProviderSession,
     type ModelProviderUsage,
 } from '../models/ModelProviderProtocol';
-import { classifyAgentDataPolicy } from '../models/AgentDataPolicy';
 
 const MAX_MODEL_PROVIDER_EVENT_BYTES = 64 * 1_024;
 const MAX_MODEL_PROVIDER_REQUEST_BYTES = 1_024 * 1_024;

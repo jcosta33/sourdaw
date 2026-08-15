@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { createRemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type ModelProviderEvent,
@@ -47,6 +48,12 @@ function compileTextRequest(provider: 'webllm' | 'openai-compatible' = 'webllm')
         controls: { cache: 'provider-default', reasoning: 'provider-default' },
         budget: { maxInputTokens: 100, maxOutputTokens: 32, maxTotalTokens: 132 },
         dataPolicy: provider === 'webllm' ? 'local-only' : 'remote-allowed',
+        ...(provider === 'webllm'
+            ? {}
+            : {
+                  dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+                  remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+              }),
     });
     if (compiled.status !== 'ready') {
         throw new Error(compiled.failure.safeMessage);
@@ -55,6 +62,36 @@ function compileTextRequest(provider: 'webllm' | 'openai-compatible' = 'webllm')
 }
 
 describe('modelProviderProtocol', () => {
+    it('rejects raw audio before a hosted provider can be invoked', () => {
+        const hosted = createModelProviderProtocol({ provider: 'openai-compatible', model: 'fixture-model' });
+        const invokeProvider = vi.fn();
+        const compiled = hosted.compileRequest({
+            correlationId: 'raw-audio-request',
+            operation: 'tools',
+            modality: 'text',
+            messages: [{ role: 'user', content: 'Process this recording.' }],
+            tools: [],
+            stream: false,
+            limits: { maxOutputTokens: 64 },
+            controls: { cache: 'provider-default', reasoning: 'provider-default' },
+            budget: { maxInputTokens: 100, maxOutputTokens: 64, maxTotalTokens: 164 },
+            dataPolicy: 'remote-allowed',
+            dataCategories: ['raw-audio'],
+            remoteDisclosure: {
+                destination: 'provider',
+                categories: ['raw-audio'],
+                disclosedAt: Date.now(),
+            },
+        });
+
+        if (compiled.status === 'ready') {
+            invokeProvider(compiled.request);
+        }
+
+        expect(compiled).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
+        expect(invokeProvider).not.toHaveBeenCalled();
+    });
+
     it('publishes the complete provider-neutral protocol surface', () => {
         expect(getAiRuntimeProtocolContracts().providerProtocol).toMatchObject({
             schemaVersion: 2,

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { streamHostedModelText } from '../streamHostedModelText';
-import { discloseRemoteTransmission } from '../discloseRemoteTransmission';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
+import { discloseRemoteTransmission } from '../discloseRemoteTransmission';
+import { streamHostedModelText } from '../streamHostedModelText';
 
 const mocks = vi.hoisted(() => ({
     streamCloudChatCompletion: vi.fn(),

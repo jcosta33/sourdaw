@@ -1,3 +1,5 @@
+import { type AgentDataCategory, type RemoteTransmissionDisclosure } from './AgentDataPolicy';
+
 export const MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION = 2 as const;
 
 export const MODEL_PROVIDER_NAMES = ['native', 'webllm', 'anthropic', 'openai', 'openai-compatible'] as const;
@@ -163,4 +165,3 @@ export type ModelProviderProtocol = {
     compileRequest: (input: ModelProviderRequestInput) => CompiledModelProviderRequest;
     start: (request: ModelProviderRequest) => ModelProviderSession;
 };
-import { type AgentDataCategory, type RemoteTransmissionDisclosure } from './AgentDataPolicy';
