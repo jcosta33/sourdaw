@@ -2,13 +2,13 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { type ModelProviderEvent } from '../../../models/ModelProviderProtocol';
-import { getCloudClient } from '../getCloudClient';
 import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
 import { CLOUD_MODEL } from './helpers';
+import { requestAnthropicStream } from './requestAnthropicStream';
 import { streamOpenAiCompatibleChatCompletion } from './streamOpenAiCompatibleChatCompletion';
 
 const MAX_ANTHROPIC_EVENT_BYTES = 64 * 1_024;
@@ -68,19 +68,14 @@ export async function streamCloudChatCompletion(
             return { status: 'complete' };
         }
 
-        const client = getCloudClient();
-        if (!client) {
-            throw new Error('Anthropic client unavailable');
-        }
-        const stream = client.messages.stream(
-            {
-                model: runtime.model || CLOUD_MODEL,
-                max_tokens: options?.maxTokens ?? 2048,
-                system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
-                messages: chatMessages,
-            },
-            { signal: controller.signal }
-        );
+        const stream = requestAnthropicStream({
+            apiKey: runtime.api_key,
+            model: runtime.model || CLOUD_MODEL,
+            maxTokens: options?.maxTokens ?? 2048,
+            system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
+            messages: chatMessages,
+            signal: controller.signal,
+        });
 
         // Stream-error handling: the Anthropic SDK's MessageStream event union
         // (RawMessageStreamEvent) has NO 'error' member — it is only
@@ -97,6 +92,9 @@ export async function streamCloudChatCompletion(
         let eventCount = 0;
         let streamedBytes = 0;
         for await (const event of stream) {
+            if (!isRecord(event) || typeof event.type !== 'string') {
+                throw new Error('Hosted AI chat stream returned an invalid event');
+            }
             const eventBytes = encodedJsonBytes(event);
             eventCount += 1;
             if (
@@ -115,8 +113,16 @@ export async function streamCloudChatCompletion(
                 options?.onUsage?.(usageEvent);
             }
             // Text tokens are the visible output.
-            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-                onToken(event.delta.text);
+            if (event.type === 'content_block_delta') {
+                if (!isRecord(event.delta) || typeof event.delta.type !== 'string') {
+                    throw new Error('Hosted AI chat stream returned an invalid content event');
+                }
+                if (event.delta.type === 'text_delta') {
+                    if (typeof event.delta.text !== 'string') {
+                        throw new TypeError('Hosted AI chat stream returned invalid text');
+                    }
+                    onToken(event.delta.text);
+                }
                 continue;
             }
 
@@ -124,6 +130,12 @@ export async function streamCloudChatCompletion(
             // refusing — previously invisible to the caller. Surface it as a
             // diagnostic so a cut-off completion is not silently treated as whole.
             if (event.type === 'message_delta') {
+                if (
+                    !isRecord(event.delta) ||
+                    (event.delta.stop_reason !== null && typeof event.delta.stop_reason !== 'string')
+                ) {
+                    throw new Error('Hosted AI chat stream returned an invalid completion event');
+                }
                 const stopReason = event.delta.stop_reason;
                 if (stopReason !== null) {
                     sawTerminalDelta = true;
