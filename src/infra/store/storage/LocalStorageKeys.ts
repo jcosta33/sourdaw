@@ -126,6 +126,9 @@ export type LocalStorageKey =
     // Stores AI action history (undo groups, timestamps, prompts)
     | 'sourdaw-ai-history'
 
+    // Stores resumable local AI run metadata, receipts, leases, and cleanup ownership
+    | 'sourdaw-agent-runs'
+
     // Stores user-defined keyboard shortcuts
     | 'sourdaw-shortcuts'
 

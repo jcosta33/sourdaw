@@ -55,6 +55,7 @@ const {
     canExecuteCommandBatchMock,
     prepareOfflineLevainMock,
     initBranchStateMock,
+    recoverInterruptedAgentRunsMock,
     flushDeferredStorageNoticeMock,
     getAutomationParameterRangeMock,
     setAutomationParameterRangeResolverMock,
@@ -86,6 +87,7 @@ const {
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
         initBranchStateMock: vi.fn(),
+        recoverInterruptedAgentRunsMock: vi.fn(() => ({ recoveredRunIds: [] })),
         flushDeferredStorageNoticeMock: vi.fn(),
         getAutomationParameterRangeMock: vi.fn(),
         setAutomationParameterRangeResolverMock: vi.fn(),
@@ -103,6 +105,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
+    recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
     setVoiceToggleEventBus: noop,
@@ -566,6 +569,10 @@ describe('bootstrap', () => {
         // refused localStorage write threw during module evaluation and stopped
         // the app booting with no catch anywhere able to reach it. See #1557.
         expect(initBranchStateMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('recovers interrupted AI runs as an explicit boot step', () => {
+        expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {

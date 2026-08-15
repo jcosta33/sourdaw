@@ -33,11 +33,27 @@ export type LocalStorageAdapter<TData> = StorageAdapter<TData> & {
     trySet(value: TData | null): boolean;
 };
 
-export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAdapter<TData> => {
+type CreateLocalStorageOptions = {
+    /**
+     * Keep sanitizer-rejected source bytes durable while exposing only the
+     * sanitized projection to this build. Versioned stores use this to avoid
+     * destroying state written by a newer application version.
+     */
+    preserveSanitizedSourceWhen?: (value: unknown) => boolean;
+};
+
+export const createLocalStorage = <TData>(
+    key: LocalStorageKey,
+    options?: CreateLocalStorageOptions
+): LocalStorageAdapter<TData> => {
     let cachedValue: TData | null | undefined = undefined;
+    let sanitizedSourcePreserved = false;
 
     /** Write through to the backing store, advancing the cache only once durable. */
     function persist(value: TData | null): void {
+        if (sanitizedSourcePreserved) {
+            throw new Error(`Local storage "${key}" contains a quarantined unsupported schema`);
+        }
         if (value === null) {
             window.localStorage.removeItem(key);
             cachedValue = null;
@@ -48,7 +64,7 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAda
         cachedValue = value;
     }
 
-    return {
+    const adapter: LocalStorageAdapter<TData> = {
         get(): TData | null {
             if (cachedValue !== undefined) {
                 return cachedValue;
@@ -91,6 +107,9 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAda
         // keeping the stale value instead would leave readers on data the
         // caller has already moved past.
         trySet(value: TData | null): boolean {
+            if (sanitizedSourcePreserved) {
+                return false;
+            }
             try {
                 persist(value);
                 return true;
@@ -109,6 +128,7 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAda
         clear(): void {
             window.localStorage.removeItem(key);
             cachedValue = null;
+            sanitizedSourcePreserved = false;
         },
 
         isSupported(): boolean {
@@ -119,4 +139,14 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAda
             }
         },
     };
+
+    if (options?.preserveSanitizedSourceWhen) {
+        adapter.setProjected = (value): void => {
+            cachedValue = value;
+            sanitizedSourcePreserved = true;
+        };
+        adapter.shouldProjectSanitizedSource = options.preserveSanitizedSourceWhen;
+    }
+
+    return adapter;
 };

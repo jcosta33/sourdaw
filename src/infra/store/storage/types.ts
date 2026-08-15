@@ -46,10 +46,15 @@ export type StorageAdapter<TData> = {
      *  from one replica's opinion deletes, for every peer, rows another build
      *  reads perfectly well.
      *
-     *  Adapters backed by storage only this replica can see omit this, so the
-     *  caller falls back to `set()`. There repairing the backing store is the
-     *  point and there is no peer to lose. */
+     *  Local-only adapters normally omit this because repair is the point.
+     *  A versioned local store may opt in when an unrecognized future schema
+     *  must remain byte-for-byte available to the newer build that authored
+     *  it, while this build exposes only a safe empty projection. */
     setProjected?(value: TData | null): void;
+    /** Decide whether one sanitizer input must be projected rather than
+     *  repaired. Shared adapters omit this and always project; versioned local
+     *  adapters use it to quarantine only explicit unsupported schemas. */
+    shouldProjectSanitizedSource?(value: unknown): boolean;
     /** Register the store's inbound sanitizer so shared raw CRDT content can
      *  be checked for projection loss before any read model is hydrated. */
     registerInboundSanitizer?(sanitize: (value: unknown) => unknown): void;

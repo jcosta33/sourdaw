@@ -15,7 +15,9 @@ import { type IntentResult } from '../../models/IntentResult';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { agentRunControls } from '../getAgentRunControlProjection';
 import { type ProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
@@ -24,12 +26,15 @@ type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['exec
 type ExecuteVersionedCommandBatchEnvelope =
     (typeof import('#/modules/Command/useCases'))['executeVersionedCommandBatchEnvelope'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
+const { clear: clearAgentRuns, get: getAgentRun } = agentRunLifecycle;
+const { list: getAgentRunControlProjections } = agentRunControls;
 type MockWebLlmEngine = {
     interruptGenerate: () => void;
     chat: { completions: { create: (payload: Record<string, unknown>) => Promise<unknown> } };
 };
 type ProposedConfirmationInput = {
     id: string;
+    runId?: string;
     risk?: {
         level: string;
         reason: string | null;
@@ -81,6 +86,7 @@ const mocks = vi.hoisted(() => {
                     options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
                 ) => Promise<{ status: 'complete' } | { status: 'incomplete'; reason: string }>
             >(),
+        rejectPendingConfirmation: { value: false },
     };
 });
 
@@ -183,6 +189,10 @@ vi.mock('../../stores/pendingActionConfirmationStore', async (import_original) =
             // confirmPendingChatActions can replay the approved batch in the
             // ADR-0033 confirmation-flow tests below.
             mocks.proposePendingActionConfirmation(input);
+            if (mocks.rejectPendingConfirmation.value) {
+                input.resourceLease?.release();
+                return null;
+            }
             return original.proposePendingActionConfirmation(input);
         },
     };
@@ -213,12 +223,14 @@ describe('sendChatMessage injectables', () => {
             targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, `fingerprint:${targetId}`])),
         }));
         clearPendingActionConfirmations();
+        clearAgentRuns();
         mocks.chatStoreValue.value = null;
         mocks.nativeEngineReady.value = true;
         mocks.backend.value = 'native';
         mocks.cloudAvailable.value = false;
         mocks.webLlmEngine.value = null;
         mocks.projectRevision.value = 'revision-1';
+        mocks.rejectPendingConfirmation.value = false;
         aiBackendPreferenceStore.set('auto');
         llmStatusStore.set({ state: 'idle' });
         mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
@@ -334,6 +346,24 @@ describe('sendChatMessage injectables', () => {
             expect.any(String),
             expect.objectContaining({ content: expect.stringContaining('Planned without changing the project:') })
         );
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the planned run to be retained');
+        }
+        expect(projection).toMatchObject({
+            mode: 'plan',
+            phase: 'completed',
+            request: 'plan removing track 1',
+            allowedActions: { cancel: false, resume: false, retryWorkIds: [] },
+        });
+        expect(getAgentRun(projection.runId)?.plan).toMatchObject({
+            summary: 'Remove track "Track 1"',
+            commandIds: [],
+            serializedBatchIdentity: null,
+        });
+        expect(getAgentRun(projection.runId)?.workLeases).toMatchObject([
+            { workId: 'provider-planning', ownerKind: 'provider', terminalState: 'completed' },
+        ]);
     });
 
     it('should not execute prompt actions that require confirmation', async () => {
@@ -415,6 +445,18 @@ describe('sendChatMessage injectables', () => {
         expect(confirmationUpdate?.content).toContain('Remove track "Drums"');
         expect(confirmationUpdate?.pendingActionConfirmationId).toMatch(/^prompt-confirmation-/);
         expect(confirmationUpdate?.pendingActionConfirmationStatus).toBe('proposed');
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the approval run to be retained');
+        }
+        expect(projection).toMatchObject({
+            mode: 'apply',
+            phase: 'waiting-for-approval',
+            request: 'delete drums',
+        });
+        expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledWith(
+            expect.objectContaining({ runId: projection.runId })
+        );
     });
 
     it('proposes named confirmation instead of executing a destructive clip command', async () => {
@@ -863,6 +905,93 @@ describe('sendChatMessage injectables', () => {
             })
         );
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the cancelled explain run to be retained');
+        }
+        expect(projection).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { requested: true, acknowledgement: 'consumer-only' },
+        });
+        expect(getAgentRun(projection.runId)?.workLeases).toMatchObject([
+            { workId: 'provider-response', terminalState: 'cancelled' },
+        ]);
+    });
+
+    it('claims and settles durable preview work around the isolated command preview', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'preview muting the vocals',
+            requiresConfirmation: false,
+        });
+        mocks.executeVersionedCommandBatchEnvelope.mockRejectedValueOnce(new Error('preview stopped'));
+
+        await sendChatMessage('preview muting the vocals', { mode: 'preview' });
+
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the failed preview run to be retained');
+        }
+        expect(projection).toMatchObject({ phase: 'failed' });
+        expect(getAgentRun(projection.runId)?.workLeases).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    ownerKind: 'command',
+                    cleanupOwner: 'command-preview',
+                    terminalState: 'failed',
+                }),
+            ])
+        );
+    });
+
+    it('settles preview work when the command preview returns a non-preview outcome', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'preview muting the vocals',
+            requiresConfirmation: false,
+        });
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValueOnce({
+            status: 'rejected',
+            reason: 'preview rejected',
+            actions: [],
+        });
+
+        await sendChatMessage('preview muting the vocals', { mode: 'preview' });
+
+        const [projection] = getAgentRunControlProjections();
+        if (!projection) {
+            throw new Error('Expected the rejected preview run to be retained');
+        }
+        expect(projection).toMatchObject({ phase: 'failed' });
+        expect(getAgentRun(projection.runId)?.workLeases).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    ownerKind: 'command',
+                    cleanupOwner: 'command-preview',
+                    terminalState: 'failed',
+                }),
+            ])
+        );
     });
 
     it('does not restore a stale backend after selection changes during generation', async () => {
@@ -1031,6 +1160,49 @@ describe('sendChatMessage injectables', () => {
                 content: expect.stringMatching(/runtime command executed.*do not retry/is),
             })
         );
+        const [projection] = getAgentRunControlProjections();
+        expect(projection?.committedReceipts).toEqual([expect.objectContaining({ revertGroupId: null })]);
+    });
+
+    it('does not reanimate a cancelled run when a committed callback arrives after lease cancellation', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'mute the drums',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppActionBatch.mockImplementationOnce(async () => {
+            const [projection] = getAgentRunControlProjections();
+            if (!projection) {
+                throw new Error('Expected an executing agent run');
+            }
+            agentRunLifecycle.cancel({
+                runId: projection.runId,
+                reason: 'Cancelled while command was in flight.',
+            });
+            return {
+                status: 'committed',
+                actions: [{ action, label: 'Mute track' }],
+            };
+        });
+
+        await sendChatMessage('mute the drums');
+
+        const [projection] = getAgentRunControlProjections();
+        expect(projection).toMatchObject({
+            phase: 'partially-completed',
+            cancellation: { requested: true },
+            committedReceipts: [expect.objectContaining({ workId: expect.any(String) })],
+        });
     });
 
     it('does not report execution failure when AI history reporting throws after commit', async () => {
@@ -1069,6 +1241,57 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
+    it('keeps a committed receipt authoritative when run-state persistence fails afterward', async () => {
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true, expectedMuted: false },
+        } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'mute the drums',
+            requiresConfirmation: false,
+        });
+        const originalSetItem = Storage.prototype.setItem;
+        let commandCommitted = false;
+        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+            this: Storage,
+            key,
+            value
+        ) {
+            if (key === 'sourdaw-agent-runs' && commandCommitted) {
+                throw new DOMException('quota exceeded', 'QuotaExceededError');
+            }
+            originalSetItem.call(this, key, value);
+        });
+        try {
+            mocks.executeAppActionBatch.mockImplementationOnce(async () => {
+                commandCommitted = true;
+                return { status: 'committed', actions: [{ action, label: 'Mute track' }] };
+            });
+
+            const receipt = await sendChatMessage('mute the drums');
+
+            expect(receipt?.outcome).toBe('committed');
+            const assistantMessage = mocks.appendChatMessage.mock.calls[1]?.[0];
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                assistantMessage?.id,
+                expect.objectContaining({
+                    error: expect.stringContaining('recovery state could not be persisted'),
+                    content: expect.stringMatching(/project change committed.*do not retry/is),
+                })
+            );
+            expect(getAgentRunControlProjections()[0]).toMatchObject({ phase: 'completed' });
+        } finally {
+            setItemSpy.mockRestore();
+        }
+    });
+
     it('does not persist or report a prefix when a later batch action fails', async () => {
         const later_failure = new Error('second action was not dispatched');
         setProjectContextWithClip();
@@ -1092,7 +1315,7 @@ describe('sendChatMessage injectables', () => {
         // ADR 0033: destructive multi-command work must be confirmed, so the
         // destructive pair proposes instead of executing directly.
         const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
-        if (!proposal?.id) {
+        if (!proposal?.id || !proposal.runId) {
             throw new Error('Expected the destructive batch to require confirmation');
         }
         expect(proposal.risk).toEqual({
@@ -1109,6 +1332,15 @@ describe('sendChatMessage injectables', () => {
             status: 'failed',
             reason: later_failure.message,
         });
+        expect(getAgentRun(proposal.runId)).toMatchObject({
+            phase: 'failed',
+            errors: [{ code: 'confirmed-command-rejected', message: later_failure.message }],
+            committedWork: [],
+            workLeases: [
+                { workId: 'provider-planning', terminalState: 'completed' },
+                { ownerKind: 'command', terminalState: 'failed' },
+            ],
+        });
 
         expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
@@ -1120,6 +1352,35 @@ describe('sendChatMessage injectables', () => {
         expect(partialUpdate?.[1].content).toBe(
             `Failed to execute confirmed actions atomically:\n\n${later_failure.message}`
         );
+    });
+
+    it('terminalizes a run when its pending confirmation cannot be retained', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
+            rawText: 'delete the drums',
+            requiresConfirmation: false,
+        });
+        mocks.rejectPendingConfirmation.value = true;
+
+        await sendChatMessage('delete the drums');
+
+        const [projection] = getAgentRunControlProjections();
+        expect(projection).toMatchObject({
+            phase: 'failed',
+            errors: [
+                expect.objectContaining({
+                    code: 'confirmation-not-retained',
+                    retriable: true,
+                    workId: expect.any(String),
+                }),
+            ],
+        });
     });
 
     it('reports an ambiguous partial commit without creating AI history or suggesting retry', async () => {
@@ -1143,7 +1404,7 @@ describe('sendChatMessage injectables', () => {
         await sendChatMessage('delete drums and clip');
 
         const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
-        if (!proposal?.id) {
+        if (!proposal?.id || !proposal.runId) {
             throw new Error('Expected the destructive batch to require confirmation');
         }
         mocks.executeAppActionBatch.mockResolvedValueOnce({
@@ -1189,7 +1450,7 @@ describe('sendChatMessage injectables', () => {
         await sendChatMessage('delete drums and clip');
 
         const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
-        if (!proposal?.id) {
+        if (!proposal?.id || !proposal.runId) {
             throw new Error('Expected the destructive batch to require confirmation');
         }
         mocks.executeAppActionBatch.mockResolvedValueOnce({
@@ -1203,6 +1464,20 @@ describe('sendChatMessage injectables', () => {
 
         await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toEqual({
             status: 'executed',
+        });
+        expect(getAgentRun(proposal.runId)).toMatchObject({
+            phase: 'completed',
+            committedWork: [
+                {
+                    workId: expect.any(String),
+                    receiptIdentity: expect.stringContaining(proposal.runId),
+                    revertGroupId: 'group-1',
+                },
+            ],
+            workLeases: [
+                { workId: 'provider-planning', terminalState: 'completed' },
+                { ownerKind: 'command', terminalState: 'completed' },
+            ],
         });
 
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
@@ -1222,5 +1497,112 @@ describe('sendChatMessage injectables', () => {
         expect(combinedFailureUpdate?.[0]).toBe(assistant_message?.id);
         expect(combinedFailureUpdate?.[1].error).toBe(warning);
         expect(combinedFailureUpdate?.[1].content).toMatch(/committed with a follow-up warning.*do not retry/is);
+    });
+
+    it('retains a late confirmed receipt without reopening a cancelled run', async () => {
+        setProjectContextWithClip();
+        const firstAction = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        const secondAction = { type: 'removeClip', payload: { clipId: 'clip-1' } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [firstAction, secondAction],
+            rawText: 'delete drums and clip',
+            requiresConfirmation: false,
+        });
+        await sendChatMessage('delete drums and clip');
+        const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        if (!proposal?.id || !proposal.runId) {
+            throw new Error('Expected the destructive batch to require confirmation');
+        }
+        const proposalRunId = proposal.runId;
+        mocks.executeAppActionBatch.mockImplementationOnce(async () => {
+            agentRunLifecycle.cancel({
+                runId: proposalRunId,
+                reason: 'Cancelled while the confirmed command was in flight.',
+            });
+            return {
+                status: 'committed',
+                actions: [
+                    { action: firstAction, label: 'Remove track' },
+                    { action: secondAction, label: 'Remove clip' },
+                ],
+            };
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(getAgentRun(proposalRunId)).toMatchObject({
+            phase: 'partially-completed',
+            cancellation: { requestedAt: expect.any(Number) },
+            committedWork: [expect.objectContaining({ receiptIdentity: expect.any(String) })],
+        });
+    });
+
+    it('warns after confirmation when the committed run receipt cannot persist', async () => {
+        setProjectContextWithClip();
+        const firstAction = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        const secondAction = { type: 'removeClip', payload: { clipId: 'clip-1' } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [firstAction, secondAction],
+            rawText: 'delete drums and clip',
+            requiresConfirmation: false,
+        });
+        await sendChatMessage('delete drums and clip');
+        const proposal = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0];
+        if (!proposal?.id || !proposal.runId) {
+            throw new Error('Expected the destructive batch to require confirmation');
+        }
+
+        const originalSetItem = Storage.prototype.setItem;
+        let commandCommitted = false;
+        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+            this: Storage,
+            key,
+            value
+        ) {
+            if (key === 'sourdaw-agent-runs' && commandCommitted) {
+                throw new DOMException('quota exceeded', 'QuotaExceededError');
+            }
+            originalSetItem.call(this, key, value);
+        });
+        try {
+            mocks.executeAppActionBatch.mockImplementationOnce(async () => {
+                commandCommitted = true;
+                return {
+                    status: 'committed',
+                    actions: [
+                        { action: firstAction, label: 'Remove track' },
+                        { action: secondAction, label: 'Remove clip' },
+                    ],
+                };
+            });
+
+            await expect(confirmPendingChatActions({ confirmationId: proposal.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            const assistantMessage = mocks.appendChatMessage.mock.calls[1]?.[0];
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                assistantMessage?.id,
+                expect.objectContaining({
+                    error: expect.stringContaining('recovery state could not be persisted'),
+                    content: expect.stringMatching(/verified command receipt remains authoritative.*do not retry/is),
+                })
+            );
+            expect(getAgentRun(proposal.runId)).toMatchObject({ phase: 'completed' });
+        } finally {
+            setItemSpy.mockRestore();
+        }
     });
 });
