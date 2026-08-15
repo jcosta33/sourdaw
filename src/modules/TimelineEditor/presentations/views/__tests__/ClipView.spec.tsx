@@ -227,6 +227,11 @@ describe('ClipView', () => {
         expect(screen.queryByTestId('knead-editor')).not.toBeInTheDocument();
         expect(screen.getByText('Track track-1')).toBeInTheDocument();
         expect(screen.getByText('— Midi Clip')).toBeInTheDocument();
+        // The note-count readout mirrors the MIDI store's notes for the
+        // selected clip (live content, not clip bookkeeping).
+        const noteCount = screen.getByTestId('selected-clip-note-count');
+        expect(noteCount).toHaveTextContent('0 notes');
+        expect(noteCount).toHaveAttribute('aria-label', '0 notes in Midi Clip');
     });
 
     it('should render the waveform editor by default for an audio track with a clip', () => {
@@ -242,6 +247,8 @@ describe('ClipView', () => {
         expect(waveform).toHaveAttribute('data-clip-id', 'clip-audio');
         expect(waveform).toHaveAttribute('data-audio-buffer-id', 'buf-1');
         expect(screen.queryByTestId('knead-editor')).not.toBeInTheDocument();
+        // The note-count readout is a MIDI-clip surface: absent for audio.
+        expect(screen.queryByTestId('selected-clip-note-count')).not.toBeInTheDocument();
 
         const waveformButton = screen.getByText('Waveform');
         const pitchButton = screen.getByText('Knead (Pitch)');
