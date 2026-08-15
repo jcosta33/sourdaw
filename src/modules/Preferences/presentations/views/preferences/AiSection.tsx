@@ -159,14 +159,14 @@ export const AiSection = (): ReactElement => {
                     className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
                     aria-label="AI execution backend"
                 >
-                    {nativeAvailable ? <option value="auto">Automatic failover</option> : null}
+                    {nativeAvailable ? <option value="auto">Automatic local failover</option> : null}
                     {nativeAvailable ? <option value="native">Native local</option> : null}
                     <option value="webllm">Browser WebLLM</option>
                     <option value="cloud">Hosted provider</option>
                 </select>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
                     {nativeAvailable
-                        ? 'Choose one backend, or let the desktop app fail over between native local, WebLLM, and your hosted provider.'
+                        ? 'Automatic stays local and fails over between native local and WebLLM. Select Hosted provider explicitly to send prompts remotely.'
                         : 'Choose where prompts run. WebLLM stays in this browser; hosted AI uses your configured provider.'}
                 </p>
             </FieldGroup>
