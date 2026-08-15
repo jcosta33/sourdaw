@@ -38,8 +38,6 @@ sha2 = "0.11"
 rtrb = "0.3"
 hound = "3.5"
 uuid = { version = "1.23.0", features = ["v4"] }
-specta = { version = "2.0.0-rc.25", features = ["derive"] }
-tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "typescript"] }
 daw-core = { path = "../crates/daw-core" }
 daw-collab = { path = "../crates/daw-collab" }
 daw-engine = { path = "../crates/daw-engine" }

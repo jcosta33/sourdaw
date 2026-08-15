@@ -12,7 +12,6 @@ WebAudio graph runtime: hosts every built-in device as a WASM engine node, plus 
 
 ## Traps
 
-- `public/wasm/dutch-oven/` and `public/wasm/gluten/` (and `scripts/gen-dutch-oven-worklet.ts`) are **legacy outputs with no build script** — superseded by `proof-chamber` / `daw-dsp`. Don't wire new code against them.
 - Worklets stay isolated: no imports from app/helpers/Tauri (deps **error** rule). `worker.format: 'iife'` in `vite.config.ts` exists so worklet blob URLs can load bundles — don't change it casually.
 - One live `AudioContext` app-wide (root always-on rules). Audio-thread code must not allocate, lock, or block.
 - Faust has **two** integration points: this module and PluginHost — check both before changing Faust wiring.
