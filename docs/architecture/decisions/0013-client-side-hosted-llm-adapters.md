@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-27
 - Amended by: ADR 0035 for remote HTTPS OpenAI-compatible transport; loopback development remains browser-side.
+- Amended by: ADR 0036 for the provider-neutral ordered and bounded stream envelope.
 
 ## Context
 
@@ -16,7 +17,7 @@ Browser-held API keys are inherently less protected than server-held credentials
 
 The volatile hosted-LLM session owns one discriminated provider runtime:
 
-- `anthropic`: Anthropic Messages API through the existing SDK.
+- `anthropic`: Anthropic Messages API through repository-owned transports: the official SDK for structured tool planning, and authenticated fetch/SSE with explicit request, response, event, and cancellation bounds for chat streaming.
 - `openai`: OpenAI Chat Completions through the official HTTPS endpoint.
 - `openai-compatible`: a user-supplied Chat Completions base URL and model.
 

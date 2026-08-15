@@ -14,6 +14,11 @@ use tokio::sync::{watch, Mutex, RwLock};
 
 use super::model_download;
 
+const MAX_STREAM_EVENT_BYTES: usize = 64 * 1024;
+const MAX_STREAM_ERROR_MESSAGE_BYTES: usize = 16 * 1024;
+const MAX_STREAM_BYTES: usize = 1024 * 1024;
+const MAX_STREAM_EVENTS: u32 = 4096;
+
 // ── Managed state ────────────────────────────────────────────────────────
 
 pub struct NativeLlmState {
@@ -55,15 +60,24 @@ pub struct ChatMessage {
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum LlmStreamEvent {
     Token {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         text: String,
     },
     #[serde(rename_all = "camelCase")]
     Done {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         prompt_tokens: usize,
         completion_tokens: usize,
         finish_reason: String,
     },
     Error {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         message: String,
     },
 }
@@ -191,6 +205,22 @@ fn generation_cancelled_error() -> String {
     "Native LLM generation cancelled".to_string()
 }
 
+fn bounded_stream_error_message(message: &str) -> String {
+    if message.len() <= MAX_STREAM_ERROR_MESSAGE_BYTES {
+        return message.to_string();
+    }
+
+    let suffix = "…";
+    let mut end = MAX_STREAM_ERROR_MESSAGE_BYTES - suffix.len();
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut bounded = String::with_capacity(MAX_STREAM_ERROR_MESSAGE_BYTES);
+    bounded.push_str(&message[..end]);
+    bounded.push_str(suffix);
+    bounded
+}
+
 fn prune_cancellation_tombstones(cancellations: &mut HashMap<String, GenerationCancellation>) {
     cancellations.retain(|_, cancellation| {
         cancellation.registered || cancellation.created_at.elapsed() < CANCELLATION_TOMBSTONE_TTL
@@ -271,25 +301,49 @@ fn stream_chunk_terminal(
 fn apply_stream_response(
     response: Response,
     on_event: &Channel<LlmStreamEvent>,
+    request_id: &str,
+    sequence: &mut u32,
+    streamed_bytes: &mut usize,
+    stream_limit_error: &'static str,
     validate_finish: &impl Fn(&str) -> Result<(), String>,
     missing_choice_error: &'static str,
 ) -> Result<bool, String> {
     match response {
         Response::Chunk(chunk) => {
+            let terminal = stream_chunk_terminal(&chunk)?;
+            if let Some(terminal) = terminal.as_ref() {
+                validate_finish(&terminal.finish_reason)?;
+            }
             if let Some(choice) = chunk.choices.first() {
                 if let Some(ref content) = choice.delta.content {
                     if !content.is_empty() {
+                        if content.len() > MAX_STREAM_EVENT_BYTES
+                            || streamed_bytes.saturating_add(content.len()) > MAX_STREAM_BYTES
+                            || *sequence >= MAX_STREAM_EVENTS
+                        {
+                            let _ = on_event.send(LlmStreamEvent::Error {
+                                request_id: request_id.to_string(),
+                                sequence: *sequence,
+                                message: stream_limit_error.to_string(),
+                            });
+                            return Err(stream_limit_error.to_string());
+                        }
                         let _ = on_event.send(LlmStreamEvent::Token {
+                            request_id: request_id.to_string(),
+                            sequence: *sequence,
                             text: content.clone(),
                         });
+                        *sequence += 1;
+                        *streamed_bytes += content.len();
                     }
                 }
             }
-            let Some(terminal) = stream_chunk_terminal(&chunk)? else {
+            let Some(terminal) = terminal else {
                 return Ok(false);
             };
-            validate_finish(&terminal.finish_reason)?;
             let _ = on_event.send(LlmStreamEvent::Done {
+                request_id: request_id.to_string(),
+                sequence: *sequence,
                 prompt_tokens: terminal.prompt_tokens,
                 completion_tokens: terminal.completion_tokens,
                 finish_reason: terminal.finish_reason,
@@ -300,6 +354,8 @@ fn apply_stream_response(
             let choice = response.choices.first().ok_or(missing_choice_error)?;
             validate_finish(&choice.finish_reason)?;
             let _ = on_event.send(LlmStreamEvent::Done {
+                request_id: request_id.to_string(),
+                sequence: *sequence,
                 prompt_tokens: response.usage.prompt_tokens,
                 completion_tokens: response.usage.completion_tokens,
                 finish_reason: choice.finish_reason.clone(),
@@ -307,7 +363,10 @@ fn apply_stream_response(
             Ok(true)
         }
         Response::ModelError(message, _) => {
+            let message = bounded_stream_error_message(&message);
             let _ = on_event.send(LlmStreamEvent::Error {
+                request_id: request_id.to_string(),
+                sequence: *sequence,
                 message: message.clone(),
             });
             Err(message)
@@ -557,8 +616,10 @@ pub async fn stream_native_completion(
             }
             stream = model.stream_chat_request(request) => {
                 stream.map_err(|e| {
-                    let msg = format!("Stream init error: {e}");
+                    let msg = bounded_stream_error_message(&format!("Stream init error: {e}"));
                     let _ = on_event.send(LlmStreamEvent::Error {
+                        request_id: request_id.clone(),
+                        sequence: 0,
                         message: msg.clone(),
                     });
                     msg
@@ -567,6 +628,8 @@ pub async fn stream_native_completion(
         };
 
         let mut completed = false;
+        let mut sequence = 0u32;
+        let mut streamed_bytes = 0usize;
 
         loop {
             let chunk = tokio::select! {
@@ -583,6 +646,10 @@ pub async fn stream_native_completion(
             if apply_stream_response(
                 chunk,
                 &on_event,
+                &request_id,
+                &mut sequence,
+                &mut streamed_bytes,
+                "Native completion stream exceeded its bounded protocol limits",
                 &validate_stream_finish_reason,
                 "No stream completion response",
             )? {
@@ -765,8 +832,13 @@ pub async fn schema_constrained_generation(
         let model = get_model(&state).await?;
 
         let constraint = build_json_schema_constraint(&json_schema).map_err(|e| {
-            let _ = on_event.send(LlmStreamEvent::Error { message: e.clone() });
-            e
+            let message = bounded_stream_error_message(&e);
+            let _ = on_event.send(LlmStreamEvent::Error {
+                request_id: request_id.clone(),
+                sequence: 0,
+                message: message.clone(),
+            });
+            message
         })?;
 
         let request = RequestBuilder::new()
@@ -784,8 +856,10 @@ pub async fn schema_constrained_generation(
             }
             stream = model.stream_chat_request(request) => {
                 stream.map_err(|e| {
-                    let msg = format!("Schema-constrained stream init error: {e}");
+                    let msg = bounded_stream_error_message(&format!("Schema-constrained stream init error: {e}"));
                     let _ = on_event.send(LlmStreamEvent::Error {
+                        request_id: request_id.clone(),
+                        sequence: 0,
                         message: msg.clone(),
                     });
                     msg
@@ -794,6 +868,8 @@ pub async fn schema_constrained_generation(
         };
 
         let mut completed = false;
+        let mut sequence = 0u32;
+        let mut streamed_bytes = 0usize;
 
         loop {
             let chunk = tokio::select! {
@@ -810,6 +886,10 @@ pub async fn schema_constrained_generation(
             if apply_stream_response(
                 chunk,
                 &on_event,
+                &request_id,
+                &mut sequence,
+                &mut streamed_bytes,
+                "Native schema-constrained stream exceeded its bounded protocol limits",
                 &|finish_reason| {
                     validate_text_finish_reason(
                         finish_reason,
@@ -1080,6 +1160,36 @@ mod tests {
     }
 
     #[test]
+    fn should_serialize_correlated_native_stream_events() {
+        assert_eq!(
+            serde_json::to_value(LlmStreamEvent::Token {
+                request_id: "request-1".to_string(),
+                sequence: 4,
+                text: "hello".to_string(),
+            })
+            .expect("native stream event must serialize"),
+            serde_json::json!({
+                "event": "token",
+                "data": { "requestId": "request-1", "sequence": 4, "text": "hello" }
+            })
+        );
+    }
+
+    #[test]
+    fn should_bound_native_stream_error_messages() {
+        let bounded = bounded_stream_error_message(&"é".repeat(MAX_STREAM_EVENT_BYTES));
+        let serialized = serde_json::to_vec(&LlmStreamEvent::Error {
+            request_id: "request-1".to_string(),
+            sequence: 0,
+            message: bounded.clone(),
+        })
+        .expect("native stream error must serialize");
+
+        assert!(bounded.len() <= 16 * 1024);
+        assert!(serialized.len() <= MAX_STREAM_EVENT_BYTES);
+    }
+
+    #[test]
     fn should_serialize_native_tool_calling_response_with_camel_case_fields() {
         assert_eq!(
             serde_json::to_value(NativeToolCallingResponse::Complete {
@@ -1229,10 +1339,16 @@ mod tests {
         ];
 
         let mut completed = false;
+        let mut sequence = 0;
+        let mut streamed_bytes = 0;
         for response in stream {
             if apply_stream_response(
                 response,
                 &channel,
+                "test-request",
+                &mut sequence,
+                &mut streamed_bytes,
+                "Native completion stream exceeded its bounded protocol limits",
                 &validate_stream_finish_reason,
                 "No stream completion response",
             )
@@ -1248,9 +1364,19 @@ mod tests {
         assert_eq!(
             *events,
             vec![
-                serde_json::json!({"event": "token", "data": {"text": "Hel"}}),
-                serde_json::json!({"event": "token", "data": {"text": "lo"}}),
+                serde_json::json!({"event": "token", "data": {
+                    "requestId": "test-request",
+                    "sequence": 0,
+                    "text": "Hel"
+                }}),
+                serde_json::json!({"event": "token", "data": {
+                    "requestId": "test-request",
+                    "sequence": 1,
+                    "text": "lo"
+                }}),
                 serde_json::json!({"event": "done", "data": {
+                    "requestId": "test-request",
+                    "sequence": 2,
                     "promptTokens": 12,
                     "completionTokens": 34,
                     "finishReason": "stop"
@@ -1262,10 +1388,20 @@ mod tests {
     #[test]
     fn should_error_when_terminal_chunk_carries_no_usage() {
         let (channel, events) = collecting_channel();
+        let mut sequence = 0;
+        let mut streamed_bytes = 0;
 
         let result = apply_stream_response(
-            Response::Chunk(stream_chunk(None, Some("stop"), None)),
+            Response::Chunk(stream_chunk(
+                Some("must-not-be-exposed"),
+                Some("stop"),
+                None,
+            )),
             &channel,
+            "test-request",
+            &mut sequence,
+            &mut streamed_bytes,
+            "Native completion stream exceeded its bounded protocol limits",
             &validate_stream_finish_reason,
             "No stream completion response",
         );
@@ -1280,6 +1416,8 @@ mod tests {
     #[test]
     fn should_reject_terminal_chunk_with_unsupported_finish_reason() {
         let (channel, events) = collecting_channel();
+        let mut sequence = 0;
+        let mut streamed_bytes = 0;
 
         let result = apply_stream_response(
             Response::Chunk(stream_chunk(
@@ -1288,6 +1426,10 @@ mod tests {
                 Some(stream_usage(1, 2)),
             )),
             &channel,
+            "test-request",
+            &mut sequence,
+            &mut streamed_bytes,
+            "Native completion stream exceeded its bounded protocol limits",
             &validate_stream_finish_reason,
             "No stream completion response",
         );
@@ -1306,6 +1448,8 @@ mod tests {
     #[test]
     fn should_keep_response_done_terminal() {
         let (channel, events) = collecting_channel();
+        let mut sequence = 0;
+        let mut streamed_bytes = 0;
         let response = Response::Done(mistralrs::ChatCompletionResponse {
             id: "done".to_string(),
             choices: vec![mistralrs::Choice {
@@ -1329,6 +1473,10 @@ mod tests {
         let terminal = apply_stream_response(
             response,
             &channel,
+            "test-request",
+            &mut sequence,
+            &mut streamed_bytes,
+            "Native completion stream exceeded its bounded protocol limits",
             &validate_stream_finish_reason,
             "No stream completion response",
         )
@@ -1338,6 +1486,8 @@ mod tests {
         assert_eq!(
             *events.lock().unwrap(),
             vec![serde_json::json!({"event": "done", "data": {
+                "requestId": "test-request",
+                "sequence": 0,
                 "promptTokens": 3,
                 "completionTokens": 4,
                 "finishReason": "stop"

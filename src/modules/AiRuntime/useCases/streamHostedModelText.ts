@@ -7,10 +7,14 @@ import {
 import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
 
+import { createModelProviderStreamWriter } from './createModelProviderStreamWriter';
 import { createModelProviderProtocol } from './modelProviderProtocol';
 
 type StreamHostedModelTextInput = {
     correlationId: string;
+    runId?: string;
+    requestId?: string;
+    cancellationGeneration?: number;
     messages: ModelProviderMessage[];
     maxOutputTokens: number;
     temperature?: number;
@@ -58,6 +62,9 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
     });
     const compiled = protocol.compileRequest({
         correlationId: input.correlationId,
+        ...(input.runId === undefined ? {} : { runId: input.runId }),
+        ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
+        ...(input.cancellationGeneration === undefined ? {} : { cancellationGeneration: input.cancellationGeneration }),
         operation: 'text',
         modality: 'text',
         messages: input.messages,
@@ -81,28 +88,29 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
     }
 
     const session = protocol.start(compiled.request);
+    const writer = createModelProviderStreamWriter(compiled.request, session);
     try {
         const outcome = await streamCloudChatCompletion(
             compiled.request.messages,
             (text) => {
-                session.push({ type: 'text', mode: 'delta', text });
+                writer.push({ type: 'text', mode: 'delta', text });
                 input.onToken(text);
             },
             {
                 maxTokens: compiled.request.limits.maxOutputTokens,
                 temperature: input.temperature,
                 signal: input.signal,
-                onUsage: (event) => session.push(event),
-                onUnknownEvent: (providerEventType) => session.push({ type: 'unknown', providerEventType }),
+                onUsage: (event) => writer.push(event),
+                onUnknownEvent: (providerEventType) => writer.push({ type: 'unknown', providerEventType }),
             }
         );
         if (outcome.status === 'complete') {
-            return session.finish({ reason: 'stop' });
+            return writer.finish({ reason: 'stop' });
         }
         if (outcome.reason === 'token limit' || outcome.reason === 'max_tokens' || outcome.reason === 'length') {
-            return session.finish({ reason: 'length' });
+            return writer.finish({ reason: 'length' });
         }
-        return session.finish({
+        return writer.finish({
             reason: 'error',
             failure: {
                 code: 'hosted-provider-incomplete',
@@ -116,9 +124,9 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
             isAiRuntimeConfigurationChangedError(error) ||
             (error instanceof Error && error.name === 'AbortError')
         ) {
-            return session.finish({ reason: 'cancelled' });
+            return writer.finish({ reason: 'cancelled' });
         }
-        return session.finish({
+        return writer.finish({
             reason: 'error',
             failure: {
                 code: 'hosted-provider-failed',

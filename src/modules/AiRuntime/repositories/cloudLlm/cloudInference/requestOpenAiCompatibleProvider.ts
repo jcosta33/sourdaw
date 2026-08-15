@@ -16,6 +16,16 @@ export type OpenAiCompatibleProviderResponse = {
 };
 
 const verifiedAdapters = new WeakSet<CompiledProviderAdapter>();
+const MAX_PROVIDER_REQUEST_BYTES = 1_024 * 1_024;
+const MAX_PROVIDER_RESPONSE_BYTES = 8 * 1_024 * 1_024;
+
+function addBoundedResponseBytes(current: number, chunk: Uint8Array): number {
+    const next = current + chunk.byteLength;
+    if (!Number.isSafeInteger(next) || next > MAX_PROVIDER_RESPONSE_BYTES) {
+        throw new Error('Hosted provider response exceeds its 8 MiB limit');
+    }
+    return next;
+}
 
 async function ensureAdapterCapabilities(
     adapter: CompiledProviderAdapter,
@@ -26,6 +36,7 @@ async function ensureAdapterCapabilities(
         return;
     }
     const chunks: Uint8Array[] = [];
+    let responseBytes = 0;
     let status: number | null = null;
     await runProviderGatewayRequest({
         requestId: crypto.randomUUID(),
@@ -37,7 +48,10 @@ async function ensureAdapterCapabilities(
         onResponseStart: (response) => {
             status = response.status;
         },
-        onBodyChunk: (chunk) => chunks.push(chunk),
+        onBodyChunk: (chunk) => {
+            responseBytes = addBoundedResponseBytes(responseBytes, chunk);
+            chunks.push(chunk);
+        },
     });
     if (status === null || status < 200 || status >= 300) {
         throw new Error(`Provider adapter capability probe failed with status ${String(status ?? 'unknown')}`);
@@ -65,6 +79,9 @@ export async function requestOpenAiCompatibleProvider({
     signal,
     onBodyChunk,
 }: RequestOpenAiCompatibleProviderInput): Promise<OpenAiCompatibleProviderResponse> {
+    if (new TextEncoder().encode(body).byteLength > MAX_PROVIDER_REQUEST_BYTES) {
+        throw new Error('Hosted provider request exceeds its 1 MiB limit');
+    }
     if (runtime.adapter) {
         await ensureAdapterCapabilities(runtime.adapter, runtime.api_key, signal);
         let responseStatus = 0;
@@ -110,14 +127,18 @@ export async function requestOpenAiCompatibleProvider({
         headers,
         body,
     });
-    if (response.ok && response.body) {
+    if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+    } else if (response.body) {
         const reader = response.body.getReader();
+        let responseBytes = 0;
         try {
             for (;;) {
                 const chunk = await reader.read();
                 if (chunk.done) {
                     break;
                 }
+                responseBytes = addBoundedResponseBytes(responseBytes, chunk.value);
                 onBodyChunk(chunk.value);
             }
         } finally {

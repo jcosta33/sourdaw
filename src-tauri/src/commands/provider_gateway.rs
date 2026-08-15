@@ -11,6 +11,8 @@ use tokio::sync::{watch, Mutex};
 const COMPILED_ADAPTER_ID: &str = "builtin.openai-compatible.chat-completions.v1";
 const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+const MAX_RESPONSE_EVENT_BYTES: usize = 64 * 1024;
+const MAX_RESPONSE_EVENTS: u32 = 256;
 const MAX_API_KEY_BYTES: usize = 16 * 1024;
 const MAX_CANCELLATION_ENTRIES: usize = 256;
 const CANCELLATION_TOMBSTONE_TTL: Duration = Duration::from_secs(30);
@@ -30,14 +32,24 @@ pub struct ProviderGatewayState {
 #[serde(tag = "event", content = "data", rename_all = "kebab-case")]
 pub enum ProviderGatewayEvent {
     ResponseStart {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         status: u16,
         #[serde(rename = "contentType")]
         content_type: Option<String>,
     },
     BodyChunk {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
         bytes: Vec<u8>,
     },
-    Done,
+    Done {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        sequence: u32,
+    },
 }
 
 fn validate_request_id(request_id: &str) -> Result<(), String> {
@@ -321,6 +333,7 @@ pub async fn provider_gateway_request(
             }
         };
         let status = response.status().as_u16();
+        let mut sequence = 0u32;
         let content_type = response
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
@@ -328,10 +341,13 @@ pub async fn provider_gateway_request(
             .map(ToString::to_string);
         on_event
             .send(ProviderGatewayEvent::ResponseStart {
+                request_id: request_id.clone(),
+                sequence,
                 status,
                 content_type,
             })
             .map_err(|_| "Provider gateway response channel closed".to_string())?;
+        sequence += 1;
 
         let mut response_bytes = 0usize;
         let mut stream = response.bytes_stream();
@@ -353,14 +369,28 @@ pub async fn provider_gateway_request(
             if response_bytes > MAX_RESPONSE_BODY_BYTES {
                 return Err("Provider gateway response exceeded its size limit".to_string());
             }
-            on_event
-                .send(ProviderGatewayEvent::BodyChunk {
-                    bytes: chunk.to_vec(),
-                })
-                .map_err(|_| "Provider gateway response channel closed".to_string())?;
+            for event_chunk in chunk.chunks(MAX_RESPONSE_EVENT_BYTES) {
+                if sequence >= MAX_RESPONSE_EVENTS {
+                    return Err("Provider gateway response exceeded its event limit".to_string());
+                }
+                on_event
+                    .send(ProviderGatewayEvent::BodyChunk {
+                        request_id: request_id.clone(),
+                        sequence,
+                        bytes: event_chunk.to_vec(),
+                    })
+                    .map_err(|_| "Provider gateway response channel closed".to_string())?;
+                sequence += 1;
+            }
+        }
+        if sequence >= MAX_RESPONSE_EVENTS {
+            return Err("Provider gateway response exceeded its event limit".to_string());
         }
         on_event
-            .send(ProviderGatewayEvent::Done)
+            .send(ProviderGatewayEvent::Done {
+                request_id: request_id.clone(),
+                sequence,
+            })
             .map_err(|_| "Provider gateway response channel closed".to_string())?;
         Ok(())
     }
@@ -373,11 +403,27 @@ pub async fn provider_gateway_request(
 mod tests {
     use super::{
         await_provider_step_or_cancellation, parse_canonical_origin, register_cancellation,
-        request_cancellation, validate_resolved_addresses, ProviderGatewayState,
-        CANCELLATION_TOMBSTONE_TTL, MAX_CANCELLATION_ENTRIES,
+        request_cancellation, validate_resolved_addresses, ProviderGatewayEvent,
+        ProviderGatewayState, CANCELLATION_TOMBSTONE_TTL, MAX_CANCELLATION_ENTRIES,
     };
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn provider_gateway_serializes_correlated_stream_events() {
+        assert_eq!(
+            serde_json::to_value(ProviderGatewayEvent::BodyChunk {
+                request_id: "request-1".to_string(),
+                sequence: 2,
+                bytes: vec![1, 2, 3],
+            })
+            .expect("provider gateway event must serialize"),
+            serde_json::json!({
+                "event": "body-chunk",
+                "data": { "requestId": "request-1", "sequence": 2, "bytes": [1, 2, 3] }
+            })
+        );
+    }
 
     #[test]
     fn provider_gateway_accepts_only_canonical_https_origins() {

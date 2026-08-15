@@ -2,6 +2,8 @@
 
 **Status:** Accepted
 
+**Amended by:** ADR 0036 for universal terminal stream semantics.
+
 ## Context
 
 Structured native and hosted tool-planning adapters reported malformed payloads, refusals, inconsistent finish states, and incomplete output with ordinary errors. The provider fallback chain could mistake those completed but non-executable protocol responses for availability failures, retry another backend, and bypass the original provider's terminal result. A malformed Tauri DTO is different because the frontend cannot prove that the native model completed with a validated planning result. Transport, protocol-bridge, configuration, and initialization failures still need fallback so tool planning remains available when a backend cannot run.

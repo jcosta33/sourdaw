@@ -56,6 +56,15 @@ function createAdapterRuntime(): OpenAiCompatibleCloudRuntime {
     };
 }
 
+function gatewayEvent(
+    requestId: unknown,
+    sequence: number,
+    event: string,
+    data: Record<string, unknown> = {}
+): Record<string, unknown> {
+    return { event, data: { ...data, requestId, sequence } };
+}
+
 function installGatewayResponses(requestChunks: readonly string[], requestContentType: string): void {
     const encoder = new TextEncoder();
     tauriHarness.invoke.mockImplementation(async (command, args) => {
@@ -73,15 +82,21 @@ function installGatewayResponses(requestChunks: readonly string[], requestConten
         }
         const channel = channelValue as TestGatewayChannel;
         const operation = args?.operation;
+        const requestId = args?.requestId;
         const chunks = operation === 'probe' ? ['{"data":[{"id":"studio-model-v1"}]}'] : Array.from(requestChunks);
-        channel.onmessage({
-            event: 'response-start',
-            data: { status: 200, contentType: operation === 'probe' ? 'application/json' : requestContentType },
-        });
+        let sequence = 0;
+        channel.onmessage(
+            gatewayEvent(requestId, sequence++, 'response-start', {
+                status: 200,
+                contentType: operation === 'probe' ? 'application/json' : requestContentType,
+            })
+        );
         for (const chunk of chunks) {
-            channel.onmessage({ event: 'body-chunk', data: { bytes: Array.from(encoder.encode(chunk)) } });
+            channel.onmessage(
+                gatewayEvent(requestId, sequence++, 'body-chunk', { bytes: Array.from(encoder.encode(chunk)) })
+            );
         }
-        channel.onmessage({ event: 'done', data: {} });
+        channel.onmessage(gatewayEvent(requestId, sequence, 'done'));
         return undefined;
     });
 }
@@ -243,9 +258,14 @@ describe('provider adapter conformance', () => {
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(async (command, args) => {
             if (command === 'provider_gateway_request') {
                 const onEvent = args?.onEvent as typeof channel;
-                onEvent.onmessage({ event: 'response-start', data: { status: 200, contentType: 'application/json' } });
-                onEvent.onmessage({ event: 'body-chunk', data: { bytes: [123, 125] } });
-                onEvent.onmessage({ event: 'done' });
+                onEvent.onmessage(
+                    gatewayEvent(args?.requestId, 0, 'response-start', {
+                        status: 200,
+                        contentType: 'application/json',
+                    })
+                );
+                onEvent.onmessage(gatewayEvent(args?.requestId, 1, 'body-chunk', { bytes: [123, 125] }));
+                onEvent.onmessage(gatewayEvent(args?.requestId, 2, 'done'));
             }
         });
         const starts: unknown[] = [];
@@ -269,7 +289,13 @@ describe('provider adapter conformance', () => {
         channel.onmessage = (_event: unknown) => undefined;
         invoke.mockImplementationOnce(async (_command, args) => {
             const onEvent = args?.onEvent as typeof channel;
-            onEvent.onmessage({ event: 'body-chunk', data: { bytes: [999] } });
+            onEvent.onmessage(
+                gatewayEvent(args?.requestId, 0, 'response-start', {
+                    status: 200,
+                    contentType: 'application/json',
+                })
+            );
+            onEvent.onmessage(gatewayEvent(args?.requestId, 1, 'body-chunk', { bytes: [999] }));
         });
         const failed = runProviderGatewayRequest(
             {
@@ -288,6 +314,89 @@ describe('provider adapter conformance', () => {
         await expect(failed.catch((error: unknown) => String(error))).resolves.not.toMatch(
             /secret-not-in-errors|request-body/u
         );
+    });
+
+    it('rejects a cross-request gateway event before exposing response data', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const channel = { id: 5, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:5' };
+        const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(async (_command, args) => {
+            const onEvent = args?.onEvent as typeof channel;
+            onEvent.onmessage(
+                gatewayEvent('another-request', 0, 'response-start', {
+                    status: 200,
+                    contentType: 'application/json',
+                })
+            );
+        });
+        const onResponseStart = vi.fn();
+
+        await expect(
+            runProviderGatewayRequest(
+                {
+                    requestId: 'request-5',
+                    adapter,
+                    operation: 'request',
+                    apiKey: '',
+                    body: '{}',
+                    signal: new AbortController().signal,
+                    onResponseStart,
+                    onBodyChunk: vi.fn(),
+                },
+                { createChannel: async () => channel, invoke }
+            )
+        ).rejects.toThrow('cross-request or out-of-order');
+        expect(onResponseStart).not.toHaveBeenCalled();
+    });
+
+    it('cancels the privileged request when downstream event handling rejects', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const channel = { id: 6, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:6' };
+        let rejectRequest: ((error: Error) => void) | undefined;
+        const invoke = vi.fn<ProviderGatewayDependencies['invoke']>((command, args) => {
+            if (command === 'provider_gateway_request') {
+                const onEvent = args?.onEvent as typeof channel;
+                return new Promise<void>((_resolve, reject) => {
+                    rejectRequest = reject;
+                    queueMicrotask(() => {
+                        onEvent.onmessage(
+                            gatewayEvent(args?.requestId, 0, 'response-start', {
+                                status: 200,
+                                contentType: 'application/json',
+                            })
+                        );
+                        onEvent.onmessage(gatewayEvent(args?.requestId, 1, 'body-chunk', { bytes: [123] }));
+                    });
+                });
+            }
+            if (command === 'cancel_provider_gateway_request') {
+                rejectRequest?.(new Error('Native provider gateway request cancelled'));
+            }
+            return Promise.resolve(undefined);
+        });
+        const pending = runProviderGatewayRequest(
+            {
+                requestId: 'request-callback-failure',
+                adapter,
+                operation: 'request',
+                apiKey: '',
+                body: '{}',
+                signal: new AbortController().signal,
+                onResponseStart: vi.fn(),
+                onBodyChunk: () => {
+                    throw new Error('downstream rejected chunk');
+                },
+            },
+            { createChannel: async () => channel, invoke }
+        );
+        const pendingRejection = expect(pending).rejects.toThrow('downstream rejected chunk');
+
+        await vi.waitFor(() =>
+            expect(invoke).toHaveBeenCalledWith('cancel_provider_gateway_request', {
+                requestId: 'request-callback-failure',
+            })
+        );
+        await pendingRejection;
+        expect(invoke.mock.calls.filter(([command]) => command === 'cancel_provider_gateway_request')).toHaveLength(1);
     });
 
     it('routes adapter-backed tool planning through probe and privileged gateway without renderer fetch', async () => {

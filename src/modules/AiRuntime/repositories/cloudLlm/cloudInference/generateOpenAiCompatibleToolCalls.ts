@@ -140,32 +140,6 @@ export async function generateOpenAiCompatibleToolCalls({
         n: 1,
         stream: false,
     });
-    let payload: unknown;
-    if (!runtime.adapter) {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (runtime.api_key) {
-            headers.Authorization = `Bearer ${runtime.api_key}`;
-        }
-        const response = await fetch(`${runtime.base_url}/chat/completions`, {
-            method: 'POST',
-            signal,
-            headers,
-            body,
-        });
-        if (!response.ok) {
-            throw new Error(`Hosted AI tool request failed with status ${String(response.status)}`);
-        }
-        try {
-            payload = (await response.json()) as unknown;
-        } catch (error) {
-            if (hasErrorName(error, 'SyntaxError')) {
-                throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
-            }
-            throw error;
-        }
-        return parseToolCalls(payload);
-    }
-
     const chunks: Uint8Array[] = [];
     const response = await requestOpenAiCompatibleProvider({
         runtime,
@@ -176,6 +150,7 @@ export async function generateOpenAiCompatibleToolCalls({
     if (response.status < 200 || response.status >= 300) {
         throw new Error(`Hosted AI tool request failed with status ${String(response.status)}`);
     }
+    let payload: unknown;
     try {
         const totalLength = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
         const bytes = new Uint8Array(totalLength);

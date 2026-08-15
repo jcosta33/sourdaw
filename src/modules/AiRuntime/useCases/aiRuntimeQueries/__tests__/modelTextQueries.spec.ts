@@ -123,7 +123,14 @@ describe('model text query protocol boundary', () => {
             retryable: true,
             partialOutputDisposition: 'none',
         });
-        expect(mocks.finish).not.toHaveBeenCalled();
+        expect(mocks.finish).toHaveBeenCalledWith(
+            expect.objectContaining({
+                finish: expect.objectContaining({
+                    reason: 'error',
+                    failure: expect.objectContaining({ code: 'native-provider-unavailable' }),
+                }),
+            })
+        );
     });
 
     it('routes the legacy hosted query through the neutral hosted use case', async () => {
