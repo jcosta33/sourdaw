@@ -405,6 +405,12 @@
           "markdownDescription": "Enables the cancel_native_llm_generation command without any pre-configured scope."
         },
         {
+          "description": "Enables the cancel_provider_gateway_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-provider-gateway-request",
+          "markdownDescription": "Enables the cancel_provider_gateway_request command without any pre-configured scope."
+        },
+        {
           "description": "Enables the close_all_plugin_guis command without any pre-configured scope.",
           "type": "string",
           "const": "allow-close-all-plugin-guis",
@@ -747,6 +753,12 @@
           "markdownDescription": "Enables the process_plugin_audio command without any pre-configured scope."
         },
         {
+          "description": "Enables the provider_gateway_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-provider-gateway-request",
+          "markdownDescription": "Enables the provider_gateway_request command without any pre-configured scope."
+        },
+        {
           "description": "Enables the read_audio_file command without any pre-configured scope.",
           "type": "string",
           "const": "allow-read-audio-file",
@@ -931,6 +943,12 @@
           "type": "string",
           "const": "deny-cancel-native-llm-generation",
           "markdownDescription": "Denies the cancel_native_llm_generation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_provider_gateway_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-provider-gateway-request",
+          "markdownDescription": "Denies the cancel_provider_gateway_request command without any pre-configured scope."
         },
         {
           "description": "Denies the close_all_plugin_guis command without any pre-configured scope.",
@@ -1273,6 +1291,12 @@
           "type": "string",
           "const": "deny-process-plugin-audio",
           "markdownDescription": "Denies the process_plugin_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the provider_gateway_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-provider-gateway-request",
+          "markdownDescription": "Denies the provider_gateway_request command without any pre-configured scope."
         },
         {
           "description": "Denies the read_audio_file command without any pre-configured scope.",

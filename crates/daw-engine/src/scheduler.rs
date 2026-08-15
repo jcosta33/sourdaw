@@ -3,7 +3,8 @@
 //! Handles both built-in DSP effects (Knead) and external plugins (CLAP/VST3)
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
-use crate::audio_bridge::PluginAudioBridge;
+use crate::audio_bridge::{PluginAudioBridge, RENDER_QUANTUM_FRAMES, RING_CAPACITY};
+use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
@@ -466,77 +467,172 @@ impl AudioScheduler {
 
     /// Process ring-buffer audio bridges — reads input blocks from main thread,
     /// processes through plugins, writes output back for main thread to return to worklet.
+    ///
+    /// `callback_frames` is what the device asked for this period. Each bridge
+    /// may spend that plus one render quantum of catch-up, so a backlog left
+    /// by a main-thread stall is worked off over successive callbacks rather
+    /// than rendered in one spike on the thread with the deadline.
     #[inline]
-    pub fn process_audio_bridges(&mut self) {
+    pub fn process_audio_bridges(&mut self, callback_frames: usize) {
+        // A device period the bridge cannot carry would starve every plugin
+        // permanently rather than intermittently, so it is counted rather than
+        // left to look like ordinary jitter.
+        if callback_frames > MAX_CALLBACK_FRAMES {
+            self.midi_rt_diagnostics
+                .record_callback_frames_over_bridge_reach(1);
+        }
+        let callback_frames = callback_frames.min(MAX_CALLBACK_FRAMES);
+        let frame_budget = callback_frames.saturating_add(RENDER_QUANTUM_FRAMES);
+        // Deep enough to cover the device period twice over, plus a quantum of
+        // slack either side. Nothing locks the app's IPC cadence to this
+        // callback, so the phase between them wanders across a full period;
+        // a target of one period would shed on every crossing, and each shed
+        // costs the app a quantum of return audio. Two periods absorbs the
+        // whole slip. Beyond that is plugin latency the user hears against the
+        // rest of the graph, so the target stays proportional to the period
+        // rather than growing to the ring's capacity.
+        // The clamp keeps the target meaningful: a period that already needs
+        // most of the ring cannot also carry twice itself, and a target above
+        // what the ring holds would never be crossed, which is the ratchet
+        // this shedding exists to stop.
+        let blocks_per_period = callback_frames.div_ceil(RENDER_QUANTUM_FRAMES);
+        let target_depth_blocks = (blocks_per_period * 2 + 2).min(RING_CAPACITY);
+
         for bridge in &mut self.audio_bridges {
             let plugin_id = bridge.plugin_id;
 
-            // Find the matching plugin
-            if let Some(effect) = self.effects.iter_mut().find(|e| e.id == plugin_id) {
-                if effect.bypassed {
-                    // Drain input without processing (passthrough)
-                    bridge.try_process(|left, right, n| {
+            let effect = self
+                .effects
+                .iter_mut()
+                .find(|effect| effect.id == plugin_id);
+
+            // A bridge with no plugin able to process its audio — no effect
+            // under that id at all (registered on its own through
+            // `RegisterAudioBridge`, or outliving its plugin), or an effect
+            // with no bridged path, such as a built-in Knead — used to be left
+            // untouched. Its input ring then filled and stayed full, so every
+            // later push was refused and the app was left on permanent dry
+            // fallback with nothing recorded. Return the blocks untouched
+            // instead: the app keeps its audio, the ring keeps moving, and the
+            // count says no plugin took them.
+            let unprocessable = match effect {
+                None => true,
+                Some(ref effect) => !matches!(effect.instance, PluginCore::Native(_)),
+            };
+
+            if unprocessable {
+                let drain =
+                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
+                        let _ = (left, right, n);
+                    });
+                self.midi_rt_diagnostics
+                    .record_unmatched_bridge_blocks(drain.blocks_processed as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
+                if let Some(effect) = effect {
+                    effect.pending_midi.clear();
+                }
+                continue;
+            }
+
+            let Some(effect) = effect else {
+                continue;
+            };
+
+            if effect.bypassed {
+                // Drain input without processing (passthrough)
+                let drain =
+                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
                         // output = input (already in the block)
                         let _ = (left, right, n);
                     });
-                    // A bypassed effect discards incoming MIDI rather than
-                    // banking it: without this, notes queued via SendMidiNote
-                    // while bypassed would accumulate toward the fixed
-                    // 128-slot ceiling and then flush as one stale burst —
-                    // old note-ons with no note-offs behind them — the
-                    // instant the effect is un-bypassed.
-                    effect.pending_midi.clear();
-                    continue;
-                }
+                self.midi_rt_diagnostics
+                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
+                // A bypassed effect discards incoming MIDI rather than
+                // banking it: without this, notes queued via SendMidiNote
+                // while bypassed would accumulate toward the fixed
+                // 128-slot ceiling and then flush as one stale burst —
+                // old note-ons with no note-offs behind them — the
+                // instant the effect is un-bypassed.
+                effect.pending_midi.clear();
+                continue;
+            }
 
-                if let PluginCore::Native(ref mut plugin) = effect.instance {
-                    let probability_evaluator = &mut effect.probability_evaluator;
-                    let midi_fx = &mut effect.midi_fx;
-                    let pending_midi = &mut effect.pending_midi;
-                    let transport = self.transport;
-                    let sample_rate = self.sample_rate;
+            let PluginCore::Native(ref mut plugin) = effect.instance else {
+                continue;
+            };
 
-                    let processed = bridge.try_process(|left, right, num_samples| {
-                        probability_evaluator.process_midi_with_diagnostics(
+            let probability_evaluator = &mut effect.probability_evaluator;
+            let midi_fx = &mut effect.midi_fx;
+            let pending_midi = &mut effect.pending_midi;
+            let transport = self.transport;
+            let sample_rate = self.sample_rate;
+
+            let diagnostics = &mut self.midi_rt_diagnostics;
+            // The MIDI chain belongs to the callback, not to the block.
+            // Several blocks are normally waiting, and running the chain
+            // once per block would re-evaluate authored probability and
+            // re-emit every queued note once per block — the same note-on
+            // delivered to the plugin two, three, four times. It runs on
+            // the first block of the pass, the earliest audio in the
+            // callback.
+            let mut events_delivered = false;
+
+            let drain = bridge.drain_process(
+                frame_budget,
+                target_depth_blocks,
+                |left, right, num_samples| {
+                    if events_delivered {
+                        plugin.process_bridged_audio(left, right, num_samples);
+                        return;
+                    }
+
+                    probability_evaluator.process_midi_with_diagnostics(
+                        pending_midi,
+                        &transport,
+                        sample_rate,
+                        num_samples,
+                        diagnostics,
+                    );
+                    for fx in midi_fx.iter_mut() {
+                        fx.process_midi_with_diagnostics(
                             pending_midi,
                             &transport,
                             sample_rate,
                             num_samples,
-                            &mut self.midi_rt_diagnostics,
+                            diagnostics,
                         );
-                        for fx in midi_fx.iter_mut() {
-                            fx.process_midi_with_diagnostics(
-                                pending_midi,
-                                &transport,
-                                sample_rate,
-                                num_samples,
-                                &mut self.midi_rt_diagnostics,
-                            );
-                        }
-
-                        if pending_midi.is_empty() {
-                            plugin.process_bridged_audio(left, right, num_samples);
-                        } else {
-                            plugin.process_bridged_with_events(
-                                left,
-                                right,
-                                num_samples,
-                                pending_midi.as_slice(),
-                                &transport,
-                            );
-                        }
-                    });
-
-                    // Only clear pending MIDI when the closure actually ran and
-                    // consumed it. When the input ring was empty this cycle
-                    // (the CPAL callback beating the worklet's push, guaranteed
-                    // at bridge startup and on any cadence jitter), the events
-                    // must survive to the next cycle rather than being dropped.
-                    if processed {
-                        pending_midi.clear();
                     }
-                }
+                    events_delivered = true;
+
+                    if pending_midi.is_empty() {
+                        plugin.process_bridged_audio(left, right, num_samples);
+                    } else {
+                        plugin.process_bridged_with_events(
+                            left,
+                            right,
+                            num_samples,
+                            pending_midi.as_slice(),
+                            &transport,
+                        );
+                    }
+                },
+            );
+
+            // Only clear pending MIDI when the closure actually ran and
+            // consumed it. When the input ring was empty this cycle (the
+            // CPAL callback beating the worklet's push, guaranteed at
+            // bridge startup and on any cadence jitter), the events must
+            // survive to the next cycle rather than being dropped.
+            if drain.blocks_processed > 0 {
+                pending_midi.clear();
             }
+            diagnostics.record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+            diagnostics.record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
         }
     }
 
@@ -834,7 +930,7 @@ mod tests {
 
         // Real worklet audio arrives over the bridge and is processed.
         assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges();
+        scheduler.process_audio_bridges(512);
         let processed = handle.pop_output().expect("the bridged block");
         assert_eq!(processed.frames, 4);
         assert_eq!(&processed.left[..4], &[0.25; 4]);
@@ -903,10 +999,10 @@ mod tests {
         // callback does every cycle: process_audio_bridges() first, then
         // process_block() over the standalone chain's zeroed scratch. The
         // CPAL callback beats the worklet's input push here — the bridge's
-        // input ring is empty, so try_process's closure never runs this
+        // input ring is empty, so drain_process's closure never runs this
         // cycle — and process_block must not wipe the note that
         // process_audio_bridges deliberately left queued for next cycle.
-        scheduler.process_audio_bridges();
+        scheduler.process_audio_bridges(512);
         scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
 
@@ -915,7 +1011,7 @@ mod tests {
         // an unconditional clear in either process_audio_bridges or
         // process_block would have discarded it forever on the first cycle.
         assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges();
+        scheduler.process_audio_bridges(512);
         scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
     }
@@ -967,7 +1063,7 @@ mod tests {
                 .unwrap();
             scheduler.update_graph();
             assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-            scheduler.process_audio_bridges();
+            scheduler.process_audio_bridges(512);
             scheduler.process_block(&mut left, &mut right, 4);
         }
 
@@ -976,10 +1072,137 @@ mod tests {
         command_tx.push(GraphCommand::SetBypass(42, false)).unwrap();
         scheduler.update_graph();
         assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges();
+        scheduler.process_audio_bridges(512);
         scheduler.process_block(&mut left, &mut right, 4);
 
         assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn one_callback_processes_every_block_the_app_queued_since_the_last_one() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        // The device buffer spans several render quanta — a 512-frame CPAL
+        // callback at 48 kHz covers four 128-frame worklet quanta — so four
+        // blocks are already waiting when the callback runs. Taking one per
+        // callback leaves the rest to fill the ring, after which the app's
+        // pushes are refused for good and the plugin hears a fraction of its
+        // input.
+        for _ in 0..4 {
+            assert!(handle.push_input(&[0.1; 128], &[0.1; 128]));
+        }
+
+        scheduler.process_audio_bridges(512);
+
+        let mut returned = 0;
+        while let Some(block) = handle.pop_output() {
+            assert_eq!(block.frames, 128);
+            assert_eq!(block.left[0], 0.25);
+            returned += 1;
+        }
+        assert_eq!(returned, 4, "a block left in the ring is lost audio");
+    }
+
+    #[test]
+    fn a_burst_of_blocks_delivers_each_queued_note_to_the_plugin_once() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+        let received_event_count = Arc::new(AtomicUsize::new(0));
+        let received_channel_sum = Arc::new(AtomicUsize::new(0));
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(MidiRecordingPlugin {
+                    received_event_count: Arc::clone(&received_event_count),
+                    received_channel_sum,
+                }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                42,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        for _ in 0..3 {
+            assert!(handle.push_input(&[0.0; 128], &[0.0; 128]));
+        }
+        scheduler.process_audio_bridges(512);
+
+        // The MIDI queue belongs to the callback, not to the block. Running
+        // the chain once per drained block would hand the plugin the same
+        // note-on three times — three stacked voices from one key press.
+        assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn blocks_on_a_bridge_with_no_plugin_are_returned_and_counted() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(77);
+
+        command_tx
+            .push(GraphCommand::RegisterAudioBridge(bridge))
+            .unwrap();
+        scheduler.update_graph();
+        assert!(scheduler.effects.is_empty());
+
+        // Fill the input ring the way a running worklet does.
+        let mut pushed = 0;
+        while handle.push_input(&[0.4; 64], &[0.4; 64]) {
+            pushed += 1;
+        }
+        assert!(pushed > 0);
+
+        // Successive callbacks, each spending its own budget.
+        let mut returned = 0;
+        for _ in 0..pushed {
+            scheduler.process_audio_bridges(512);
+            while let Some(block) = handle.pop_output() {
+                assert_eq!(block.left[0], 0.4, "an unprocessed block must be intact");
+                returned += 1;
+            }
+        }
+
+        // A ring filled to capacity is deeper than the device period needs, so
+        // the oldest blocks are shed to bring the round trip back to its
+        // target. Every block is accounted for: returned or shed, none left
+        // sitting in a ring that never drains again.
+        let snapshot = scheduler.midi_rt_diagnostics.snapshot();
+        assert_eq!(
+            returned as u64 + snapshot.bridge_backlog_blocks_shed,
+            pushed as u64
+        );
+        assert_eq!(snapshot.unmatched_bridge_blocks, pushed as u64);
+
+        // The ring keeps moving. Skipping the bridge left it full forever, so
+        // every later push was refused and the app never processed again.
+        assert!(handle.push_input(&[0.4; 64], &[0.4; 64]));
     }
 
     #[test]

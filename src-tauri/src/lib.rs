@@ -18,6 +18,7 @@ pub fn run() {
         .manage(commands::speech::DictationState::default())
         .manage(commands::audio_gen::AudioGenState::default())
         .manage(commands::crumbs::CrumbsState::default())
+        .manage(commands::provider_gateway::ProviderGatewayState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +34,9 @@ pub fn run() {
             commands::native_llm::finalize_native_llm_initialization,
             commands::native_llm::get_native_llm_status,
             commands::native_llm::get_model_dir,
+            // Privileged model-provider gateway
+            commands::provider_gateway::provider_gateway_request,
+            commands::provider_gateway::cancel_provider_gateway_request,
             // AI audio processing (DeepFilterNet + Demucs ONNX)
             commands::ai_audio::denoise_audio,
             commands::ai_audio::separate_stems,

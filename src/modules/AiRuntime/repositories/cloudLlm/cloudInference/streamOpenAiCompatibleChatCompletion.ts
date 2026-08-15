@@ -1,6 +1,8 @@
 import { type ModelProviderEvent } from '../../../models/ModelProviderProtocol';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
+import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
+
 type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 
 type StreamOpenAiCompatibleChatCompletionInput = {
@@ -121,81 +123,51 @@ export async function streamOpenAiCompatibleChatCompletion({
     onUsage,
     onUnknownEvent,
 }: StreamOpenAiCompatibleChatCompletionInput): Promise<OpenAiCompatibleFinishReason> {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-    };
-    if (runtime.api_key) {
-        headers.Authorization = `Bearer ${runtime.api_key}`;
-    }
-
-    const response = await fetch(`${runtime.base_url}/chat/completions`, {
-        method: 'POST',
-        signal,
-        headers,
-        body: JSON.stringify({
-            model: runtime.model,
-            messages: messages.filter(
-                (message) => message.role === 'system' || message.role === 'user' || message.role === 'assistant'
-            ),
-            max_tokens: maxTokens ?? 2048,
-            stream: true,
-            ...(runtime.provider === 'openai' ? { stream_options: { include_usage: true } } : {}),
-        }),
+    const body = JSON.stringify({
+        model: runtime.model,
+        messages: messages.filter(
+            (message) => message.role === 'system' || message.role === 'user' || message.role === 'assistant'
+        ),
+        max_tokens: maxTokens ?? 2048,
+        stream: true,
+        ...(runtime.provider === 'openai' ? { stream_options: { include_usage: true } } : {}),
     });
-
-    if (!response.ok) {
-        throw new Error(`Hosted AI chat request failed with status ${String(response.status)}`);
-    }
-    if (!response.body) {
-        throw new Error('Hosted AI chat response did not include a stream');
-    }
-
-    const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let streamEnded = false;
+    let completed: OpenAiCompatibleFinishReason | null = null;
     const streamState: StreamState = { finishReason: null };
-
-    try {
-        while (!streamEnded) {
-            const chunk = await reader.read();
-            streamEnded = chunk.done;
-            buffer += decoder.decode(chunk.value, { stream: !chunk.done });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
-
-            for (const line of lines) {
-                if (!line.startsWith('data:')) {
-                    continue;
-                }
-                const finishReason = emitEventData(line.slice(5).trim(), onToken, onUsage, onUnknownEvent, streamState);
-                if (finishReason !== null) {
-                    await reader.cancel();
-                    return finishReason;
-                }
+    const consumeLines = (): void => {
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+            if (!line.startsWith('data:') || completed !== null) {
+                continue;
             }
+            completed = emitEventData(line.slice(5).trim(), onToken, onUsage, onUnknownEvent, streamState);
         }
-
-        const finalLine = buffer.trim();
-        if (finalLine.startsWith('data:')) {
-            const finishReason = emitEventData(
-                finalLine.slice(5).trim(),
-                onToken,
-                onUsage,
-                onUnknownEvent,
-                streamState
-            );
-            if (finishReason !== null) {
-                await reader.cancel();
-                return finishReason;
-            }
-        }
-
-        throw new Error('Hosted AI chat stream ended unexpectedly');
-    } catch (error) {
-        await reader.cancel().catch(() => undefined);
-        throw error;
+    };
+    const response = await requestOpenAiCompatibleProvider({
+        runtime,
+        body,
+        signal,
+        onBodyChunk: (chunk) => {
+            buffer += decoder.decode(chunk, { stream: true });
+            consumeLines();
+        },
+    });
+    if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Hosted AI chat request failed with status ${String(response.status)}`);
     }
+    buffer += decoder.decode();
+    consumeLines();
+    const finalLine = buffer.trim();
+    if (completed === null && finalLine.startsWith('data:')) {
+        completed = emitEventData(finalLine.slice(5).trim(), onToken, onUsage, onUnknownEvent, streamState);
+    }
+    if (completed === null) {
+        throw new Error('Hosted AI chat stream ended unexpectedly');
+    }
+    return completed;
 }
 
 function readUsage(value: unknown): ModelProviderUsageEvent['usage'] | null {

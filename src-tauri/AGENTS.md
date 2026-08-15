@@ -14,7 +14,7 @@ Tauri 2 desktop shell (lib `sourdaw_lib`; `src/main.rs` → `sourdaw_lib::run()`
 - The CPAL callback lives in `crates/daw-engine/src/audio_thread.rs`. On the audio path: **no heap allocation, no locks, no IPC** — scratch buffers are preallocated (`host/native_bridge.rs`).
 - Never final-drop a hosted plugin on the audio thread — removed CLAP runtimes go to `retired_engine_plugins` (`src/state.rs`).
 - If non-RT control owns a plugin wrapper's mutex, the RT path bypasses it rather than waiting (`host/native_bridge.rs`).
-- WebAudio↔Rust audio crosses `PluginAudioBridge` (rtrb SPSC rings, 8 blocks × 128 frames stereo ≈ 21 ms @ 48 kHz), relayed from the worklet via main-thread MessagePort (`commands/plugins.rs` — `process_plugin_audio`).
+- WebAudio↔Rust audio crosses `PluginAudioBridge` (rtrb SPSC rings sized from `MAX_CALLBACK_FRAMES`, 36 blocks × up to 512 frames stereo), relayed from the worklet via main-thread MessagePort (`commands/plugins.rs` — `process_plugin_audio`). Capacity is headroom, not latency: the callback holds the round trip within twice the device period by processing a block and then withholding it from the return ring, so latency settles at that depth instead of ratcheting up to the ring. Never shed a block before the plugin sees it — the input side is the native sampler's only record feed.
 - Note: the native chain currently renders silence except bridged plugins (`audio_thread.rs`) — timeline audio is a Web Audio concern.
 
 ## Gotchas

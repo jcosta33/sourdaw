@@ -209,13 +209,20 @@ fn arpeggiator_exhaustion_reports_exact_count_and_preserves_accepted_set() {
 }
 
 #[test]
-fn active_runtime_diagnostic_aggregation_saturates_both_counters() {
+fn active_runtime_diagnostic_aggregation_saturates_every_counter() {
+    // Every counter, not a sample of them: these run on the audio thread,
+    // where an overflowing add is a panic in a release-mode debug build and a
+    // wrapped count — reading as healthy — everywhere else.
     let maximum = ActiveMidiRtDiagnosticsSnapshot {
         scheduler_event_buffer_overflows: u64::MAX,
         arpeggiator_active_note_exhaustions: u64::MAX,
-        effect_id_collisions: 0,
-        unsupported_effect_additions: 0,
-        unmapped_set_param_calls: 0,
+        effect_id_collisions: u64::MAX,
+        unsupported_effect_additions: u64::MAX,
+        unmapped_set_param_calls: u64::MAX,
+        bridge_output_blocks_dropped: u64::MAX,
+        unmatched_bridge_blocks: u64::MAX,
+        bridge_backlog_blocks_shed: u64::MAX,
+        callback_frames_over_bridge_reach: u64::MAX,
     };
     let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
@@ -223,6 +230,20 @@ fn active_runtime_diagnostic_aggregation_saturates_both_counters() {
     diagnostics.record_scheduler_event_buffer_overflow(1);
     diagnostics.record_arpeggiator_active_note_exhaustion(u64::MAX);
     diagnostics.record_arpeggiator_active_note_exhaustion(1);
+    diagnostics.record_effect_id_collision(u64::MAX);
+    diagnostics.record_effect_id_collision(1);
+    diagnostics.record_unsupported_effect_addition(u64::MAX);
+    diagnostics.record_unsupported_effect_addition(1);
+    diagnostics.record_unmapped_set_param_call(u64::MAX);
+    diagnostics.record_unmapped_set_param_call(1);
+    diagnostics.record_bridge_output_blocks_dropped(u64::MAX);
+    diagnostics.record_bridge_output_blocks_dropped(1);
+    diagnostics.record_unmatched_bridge_blocks(u64::MAX);
+    diagnostics.record_unmatched_bridge_blocks(1);
+    diagnostics.record_bridge_backlog_blocks_shed(u64::MAX);
+    diagnostics.record_bridge_backlog_blocks_shed(1);
+    diagnostics.record_callback_frames_over_bridge_reach(u64::MAX);
+    diagnostics.record_callback_frames_over_bridge_reach(1);
 
     assert_eq!(diagnostics.snapshot(), maximum);
 }
