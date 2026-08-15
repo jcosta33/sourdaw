@@ -1,0 +1,33 @@
+crates/daw-engine/src/scheduler.rs
+  s_ab5443e65c7fba::t_a4b6ef4ce42a2b 6
+  s_ab5443e65c7fba::t_4a87f1166a9bb5 1201
+  s_ab5443e65c7fba::t_c92d7a28680db3 486-493,498
+  s_ab5443e65c7fba::t_b2bbce316fe4e3 494-497,499
+crates/daw-engine/src/audio_bridge.rs
+  s_ab5443e65c7fba::t_77a58e99b6adbc 105-107
+  s_ab5443e65c7fba::t_089e791ee052dd 120,132-137,139-140
+  s_ab5443e65c7fba::t_9b556b19e4db33 35-36
+  s_ab5443e65c7fba::t_d53c7b521bf95e 168-171,179-180,194-197
+  s_ab5443e65c7fba::t_04b20968f14b60 440-470
+  s_ab5443e65c7fba::t_af14b9afb1f2d7 439
+crates/daw-engine/src/midi/diagnostics.rs
+  s_ab5443e65c7fba::t_888d1bbf55a049 22-26
+src-tauri/AGENTS.md
+  s_ab5443e65c7fba::t_e9b8cf2a285cd8 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "91e3a833530beca1026badeee2d68cb5ae4ce0e5",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
