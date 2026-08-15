@@ -38,12 +38,24 @@ async function drawNotes(page: Page): Promise<void> {
         const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
         if (await pianoRoll.isVisible().catch(() => false)) {
             // A single click stamps a note (mousedown stashes a pending
-            // stamp; mouse-up commits it). A DOUBLE click would stamp and
-            // then hit-test-remove the fresh note — net zero notes.
-            await pianoRoll.click({ position: { x: 80, y: 120 } });
-            await page.waitForTimeout(200);
-            await pianoRoll.click({ position: { x: 160, y: 140 } });
-            await page.waitForTimeout(300);
+            // stamp; mouse-up commits it) snapped to the default 0.25-beat
+            // grid. A DOUBLE click would stamp and then hit-test-remove the
+            // fresh note — net zero notes. The Add-Clip flow makes a 16-beat
+            // clip, so beatWidth = canvas width / 16; stamping at
+            // beatWidth · (k + 0.25) lands on beats 1.25, 2.25, 3.25 — on
+            // the stamp grid but half a slot off any coarser extraction
+            // grid, so the groove cannot come out straight.
+            const box = await pianoRoll.boundingBox();
+            expect(box).not.toBeNull();
+            const beatWidth = box!.width / 16;
+            for (const beats of [1.25, 2.25, 3.25]) {
+                await pianoRoll.click({ position: { x: Math.round(beatWidth * beats), y: 130 } });
+                await page.waitForTimeout(150);
+            }
+
+            // Contract: each stamp pushes an undo entry — the transport undo
+            // becoming enabled proves the notes actually landed in the clip.
+            await expect(page.getByTestId('transport-undo')).toBeEnabled({ timeout: 5000 });
             return;
         }
     }
@@ -90,31 +102,34 @@ test.describe('Yeast groove extraction — preview, commit, rename, delete', () 
         const combobox = page.getByRole('combobox', { name: 'Groove template' });
         const before = await grooveTemplateOptions(page);
 
-        // Preview: the notes were drawn into whichever clip the piano roll
-        // opened — try each option until one extracts (bounded by the
-        // dropdown's own length; an empty clip reports 'no notes').
+        // Preview: search subdivision × clip until a real groove extracts.
+        // The stamps sit on the piano roll's 0.25-beat snap grid, and each
+        // subdivision interprets slot boundaries differently — the app's own
+        // preview is the oracle for which combination yields non-zero timing
+        // offsets. Bounded: 4 subdivisions × the dropdown's own length.
+        const subdivisionSelect = page.getByRole('combobox', { name: 'Groove extraction subdivision' });
         const clipSelect = page.getByRole('combobox', { name: 'MIDI clip for groove extraction' });
         const optionCount = await clipSelect.locator('option').count();
         expect(optionCount).toBeGreaterThan(1);
         const status = page.locator('[role="status"]').filter({ hasText: /groove|straight|clip/i }).first();
         let message = '';
-        for (let index = 1; index < optionCount; index += 1) {
-            await clipSelect.selectOption({ index });
-            await page.getByRole('button', { name: 'Preview groove' }).click();
-            await expect(status).toBeVisible({ timeout: 10_000 });
-            message = await status.innerText();
-            if (!/no notes|empty/i.test(message)) {
-                break;
+        outer: for (const subdivision of ['1/16', '1/8', '1/32', '1/16T']) {
+            await subdivisionSelect.selectOption(subdivision);
+            for (let index = 1; index < optionCount; index += 1) {
+                await clipSelect.selectOption({ index });
+                await page.getByRole('button', { name: 'Preview groove' }).click();
+                await expect(status).toBeVisible({ timeout: 10_000 });
+                message = await status.innerText();
+                if (!/no notes|empty|straight|already/i.test(message)) {
+                    break outer;
+                }
             }
         }
+        // Every combination must at least find the notes; failing all four
+        // subdivisions with 'straight' means the stamping seeded perfectly
+        // symmetric material — a seeding failure, not a flow pass.
         expect(message).not.toMatch(/no notes|empty/i);
-
-        // A straight (already-on-grid) clip extracts to the straight template
-        // and has nothing to save; an extracted groove offers Save.
-        if (/straight|already/i.test(message)) {
-            await expect(page.getByRole('button', { name: 'Save groove' })).toHaveCount(0);
-            return;
-        }
+        expect(message).not.toMatch(/straight|already/i);
         await expect(page.getByRole('button', { name: 'Save groove' })).toBeVisible();
 
         // Commit: the template list gains exactly the extracted template.
