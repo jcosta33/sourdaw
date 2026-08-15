@@ -29,9 +29,19 @@ function requestInput() {
 
 describe('requestAnthropicStream', () => {
     it('rejects an oversized raw SSE chunk before parsing or exposing an event', async () => {
-        const fetchMock = vi
-            .fn<typeof fetch>()
-            .mockResolvedValue(responseFromChunks([new TextEncoder().encode(`data: ${'x'.repeat(70 * 1_024)}\n\n`)]));
+        const cancel = vi.fn();
+        const chunk = new TextEncoder().encode(`data: ${'x'.repeat(70 * 1_024)}\n\n`);
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                new ReadableStream<Uint8Array>({
+                    start(controller) {
+                        controller.enqueue(chunk);
+                    },
+                    cancel,
+                }),
+                { status: 200 }
+            )
+        );
         vi.stubGlobal('fetch', fetchMock);
         const events: unknown[] = [];
 
@@ -42,6 +52,7 @@ describe('requestAnthropicStream', () => {
         }).rejects.toThrow(/response|chunk|event|payload|limit/i);
 
         expect(events).toEqual([]);
+        expect(cancel).toHaveBeenCalledTimes(1);
     });
 
     it('parses bounded Anthropic SSE data with the owned authenticated request', async () => {
@@ -72,5 +83,30 @@ describe('requestAnthropicStream', () => {
                 }),
             })
         );
+    });
+
+    it('cancels the response body when the consumer stops before exhaustion', async () => {
+        const cancel = vi.fn();
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                new ReadableStream<Uint8Array>({
+                    start(controller) {
+                        controller.enqueue(
+                            new TextEncoder().encode('event: message_stop\ndata: {"type":"message_stop"}\n\n')
+                        );
+                    },
+                    cancel,
+                }),
+                { status: 200 }
+            )
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        for await (const event of requestAnthropicStream(requestInput())) {
+            expect(event).toEqual({ type: 'message_stop' });
+            break;
+        }
+
+        expect(cancel).toHaveBeenCalledTimes(1);
     });
 });

@@ -59,6 +59,7 @@ export async function* requestAnthropicStream({
     let eventDataLines: string[] = [];
     let eventDataBytes = 0;
     let eventCount = 0;
+    let responseExhausted = false;
 
     const finishEvent = (): unknown[] => {
         if (eventDataLines.length === 0) {
@@ -119,6 +120,7 @@ export async function* requestAnthropicStream({
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
+                responseExhausted = true;
                 break;
             }
             rawBytes += value.byteLength;
@@ -135,6 +137,9 @@ export async function* requestAnthropicStream({
             yield event;
         }
     } finally {
+        if (!responseExhausted) {
+            await reader.cancel().catch(() => undefined);
+        }
         reader.releaseLock();
     }
 }
