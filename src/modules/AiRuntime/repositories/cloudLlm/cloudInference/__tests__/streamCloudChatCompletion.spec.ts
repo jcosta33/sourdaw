@@ -157,6 +157,25 @@ describe('streamCloudChatCompletion', () => {
         expect(outcome).toEqual({ status: 'complete' });
     });
 
+    it('rejects an oversized Anthropic event before exposing its token', async () => {
+        mocks.stream.mockReturnValue({
+            async *[Symbol.asyncIterator](): AsyncGenerator<CloudStreamEvent> {
+                yield {
+                    type: 'content_block_delta',
+                    delta: { type: 'text_delta', text: 'x'.repeat(70 * 1_024) },
+                };
+                yield { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null } };
+                yield { type: 'message_stop' };
+            },
+        });
+        const onToken = vi.fn();
+
+        await expect(streamCloudChatCompletion([{ role: 'user', content: 'test' }], onToken)).rejects.toThrow(
+            /event|payload|size|limit/i
+        );
+        expect(onToken).not.toHaveBeenCalled();
+    });
+
     it('normalizes Anthropic usage snapshots and final totals', async () => {
         mocks.stream.mockReturnValue({
             async *[Symbol.asyncIterator](): AsyncGenerator<CloudStreamEvent> {

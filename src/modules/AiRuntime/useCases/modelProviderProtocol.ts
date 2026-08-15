@@ -18,6 +18,7 @@ import {
 } from '../models/ModelProviderProtocol';
 
 const MAX_MODEL_PROVIDER_EVENT_BYTES = 64 * 1_024;
+const MAX_MODEL_PROVIDER_REQUEST_BYTES = 1_024 * 1_024;
 const MAX_MODEL_PROVIDER_STREAM_BYTES = 1_024 * 1_024;
 const MAX_MODEL_PROVIDER_EVENTS = 4_096;
 const MAX_IGNORED_PROVIDER_EVENTS = 64;
@@ -171,6 +172,24 @@ function matchesSchemaType(value: unknown, type: unknown): boolean {
     return false;
 }
 
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+    if (Object.is(left, right)) {
+        return true;
+    }
+    if (Array.isArray(left) && Array.isArray(right)) {
+        return left.length === right.length && left.every((item, index) => jsonValuesEqual(item, right[index]));
+    }
+    if (isRecord(left) && isRecord(right)) {
+        const leftKeys = Object.keys(left).sort();
+        const rightKeys = Object.keys(right).sort();
+        return (
+            leftKeys.length === rightKeys.length &&
+            leftKeys.every((key, index) => key === rightKeys[index] && jsonValuesEqual(left[key], right[key]))
+        );
+    }
+    return false;
+}
+
 function matchesJsonSchema(value: unknown, schema: unknown, depth = 0): boolean {
     if (depth > 64) {
         return false;
@@ -196,10 +215,10 @@ function matchesJsonSchema(value: unknown, schema: unknown, depth = 0): boolean 
     if (schema.not !== undefined && matchesJsonSchema(value, schema.not, depth + 1)) {
         return false;
     }
-    if ('const' in schema && JSON.stringify(value) !== JSON.stringify(schema.const)) {
+    if ('const' in schema && !jsonValuesEqual(value, schema.const)) {
         return false;
     }
-    if (Array.isArray(schema.enum) && !schema.enum.some((entry) => JSON.stringify(entry) === JSON.stringify(value))) {
+    if (Array.isArray(schema.enum) && !schema.enum.some((entry) => jsonValuesEqual(entry, value))) {
         return false;
     }
     if (schema.type !== undefined && !matchesSchemaType(value, schema.type)) {
@@ -241,6 +260,12 @@ function matchesJsonSchema(value: unknown, schema: unknown, depth = 0): boolean 
             return false;
         }
         if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) {
+            return false;
+        }
+        if (
+            schema.uniqueItems === true &&
+            value.some((item, index) => value.slice(index + 1).some((candidate) => jsonValuesEqual(item, candidate)))
+        ) {
             return false;
         }
         if (schema.items !== undefined && !value.every((item) => matchesJsonSchema(item, schema.items, depth + 1))) {
@@ -361,6 +386,13 @@ function compileRequest(
         input.budget.maxTotalTokens < 0
     ) {
         return unavailable('invalid-request', 'The model provider request is invalid.');
+    }
+    try {
+        if (encodedJsonBytes(input) > MAX_MODEL_PROVIDER_REQUEST_BYTES) {
+            return unavailable('invalid-request', 'The model provider request exceeds its size limit.');
+        }
+    } catch {
+        return unavailable('invalid-request', 'The model provider request is not valid bounded JSON.');
     }
 
     return {
@@ -631,7 +663,9 @@ function createSession(input: {
         finish(envelope: ModelProviderFinishEnvelope): ModelProviderResult {
             assertActive();
             assertIdentity(envelope);
-            encodedJsonBytes(envelope.finish);
+            if (encodedJsonBytes(envelope.finish) > MAX_MODEL_PROVIDER_EVENT_BYTES) {
+                throw new TypeError('Provider stream terminal payload exceeds its size limit.');
+            }
             finished = true;
             nextSequence += 1;
             return resultForFinish(envelope.finish);

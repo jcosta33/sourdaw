@@ -11,6 +11,10 @@ import { unregisterCloudStreamController } from '../unregisterCloudStreamControl
 import { CLOUD_MODEL } from './helpers';
 import { streamOpenAiCompatibleChatCompletion } from './streamOpenAiCompatibleChatCompletion';
 
+const MAX_ANTHROPIC_EVENT_BYTES = 64 * 1_024;
+const MAX_ANTHROPIC_STREAM_BYTES = 1_024 * 1_024;
+const MAX_ANTHROPIC_STREAM_EVENTS = 4_096;
+
 export type CloudChatCompletionOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
 
 type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
@@ -91,11 +95,18 @@ export async function streamCloudChatCompletion(
         let sawTerminalDelta = false;
         let sawMessageStop = false;
         let eventCount = 0;
+        let streamedBytes = 0;
         for await (const event of stream) {
+            const eventBytes = encodedJsonBytes(event);
             eventCount += 1;
-            if (eventCount > 4_096) {
-                throw new Error('Hosted AI chat stream exceeded its event limit');
+            if (
+                eventBytes > MAX_ANTHROPIC_EVENT_BYTES ||
+                streamedBytes + eventBytes > MAX_ANTHROPIC_STREAM_BYTES ||
+                eventCount > MAX_ANTHROPIC_STREAM_EVENTS
+            ) {
+                throw new Error('Hosted AI chat stream exceeded its bounded event or payload limit');
             }
+            streamedBytes += eventBytes;
             if (sawMessageStop || (sawTerminalDelta && event.type !== 'message_stop')) {
                 throw new Error('Hosted AI chat stream returned an event after completion');
             }
@@ -152,6 +163,19 @@ export async function streamCloudChatCompletion(
         unlinkCallerAbort();
         unregisterCloudStreamController(controller);
     }
+}
+
+function encodedJsonBytes(value: unknown): number {
+    let serialized: string | undefined;
+    try {
+        serialized = JSON.stringify(value);
+    } catch {
+        throw new TypeError('Hosted AI chat stream returned a non-JSON event');
+    }
+    if (serialized === undefined) {
+        throw new TypeError('Hosted AI chat stream returned a non-JSON event');
+    }
+    return new TextEncoder().encode(serialized).byteLength;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

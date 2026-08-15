@@ -28,6 +28,23 @@ function createRequest() {
                     additionalProperties: false,
                 },
             },
+            {
+                name: 'glueClips',
+                description: 'Glue clips together.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        clipIds: {
+                            type: 'array',
+                            items: { type: 'string' },
+                            minItems: 2,
+                            uniqueItems: true,
+                        },
+                    },
+                    required: ['clipIds'],
+                    additionalProperties: false,
+                },
+            },
         ],
         stream: true,
         limits: { maxOutputTokens: 256 },
@@ -146,8 +163,32 @@ describe('model stream protocol', () => {
         ).toThrow(/arguments/i);
     });
 
+    it('enforces advertised JSON Schema uniqueness before exposing tool arguments', () => {
+        const { protocol, request } = createRequest();
+        const session = protocol.start(request);
+
+        expect(() =>
+            session.push(
+                eventEnvelope(0, {
+                    type: 'tool-call',
+                    call: {
+                        id: 'call-unique',
+                        name: 'glueClips',
+                        arguments: { clipIds: ['clip-1', 'clip-1'] },
+                    },
+                }) as never
+            )
+        ).toThrow(/arguments/i);
+    });
+
     it('bounds individual payloads, accumulated output, and retained unknown events', () => {
         const { protocol, request } = createRequest();
+
+        const oversizedRequest = protocol.compileRequest({
+            ...request,
+            messages: [{ role: 'user', content: 'x'.repeat(1_024 * 1_024) }],
+        });
+        expect(oversizedRequest).toMatchObject({ status: 'unavailable', failure: { code: 'invalid-request' } });
 
         expect(() =>
             protocol
@@ -166,6 +207,21 @@ describe('model stream protocol', () => {
                 eventEnvelope(MAX_UNKNOWN_EVENTS, { type: 'unknown', providerEventType: 'future:64' }) as never
             )
         ).toThrow(/unknown|limit/i);
+
+        const finishSession = protocol.start(request);
+        expect(() =>
+            finishSession.finish(
+                finishEnvelope(0, {
+                    reason: 'error',
+                    failure: {
+                        code: 'provider-error',
+                        retryable: true,
+                        safeMessage: 'x'.repeat(70 * 1_024),
+                    },
+                }) as never
+            )
+        ).toThrow(/payload|size|limit/i);
+        expect(() => finishSession.finish(finishEnvelope(0, { reason: 'stop' }) as never)).not.toThrow();
     });
 
     it('emits exactly one terminal result and rejects all late or post-cancellation input', () => {

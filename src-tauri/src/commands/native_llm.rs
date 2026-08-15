@@ -15,6 +15,7 @@ use tokio::sync::{watch, Mutex, RwLock};
 use super::model_download;
 
 const MAX_STREAM_EVENT_BYTES: usize = 64 * 1024;
+const MAX_STREAM_ERROR_MESSAGE_BYTES: usize = 16 * 1024;
 const MAX_STREAM_BYTES: usize = 1024 * 1024;
 const MAX_STREAM_EVENTS: u32 = 4096;
 
@@ -201,6 +202,22 @@ async fn wait_for_generation_cancellation(cancellation: &mut watch::Receiver<boo
 
 fn generation_cancelled_error() -> String {
     "Native LLM generation cancelled".to_string()
+}
+
+fn bounded_stream_error_message(message: &str) -> String {
+    if message.len() <= MAX_STREAM_ERROR_MESSAGE_BYTES {
+        return message.to_string();
+    }
+
+    let suffix = "…";
+    let mut end = MAX_STREAM_ERROR_MESSAGE_BYTES - suffix.len();
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut bounded = String::with_capacity(MAX_STREAM_ERROR_MESSAGE_BYTES);
+    bounded.push_str(&message[..end]);
+    bounded.push_str(suffix);
+    bounded
 }
 
 fn prune_cancellation_tombstones(cancellations: &mut HashMap<String, GenerationCancellation>) {
@@ -489,7 +506,7 @@ pub async fn stream_native_completion(
             }
             stream = model.stream_chat_request(request) => {
                 stream.map_err(|e| {
-                    let msg = format!("Stream init error: {e}");
+                    let msg = bounded_stream_error_message(&format!("Stream init error: {e}"));
                     let _ = on_event.send(LlmStreamEvent::Error {
                         request_id: request_id.clone(),
                         sequence: 0,
@@ -561,12 +578,13 @@ pub async fn stream_native_completion(
                     break;
                 }
                 Response::ModelError(msg, _) => {
+                    let message = bounded_stream_error_message(&msg.to_string());
                     let _ = on_event.send(LlmStreamEvent::Error {
                         request_id: request_id.clone(),
                         sequence,
-                        message: msg.to_string(),
+                        message: message.clone(),
                     });
-                    return Err(msg.to_string());
+                    return Err(message);
                 }
                 _ => {}
             }
@@ -746,12 +764,13 @@ pub async fn schema_constrained_generation(
         let model = get_model(&state).await?;
 
         let constraint = build_json_schema_constraint(&json_schema).map_err(|e| {
+            let message = bounded_stream_error_message(&e);
             let _ = on_event.send(LlmStreamEvent::Error {
                 request_id: request_id.clone(),
                 sequence: 0,
-                message: e.clone(),
+                message: message.clone(),
             });
-            e
+            message
         })?;
 
         let request = RequestBuilder::new()
@@ -769,7 +788,7 @@ pub async fn schema_constrained_generation(
             }
             stream = model.stream_chat_request(request) => {
                 stream.map_err(|e| {
-                    let msg = format!("Schema-constrained stream init error: {e}");
+                    let msg = bounded_stream_error_message(&format!("Schema-constrained stream init error: {e}"));
                     let _ = on_event.send(LlmStreamEvent::Error {
                         request_id: request_id.clone(),
                         sequence: 0,
@@ -844,12 +863,13 @@ pub async fn schema_constrained_generation(
                     break;
                 }
                 Response::ModelError(msg, _) => {
+                    let message = bounded_stream_error_message(&msg.to_string());
                     let _ = on_event.send(LlmStreamEvent::Error {
                         request_id: request_id.clone(),
                         sequence,
-                        message: msg.to_string(),
+                        message: message.clone(),
                     });
-                    return Err(msg.to_string());
+                    return Err(message);
                 }
                 _ => {}
             }
@@ -1125,6 +1145,20 @@ mod tests {
                 "data": { "requestId": "request-1", "sequence": 4, "text": "hello" }
             })
         );
+    }
+
+    #[test]
+    fn should_bound_native_stream_error_messages() {
+        let bounded = bounded_stream_error_message(&"é".repeat(MAX_STREAM_EVENT_BYTES));
+        let serialized = serde_json::to_vec(&LlmStreamEvent::Error {
+            request_id: "request-1".to_string(),
+            sequence: 0,
+            message: bounded.clone(),
+        })
+        .expect("native stream error must serialize");
+
+        assert!(bounded.len() <= 16 * 1024);
+        assert!(serialized.len() <= MAX_STREAM_EVENT_BYTES);
     }
 
     #[test]
