@@ -1,0 +1,87 @@
+src/modules/AudioEngine/models/EngineRtDiagnostics.ts
+  s_ab5443e65c7fba::t_497884230438a1 1-58
+src-tauri/src/commands/engine_diagnostics.rs
+  s_ab5443e65c7fba::t_8f3431555cd067 1-235
+  s_ab5443e65c7fba::t_48159b89ecf2cc 236-237
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  s_ab5443e65c7fba::t_405f1bff179d63 1-111
+src/modules/AudioEngine/useCases/engineAccess/refreshEngineRtDiagnostics.ts
+  s_ab5443e65c7fba::t_bf3410d8ff9d2d 1-31
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  s_ab5443e65c7fba::t_f21a958f64382f 1-103
+crates/daw-engine/src/engine_events.rs
+  s_ab5443e65c7fba::t_0d43d2c92863e6 1-192
+  s_ab5443e65c7fba::t_1e02eff24fc496 193-197
+src/modules/AudioEngine/stores/engineRtDiagnosticsStore.ts
+  s_ab5443e65c7fba::t_72b80cabe7b0be 1-34
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  s_ab5443e65c7fba::t_910d5c3aae24fb 1-86
+crates/daw-engine/src/lib.rs
+  s_ab5443e65c7fba::t_d4ecec36c8bcfd 3,10,16,24,32-34,41,50-58
+src-tauri/src/commands/plugins.rs
+  s_ab5443e65c7fba::t_f0a808d7041755 17,938-950,1038-1095
+crates/daw-engine/src/audio_thread.rs
+  s_28ea00c9daa817::t_c493f75ec9cd6e 3,11,19-23,144-145,151,157-162,214-236,241,265-281,290,351,398-463
+src-tauri/src/commands/mod.rs
+  s_28ea00c9daa817::t_dffbc17bb40a0d 7
+src-tauri/src/lib.rs
+  s_28ea00c9daa817::t_dfbacb0c28b6e9 70
+src-tauri/src/state.rs
+  s_d940ed5d0a8036::t_f5ec1dbc46f738 9,92-97,118
+src/modules/AudioEngine/stores/index.ts
+  s_ea24536bc8e517::t_259ad66007d1a6 13-20
+src/modules/AudioEngine/useCases/index.ts
+  s_28ea00c9daa817::t_39ea335ba8b9c6 70
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_28ea00c9daa817::t_f1acb7ec4d2910 3,21-22,162-204
+src/modules/PluginHost/repositories/pluginBridge/loadPlugin.ts
+  s_28ea00c9daa817::t_e54a4ea2938f0f 15
+src/modules/PluginHost/repositories/pluginBridge/processAudioIPC.ts
+  s_28ea00c9daa817::t_7ff35aec6dea7f 1,39-56,68,70-75
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_28ea00c9daa817::t_8dc9e9ffa38908 32-42
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_28ea00c9daa817::t_78a9c835e1b90e 82-92
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_ab5443e65c7fba::t_6aa77d3c069623 121-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "dfca30042dba827169c1618946f2a3a56c55b8a1",
+  "prompts": {},
+  "sessions": {
+    "s_28ea00c9daa817": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a05a585510fcff51e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d940ed5d0a8036": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0078c-7dc5-7b83-a566-def455ff86f2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ea24536bc8e517": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00795-accb-7783-bd43-5af10f63cd20",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
