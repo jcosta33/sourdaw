@@ -1,0 +1,25 @@
+tests/e2e/grandBouleMidiCalibration.spec.ts
+  h_1228e573df1f42 1-38,42-70
+  s_ab5443e65c7fba::t_a5a5e9bc65dcac 39-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9b4e3c2c9294a63acf1624650789ecabe808c7f8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
