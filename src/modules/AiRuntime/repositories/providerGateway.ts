@@ -161,21 +161,29 @@ export async function runProviderGatewayRequest(
     };
     request.signal.addEventListener('abort', cancel, { once: true });
     try {
-        await dependencies.invoke('provider_gateway_request', {
-            requestId: request.requestId,
-            adapterId: request.adapter.adapterId,
-            origin: request.adapter.origin,
-            operation: request.operation,
-            apiKey: request.apiKey,
-            body: request.body,
-            onEvent: channel,
-        });
+        let invokeError: { value: unknown } | null = null;
+        try {
+            await dependencies.invoke('provider_gateway_request', {
+                requestId: request.requestId,
+                adapterId: request.adapter.adapterId,
+                origin: request.adapter.origin,
+                operation: request.operation,
+                apiKey: request.apiKey,
+                body: request.body,
+                onEvent: channel,
+            });
+        } catch (error) {
+            invokeError = { value: error };
+        }
         request.signal.throwIfAborted();
         if (eventError !== null) {
             if (eventError instanceof Error) {
                 throw eventError;
             }
             throw new Error('Provider gateway event handling failed');
+        }
+        if (invokeError !== null) {
+            throw invokeError.value;
         }
         if (!streamState.done) {
             throw new Error('Provider gateway completed without one terminal event');

@@ -310,6 +310,10 @@ fn apply_stream_response(
 ) -> Result<bool, String> {
     match response {
         Response::Chunk(chunk) => {
+            let terminal = stream_chunk_terminal(&chunk)?;
+            if let Some(terminal) = terminal.as_ref() {
+                validate_finish(&terminal.finish_reason)?;
+            }
             if let Some(choice) = chunk.choices.first() {
                 if let Some(ref content) = choice.delta.content {
                     if !content.is_empty() {
@@ -334,10 +338,9 @@ fn apply_stream_response(
                     }
                 }
             }
-            let Some(terminal) = stream_chunk_terminal(&chunk)? else {
+            let Some(terminal) = terminal else {
                 return Ok(false);
             };
-            validate_finish(&terminal.finish_reason)?;
             let _ = on_event.send(LlmStreamEvent::Done {
                 request_id: request_id.to_string(),
                 sequence: *sequence,
@@ -1389,7 +1392,11 @@ mod tests {
         let mut streamed_bytes = 0;
 
         let result = apply_stream_response(
-            Response::Chunk(stream_chunk(None, Some("stop"), None)),
+            Response::Chunk(stream_chunk(
+                Some("must-not-be-exposed"),
+                Some("stop"),
+                None,
+            )),
             &channel,
             "test-request",
             &mut sequence,

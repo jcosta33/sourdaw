@@ -351,20 +351,25 @@ describe('provider adapter conformance', () => {
     it('cancels the privileged request when downstream event handling rejects', async () => {
         const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const channel = { id: 6, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:6' };
-        let resolveRequest: (() => void) | undefined;
+        let rejectRequest: ((error: Error) => void) | undefined;
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>((command, args) => {
             if (command === 'provider_gateway_request') {
                 const onEvent = args?.onEvent as typeof channel;
-                onEvent.onmessage(
-                    gatewayEvent(args?.requestId, 0, 'response-start', {
-                        status: 200,
-                        contentType: 'application/json',
-                    })
-                );
-                onEvent.onmessage(gatewayEvent(args?.requestId, 1, 'body-chunk', { bytes: [123] }));
-                return new Promise<void>((resolve) => {
-                    resolveRequest = resolve;
+                return new Promise<void>((_resolve, reject) => {
+                    rejectRequest = reject;
+                    queueMicrotask(() => {
+                        onEvent.onmessage(
+                            gatewayEvent(args?.requestId, 0, 'response-start', {
+                                status: 200,
+                                contentType: 'application/json',
+                            })
+                        );
+                        onEvent.onmessage(gatewayEvent(args?.requestId, 1, 'body-chunk', { bytes: [123] }));
+                    });
                 });
+            }
+            if (command === 'cancel_provider_gateway_request') {
+                rejectRequest?.(new Error('Native provider gateway request cancelled'));
             }
             return Promise.resolve(undefined);
         });
@@ -383,14 +388,14 @@ describe('provider adapter conformance', () => {
             },
             { createChannel: async () => channel, invoke }
         );
+        const pendingRejection = expect(pending).rejects.toThrow('downstream rejected chunk');
 
         await vi.waitFor(() =>
             expect(invoke).toHaveBeenCalledWith('cancel_provider_gateway_request', {
                 requestId: 'request-callback-failure',
             })
         );
-        resolveRequest?.();
-        await expect(pending).rejects.toThrow('downstream rejected chunk');
+        await pendingRejection;
         expect(invoke.mock.calls.filter(([command]) => command === 'cancel_provider_gateway_request')).toHaveLength(1);
     });
 
