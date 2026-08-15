@@ -60,7 +60,10 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.tauriInvoke.mockImplementation(() => {
             channel.onmessage?.({ event: 'token', data: { text: '{"kind":' } });
             channel.onmessage?.({ event: 'token', data: { text: '"edit_plan"}' } });
-            channel.onmessage?.({ event: 'done', data: { total_tokens: 2 } });
+            channel.onmessage?.({
+                event: 'done',
+                data: { promptTokens: 1, completionTokens: 2, finishReason: 'stop' },
+            });
             return Promise.resolve(undefined);
         });
         const onToken = vi.fn();

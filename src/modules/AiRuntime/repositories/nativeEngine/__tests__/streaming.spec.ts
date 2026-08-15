@@ -114,7 +114,10 @@ describe('streamNativeCompletion', () => {
             mocks.createChannel.mockResolvedValue(mockChannel);
             mocks.tauriInvoke.mockImplementation(() => {
                 mockChannel.onmessage?.({ event: 'future_native_event', data: { private: 'not-forwarded' } });
-                mockChannel.onmessage?.({ event: 'done', data: { totalTokens: 0 } });
+                mockChannel.onmessage?.({
+                    event: 'done',
+                    data: { promptTokens: 0, completionTokens: 0, finishReason: 'stop' },
+                });
                 return Promise.resolve(undefined);
             });
             const onUnknownEvent = vi.fn();

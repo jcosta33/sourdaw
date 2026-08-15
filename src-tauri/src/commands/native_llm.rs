@@ -1,6 +1,6 @@
 use mistralrs::{
-    Constraint, Function, GgufModelBuilder, PagedAttentionMetaBuilder, RequestBuilder, Response,
-    TextMessageRole, Tool, ToolChoice, ToolType,
+    ChatCompletionChunkResponse, Constraint, Function, GgufModelBuilder, PagedAttentionMetaBuilder,
+    RequestBuilder, Response, TextMessageRole, Tool, ToolChoice, ToolType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -57,6 +57,7 @@ pub enum LlmStreamEvent {
     Token {
         text: String,
     },
+    #[serde(rename_all = "camelCase")]
     Done {
         prompt_tokens: usize,
         completion_tokens: usize,
@@ -233,6 +234,86 @@ fn validate_stream_finish_reason(finish_reason: &str) -> Result<(), String> {
     Err(format!(
         "Native completion stream ended with unsupported finish reason {finish_reason}"
     ))
+}
+
+struct StreamTerminal {
+    prompt_tokens: usize,
+    completion_tokens: usize,
+    finish_reason: String,
+}
+
+/// mistralrs 0.8.1 streaming requests (`Model::stream_chat_request` always
+/// sets `is_streaming`) deliver their terminal signal on the final
+/// `Response::Chunk`, which carries `finish_reason` and `usage`;
+/// `Response::Done` is produced only on the non-streaming engine path.
+fn stream_chunk_terminal(
+    response: &ChatCompletionChunkResponse,
+) -> Result<Option<StreamTerminal>, String> {
+    let Some(choice) = response.choices.first() else {
+        return Ok(None);
+    };
+    let Some(finish_reason) = choice.finish_reason.as_ref() else {
+        return Ok(None);
+    };
+    let usage = response
+        .usage
+        .as_ref()
+        .ok_or("Native stream terminal chunk carried no usage")?;
+    Ok(Some(StreamTerminal {
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        finish_reason: finish_reason.clone(),
+    }))
+}
+
+/// Forward one engine response to the IPC channel. Returns `Ok(true)` once
+/// the stream is terminal and a `Done` event has been emitted.
+fn apply_stream_response(
+    response: Response,
+    on_event: &Channel<LlmStreamEvent>,
+    validate_finish: &impl Fn(&str) -> Result<(), String>,
+    missing_choice_error: &'static str,
+) -> Result<bool, String> {
+    match response {
+        Response::Chunk(chunk) => {
+            if let Some(choice) = chunk.choices.first() {
+                if let Some(ref content) = choice.delta.content {
+                    if !content.is_empty() {
+                        let _ = on_event.send(LlmStreamEvent::Token {
+                            text: content.clone(),
+                        });
+                    }
+                }
+            }
+            let Some(terminal) = stream_chunk_terminal(&chunk)? else {
+                return Ok(false);
+            };
+            validate_finish(&terminal.finish_reason)?;
+            let _ = on_event.send(LlmStreamEvent::Done {
+                prompt_tokens: terminal.prompt_tokens,
+                completion_tokens: terminal.completion_tokens,
+                finish_reason: terminal.finish_reason,
+            });
+            Ok(true)
+        }
+        Response::Done(response) => {
+            let choice = response.choices.first().ok_or(missing_choice_error)?;
+            validate_finish(&choice.finish_reason)?;
+            let _ = on_event.send(LlmStreamEvent::Done {
+                prompt_tokens: response.usage.prompt_tokens,
+                completion_tokens: response.usage.completion_tokens,
+                finish_reason: choice.finish_reason.clone(),
+            });
+            Ok(true)
+        }
+        Response::ModelError(message, _) => {
+            let _ = on_event.send(LlmStreamEvent::Error {
+                message: message.clone(),
+            });
+            Err(message)
+        }
+        _ => Ok(false),
+    }
 }
 
 async fn unload_model_if_owned(state: &NativeLlmState, request_id: &str) -> bool {
@@ -499,39 +580,14 @@ pub async fn stream_native_completion(
                 break;
             };
 
-            match chunk {
-                Response::Chunk(resp) => {
-                    if let Some(choice) = resp.choices.first() {
-                        if let Some(ref content) = choice.delta.content {
-                            if !content.is_empty() {
-                                let _ = on_event.send(LlmStreamEvent::Token {
-                                    text: content.clone(),
-                                });
-                            }
-                        }
-                    }
-                }
-                Response::Done(response) => {
-                    let choice = response
-                        .choices
-                        .first()
-                        .ok_or("No stream completion response")?;
-                    validate_stream_finish_reason(&choice.finish_reason)?;
-                    let _ = on_event.send(LlmStreamEvent::Done {
-                        prompt_tokens: response.usage.prompt_tokens,
-                        completion_tokens: response.usage.completion_tokens,
-                        finish_reason: choice.finish_reason.clone(),
-                    });
-                    completed = true;
-                    break;
-                }
-                Response::ModelError(msg, _) => {
-                    let _ = on_event.send(LlmStreamEvent::Error {
-                        message: msg.to_string(),
-                    });
-                    return Err(msg.to_string());
-                }
-                _ => {}
+            if apply_stream_response(
+                chunk,
+                &on_event,
+                &validate_stream_finish_reason,
+                "No stream completion response",
+            )? {
+                completed = true;
+                break;
             }
         }
 
@@ -751,42 +807,19 @@ pub async fn schema_constrained_generation(
                 break;
             };
 
-            match chunk {
-                Response::Chunk(resp) => {
-                    if let Some(choice) = resp.choices.first() {
-                        if let Some(ref content) = choice.delta.content {
-                            if !content.is_empty() {
-                                let _ = on_event.send(LlmStreamEvent::Token {
-                                    text: content.clone(),
-                                });
-                            }
-                        }
-                    }
-                }
-                Response::Done(response) => {
-                    let choice = response
-                        .choices
-                        .first()
-                        .ok_or("No schema-constrained completion response")?;
+            if apply_stream_response(
+                chunk,
+                &on_event,
+                &|finish_reason| {
                     validate_text_finish_reason(
-                        &choice.finish_reason,
+                        finish_reason,
                         "Native schema-constrained generation",
-                    )?;
-                    let _ = on_event.send(LlmStreamEvent::Done {
-                        prompt_tokens: response.usage.prompt_tokens,
-                        completion_tokens: response.usage.completion_tokens,
-                        finish_reason: choice.finish_reason.clone(),
-                    });
-                    completed = true;
-                    break;
-                }
-                Response::ModelError(msg, _) => {
-                    let _ = on_event.send(LlmStreamEvent::Error {
-                        message: msg.to_string(),
-                    });
-                    return Err(msg.to_string());
-                }
-                _ => {}
+                    )
+                },
+                "No schema-constrained completion response",
+            )? {
+                completed = true;
+                break;
             }
         }
 
@@ -1115,6 +1148,200 @@ mod tests {
         assert_eq!(
             validate_text_finish_reason("length", "Native test"),
             Err("Native test ended incompletely with finish reason length".to_string())
+        );
+    }
+
+    use mistralrs::{ChunkChoice, Delta, Usage};
+
+    fn collecting_channel() -> (
+        Channel<LlmStreamEvent>,
+        Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+    ) {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&events);
+        let channel = Channel::new(move |body| {
+            let tauri::ipc::InvokeResponseBody::Json(json) = body else {
+                panic!("expected a JSON channel payload");
+            };
+            sink.lock()
+                .unwrap()
+                .push(serde_json::from_str(&json).expect("channel payload must be valid JSON"));
+            Ok(())
+        });
+        (channel, events)
+    }
+
+    fn stream_usage(prompt_tokens: usize, completion_tokens: usize) -> Usage {
+        Usage {
+            completion_tokens,
+            prompt_tokens,
+            total_tokens: prompt_tokens + completion_tokens,
+            avg_tok_per_sec: 0.0,
+            avg_prompt_tok_per_sec: 0.0,
+            avg_compl_tok_per_sec: 0.0,
+            total_time_sec: 0.0,
+            total_prompt_time_sec: 0.0,
+            total_completion_time_sec: 0.0,
+        }
+    }
+
+    fn stream_chunk(
+        content: Option<&str>,
+        finish_reason: Option<&str>,
+        usage: Option<Usage>,
+    ) -> ChatCompletionChunkResponse {
+        ChatCompletionChunkResponse {
+            id: "chunk".to_string(),
+            choices: vec![ChunkChoice {
+                finish_reason: finish_reason.map(str::to_string),
+                index: 0,
+                delta: Delta {
+                    content: content.map(str::to_string),
+                    role: "assistant".to_string(),
+                    tool_calls: None,
+                    reasoning_content: None,
+                },
+                logprobs: None,
+            }],
+            created: 0,
+            model: "test".to_string(),
+            system_fingerprint: "test".to_string(),
+            object: "chat.completion.chunk".to_string(),
+            usage,
+        }
+    }
+
+    /// Regression (#1973): mistralrs streaming never sends `Response::Done`;
+    /// the terminal signal is the final `Response::Chunk` carrying
+    /// `finish_reason` and `usage`. A stream ending that way must complete
+    /// with exactly one `Done` event instead of falling off the loop into
+    /// "ended without a terminal response".
+    #[test]
+    fn should_complete_stream_on_finish_reason_bearing_chunk() {
+        let (channel, events) = collecting_channel();
+        let stream = vec![
+            Response::Chunk(stream_chunk(Some("Hel"), None, None)),
+            Response::Chunk(stream_chunk(
+                Some("lo"),
+                Some("stop"),
+                Some(stream_usage(12, 34)),
+            )),
+        ];
+
+        let mut completed = false;
+        for response in stream {
+            if apply_stream_response(
+                response,
+                &channel,
+                &validate_stream_finish_reason,
+                "No stream completion response",
+            )
+            .expect("stream must not error")
+            {
+                completed = true;
+                break;
+            }
+        }
+
+        assert!(completed, "finish-reason-bearing chunk must be terminal");
+        let events = events.lock().unwrap();
+        assert_eq!(
+            *events,
+            vec![
+                serde_json::json!({"event": "token", "data": {"text": "Hel"}}),
+                serde_json::json!({"event": "token", "data": {"text": "lo"}}),
+                serde_json::json!({"event": "done", "data": {
+                    "promptTokens": 12,
+                    "completionTokens": 34,
+                    "finishReason": "stop"
+                }}),
+            ]
+        );
+    }
+
+    #[test]
+    fn should_error_when_terminal_chunk_carries_no_usage() {
+        let (channel, events) = collecting_channel();
+
+        let result = apply_stream_response(
+            Response::Chunk(stream_chunk(None, Some("stop"), None)),
+            &channel,
+            &validate_stream_finish_reason,
+            "No stream completion response",
+        );
+
+        assert_eq!(
+            result,
+            Err("Native stream terminal chunk carried no usage".to_string())
+        );
+        assert!(events.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn should_reject_terminal_chunk_with_unsupported_finish_reason() {
+        let (channel, events) = collecting_channel();
+
+        let result = apply_stream_response(
+            Response::Chunk(stream_chunk(
+                None,
+                Some("content_filter"),
+                Some(stream_usage(1, 2)),
+            )),
+            &channel,
+            &validate_stream_finish_reason,
+            "No stream completion response",
+        );
+
+        assert_eq!(
+            result,
+            Err(
+                "Native completion stream ended with unsupported finish reason content_filter"
+                    .to_string()
+            )
+        );
+        assert!(events.lock().unwrap().is_empty());
+    }
+
+    /// The defensive `Response::Done` path stays terminal.
+    #[test]
+    fn should_keep_response_done_terminal() {
+        let (channel, events) = collecting_channel();
+        let response = Response::Done(mistralrs::ChatCompletionResponse {
+            id: "done".to_string(),
+            choices: vec![mistralrs::Choice {
+                finish_reason: "stop".to_string(),
+                index: 0,
+                message: mistralrs::ResponseMessage {
+                    content: Some("Hello".to_string()),
+                    role: "assistant".to_string(),
+                    tool_calls: None,
+                    reasoning_content: None,
+                },
+                logprobs: None,
+            }],
+            created: 0,
+            model: "test".to_string(),
+            system_fingerprint: "test".to_string(),
+            object: "chat.completion".to_string(),
+            usage: stream_usage(3, 4),
+        });
+
+        let terminal = apply_stream_response(
+            response,
+            &channel,
+            &validate_stream_finish_reason,
+            "No stream completion response",
+        )
+        .expect("done response must not error");
+
+        assert!(terminal);
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec![serde_json::json!({"event": "done", "data": {
+                "promptTokens": 3,
+                "completionTokens": 4,
+                "finishReason": "stop"
+            }})]
         );
     }
 
