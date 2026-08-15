@@ -1193,7 +1193,7 @@ describe('sendChatMessage injectables', () => {
 
         const [projection] = getAgentRunControlProjections();
         expect(projection).toMatchObject({
-            phase: 'cancelled',
+            phase: 'partially-completed',
             cancellation: { requested: true },
             committedReceipts: [expect.objectContaining({ workId: expect.any(String) })],
         });
@@ -1503,7 +1503,7 @@ describe('sendChatMessage injectables', () => {
             status: 'executed',
         });
         expect(getAgentRun(proposalRunId)).toMatchObject({
-            phase: 'cancelled',
+            phase: 'partially-completed',
             cancellation: { requestedAt: expect.any(Number) },
             committedWork: [expect.objectContaining({ receiptIdentity: expect.any(String) })],
         });

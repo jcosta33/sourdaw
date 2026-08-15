@@ -300,9 +300,18 @@ function recordAgentRunCommittedWork(input: {
         const receipts = [...run.receipts.filter((receipt) => receipt.workId !== input.workId), committedWork];
         const renderJobIds = input.renderJobIds ?? [];
         const analysisIds = input.analysisIds ?? [];
+        const phase = (() => {
+            if (input.completesRun !== false) {
+                return 'completed' as const;
+            }
+            if (run.phase === 'cancelled' || run.phase === 'failed') {
+                return 'partially-completed' as const;
+            }
+            return run.phase;
+        })();
         return {
             ...run,
-            phase: input.completesRun === false ? run.phase : 'completed',
+            phase,
             revisions: {
                 ...run.revisions,
                 committed: input.committedRevision ?? run.revisions.committed,
