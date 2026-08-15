@@ -396,6 +396,16 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     );
                 }
 
+                if (backend === 'webllm' && outcome.status === 'complete') {
+                    const advertisedToolNames = new Set(providerTools.map((tool) => tool.function.name));
+                    if (outcome.toolCalls.some((call) => !advertisedToolNames.has(call.name))) {
+                        outcome = {
+                            status: 'rejected',
+                            reason: 'Provider requested a tool that was not advertised for this request.',
+                        };
+                    }
+                }
+
                 if (outcome.status === 'complete') {
                     const providerCallIds = outcome.toolCalls.map((call) => call.id);
                     for (const [index, call] of outcome.toolCalls.entries()) {

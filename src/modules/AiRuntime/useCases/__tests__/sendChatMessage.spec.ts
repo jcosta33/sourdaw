@@ -17,6 +17,7 @@ import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore'
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { agentRunControls } from '../getAgentRunControlProjection';
 import { type ProjectContext } from '../getProjectContext';
@@ -1313,7 +1314,27 @@ describe('sendChatMessage injectables', () => {
             enableReasoning: true,
             chatMode: 'prompt',
         };
-        mocks.parsePromptToActions.mockRejectedValue(new AiRuntimeConfigurationChangedError());
+        mocks.parsePromptToActions.mockRejectedValue(
+            new ApplicationOwnedToolLoopRequestError(
+                new AiRuntimeConfigurationChangedError(),
+                [
+                    {
+                        schema: 'sourdaw.application-tool-receipt',
+                        schemaVersion: 1,
+                        callId: 'query-before-reconfiguration',
+                        toolName: 'project.query',
+                        turn: 1,
+                        status: 'success',
+                        revision: 'revision-1',
+                        data: { queryType: 'project-summary' },
+                        summary: 'project-summary: 1 of 1 item(s)',
+                        warnings: [],
+                        error: null,
+                    },
+                ],
+                2
+            )
+        );
 
         await sendChatMessage('mute the vocals');
 
@@ -1324,6 +1345,13 @@ describe('sendChatMessage injectables', () => {
                 error: 'AI configuration changed while the request was running',
             })
         );
+        const [cancelledProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(cancelledProjection!.runId)?.plan).toMatchObject({
+            commandIds: [],
+            applicationToolReceipts: [
+                expect.objectContaining({ callId: 'query-before-reconfiguration', revision: 'revision-1' }),
+            ],
+        });
     });
 
     it('should update the existing executing row when a prompt action is not dispatched', async () => {

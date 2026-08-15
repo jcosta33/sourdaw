@@ -601,6 +601,34 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledWith('sys', 'mute drums', tools, controller.signal);
     });
 
+    it('rejects a WebLLM call whose registered tool was not advertised for this request', async () => {
+        const tools: ToolSchema[] = Array.from({ length: 35 }, (_, index) => ({
+            type: 'function',
+            function: {
+                name: `action${String(index)}`,
+                description: `Action ${String(index)}`,
+                parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+            },
+        }));
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockImplementation(
+            async (_systemPrompt: string, _userMessage: string, advertisedTools: ToolSchema[]) => {
+                const advertisedNames = new Set(advertisedTools.map((tool) => tool.function.name));
+                const omittedTool = tools.find((tool) => !advertisedNames.has(tool.function.name));
+                if (!omittedTool) {
+                    throw new Error('Expected prompt tool selection to omit at least one registered tool');
+                }
+                return completePlan([{ id: 'unadvertised-call', name: omittedTool.function.name, arguments: {} }]);
+            }
+        );
+
+        await expect(generateToolCalls('sys', 'use the appropriate action', tools)).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Provider requested a tool that was not advertised for this request.',
+        });
+    });
+
     it('passes cancellation into WebLLM initialization', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.isWebLlmLoaded.mockReturnValue(false);

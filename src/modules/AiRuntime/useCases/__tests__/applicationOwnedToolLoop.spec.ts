@@ -130,6 +130,63 @@ describe('application-owned tool loop', () => {
         ]);
     });
 
+    it.each([
+        {
+            label: 'fails',
+            interrupt(_controller: AbortController) {
+                return new Error('provider continuation failed');
+            },
+            expectedRejection: 'Provider planning failed: provider continuation failed',
+        },
+        {
+            label: 'is cancelled',
+            interrupt(controller: AbortController) {
+                controller.abort();
+                return new DOMException('Aborted', 'AbortError');
+            },
+            expectedRejection: undefined,
+        },
+    ])(
+        'retains completed query receipts when the next provider turn $label',
+        async ({ interrupt, expectedRejection }) => {
+            vi.mocked(querySemanticProject).mockReturnValue({
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 0 },
+                items: [],
+                nextCursor: null,
+                warnings: [],
+            });
+            const controller = new AbortController();
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        { id: 'completed-query', name: 'project.query', arguments: { type: 'project-summary' } },
+                    ],
+                })
+                .mockImplementationOnce(() => Promise.reject(interrupt(controller)));
+
+            const result = await parsePromptToActions(
+                'inspect the project before planning',
+                context,
+                controller.signal,
+                'revision-2'
+            );
+
+            expect(result).toMatchObject({
+                actions: [],
+                applicationToolReceipts: [{ callId: 'completed-query', status: 'success', revision: 'revision-2' }],
+                ...(expectedRejection === undefined ? {} : { rejectionReason: expectedRejection }),
+            });
+        }
+    );
+
     it('publishes data-only schemas and rejects unavailable tools before local execution', async () => {
         const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
         expect(schemas).toHaveLength(1);

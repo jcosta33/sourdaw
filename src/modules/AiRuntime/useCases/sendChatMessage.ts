@@ -45,6 +45,7 @@ import { proposePendingActionConfirmation } from '../stores/pendingActionConfirm
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
@@ -182,7 +183,7 @@ function recordModelProviderUsage(runId: string, result: ModelProviderResult): v
 function recordApplicationToolOnlyPlan(input: {
     runId: string;
     revision: string;
-    receipts: ApplicationToolReceipt[];
+    receipts: readonly ApplicationToolReceipt[];
 }): void {
     if (input.receipts.length === 0) {
         return;
@@ -194,7 +195,7 @@ function recordApplicationToolOnlyPlan(input: {
             .join('\n'),
         commandIds: [],
         serializedBatchIdentity: null,
-        applicationToolReceipts: input.receipts,
+        applicationToolReceipts: [...input.receipts],
         revision: input.revision,
         scope: {
             targetIds: [],
@@ -303,20 +304,20 @@ export async function sendChatMessage(
                 terminalState: 'completed',
             });
 
-            if (aborter.signal.aborted) {
-                await agentRunCancellation.cancel({
-                    runId,
-                    reason: 'User cancelled the run before planning completed.',
-                });
-                return undefined;
-            }
-
             if (result.actions.length === 0) {
                 recordApplicationToolOnlyPlan({
                     runId,
                     revision: projectRevision,
                     receipts: result.applicationToolReceipts ?? [],
                 });
+            }
+
+            if (aborter.signal.aborted) {
+                await agentRunCancellation.cancel({
+                    runId,
+                    reason: 'User cancelled the run before planning completed.',
+                });
+                return undefined;
             }
 
             if (result.actions.length > 0) {
@@ -896,6 +897,15 @@ export async function sendChatMessage(
                 });
             }
         } catch (error) {
+            if (error instanceof ApplicationOwnedToolLoopRequestError && error.receipts.length > 0) {
+                recordApplicationToolOnlyPlan({
+                    runId,
+                    revision:
+                        error.receipts.find((receipt) => receipt.revision !== null)?.revision ??
+                        captureProjectRevision(),
+                    receipts: error.receipts,
+                });
+            }
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;

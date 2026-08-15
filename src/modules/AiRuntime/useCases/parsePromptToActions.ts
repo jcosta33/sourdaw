@@ -39,7 +39,11 @@ import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRou
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
-import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
+import {
+    APPLICATION_OWNED_TOOL_SCHEMAS,
+    ApplicationOwnedToolLoopRequestError,
+    runApplicationOwnedToolLoop,
+} from './applicationOwnedToolLoop';
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
@@ -461,6 +465,9 @@ export const parsePromptToActions = inject({ logger })(
                     };
                 }
             } catch (error) {
+                if (error instanceof ApplicationOwnedToolLoopRequestError && error.receipts.length > 0) {
+                    applicationToolReceiptFields = { applicationToolReceipts: [...error.receipts] };
+                }
                 if (isAiRuntimeConfigurationChangedError(error)) {
                     throw error;
                 }

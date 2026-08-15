@@ -38,6 +38,20 @@ export type ApplicationOwnedToolLoopOutcome =
           turns: number;
       };
 
+export class ApplicationOwnedToolLoopRequestError extends Error {
+    readonly receipts: readonly ApplicationToolReceipt[];
+    readonly turns: number;
+    readonly originalError: unknown;
+
+    constructor(error: unknown, receipts: readonly ApplicationToolReceipt[], turns: number) {
+        super(error instanceof Error ? error.message : String(error));
+        this.name = error instanceof Error ? error.name : 'ApplicationOwnedToolLoopRequestError';
+        this.receipts = structuredClone(receipts);
+        this.turns = turns;
+        this.originalError = error;
+    }
+}
+
 type ToolLoopLimits = Partial<typeof DEFAULT_LIMITS>;
 
 type RunApplicationOwnedToolLoopInput = {
@@ -410,15 +424,20 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn - 1,
             };
         }
-        const outcome = await input.requestTurn({
-            turn,
-            receiptContext,
-            remaining: {
-                turns: limits.maxTurns - turn + 1,
-                calls: limits.maxTotalCalls - totalCalls,
-                receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
-            },
-        });
+        let outcome: ApplicationToolPlanningOutcome;
+        try {
+            outcome = await input.requestTurn({
+                turn,
+                receiptContext,
+                remaining: {
+                    turns: limits.maxTurns - turn + 1,
+                    calls: limits.maxTotalCalls - totalCalls,
+                    receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
+                },
+            });
+        } catch (error) {
+            throw new ApplicationOwnedToolLoopRequestError(error, receipts, turn);
+        }
         if (outcome.status === 'rejected') {
             return { ...outcome, receipts, turns: turn };
         }
