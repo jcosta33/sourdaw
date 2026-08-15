@@ -1,0 +1,33 @@
+src/modules/AiRuntime/repositories/__tests__/nativeModelProviderAdapter.spec.ts
+  s_a40848e8f8cca9::t_cb8131ba32c671 253-266
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_a40848e8f8cca9::t_cb8131ba32c671 83,87-90,102
+  s_a40848e8f8cca9::t_371948967a2f47 94,96,109
+src/modules/AiRuntime/repositories/nativeModelProviderAdapter.ts
+  s_a40848e8f8cca9::t_87bfd7f637ab90 106,116-118,121,229-232
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  s_a40848e8f8cca9::t_87bfd7f637ab90 33,65-66,68-83,171,173,176-198,202-210
+  s_a40848e8f8cca9::t_3e7d1e540f1802 199,201
+  s_a40848e8f8cca9::t_46dbeb5fe4060f 200
+src-tauri/src/commands/native_llm.rs
+  s_a40848e8f8cca9::t_126f9562d2df64 1118-1124,1129-1130
+  s_a40848e8f8cca9::t_3fa2b4a0bb31d7 57-59,64-66
+  s_a40848e8f8cca9::t_a37546bf45b276 1125-1128
+  s_a40848e8f8cca9::t_87bfd7f637ab90 60-63,67,229-237,519-524
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ed788d7c4b014729c2670f325b71852703dc5807",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
