@@ -20,13 +20,17 @@ import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
-import { getStraightGrooveTemplateId, getSupportedGrooveSubdivisions } from '#/modules/MIDI/useCases';
+import {
+    getScopedGrooveConsumerId,
+    getStraightGrooveTemplateId,
+    getSupportedGrooveSubdivisions,
+} from '#/modules/MIDI/useCases';
 
 import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
 import { PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
 import { yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
-import { getYeastGrooveAssignment } from '../../useCases/getYeastGrooveAssignment';
+import { YEAST_GROOVE_OWNER_ID } from '../../useCases/getYeastGrooveAssignment';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
 import { setYeastGrooveTemplate } from '../../useCases/setYeastGrooveTemplate';
@@ -198,7 +202,18 @@ const GROOVE_EXTRACTION_SUBDIVISIONS = getSupportedGrooveSubdivisions();
 const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorInfo }): ReactElement => {
     const grooveState = useStore(grooveTemplateStore, defaultGrooveTemplateState);
     const [extractionSubdivision, setExtractionSubdivision] = useState('1/16');
-    const assignment = getYeastGrooveAssignment(processor.id);
+    // Derive the assignment from the SUBSCRIBED state, not from an impure
+    // store read: React Compiler memoizes getYeastGrooveAssignment(processor.id)
+    // as pure (its only input is the id), so a store write never invalidates
+    // the cached null and the panel kept rendering the straight template
+    // after an assignment landed.
+    const scopedConsumerId = getScopedGrooveConsumerId({
+        ownerId: YEAST_GROOVE_OWNER_ID,
+        localId: processor.id,
+    });
+    const assignment = grooveState.assignments.find(
+        (candidate) => candidate.consumerType === 'yeast-processor' && candidate.consumerId === scopedConsumerId
+    );
     const selectedGrooveTemplateId = assignment?.templateId ?? getStraightGrooveTemplateId();
     const selectedGrooveTemplate = grooveState.templates.find((template) => template.id === selectedGrooveTemplateId);
     const canEditSelectedGroove =
