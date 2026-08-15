@@ -130,12 +130,22 @@ export async function runProviderGatewayRequest(
     request.signal.throwIfAborted();
     let eventError: unknown = null;
     let acceptsEvents = true;
+    let cancelRequested = false;
     const streamState = {
         nextSequence: 0,
         responseStarted: false,
         done: false,
         eventCount: 0,
         responseBytes: 0,
+    };
+    const cancel = (): void => {
+        if (cancelRequested) {
+            return;
+        }
+        cancelRequested = true;
+        void dependencies
+            .invoke('cancel_provider_gateway_request', { requestId: request.requestId })
+            .catch(() => undefined);
     };
     channel.onmessage = (event) => {
         if (!acceptsEvents || request.signal.aborted || eventError !== null) {
@@ -145,13 +155,9 @@ export async function runProviderGatewayRequest(
             parseWireEvent(event, request.requestId, streamState, request.onResponseStart, request.onBodyChunk);
         } catch (error) {
             eventError = error;
+            acceptsEvents = false;
+            cancel();
         }
-    };
-
-    const cancel = (): void => {
-        void dependencies
-            .invoke('cancel_provider_gateway_request', { requestId: request.requestId })
-            .catch(() => undefined);
     };
     request.signal.addEventListener('abort', cancel, { once: true });
     try {

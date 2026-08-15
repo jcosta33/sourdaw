@@ -1,4 +1,4 @@
-import { isTauri, createChannel } from '#/utils/tauriBridge';
+import { isTauri, createChannel, tauriInvoke } from '#/utils/tauriBridge';
 
 import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 
@@ -34,18 +34,27 @@ export async function generateSchemaConstrainedNativeCompletion(
     const requestId = crypto.randomUUID();
     const streamState = { error: null as Error | null, nextSequence: 0, terminal: false, bytes: 0 };
 
+    function rejectStream(error: Error): void {
+        if (streamState.error !== null) {
+            return;
+        }
+        streamState.error = error;
+        streamState.terminal = true;
+        void tauriInvoke('cancel_native_llm_generation', { requestId }).catch(() => undefined);
+    }
+
     const channel = await createChannel<unknown>();
     channel.onmessage = (event: unknown) => {
-        if (input.signal?.aborted) {
+        if (input.signal?.aborted || streamState.error !== null) {
             return;
         }
         const parsedEvent = narrowSchemaConstrainedStreamEvent(event, requestId, streamState.nextSequence);
         if (parsedEvent === null) {
-            streamState.error = new Error('Invalid schema_constrained_generation event');
+            rejectStream(new Error('Invalid schema_constrained_generation event'));
             return;
         }
         if (streamState.terminal || streamState.nextSequence >= 4_096) {
-            streamState.error = new Error('Invalid schema_constrained_generation event sequence');
+            rejectStream(new Error('Invalid schema_constrained_generation event sequence'));
             return;
         }
         streamState.nextSequence += 1;
@@ -54,11 +63,15 @@ export async function generateSchemaConstrainedNativeCompletion(
             const eventBytes = new TextEncoder().encode(parsedEvent.data.text).byteLength;
             streamState.bytes += eventBytes;
             if (eventBytes > 64 * 1_024 || streamState.bytes > 1_024 * 1_024) {
-                streamState.error = new Error('Schema-constrained generation exceeded its payload limit');
+                rejectStream(new Error('Schema-constrained generation exceeded its payload limit'));
                 return;
             }
-            result += parsedEvent.data.text;
-            input.onToken?.(parsedEvent.data.text);
+            try {
+                result += parsedEvent.data.text;
+                input.onToken?.(parsedEvent.data.text);
+            } catch (error) {
+                rejectStream(error instanceof Error ? error : new Error(String(error)));
+            }
             return;
         }
 

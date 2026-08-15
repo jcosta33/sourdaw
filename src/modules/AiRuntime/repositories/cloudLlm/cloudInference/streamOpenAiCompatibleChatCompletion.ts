@@ -31,6 +31,7 @@ export type OpenAiCompatibleFinishReason = 'stop' | 'length';
 type StreamState = {
     finishReason: OpenAiCompatibleFinishReason | null;
     eventCount: number;
+    finalUsageSeen: boolean;
 };
 
 const MAX_STREAM_EVENT_BYTES = 64 * 1_024;
@@ -103,12 +104,30 @@ function emitEventData(
         throw new Error('Hosted AI returned an invalid streaming event');
     }
     const event = parseStreamEvent(parsed);
+    if (state.finishReason !== null) {
+        if (
+            event.usage !== null &&
+            event.text === null &&
+            event.finishReason === null &&
+            event.unknownEventType === null &&
+            !state.finalUsageSeen
+        ) {
+            onUsage?.({ type: 'usage', mode: 'final', usage: event.usage, provenance: 'provider-reported' });
+            state.finalUsageSeen = true;
+            return null;
+        }
+        if (event.finishReason !== null) {
+            throw new Error('Hosted AI chat stream returned duplicate completion');
+        }
+        throw new Error('Hosted AI chat stream returned data after completion');
+    }
     if (event.unknownEventType !== null) {
         onUnknownEvent?.(`openai-compatible:${event.unknownEventType}`);
         return null;
     }
     if (event.usage) {
         onUsage?.({ type: 'usage', mode: 'final', usage: event.usage, provenance: 'provider-reported' });
+        state.finalUsageSeen = true;
     }
     if (event.finishReason !== null) {
         if (event.finishReason !== 'stop' && event.finishReason !== 'length') {
@@ -146,7 +165,7 @@ export async function streamOpenAiCompatibleChatCompletion({
     const decoder = new TextDecoder();
     let buffer = '';
     let completed: OpenAiCompatibleFinishReason | null = null;
-    const streamState: StreamState = { finishReason: null, eventCount: 0 };
+    const streamState: StreamState = { finishReason: null, eventCount: 0, finalUsageSeen: false };
     const consumeLines = (): void => {
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';

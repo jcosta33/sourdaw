@@ -123,18 +123,26 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.isTauri.mockReturnValue(true);
         const channel: TestChannel = { onmessage: null };
         mocks.createChannel.mockResolvedValue(channel);
-        mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
-            emitSchemaEvent(channel, args, 0, 'token', { text: 12 });
+        mocks.tauriInvoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+            if (command === 'schema_constrained_generation') {
+                emitSchemaEvent(channel, args, 0, 'token', { text: 12 });
+                emitSchemaEvent(channel, args, 0, 'token', { text: 'must-not-be-exposed' });
+            }
             return Promise.resolve(undefined);
         });
+        const onToken = vi.fn();
 
         await expect(
             generateSchemaConstrainedNativeCompletion({
                 systemPrompt: 'system',
                 userMessage: 'mute drums',
                 jsonSchema: '{"type":"object"}',
+                onToken,
             })
         ).rejects.toThrow(/Invalid schema_constrained_generation event/);
+        expect(onToken).not.toHaveBeenCalled();
+        expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+        expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
     });
 
     it('should reject when the abort signal fires before native schema generation resolves', async () => {

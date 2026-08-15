@@ -254,6 +254,25 @@ describe('streamNativeCompletion', () => {
             expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
             expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
         });
+
+        it('rejects and cancels a malformed known event before a valid same-sequence token', async () => {
+            const mockChannel: TestChannel = { onmessage: null };
+            mocks.createChannel.mockResolvedValue(mockChannel);
+            mocks.tauriInvoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+                if (command === 'stream_native_completion') {
+                    emitNativeEvent(mockChannel, args, 0, 'token', { text: 12 });
+                    emitNativeEvent(mockChannel, args, 0, 'token', { text: 'must-not-be-exposed' });
+                }
+                return Promise.resolve(undefined);
+            });
+            const onToken = vi.fn();
+
+            await expect(streamNativeCompletion([{ role: 'user', content: 'hi' }], onToken)).rejects.toThrow(
+                'invalid token event'
+            );
+            expect(onToken).not.toHaveBeenCalled();
+            expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+        });
     });
 
     describe('when running in browser (dev mode)', () => {
@@ -325,6 +344,60 @@ describe('streamNativeCompletion', () => {
             mocks.fetch.mockResolvedValue({ ok: true, body: { getReader: () => mockReader } });
 
             await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('invalid JSON');
+        });
+
+        it('rejects browser-native text after the first finish reason before exposing it', async () => {
+            const encoder = new TextEncoder();
+            const chunks = [
+                encoder.encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'),
+                encoder.encode('data: {"choices":[{"delta":{"content":"late"}}]}\n\n'),
+                encoder.encode('data: [DONE]\n\n'),
+            ];
+            const reader = {
+                read: vi
+                    .fn()
+                    .mockResolvedValueOnce({ done: false, value: chunks[0] })
+                    .mockResolvedValueOnce({ done: false, value: chunks[1] })
+                    .mockResolvedValueOnce({ done: false, value: chunks[2] })
+                    .mockResolvedValue({ done: true, value: undefined }),
+                cancel: vi.fn().mockResolvedValue(undefined),
+            };
+            mocks.fetch.mockResolvedValue({ ok: true, body: { getReader: () => reader } });
+            const onToken = vi.fn();
+
+            await expect(streamNativeCompletion([], onToken)).rejects.toThrow('after completion');
+            expect(onToken).not.toHaveBeenCalled();
+        });
+
+        it('rejects browser-native unknown and repeated usage events after completion', async () => {
+            const encoder = new TextEncoder();
+            const eventPayloads = [
+                ['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n', 'data: {"type":"late-event"}\n\n'],
+                [
+                    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+                    'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',
+                    'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',
+                ],
+            ];
+
+            for (const payloads of eventPayloads) {
+                const reader = {
+                    read: vi
+                        .fn()
+                        .mockResolvedValueOnce({ done: false, value: encoder.encode(payloads.join('')) })
+                        .mockResolvedValue({ done: true, value: undefined }),
+                    cancel: vi.fn().mockResolvedValue(undefined),
+                };
+                mocks.fetch.mockResolvedValueOnce({ ok: true, body: { getReader: () => reader } });
+                const onUsage = vi.fn();
+                const onUnknownEvent = vi.fn();
+
+                await expect(streamNativeCompletion([], vi.fn(), { onUsage, onUnknownEvent })).rejects.toThrow(
+                    'after completion'
+                );
+                expect(onUnknownEvent).not.toHaveBeenCalled();
+                expect(onUsage.mock.calls.length).toBeLessThanOrEqual(1);
+            }
         });
 
         it('throws if no body is returned', async () => {

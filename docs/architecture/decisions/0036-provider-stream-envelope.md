@@ -20,7 +20,7 @@ The common protocol and every transport boundary must:
 5. accept exactly one terminal outcome and reject missing, duplicate, or late completion;
 6. keep cancellation request-scoped and generation-scoped so an obsolete cancellation cannot affect a replacement request.
 
-Provider-specific wire formats remain repository concerns. A repository stamps validated wire output into the common envelope; it does not move provider parsing into use cases or Rust. Tauri commands additionally include request ID and sequence on every channel event so the renderer can validate the privileged boundary independently.
+Provider-specific wire formats remain repository concerns. Repositories validate and normalize provider wire output. The provider-neutral AiRuntime orchestration layer owns common-envelope stamping when it owns the run/request session; a repository may stamp envelopes only when it owns that complete provider session, as the native adapter does. Provider parsing does not move into generic use cases or Rust. Tauri commands additionally include request ID and sequence on every channel event so the renderer can validate the privileged boundary independently.
 
 ## Consequences
 

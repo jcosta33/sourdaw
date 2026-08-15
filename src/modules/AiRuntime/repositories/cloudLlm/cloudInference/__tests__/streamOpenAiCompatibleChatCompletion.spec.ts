@@ -77,6 +77,70 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         });
     });
 
+    it('rejects text after the first finish reason before exposing it', async () => {
+        const sse = [
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+            'data: {"choices":[{"delta":{"content":"late"}}]}\n\n',
+            'data: [DONE]\n\n',
+        ].join('');
+        vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(sse, { status: 200 })));
+        const onToken = vi.fn();
+
+        await expect(
+            streamOpenAiCompatibleChatCompletion({
+                runtime,
+                messages: [{ role: 'user', content: 'help' }],
+                onToken,
+                signal: new AbortController().signal,
+            })
+        ).rejects.toThrow('after completion');
+        expect(onToken).not.toHaveBeenCalled();
+    });
+
+    it('rejects unknown events after the first finish reason before exposing them', async () => {
+        const sse = [
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+            'data: {"type":"late-event"}\n\n',
+            'data: [DONE]\n\n',
+        ].join('');
+        vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(sse, { status: 200 })));
+        const onUnknownEvent = vi.fn();
+
+        await expect(
+            streamOpenAiCompatibleChatCompletion({
+                runtime,
+                messages: [{ role: 'user', content: 'help' }],
+                onToken: vi.fn(),
+                onUnknownEvent,
+                signal: new AbortController().signal,
+            })
+        ).rejects.toThrow('after completion');
+        expect(onUnknownEvent).not.toHaveBeenCalled();
+    });
+
+    it('rejects repeated final usage after the first finish reason', async () => {
+        const usage = 'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":4}}\n\n';
+        const sse = [
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+            usage,
+            usage,
+            'data: [DONE]\n\n',
+        ].join('');
+        vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(sse, { status: 200 })));
+        const onUsage = vi.fn();
+
+        await expect(
+            streamOpenAiCompatibleChatCompletion({
+                runtime,
+                messages: [{ role: 'user', content: 'help' }],
+                onToken: vi.fn(),
+                onUsage,
+                signal: new AbortController().signal,
+            })
+        ).rejects.toThrow('after completion');
+        expect(onUsage).toHaveBeenCalledTimes(1);
+    });
+
     it('surfaces unknown future events and continues to the terminal result', async () => {
         const sse = [
             'data: {"type":"response.telemetry","private":"not-forwarded"}\n\n',

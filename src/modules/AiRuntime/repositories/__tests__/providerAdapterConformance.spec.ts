@@ -348,6 +348,52 @@ describe('provider adapter conformance', () => {
         expect(onResponseStart).not.toHaveBeenCalled();
     });
 
+    it('cancels the privileged request when downstream event handling rejects', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const channel = { id: 6, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:6' };
+        let resolveRequest: (() => void) | undefined;
+        const invoke = vi.fn<ProviderGatewayDependencies['invoke']>((command, args) => {
+            if (command === 'provider_gateway_request') {
+                const onEvent = args?.onEvent as typeof channel;
+                onEvent.onmessage(
+                    gatewayEvent(args?.requestId, 0, 'response-start', {
+                        status: 200,
+                        contentType: 'application/json',
+                    })
+                );
+                onEvent.onmessage(gatewayEvent(args?.requestId, 1, 'body-chunk', { bytes: [123] }));
+                return new Promise<void>((resolve) => {
+                    resolveRequest = resolve;
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        const pending = runProviderGatewayRequest(
+            {
+                requestId: 'request-callback-failure',
+                adapter,
+                operation: 'request',
+                apiKey: '',
+                body: '{}',
+                signal: new AbortController().signal,
+                onResponseStart: vi.fn(),
+                onBodyChunk: () => {
+                    throw new Error('downstream rejected chunk');
+                },
+            },
+            { createChannel: async () => channel, invoke }
+        );
+
+        await vi.waitFor(() =>
+            expect(invoke).toHaveBeenCalledWith('cancel_provider_gateway_request', {
+                requestId: 'request-callback-failure',
+            })
+        );
+        resolveRequest?.();
+        await expect(pending).rejects.toThrow('downstream rejected chunk');
+        expect(invoke.mock.calls.filter(([command]) => command === 'cancel_provider_gateway_request')).toHaveLength(1);
+    });
+
     it('routes adapter-backed tool planning through probe and privileged gateway without renderer fetch', async () => {
         installGatewayResponses(
             [

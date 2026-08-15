@@ -292,6 +292,40 @@ describe('modelProviderProtocol', () => {
         });
     });
 
+    it.each([
+        { type: 'text', mode: 'invalid', text: 'unsafe' },
+        { type: 'reasoning', mode: 'delta', text: 12 },
+        {
+            type: 'usage',
+            mode: 'final',
+            usage: { inputTokens: -1, outputTokens: 1, cachedInputTokens: null, reasoningTokens: null },
+            provenance: 'provider-reported',
+        },
+        { type: 'future-event', providerEventType: 'future-event' },
+        { type: 'unknown' },
+    ])('rejects a malformed runtime provider event before applying it: %j', (malformedEvent) => {
+        const { protocol, request } = compileTextRequest();
+        const session = protocol.start(request);
+        const source = createModelProviderStreamSource(request);
+
+        expect(() => session.push(source.push(malformedEvent as unknown as ModelProviderEvent))).toThrow(
+            'invalid runtime shape'
+        );
+    });
+
+    it.each([{ reason: 'bogus' }, { reason: 'error' }, { reason: 'refusal', failure: { code: '', retryable: 1 } }])(
+        'rejects a malformed terminal outcome before finishing the session: %j',
+        (malformedFinish) => {
+            const { protocol, request } = compileTextRequest();
+            const session = protocol.start(request);
+            const source = createModelProviderStreamSource(request);
+
+            expect(() => session.finish(source.finish(malformedFinish as unknown as ModelProviderFinish))).toThrow(
+                'invalid runtime shape'
+            );
+        }
+    );
+
     it('returns typed retryability, safe diagnostics, correlation, and partial-output disposition', () => {
         const { protocol, request } = compileTextRequest('openai-compatible');
         const session = protocol.start(request);

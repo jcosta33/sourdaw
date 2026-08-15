@@ -305,6 +305,85 @@ function isValidIdentityPart(value: string): boolean {
     return value.trim().length > 0 && value.length <= MAX_PROVIDER_ID_LENGTH;
 }
 
+function isUsageCounter(value: unknown): value is number | null {
+    return value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
+}
+
+function assertProviderEventShape(value: unknown): asserts value is ModelProviderEvent {
+    if (!isRecord(value) || typeof value.type !== 'string') {
+        throw new TypeError('Provider stream event has an invalid runtime shape.');
+    }
+    if (value.type === 'text' || value.type === 'reasoning') {
+        if ((value.mode !== 'delta' && value.mode !== 'cumulative-snapshot') || typeof value.text !== 'string') {
+            throw new TypeError('Provider stream event has an invalid runtime shape.');
+        }
+        return;
+    }
+    if (value.type === 'tool-call') {
+        if (
+            !isRecord(value.call) ||
+            typeof value.call.id !== 'string' ||
+            typeof value.call.name !== 'string' ||
+            !isRecord(value.call.arguments) ||
+            !isJsonValue(value.call.arguments)
+        ) {
+            throw new TypeError('Provider stream event has an invalid runtime shape.');
+        }
+        return;
+    }
+    if (value.type === 'structured-output') {
+        if (!('value' in value) || !isJsonValue(value.value)) {
+            throw new TypeError('Provider stream event has an invalid runtime shape.');
+        }
+        return;
+    }
+    if (value.type === 'usage') {
+        if (
+            (value.mode !== 'delta' && value.mode !== 'cumulative-snapshot' && value.mode !== 'final') ||
+            !isRecord(value.usage) ||
+            !isUsageCounter(value.usage.inputTokens) ||
+            !isUsageCounter(value.usage.outputTokens) ||
+            !isUsageCounter(value.usage.cachedInputTokens) ||
+            !isUsageCounter(value.usage.reasoningTokens) ||
+            (value.provenance !== 'provider-reported' &&
+                value.provenance !== 'versioned-estimate' &&
+                value.provenance !== 'unavailable')
+        ) {
+            throw new TypeError('Provider stream event has an invalid runtime shape.');
+        }
+        return;
+    }
+    if (value.type === 'unknown') {
+        if (typeof value.providerEventType !== 'string') {
+            throw new TypeError('Provider stream event has an invalid runtime shape.');
+        }
+        return;
+    }
+    throw new TypeError('Provider stream event has an invalid runtime shape.');
+}
+
+function assertProviderFinishShape(value: unknown): asserts value is ModelProviderFinish {
+    if (!isRecord(value) || typeof value.reason !== 'string') {
+        throw new TypeError('Provider stream terminal has an invalid runtime shape.');
+    }
+    if (value.reason === 'stop' || value.reason === 'length' || value.reason === 'cancelled') {
+        return;
+    }
+    if (value.reason !== 'error' && value.reason !== 'refusal') {
+        throw new TypeError('Provider stream terminal has an invalid runtime shape.');
+    }
+    if (
+        !isRecord(value.failure) ||
+        typeof value.failure.code !== 'string' ||
+        !isValidIdentityPart(value.failure.code) ||
+        typeof value.failure.retryable !== 'boolean' ||
+        typeof value.failure.safeMessage !== 'string' ||
+        value.failure.safeMessage.trim().length === 0
+    ) {
+        throw new TypeError('Provider stream terminal has an invalid runtime shape.');
+    }
+}
+
 function compileRequest(
     provider: ModelProviderName,
     capabilities: ModelProviderCapabilities,
@@ -467,6 +546,7 @@ function createSession(input: {
         if (eventCount >= MAX_MODEL_PROVIDER_EVENTS || streamBytes + eventBytes > MAX_MODEL_PROVIDER_STREAM_BYTES) {
             throw new TypeError('Provider stream exceeds its bounded event or payload limit.');
         }
+        assertProviderEventShape(envelope.event);
         const event = envelope.event;
         if (event.type === 'text') {
             const nextText = event.mode === 'delta' ? `${text}${event.text}` : event.text;
@@ -666,6 +746,7 @@ function createSession(input: {
             if (encodedJsonBytes(envelope.finish) > MAX_MODEL_PROVIDER_EVENT_BYTES) {
                 throw new TypeError('Provider stream terminal payload exceeds its size limit.');
             }
+            assertProviderFinishShape(envelope.finish);
             finished = true;
             nextSequence += 1;
             return resultForFinish(envelope.finish);

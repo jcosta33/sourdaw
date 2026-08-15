@@ -73,53 +73,66 @@ export async function streamNativeCompletion(
                 rejectNativeStream(new TypeError('Native provider returned a cross-request or out-of-order event'));
                 return;
             }
-            try {
-                if (event.event === 'token' && typeof event.data.text === 'string') {
-                    const eventBytes = new TextEncoder().encode(event.data.text).byteLength;
+            if (event.event === 'token') {
+                const tokenText = event.data.text;
+                if (typeof tokenText !== 'string') {
+                    rejectNativeStream(new TypeError('Native provider returned an invalid token event'));
+                    return;
+                }
+                try {
+                    const eventBytes = new TextEncoder().encode(tokenText).byteLength;
                     if (eventBytes > 64 * 1_024 || streamState.bytes + eventBytes > 1_024 * 1_024) {
                         throw new TypeError('Native provider stream exceeded its payload limit');
                     }
-                    onToken(event.data.text);
+                    onToken(tokenText);
                     streamState.bytes += eventBytes;
                     streamState.nextSequence += 1;
+                } catch (tokenError) {
+                    rejectNativeStream(tokenError instanceof Error ? tokenError : new Error(String(tokenError)));
                 }
-            } catch (tokenError) {
-                rejectNativeStream(tokenError instanceof Error ? tokenError : new Error(String(tokenError)));
                 return;
             }
-            if (event.event === 'error' && typeof event.data.message === 'string') {
-                streamState.error = new Error(event.data.message);
+            if (event.event === 'error') {
+                const errorMessage = event.data.message;
+                if (typeof errorMessage !== 'string') {
+                    rejectNativeStream(new TypeError('Native provider returned an invalid error event'));
+                    return;
+                }
+                streamState.error = new Error(errorMessage);
                 streamState.terminal = true;
                 streamState.nextSequence += 1;
+                return;
             }
-            if (
-                event.event === 'done' &&
-                typeof event.data.finishReason === 'string' &&
-                (event.data.finishReason === 'stop' || event.data.finishReason === 'length')
-            ) {
+            if (event.event === 'done') {
+                const finishReason = event.data.finishReason;
                 const inputTokens = readNonNegativeInteger(event.data.promptTokens);
                 const outputTokens = readNonNegativeInteger(event.data.completionTokens);
-                if (inputTokens !== null && outputTokens !== null) {
-                    options?.onUsage?.({
-                        type: 'usage',
-                        mode: 'final',
-                        usage: {
-                            inputTokens,
-                            outputTokens,
-                            cachedInputTokens: null,
-                            reasoningTokens: null,
-                        },
-                        provenance: 'provider-reported',
-                    });
+                if (
+                    (finishReason !== 'stop' && finishReason !== 'length') ||
+                    inputTokens === null ||
+                    outputTokens === null
+                ) {
+                    rejectNativeStream(new TypeError('Native provider returned an invalid done event'));
+                    return;
                 }
-                options?.onFinish?.(event.data.finishReason);
+                options?.onUsage?.({
+                    type: 'usage',
+                    mode: 'final',
+                    usage: {
+                        inputTokens,
+                        outputTokens,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                    },
+                    provenance: 'provider-reported',
+                });
+                options?.onFinish?.(finishReason);
                 streamState.terminal = true;
                 streamState.nextSequence += 1;
+                return;
             }
-            if (event.event !== 'token' && event.event !== 'error' && event.event !== 'done') {
-                options?.onUnknownEvent?.(`native:${event.event}`);
-                streamState.nextSequence += 1;
-            }
+            options?.onUnknownEvent?.(`native:${event.event}`);
+            streamState.nextSequence += 1;
         };
 
         const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? '';
@@ -186,6 +199,7 @@ export async function streamNativeCompletion(
     let streamBytes = 0;
     let eventCount = 0;
     let finishReasonSeen = false;
+    let finalUsageSeen = false;
 
     try {
         // Stop pulling tokens the moment the caller aborts — previously the loop
@@ -235,6 +249,9 @@ export async function streamNativeCompletion(
                     throw new TypeError('Native completion stream returned an invalid event');
                 }
                 if (!Array.isArray(chunk.choices)) {
+                    if (finishReasonSeen) {
+                        throw new TypeError('Native completion stream returned data after completion');
+                    }
                     options?.onUnknownEvent?.(`native:${typeof chunk.type === 'string' ? chunk.type : 'unknown'}`);
                     continue;
                 }
@@ -245,10 +262,27 @@ export async function streamNativeCompletion(
                     typeof firstChoice.delta.content === 'string'
                         ? firstChoice.delta.content
                         : undefined;
+                const finishReason = isRecord(firstChoice) ? firstChoice.finish_reason : undefined;
+                const usage = readUsage(chunk.usage);
+                if (finishReasonSeen) {
+                    if (chunk.choices.length === 0 && usage !== null && !finalUsageSeen) {
+                        options?.onUsage?.({
+                            type: 'usage',
+                            mode: 'final',
+                            usage,
+                            provenance: 'provider-reported',
+                        });
+                        finalUsageSeen = true;
+                        continue;
+                    }
+                    if (finishReason === 'stop' || finishReason === 'length') {
+                        throw new TypeError('Native completion stream returned duplicate completion');
+                    }
+                    throw new TypeError('Native completion stream returned data after completion');
+                }
                 if (content) {
                     onToken(content);
                 }
-                const finishReason = isRecord(firstChoice) ? firstChoice.finish_reason : undefined;
                 if (finishReason === 'stop' || finishReason === 'length') {
                     if (finishReasonSeen) {
                         throw new TypeError('Native completion stream returned duplicate completion');
@@ -260,7 +294,6 @@ export async function streamNativeCompletion(
                         `Native completion stream ended with unsupported finish reason ${finishReason}`
                     );
                 }
-                const usage = readUsage(chunk.usage);
                 if (usage) {
                     options?.onUsage?.({
                         type: 'usage',
@@ -268,6 +301,7 @@ export async function streamNativeCompletion(
                         usage,
                         provenance: 'provider-reported',
                     });
+                    finalUsageSeen = true;
                 }
             }
         }
