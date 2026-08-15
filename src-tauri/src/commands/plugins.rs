@@ -147,7 +147,6 @@ fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginReg
 }
 
 #[tauri::command]
-#[specta::specta]
 pub async fn scan_plugins(
     paths: Vec<String>,
     state: tauri::State<'_, AppState>,
@@ -248,7 +247,6 @@ pub async fn scan_plugins(
 }
 
 #[tauri::command]
-#[specta::specta]
 pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
     Ok(PluginScanPolicy::platform_defaults().allowed_roots_as_strings())
 }
@@ -256,7 +254,6 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
 // ── Instance lifecycle commands ─────────────────────────────────────────
 
 #[tauri::command]
-#[specta::specta]
 pub async fn load_plugin(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
@@ -444,7 +441,6 @@ fn remove_plugin_window(instance_id: &str, app: Option<&tauri::AppHandle>, state
 }
 
 #[tauri::command]
-#[specta::specta]
 pub async fn unload_plugin(
     instance_id: Option<PluginInstanceId>,
     app: tauri::AppHandle,
@@ -615,7 +611,6 @@ fn update_parameter_cache_after_enqueue(
 }
 
 #[tauri::command]
-#[specta::specta]
 pub async fn set_plugin_parameter(
     instance_id: PluginInstanceId,
     param_id: u32,
@@ -654,7 +649,6 @@ pub async fn set_plugin_parameter(
 }
 
 #[tauri::command]
-#[specta::specta]
 pub async fn get_plugin_parameters(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,

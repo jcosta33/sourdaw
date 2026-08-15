@@ -51,7 +51,6 @@ Each DSP crate exports `#[wasm_bindgen]` instance structs (`FermenterInstance`, 
 
 ## 4. Traps
 
-- **Legacy outputs.** `public/wasm/dutch-oven/` and `public/wasm/gluten/` (and `scripts/gen-dutch-oven-worklet.ts`) exist but have **no build script** — superseded by `proof-chamber` and `daw-dsp`. Do not wire new code against them.
 - **Worklet isolation.** Worklet code may not import app/helpers/Tauri (`worklets-no-*` depcruise rules — currently forward-looking: they match `src/modules/<M>/worklets/**` only; the 3 raw JS processors in `public/audio/worklets/` sit outside those paths).
 - **`worker.format: 'iife'`** in `vite.config.ts` exists so worklet blob URLs can load bundles. Changing it breaks worklet loading in non-obvious ways.
 - **Two Faust integration points** — AudioEngine and PluginHost both use `@grame/faustwasm` (`public/faust/`). Check both before touching Faust wiring.

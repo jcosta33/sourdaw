@@ -12,10 +12,10 @@
     },
     "aliases": {
         "components": "#/components",
-        "utils": "#/helpers/Styles/cn",
+        "utils": "#/utils/Styles/cn",
         "ui": "#/components/ui",
-        "hooks": "#/helpers/React",
-        "lib": "#/helpers"
+        "hooks": "#/components/ui",
+        "lib": "#/utils"
     },
     "iconLibrary": "lucide"
 }
