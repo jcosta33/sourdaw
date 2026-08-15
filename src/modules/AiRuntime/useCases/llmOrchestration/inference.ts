@@ -266,7 +266,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         toolSelectionPrompt: string = userMessage,
         onProviderResult?: (result: ModelProviderResult) => void
     ): Promise<ToolPlanningOutcome> {
-        const chain = getBackendChain();
+        const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
         const reportProviderResult = (result: ModelProviderResult): void => {
             try {

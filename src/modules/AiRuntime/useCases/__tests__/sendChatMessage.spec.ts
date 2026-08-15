@@ -383,6 +383,13 @@ describe('sendChatMessage injectables', () => {
 
         expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        const [routeProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(routeProjection!.runId)).toEqual(
+            expect.objectContaining({
+                modelRoute: { requestedRoute: 'auto', selectedRouteId: 'native:native:native' },
+                providerUsage: [],
+            })
+        );
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
         expect(mocks.updateChatMessage).toHaveBeenCalledWith(
             expect.any(String),
@@ -1040,6 +1047,7 @@ describe('sendChatMessage injectables', () => {
         const [usageProjection] = getAgentRunControlProjections();
         expect(getAgentRun(usageProjection!.runId)?.providerUsage).toEqual([
             {
+                attempt: 1,
                 provider: 'openai-compatible',
                 model: 'cloud',
                 inputTokens: 11,
@@ -1049,8 +1057,15 @@ describe('sendChatMessage injectables', () => {
                 status: 'complete',
                 retryable: null,
                 partialOutputDisposition: 'none',
+                routeId: 'cloud:openai-compatible:cloud',
+                executor: 'cloud',
+                fallbackReason: null,
             },
         ]);
+        expect(getAgentRun(usageProjection!.runId)?.modelRoute).toEqual({
+            requestedRoute: 'auto',
+            selectedRouteId: 'cloud:openai-compatible:cloud',
+        });
     });
 
     it('records each fallback planning attempt with its actual provider and correlation', async () => {
@@ -1068,8 +1083,8 @@ describe('sendChatMessage injectables', () => {
                     provider: 'native',
                     model: 'native',
                     correlationId: 'attempt-native',
-                    status: 'failed',
-                    output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+                    status: 'partial',
+                    output: { text: 'incomplete', reasoning: '', toolCalls: [], structuredOutput: null },
                     usage: {
                         inputTokens: null,
                         outputTokens: null,
@@ -1114,20 +1129,33 @@ describe('sendChatMessage injectables', () => {
         await sendChatMessage('solo drums');
 
         const [projection] = getAgentRunControlProjections();
-        expect(getAgentRun(projection!.runId)?.providerUsage).toEqual([
+        const run = getAgentRun(projection!.runId);
+        expect(run?.providerUsage).toEqual([
             expect.objectContaining({
+                attempt: 1,
                 provider: 'native',
                 correlationId: 'attempt-native',
-                status: 'failed',
+                status: 'partial',
                 retryable: true,
+                routeId: 'native:native:native',
+                executor: 'native',
+                fallbackReason: 'provider-attempt-failed',
             }),
             expect.objectContaining({
+                attempt: 2,
                 provider: 'webllm',
                 correlationId: 'attempt-webllm',
                 status: 'complete',
                 retryable: null,
+                routeId: 'webllm:webllm:webllm-model',
+                executor: 'webllm',
+                fallbackReason: null,
             }),
         ]);
+        expect(run?.modelRoute).toEqual({
+            requestedRoute: 'auto',
+            selectedRouteId: 'webllm:webllm:webllm-model',
+        });
     });
 
     it('interrupts active WebLLM generation when Stop is requested', async () => {
@@ -1257,6 +1285,10 @@ describe('sendChatMessage injectables', () => {
                 partialOutputDisposition: 'preserve',
             }),
         ]);
+        expect(getAgentRun(usageProjection!.runId)?.modelRoute).toEqual({
+            requestedRoute: 'auto',
+            selectedRouteId: 'cloud:openai-compatible:cloud',
+        });
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
         const [projection] = getAgentRunControlProjections();
         if (!projection) {
@@ -1446,6 +1478,11 @@ describe('sendChatMessage injectables', () => {
 
         await sendChatMessage('mute the vocals');
 
+        const [projection] = getAgentRunControlProjections();
+        expect(getAgentRun(projection!.runId)?.modelRoute).toEqual({
+            requestedRoute: 'auto',
+            selectedRouteId: 'native:native:native',
+        });
         expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
             expect.objectContaining({
                 role: 'assistant',

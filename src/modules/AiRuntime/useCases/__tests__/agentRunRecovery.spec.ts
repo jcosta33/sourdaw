@@ -33,6 +33,7 @@ describe('agent run recovery', () => {
             request: 'Render the comparison, analyze it, then apply the chosen mix.',
             mode: 'macro',
             createdRevision: 'heads-a',
+            requestedRoute: 'auto',
             createdAt: 100,
         });
         recordAgentRunPlan({
@@ -92,6 +93,9 @@ describe('agent run recovery', () => {
                 inputTokens: null,
                 outputTokens: null,
                 provenance: 'unavailable',
+                routeId: 'webllm:webllm:local-model',
+                executor: 'webllm',
+                fallbackReason: null,
             },
             recordedAt: 109,
         });
@@ -146,7 +150,18 @@ describe('agent run recovery', () => {
                 { artifactId: 'analysis-1', status: 'pending' },
                 { artifactId: 'analysis-from-receipt', workId: 'batch-committed', status: 'completed' },
             ],
-            providerUsage: [{ provider: 'webllm', provenance: 'unavailable' }],
+            modelRoute: {
+                requestedRoute: 'auto',
+                selectedRouteId: 'webllm:webllm:local-model',
+            },
+            providerUsage: [
+                {
+                    attempt: 1,
+                    provider: 'webllm',
+                    provenance: 'unavailable',
+                    routeId: 'webllm:webllm:local-model',
+                },
+            ],
             committedWork: [
                 {
                     workId: 'batch-committed',
@@ -182,6 +197,7 @@ describe('agent run recovery', () => {
         const stored = window.localStorage.getItem('sourdaw-agent-runs');
         expect(stored).toContain('"schemaVersion":1');
         expect(stored).toContain('run-recovery');
+        expect(stored).toContain('webllm:webllm:local-model');
     });
 
     it('leaves terminal runs unchanged during restart recovery', () => {

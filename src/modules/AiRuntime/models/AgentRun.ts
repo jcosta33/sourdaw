@@ -1,5 +1,6 @@
 import { type AgentExecutionMode } from './AgentExecutionMode';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
+import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
 
 export const AGENT_RUN_SCHEMA_VERSION = 1 as const;
 
@@ -73,6 +74,7 @@ export type AgentRunArtifact = {
 };
 
 export type AgentRunProviderUsage = {
+    attempt?: number;
     provider: string;
     model: string | null;
     inputTokens: number | null;
@@ -82,6 +84,14 @@ export type AgentRunProviderUsage = {
     status?: 'complete' | 'partial' | 'failed' | 'cancelled' | 'unavailable';
     retryable?: boolean | null;
     partialOutputDisposition?: 'none' | 'preserve' | 'discard';
+    routeId?: string;
+    executor?: RunnableAiBackend;
+    fallbackReason?: string | null;
+};
+
+export type AgentRunModelRoute = {
+    requestedRoute: AiBackendPreference | 'legacy-unknown';
+    selectedRouteId: string | null;
 };
 
 export type AgentRunError = {
@@ -172,6 +182,7 @@ export type AgentRun = {
     receipts: AgentRunReceipt[];
     renders: AgentRunArtifact[];
     analyses: AgentRunArtifact[];
+    modelRoute: AgentRunModelRoute;
     providerUsage: AgentRunProviderUsage[];
     errors: AgentRunError[];
     cancellation: AgentRunCancellation;

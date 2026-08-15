@@ -160,20 +160,14 @@ function trySettleAgentRunWorkLease(
     }
 }
 
-function recordUnavailableProviderUsage(runId: string, backend: RunnableAiBackend): void {
-    agentRunLifecycle.recordProviderUsage({
-        runId,
-        usage: {
-            provider: backend,
-            model: getBackendModelId(backend),
-            inputTokens: null,
-            outputTokens: null,
-            provenance: 'unavailable',
-        },
-    });
-}
-
-function recordModelProviderUsage(runId: string, result: ModelProviderResult): void {
+function recordModelProviderUsage(
+    runId: string,
+    result: ModelProviderResult,
+    options: { terminal: boolean } = { terminal: false }
+): void {
+    const executor: RunnableAiBackend =
+        result.provider === 'native' || result.provider === 'webllm' ? result.provider : 'cloud';
+    const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
     agentRunLifecycle.recordProviderUsage({
         runId,
         usage: {
@@ -186,6 +180,10 @@ function recordModelProviderUsage(runId: string, result: ModelProviderResult): v
             status: result.status,
             retryable: result.failure?.retryable ?? null,
             partialOutputDisposition: result.partialOutputDisposition,
+            routeId,
+            executor,
+            fallbackReason:
+                options.terminal || result.status === 'complete' ? null : (result.failure?.code ?? result.status),
         },
     });
 }
@@ -231,12 +229,17 @@ export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
 ): Promise<AgentApplyReceipt | undefined> {
-    const backend = resolveBackend();
+    const requestedRoute = aiBackendPreferenceStore.value ?? 'auto';
     const state = chatStore.value;
     if (!state || state.isGenerating) {
         return undefined;
     }
     const interactionMode = resolveAgentExecutionMode({ chatMode: state.chatMode, requestedMode: options?.mode });
+    const backend = resolveBackend({
+        operation: interactionMode === 'explain' ? 'text' : 'tools',
+        modality: 'text',
+        streaming: interactionMode === 'explain',
+    });
 
     // Regular chat streams from one selected backend. Prompt mode delegates
     // readiness and provider fallback to generateToolCalls.
@@ -259,6 +262,8 @@ export async function sendChatMessage(
         request: userText,
         mode: interactionMode,
         createdRevision: captureProjectRevision(),
+        requestedRoute,
+        selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
@@ -284,7 +289,6 @@ export async function sendChatMessage(
     if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
-        let promptProviderResultRecorded = false;
         setActiveAborter(aborter);
         const releaseProviderCancellation = agentRunCancellation.bindAbortController({
             runId,
@@ -299,7 +303,6 @@ export async function sendChatMessage(
                 signal: aborter.signal,
                 onProviderResult: (providerResult) => {
                     recordModelProviderUsage(runId, providerResult);
-                    promptProviderResultRecorded = true;
                 },
             });
             agentRunWorkLease.settle({
@@ -384,9 +387,6 @@ export async function sendChatMessage(
                         },
                         budgets: { limits: {}, consumed: {} },
                     });
-                    if (!promptProviderResultRecorded) {
-                        recordUnavailableProviderUsage(runId, backend);
-                    }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     createStemImportConfirmationResourceLease(result.actions)?.release();
                     updateChatMessage(assistantMsgId, {
@@ -457,10 +457,6 @@ export async function sendChatMessage(
                         receiptIdentity: null,
                     },
                 });
-                if (!promptProviderResultRecorded) {
-                    recordUnavailableProviderUsage(runId, backend);
-                }
-
                 if (interactionMode === 'preview') {
                     const previewWorkId = `preview:${parsedCommandBatch.envelope.batchId}`;
                     const previewReceiptIdentity = `preview:${runId}:${parsedCommandBatch.envelope.batchId}`;
@@ -857,9 +853,6 @@ export async function sendChatMessage(
                     });
                 }
             } else if (result.rejectionReason) {
-                if (!promptProviderResultRecorded) {
-                    recordUnavailableProviderUsage(runId, backend);
-                }
                 agentRunLifecycle.recordError({
                     runId,
                     error: {
@@ -885,9 +878,6 @@ export async function sendChatMessage(
                     error: result.rejectionReason,
                 });
             } else {
-                if (!promptProviderResultRecorded) {
-                    recordUnavailableProviderUsage(runId, backend);
-                }
                 agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
@@ -1259,7 +1249,7 @@ export async function sendChatMessage(
             receiptIdentity: providerLease.receiptIdentity,
             terminalState: 'completed',
         });
-        recordModelProviderUsage(runId, providerResult);
+        recordModelProviderUsage(runId, providerResult, { terminal: true });
         providerUsageRecorded = true;
         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
@@ -1295,7 +1285,7 @@ export async function sendChatMessage(
             );
         }
         if (providerResult && !providerUsageRecorded) {
-            recordModelProviderUsage(runId, providerResult);
+            recordModelProviderUsage(runId, providerResult, { terminal: true });
             providerUsageRecorded = true;
         }
         if (configurationChanged) {
