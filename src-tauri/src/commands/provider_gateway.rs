@@ -132,6 +132,7 @@ async fn register_cancellation(
     request_id: &str,
 ) -> Result<watch::Receiver<bool>, String> {
     let mut cancellations = state.cancellations.lock().await;
+    prune_cancellation_tombstones(&mut cancellations);
     if let Some(existing) = cancellations.get(request_id) {
         if existing.registered {
             return Err("Provider gateway request ID is already active".to_string());
@@ -141,7 +142,6 @@ async fn register_cancellation(
         existing.registered = true;
         return Ok(existing.sender.subscribe());
     }
-    prune_cancellation_tombstones(&mut cancellations);
     evict_oldest_cancellation_tombstone_if_full(&mut cancellations);
     if cancellations.len() >= MAX_CANCELLATION_ENTRIES {
         return Err("Provider gateway has too many pending cancellation records".to_string());
@@ -250,14 +250,6 @@ pub async fn provider_gateway_request(
         return Err("Provider gateway request exceeds its body limit".to_string());
     }
     let (origin_url, host, port) = parse_canonical_origin(&origin)?;
-    let mut addresses: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
-        .await
-        .map_err(|_| "Provider gateway DNS lookup failed".to_string())?
-        .collect();
-    addresses.sort_unstable();
-    addresses.dedup();
-    validate_resolved_addresses(&addresses)?;
-
     let (method, path) = match operation.as_str() {
         "probe" => (reqwest::Method::GET, "/v1/models"),
         "request" => (reqwest::Method::POST, "/v1/chat/completions"),
@@ -273,27 +265,35 @@ pub async fn provider_gateway_request(
     if request_url.origin() != origin_url.origin() {
         return Err("Provider gateway refused to forward a request across origins".to_string());
     }
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .resolve_to_addrs(&host, &addresses)
-        .build()
-        .map_err(|_| "Provider gateway transport could not be initialized".to_string())?;
-
-    let mut request = client
-        .request(method, request_url)
-        .header("Accept", "application/json, text/event-stream");
-    if !api_key.is_empty() {
-        request = request.bearer_auth(api_key);
-    }
-    if let Some(body) = body {
-        request = request
-            .header("Content-Type", "application/json")
-            .body(body);
-    }
 
     let mut cancellation = register_cancellation(&state, &request_id).await?;
     let result = async {
+        let mut addresses: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+            .await
+            .map_err(|_| "Provider gateway DNS lookup failed".to_string())?
+            .collect();
+        addresses.sort_unstable();
+        addresses.dedup();
+        validate_resolved_addresses(&addresses)?;
+
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(&host, &addresses)
+            .build()
+            .map_err(|_| "Provider gateway transport could not be initialized".to_string())?;
+        let mut request = client
+            .request(method, request_url)
+            .header("Accept", "application/json, text/event-stream");
+        if !api_key.is_empty() {
+            request = request.bearer_auth(api_key);
+        }
+        if let Some(body) = body {
+            request = request
+                .header("Content-Type", "application/json")
+                .body(body);
+        }
+
         let response = tokio::select! {
             biased;
             _ = wait_for_cancellation(&mut cancellation) => {
@@ -461,11 +461,14 @@ mod tests {
             .expect("stored tombstone")
             .created_at = Instant::now() - (CANCELLATION_TOMBSTONE_TTL + Duration::from_secs(1));
 
+        let expired_receiver = register_cancellation(&state, "expired")
+            .await
+            .expect("expired tombstone must not cancel a reused ID");
+        assert!(!*expired_receiver.borrow());
+
         request_cancellation(&state, "pre-registration")
             .await
             .expect("pre-registration cancellation");
-        assert!(!state.cancellations.lock().await.contains_key("expired"));
-
         let receiver = register_cancellation(&state, "pre-registration")
             .await
             .expect("matching registration consumes tombstone");
