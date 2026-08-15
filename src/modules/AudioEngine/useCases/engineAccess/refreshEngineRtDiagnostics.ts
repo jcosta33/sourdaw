@@ -2,20 +2,16 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { getEngineRtDiagnostics } from '../../repositories/engineDiagnostics/getEngineRtDiagnostics';
 import {
+    clearEngineDiagnosticsReadFailure,
+    shouldReportEngineDiagnosticsReadFailure,
+} from '../../services/engineDiagnosticsReadFailureLatch';
+import {
     defaultEngineRtDiagnosticsState,
     ENGINE_EVENT_HISTORY_LIMIT,
     engineRtDiagnosticsStore,
 } from '../../stores/engineRtDiagnosticsStore';
 
 import type { EngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
-
-/**
- * The last read failure reported, so a command failing on every poll logs once
- * per distinct cause instead of once a second for the life of the session.
- * Cleared on the first success, so the same fault returning after a recovery is
- * reported again.
- */
-let lastReportedReadFailure: string | null = null;
 
 /**
  * Read the native engine's real-time diagnostics and publish them.
@@ -33,7 +29,8 @@ let lastReportedReadFailure: string | null = null;
  * Returns null when the read itself failed. The store is left untouched in that
  * case: a poll that could not reach the engine knows nothing, and publishing a
  * not-running shape for it would erase the last real reading and the event
- * history with it.
+ * history with it. A failure is logged once per distinct cause — the poll runs
+ * every second, so reporting each one would bury the log.
  */
 export async function refreshEngineRtDiagnostics(): Promise<EngineRtDiagnostics | null> {
     let diagnostics: EngineRtDiagnostics;
@@ -41,14 +38,13 @@ export async function refreshEngineRtDiagnostics(): Promise<EngineRtDiagnostics 
         diagnostics = await getEngineRtDiagnostics();
     } catch (error) {
         const message = String(error);
-        if (message !== lastReportedReadFailure) {
-            lastReportedReadFailure = message;
+        if (shouldReportEngineDiagnosticsReadFailure(message)) {
             logger.error(new Error(`[AudioEngine] failed to read native engine diagnostics: ${message}`));
         }
         return null;
     }
 
-    lastReportedReadFailure = null;
+    clearEngineDiagnosticsReadFailure();
 
     for (const event of diagnostics.events) {
         logger.warn(`[AudioEngine] native engine ${event.type}: ${event.kind}`);

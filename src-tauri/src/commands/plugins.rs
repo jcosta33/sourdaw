@@ -1080,7 +1080,7 @@ mod tests {
 
         tauri::async_runtime::block_on(process_plugin_audio(
             "instance-input-refusal".to_string(),
-            block_bytes,
+            block_bytes.clone(),
             app.state::<AppState>(),
         ))
         .expect("a refused input block must not fail the round trip");
@@ -1090,6 +1090,23 @@ mod tests {
                 .load(AtomicOrdering::Relaxed),
             1,
             "a block the plugin never received must be counted"
+        );
+
+        // The ring is still full, so this one is refused too. The counter is
+        // cumulative since engine start: a store rather than an add would read
+        // 1 here and make a stream refusing every period look like one hiccup.
+        tauri::async_runtime::block_on(process_plugin_audio(
+            "instance-input-refusal".to_string(),
+            block_bytes,
+            app.state::<AppState>(),
+        ))
+        .expect("a refused input block must not fail the round trip");
+        assert_eq!(
+            state
+                .bridge_input_blocks_refused
+                .load(AtomicOrdering::Relaxed),
+            2,
+            "every refused block must add to the count, not overwrite it"
         );
     }
 

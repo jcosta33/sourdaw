@@ -16,6 +16,31 @@ use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, RingBuffer};
 use scheduler::GraphCommand;
 
+/// Run a start attempt, and on failure run it once more with the negotiated
+/// buffer period dropped, reporting both failures when neither attempt worked.
+///
+/// A negotiated `BufferSize::Fixed` request reaches backend code a
+/// `BufferSize::Default` request never runs — CoreAudio configures the device
+/// period only for a `Fixed` request, and ALSA validates it against a separate
+/// `hw_params` clone — so a build can fail for the requested period alone.
+/// Failing outright there would leave the user with no engine at all, strictly
+/// worse than the unnegotiated period the engine ran on before, so the second
+/// attempt drops the request.
+///
+/// Generic over the attempt rather than written inline in [`EngineHandle::new`]
+/// so this control flow — one attempt on success, two on failure, both errors in
+/// the merged message — is testable without an audio device.
+fn spawn_with_fallback<T>(mut spawn: impl FnMut(bool) -> Result<T, String>) -> Result<T, String> {
+    match spawn(false) {
+        Ok(handle) => Ok(handle),
+        Err(negotiated_error) => spawn(true).map_err(|default_error| {
+            format!(
+                "{negotiated_error} (retrying with the device default period also failed: {default_error})"
+            )
+        }),
+    }
+}
+
 pub struct EngineHandle {
     command_tx: Producer<GraphCommand>,
     _audio_thread: AudioThreadHandle,
@@ -27,22 +52,10 @@ pub struct EngineHandle {
 impl EngineHandle {
     /// Boot the native audio engine (spawns CPAL stream).
     ///
-    /// Two attempts. A negotiated `BufferSize::Fixed` request reaches backend
-    /// code a `BufferSize::Default` request never runs — CoreAudio configures
-    /// the device period only for a `Fixed` request, and ALSA validates it
-    /// against a separate `hw_params` clone — so a build can fail for the
-    /// requested period alone. Failing outright there would leave the user with
-    /// no engine at all, strictly worse than the unnegotiated period the engine
-    /// ran on before, so the second attempt drops the request.
+    /// Two attempts, the second without the negotiated buffer period — see
+    /// [`spawn_with_fallback`] for why the retry exists and what it reports.
     pub fn new() -> Result<Self, String> {
-        match Self::spawn(false) {
-            Ok(handle) => Ok(handle),
-            Err(negotiated_error) => Self::spawn(true).map_err(|default_error| {
-                format!(
-                    "{negotiated_error} (retrying with the device default period also failed: {default_error})"
-                )
-            }),
-        }
+        spawn_with_fallback(Self::spawn)
     }
 
     /// Start the audio thread against a freshly built set of channels.
@@ -177,5 +190,70 @@ impl EngineHandle {
             .push(GraphCommand::RegisterAudioBridge(bridge))
             .map_err(|_| "Audio command queue full".to_string())?;
         Ok(handle)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::spawn_with_fallback;
+    use std::cell::RefCell;
+
+    #[test]
+    fn a_start_that_negotiates_its_period_is_the_only_attempt_made() {
+        let requests = RefCell::new(Vec::new());
+
+        let started = spawn_with_fallback(|force_default_buffer| {
+            requests.borrow_mut().push(force_default_buffer);
+            Ok::<&str, String>("engine on the negotiated period")
+        });
+
+        assert_eq!(started, Ok("engine on the negotiated period"));
+        // One attempt, and it asked for the negotiated period: a retry here
+        // would rebuild a stream that already runs.
+        assert_eq!(*requests.borrow(), vec![false]);
+    }
+
+    #[test]
+    fn a_refused_period_is_retried_once_with_the_device_default() {
+        let requests = RefCell::new(Vec::new());
+
+        let started = spawn_with_fallback(|force_default_buffer| {
+            requests.borrow_mut().push(force_default_buffer);
+            if force_default_buffer {
+                Ok("engine on the device default period")
+            } else {
+                Err("requested period unsupported".to_string())
+            }
+        });
+
+        assert_eq!(started, Ok("engine on the device default period"));
+        assert_eq!(*requests.borrow(), vec![false, true]);
+    }
+
+    #[test]
+    fn a_start_that_fails_both_ways_reports_both_failures() {
+        let requests = RefCell::new(Vec::new());
+
+        let started = spawn_with_fallback(|force_default_buffer| {
+            requests.borrow_mut().push(force_default_buffer);
+            Err::<(), String>(if force_default_buffer {
+                "no output device available".to_string()
+            } else {
+                "requested period unsupported".to_string()
+            })
+        });
+
+        // The first failure is the one that describes the request the user's
+        // settings made; dropping it for the retry's message would leave the
+        // rejected period invisible.
+        assert_eq!(
+            started,
+            Err(concat!(
+                "requested period unsupported (retrying with the device default ",
+                "period also failed: no output device available)"
+            )
+            .to_string())
+        );
+        assert_eq!(*requests.borrow(), vec![false, true]);
     }
 }

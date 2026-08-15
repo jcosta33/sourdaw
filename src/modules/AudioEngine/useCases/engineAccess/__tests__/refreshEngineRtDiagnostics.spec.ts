@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 
 import { getEngineRtDiagnostics } from '../../../repositories/engineDiagnostics/getEngineRtDiagnostics';
+import { clearEngineDiagnosticsReadFailure } from '../../../services/engineDiagnosticsReadFailureLatch';
 import {
     defaultEngineRtDiagnosticsState,
     ENGINE_EVENT_HISTORY_LIMIT,
@@ -42,6 +43,10 @@ describe('refreshEngineRtDiagnostics', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         engineRtDiagnosticsStore.set(defaultEngineRtDiagnosticsState);
+        // The report-once latch is module state and outlives a test, so a
+        // failure reported by one spec would silence the same failure in the
+        // next one.
+        clearEngineDiagnosticsReadFailure();
     });
 
     it('publishes the latest reading to the store and returns it', async () => {
@@ -77,6 +82,17 @@ describe('refreshEngineRtDiagnostics', () => {
         expect(logger.error).toHaveBeenCalledWith(
             expect.objectContaining({ message: expect.stringContaining('Failed to lock engine: poisoned') })
         );
+    });
+
+    it('reports a failure the previous test already reported', async () => {
+        // Guards the isolation the suite depends on: the latch above is module
+        // state, so without the reset in `beforeEach` this identical message
+        // would be treated as already reported and log nothing.
+        vi.mocked(getEngineRtDiagnostics).mockRejectedValue(new Error('Failed to lock engine: poisoned'));
+
+        expect(await refreshEngineRtDiagnostics()).toBeNull();
+
+        expect(logger.error).toHaveBeenCalledTimes(1);
     });
 
     it('reports a read failure again after a successful read in between', async () => {

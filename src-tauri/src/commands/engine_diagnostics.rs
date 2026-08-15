@@ -8,6 +8,7 @@
 
 use crate::state::AppState;
 use daw_engine::engine_events::{EngineEvent, StreamErrorKind};
+use daw_engine::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 
@@ -80,6 +81,33 @@ pub struct EngineRtDiagnostics {
     pub events: Vec<EngineEventPayload>,
 }
 
+/// Assemble the wire payload for a running engine.
+///
+/// Split out of the command because the mapping is the part that can be wrong:
+/// every counter here is a `u64` under a different name, so two of them swapped
+/// would serialize, deserialize, and render without complaint. Taking the
+/// readings as arguments makes that mapping testable without a live device.
+fn running_engine_diagnostics(
+    snapshot: ActiveMidiRtDiagnosticsSnapshot,
+    events: Vec<EngineEvent>,
+    bridge_input_blocks_refused: u64,
+) -> EngineRtDiagnostics {
+    EngineRtDiagnostics {
+        running: true,
+        scheduler_event_buffer_overflows: snapshot.scheduler_event_buffer_overflows,
+        arpeggiator_active_note_exhaustions: snapshot.arpeggiator_active_note_exhaustions,
+        effect_id_collisions: snapshot.effect_id_collisions,
+        unsupported_effect_additions: snapshot.unsupported_effect_additions,
+        unmapped_set_param_calls: snapshot.unmapped_set_param_calls,
+        bridge_output_blocks_dropped: snapshot.bridge_output_blocks_dropped,
+        unmatched_bridge_blocks: snapshot.unmatched_bridge_blocks,
+        bridge_backlog_blocks_shed: snapshot.bridge_backlog_blocks_shed,
+        callback_frames_over_bridge_reach: snapshot.callback_frames_over_bridge_reach,
+        bridge_input_blocks_refused,
+        events: events.into_iter().map(EngineEventPayload::from).collect(),
+    }
+}
+
 /// Read the native engine's real-time diagnostics.
 ///
 /// Returns the not-running shape rather than an error when no engine has been
@@ -110,26 +138,13 @@ pub async fn engine_rt_diagnostics(
     };
 
     let snapshot = engine.midi_rt_diagnostics_snapshot();
-    let events = engine
-        .drain_engine_events()
-        .into_iter()
-        .map(EngineEventPayload::from)
-        .collect();
+    let events = engine.drain_engine_events();
 
-    Ok(EngineRtDiagnostics {
-        running: true,
-        scheduler_event_buffer_overflows: snapshot.scheduler_event_buffer_overflows,
-        arpeggiator_active_note_exhaustions: snapshot.arpeggiator_active_note_exhaustions,
-        effect_id_collisions: snapshot.effect_id_collisions,
-        unsupported_effect_additions: snapshot.unsupported_effect_additions,
-        unmapped_set_param_calls: snapshot.unmapped_set_param_calls,
-        bridge_output_blocks_dropped: snapshot.bridge_output_blocks_dropped,
-        unmatched_bridge_blocks: snapshot.unmatched_bridge_blocks,
-        bridge_backlog_blocks_shed: snapshot.bridge_backlog_blocks_shed,
-        callback_frames_over_bridge_reach: snapshot.callback_frames_over_bridge_reach,
-        bridge_input_blocks_refused,
+    Ok(running_engine_diagnostics(
+        snapshot,
         events,
-    })
+        bridge_input_blocks_refused,
+    ))
 }
 
 #[cfg(test)]
@@ -218,6 +233,52 @@ mod tests {
                 r#""xrun""#,
                 r#""backendSpecific""#,
             ]
+        );
+    }
+
+    /// Every counter on the payload is a `u64`, so a mapping that reads the
+    /// wrong snapshot field still serializes and still renders — distinct values
+    /// per field are what makes a swap fail here.
+    #[test]
+    fn a_running_engine_maps_each_reading_onto_its_own_field() {
+        let snapshot = ActiveMidiRtDiagnosticsSnapshot {
+            scheduler_event_buffer_overflows: 1,
+            arpeggiator_active_note_exhaustions: 2,
+            effect_id_collisions: 3,
+            unsupported_effect_additions: 4,
+            unmapped_set_param_calls: 5,
+            bridge_output_blocks_dropped: 6,
+            unmatched_bridge_blocks: 7,
+            bridge_backlog_blocks_shed: 8,
+            callback_frames_over_bridge_reach: 9,
+        };
+
+        let diagnostics = running_engine_diagnostics(
+            snapshot,
+            vec![EngineEvent::StreamError {
+                kind: StreamErrorKind::DeviceBusy,
+            }],
+            11,
+        );
+
+        assert!(diagnostics.running);
+        assert_eq!(diagnostics.scheduler_event_buffer_overflows, 1);
+        assert_eq!(diagnostics.arpeggiator_active_note_exhaustions, 2);
+        assert_eq!(diagnostics.effect_id_collisions, 3);
+        assert_eq!(diagnostics.unsupported_effect_additions, 4);
+        assert_eq!(diagnostics.unmapped_set_param_calls, 5);
+        assert_eq!(diagnostics.bridge_output_blocks_dropped, 6);
+        assert_eq!(diagnostics.unmatched_bridge_blocks, 7);
+        assert_eq!(diagnostics.bridge_backlog_blocks_shed, 8);
+        assert_eq!(diagnostics.callback_frames_over_bridge_reach, 9);
+        // The refusal count is the app's, not the snapshot's: it must not be
+        // read off the audio thread's counters.
+        assert_eq!(diagnostics.bridge_input_blocks_refused, 11);
+        assert_eq!(
+            diagnostics.events,
+            vec![EngineEventPayload::StreamError {
+                kind: StreamErrorKindPayload::DeviceBusy,
+            }]
         );
     }
 
