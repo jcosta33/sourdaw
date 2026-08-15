@@ -1,0 +1,77 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_07a8f2c549e352 47,49-50,53,55-56,73-74,344
+  s_a40848e8f8cca9::t_73147a69ea20c1 39-42,48,51-52,59
+  s_a40848e8f8cca9::t_9c8df53f816c20 316-320
+  s_a40848e8f8cca9::t_67cecdfcbe716b 70
+  s_a40848e8f8cca9::t_aa01bb1ab627f1 29,128-134,242-243,268,270,272-301,308-315,321-334,349-354,359-366,368,372-378,380-387
+  s_a40848e8f8cca9::t_1b5c7819710611 11,265-267,302-307
+  s_a40848e8f8cca9::t_2485589a339bfe 358,367
+  s_a40848e8f8cca9::t_d35c56cd3c79e8 57,60-69,71-72
+  s_a40848e8f8cca9::t_0b4ec4e47578c6 335-341,343
+  s_a40848e8f8cca9::t_06296b231611d6 43-46,54,58
+src/modules/AiRuntime/useCases/getAiRuntimeProtocolContracts.ts
+  s_a40848e8f8cca9::t_ceb02ed9327d8f 2,32-44,46,52-53
+  s_a40848e8f8cca9::t_1b5c7819710611 3
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_a40848e8f8cca9::t_ceb02ed9327d8f 3,29-50
+  s_a40848e8f8cca9::t_275181f86827ef 1-2,4-28,51-88,91-273
+  s_a40848e8f8cca9::t_805adafafeed3e 89-90
+src/modules/AiRuntime/repositories/nativeEngine/nativeToolCalling.ts
+  s_a40848e8f8cca9::t_20a8460a0ddef6 5,51
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_e40d9920142368 15,26,830-861
+  s_a40848e8f8cca9::t_4146506b593291 83-94
+  s_a40848e8f8cca9::t_085cfab89e9864 862-863
+src/modules/AiRuntime/models/LlmOrchestrationTypes.ts
+  s_a40848e8f8cca9::t_20a8460a0ddef6 2
+src/modules/AiRuntime/models/ModelProviderProtocol.ts
+  s_a40848e8f8cca9::t_a1491cde73ff65 131-132
+  s_a40848e8f8cca9::t_ceb02ed9327d8f 4,7
+  s_a40848e8f8cca9::t_2485589a339bfe 122
+  s_a40848e8f8cca9::t_7789327254621a 1-3,5-6,8-121,123-130,133-143
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_a40848e8f8cca9::t_2485589a339bfe 151-156
+  s_a40848e8f8cca9::t_9d5f209225f2a6 4,16-17,21-26,55,92-95,138-150,157-179
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_a40848e8f8cca9::t_a1a2e1a36a714d 39-40,47-48,55-56,64
+  s_a40848e8f8cca9::t_c5d0456fad325c 1-4,6-13,15-38,41-46,49-54,57-63,65-92,94-161,163-192,194-195,197-221,229-322,345-367
+  s_a40848e8f8cca9::t_1b5c7819710611 93,162
+  s_a40848e8f8cca9::t_4e855a53cc76e5 222-228
+  s_a40848e8f8cca9::t_93ad3d9239d6ee 5,14,193,323-344
+  s_a40848e8f8cca9::t_2485589a339bfe 196
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion.ts
+  s_a40848e8f8cca9::t_2ce32dd8af57ca 1,4-5,12,22,32,35-39,63,70,86-88,107,127,156,166,179-201
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_c0c8bcbab5820c 986-991,1005-1010
+  s_a40848e8f8cca9::t_f7c715b9cd92ae 74,76-79,1035-1040,1061-1076
+  s_a40848e8f8cca9::t_50c366f7efe424 18-22,55,69-73,164-176,925-927,948-967,972,977,996,1001,1029,1031,1051,1091-1118,1145-1146,1178-1195
+  s_a40848e8f8cca9::t_e86e9a04b8f599 17
+  s_a40848e8f8cca9::t_5103a5d9f2223c 75
+  s_a40848e8f8cca9::t_87f90e01e3b897 1077
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_a40848e8f8cca9::t_cab5366b7052b4 83-106
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  s_a40848e8f8cca9::t_9c8df53f816c20 165-167
+  s_a40848e8f8cca9::t_6303266b3509c8 3-4,13-14,31-37,62-74,159-164,168-169,173-181,193-217
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiCompatibleChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_cab5366b7052b4 52-79
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_bccb533f1086af 13-23,25-29,159-197
+  s_a40848e8f8cca9::t_7750e0f3d69ca1 198-199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "129a8595d4668baeac5e1740b00c19c7ee217fc4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
