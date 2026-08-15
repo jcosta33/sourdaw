@@ -75,6 +75,16 @@ function getModelProviderName(backend: RunnableAiBackend): ModelProviderName {
     return getCloudProviderInfo()?.provider ?? 'openai-compatible';
 }
 
+function getProviderDisplayName(backend: RunnableAiBackend): string {
+    if (backend === 'native') {
+        return 'Native AI';
+    }
+    if (backend === 'cloud') {
+        return 'Hosted AI';
+    }
+    return 'WebLLM';
+}
+
 function readProviderTokenCount(value: unknown): number | null {
     return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }
@@ -1220,15 +1230,14 @@ export async function sendChatMessage(
 
         // Strip <think>…</think> reasoning block before storing the final message.
         const { reasoning, content: cleanContent } = thinkParser.snapshot();
-        const incompleteReason = cloudOutcome?.status === 'incomplete' ? cloudOutcome.reason : webLlmIncompleteReason;
+        const incompleteReason = providerResult.status === 'partial' ? providerResult.finishReason : null;
         const incompleteNotice =
             incompleteReason === null ? '' : `\n\n_Response incomplete: provider stopped at ${incompleteReason}._`;
-        let incompleteError: string | undefined;
-        if (cloudOutcome?.status === 'incomplete') {
-            incompleteError = `Hosted AI response incomplete (${cloudOutcome.reason})`;
-        } else if (webLlmIncompleteReason !== null) {
-            incompleteError = `WebLLM response incomplete (${webLlmIncompleteReason})`;
-        }
+        const incompleteProviderLabel = getProviderDisplayName(backend);
+        const incompleteError =
+            incompleteReason === null
+                ? undefined
+                : `${incompleteProviderLabel} response incomplete (${incompleteReason})`;
         updateChatMessage(assistantMsgId, {
             isStreaming: false,
             content: `${cleanContent}${incompleteNotice}`,

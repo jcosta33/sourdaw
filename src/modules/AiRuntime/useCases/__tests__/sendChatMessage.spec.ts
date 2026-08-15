@@ -28,6 +28,8 @@ type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type ExecuteVersionedCommandBatchEnvelope =
     (typeof import('#/modules/Command/useCases'))['executeVersionedCommandBatchEnvelope'];
+type RunNativeModelProviderRequest =
+    (typeof import('../../repositories/nativeModelProviderAdapter'))['runNativeModelProviderRequest'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
 const { clear: clearAgentRuns, get: getAgentRun } = agentRunLifecycle;
 const { list: getAgentRunControlProjections } = agentRunControls;
@@ -102,6 +104,7 @@ const mocks = vi.hoisted(() => {
                 }
             ) => Promise<{ status: 'complete' } | { status: 'incomplete'; reason: string }>
         >(),
+        runNativeModelProviderRequest: vi.fn<RunNativeModelProviderRequest>(),
         rejectPendingConfirmation: { value: false },
     };
 });
@@ -150,6 +153,10 @@ vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
 
 vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
     streamCloudChatCompletion: mocks.streamCloudChatCompletion,
+}));
+
+vi.mock('../../repositories/nativeModelProviderAdapter', () => ({
+    runNativeModelProviderRequest: mocks.runNativeModelProviderRequest,
 }));
 
 vi.mock('../../repositories/webLlm/getLlmEngine', () => ({
@@ -250,6 +257,10 @@ describe('sendChatMessage injectables', () => {
         aiBackendPreferenceStore.set('auto');
         llmStatusStore.set({ state: 'idle' });
         mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent }) => {
+            onEvent({ type: 'text', mode: 'delta', text: 'Complete answer' });
+            return { status: 'available', finish: { reason: 'stop' } };
+        });
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.executeAppActionBatch.mockImplementation((actions: Parameters<ExecuteAppActionBatch>[0]) =>
             Promise.resolve({
@@ -925,9 +936,31 @@ describe('sendChatMessage injectables', () => {
         await sendChatMessage('How should I mix this?');
 
         const completionUpdate = mocks.updateChatMessage.mock.calls.find(
-            (call) => call[1].error === 'Hosted AI response incomplete (token limit)'
+            (call) => call[1].error === 'Hosted AI response incomplete (length)'
         );
         expect(completionUpdate?.[1].isStreaming).toBe(false);
+        expect(completionUpdate?.[1].content).toContain('Response incomplete');
+    });
+
+    it('marks a token-limited native response visibly incomplete', async () => {
+        mocks.backend.value = 'native';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent }) => {
+            onEvent({ type: 'text', mode: 'delta', text: 'Partial answer' });
+            return { status: 'available', finish: { reason: 'length' } };
+        });
+
+        await sendChatMessage('How should I mix this?');
+
+        const completionUpdate = mocks.updateChatMessage.mock.calls.find(
+            (call) => call[1].error === 'Native AI response incomplete (length)'
+        );
+        expect(completionUpdate?.[1].content).toContain('Partial answer');
         expect(completionUpdate?.[1].content).toContain('Response incomplete');
     });
 

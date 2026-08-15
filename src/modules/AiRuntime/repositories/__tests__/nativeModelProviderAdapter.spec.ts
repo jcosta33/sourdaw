@@ -132,6 +132,38 @@ describe('native model provider adapter', () => {
         expect(session.finish(outcome.finish).output.text).toBe('two parts');
     });
 
+    it('fails closed instead of dropping normalized conversation history', async () => {
+        const { request } = createFixture({ operation: 'text' });
+
+        await expect(
+            runNativeModelProviderRequest(
+                {
+                    request: {
+                        ...request,
+                        messages: [
+                            { role: 'system', content: 'You are a DAW assistant.' },
+                            { role: 'user', content: 'Describe the mix.' },
+                            { role: 'assistant', content: 'The drums are forward.' },
+                            { role: 'user', content: 'What should change next?' },
+                        ],
+                    },
+                    onEvent: vi.fn(),
+                },
+                createDependencies()
+            )
+        ).resolves.toEqual({
+            status: 'available',
+            finish: {
+                reason: 'error',
+                failure: {
+                    code: 'native-conversation-history-unsupported',
+                    retryable: false,
+                    safeMessage: 'The native model provider does not support multi-turn conversation history.',
+                },
+            },
+        });
+    });
+
     it('normalizes native tool calls and app-owns missing correlation IDs', async () => {
         const { request, session } = createFixture({
             operation: 'tools',
