@@ -196,7 +196,39 @@ describe('generateToolPlanningOutcome', () => {
         );
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
-        expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]));
+        expect(result).toEqual(
+            completePlan([
+                {
+                    id: expect.stringMatching(/^tool-planning-.*:0$/),
+                    name: 'mute_track',
+                    arguments: { track_id: 'track-1', muted: true },
+                },
+            ])
+        );
+    });
+
+    it('preserves normalized native lifecycle unavailability for provider fallback evidence', async () => {
+        mocks.backendChain.value = ['native'];
+        mocks.nativeEngineReady.value = false;
+        const providerResults: ModelProviderResult[] = [];
+
+        await expect(
+            generateToolCalls('sys', 'mute drums', undefined, undefined, undefined, (result) => {
+                providerResults.push(result);
+            })
+        ).rejects.toMatchObject({
+            _tag: 'ModelProviderFailure',
+            code: 'native-provider-unavailable',
+            retryable: true,
+        });
+        expect(providerResults).toEqual([
+            expect.objectContaining({
+                provider: 'native',
+                status: 'failed',
+                failure: expect.objectContaining({ code: 'native-provider-unavailable', retryable: true }),
+            }),
+        ]);
+        expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
     });
 
     it('does not retry a successful provider when result persistence throws', async () => {
@@ -210,7 +242,15 @@ describe('generateToolPlanningOutcome', () => {
             generateToolCalls('sys', 'mute drums', undefined, undefined, undefined, () => {
                 throw new Error('provider usage persistence failed');
             })
-        ).resolves.toEqual(completePlan([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]));
+        ).resolves.toEqual(
+            completePlan([
+                {
+                    id: expect.stringMatching(/^tool-planning-.*:0$/),
+                    name: 'mute_track',
+                    arguments: { track_id: 'track-1', muted: true },
+                },
+            ])
+        );
         expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
         expect(mockLogger.warn).toHaveBeenCalledWith(
             '[AI Engine] Provider result observer failed: provider usage persistence failed'
@@ -690,6 +730,7 @@ describe('generateToolPlanningOutcome', () => {
                 },
             ],
             temperature: 0.1,
+            timeoutMs: 120_000,
         });
     });
 
@@ -706,12 +747,12 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
             expect.stringContaining('Available tools:'),
             'mute drums',
-            { requireComplete: true }
+            expect.objectContaining({ requireComplete: true, maxTokens: 2_048, timeoutMs: 120_000 })
         );
         expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
             expect.stringContaining('muteTrack'),
             'mute drums',
-            { requireComplete: true }
+            expect.objectContaining({ requireComplete: true, maxTokens: 2_048, timeoutMs: 120_000 })
         );
         expect(mocks.parseToolPlanningOutcome).toHaveBeenCalledWith('<tool name="mute_track" />');
         expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
@@ -755,7 +796,7 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
             expect.stringContaining('Available tools:'),
             'mute drums',
-            { requireComplete: true }
+            expect.objectContaining({ requireComplete: true, maxTokens: 2_048, timeoutMs: 120_000 })
         );
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
         expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
@@ -771,12 +812,12 @@ describe('generateToolPlanningOutcome', () => {
         const result = await generateToolCalls('sys', 'mute drums');
 
         expect(mockLogger.warn).toHaveBeenCalledWith(
-            '[AI Engine] Structured tool calling failed, falling back to text: structured unavailable'
+            '[AI Engine] Structured tool calling unavailable, falling back to text.'
         );
         expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
             expect.stringContaining('Available tools:'),
             'mute drums',
-            { requireComplete: true }
+            expect.objectContaining({ requireComplete: true, maxTokens: 2_048, timeoutMs: 120_000 })
         );
         expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
     });

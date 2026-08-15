@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     compileRequest: vi.fn(),
     createModelProviderProtocol: vi.fn(),
     finish: vi.fn(),
-    generateNativeCompletion: vi.fn(),
+    runNativeModelProviderRequest: vi.fn(),
     generateWebLlmCompletion: vi.fn(),
     push: vi.fn(),
     rawCloudCompletion: vi.fn(),
@@ -20,8 +20,8 @@ vi.mock('../../modelProviderProtocol', () => ({
     createModelProviderProtocol: mocks.createModelProviderProtocol,
 }));
 
-vi.mock('../../../repositories/nativeEngine/completions', () => ({
-    generateNativeCompletion: mocks.generateNativeCompletion,
+vi.mock('../../../repositories/nativeModelProviderAdapter', () => ({
+    runNativeModelProviderRequest: mocks.runNativeModelProviderRequest,
 }));
 
 vi.mock('../../../repositories/webLlm/generateWebLlmCompletion', () => ({
@@ -53,7 +53,10 @@ describe('model text query protocol boundary', () => {
             compileRequest: mocks.compileRequest,
             start: mocks.start,
         });
-        mocks.generateNativeCompletion.mockResolvedValue('native text');
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent }) => {
+            onEvent({ type: 'text', mode: 'cumulative-snapshot', text: 'native text' });
+            return { status: 'available', finish: { reason: 'stop' } };
+        });
         mocks.generateWebLlmCompletion.mockResolvedValue('webllm text');
         mocks.rawCloudCompletion.mockResolvedValue({ status: 'complete' });
         mocks.streamHostedModelText.mockResolvedValue({ status: 'complete', failure: null });
@@ -76,7 +79,7 @@ describe('model text query protocol boundary', () => {
     });
 
     it('throws the normalized local provider failure instead of the adapter error', async () => {
-        mocks.generateNativeCompletion.mockRejectedValue(new Error('private native diagnostic'));
+        mocks.runNativeModelProviderRequest.mockRejectedValue(new Error('private native diagnostic'));
         mocks.finish.mockReturnValue({
             status: 'failed',
             output: { text: '' },
@@ -98,6 +101,29 @@ describe('model text query protocol boundary', () => {
             retryable: true,
             partialOutputDisposition: 'discard',
         });
+    });
+
+    it('preserves native lifecycle unavailability without rewriting it as inference failure', async () => {
+        mocks.runNativeModelProviderRequest.mockResolvedValue({
+            status: 'unavailable',
+            failure: {
+                code: 'native-provider-unavailable',
+                correlationId: 'model-text-correlation',
+                retryable: true,
+                safeMessage: 'The native model provider is not running.',
+                partialOutputDisposition: 'none',
+            },
+        });
+
+        await expect(generateNativeCompletion('system', 'user')).rejects.toMatchObject({
+            _tag: 'ModelProviderFailure',
+            message: 'The native model provider is not running.',
+            code: 'native-provider-unavailable',
+            correlationId: 'model-text-correlation',
+            retryable: true,
+            partialOutputDisposition: 'none',
+        });
+        expect(mocks.finish).not.toHaveBeenCalled();
     });
 
     it('routes the legacy hosted query through the neutral hosted use case', async () => {

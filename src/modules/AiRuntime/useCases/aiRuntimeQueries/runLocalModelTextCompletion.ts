@@ -1,16 +1,39 @@
 import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
-import { type ModelProviderName } from '../../models/ModelProviderProtocol';
+import {
+    type ModelProviderEvent,
+    type ModelProviderFailure,
+    type ModelProviderFinish,
+    type ModelProviderName,
+    type ModelProviderRequest,
+} from '../../models/ModelProviderProtocol';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
-type RunLocalModelTextCompletionInput = {
+type RunLocalModelTextCompletionBase = {
     provider: Extract<ModelProviderName, 'native' | 'webllm'>;
     model: string;
     systemPrompt: string;
     userMessage: string;
     maxOutputTokens: number;
     signal?: AbortSignal;
-    execute: (systemPrompt: string, userMessage: string) => Promise<string>;
 };
+
+type RunLocalModelTextCompletionInput = RunLocalModelTextCompletionBase &
+    (
+        | {
+              execute: (systemPrompt: string, userMessage: string) => Promise<string>;
+              executeRequest?: never;
+          }
+        | {
+              execute?: never;
+              executeRequest: (
+                  request: ModelProviderRequest,
+                  onEvent: (event: ModelProviderEvent) => void
+              ) => Promise<
+                  | { status: 'available'; finish: ModelProviderFinish }
+                  | { status: 'unavailable'; failure: ModelProviderFailure }
+              >;
+          }
+    );
 
 export async function runLocalModelTextCompletion(input: RunLocalModelTextCompletionInput): Promise<string> {
     const protocol = createModelProviderProtocol({ provider: input.provider, model: input.model });
@@ -40,6 +63,22 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
     let settled = false;
     try {
         input.signal?.throwIfAborted();
+        if (input.executeRequest !== undefined) {
+            const outcome = await input.executeRequest(compiled.request, (event) => session.push(event));
+            if (outcome.status === 'unavailable') {
+                settled = true;
+                throw createModelProviderFailureError(outcome.failure);
+            }
+            const result = session.finish(outcome.finish);
+            settled = true;
+            if (result.status !== 'complete') {
+                if (result.failure !== null) {
+                    throw createModelProviderFailureError(result.failure);
+                }
+                throw new Error('The model provider request did not complete.');
+            }
+            return result.output.text;
+        }
         const systemPrompt = compiled.request.messages.find((message) => message.role === 'system')?.content;
         const userMessage = compiled.request.messages.find((message) => message.role === 'user')?.content;
         if (systemPrompt === undefined || userMessage === undefined) {

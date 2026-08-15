@@ -28,7 +28,7 @@ import {
 import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
 import { isCloudAvailable } from '../repositories/cloudLlm/isCloudAvailable';
 import { isNativeEngineReady } from '../repositories/nativeEngine/isNativeEngineReady';
-import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
+import { runNativeModelProviderRequest } from '../repositories/nativeModelProviderAdapter';
 import { getActiveModelId } from '../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
 import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
@@ -997,6 +997,7 @@ export async function sendChatMessage(
     const thinkParser = createThinkBlockParser();
     let cloudOutcome: CloudChatCompletionOutcome | null = null;
     let webLlmIncompleteReason: string | null = null;
+    let nativeProviderFinish: ModelProviderFinish | null = null;
     let providerSession: ModelProviderSession | null = null;
     let providerResult: ModelProviderResult | null = null;
     let providerUsageRecorded = false;
@@ -1042,31 +1043,39 @@ export async function sendChatMessage(
         providerSession = providerProtocol.start(providerRequest);
 
         if (backend === 'native') {
-            // Native: streaming completion via Tauri Channel API
-            await streamNativeCompletion(
-                providerRequest.messages,
-                (token) => {
-                    if (aborter.signal.aborted) {
-                        throw createAiRuntimeError('AbortedByUser');
+            const nativeOutcome = await runNativeModelProviderRequest({
+                request: providerRequest,
+                signal: aborter.signal,
+                onEvent: (event) => {
+                    providerSession?.push(event);
+                    if (event.type === 'text') {
+                        const parsed = thinkParser.push(event.text);
+                        updateChatMessage(assistantMsgId, {
+                            content: parsed.content,
+                            reasoning: parsed.reasoning,
+                        });
                     }
-                    providerSession?.push({ type: 'text', mode: 'delta', text: token });
-                    const parsed = thinkParser.push(token);
-                    updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
-                // Thread the abort signal so Stop tears the stream down at the
-                // source: in browser dev mode the SSE loop breaks immediately
-                // instead of draining the whole response, and in native mode the
-                // watchdog race is unblocked. Without this, only the per-token
-                // throw above could stop it — and only while tokens keep arriving.
-                {
-                    temperature: 0.7,
-                    maxTokens: providerRequest.limits.maxOutputTokens,
-                    signal: aborter.signal,
-                    onUsage: (event) => providerSession?.push(event),
-                    onUnknownEvent: (providerEventType) =>
-                        providerSession?.push({ type: 'unknown', providerEventType }),
-                }
-            );
+            });
+            if (nativeOutcome.status === 'unavailable') {
+                providerResult = providerSession.finish({
+                    reason: 'error',
+                    failure: {
+                        code: nativeOutcome.failure.code,
+                        retryable: nativeOutcome.failure.retryable,
+                        safeMessage: nativeOutcome.failure.safeMessage,
+                    },
+                });
+                throw createAiRuntimeError(nativeOutcome.failure.safeMessage);
+            }
+            if (nativeOutcome.finish.reason === 'cancelled') {
+                throw new DOMException('Native model provider request cancelled', 'AbortError');
+            }
+            if (nativeOutcome.finish.reason === 'error' || nativeOutcome.finish.reason === 'refusal') {
+                providerResult = providerSession.finish(nativeOutcome.finish);
+                throw createAiRuntimeError(nativeOutcome.finish.failure.safeMessage);
+            }
+            nativeProviderFinish = nativeOutcome.finish;
         } else if (backend === 'cloud') {
             // Cloud: streaming completion via Claude API
             cloudOutcome = await streamCloudChatCompletion(
@@ -1181,7 +1190,7 @@ export async function sendChatMessage(
             throw aborter.signal.reason;
         }
 
-        let providerFinish: ModelProviderFinish = { reason: 'stop' };
+        let providerFinish: ModelProviderFinish = nativeProviderFinish ?? { reason: 'stop' };
         if (cloudOutcome?.status === 'incomplete') {
             providerFinish =
                 cloudOutcome.reason === 'length' || cloudOutcome.reason === 'token limit'
