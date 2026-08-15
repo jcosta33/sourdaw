@@ -7,6 +7,7 @@ import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
@@ -260,8 +261,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const workflowSelectionTools = availableTools.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
+                    const applicationTools = availableTools.filter(
+                        (tool) => tool.function.name === PROJECT_QUERY_TOOL_NAME
+                    );
                     const actionTools = availableTools.filter(
-                        (tool) => tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME
+                        (tool) =>
+                            tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
+                            tool.function.name !== PROJECT_QUERY_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
@@ -273,15 +279,19 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
                             : [];
                     const mandatoryToolNames = new Set(
-                        [...workflowSelectionTools, ...workflowActionTools].map((tool) => tool.function.name)
+                        [...workflowSelectionTools, ...applicationTools, ...workflowActionTools].map(
+                            (tool) => tool.function.name
+                        )
                     );
                     const promptActionTools = selectedActionTools.filter(
                         (tool) => !mandatoryToolNames.has(tool.function.name)
                     );
-                    providerTools = [...workflowSelectionTools, ...workflowActionTools, ...promptActionTools].slice(
-                        0,
-                        30
-                    );
+                    providerTools = [
+                        ...workflowSelectionTools,
+                        ...applicationTools,
+                        ...workflowActionTools,
+                        ...promptActionTools,
+                    ].slice(0, 30);
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
                     );

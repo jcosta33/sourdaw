@@ -12,6 +12,7 @@ import {
     createWorkflowCapabilityToolSchema,
     WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
 } from '../../../models/WorkflowCapability';
+import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../applicationOwnedToolLoop';
 import { generateToolCalls as generateCompatibleToolCalls } from '../generateToolCalls';
 import { generateToolPlanningOutcome as generateToolCalls } from '../inference';
 
@@ -434,6 +435,19 @@ describe('generateToolPlanningOutcome', () => {
         expect(selectedTools?.map((tool) => tool.function.name)).toEqual(
             expect.arrayContaining(['selectWorkflowCapability', ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES])
         );
+        expect(selectedTools?.length).toBeLessThanOrEqual(30);
+    });
+
+    it('always retains the application-owned project query inside the bounded WebLLM tool set', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
+        const tools = [...APPLICATION_OWNED_TOOL_SCHEMAS, ...getExecutableAppActionToolSchemas()];
+
+        await generateToolCalls('sys', 'inspect the project before editing', tools);
+
+        const selectedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] as ToolSchema[] | undefined;
+        expect(selectedTools?.map((tool) => tool.function.name)).toContain('project.query');
         expect(selectedTools?.length).toBeLessThanOrEqual(30);
     });
 

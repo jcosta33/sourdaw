@@ -319,7 +319,8 @@ describe('parsePromptToActions', () => {
                 ...getExecutableAppActionToolSchemas(),
             ]),
             undefined,
-            'make the project faster'
+            'make the project faster',
+            undefined
         );
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
             prompt: 'make the project faster',
@@ -453,7 +454,8 @@ describe('parsePromptToActions', () => {
                 ...getExecutableAppActionToolSchemas(),
             ]),
             undefined,
-            'enable punch in/out'
+            'enable punch in/out',
+            undefined
         );
     });
 

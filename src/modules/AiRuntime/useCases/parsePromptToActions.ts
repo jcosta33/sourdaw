@@ -39,6 +39,7 @@ import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRou
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
+import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
@@ -181,33 +182,45 @@ export const parsePromptToActions = inject({ logger })(
                     context,
                     projectRevision
                 )?.capability;
-                const planningOutcome = await generateToolPlanningOutcome(
-                    `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests.`,
-                    buildLlmActionUserMessage({
-                        prompt,
-                        context,
-                        projectRevision,
-                        articulationTransferCapability,
-                        backingVocalPlateCapability,
-                        bassProcessingCopyCapability,
-                        drumRoutingCapability,
-                        drumRenderComparisonCapability,
-                        drumPreviewBranchesCapability,
-                        midiOverlapTransformCapability,
-                        sidechainRoutingCapability,
-                        sharedVocalFxBusesCapability,
-                        stemImportCapability: stemImportScope?.capability,
-                        syncopatedArpeggioCapability,
-                        wholeProjectVibeMixCapability,
-                    }),
-                    [
-                        createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS),
-                        ...getExecutableAppActionToolSchemas(),
-                    ],
-                    signal,
+                const terminalToolSchemas = [
+                    createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS),
+                    ...getExecutableAppActionToolSchemas(),
+                ];
+                const providerToolSchemas = [...APPLICATION_OWNED_TOOL_SCHEMAS, ...terminalToolSchemas];
+                const terminalToolNames = new Set(terminalToolSchemas.map((schema) => schema.function.name));
+                const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.`;
+                const userMessage = buildLlmActionUserMessage({
                     prompt,
-                    onProviderResult
-                );
+                    context,
+                    projectRevision,
+                    articulationTransferCapability,
+                    backingVocalPlateCapability,
+                    bassProcessingCopyCapability,
+                    drumRoutingCapability,
+                    drumRenderComparisonCapability,
+                    drumPreviewBranchesCapability,
+                    midiOverlapTransformCapability,
+                    sidechainRoutingCapability,
+                    sharedVocalFxBusesCapability,
+                    stemImportCapability: stemImportScope?.capability,
+                    syncopatedArpeggioCapability,
+                    wholeProjectVibeMixCapability,
+                });
+                const planningOutcome = await runApplicationOwnedToolLoop({
+                    loopId: `planning-${crypto.randomUUID()}`,
+                    terminalToolNames,
+                    deferTerminalAdmission: true,
+                    signal,
+                    requestTurn: async ({ receiptContext }) =>
+                        generateToolPlanningOutcome(
+                            systemPrompt,
+                            receiptContext === null ? userMessage : `${userMessage}\n\n${receiptContext}`,
+                            providerToolSchemas,
+                            signal,
+                            prompt,
+                            onProviderResult
+                        ),
+                });
 
                 if (signal?.aborted) {
                     return { actions: [], rawText: prompt, requiresConfirmation: false };
