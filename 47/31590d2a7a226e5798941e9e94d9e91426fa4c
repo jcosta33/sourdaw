@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_38999608ed8d86 36,355-356,358,379-383
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_38999608ed8d86 61,1058-1062
+src/modules/AiRuntime/models/AgentDataPolicy.ts
+  s_a40848e8f8cca9::t_01a44199abe61f 30-31
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_a40848e8f8cca9::t_01a44199abe61f 450-454
+  s_a40848e8f8cca9::t_1b666796a6ff08 455
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_a40848e8f8cca9::t_b38bb11206672a 3,10,56-60,85,96-136
+  s_a40848e8f8cca9::t_fba1d70029f8c7 137-139
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_a40848e8f8cca9::t_38999608ed8d86 12,85
+  s_a40848e8f8cca9::t_bf0804cbeb0bcc 66,86-89
+src/modules/AiRuntime/useCases/discloseRemoteTransmission.ts
+  s_a40848e8f8cca9::t_01a44199abe61f 4,9-11,13-22,24-43
+  s_a40848e8f8cca9::t_38999608ed8d86 12,23,45-49
+src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts
+  s_a40848e8f8cca9::t_3d5065252757b8 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4731590d2a7a226e5798941e9e94d9e91426fa4c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
