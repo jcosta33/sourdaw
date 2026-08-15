@@ -12,6 +12,7 @@ import {
     type AgentRunScope,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 
 const DEFAULT_SCOPE: AgentRunScope = {
@@ -56,6 +57,7 @@ type CreateAgentRunInput = {
     request: string;
     mode: AgentExecutionMode;
     createdRevision: string | null;
+    requestedRoute?: AiBackendPreference;
     createdAt?: number;
     scope?: AgentRunScope;
     grants?: AgentRunGrants;
@@ -119,6 +121,10 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         receipts: [],
         renders: [],
         analyses: [],
+        modelRoute: {
+            requestedRoute: input.requestedRoute ?? 'legacy-unknown',
+            selectedRouteId: null,
+        },
         providerUsage: [],
         errors: [],
         cancellation: {
@@ -276,9 +282,15 @@ function recordAgentRunProviderUsage(input: {
         ) {
             return run;
         }
+        const usage = structuredClone(input.usage);
+        usage.attempt ??= run.providerUsage.length + 1;
         return {
             ...run,
-            providerUsage: [...run.providerUsage, structuredClone(input.usage)],
+            modelRoute:
+                usage.selected === true && usage.routeId !== undefined
+                    ? { ...run.modelRoute, selectedRouteId: run.modelRoute.selectedRouteId ?? usage.routeId }
+                    : run.modelRoute,
+            providerUsage: [...run.providerUsage, usage],
         };
     });
 }

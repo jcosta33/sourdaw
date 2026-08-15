@@ -161,19 +161,32 @@ function trySettleAgentRunWorkLease(
 }
 
 function recordUnavailableProviderUsage(runId: string, backend: RunnableAiBackend): void {
+    const model = getBackendModelId(backend);
     agentRunLifecycle.recordProviderUsage({
         runId,
         usage: {
             provider: backend,
-            model: getBackendModelId(backend),
+            model,
             inputTokens: null,
             outputTokens: null,
             provenance: 'unavailable',
+            routeId: `${backend}:${backend}:${model}`,
+            executor: backend,
+            fallbackReason: 'backend-unavailable',
+            selected: false,
         },
     });
 }
 
-function recordModelProviderUsage(runId: string, result: ModelProviderResult): void {
+function recordModelProviderUsage(
+    runId: string,
+    result: ModelProviderResult,
+    options: { partialIsSelected: boolean } = { partialIsSelected: false }
+): void {
+    const executor: RunnableAiBackend =
+        result.provider === 'native' || result.provider === 'webllm' ? result.provider : 'cloud';
+    const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
+    const selected = result.status === 'complete' || (result.status === 'partial' && options.partialIsSelected);
     agentRunLifecycle.recordProviderUsage({
         runId,
         usage: {
@@ -186,6 +199,10 @@ function recordModelProviderUsage(runId: string, result: ModelProviderResult): v
             status: result.status,
             retryable: result.failure?.retryable ?? null,
             partialOutputDisposition: result.partialOutputDisposition,
+            routeId,
+            executor,
+            fallbackReason: selected ? null : (result.failure?.code ?? result.status),
+            selected,
         },
     });
 }
@@ -231,12 +248,17 @@ export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
 ): Promise<AgentApplyReceipt | undefined> {
-    const backend = resolveBackend();
+    const requestedRoute = aiBackendPreferenceStore.value ?? 'auto';
     const state = chatStore.value;
     if (!state || state.isGenerating) {
         return undefined;
     }
     const interactionMode = resolveAgentExecutionMode({ chatMode: state.chatMode, requestedMode: options?.mode });
+    const backend = resolveBackend({
+        operation: interactionMode === 'explain' ? 'text' : 'tools',
+        modality: 'text',
+        streaming: interactionMode === 'explain',
+    });
 
     // Regular chat streams from one selected backend. Prompt mode delegates
     // readiness and provider fallback to generateToolCalls.
@@ -259,6 +281,7 @@ export async function sendChatMessage(
         request: userText,
         mode: interactionMode,
         createdRevision: captureProjectRevision(),
+        requestedRoute,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
@@ -1259,7 +1282,7 @@ export async function sendChatMessage(
             receiptIdentity: providerLease.receiptIdentity,
             terminalState: 'completed',
         });
-        recordModelProviderUsage(runId, providerResult);
+        recordModelProviderUsage(runId, providerResult, { partialIsSelected: true });
         providerUsageRecorded = true;
         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
@@ -1295,7 +1318,7 @@ export async function sendChatMessage(
             );
         }
         if (providerResult && !providerUsageRecorded) {
-            recordModelProviderUsage(runId, providerResult);
+            recordModelProviderUsage(runId, providerResult, { partialIsSelected: true });
             providerUsageRecorded = true;
         }
         if (configurationChanged) {

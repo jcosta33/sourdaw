@@ -178,6 +178,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         return null;
     }
     const provider = readString(value.provider);
+    const attempt = value.attempt === undefined ? undefined : readNonNegativeInteger(value.attempt);
     const model = readNullableString(value.model);
     const inputTokens = value.inputTokens === null ? null : readNonNegativeInteger(value.inputTokens);
     const outputTokens = value.outputTokens === null ? null : readNonNegativeInteger(value.outputTokens);
@@ -207,8 +208,15 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         value.partialOutputDisposition === undefined
             ? undefined
             : partialOutputDispositions.find((candidate) => candidate === value.partialOutputDisposition);
+    const routeId = value.routeId === undefined ? undefined : readString(value.routeId);
+    const executors: NonNullable<AgentRunProviderUsage['executor']>[] = ['native', 'webllm', 'cloud'];
+    const executor =
+        value.executor === undefined ? undefined : executors.find((candidate) => candidate === value.executor);
+    const fallbackReason = value.fallbackReason === undefined ? undefined : readNullableString(value.fallbackReason);
+    const selected = value.selected === undefined ? undefined : value.selected;
     if (
         provider === null ||
+        (value.attempt !== undefined && (attempt === null || attempt === undefined || attempt < 1)) ||
         model === undefined ||
         (inputTokens === null && value.inputTokens !== null) ||
         (outputTokens === null && value.outputTokens !== null) ||
@@ -216,11 +224,16 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         correlationId === null ||
         (value.status !== undefined && status === undefined) ||
         !retryableIsValid ||
-        (value.partialOutputDisposition !== undefined && partialOutputDisposition === undefined)
+        (value.partialOutputDisposition !== undefined && partialOutputDisposition === undefined) ||
+        routeId === null ||
+        (value.executor !== undefined && executor === undefined) ||
+        (value.fallbackReason !== undefined && fallbackReason === undefined) ||
+        (selected !== undefined && typeof selected !== 'boolean')
     ) {
         return null;
     }
     return {
+        ...(typeof attempt === 'number' ? { attempt } : {}),
         provider,
         model,
         inputTokens,
@@ -230,6 +243,10 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         ...(status === undefined ? {} : { status }),
         ...(retryable === undefined ? {} : { retryable }),
         ...(partialOutputDisposition === undefined ? {} : { partialOutputDisposition }),
+        ...(routeId === undefined ? {} : { routeId }),
+        ...(executor === undefined ? {} : { executor }),
+        ...(fallbackReason === undefined ? {} : { fallbackReason }),
+        ...(selected === undefined ? {} : { selected }),
     };
 }
 
@@ -505,6 +522,21 @@ function readAgentRun(value: unknown): AgentRun | null {
     const renders = readCollection(value.renders, readArtifact);
     const analyses = readCollection(value.analyses, readArtifact);
     const providerUsage = readCollection(value.providerUsage, readProviderUsage);
+    const modelRoute = (() => {
+        const rawModelRoute = value.modelRoute;
+        if (rawModelRoute === undefined) {
+            return { requestedRoute: 'legacy-unknown' as const, selectedRouteId: null };
+        }
+        if (!isRecord(rawModelRoute)) {
+            return null;
+        }
+        const requestedRoutes = ['auto', 'native', 'webllm', 'cloud', 'legacy-unknown'] as const;
+        const requestedRoute = requestedRoutes.find((candidate) => candidate === rawModelRoute.requestedRoute);
+        const selectedRouteId = readNullableString(rawModelRoute.selectedRouteId);
+        return requestedRoute === undefined || selectedRouteId === undefined
+            ? null
+            : { requestedRoute, selectedRouteId };
+    })();
     const errors = readCollection(value.errors, readError);
     const committedWork = readCollection(value.committedWork, readCommittedWork);
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
@@ -545,6 +577,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         receipts === null ||
         renders === null ||
         analyses === null ||
+        modelRoute === null ||
         providerUsage === null ||
         errors === null ||
         committedWork === null ||
@@ -604,6 +637,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         receipts,
         renders,
         analyses,
+        modelRoute,
         providerUsage,
         errors,
         cancellation: {
