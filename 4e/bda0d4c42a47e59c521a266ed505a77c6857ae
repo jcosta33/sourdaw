@@ -1,0 +1,21 @@
+AGENTS.md
+  s_0a3429e31e555d::t_aa2bbb6c022fa1 7-8,10-12,15-16,18-20,22-23,28,32,34-35
+.agents/skills/settle/SKILL.md
+  s_0a3429e31e555d::t_aa2bbb6c022fa1 4-7,12-13,17-18,21-25,27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4ebda0d4c42a47e59c521a266ed505a77c6857ae",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
