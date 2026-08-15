@@ -122,9 +122,12 @@ describe('LlmStatusBadge', () => {
 
         expect(screen.getByText('Light')).toBeInTheDocument();
         expect(screen.getByText('Standard')).toBeInTheDocument();
+        expect(
+            screen.getByText('Downloads and verifies this model for private use in this browser.')
+        ).toBeInTheDocument();
 
         fireEvent.click(screen.getByText('Light'));
-        fireEvent.click(screen.getByRole('button', { name: /Load Light/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Download & Load Light/ }));
 
         expect(onLoad).toHaveBeenCalledWith('Qwen3-1.7B-q4f16_1-MLC');
     });
@@ -186,7 +189,7 @@ describe('LlmStatusBadge', () => {
         const onLoad = vi.fn();
         render(<LlmStatusBadge status={{ state: 'error', message: 'Failed to load model' }} onLoad={onLoad} />);
 
-        const retryButton = screen.getByRole('button', { name: /AI Error/ });
+        const retryButton = screen.getByRole('button', { name: 'Retry Model Download' });
         expect(retryButton).toHaveAttribute('title', 'Failed to load model');
 
         fireEvent.click(retryButton);

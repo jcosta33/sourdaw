@@ -5,15 +5,24 @@ import { llmStatusStore } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
 import { unloadWebLlmEngine } from './unloadWebLlmEngine';
+import { admitWebLlmModelArtifacts } from './webLlmArtifactAdmission';
+import { getWebLlmArtifactManifestModel } from './webLlmArtifactManifest';
 
 type InitWebLlmEngineOptions = {
+    downloadConsent?: boolean;
     signal?: AbortSignal;
 };
 
-export const initWebLlmEngine = inject({ logger })(
-    ({ logger }) =>
+export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
+    ({ logger, admitWebLlmModelArtifacts }) =>
         function initWebLlmEngine(modelId?: string, options: InitWebLlmEngineOptions = {}): Promise<WebLlmEngine> {
             const targetModel = modelId ?? engineState.activeModelId;
+            let targetArtifactSetDigest: string;
+            try {
+                targetArtifactSetDigest = getWebLlmArtifactManifestModel(targetModel).artifactSetDigest;
+            } catch (error) {
+                return Promise.reject(error);
+            }
             if (options.signal?.aborted) {
                 const reason: unknown = options.signal.reason;
                 return Promise.reject(
@@ -22,12 +31,20 @@ export const initWebLlmEngine = inject({ logger })(
             }
 
             // If already loaded with the same model, return immediately
-            if (engineState.engine && targetModel === engineState.activeModelId) {
+            if (
+                engineState.engine &&
+                targetModel === engineState.activeModelId &&
+                targetArtifactSetDigest === engineState.activeArtifactSetDigest
+            ) {
                 return Promise.resolve(engineState.engine);
             }
 
             // If switching models, unload the current one first
-            if (engineState.engine && targetModel !== engineState.activeModelId) {
+            if (
+                engineState.engine &&
+                (targetModel !== engineState.activeModelId ||
+                    targetArtifactSetDigest !== engineState.activeArtifactSetDigest)
+            ) {
                 unloadWebLlmEngine();
             }
 
@@ -74,6 +91,22 @@ export const initWebLlmEngine = inject({ logger })(
                     llmStatusStore.set({ state: 'loading', progress: 0, text: 'Loading AI engine...' });
                 }
 
+                const admission = await admitWebLlmModelArtifacts(targetModel, {
+                    downloadConsent: options.downloadConsent,
+                    onProgress: (report) => {
+                        if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
+                            return;
+                        }
+                        llmStatusStore.set({
+                            state: 'loading',
+                            progress: report.progress,
+                            text: report.text,
+                        });
+                    },
+                    signal: attemptSignal,
+                });
+                attemptSignal.throwIfAborted();
+
                 // Dynamic import — avoids loading the 6.2MB WebLLM bundle at app startup.
                 // The bundle is only fetched when the user actually requests model loading.
                 const [{ CreateWebWorkerMLCEngine }, { default: LlmWorker }] = await Promise.all([
@@ -99,6 +132,7 @@ export const initWebLlmEngine = inject({ logger })(
                         worker,
                         targetModel,
                         {
+                            appConfig: admission.appConfig,
                             initProgressCallback: (report: { progress: number; text: string }) => {
                                 if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
                                     return;
@@ -123,6 +157,7 @@ export const initWebLlmEngine = inject({ logger })(
 
                 // eslint-disable-next-line sourdaw/no-type-assertion-escape -- WebWorkerMLCEngine and WebLlmEngine are structurally compatible subsets; cast required due to overloaded chat.completions.create signature
                 engineState.engine = created as unknown as WebLlmEngine;
+                engineState.activeArtifactSetDigest = admission.artifactSetDigest;
                 if (!attemptSignal.aborted) {
                     llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
@@ -155,6 +190,7 @@ export const initWebLlmEngine = inject({ logger })(
                 engineState.initSignal = null;
                 engineState.initWaiterCount = 0;
                 engineState.engine = null;
+                engineState.activeArtifactSetDigest = null;
             });
 
             return waitForWebLlmAttempt({

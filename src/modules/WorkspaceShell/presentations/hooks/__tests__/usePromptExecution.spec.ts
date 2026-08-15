@@ -852,7 +852,9 @@ describe('usePromptExecution', () => {
 
         vi.mocked(isLlmAvailable).mockReturnValue(true);
         act(() => result.current.handleLoadModel('gpt-4'));
-        expect(vi.mocked(initEngine)).toHaveBeenCalledWith('gpt-4');
+        expect(vi.mocked(initEngine)).toHaveBeenCalledWith('gpt-4', {
+            webLlmDownloadConsent: true,
+        });
     });
 
     it('swallows errors thrown by executePreset and clears processing', async () => {
