@@ -1,6 +1,7 @@
 use futures_util::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -216,6 +217,19 @@ async fn wait_for_cancellation(cancellation: &mut watch::Receiver<bool>) {
     }
 }
 
+async fn await_provider_step_or_cancellation<T>(
+    cancellation: &mut watch::Receiver<bool>,
+    operation: impl Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    tokio::select! {
+        biased;
+        _ = wait_for_cancellation(cancellation) => {
+            Err("Provider gateway request was cancelled".to_string())
+        }
+        result = operation => result,
+    }
+}
+
 #[tauri::command]
 pub async fn cancel_provider_gateway_request(
     request_id: String,
@@ -268,10 +282,13 @@ pub async fn provider_gateway_request(
 
     let mut cancellation = register_cancellation(&state, &request_id).await?;
     let result = async {
-        let mut addresses: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
-            .await
-            .map_err(|_| "Provider gateway DNS lookup failed".to_string())?
-            .collect();
+        let resolved_addresses = await_provider_step_or_cancellation(&mut cancellation, async {
+            tokio::net::lookup_host((host.as_str(), port))
+                .await
+                .map_err(|_| "Provider gateway DNS lookup failed".to_string())
+        })
+        .await?;
+        let mut addresses: Vec<SocketAddr> = resolved_addresses.collect();
         addresses.sort_unstable();
         addresses.dedup();
         validate_resolved_addresses(&addresses)?;
@@ -355,9 +372,9 @@ pub async fn provider_gateway_request(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_canonical_origin, register_cancellation, request_cancellation,
-        validate_resolved_addresses, ProviderGatewayState, CANCELLATION_TOMBSTONE_TTL,
-        MAX_CANCELLATION_ENTRIES,
+        await_provider_step_or_cancellation, parse_canonical_origin, register_cancellation,
+        request_cancellation, validate_resolved_addresses, ProviderGatewayState,
+        CANCELLATION_TOMBSTONE_TTL, MAX_CANCELLATION_ENTRIES,
     };
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
@@ -473,5 +490,24 @@ mod tests {
             .await
             .expect("matching registration consumes tombstone");
         assert!(*receiver.borrow());
+    }
+
+    #[tokio::test]
+    async fn provider_gateway_cancels_a_stalled_admission_step() {
+        let (sender, mut receiver) = tokio::sync::watch::channel(false);
+        let cancellation = async {
+            tokio::task::yield_now().await;
+            sender.send_replace(true);
+        };
+        let admission = await_provider_step_or_cancellation(
+            &mut receiver,
+            std::future::pending::<Result<(), String>>(),
+        );
+
+        let (result, ()) = tokio::join!(admission, cancellation);
+        assert_eq!(
+            result.expect_err("stalled admission must cancel"),
+            "Provider gateway request was cancelled"
+        );
     }
 }
