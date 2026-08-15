@@ -26,12 +26,45 @@ pub struct EngineHandle {
 
 impl EngineHandle {
     /// Boot the native audio engine (spawns CPAL stream).
+    ///
+    /// Two attempts. A negotiated `BufferSize::Fixed` request reaches backend
+    /// code a `BufferSize::Default` request never runs — CoreAudio configures
+    /// the device period only for a `Fixed` request, and ALSA validates it
+    /// against a separate `hw_params` clone — so a build can fail for the
+    /// requested period alone. Failing outright there would leave the user with
+    /// no engine at all, strictly worse than the unnegotiated period the engine
+    /// ran on before, so the second attempt drops the request.
     pub fn new() -> Result<Self, String> {
+        match Self::spawn(false) {
+            Ok(handle) => Ok(handle),
+            Err(negotiated_error) => Self::spawn(true).map_err(|default_error| {
+                format!(
+                    "{negotiated_error} (retrying with the device default period also failed: {default_error})"
+                )
+            }),
+        }
+    }
+
+    /// Start the audio thread against a freshly built set of channels.
+    ///
+    /// Every channel is rebuilt per attempt because a failed stream build
+    /// consumes the ends it was given: the command consumer went into the
+    /// scheduler, the scheduler and the event producer went into the cpal
+    /// callbacks, and cpal drops those callbacks along with the stream it could
+    /// not build. Reusing the producers held here would leave them writing to
+    /// ends that no longer exist. `EngineHandle` is the only place that owns
+    /// both halves of all three channels, which is why the retry lives here
+    /// rather than inside `spawn_audio_thread`.
+    fn spawn(force_default_buffer: bool) -> Result<Self, String> {
         let (tx, rx) = RingBuffer::new(256);
         let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
-        let thread_handle =
-            spawn_audio_thread_with_diagnostics(rx, diagnostics_tx, engine_event_tx)?;
+        let thread_handle = spawn_audio_thread_with_diagnostics(
+            rx,
+            diagnostics_tx,
+            engine_event_tx,
+            force_default_buffer,
+        )?;
 
         Ok(Self {
             command_tx: tx,

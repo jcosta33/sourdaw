@@ -4,7 +4,9 @@
 //! audio thread itself, so publishing it must not allocate, lock, or block.
 //! Every event here is therefore a fixed-size `Copy` value pushed into a
 //! bounded SPSC ring; the non-real-time side drains it through
-//! `EngineHandle::drain_engine_events`.
+//! `EngineHandle::drain_engine_events`, and everything that costs anything to
+//! do — formatting, logging, allocating — happens there rather than at the
+//! push.
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -66,11 +68,18 @@ pub(crate) fn engine_event_channel() -> (Producer<EngineEvent>, Consumer<EngineE
     RingBuffer::new(ENGINE_EVENT_QUEUE_CAPACITY)
 }
 
-/// Drain every event currently queued. Never called on the audio thread, so the
-/// allocation the `Vec` performs is fine here.
+/// Drain every event currently queued, reporting each one to stderr on the way
+/// out.
+///
+/// Never called on the audio thread, which is what makes the reporting possible
+/// here: the `Vec` allocation and the global stderr lock `eprintln!` takes are
+/// both affordable on the control side and both forbidden in the callback that
+/// produced these events. Reporting is therefore this side's job — an event no
+/// other reader acts on still reaches the log exactly once.
 pub(crate) fn drain_engine_events(consumer: &mut Consumer<EngineEvent>) -> Vec<EngineEvent> {
     let mut events = Vec::new();
     while let Ok(event) = consumer.pop() {
+        eprintln!("[Engine] {event:?}");
         events.push(event);
     }
     events

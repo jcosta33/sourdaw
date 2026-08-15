@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { getEngineRtDiagnostics } from '../../../repositories/engineDiagnostics/getEngineRtDiagnostics';
 import {
     defaultEngineRtDiagnosticsState,
@@ -12,6 +14,10 @@ import type { EngineRtDiagnostics } from '../../../models/EngineRtDiagnostics';
 
 vi.mock('../../../repositories/engineDiagnostics/getEngineRtDiagnostics', () => ({
     getEngineRtDiagnostics: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 function diagnostics(overrides: Partial<EngineRtDiagnostics> = {}): EngineRtDiagnostics {
@@ -82,6 +88,34 @@ describe('refreshEngineRtDiagnostics', () => {
         await refreshEngineRtDiagnostics();
 
         expect(engineRtDiagnosticsStore.value?.events).toEqual([{ type: 'streamError', kind: 'deviceChanged' }]);
+    });
+
+    it('logs every drained event once, so a report reaches the log without a diagnostics reader', async () => {
+        // The engine hands each event out exactly once, so logging at ingestion
+        // cannot double-report — and nothing else logs it: the native error
+        // callback runs on the real-time thread and only pushes.
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValue(
+            diagnostics({
+                events: [
+                    { type: 'streamError', kind: 'deviceNotAvailable' },
+                    { type: 'streamError', kind: 'xrun' },
+                ],
+            })
+        );
+
+        await refreshEngineRtDiagnostics();
+
+        expect(logger.warn).toHaveBeenCalledTimes(2);
+        expect(logger.warn).toHaveBeenNthCalledWith(1, expect.stringContaining('deviceNotAvailable'));
+        expect(logger.warn).toHaveBeenNthCalledWith(2, expect.stringContaining('xrun'));
+    });
+
+    it('says nothing when a refresh drains no events', async () => {
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValue(diagnostics());
+
+        await refreshEngineRtDiagnostics();
+
+        expect(logger.warn).not.toHaveBeenCalled();
     });
 
     it('bounds the event history so a stream failing every period cannot grow it forever', async () => {

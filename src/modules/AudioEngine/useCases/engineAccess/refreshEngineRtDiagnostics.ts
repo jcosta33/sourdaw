@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+
 import { getEngineRtDiagnostics } from '../../repositories/engineDiagnostics/getEngineRtDiagnostics';
 import {
     defaultEngineRtDiagnosticsState,
@@ -13,9 +15,17 @@ import type { EngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
  * The command drains the engine's event ring, so the events it returns are
  * appended to what the store already holds — replacing them would throw away
  * every report made before this call.
+ *
+ * Each drained event is also logged at ingestion. The engine hands an event out
+ * exactly once, so this reports it once: a stream error the user never opens the
+ * diagnostics panel for still leaves a trace.
  */
 export async function refreshEngineRtDiagnostics(): Promise<EngineRtDiagnostics> {
     const diagnostics = await getEngineRtDiagnostics();
+
+    for (const event of diagnostics.events) {
+        logger.warn(`[AudioEngine] native engine ${event.type}: ${event.kind}`);
+    }
 
     engineRtDiagnosticsStore.update((state) => {
         const current = state ?? defaultEngineRtDiagnosticsState;
