@@ -36,6 +36,7 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
@@ -58,6 +59,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearHandlerRegistry();
         clearUndoHistory();
         clearAiHistory();
+        agentRunLifecycle.clear();
         clearPendingActionConfirmations();
         resetCrdtProjectAuthority('AI confirmation admission');
         createCrdtDoc('independent');
@@ -512,6 +514,22 @@ describe('confirmPendingChatActions transaction admission', () => {
             payload: { bpm: 132 },
         } satisfies SetTempoAction;
         const projectRevision = captureProjectRevision();
+        agentRunLifecycle.create({
+            runId: 'confirmation-reapproval',
+            request: 'set tempo to 132',
+            mode: 'apply',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: 'confirmation-reapproval',
+            phase: 'planning',
+            revision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: 'confirmation-reapproval',
+            phase: 'waiting-for-approval',
+            revision: projectRevision,
+        });
         const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
             action,
             expectedEffect: 'Tempo changes from 120 BPM to 132 BPM.',
@@ -539,6 +557,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             groupId: 'group-reapproval',
             groupLabel: 'Set tempo batch',
             projectRevision,
+            runId: 'confirmation-reapproval',
         });
         const classify = vi.fn(() => ({
             kind: 'non-overlapping' as const,
@@ -576,10 +595,12 @@ describe('confirmPendingChatActions transaction admission', () => {
             projectRevision: currentRevision,
             status: 'proposed',
         });
+        expect(agentRunLifecycle.get('confirmation-reapproval')?.revisions.approved).toBeNull();
 
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-reapproval' })).resolves.toEqual({
             status: 'executed',
         });
+        expect(agentRunLifecycle.get('confirmation-reapproval')?.revisions.approved).toBe(currentRevision);
         expect(execute).toHaveBeenCalledOnce();
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
     });

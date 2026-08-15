@@ -33,7 +33,19 @@ export type LocalStorageAdapter<TData> = StorageAdapter<TData> & {
     trySet(value: TData | null): boolean;
 };
 
-export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAdapter<TData> => {
+type CreateLocalStorageOptions = {
+    /**
+     * Keep sanitizer-rejected source bytes durable while exposing only the
+     * sanitized projection to this build. Versioned stores use this to avoid
+     * destroying state written by a newer application version.
+     */
+    preserveSanitizedSource?: boolean;
+};
+
+export const createLocalStorage = <TData>(
+    key: LocalStorageKey,
+    options?: CreateLocalStorageOptions
+): LocalStorageAdapter<TData> => {
     let cachedValue: TData | null | undefined = undefined;
 
     /** Write through to the backing store, advancing the cache only once durable. */
@@ -48,7 +60,7 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAda
         cachedValue = value;
     }
 
-    return {
+    const adapter: LocalStorageAdapter<TData> = {
         get(): TData | null {
             if (cachedValue !== undefined) {
                 return cachedValue;
@@ -119,4 +131,12 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): LocalStorageAda
             }
         },
     };
+
+    if (options?.preserveSanitizedSource === true) {
+        adapter.setProjected = (value): void => {
+            cachedValue = value;
+        };
+    }
+
+    return adapter;
 };

@@ -8,7 +8,12 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
     const state = readAgentRunState();
     const recoveredRunIds: string[] = [];
     const runs = state.runs.map((run): AgentRun => {
-        if (TERMINAL_PHASES.has(run.phase) || run.phase === 'paused') {
+        const hasUnsettledLease = run.workLeases.some((lease) => lease.terminalState === null);
+        const hasLiveTemporaryAsset = run.temporaryAssets.some((asset) => asset.status === 'live');
+        if (
+            TERMINAL_PHASES.has(run.phase) ||
+            (run.phase === 'paused' && !hasUnsettledLease && !hasLiveTemporaryAsset)
+        ) {
             return run;
         }
         recoveredRunIds.push(run.runId);

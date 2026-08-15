@@ -1,6 +1,6 @@
+import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -219,10 +219,75 @@ describe('agent run recovery', () => {
         ).toThrow('Agent run state could not be persisted locally');
     });
 
-    it('rejects unsupported persisted schema versions instead of executing them as current runs', () => {
-        expect(sanitizeAgentRunState({ schemaVersion: 2, runs: [{ runId: 'future-run' }] })).toEqual({
+    it('orphans live work and schedules asset cleanup for an already-paused run after restart', () => {
+        createAgentRun({
+            runId: 'run-paused-with-live-work',
+            request: 'Resume the analysis after approval.',
+            mode: 'macro',
+            createdRevision: 'heads-a',
+            createdAt: 100,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: 'run-paused-with-live-work',
+            phase: 'planning',
+            revision: 'heads-a',
+            transitionedAt: 101,
+        });
+        expect(
+            claimAgentRunWorkLease({
+                runId: 'run-paused-with-live-work',
+                workId: 'analysis-1',
+                ownerKind: 'analysis',
+                cleanupOwner: 'analysis-worker',
+                idempotencyKey: 'analysis-key',
+                receiptIdentity: 'analysis-receipt',
+                idempotent: true,
+                retriable: true,
+                claimedAt: 102,
+            }).status
+        ).toBe('claimed');
+        registerAgentRunTemporaryAsset({
+            runId: 'run-paused-with-live-work',
+            assetId: 'analysis-input.wav',
+            kind: 'analysis',
+            cleanupOwner: 'analysis-worker',
+            createdAt: 103,
+        });
+        agentRunLifecycle.requireManualResume({
+            runId: 'run-paused-with-live-work',
+            reason: 'Waiting for a manual choice.',
+            workIds: ['analysis-1'],
+            requiredAt: 104,
+        });
+
+        expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({
+            recoveredRunIds: ['run-paused-with-live-work'],
+        });
+        expect(getAgentRun('run-paused-with-live-work')).toMatchObject({
+            phase: 'paused',
+            workLeases: [{ workId: 'analysis-1', terminalState: 'orphaned', settledAt: 200 }],
+            temporaryAssets: [{ assetId: 'analysis-input.wav', status: 'cleanup-pending' }],
+            manualResume: {
+                required: true,
+                workIds: ['analysis-1'],
+                reason: expect.stringContaining('restarted'),
+                requiredAt: 200,
+            },
+        });
+    });
+
+    it('rejects unsupported persisted schema versions without overwriting their bytes', async () => {
+        const futureState = { schemaVersion: 2, runs: [{ runId: 'future-run', futureReceipt: 'receipt-v2' }] };
+        const rawFutureState = stringify(futureState);
+        window.localStorage.setItem('sourdaw-agent-runs', rawFutureState);
+
+        vi.resetModules();
+        const { agentRunStore: futureAgentRunStore } = await import('../../stores/agentRunStore');
+
+        expect(futureAgentRunStore.value).toEqual({
             schemaVersion: 1,
             runs: [],
         });
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(rawFutureState);
     });
 });

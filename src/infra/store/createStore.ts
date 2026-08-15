@@ -116,13 +116,12 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
      *
      * What happens to the rejected content depends on who else can see the
      * backing store. On a shared document the sanitized result governs the read
-     * view and nothing more: the content stays in the document, quarantined
-     * rather than deleted. Writing it back would let a validator that cannot
-     * recognise a row destroy it for every peer — including peers that read it
-     * perfectly well — and a structural, version-blind validator cannot even
-     * tell those rows from corrupt ones. On storage only this replica can see
-     * there is no peer to lose and repairing it is the point, so the write-back
-     * stands.
+     * view and nothing more: the content stays quarantined rather than deleted.
+     * Writing it back would let a validator that cannot recognise a row destroy
+     * it for every peer — including peers that read it perfectly well. A
+     * versioned local store may opt into the same projection boundary so an
+     * older build cannot erase a newer schema. Other local storage repairs the
+     * backing value because there is no peer or future-schema owner to lose.
      */
     const sanitizeStorageValue = (value: TData | null): boolean => {
         if (!sanitize) {

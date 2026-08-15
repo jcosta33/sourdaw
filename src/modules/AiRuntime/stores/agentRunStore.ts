@@ -555,7 +555,7 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
 
 export const agentRunStore = createStore<AgentRunState>({
     initialData: createEmptyAgentRunState(),
-    storage: createLocalStorage<AgentRunState>('sourdaw-agent-runs'),
+    storage: createLocalStorage<AgentRunState>('sourdaw-agent-runs', { preserveSanitizedSource: true }),
     sanitize: sanitizeAgentRunState,
 });
 

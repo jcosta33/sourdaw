@@ -157,7 +157,7 @@ function transitionAgentRunPhase(input: {
         if (input.revision !== undefined) {
             if (input.phase === 'planning') {
                 revisions.planned = input.revision;
-            } else if (input.phase === 'waiting-for-approval') {
+            } else if (input.phase === 'executing') {
                 revisions.approved = input.revision;
             } else if (input.phase === 'completed' || input.phase === 'partially-completed') {
                 revisions.committed = input.revision;
