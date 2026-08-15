@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_2b745ef66a6af0 951-969,971-990,1157,1159-1181,1186-1199
+  s_a40848e8f8cca9::t_571733c2cc80d4 1158,1182-1185
+  s_a40848e8f8cca9::t_40e18eacbcc398 970
+  s_a40848e8f8cca9::t_6b654b3d521312 1487,1490,1505
+  s_a40848e8f8cca9::t_1244e855239d1d 1467-1486,1488-1489,1491-1504,1506-1511
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_66e88755250a40 83,85,92,96,104-112,114,127
+  s_a40848e8f8cca9::t_45282e2fea7022 77-78,122-125
+  s_a40848e8f8cca9::t_d8e58d56cb88e9 410-425,519,523,543,582,607-619,630-632,641-648,657-669,683-695
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_d8f626cdb1e0a3 69-70,107,114-115,123-127,131,133,141-144,147,155,159,161-163
+  s_a40848e8f8cca9::t_571733c2cc80d4 160
+  s_a40848e8f8cca9::t_d441df42a491b4 679,681-688,707,722,730,753,755-759
+  s_a40848e8f8cca9::t_191234dca11a58 754
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2f24499cccd0e468c1cb8fe4ada2332e57e3f385",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
