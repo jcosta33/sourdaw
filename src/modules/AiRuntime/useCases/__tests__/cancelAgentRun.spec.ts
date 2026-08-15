@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { agentRunControls } from '../getAgentRunControlProjection';
@@ -276,7 +277,7 @@ describe('cancelAgentRun', () => {
         ]);
     });
 
-    it('lets the exact persisted cleanup owner reacquire a pending asset after restart', async () => {
+    it('lets the exact persisted cleanup owner release a recovered asset on the first cancellation', async () => {
         createPlanningRun('run-restarted-cleanup');
         agentRunLifecycle.registerTemporaryAsset({
             runId: 'run-restarted-cleanup',
@@ -285,7 +286,13 @@ describe('cancelAgentRun', () => {
             cleanupOwner: 'render-worker',
             createdAt: 110,
         });
-        agentRunLifecycle.cancel({ runId: 'run-restarted-cleanup', reason: 'Process stopped', requestedAt: 120 });
+        expect(recoverInterruptedAgentRuns({ recoveredAt: 120 })).toEqual({
+            recoveredRunIds: ['run-restarted-cleanup'],
+        });
+        expect(agentRunLifecycle.get('run-restarted-cleanup')).toMatchObject({
+            phase: 'paused',
+            temporaryAssets: [{ assetId: 'persisted.wav', status: 'cleanup-pending' }],
+        });
         const cleanup = vi.fn();
 
         expect(() =>
@@ -296,7 +303,7 @@ describe('cancelAgentRun', () => {
                 cleanup,
             })
         ).not.toThrow();
-        await cancelAgentRun({ runId: 'run-restarted-cleanup', reason: 'Resume cleanup', requestedAt: 130 });
+        await cancelAgentRun({ runId: 'run-restarted-cleanup', reason: 'Cancel recovered run', requestedAt: 130 });
 
         expect(cleanup).toHaveBeenCalledOnce();
         expect(agentRunLifecycle.get('run-restarted-cleanup')?.temporaryAssets).toEqual([

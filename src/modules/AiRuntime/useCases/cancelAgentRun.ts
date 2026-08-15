@@ -169,7 +169,7 @@ async function cancelAgentRun(input: {
     const requestedAt = input.requestedAt ?? Date.now();
     const activeLeases = run.workLeases.filter((lease) => lease.terminalState === null);
     const cleanupAssets = run.temporaryAssets.filter(
-        (asset) => asset.status === 'live' || (retryingPendingCleanup && asset.status === 'cleanup-pending')
+        (asset) => asset.status === 'live' || asset.status === 'cleanup-pending'
     );
 
     // Revoke durable authority before notifying any external owner. A callback
