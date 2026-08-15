@@ -1,0 +1,38 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_424dfef32b2965 737-744
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_81c9e7e6392e3d 41,204,376,536,864
+  s_a40848e8f8cca9::t_8248cb65cc0dff 205-209,377-381,394,537-541,548-549,836,865-869,1101
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_81c9e7e6392e3d 34,632
+  s_a40848e8f8cca9::t_8248cb65cc0dff 631,633-638,713
+src/modules/AiRuntime/useCases/__tests__/cancelAgentRun.spec.ts
+  s_a40848e8f8cca9::t_f7d62e22032393 6
+  s_a40848e8f8cca9::t_81c9e7e6392e3d 5,7-12
+  s_a40848e8f8cca9::t_1b21c340e1c525 1-4,13-255
+src/modules/AiRuntime/useCases/cancelAgentRun.ts
+  s_a40848e8f8cca9::t_8a5a85d80d6b80 1-61,65-89,116-230
+  s_a40848e8f8cca9::t_81c9e7e6392e3d 90,115,231-236
+  s_a40848e8f8cca9::t_8248cb65cc0dff 91-114
+  s_a40848e8f8cca9::t_7445734a86c4e4 62-64
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_81c9e7e6392e3d 68
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_8a5a85d80d6b80 371-400,488
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "added286c18eaabda2f07752e574b3ce1098d77c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
