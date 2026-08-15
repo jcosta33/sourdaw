@@ -1,4 +1,7 @@
+import { type ModelProviderEvent } from '../../../models/ModelProviderProtocol';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
+
+type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 
 type StreamOpenAiCompatibleChatCompletionInput = {
     runtime: OpenAiCompatibleCloudRuntime;
@@ -6,6 +9,8 @@ type StreamOpenAiCompatibleChatCompletionInput = {
     onToken: (text: string) => void;
     signal: AbortSignal;
     maxTokens?: number;
+    onUsage?: (event: ModelProviderUsageEvent) => void;
+    onUnknownEvent?: (providerEventType: string) => void;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -15,6 +20,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 type ParsedStreamEvent = {
     text: string | null;
     finishReason: string | null;
+    usage: ModelProviderUsageEvent['usage'] | null;
+    unknownEventType: string | null;
 };
 
 export type OpenAiCompatibleFinishReason = 'stop' | 'length';
@@ -24,10 +31,20 @@ type StreamState = {
 };
 
 function parseStreamEvent(event: unknown): ParsedStreamEvent {
-    if (!isRecord(event) || !Array.isArray(event.choices)) {
+    if (!isRecord(event) || 'error' in event) {
         throw new Error('Hosted AI returned an invalid streaming event');
     }
-    if ('error' in event || event.choices.length === 0) {
+    if (!Array.isArray(event.choices)) {
+        if (typeof event.type === 'string') {
+            return { text: null, finishReason: null, usage: null, unknownEventType: event.type };
+        }
+        throw new Error('Hosted AI returned an invalid streaming event');
+    }
+    const usage = readUsage(event.usage);
+    if (event.choices.length === 0) {
+        if (usage) {
+            return { text: null, finishReason: null, usage, unknownEventType: null };
+        }
         throw new Error('Hosted AI returned an invalid streaming event');
     }
     const choices: unknown[] = event.choices;
@@ -51,12 +68,16 @@ function parseStreamEvent(event: unknown): ParsedStreamEvent {
     return {
         text: typeof content === 'string' ? content : null,
         finishReason: typeof finishReason === 'string' ? finishReason : null,
+        usage,
+        unknownEventType: null,
     };
 }
 
 function emitEventData(
     data: string,
     onToken: (text: string) => void,
+    onUsage: ((event: ModelProviderUsageEvent) => void) | undefined,
+    onUnknownEvent: ((providerEventType: string) => void) | undefined,
     state: StreamState
 ): OpenAiCompatibleFinishReason | null {
     if (data === '[DONE]') {
@@ -72,6 +93,13 @@ function emitEventData(
         throw new Error('Hosted AI returned an invalid streaming event');
     }
     const event = parseStreamEvent(parsed);
+    if (event.unknownEventType !== null) {
+        onUnknownEvent?.(`openai-compatible:${event.unknownEventType}`);
+        return null;
+    }
+    if (event.usage) {
+        onUsage?.({ type: 'usage', mode: 'final', usage: event.usage, provenance: 'provider-reported' });
+    }
     if (event.finishReason !== null) {
         if (event.finishReason !== 'stop' && event.finishReason !== 'length') {
             throw new Error('Hosted AI chat stream ended before normal completion');
@@ -90,6 +118,8 @@ export async function streamOpenAiCompatibleChatCompletion({
     onToken,
     signal,
     maxTokens,
+    onUsage,
+    onUnknownEvent,
 }: StreamOpenAiCompatibleChatCompletionInput): Promise<OpenAiCompatibleFinishReason> {
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -109,6 +139,7 @@ export async function streamOpenAiCompatibleChatCompletion({
             ),
             max_tokens: maxTokens ?? 2048,
             stream: true,
+            ...(runtime.provider === 'openai' ? { stream_options: { include_usage: true } } : {}),
         }),
     });
 
@@ -137,7 +168,7 @@ export async function streamOpenAiCompatibleChatCompletion({
                 if (!line.startsWith('data:')) {
                     continue;
                 }
-                const finishReason = emitEventData(line.slice(5).trim(), onToken, streamState);
+                const finishReason = emitEventData(line.slice(5).trim(), onToken, onUsage, onUnknownEvent, streamState);
                 if (finishReason !== null) {
                     await reader.cancel();
                     return finishReason;
@@ -147,7 +178,13 @@ export async function streamOpenAiCompatibleChatCompletion({
 
         const finalLine = buffer.trim();
         if (finalLine.startsWith('data:')) {
-            const finishReason = emitEventData(finalLine.slice(5).trim(), onToken, streamState);
+            const finishReason = emitEventData(
+                finalLine.slice(5).trim(),
+                onToken,
+                onUsage,
+                onUnknownEvent,
+                streamState
+            );
             if (finishReason !== null) {
                 await reader.cancel();
                 return finishReason;
@@ -159,4 +196,27 @@ export async function streamOpenAiCompatibleChatCompletion({
         await reader.cancel().catch(() => undefined);
         throw error;
     }
+}
+
+function readUsage(value: unknown): ModelProviderUsageEvent['usage'] | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const inputTokens = readNonNegativeInteger(value.prompt_tokens);
+    const outputTokens = readNonNegativeInteger(value.completion_tokens);
+    if (inputTokens === null && outputTokens === null) {
+        return null;
+    }
+    const promptDetails = isRecord(value.prompt_tokens_details) ? value.prompt_tokens_details : null;
+    const completionDetails = isRecord(value.completion_tokens_details) ? value.completion_tokens_details : null;
+    return {
+        inputTokens,
+        outputTokens,
+        cachedInputTokens: readNonNegativeInteger(promptDetails?.cached_tokens),
+        reasoningTokens: readNonNegativeInteger(completionDetails?.reasoning_tokens),
+    };
+}
+
+function readNonNegativeInteger(value: unknown): number | null {
+    return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }

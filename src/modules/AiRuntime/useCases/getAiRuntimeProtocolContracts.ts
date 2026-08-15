@@ -1,9 +1,6 @@
 import { EXTERNAL_ADAPTER_SCHEMA_VERSION, HOSTED_LLM_PROVIDERS } from '../models/HostedLlmProvider';
-import {
-    AI_BACKENDS,
-    PROVIDER_PROTOCOL_OPERATIONS,
-    PROVIDER_PROTOCOL_SCHEMA_VERSION,
-} from '../models/LlmOrchestrationTypes';
+import { AI_BACKENDS } from '../models/LlmOrchestrationTypes';
+import { MODEL_PROVIDER_OPERATIONS, MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION } from '../models/ModelProviderProtocol';
 
 import { getConfiguredCloudProvider } from './cloudApiManagement/getConfiguredCloudProvider';
 import { isNativeAiRuntimeAvailable } from './llmOrchestration/backendResolution/isNativeAiRuntimeAvailable';
@@ -32,17 +29,28 @@ export function getAiRuntimeProtocolContracts() {
         providerProtocol: {
             id: 'provider-protocol' as const,
             owner: 'AiRuntime' as const,
-            schemaVersion: PROVIDER_PROTOCOL_SCHEMA_VERSION,
-            capabilities: ['provider-neutral-tool-calls', 'terminal-outcomes', 'stream-cancellation'] as const,
-            operations: PROVIDER_PROTOCOL_OPERATIONS.map((name) => ({
+            schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+            capabilities: [
+                'provider-neutral-text-tools-and-structured-output',
+                'delta-snapshot-and-final-events',
+                'usage-provenance-and-reconciliation',
+                'context-output-and-run-budgets',
+                'cache-reasoning-and-data-policy-controls',
+                'typed-retryability-safe-diagnostics-and-partial-output',
+                'fixed-unavailable-media-modalities',
+                'unknown-future-event-tolerance',
+                'stream-cancellation',
+            ] as const,
+            operations: MODEL_PROVIDER_OPERATIONS.map((name) => ({
                 name,
-                version: String(PROVIDER_PROTOCOL_SCHEMA_VERSION),
+                version: String(MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION),
                 availability: 'available' as const,
             })),
             availability: 'available' as const,
             compatibility: {
                 mode: 'reject-unsupported' as const,
-                behavior: 'Normalize supported provider responses and fail closed on unsupported terminal protocols.',
+                behavior:
+                    'Normalize supported provider requests and events, preserve unknown event names for diagnostics, and fail closed on unavailable capabilities.',
                 canonicalProjectRequiresCommandReplay: false as const,
             },
         },

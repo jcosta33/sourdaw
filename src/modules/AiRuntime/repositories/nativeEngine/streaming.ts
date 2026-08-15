@@ -1,12 +1,11 @@
 import { isTauri, createChannel } from '#/utils/tauriBridge';
 
+import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
+
 import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 import { BASE_URL } from './lifecycleState';
 
-type LlmStreamEvent =
-    | { event: 'token'; data: { text: string } }
-    | { event: 'done'; data: { totalTokens: number } }
-    | { event: 'error'; data: { message: string } };
+type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 
 /** Default watchdog: abort a native invoke that produces no resolution in time. */
 const DEFAULT_NATIVE_TIMEOUT_MS = 120_000;
@@ -24,10 +23,17 @@ const DEFAULT_NATIVE_TIMEOUT_MS = 120_000;
 export async function streamNativeCompletion(
     messages: Array<{ role: string; content: string }>,
     onToken: (text: string) => void,
-    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; timeoutMs?: number }
+    options?: {
+        temperature?: number;
+        maxTokens?: number;
+        signal?: AbortSignal;
+        timeoutMs?: number;
+        onUsage?: (event: ModelProviderUsageEvent) => void;
+        onUnknownEvent?: (providerEventType: string) => void;
+    }
 ): Promise<void> {
     if (isTauri()) {
-        const channel = await createChannel<LlmStreamEvent>();
+        const channel = await createChannel<unknown>();
 
         // Errors thrown inside onmessage (a synchronous callback) do not propagate
         // to the awaiting tauriInvoke call — capture and rethrow after the invoke.
@@ -35,19 +41,44 @@ export async function streamNativeCompletion(
         // checking signal.aborted): without this catch the throw escapes into the
         // Tauri channel dispatcher and is swallowed, so the stream keeps running.
         const streamState = { error: null as Error | null };
-        channel.onmessage = (event: LlmStreamEvent) => {
+        channel.onmessage = (event: unknown) => {
             if (options?.signal?.aborted) {
                 return;
             }
+            if (!isRecord(event) || typeof event.event !== 'string' || !isRecord(event.data)) {
+                options?.onUnknownEvent?.('native:unknown');
+                return;
+            }
             try {
-                if (event.event === 'token') {
+                if (event.event === 'token' && typeof event.data.text === 'string') {
                     onToken(event.data.text);
                 }
             } catch (tokenError) {
                 streamState.error = tokenError instanceof Error ? tokenError : new Error(String(tokenError));
             }
-            if (event.event === 'error') {
+            if (event.event === 'error' && typeof event.data.message === 'string') {
                 streamState.error = new Error(event.data.message);
+            }
+            if (
+                event.event === 'done' &&
+                typeof event.data.totalTokens === 'number' &&
+                Number.isSafeInteger(event.data.totalTokens) &&
+                event.data.totalTokens >= 0
+            ) {
+                options?.onUsage?.({
+                    type: 'usage',
+                    mode: 'final',
+                    usage: {
+                        inputTokens: null,
+                        outputTokens: event.data.totalTokens,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                    },
+                    provenance: 'provider-reported',
+                });
+            }
+            if (event.event !== 'token' && event.event !== 'error' && event.event !== 'done') {
+                options?.onUnknownEvent?.(`native:${event.event}`);
             }
         };
 
@@ -133,10 +164,32 @@ export async function streamNativeCompletion(
                     return;
                 }
                 try {
-                    const chunk = JSON.parse(jsonStr) as { choices: Array<{ delta: { content?: string } }> };
-                    const content = chunk.choices[0]?.delta.content;
+                    const chunk = JSON.parse(jsonStr) as unknown;
+                    if (!isRecord(chunk)) {
+                        continue;
+                    }
+                    if (!Array.isArray(chunk.choices)) {
+                        options?.onUnknownEvent?.(`native:${typeof chunk.type === 'string' ? chunk.type : 'unknown'}`);
+                        continue;
+                    }
+                    const firstChoice: unknown = chunk.choices[0];
+                    const content =
+                        isRecord(firstChoice) &&
+                        isRecord(firstChoice.delta) &&
+                        typeof firstChoice.delta.content === 'string'
+                            ? firstChoice.delta.content
+                            : undefined;
                     if (content) {
                         onToken(content);
+                    }
+                    const usage = readUsage(chunk.usage);
+                    if (usage) {
+                        options?.onUsage?.({
+                            type: 'usage',
+                            mode: 'final',
+                            usage,
+                            provenance: 'provider-reported',
+                        });
                     }
                 } catch {
                     // Skip malformed SSE chunks
@@ -148,4 +201,29 @@ export async function streamNativeCompletion(
         // leave the reader (and socket) dangling.
         await reader.cancel().catch(() => undefined);
     }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readUsage(value: unknown): ModelProviderUsageEvent['usage'] | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const inputTokens = readNonNegativeInteger(value.prompt_tokens);
+    const outputTokens = readNonNegativeInteger(value.completion_tokens);
+    if (inputTokens === null && outputTokens === null) {
+        return null;
+    }
+    return {
+        inputTokens,
+        outputTokens,
+        cachedInputTokens: null,
+        reasoningTokens: null,
+    };
+}
+
+function readNonNegativeInteger(value: unknown): number | null {
+    return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }

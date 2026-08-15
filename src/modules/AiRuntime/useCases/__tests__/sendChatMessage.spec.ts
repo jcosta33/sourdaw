@@ -12,6 +12,7 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ChatMessage, type ChatState } from '../../models/Chat';
 import { type IntentResult } from '../../models/IntentResult';
+import { type ModelProviderEvent, type ModelProviderResult } from '../../models/ModelProviderProtocol';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
@@ -22,6 +23,7 @@ import { type ProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
 type MockBackend = 'native' | 'cloud' | 'webllm' | 'none';
+type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type ExecuteVersionedCommandBatchEnvelope =
     (typeof import('#/modules/Command/useCases'))['executeVersionedCommandBatchEnvelope'];
@@ -63,7 +65,16 @@ const mocks = vi.hoisted(() => {
         describeAction: vi.fn((_action: AppAction) => 'Remove track'),
         generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
         parsePromptToActions:
-            vi.fn<(prompt: string, context: ProjectContext, signal?: AbortSignal) => Promise<IntentResult>>(),
+            vi.fn<
+                (
+                    prompt: string,
+                    context: ProjectContext,
+                    signal?: AbortSignal,
+                    projectRevision?: string,
+                    stemImportScope?: unknown,
+                    onProviderResult?: (result: ModelProviderResult) => void
+                ) => Promise<IntentResult>
+            >(),
         getProjectContext: vi.fn<() => ProjectContext>(),
         notifyAiChange: vi.fn(),
         pushAiActionGroup: vi.fn(),
@@ -78,14 +89,18 @@ const mocks = vi.hoisted(() => {
         webLlmEngine,
         webLlmCreate: vi.fn<(payload: Record<string, unknown>) => Promise<unknown>>(),
         webLlmInterrupt: vi.fn(),
-        streamCloudChatCompletion:
-            vi.fn<
-                (
-                    messages: Array<{ role: string; content: string }>,
-                    onToken: (text: string) => void,
-                    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
-                ) => Promise<{ status: 'complete' } | { status: 'incomplete'; reason: string }>
-            >(),
+        streamCloudChatCompletion: vi.fn<
+            (
+                messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void,
+                options?: {
+                    temperature?: number;
+                    maxTokens?: number;
+                    signal?: AbortSignal;
+                    onUsage?: (event: ModelProviderUsageEvent) => void;
+                }
+            ) => Promise<{ status: 'complete' } | { status: 'incomplete'; reason: string }>
+        >(),
         rejectPendingConfirmation: { value: false },
     };
 });
@@ -582,7 +597,9 @@ describe('sendChatMessage injectables', () => {
             'mute the vocals',
             expect.any(Object),
             expect.any(AbortSignal),
-            'revision-1'
+            'revision-1',
+            undefined,
+            expect.any(Function)
         );
     });
 
@@ -821,6 +838,121 @@ describe('sendChatMessage injectables', () => {
         expect(completionUpdate?.[1].content).toContain('Response incomplete');
     });
 
+    it('records normalized provider-reported usage on the agent run', async () => {
+        mocks.backend.value = 'cloud';
+        mocks.cloudAvailable.value = true;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.streamCloudChatCompletion.mockImplementation(async (_messages, onToken, options) => {
+            onToken('Complete answer');
+            options?.onUsage?.({
+                type: 'usage',
+                mode: 'final',
+                usage: { inputTokens: 11, outputTokens: 4, cachedInputTokens: 3, reasoningTokens: 2 },
+                provenance: 'provider-reported',
+            });
+            return { status: 'complete' };
+        });
+
+        await sendChatMessage('How should I mix this?');
+
+        const [usageProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(usageProjection!.runId)?.providerUsage).toEqual([
+            {
+                provider: 'openai-compatible',
+                model: 'cloud',
+                inputTokens: 11,
+                outputTokens: 4,
+                provenance: 'provider-reported',
+                correlationId: expect.any(String),
+                status: 'complete',
+                retryable: null,
+                partialOutputDisposition: 'none',
+            },
+        ]);
+    });
+
+    it('records each fallback planning attempt with its actual provider and correlation', async () => {
+        mocks.backend.value = 'native';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockImplementation(
+            async (_prompt, _context, _signal, _projectRevision, _stemImportScope, onProviderResult) => {
+                onProviderResult?.({
+                    schemaVersion: 1,
+                    provider: 'native',
+                    model: 'native',
+                    correlationId: 'attempt-native',
+                    status: 'failed',
+                    output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+                    usage: {
+                        inputTokens: null,
+                        outputTokens: null,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                        provenance: 'unavailable',
+                    },
+                    finishReason: 'error',
+                    partialOutputDisposition: 'discard',
+                    failure: {
+                        code: 'provider-attempt-failed',
+                        correlationId: 'attempt-native',
+                        retryable: true,
+                        safeMessage: 'The model provider request failed.',
+                        partialOutputDisposition: 'discard',
+                    },
+                    ignoredProviderEvents: [],
+                });
+                onProviderResult?.({
+                    schemaVersion: 1,
+                    provider: 'webllm',
+                    model: 'webllm-model',
+                    correlationId: 'attempt-webllm',
+                    status: 'complete',
+                    output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+                    usage: {
+                        inputTokens: 8,
+                        outputTokens: 3,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                        provenance: 'provider-reported',
+                    },
+                    finishReason: 'stop',
+                    partialOutputDisposition: 'none',
+                    failure: null,
+                    ignoredProviderEvents: [],
+                });
+                return { actions: [], rawText: '', requiresConfirmation: false };
+            }
+        );
+
+        await sendChatMessage('solo drums');
+
+        const [projection] = getAgentRunControlProjections();
+        expect(getAgentRun(projection!.runId)?.providerUsage).toEqual([
+            expect.objectContaining({
+                provider: 'native',
+                correlationId: 'attempt-native',
+                status: 'failed',
+                retryable: true,
+            }),
+            expect.objectContaining({
+                provider: 'webllm',
+                correlationId: 'attempt-webllm',
+                status: 'complete',
+                retryable: null,
+            }),
+        ]);
+    });
+
     it('interrupts active WebLLM generation when Stop is requested', async () => {
         mocks.backend.value = 'webllm';
         mocks.chatStoreValue.value = {
@@ -918,7 +1050,16 @@ describe('sendChatMessage injectables', () => {
             enableReasoning: true,
             chatMode: 'chat',
         };
-        mocks.streamCloudChatCompletion.mockRejectedValue(new AiRuntimeConfigurationChangedError());
+        mocks.streamCloudChatCompletion.mockImplementation(async (_messages, onToken, options) => {
+            onToken('Partial hosted answer');
+            options?.onUsage?.({
+                type: 'usage',
+                mode: 'cumulative-snapshot',
+                usage: { inputTokens: 9, outputTokens: 2, cachedInputTokens: 1, reasoningTokens: null },
+                provenance: 'provider-reported',
+            });
+            throw new AiRuntimeConfigurationChangedError();
+        });
 
         await sendChatMessage('How should I mix this?');
 
@@ -929,6 +1070,16 @@ describe('sendChatMessage injectables', () => {
                 error: 'Hosted AI configuration changed; this response was cancelled.',
             })
         );
+        const [usageProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(usageProjection!.runId)?.providerUsage).toEqual([
+            expect.objectContaining({
+                provider: 'openai-compatible',
+                status: 'cancelled',
+                inputTokens: 9,
+                outputTokens: 2,
+                partialOutputDisposition: 'preserve',
+            }),
+        ]);
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
         const [projection] = getAgentRunControlProjections();
         if (!projection) {

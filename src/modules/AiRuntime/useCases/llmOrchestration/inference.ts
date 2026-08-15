@@ -4,10 +4,16 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
+import {
+    type ModelProviderName,
+    type ModelProviderResult,
+    type ModelProviderSession,
+} from '../../models/ModelProviderProtocol';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
@@ -25,6 +31,7 @@ import {
     type ToolCallResult,
     type ToolPlanningOutcome,
 } from '../../transformers/toolCallParser';
+import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
 
@@ -32,6 +39,42 @@ function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
     error.name = 'AbortError';
     return error;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+}
+
+function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutcome {
+    if (!isRecord(value)) {
+        return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
+    }
+    if (value.status === 'rejected' && typeof value.reason === 'string') {
+        return { status: 'rejected', reason: value.reason };
+    }
+    if (value.status !== 'complete' || !isUnknownArray(value.toolCalls)) {
+        return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
+    }
+    const toolCalls: ToolCallResult[] = [];
+    for (const call of value.toolCalls) {
+        if (!isRecord(call)) {
+            return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
+        }
+        if (
+            typeof call.name !== 'string' ||
+            typeof call.arguments !== 'object' ||
+            call.arguments === null ||
+            Array.isArray(call.arguments)
+        ) {
+            return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
+        }
+        toolCalls.push({ name: call.name, arguments: Object.fromEntries(Object.entries(call.arguments)) });
+    }
+    return { status: 'complete', toolCalls };
 }
 
 async function waitForInference<TResult>(inference: Promise<TResult>, signal?: AbortSignal): Promise<TResult> {
@@ -85,6 +128,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             return getCloudProviderInfo()?.model ?? 'cloud';
         }
         return WEBLLM_MODEL_ID;
+    }
+
+    function getProviderName(backend: RunnableAiBackend): ModelProviderName {
+        if (backend === 'native' || backend === 'webllm') {
+            return backend;
+        }
+        return getCloudProviderInfo()?.provider ?? 'openai-compatible';
     }
 
     async function generateNativeToolCalls(
@@ -168,10 +218,19 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         userMessage: string,
         toolSchemas?: readonly ToolSchema[],
         signal?: AbortSignal,
-        toolSelectionPrompt: string = userMessage
+        toolSelectionPrompt: string = userMessage,
+        onProviderResult?: (result: ModelProviderResult) => void
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain();
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
+        const reportProviderResult = (result: ModelProviderResult): void => {
+            try {
+                onProviderResult?.(result);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                logger.warn(`[AI Engine] Provider result observer failed: ${message}`);
+            }
+        };
 
         if (signal?.aborted) {
             throw createToolPlanningAbortError();
@@ -190,25 +249,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         let lastError: Error | null = null;
 
         for (const backend of chain) {
+            let providerSession: ModelProviderSession | null = null;
+            let providerSessionSettled = false;
             try {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
                 }
-                let outcome: ToolPlanningOutcome;
-
-                if (backend === 'cloud') {
-                    let cloudInference: Promise<ToolCallResult[]>;
-                    if (signal === undefined) {
-                        cloudInference = generateCloudToolCalls(systemPrompt, userMessage, availableTools);
-                    } else {
-                        cloudInference = generateCloudToolCalls(systemPrompt, userMessage, availableTools, signal);
-                    }
-                    const toolCalls = await waitForInference(cloudInference, signal);
-                    outcome = { status: 'complete', toolCalls };
-                } else if (backend === 'webllm') {
-                    if (!isWebLlmLoaded()) {
-                        await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
-                    }
+                let providerTools = availableTools;
+                if (backend === 'webllm') {
                     const workflowSelectionTools = availableTools.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
@@ -230,42 +278,183 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const promptActionTools = selectedActionTools.filter(
                         (tool) => !mandatoryToolNames.has(tool.function.name)
                     );
-                    const relevantTools = [
-                        ...workflowSelectionTools,
-                        ...workflowActionTools,
-                        ...promptActionTools,
-                    ].slice(0, 30);
+                    providerTools = [...workflowSelectionTools, ...workflowActionTools, ...promptActionTools].slice(
+                        0,
+                        30
+                    );
                     logger.info(
-                        `[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(availableTools.length)} tools`
+                        `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
                     );
-                    outcome = await waitForInference(
-                        generateWebLlmToolCalls(systemPrompt, userMessage, relevantTools, signal),
-                        signal
+                }
+                const providerName = getProviderName(backend);
+                const providerProtocol = createModelProviderProtocol({
+                    provider: providerName,
+                    model: getBackendModelId(backend),
+                });
+                const compiledRequest = providerProtocol.compileRequest({
+                    correlationId: `tool-planning-${crypto.randomUUID()}`,
+                    operation: 'tools',
+                    modality: 'text',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userMessage },
+                    ],
+                    tools: providerTools.map((tool) => ({
+                        name: tool.function.name,
+                        description: tool.function.description ?? '',
+                        parameters: tool.function.parameters,
+                    })),
+                    stream: false,
+                    limits: { maxOutputTokens: 2_048 },
+                    controls: { cache: 'provider-default', reasoning: 'provider-default' },
+                    budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
+                    dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+                });
+                if (compiledRequest.status !== 'ready') {
+                    return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
+                }
+                const providerRequest = compiledRequest.request;
+                providerSession = providerProtocol.start(providerRequest);
+                const providerSystemPrompt = providerRequest.messages.find(
+                    (message) => message.role === 'system'
+                )?.content;
+                const providerUserMessage = providerRequest.messages.find(
+                    (message) => message.role === 'user'
+                )?.content;
+                if (providerSystemPrompt === undefined || providerUserMessage === undefined) {
+                    providerSession.finish({
+                        reason: 'error',
+                        failure: {
+                            code: 'invalid-provider-request',
+                            retryable: false,
+                            safeMessage: 'The model provider request is missing required messages.',
+                        },
+                    });
+                    providerSessionSettled = true;
+                    return { status: 'rejected', reason: 'The model provider request is missing required messages.' };
+                }
+                let outcome: ToolPlanningOutcome;
+
+                if (backend === 'cloud') {
+                    let cloudInference: Promise<ToolCallResult[]>;
+                    if (signal === undefined) {
+                        cloudInference = generateCloudToolCalls(
+                            providerSystemPrompt,
+                            providerUserMessage,
+                            providerTools
+                        );
+                    } else {
+                        cloudInference = generateCloudToolCalls(
+                            providerSystemPrompt,
+                            providerUserMessage,
+                            providerTools,
+                            signal
+                        );
+                    }
+                    const toolCalls = await waitForInference(cloudInference, signal);
+                    outcome = { status: 'complete', toolCalls };
+                } else if (backend === 'webllm') {
+                    if (!isWebLlmLoaded()) {
+                        await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
+                    }
+                    const generatedInference = Promise.resolve<unknown>(
+                        Reflect.apply(generateWebLlmToolCalls, undefined, [
+                            providerSystemPrompt,
+                            providerUserMessage,
+                            providerTools,
+                            signal,
+                        ])
                     );
+                    const generatedOutcome = await waitForInference(generatedInference, signal);
+                    outcome = normalizeGeneratedToolPlanningOutcome(generatedOutcome);
                 } else {
                     if (!isNativeEngineReady()) {
                         throw createAiRuntimeError('Native AI engine not running');
                     }
-                    outcome = await generateNativeToolCalls(systemPrompt, userMessage, availableTools, signal);
+                    outcome = await generateNativeToolCalls(
+                        providerSystemPrompt,
+                        providerUserMessage,
+                        providerTools,
+                        signal
+                    );
                 }
 
                 if (outcome.status === 'complete') {
+                    for (const [index, call] of outcome.toolCalls.entries()) {
+                        providerSession.push({
+                            type: 'tool-call',
+                            call: {
+                                id: `${providerRequest.correlationId}:${String(index)}`,
+                                name: call.name,
+                                arguments: call.arguments,
+                            },
+                        });
+                    }
+                    const normalizedResult = providerSession.finish({ reason: 'stop' });
+                    providerSessionSettled = true;
+                    reportProviderResult(normalizedResult);
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
+                    outcome = {
+                        status: 'complete',
+                        toolCalls: normalizedResult.output.toolCalls.map((call) => ({
+                            name: call.name,
+                            arguments: call.arguments,
+                        })),
+                    };
                 } else {
+                    const rejectedResult = providerSession.finish({
+                        reason: 'error',
+                        failure: {
+                            code: 'tool-planning-rejected',
+                            retryable: false,
+                            safeMessage: outcome.reason,
+                        },
+                    });
+                    providerSessionSettled = true;
+                    reportProviderResult(rejectedResult);
                     logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
                 }
 
                 llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                 return outcome;
             } catch (error) {
+                const isTerminalModelRejection = isToolPlanningRejectedError(error);
+                const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                let normalizedAttemptError: Error | null = null;
+                if (providerSession !== null && !providerSessionSettled) {
+                    let failedResult: ModelProviderResult;
+                    if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
+                        failedResult = providerSession.finish({ reason: 'cancelled' });
+                    } else if (isTerminalModelRejection) {
+                        failedResult = providerSession.finish({
+                            reason: 'error',
+                            failure: {
+                                code: 'tool-planning-rejected',
+                                retryable: false,
+                                safeMessage: 'The model provider rejected tool planning.',
+                            },
+                        });
+                    } else {
+                        failedResult = providerSession.finish({
+                            reason: 'error',
+                            failure: {
+                                code: 'provider-attempt-failed',
+                                retryable: true,
+                                safeMessage: 'The model provider request failed.',
+                            },
+                        });
+                    }
+                    reportProviderResult(failedResult);
+                    if (failedResult.failure !== null) {
+                        normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
+                    }
+                }
                 if (isAiRuntimeConfigurationChangedError(error)) {
                     llmStatusStore.set({ state: 'idle' });
                     throw error;
                 }
-                const isTerminalModelRejection = isToolPlanningRejectedError(error);
-                const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
                 if (!isTerminalModelRejection && !isExplicitAbort) {
                     failedBackends.add(backend);
                 }
@@ -288,7 +477,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                     return { status: 'rejected', reason: error.message };
                 }
-                lastError = error instanceof Error ? error : new Error(String(error));
+                lastError = normalizedAttemptError ?? (error instanceof Error ? error : new Error(String(error)));
                 logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
             }
         }

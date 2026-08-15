@@ -1,6 +1,7 @@
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
@@ -13,6 +14,7 @@ import { parsePromptToActions } from './parsePromptToActions';
 type PlanPromptActionsInput = {
     prompt: string;
     signal?: AbortSignal;
+    onProviderResult?: (result: ModelProviderResult) => void;
 };
 
 export async function planPromptActions(input: PlanPromptActionsInput) {
@@ -21,7 +23,14 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
     let stemImportScope: StemImportPromptScope | undefined;
     let result;
     try {
-        result = await parsePromptToActions(input.prompt, context, input.signal, projectRevision);
+        result = await parsePromptToActions(
+            input.prompt,
+            context,
+            input.signal,
+            projectRevision,
+            undefined,
+            input.onProviderResult
+        );
         if (result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal);
             if (preparedStemImport.status === 'cancelled') {
@@ -32,7 +41,14 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 };
             }
             stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
-            result = await parsePromptToActions(input.prompt, context, input.signal, projectRevision, stemImportScope);
+            result = await parsePromptToActions(
+                input.prompt,
+                context,
+                input.signal,
+                projectRevision,
+                stemImportScope,
+                input.onProviderResult
+            );
         }
     } catch (error) {
         if (stemImportScope) {

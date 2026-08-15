@@ -6,6 +6,7 @@ import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeCon
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { NativeToolCallingProtocolError } from '../../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import {
     createWorkflowCapabilityToolSchema,
@@ -47,6 +48,7 @@ const { mockLogger, mocks } = vi.hoisted(() => {
             llmStatusSet: vi.fn(),
             llmStatusValue,
             backendPreference,
+            providerFinishCalls: [] as unknown[],
         },
     };
 });
@@ -108,6 +110,28 @@ vi.mock('../../../transformers/toolCallParser', () => ({
     parseToolPlanningOutcome: mocks.parseToolPlanningOutcome,
 }));
 
+vi.mock('../../modelProviderProtocol', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../modelProviderProtocol')>();
+    return {
+        createModelProviderProtocol: (...args: Parameters<typeof original.createModelProviderProtocol>) => {
+            const protocol = original.createModelProviderProtocol(...args);
+            return {
+                ...protocol,
+                start: (request: Parameters<typeof protocol.start>[0]) => {
+                    const session = protocol.start(request);
+                    return {
+                        ...session,
+                        finish: (finish: Parameters<typeof session.finish>[0]) => {
+                            mocks.providerFinishCalls.push(finish);
+                            return session.finish(finish);
+                        },
+                    };
+                },
+            };
+        },
+    };
+});
+
 function completePlan<TToolCall>(toolCalls: TToolCall[]) {
     return { status: 'complete' as const, toolCalls };
 }
@@ -123,10 +147,34 @@ describe('generateToolPlanningOutcome', () => {
         mocks.getCloudProviderInfo.mockReturnValue(null);
         mocks.llmStatusValue.value = { state: 'ready', backend: 'webllm', modelId: 'test-model' };
         mocks.backendPreference.value = 'auto';
+        mocks.providerFinishCalls.length = 0;
     });
 
     it('should throw when no backend chain is available', async () => {
         await expect(generateToolCalls('sys', 'hello')).rejects.toThrow(/No AI backend available/);
+    });
+
+    it('terminates a thrown provider attempt through a typed neutral failure', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
+        mocks.generateCloudToolCalls.mockRejectedValue(new Error('private provider diagnostic'));
+
+        await expect(generateToolCalls('sys', 'mute drums')).rejects.toMatchObject({
+            _tag: 'ModelProviderFailure',
+            message: 'The model provider request failed.',
+            code: 'provider-attempt-failed',
+            correlationId: expect.stringMatching(/^tool-planning-/),
+            retryable: true,
+            partialOutputDisposition: 'discard',
+        });
+        expect(mocks.providerFinishCalls).toContainEqual({
+            reason: 'error',
+            failure: {
+                code: 'provider-attempt-failed',
+                retryable: true,
+                safeMessage: 'The model provider request failed.',
+            },
+        });
     });
 
     it('should use repository-owned native structured tool calls before text fallback', async () => {
@@ -148,6 +196,24 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
         expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]));
+    });
+
+    it('does not retry a successful provider when result persistence throws', async () => {
+        mocks.backendChain.value = ['native', 'webllm'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateNativeToolCalls.mockResolvedValue([
+            { name: 'mute_track', arguments: { track_id: 'track-1', muted: true } },
+        ]);
+
+        await expect(
+            generateToolCalls('sys', 'mute drums', undefined, undefined, undefined, () => {
+                throw new Error('provider usage persistence failed');
+            })
+        ).resolves.toEqual(completePlan([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]));
+        expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            '[AI Engine] Provider result observer failed: provider usage persistence failed'
+        );
     });
 
     it('preserves a terminal native structured no-op without retrying through text', async () => {
@@ -190,15 +256,44 @@ describe('generateToolPlanningOutcome', () => {
         mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
         mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
 
-        await expect(generateToolCalls('sys', 'solo drums')).resolves.toEqual(
-            completePlan([{ name: 'soloTrack', arguments: {} }])
-        );
+        const providerResults: ModelProviderResult[] = [];
+
+        await expect(
+            generateToolCalls('sys', 'solo drums', undefined, undefined, undefined, (result) => {
+                providerResults.push(result);
+            })
+        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: {} }]));
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
         expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'native', modelId: 'native' });
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(
             expect.objectContaining({ state: 'ready', backend: 'webllm' })
+        );
+        expect(providerResults).toHaveLength(2);
+        expect(providerResults.map((result) => result.provider)).toEqual(['native', 'webllm']);
+        expect(providerResults.map((result) => result.status)).toEqual(['failed', 'complete']);
+        expect(providerResults[0]?.correlationId).not.toBe(providerResults[1]?.correlationId);
+        expect(providerResults[0]?.failure).toMatchObject({ retryable: true });
+    });
+
+    it('continues provider fallback when failed-attempt persistence throws', async () => {
+        mocks.backendChain.value = ['native', 'webllm'];
+        mocks.nativeEngineReady.value = true;
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateNativeToolCalls.mockRejectedValue(
+            new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
+        );
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
+
+        await expect(
+            generateToolCalls('sys', 'solo drums', undefined, undefined, undefined, () => {
+                throw new Error('provider usage persistence failed');
+            })
+        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: {} }]));
+        expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            '[AI Engine] Provider result observer failed: provider usage persistence failed'
         );
     });
 
@@ -210,7 +305,11 @@ describe('generateToolPlanningOutcome', () => {
         );
 
         await expect(generateCompatibleToolCalls('sys', 'mute drums')).rejects.toMatchObject({
-            name: 'NativeToolCallingProtocolError',
+            _tag: 'ModelProviderFailure',
+            message: 'The model provider request failed.',
+            code: 'provider-attempt-failed',
+            retryable: true,
+            partialOutputDisposition: 'discard',
         });
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
@@ -252,10 +351,17 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockRejectedValue(protocolError);
 
-        await expect(generateToolCalls('sys', 'mute drums')).rejects.toBe(protocolError);
+        await expect(generateToolCalls('sys', 'mute drums')).rejects.toMatchObject({
+            _tag: 'ModelProviderFailure',
+            message: 'The model provider request failed.',
+            code: 'provider-attempt-failed',
+            retryable: true,
+            partialOutputDisposition: 'discard',
+            cause: protocolError,
+        });
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
             state: 'error',
-            message: 'Hosted AI returned an invalid response choice count',
+            message: 'The model provider request failed.',
         });
         expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'cloud', modelId: 'cloud' });
     });

@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 
-import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
+import { streamHostedModelText } from './streamHostedModelText';
 
 /**
  * LLM-backed mix health report. Lives in AiRuntime because the primary
@@ -66,15 +66,17 @@ Format your response in Markdown with TWO main sections:
 
 Keep your response concise. Do not mention the raw numbers heavily unless necessary; focus on musical and mixing advice.`;
 
-    const outcome = await streamCloudChatCompletion(
-        [
+    const outcome = await streamHostedModelText({
+        correlationId: `mix-health-${crypto.randomUUID()}`,
+        messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: reportPayload },
         ],
+        maxOutputTokens: 1_000,
         onToken,
-        { maxTokens: 1000, signal }
-    );
-    if (outcome.status === 'incomplete') {
-        throw new Error(`Hosted AI mix analysis was incomplete (${outcome.reason}).`);
+        signal,
+    });
+    if (outcome.status !== 'complete') {
+        throw new Error(outcome.failure?.safeMessage ?? 'Hosted AI mix analysis did not complete.');
     }
 }

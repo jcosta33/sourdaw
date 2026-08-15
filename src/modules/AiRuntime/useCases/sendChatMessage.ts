@@ -15,6 +15,12 @@ import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import {
+    type ModelProviderFinish,
+    type ModelProviderName,
+    type ModelProviderResult,
+    type ModelProviderSession,
+} from '../models/ModelProviderProtocol';
+import {
     type CloudChatCompletionOutcome,
     streamCloudChatCompletion,
 } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
@@ -46,6 +52,7 @@ import { describePendingActionConfirmation } from './describePendingActionConfir
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
+import { createModelProviderProtocol } from './modelProviderProtocol';
 import { planPromptActions } from './planPromptActions';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
@@ -57,6 +64,17 @@ function getBackendModelId(backend: RunnableAiBackend): string {
         return getCloudProviderInfo()?.model ?? 'cloud';
     }
     return getActiveModelId();
+}
+
+function getModelProviderName(backend: RunnableAiBackend): ModelProviderName {
+    if (backend === 'native' || backend === 'webllm') {
+        return backend;
+    }
+    return getCloudProviderInfo()?.provider ?? 'openai-compatible';
+}
+
+function readProviderTokenCount(value: unknown): number | null {
+    return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }
 
 type SendChatMessageOptions = {
@@ -143,6 +161,23 @@ function recordUnavailableProviderUsage(runId: string, backend: RunnableAiBacken
     });
 }
 
+function recordModelProviderUsage(runId: string, result: ModelProviderResult): void {
+    agentRunLifecycle.recordProviderUsage({
+        runId,
+        usage: {
+            provider: result.provider,
+            model: result.model,
+            inputTokens: result.usage.inputTokens,
+            outputTokens: result.usage.outputTokens,
+            provenance: result.usage.provenance,
+            correlationId: result.correlationId,
+            status: result.status,
+            retryable: result.failure?.retryable ?? null,
+            partialOutputDisposition: result.partialOutputDisposition,
+        },
+    });
+}
+
 export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
@@ -200,6 +235,7 @@ export async function sendChatMessage(
     if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
+        let promptProviderResultRecorded = false;
         setActiveAborter(aborter);
         const releaseProviderCancellation = agentRunCancellation.bindAbortController({
             runId,
@@ -212,6 +248,10 @@ export async function sendChatMessage(
             const { context, result, projectRevision } = await planPromptActions({
                 prompt: userText,
                 signal: aborter.signal,
+                onProviderResult: (providerResult) => {
+                    recordModelProviderUsage(runId, providerResult);
+                    promptProviderResultRecorded = true;
+                },
             });
             agentRunWorkLease.settle({
                 runId,
@@ -286,7 +326,9 @@ export async function sendChatMessage(
                         },
                         budgets: { limits: {}, consumed: {} },
                     });
-                    recordUnavailableProviderUsage(runId, backend);
+                    if (!promptProviderResultRecorded) {
+                        recordUnavailableProviderUsage(runId, backend);
+                    }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     createStemImportConfirmationResourceLease(result.actions)?.release();
                     updateChatMessage(assistantMsgId, {
@@ -356,7 +398,9 @@ export async function sendChatMessage(
                         receiptIdentity: null,
                     },
                 });
-                recordUnavailableProviderUsage(runId, backend);
+                if (!promptProviderResultRecorded) {
+                    recordUnavailableProviderUsage(runId, backend);
+                }
 
                 if (interactionMode === 'preview') {
                     const previewWorkId = `preview:${parsedCommandBatch.envelope.batchId}`;
@@ -754,7 +798,9 @@ export async function sendChatMessage(
                     });
                 }
             } else if (result.rejectionReason) {
-                recordUnavailableProviderUsage(runId, backend);
+                if (!promptProviderResultRecorded) {
+                    recordUnavailableProviderUsage(runId, backend);
+                }
                 agentRunLifecycle.recordError({
                     runId,
                     error: {
@@ -780,7 +826,9 @@ export async function sendChatMessage(
                     error: result.rejectionReason,
                 });
             } else {
-                recordUnavailableProviderUsage(runId, backend);
+                if (!promptProviderResultRecorded) {
+                    recordUnavailableProviderUsage(runId, backend);
+                }
                 agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
@@ -891,6 +939,9 @@ export async function sendChatMessage(
     const thinkParser = createThinkBlockParser();
     let cloudOutcome: CloudChatCompletionOutcome | null = null;
     let webLlmIncompleteReason: string | null = null;
+    let providerSession: ModelProviderSession | null = null;
+    let providerResult: ModelProviderResult | null = null;
+    let providerUsageRecorded = false;
 
     try {
         const workspaceContext = getProjectContext();
@@ -911,15 +962,36 @@ export async function sendChatMessage(
             role: 'system' | 'user' | 'assistant';
             content: string;
         }> = [{ role: 'system', content: systemPrompt }, ...conversationHistory];
+        const providerProtocol = createModelProviderProtocol({
+            provider: getModelProviderName(backend),
+            model: getBackendModelId(backend),
+        });
+        const compiledProviderRequest = providerProtocol.compileRequest({
+            correlationId: providerReceiptIdentity,
+            operation: 'text',
+            modality: 'text',
+            messages: completionMessages,
+            stream: true,
+            limits: { maxOutputTokens: 2_048 },
+            controls: { cache: 'provider-default', reasoning: 'provider-default' },
+            budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
+            dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+        });
+        if (compiledProviderRequest.status !== 'ready') {
+            throw createAiRuntimeError(compiledProviderRequest.failure.safeMessage);
+        }
+        const providerRequest = compiledProviderRequest.request;
+        providerSession = providerProtocol.start(providerRequest);
 
         if (backend === 'native') {
             // Native: streaming completion via Tauri Channel API
             await streamNativeCompletion(
-                completionMessages,
+                providerRequest.messages,
                 (token) => {
                     if (aborter.signal.aborted) {
                         throw createAiRuntimeError('AbortedByUser');
                     }
+                    providerSession?.push({ type: 'text', mode: 'delta', text: token });
                     const parsed = thinkParser.push(token);
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
@@ -928,20 +1000,35 @@ export async function sendChatMessage(
                 // instead of draining the whole response, and in native mode the
                 // watchdog race is unblocked. Without this, only the per-token
                 // throw above could stop it — and only while tokens keep arriving.
-                { temperature: 0.7, maxTokens: 2048, signal: aborter.signal }
+                {
+                    temperature: 0.7,
+                    maxTokens: providerRequest.limits.maxOutputTokens,
+                    signal: aborter.signal,
+                    onUsage: (event) => providerSession?.push(event),
+                    onUnknownEvent: (providerEventType) =>
+                        providerSession?.push({ type: 'unknown', providerEventType }),
+                }
             );
         } else if (backend === 'cloud') {
             // Cloud: streaming completion via Claude API
             cloudOutcome = await streamCloudChatCompletion(
-                completionMessages,
+                providerRequest.messages,
                 (token) => {
                     if (aborter.signal.aborted) {
                         throw createAiRuntimeError('AbortedByUser');
                     }
+                    providerSession?.push({ type: 'text', mode: 'delta', text: token });
                     const parsed = thinkParser.push(token);
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
-                { temperature: 0.7, maxTokens: 2048, signal: aborter.signal }
+                {
+                    temperature: 0.7,
+                    maxTokens: providerRequest.limits.maxOutputTokens,
+                    signal: aborter.signal,
+                    onUsage: (event) => providerSession?.push(event),
+                    onUnknownEvent: (providerEventType) =>
+                        providerSession?.push({ type: 'unknown', providerEventType }),
+                }
             );
         } else {
             // WebLLM: streaming completion via the in-browser engine.
@@ -960,12 +1047,19 @@ export async function sendChatMessage(
 
             try {
                 const asyncChunkGenerator = (await engine.chat.completions.create({
-                    messages: completionMessages,
+                    messages: providerRequest.messages,
                     temperature: 0.7,
-                    max_tokens: 2048,
+                    max_tokens: providerRequest.limits.maxOutputTokens,
                     stream: true,
                 })) as AsyncIterable<{
-                    choices: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
+                    choices?: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
+                    type?: string;
+                    usage?: {
+                        prompt_tokens?: number;
+                        completion_tokens?: number;
+                        prompt_tokens_details?: { cached_tokens?: number };
+                        completion_tokens_details?: { reasoning_tokens?: number };
+                    };
                 }>;
                 let sawTerminalReason = false;
 
@@ -973,9 +1067,23 @@ export async function sendChatMessage(
                     if (aborter.signal.aborted) {
                         break;
                     }
+                    if (!Array.isArray(chunk.choices)) {
+                        providerSession.push({
+                            type: 'unknown',
+                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                        });
+                        continue;
+                    }
+                    if (chunk.choices.length === 0 && !chunk.usage) {
+                        providerSession.push({
+                            type: 'unknown',
+                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                        });
+                    }
                     const choice = chunk.choices[0];
                     const deltaDesc = choice?.delta.content;
                     if (deltaDesc !== undefined) {
+                        providerSession.push({ type: 'text', mode: 'delta', text: deltaDesc });
                         const parsed = thinkParser.push(deltaDesc);
                         updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                     }
@@ -984,6 +1092,23 @@ export async function sendChatMessage(
                         if (choice.finish_reason !== 'stop') {
                             webLlmIncompleteReason = choice.finish_reason;
                         }
+                    }
+                    if (chunk.usage) {
+                        providerSession.push({
+                            type: 'usage',
+                            mode: 'final',
+                            usage: {
+                                inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
+                                outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
+                                cachedInputTokens: readProviderTokenCount(
+                                    chunk.usage.prompt_tokens_details?.cached_tokens
+                                ),
+                                reasoningTokens: readProviderTokenCount(
+                                    chunk.usage.completion_tokens_details?.reasoning_tokens
+                                ),
+                            },
+                            provenance: 'provider-reported',
+                        });
                     }
                 }
                 if (!aborter.signal.aborted && !sawTerminalReason) {
@@ -997,6 +1122,34 @@ export async function sendChatMessage(
         if (aborter.signal.aborted) {
             throw aborter.signal.reason;
         }
+
+        let providerFinish: ModelProviderFinish = { reason: 'stop' };
+        if (cloudOutcome?.status === 'incomplete') {
+            providerFinish =
+                cloudOutcome.reason === 'length' || cloudOutcome.reason === 'token limit'
+                    ? { reason: 'length' }
+                    : {
+                          reason: 'error',
+                          failure: {
+                              code: 'incomplete-output',
+                              retryable: true,
+                              safeMessage: 'The hosted provider returned an incomplete response.',
+                          },
+                      };
+        } else if (webLlmIncompleteReason !== null) {
+            providerFinish =
+                webLlmIncompleteReason === 'length'
+                    ? { reason: 'length' }
+                    : {
+                          reason: 'error',
+                          failure: {
+                              code: 'incomplete-output',
+                              retryable: true,
+                              safeMessage: 'WebLLM returned an incomplete response.',
+                          },
+                      };
+        }
+        providerResult = providerSession.finish(providerFinish);
 
         // Strip <think>…</think> reasoning block before storing the final message.
         const { reasoning, content: cleanContent } = thinkParser.snapshot();
@@ -1024,7 +1177,8 @@ export async function sendChatMessage(
             receiptIdentity: providerLease.receiptIdentity,
             terminalState: 'completed',
         });
-        recordUnavailableProviderUsage(runId, backend);
+        recordModelProviderUsage(runId, providerResult);
+        providerUsageRecorded = true;
         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
     } catch (error) {
@@ -1037,7 +1191,32 @@ export async function sendChatMessage(
             }
             return 'An unknown error occurred during generation.';
         })();
-        if (isAiRuntimeConfigurationChangedError(error)) {
+        const configurationChanged = isAiRuntimeConfigurationChangedError(error);
+        const wasAborted =
+            configurationChanged ||
+            aborter.signal.aborted ||
+            (error instanceof Error && error.name === 'AbortError') ||
+            errorMessage === 'AbortedByUser' ||
+            errorMessage.includes('AbortError');
+        if (providerSession && !providerResult) {
+            providerResult = providerSession.finish(
+                wasAborted
+                    ? { reason: 'cancelled' }
+                    : {
+                          reason: 'error',
+                          failure: {
+                              code: 'provider-stream-failed',
+                              retryable: true,
+                              safeMessage: 'The model provider request failed.',
+                          },
+                      }
+            );
+        }
+        if (providerResult && !providerUsageRecorded) {
+            recordModelProviderUsage(runId, providerResult);
+            providerUsageRecorded = true;
+        }
+        if (configurationChanged) {
             await agentRunCancellation.cancel({ runId, reason: errorMessage });
             trySettleAgentRunWorkLease(providerLease, 'cancelled');
             const parsed = thinkParser.snapshot();
@@ -1050,12 +1229,6 @@ export async function sendChatMessage(
             llmStatusStore.set({ state: 'idle' });
             return undefined;
         }
-
-        const wasAborted =
-            aborter.signal.aborted ||
-            (error instanceof Error && error.name === 'AbortError') ||
-            errorMessage === 'AbortedByUser' ||
-            errorMessage.includes('AbortError');
         if (!wasAborted) {
             agentRunWorkLease.settle({
                 runId,

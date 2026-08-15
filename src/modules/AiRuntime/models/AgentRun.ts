@@ -76,6 +76,10 @@ export type AgentRunProviderUsage = {
     inputTokens: number | null;
     outputTokens: number | null;
     provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
+    correlationId?: string;
+    status?: 'complete' | 'partial' | 'failed' | 'cancelled' | 'unavailable';
+    retryable?: boolean | null;
+    partialOutputDisposition?: 'none' | 'preserve' | 'discard';
 };
 
 export type AgentRunError = {

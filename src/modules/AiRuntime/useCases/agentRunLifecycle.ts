@@ -229,10 +229,18 @@ function recordAgentRunProviderUsage(input: {
     usage: AgentRunProviderUsage;
     recordedAt?: number;
 }): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
-        ...run,
-        providerUsage: [...run.providerUsage, structuredClone(input.usage)],
-    }));
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
+        if (
+            input.usage.correlationId !== undefined &&
+            run.providerUsage.some((usage) => usage.correlationId === input.usage.correlationId)
+        ) {
+            return run;
+        }
+        return {
+            ...run,
+            providerUsage: [...run.providerUsage, structuredClone(input.usage)],
+        };
+    });
 }
 
 function recordAgentRunArtifact(input: {
