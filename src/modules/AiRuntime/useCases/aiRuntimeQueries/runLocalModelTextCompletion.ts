@@ -1,3 +1,4 @@
+import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
@@ -32,7 +33,7 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
         dataPolicy: 'local-only',
     });
     if (compiled.status === 'unavailable') {
-        throw new Error(compiled.failure.safeMessage);
+        throw createModelProviderFailureError(compiled.failure);
     }
 
     const session = protocol.start(compiled.request);
@@ -50,7 +51,10 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
         const result = session.finish({ reason: 'stop' });
         settled = true;
         if (result.status !== 'complete') {
-            throw new Error(result.failure?.safeMessage ?? 'The model provider request did not complete.');
+            if (result.failure !== null) {
+                throw createModelProviderFailureError(result.failure);
+            }
+            throw new Error('The model provider request did not complete.');
         }
         return result.output.text;
     } catch (error) {
@@ -58,7 +62,7 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
             if (input.signal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
                 session.finish({ reason: 'cancelled' });
             } else {
-                session.finish({
+                const result = session.finish({
                     reason: 'error',
                     failure: {
                         code: 'local-provider-failed',
@@ -66,6 +70,9 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
                         safeMessage: 'The local model provider request failed.',
                     },
                 });
+                if (result.failure !== null) {
+                    throw createModelProviderFailureError(result.failure, error);
+                }
             }
         }
         throw error;

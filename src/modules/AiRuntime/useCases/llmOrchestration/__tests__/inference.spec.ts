@@ -159,7 +159,14 @@ describe('generateToolPlanningOutcome', () => {
         mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
         mocks.generateCloudToolCalls.mockRejectedValue(new Error('private provider diagnostic'));
 
-        await expect(generateToolCalls('sys', 'mute drums')).rejects.toThrow('private provider diagnostic');
+        await expect(generateToolCalls('sys', 'mute drums')).rejects.toMatchObject({
+            _tag: 'ModelProviderFailure',
+            message: 'The model provider request failed.',
+            code: 'provider-attempt-failed',
+            correlationId: expect.stringMatching(/^tool-planning-/),
+            retryable: true,
+            partialOutputDisposition: 'discard',
+        });
         expect(mocks.providerFinishCalls).toContainEqual({
             reason: 'error',
             failure: {
@@ -298,7 +305,11 @@ describe('generateToolPlanningOutcome', () => {
         );
 
         await expect(generateCompatibleToolCalls('sys', 'mute drums')).rejects.toMatchObject({
-            name: 'NativeToolCallingProtocolError',
+            _tag: 'ModelProviderFailure',
+            message: 'The model provider request failed.',
+            code: 'provider-attempt-failed',
+            retryable: true,
+            partialOutputDisposition: 'discard',
         });
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
@@ -340,10 +351,17 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockRejectedValue(protocolError);
 
-        await expect(generateToolCalls('sys', 'mute drums')).rejects.toBe(protocolError);
+        await expect(generateToolCalls('sys', 'mute drums')).rejects.toMatchObject({
+            _tag: 'ModelProviderFailure',
+            message: 'The model provider request failed.',
+            code: 'provider-attempt-failed',
+            retryable: true,
+            partialOutputDisposition: 'discard',
+            cause: protocolError,
+        });
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
             state: 'error',
-            message: 'Hosted AI returned an invalid response choice count',
+            message: 'The model provider request failed.',
         });
         expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'cloud', modelId: 'cloud' });
     });

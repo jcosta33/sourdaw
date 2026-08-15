@@ -4,6 +4,7 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
@@ -421,6 +422,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             } catch (error) {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                let normalizedAttemptError: Error | null = null;
                 if (providerSession !== null && !providerSessionSettled) {
                     let failedResult: ModelProviderResult;
                     if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
@@ -445,6 +447,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         });
                     }
                     reportProviderResult(failedResult);
+                    if (failedResult.failure !== null) {
+                        normalizedAttemptError = createModelProviderFailureError(failedResult.failure, error);
+                    }
                 }
                 if (isAiRuntimeConfigurationChangedError(error)) {
                     llmStatusStore.set({ state: 'idle' });
@@ -472,7 +477,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                     return { status: 'rejected', reason: error.message };
                 }
-                lastError = error instanceof Error ? error : new Error(String(error));
+                lastError = normalizedAttemptError ?? (error instanceof Error ? error : new Error(String(error)));
                 logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
             }
         }

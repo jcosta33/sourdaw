@@ -75,6 +75,31 @@ describe('model text query protocol boundary', () => {
         expect(mocks.finish).toHaveBeenCalledTimes(2);
     });
 
+    it('throws the normalized local provider failure instead of the adapter error', async () => {
+        mocks.generateNativeCompletion.mockRejectedValue(new Error('private native diagnostic'));
+        mocks.finish.mockReturnValue({
+            status: 'failed',
+            output: { text: '' },
+            partialOutputDisposition: 'discard',
+            failure: {
+                code: 'local-provider-failed',
+                correlationId: 'model-text-correlation',
+                retryable: true,
+                safeMessage: 'The local model provider request failed.',
+                partialOutputDisposition: 'discard',
+            },
+        });
+
+        await expect(generateNativeCompletion('system', 'user')).rejects.toMatchObject({
+            _tag: 'ModelProviderFailure',
+            message: 'The local model provider request failed.',
+            code: 'local-provider-failed',
+            correlationId: 'model-text-correlation',
+            retryable: true,
+            partialOutputDisposition: 'discard',
+        });
+    });
+
     it('routes the legacy hosted query through the neutral hosted use case', async () => {
         await expect(
             streamCloudChatCompletion([{ role: 'user', content: 'hello' }], vi.fn(), { maxTokens: 100 })
