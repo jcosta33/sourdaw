@@ -1,8 +1,42 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
+import { streamOpenAiCompatibleChatCompletion } from '../cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion';
+import { type OpenAiCompatibleCloudRuntime } from '../cloudLlm/cloudSession';
 import { normalizeProviderCapabilityProbe } from '../normalizeProviderCapabilityProbe';
 import { compileProviderAdapterInstallation, type ProviderAdapterInstallationInput } from '../providerAdapterRegistry';
 import { runProviderGatewayRequest, type ProviderGatewayDependencies } from '../providerGateway';
+
+type TestGatewayChannel = {
+    id: number;
+    onmessage: (event: unknown) => void;
+    toJSON: () => string;
+};
+
+const tauriHarness = vi.hoisted(() => {
+    const channels: TestGatewayChannel[] = [];
+    let nextChannelId = 100;
+    return {
+        channels,
+        createChannel: vi.fn(async () => {
+            const id = nextChannelId;
+            nextChannelId += 1;
+            const channel: TestGatewayChannel = {
+                id,
+                onmessage: (_event: unknown) => undefined,
+                toJSON: () => `__CHANNEL__:${String(id)}`,
+            };
+            channels.push(channel);
+            return channel;
+        }),
+        invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
+    };
+});
+
+vi.mock('#/utils/tauriBridge', () => ({
+    createChannel: tauriHarness.createChannel,
+    tauriInvoke: tauriHarness.invoke,
+}));
 
 const BASE_INSTALLATION: ProviderAdapterInstallationInput = {
     adapterId: 'builtin.openai-compatible.chat-completions.v1',
@@ -12,7 +46,53 @@ const BASE_INSTALLATION: ProviderAdapterInstallationInput = {
     origin: 'https://models.example.test:8443',
 };
 
+function createAdapterRuntime(): OpenAiCompatibleCloudRuntime {
+    return {
+        provider: 'openai-compatible',
+        api_key: 'remote-secret',
+        model: 'studio-model-v1',
+        base_url: 'https://models.example.test:8443/v1',
+        adapter: compileProviderAdapterInstallation(BASE_INSTALLATION),
+    };
+}
+
+function installGatewayResponses(requestChunks: readonly string[], requestContentType: string): void {
+    const encoder = new TextEncoder();
+    tauriHarness.invoke.mockImplementation(async (command, args) => {
+        if (command !== 'provider_gateway_request') {
+            return undefined;
+        }
+        const channelValue = args?.onEvent;
+        if (
+            typeof channelValue !== 'object' ||
+            channelValue === null ||
+            !('onmessage' in channelValue) ||
+            typeof channelValue.onmessage !== 'function'
+        ) {
+            throw new Error('Expected a provider gateway event channel');
+        }
+        const channel = channelValue as TestGatewayChannel;
+        const operation = args?.operation;
+        const chunks = operation === 'probe' ? ['{"data":[{"id":"studio-model-v1"}]}'] : Array.from(requestChunks);
+        channel.onmessage({
+            event: 'response-start',
+            data: { status: 200, contentType: operation === 'probe' ? 'application/json' : requestContentType },
+        });
+        for (const chunk of chunks) {
+            channel.onmessage({ event: 'body-chunk', data: { bytes: Array.from(encoder.encode(chunk)) } });
+        }
+        channel.onmessage({ event: 'done', data: {} });
+        return undefined;
+    });
+}
+
 describe('provider adapter conformance', () => {
+    afterEach(() => {
+        tauriHarness.channels.length = 0;
+        tauriHarness.createChannel.mockClear();
+        tauriHarness.invoke.mockReset();
+        vi.unstubAllGlobals();
+    });
     it('compiles a stable installed adapter into the privileged provider contract', () => {
         const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
 
@@ -64,12 +144,20 @@ describe('provider adapter conformance', () => {
     it('uses only the privileged gateway and cancels by request ID', async () => {
         const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>();
+        let rejectedCancel: Promise<unknown> | undefined;
+        let readCancelCatchCount: (() => number) | undefined;
         let resolveRequest: (() => void) | undefined;
         invoke.mockImplementation((command) => {
             if (command === 'provider_gateway_request') {
                 return new Promise<void>((resolve) => {
                     resolveRequest = resolve;
                 });
+            }
+            if (command === 'cancel_provider_gateway_request') {
+                rejectedCancel = Promise.reject(new Error('cancel IPC unavailable'));
+                const cancelCatch = vi.spyOn(rejectedCancel, 'catch');
+                readCancelCatchCount = () => cancelCatch.mock.calls.length;
+                return rejectedCancel;
             }
             return Promise.resolve(undefined);
         });
@@ -96,6 +184,8 @@ describe('provider adapter conformance', () => {
         await vi.waitFor(() => expect(resolveRequest).toBeTypeOf('function'));
         const queuedLateEvent = channel.onmessage;
         controller.abort();
+        const productionCancelCatchCount = readCancelCatchCount?.() ?? 0;
+        void rejectedCancel?.catch(() => undefined);
         resolveRequest?.();
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(invoke).toHaveBeenCalledWith('provider_gateway_request', {
@@ -108,6 +198,7 @@ describe('provider adapter conformance', () => {
             onEvent: channel,
         });
         expect(invoke).toHaveBeenCalledWith('cancel_provider_gateway_request', { requestId: 'request-1' });
+        expect(productionCancelCatchCount).toBe(1);
         queuedLateEvent({ event: 'body-chunk', data: { bytes: [123] } });
         expect(onBodyChunk).not.toHaveBeenCalled();
     });
@@ -197,5 +288,89 @@ describe('provider adapter conformance', () => {
         await expect(failed.catch((error: unknown) => String(error))).resolves.not.toMatch(
             /secret-not-in-errors|request-body/u
         );
+    });
+
+    it('routes adapter-backed tool planning through probe and privileged gateway without renderer fetch', async () => {
+        installGatewayResponses(
+            [
+                JSON.stringify({
+                    choices: [
+                        {
+                            finish_reason: 'tool_calls',
+                            message: {
+                                tool_calls: [
+                                    {
+                                        id: 'call-1',
+                                        function: {
+                                            name: 'muteTrack',
+                                            arguments: '{"trackId":"track-1","muted":true}',
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                }),
+            ],
+            'application/json'
+        );
+        const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new Error('renderer fetch is forbidden'));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await expect(
+            generateOpenAiCompatibleToolCalls({
+                runtime: createAdapterRuntime(),
+                systemPrompt: 'system',
+                userMessage: 'mute drums',
+                toolSchemas: [
+                    {
+                        type: 'function',
+                        function: {
+                            name: 'muteTrack',
+                            description: 'Mute a track',
+                            parameters: {
+                                type: 'object',
+                                properties: { trackId: { type: 'string' }, muted: { type: 'boolean' } },
+                                required: ['trackId', 'muted'],
+                                additionalProperties: false,
+                            },
+                        },
+                    },
+                ],
+            })
+        ).resolves.toEqual([{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(
+            tauriHarness.invoke.mock.calls
+                .filter(([command]) => command === 'provider_gateway_request')
+                .map(([, args]) => args?.operation)
+        ).toEqual(['probe', 'request']);
+    });
+
+    it('routes adapter-backed streaming through gateway chunks without renderer fetch', async () => {
+        installGatewayResponses(
+            [
+                'data: {"choices":[{"delta":{"content":"Privileged"}}]}\n\n',
+                'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+            ],
+            'text/event-stream'
+        );
+        const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new Error('renderer fetch is forbidden'));
+        vi.stubGlobal('fetch', fetchMock);
+        const onToken = vi.fn();
+
+        await expect(
+            streamOpenAiCompatibleChatCompletion({
+                runtime: createAdapterRuntime(),
+                messages: [{ role: 'user', content: 'help' }],
+                onToken,
+                signal: new AbortController().signal,
+            })
+        ).resolves.toBe('stop');
+        expect(onToken).toHaveBeenCalledWith('Privileged');
+        expect(fetchMock).not.toHaveBeenCalled();
+        const requests = tauriHarness.invoke.mock.calls.filter(([command]) => command === 'provider_gateway_request');
+        expect(requests.map(([, args]) => args?.operation)).toEqual(['probe', 'request']);
+        expect(JSON.parse(String(requests[1]?.[1]?.body))).toMatchObject({ model: 'studio-model-v1', stream: true });
     });
 });

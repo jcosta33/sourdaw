@@ -101,7 +101,9 @@ export async function runProviderGatewayRequest(
     };
 
     const cancel = (): void => {
-        void dependencies.invoke('cancel_provider_gateway_request', { requestId: request.requestId });
+        void dependencies
+            .invoke('cancel_provider_gateway_request', { requestId: request.requestId })
+            .catch(() => undefined);
     };
     request.signal.addEventListener('abort', cancel, { once: true });
     try {
