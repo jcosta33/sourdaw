@@ -16,6 +16,11 @@ function ensureTargetTrackId(action: DuplicateTrackAction): string {
     return targetTrackId;
 }
 
+// Guards for duplicates this handler creates, keyed by action so the
+// describe-time inverse is finalized with the created entity once execute
+// lands — the handleAddTrack/handleCreateBus pattern.
+const pendingDuplicateGuards = new WeakMap<object, { entityJson: string; midiByClipIdJson: string }>();
+
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
     materializeCommandArguments: (action) => {
         ensureTargetTrackId(action);
@@ -40,6 +45,10 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         const track = duplicateTrack(action.payload.trackId, options);
         if (!track) {
             return { status: 'conflict' };
+        }
+        const guard = pendingDuplicateGuards.get(action);
+        if (guard) {
+            guard.entityJson = JSON.stringify(track);
         }
         return {
             status: 'written',
@@ -68,12 +77,24 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         const source = tracks?.find((track) => track.id === action.payload.trackId);
         const sourceIsDuplicable = source ? duplicableTrackKinds.has(source.kind) : false;
         const targetExists = tracks?.some((track) => track.id === targetTrackId) ?? true;
+        if (!sourceIsDuplicable || targetExists) {
+            return { label: 'Duplicate track', inverseAction: null };
+        }
+        // The guard makes the discard inverse reapply-safe inside atomic
+        // batches (discardCreatedTrack's canReapplyAfterDivergence requires
+        // it) — same pattern as handleAddTrack. Execute finalizes entityJson
+        // once the duplicate lands.
+        const generatedMidiStateGuard = {
+            entityJson: '',
+            midiByClipIdJson: JSON.stringify({}),
+        };
+        pendingDuplicateGuards.set(action, generatedMidiStateGuard);
         return {
             label: 'Duplicate track',
-            inverseAction:
-                sourceIsDuplicable && !targetExists
-                    ? { type: 'discardCreatedTrack', payload: { trackId: targetTrackId } }
-                    : null,
+            inverseAction: {
+                type: 'discardCreatedTrack',
+                payload: { trackId: targetTrackId, generatedMidiStateGuard },
+            },
         };
     },
     isNoop: (action) => {

@@ -105,6 +105,19 @@ export const handleAddDevice = createHandler<'addDevice'>({
             expectedDeviceIds.splice(deviceIndex, 0, deviceId);
             inversePayload.expectedTrackId = action.payload.trackId;
             inversePayload.expectedDeviceIds = expectedDeviceIds;
+        } else {
+            // Without expecteds, removeDevice's canReapplyAfterDivergence
+            // returns false and any atomic batch containing this action is
+            // rejected ("Action compensation is not guarded inside an atomic
+            // batch: addDevice"). A bare add appends, so the post-add chain is
+            // the current device ids with this id appended — the same snapshot
+            // the expecteds branch above builds for pre-declared chains.
+            const currentDeviceIds =
+                getTrackStoreState()
+                    ?.tracks.find((track) => track.id === action.payload.trackId)
+                    ?.devices.map((device) => device.id) ?? [];
+            inversePayload.expectedTrackId = action.payload.trackId;
+            inversePayload.expectedDeviceIds = [...currentDeviceIds, deviceId];
         }
         return {
             label: `Add ${action.payload.deviceType}`,

@@ -56,7 +56,14 @@ describe('handleAddDevice', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'removeDevice',
-            payload: { deviceId: expect.stringMatching(/^device-/) },
+            payload: {
+                deviceId: expect.stringMatching(/^device-/),
+                // A bare add appends, so the guarded chain is the current
+                // chain with the reserved id appended — the expecteds keep
+                // the inverse reapply-safe inside atomic batches.
+                expectedTrackId: 't1',
+                expectedDeviceIds: [expect.stringMatching(/^device-/)],
+            },
         });
     });
 
