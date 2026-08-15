@@ -255,7 +255,33 @@ export async function streamNativeCompletion(
                     options?.onUnknownEvent?.(`native:${typeof chunk.type === 'string' ? chunk.type : 'unknown'}`);
                     continue;
                 }
+                const usage = readUsage(chunk.usage);
                 const firstChoice: unknown = chunk.choices[0];
+                if (chunk.choices.length === 0) {
+                    if (usage === null) {
+                        throw new TypeError('Native completion stream returned an invalid choices event');
+                    }
+                } else {
+                    if (chunk.choices.length !== 1 || !isRecord(firstChoice)) {
+                        throw new TypeError('Native completion stream returned an invalid choices event');
+                    }
+                    const delta = firstChoice.delta;
+                    const finishReason = firstChoice.finish_reason;
+                    if (!isRecord(delta) && typeof finishReason !== 'string') {
+                        throw new TypeError('Native completion stream returned an invalid choices event');
+                    }
+                    if (
+                        isRecord(delta) &&
+                        'content' in delta &&
+                        delta.content !== null &&
+                        typeof delta.content !== 'string'
+                    ) {
+                        throw new TypeError('Native completion stream returned an invalid choices event');
+                    }
+                    if ('finish_reason' in firstChoice && finishReason !== null && typeof finishReason !== 'string') {
+                        throw new TypeError('Native completion stream returned an invalid choices event');
+                    }
+                }
                 const content =
                     isRecord(firstChoice) &&
                     isRecord(firstChoice.delta) &&
@@ -263,7 +289,6 @@ export async function streamNativeCompletion(
                         ? firstChoice.delta.content
                         : undefined;
                 const finishReason = isRecord(firstChoice) ? firstChoice.finish_reason : undefined;
-                const usage = readUsage(chunk.usage);
                 if (finishReasonSeen) {
                     if (chunk.choices.length === 0 && usage !== null && !finalUsageSeen) {
                         options?.onUsage?.({

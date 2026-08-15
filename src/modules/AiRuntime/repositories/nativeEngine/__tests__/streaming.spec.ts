@@ -346,6 +346,32 @@ describe('streamNativeCompletion', () => {
             await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('invalid JSON');
         });
 
+        it.each(['{"choices":[{}]}', '{"choices":[]}'])(
+            'rejects malformed known choices event %s before later valid output',
+            async (malformedEvent) => {
+                const encoder = new TextEncoder();
+                const payload = [
+                    `data: ${malformedEvent}\n\n`,
+                    'data: {"choices":[{"delta":{"content":"must-not-be-exposed"}}]}\n\n',
+                    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+                    'data: [DONE]\n\n',
+                ].join('');
+                const reader = {
+                    read: vi
+                        .fn()
+                        .mockResolvedValueOnce({ done: false, value: encoder.encode(payload) })
+                        .mockResolvedValue({ done: true, value: undefined }),
+                    cancel: vi.fn().mockResolvedValue(undefined),
+                };
+                mocks.fetch.mockResolvedValue({ ok: true, body: { getReader: () => reader } });
+                const onToken = vi.fn();
+
+                await expect(streamNativeCompletion([], onToken)).rejects.toThrow('invalid choices event');
+                expect(onToken).not.toHaveBeenCalled();
+                expect(reader.cancel).toHaveBeenCalledTimes(1);
+            }
+        );
+
         it('rejects browser-native text after the first finish reason before exposing it', async () => {
             const encoder = new TextEncoder();
             const chunks = [
