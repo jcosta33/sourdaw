@@ -964,6 +964,57 @@ describe('sendChatMessage injectables', () => {
         expect(completionUpdate?.[1].content).toContain('Response incomplete');
     });
 
+    it('marks a zero-output native length result visibly incomplete', async () => {
+        mocks.backend.value = 'native';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.runNativeModelProviderRequest.mockResolvedValue({ status: 'available', finish: { reason: 'length' } });
+
+        await sendChatMessage('How should I mix this?');
+
+        const completionUpdate = mocks.updateChatMessage.mock.calls.find(
+            (call) => call[1].error === 'Native AI response incomplete (length)'
+        );
+        expect(completionUpdate?.[1].content).toContain('Response incomplete');
+    });
+
+    it('reports normalized budget exhaustion instead of a false stop reason', async () => {
+        mocks.backend.value = 'native';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.runNativeModelProviderRequest.mockImplementation(async ({ onEvent }) => {
+            onEvent({ type: 'text', mode: 'delta', text: 'Partial answer' });
+            onEvent({
+                type: 'usage',
+                mode: 'final',
+                usage: {
+                    inputTokens: 10,
+                    outputTokens: 2_049,
+                    cachedInputTokens: null,
+                    reasoningTokens: null,
+                },
+                provenance: 'provider-reported',
+            });
+            return { status: 'available', finish: { reason: 'stop' } };
+        });
+
+        await sendChatMessage('How should I mix this?');
+
+        const completionUpdate = mocks.updateChatMessage.mock.calls.find(
+            (call) => call[1].error === 'Native AI response incomplete (budget-exhausted)'
+        );
+        expect(completionUpdate?.[1].content).toContain('exceeded the admitted token budget');
+        expect(completionUpdate?.[1].content).not.toContain('stopped at stop');
+    });
+
     it('records normalized provider-reported usage on the agent run', async () => {
         mocks.backend.value = 'cloud';
         mocks.cloudAvailable.value = true;

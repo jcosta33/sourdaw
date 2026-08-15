@@ -1230,9 +1230,15 @@ export async function sendChatMessage(
 
         // Strip <think>…</think> reasoning block before storing the final message.
         const { reasoning, content: cleanContent } = thinkParser.snapshot();
-        const incompleteReason = providerResult.status === 'partial' ? providerResult.finishReason : null;
+        const incompleteFailure =
+            providerResult.failure !== null &&
+            (providerResult.status === 'partial' || providerResult.status === 'failed')
+                ? providerResult.failure
+                : null;
+        const incompleteReason =
+            incompleteFailure?.code === 'output-limit' ? 'length' : (incompleteFailure?.code ?? null);
         const incompleteNotice =
-            incompleteReason === null ? '' : `\n\n_Response incomplete: provider stopped at ${incompleteReason}._`;
+            incompleteFailure === null ? '' : `\n\n_Response incomplete: ${incompleteFailure.safeMessage}_`;
         const incompleteProviderLabel = getProviderDisplayName(backend);
         const incompleteError =
             incompleteReason === null

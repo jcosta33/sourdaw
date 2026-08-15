@@ -164,6 +164,43 @@ describe('native model provider adapter', () => {
         });
     });
 
+    it('fails closed on streamed histories that the native bridge cannot preserve', async () => {
+        const { request } = createFixture({ operation: 'text', stream: true });
+        const streamCompletion = vi.fn<NativeModelProviderAdapterDependencies['streamCompletion']>();
+        const unsupportedMessages = [
+            [
+                { role: 'system' as const, content: 'Primary instructions.' },
+                { role: 'system' as const, content: 'Additional instructions.' },
+                { role: 'user' as const, content: 'Describe the mix.' },
+            ],
+            [
+                { role: 'system' as const, content: 'Primary instructions.' },
+                { role: 'tool' as const, content: 'Tool result.' },
+                { role: 'user' as const, content: 'Describe the mix.' },
+            ],
+        ];
+
+        for (const messages of unsupportedMessages) {
+            await expect(
+                runNativeModelProviderRequest(
+                    { request: { ...request, messages }, onEvent: vi.fn() },
+                    createDependencies({ streamCompletion })
+                )
+            ).resolves.toEqual({
+                status: 'available',
+                finish: {
+                    reason: 'error',
+                    failure: {
+                        code: 'native-conversation-history-unsupported',
+                        retryable: false,
+                        safeMessage: 'The native model provider does not support this conversation history.',
+                    },
+                },
+            });
+        }
+        expect(streamCompletion).not.toHaveBeenCalled();
+    });
+
     it('normalizes native tool calls and app-owns missing correlation IDs', async () => {
         const { request, session } = createFixture({
             operation: 'tools',

@@ -72,6 +72,11 @@ function hasUnsupportedConversationHistory(request: ModelProviderRequest): boole
     );
 }
 
+function hasUnsupportedStreamHistory(request: ModelProviderRequest): boolean {
+    const systemMessageCount = request.messages.filter((message) => message.role === 'system').length;
+    return systemMessageCount > 1 || request.messages.some((message) => message.role === 'tool');
+}
+
 function parseStructuredOutput(value: string): unknown {
     try {
         return JSON.parse(value);
@@ -108,6 +113,16 @@ export async function runNativeModelProviderRequest(
     const timeoutMs = input.timeoutMs ?? DEFAULT_NATIVE_PROVIDER_TIMEOUT_MS;
     try {
         input.signal?.throwIfAborted();
+        if (input.request.operation === 'text' && input.request.stream && hasUnsupportedStreamHistory(input.request)) {
+            return {
+                status: 'available',
+                finish: errorFinish(
+                    'native-conversation-history-unsupported',
+                    'The native model provider does not support this conversation history.',
+                    false
+                ),
+            };
+        }
         if (
             (input.request.operation !== 'text' || !input.request.stream) &&
             hasUnsupportedConversationHistory(input.request)
