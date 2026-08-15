@@ -1,0 +1,25 @@
+.agents/decisions/0026-ownership-by-exception.md
+  s_ab5443e65c7fba::t_a39e92e0b488d0 64-69
+  s_ab5443e65c7fba::t_a06494b3648e7b 12,15-16
+  s_ab5443e65c7fba::t_e40092b3f8aa6c 47-53
+  s_ab5443e65c7fba::t_55400a920632e9 71-74
+  s_ab5443e65c7fba::t_f17a92f918b8bb 78-81
+AGENTS.md
+  s_ab5443e65c7fba::t_116678f3f011fa 19-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b8a8b39ae1ece12da2a441aefb00fcf3cb21fa07",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
