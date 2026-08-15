@@ -1,4 +1,5 @@
 import { createAppError, type AppError } from '#/infra/errors/createAppError';
+import { isAppError } from '#/infra/errors/isAppError';
 
 import { type ModelProviderFailure } from '../models/ModelProviderProtocol';
 
@@ -23,5 +24,18 @@ export function createModelProviderFailureError(
             partialOutputDisposition: failure.partialOutputDisposition,
         },
         cause
+    );
+}
+
+export function isModelProviderFailureError(value: unknown): value is ModelProviderFailureError {
+    return (
+        isAppError(value) &&
+        value._tag === 'ModelProviderFailure' &&
+        typeof value.code === 'string' &&
+        typeof value.correlationId === 'string' &&
+        typeof value.retryable === 'boolean' &&
+        (value.partialOutputDisposition === 'none' ||
+            value.partialOutputDisposition === 'preserve' ||
+            value.partialOutputDisposition === 'discard')
     );
 }

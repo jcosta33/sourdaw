@@ -4,14 +4,14 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
-import { createModelProviderFailureError } from '../../errors/ModelProviderFailureError';
-import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
+import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
     type ModelProviderName,
+    type ModelProviderRequest,
     type ModelProviderResult,
     type ModelProviderSession,
 } from '../../models/ModelProviderProtocol';
@@ -19,9 +19,7 @@ import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions'
 import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
-import { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
-import { isNativeEngineReady } from '../../repositories/nativeEngine/isNativeEngineReady';
-import { generateNativeToolCalls as generateNativeStructuredToolCalls } from '../../repositories/nativeEngine/nativeToolCalling';
+import { runNativeModelProviderRequest } from '../../repositories/nativeModelProviderAdapter';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
@@ -146,46 +144,53 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
     }
 
     async function generateNativeToolCalls(
-        systemPrompt: string,
-        userMessage: string,
+        providerRequest: ModelProviderRequest,
         toolSchemas: readonly ToolSchema[],
         signal?: AbortSignal
     ): Promise<ToolPlanningOutcome> {
-        try {
-            const tools = toolSchemas.map((tool) => ({
-                name: tool.function.name,
-                description: tool.function.description,
-                parameters: tool.function.parameters,
-            }));
-
-            const results = await waitForInference(
-                generateNativeStructuredToolCalls({
-                    systemPrompt,
-                    userMessage,
-                    tools,
-                    temperature: 0.1,
-                    signal,
-                }),
-                signal
-            );
-
-            if (results !== null) {
-                logger.info(`[AI Engine] (native/structured) ${String(results.length)} tool call(s)`);
-                return { status: 'complete', toolCalls: results };
-            }
-        } catch (error) {
-            if (isToolPlanningRejectedError(error) || isNativeToolCallingProtocolError(error)) {
-                throw error;
-            }
-            if (signal?.aborted) {
-                if (error instanceof Error && error.name === 'AbortError') {
-                    throw createToolPlanningAbortError();
+        const toolCalls: ToolCallResult[] = [];
+        const nativeOutcome = await runNativeModelProviderRequest({
+            request: providerRequest,
+            ...(signal === undefined ? {} : { signal }),
+            onEvent: (event) => {
+                if (event.type === 'tool-call') {
+                    toolCalls.push(event.call);
                 }
-                throw error;
-            }
-            const msg = error instanceof Error ? error.message : String(error);
-            logger.warn(`[AI Engine] Structured tool calling failed, falling back to text: ${msg}`);
+            },
+        });
+        if (nativeOutcome.status === 'unavailable') {
+            throw createModelProviderFailureError(nativeOutcome.failure);
         }
+        if (nativeOutcome.finish.reason === 'stop') {
+            logger.info(`[AI Engine] (native/structured) ${String(toolCalls.length)} tool call(s)`);
+            return { status: 'complete', toolCalls };
+        }
+        if (nativeOutcome.finish.reason === 'cancelled') {
+            throw createToolPlanningAbortError();
+        }
+        if (
+            nativeOutcome.finish.reason === 'error' &&
+            nativeOutcome.finish.failure.code === 'native-tool-protocol-invalid'
+        ) {
+            throw createAiRuntimeError(nativeOutcome.finish.failure.safeMessage);
+        }
+        if (signal?.aborted) {
+            throw createToolPlanningAbortError();
+        }
+        if (nativeOutcome.finish.reason === 'error' && nativeOutcome.finish.failure.code === 'tool-planning-rejected') {
+            return { status: 'rejected', reason: nativeOutcome.finish.failure.safeMessage };
+        }
+        if (
+            nativeOutcome.finish.reason !== 'error' ||
+            !['native-tools-unavailable', 'native-provider-failed'].includes(nativeOutcome.finish.failure.code)
+        ) {
+            const message =
+                nativeOutcome.finish.reason === 'error' || nativeOutcome.finish.reason === 'refusal'
+                    ? nativeOutcome.finish.failure.safeMessage
+                    : 'The native model provider returned incomplete tool output.';
+            throw createAiRuntimeError(message);
+        }
+        logger.warn('[AI Engine] Structured tool calling unavailable, falling back to text.');
 
         // Fallback: text completion + XML/JSON parsing
         const toolDescriptions = toolSchemas
@@ -195,7 +200,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             )
             .join('\n');
         const textFallbackSystemPrompt = [
-            systemPrompt,
+            providerRequest.messages.find((message) => message.role === 'system')?.content ?? '',
             '',
             'Available tools:',
             toolDescriptions,
@@ -203,18 +208,50 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             'Respond with a JSON array of tool calls: [{"id":"unique_call_id","name":"tool_name","arguments":{...}}]',
             'Output only valid JSON. Do not include prose or markdown.',
         ].join('\n');
-        let nativeCompletion: Promise<string>;
-        if (signal === undefined) {
-            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, {
-                requireComplete: true,
-            });
-        } else {
-            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, {
-                signal,
-                requireComplete: true,
-            });
+        const fallbackProtocol = createModelProviderProtocol({ provider: 'native', model: 'native' });
+        const compiledFallback = fallbackProtocol.compileRequest({
+            correlationId: `${providerRequest.correlationId}:text-fallback`,
+            operation: 'text',
+            modality: 'text',
+            messages: [
+                { role: 'system', content: textFallbackSystemPrompt },
+                {
+                    role: 'user',
+                    content: providerRequest.messages.findLast((message) => message.role === 'user')?.content ?? '',
+                },
+            ],
+            stream: false,
+            limits: providerRequest.limits,
+            controls: providerRequest.controls,
+            budget: providerRequest.budget,
+            dataPolicy: 'local-only',
+        });
+        if (compiledFallback.status === 'unavailable') {
+            throw createModelProviderFailureError(compiledFallback.failure);
         }
-        const content = await waitForInference(nativeCompletion, signal);
+        const fallbackSession = fallbackProtocol.start(compiledFallback.request);
+        const fallbackOutcome = await runNativeModelProviderRequest({
+            request: compiledFallback.request,
+            ...(signal === undefined ? {} : { signal }),
+            onEvent: (event) => fallbackSession.push(event),
+        });
+        if (fallbackOutcome.status === 'unavailable') {
+            throw createModelProviderFailureError(fallbackOutcome.failure);
+        }
+        if (
+            fallbackOutcome.finish.reason === 'error' &&
+            fallbackOutcome.finish.failure.code === 'tool-planning-rejected'
+        ) {
+            return { status: 'rejected', reason: fallbackOutcome.finish.failure.safeMessage };
+        }
+        const fallbackResult = fallbackSession.finish(fallbackOutcome.finish);
+        if (fallbackResult.status !== 'complete') {
+            if (fallbackResult.failure !== null) {
+                throw createModelProviderFailureError(fallbackResult.failure);
+            }
+            throw createAiRuntimeError('The native model provider text fallback did not complete.');
+        }
+        const content = fallbackResult.output.text;
         logger.info(
             `[AI Engine] (native/text) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
         );
@@ -385,15 +422,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const generatedOutcome = await waitForInference(generatedInference, signal);
                     outcome = normalizeGeneratedToolPlanningOutcome(generatedOutcome);
                 } else {
-                    if (!isNativeEngineReady()) {
-                        throw createAiRuntimeError('Native AI engine not running');
-                    }
-                    outcome = await generateNativeToolCalls(
-                        providerSystemPrompt,
-                        providerUserMessage,
-                        providerTools,
-                        signal
-                    );
+                    outcome = await generateNativeToolCalls(providerRequest, providerTools, signal);
                 }
 
                 if (backend === 'webllm' && outcome.status === 'complete') {
@@ -451,6 +480,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             } catch (error) {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
                 let normalizedAttemptError: Error | null = null;
                 if (providerSession !== null && !providerSessionSettled) {
                     let failedResult: ModelProviderResult;
@@ -463,6 +493,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 code: 'tool-planning-rejected',
                                 retryable: false,
                                 safeMessage: 'The model provider rejected tool planning.',
+                            },
+                        });
+                    } else if (normalizedProviderFailure !== null) {
+                        failedResult = providerSession.finish({
+                            reason: 'error',
+                            failure: {
+                                code: normalizedProviderFailure.code,
+                                retryable: normalizedProviderFailure.retryable,
+                                safeMessage: normalizedProviderFailure.message,
                             },
                         });
                     } else {

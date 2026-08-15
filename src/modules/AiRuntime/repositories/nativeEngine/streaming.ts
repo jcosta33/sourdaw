@@ -30,6 +30,7 @@ export async function streamNativeCompletion(
         timeoutMs?: number;
         onUsage?: (event: ModelProviderUsageEvent) => void;
         onUnknownEvent?: (providerEventType: string) => void;
+        onFinish?: (finishReason: 'stop' | 'length') => void;
     }
 ): Promise<void> {
     if (isTauri()) {
@@ -61,21 +62,25 @@ export async function streamNativeCompletion(
             }
             if (
                 event.event === 'done' &&
-                typeof event.data.totalTokens === 'number' &&
-                Number.isSafeInteger(event.data.totalTokens) &&
-                event.data.totalTokens >= 0
+                typeof event.data.finishReason === 'string' &&
+                (event.data.finishReason === 'stop' || event.data.finishReason === 'length')
             ) {
-                options?.onUsage?.({
-                    type: 'usage',
-                    mode: 'final',
-                    usage: {
-                        inputTokens: null,
-                        outputTokens: event.data.totalTokens,
-                        cachedInputTokens: null,
-                        reasoningTokens: null,
-                    },
-                    provenance: 'provider-reported',
-                });
+                const inputTokens = readNonNegativeInteger(event.data.promptTokens);
+                const outputTokens = readNonNegativeInteger(event.data.completionTokens);
+                if (inputTokens !== null && outputTokens !== null) {
+                    options?.onUsage?.({
+                        type: 'usage',
+                        mode: 'final',
+                        usage: {
+                            inputTokens,
+                            outputTokens,
+                            cachedInputTokens: null,
+                            reasoningTokens: null,
+                        },
+                        provenance: 'provider-reported',
+                    });
+                }
+                options?.onFinish?.(event.data.finishReason);
             }
             if (event.event !== 'token' && event.event !== 'error' && event.event !== 'done') {
                 options?.onUnknownEvent?.(`native:${event.event}`);
@@ -163,36 +168,46 @@ export async function streamNativeCompletion(
                 if (jsonStr === '[DONE]') {
                     return;
                 }
+                let chunk: unknown;
                 try {
-                    const chunk = JSON.parse(jsonStr) as unknown;
-                    if (!isRecord(chunk)) {
-                        continue;
-                    }
-                    if (!Array.isArray(chunk.choices)) {
-                        options?.onUnknownEvent?.(`native:${typeof chunk.type === 'string' ? chunk.type : 'unknown'}`);
-                        continue;
-                    }
-                    const firstChoice: unknown = chunk.choices[0];
-                    const content =
-                        isRecord(firstChoice) &&
-                        isRecord(firstChoice.delta) &&
-                        typeof firstChoice.delta.content === 'string'
-                            ? firstChoice.delta.content
-                            : undefined;
-                    if (content) {
-                        onToken(content);
-                    }
-                    const usage = readUsage(chunk.usage);
-                    if (usage) {
-                        options?.onUsage?.({
-                            type: 'usage',
-                            mode: 'final',
-                            usage,
-                            provenance: 'provider-reported',
-                        });
-                    }
+                    chunk = JSON.parse(jsonStr) as unknown;
                 } catch {
                     // Skip malformed SSE chunks
+                    continue;
+                }
+                if (!isRecord(chunk)) {
+                    continue;
+                }
+                if (!Array.isArray(chunk.choices)) {
+                    options?.onUnknownEvent?.(`native:${typeof chunk.type === 'string' ? chunk.type : 'unknown'}`);
+                    continue;
+                }
+                const firstChoice: unknown = chunk.choices[0];
+                const content =
+                    isRecord(firstChoice) &&
+                    isRecord(firstChoice.delta) &&
+                    typeof firstChoice.delta.content === 'string'
+                        ? firstChoice.delta.content
+                        : undefined;
+                if (content) {
+                    onToken(content);
+                }
+                const finishReason = isRecord(firstChoice) ? firstChoice.finish_reason : undefined;
+                if (finishReason === 'stop' || finishReason === 'length') {
+                    options?.onFinish?.(finishReason);
+                } else if (typeof finishReason === 'string') {
+                    throw new TypeError(
+                        `Native completion stream ended with unsupported finish reason ${finishReason}`
+                    );
+                }
+                const usage = readUsage(chunk.usage);
+                if (usage) {
+                    options?.onUsage?.({
+                        type: 'usage',
+                        mode: 'final',
+                        usage,
+                        provenance: 'provider-reported',
+                    });
                 }
             }
         }

@@ -80,28 +80,33 @@ describe('streamNativeCompletion', () => {
             expect(onToken).toHaveBeenCalledWith('Hi');
         });
 
-        it('emits provider-reported final usage from the native done event', async () => {
+        it('emits exact provider-reported final usage from the native done event', async () => {
             const mockChannel: TestChannel = { onmessage: null };
             mocks.createChannel.mockResolvedValue(mockChannel);
             mocks.tauriInvoke.mockImplementation(() => {
-                mockChannel.onmessage?.({ event: 'done', data: { totalTokens: 17 } });
+                mockChannel.onmessage?.({
+                    event: 'done',
+                    data: { promptTokens: 11, completionTokens: 17, finishReason: 'stop' },
+                });
                 return Promise.resolve(undefined);
             });
             const onUsage = vi.fn();
+            const onFinish = vi.fn();
 
-            await streamNativeCompletion([{ role: 'user', content: 'hi' }], vi.fn(), { onUsage });
+            await streamNativeCompletion([{ role: 'user', content: 'hi' }], vi.fn(), { onUsage, onFinish });
 
             expect(onUsage).toHaveBeenCalledWith({
                 type: 'usage',
                 mode: 'final',
                 usage: {
-                    inputTokens: null,
+                    inputTokens: 11,
                     outputTokens: 17,
                     cachedInputTokens: null,
                     reasoningTokens: null,
                 },
                 provenance: 'provider-reported',
             });
+            expect(onFinish).toHaveBeenCalledWith('stop');
         });
 
         it('surfaces unknown native events without exposing their payload', async () => {
