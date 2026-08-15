@@ -1,0 +1,41 @@
+src-tauri/src/commands/plugins.rs
+  s_ab5443e65c7fba::t_756237225682b6 1083,1094-1109
+  s_ab5443e65c7fba::t_2788664d3dcc07 1110
+src/modules/AudioEngine/services/engineDiagnosticsReadFailureLatch.ts
+  s_ab5443e65c7fba::t_4c78b2fd2fe224 1-34
+src/modules/AudioEngine/useCases/engineAccess/refreshEngineRtDiagnostics.ts
+  s_ab5443e65c7fba::t_06328ccca81ec8 32-33
+  s_ab5443e65c7fba::t_8949c34683d294 41,47
+  s_ab5443e65c7fba::t_b3c9d5a2772bae 5-7
+  s_ab5443e65c7fba::t_a90c98c6e0d73a 4
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  s_ab5443e65c7fba::t_5502e55545d0cb 87-97
+  s_ab5443e65c7fba::t_33caf127411f28 46-48
+  s_ab5443e65c7fba::t_443b5b829364a2 6
+  s_ab5443e65c7fba::t_3d3eed2a6460e4 49
+src-tauri/src/commands/engine_diagnostics.rs
+  s_ab5443e65c7fba::t_c315b9a1a683c1 141,143-144,146-147
+  s_ab5443e65c7fba::t_8117b976c7153f 11
+  s_ab5443e65c7fba::t_6362ffd97c243a 239-284
+  s_ab5443e65c7fba::t_91cb03755cb960 84-110
+crates/daw-engine/src/lib.rs
+  s_ab5443e65c7fba::t_5c227ec592bc9c 55-56,58
+  s_ab5443e65c7fba::t_b540d5a3f5821c 195-259
+  s_ab5443e65c7fba::t_daa01c8930aa8a 19-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a1a07474bffe1e02cc615951b7197d0e47ec5385",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
