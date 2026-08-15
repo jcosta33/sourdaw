@@ -1673,7 +1673,6 @@ name = "daw-core"
 version = "0.1.0"
 dependencies = [
  "serde",
- "specta",
  "triple_buffer",
 ]
 
@@ -1717,7 +1716,6 @@ dependencies = [
  "libloading 0.9.0",
  "serde",
  "sha2 0.11.0",
- "specta",
 ]
 
 [[package]]
@@ -7499,28 +7497,6 @@ dependencies = [
  "num-traits",
  "packedvec",
  "vob",
-]
-
-[[package]]
-name = "specta"
-version = "2.0.0-rc.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38f9a30cbcbb7011f1da7d73483983bf838af123883e45f2b36ed76328df9c50"
-dependencies = [
- "rustc_version",
- "specta-macros",
-]
-
-[[package]]
-name = "specta-macros"
-version = "2.0.0-rc.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce14957ecc2897f1f848b8255b6531d13ddf49cbcf506b7c2c9fb1d005593bb"
-dependencies = [
- "Inflector",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
