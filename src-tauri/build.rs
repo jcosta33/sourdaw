@@ -10,6 +10,8 @@ fn main() {
             "unload_native_llm",
             "unload_native_llm_if_owned",
             "finalize_native_llm_initialization",
+            "provider_gateway_request",
+            "cancel_provider_gateway_request",
             "get_native_llm_status",
             "get_model_dir",
             "denoise_audio",

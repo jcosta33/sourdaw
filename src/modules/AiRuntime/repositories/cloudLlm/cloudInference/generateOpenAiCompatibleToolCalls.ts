@@ -4,6 +4,8 @@ import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
+import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
+
 type GenerateOpenAiCompatibleToolCallsInput = {
     runtime: OpenAiCompatibleCloudRuntime;
     systemPrompt: string;
@@ -127,37 +129,62 @@ export async function generateOpenAiCompatibleToolCalls({
     toolSchemas,
     signal,
 }: GenerateOpenAiCompatibleToolCallsInput): Promise<ToolCallResult[]> {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-    };
-    if (runtime.api_key) {
-        headers.Authorization = `Bearer ${runtime.api_key}`;
+    const body = JSON.stringify({
+        model: runtime.model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+        ],
+        tools: toolSchemas,
+        tool_choice: 'auto',
+        n: 1,
+        stream: false,
+    });
+    let payload: unknown;
+    if (!runtime.adapter) {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (runtime.api_key) {
+            headers.Authorization = `Bearer ${runtime.api_key}`;
+        }
+        const response = await fetch(`${runtime.base_url}/chat/completions`, {
+            method: 'POST',
+            signal,
+            headers,
+            body,
+        });
+        if (!response.ok) {
+            throw new Error(`Hosted AI tool request failed with status ${String(response.status)}`);
+        }
+        try {
+            payload = (await response.json()) as unknown;
+        } catch (error) {
+            if (hasErrorName(error, 'SyntaxError')) {
+                throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+            }
+            throw error;
+        }
+        return parseToolCalls(payload);
     }
 
-    const response = await fetch(`${runtime.base_url}/chat/completions`, {
-        method: 'POST',
-        signal,
-        headers,
-        body: JSON.stringify({
-            model: runtime.model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userMessage },
-            ],
-            tools: toolSchemas,
-            tool_choice: 'auto',
-            n: 1,
-            stream: false,
-        }),
+    const chunks: Uint8Array[] = [];
+    const response = await requestOpenAiCompatibleProvider({
+        runtime,
+        body,
+        signal: signal ?? new AbortController().signal,
+        onBodyChunk: (chunk) => chunks.push(chunk),
     });
-
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
         throw new Error(`Hosted AI tool request failed with status ${String(response.status)}`);
     }
-
-    let payload: unknown;
     try {
-        payload = (await response.json()) as unknown;
+        const totalLength = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+        const bytes = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            bytes.set(chunk, offset);
+            offset += chunk.byteLength;
+        }
+        payload = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     } catch (error) {
         if (hasErrorName(error, 'SyntaxError')) {
             throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');

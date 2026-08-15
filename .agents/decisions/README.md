@@ -39,6 +39,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0023](0023-allpass-fractional-delay-in-the-string-loop.md) | Allpass fractional delay in the Karplus-Strong loop, offset off zero |
 | [0024](0024-warp-modes-are-named-by-material.md)  | Warp modes are named by material, over three closed executors |
 | [0025](0025-fermenter-fine-tune-is-continuous.md) | Fermenter fine tune is continuous; coarse tune remains stepped |
+| [0026](0026-ownership-by-exception.md)            | The agent owns the codebase and operates by exception |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

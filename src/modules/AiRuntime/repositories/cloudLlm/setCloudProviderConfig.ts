@@ -4,6 +4,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type HostedLlmConfiguration } from '../../models/HostedLlmProvider';
+import { compileProviderAdapterInstallation } from '../providerAdapterRegistry';
 
 import { cloudSession, type CloudProviderRuntime } from './cloudSession';
 
@@ -25,11 +26,27 @@ export const setCloudProviderConfig = inject({ logger })(
                 if (!configuration.baseUrl) {
                     throw new Error('OpenAI-compatible provider requires a base URL');
                 }
+                const parsedBaseUrl = new URL(configuration.baseUrl);
+                const usesPrivilegedAdapter = parsedBaseUrl.protocol === 'https:';
+                if (usesPrivilegedAdapter && parsedBaseUrl.pathname !== '/' && parsedBaseUrl.pathname !== '/v1') {
+                    throw new Error('Remote OpenAI-compatible provider must use the compiled /v1 protocol path');
+                }
                 runtime = {
                     provider: configuration.provider,
                     api_key: configuration.apiKey,
                     model: configuration.model,
                     base_url: configuration.baseUrl,
+                    ...(usesPrivilegedAdapter
+                        ? {
+                              adapter: compileProviderAdapterInstallation({
+                                  adapterId: 'builtin.openai-compatible.chat-completions.v1',
+                                  providerId: configuration.provider,
+                                  modelId: configuration.model,
+                                  protocolFamily: 'openai-chat-completions',
+                                  origin: parsedBaseUrl.origin,
+                              }),
+                          }
+                        : {}),
                 };
             }
 

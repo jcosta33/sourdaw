@@ -20,6 +20,8 @@ export function useStoreSelector<TData, TSelected>(
     });
 
     // eslint-disable-next-line react-hooks/refs -- intentional: update ref synchronously during render to capture latest selector/equalityFn, avoiding stale-closure issues in getSnapshot
+    const selectorChanged = stateRef.current.selector !== selector;
+    // eslint-disable-next-line react-hooks/refs -- same as above
     stateRef.current.selector = selector;
     // eslint-disable-next-line react-hooks/refs -- same as above
     stateRef.current.equalityFn = equalityFn;
@@ -28,7 +30,10 @@ export function useStoreSelector<TData, TSelected>(
         const nextSnapshot = store.getSnapshot();
         const currentRef = stateRef.current;
 
-        if (nextSnapshot === currentRef.lastSnapshot && currentRef.lastSelection !== undefined) {
+        // A new selector closure (e.g. one capturing a different clip id)
+        // must re-run even when the store snapshot is unchanged — otherwise
+        // the cached selection describes the previous closure's target.
+        if (nextSnapshot === currentRef.lastSnapshot && currentRef.lastSelection !== undefined && !selectorChanged) {
             return currentRef.lastSelection;
         }
 
@@ -42,7 +47,10 @@ export function useStoreSelector<TData, TSelected>(
         currentRef.lastSnapshot = nextSnapshot;
         currentRef.lastSelection = nextSelection;
         return nextSelection;
-    }, [store]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- selectorChanged must
+        // recreate getSnapshot for the render that saw the new closure; the ref
+        // carries the latest selector for between-render store notifications.
+    }, [store, selectorChanged]);
 
     return useSyncExternalStore(store.subscribeReact, getSnapshot);
 }
