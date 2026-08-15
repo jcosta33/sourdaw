@@ -73,4 +73,32 @@ describe('setCloudProviderConfig', () => {
         expect(activeRequest.signal.aborted).toBe(true);
         expect(getCloudProviderInfo()?.provider).toBe('openai-compatible');
     });
+
+    it('compiles remote HTTPS configuration into the privileged adapter contract', () => {
+        setCloudProviderConfig({
+            provider: 'openai-compatible',
+            apiKey: 'remote-secret',
+            model: 'vendor/studio-model-v1',
+            baseUrl: 'https://models.example.test:8443/v1',
+        });
+
+        expect(getCloudProviderRuntime()).toMatchObject({
+            provider: 'openai-compatible',
+            model: 'vendor/studio-model-v1',
+            adapter: {
+                adapterId: 'builtin.openai-compatible.chat-completions.v1',
+                providerId: 'openai-compatible',
+                modelId: 'vendor/studio-model-v1',
+                origin: 'https://models.example.test:8443',
+                requestPath: '/v1/chat/completions',
+                probePath: '/v1/models',
+                transport: {
+                    kind: 'privileged-origin',
+                    dnsAdmission: 'public-global-only',
+                    redirects: 'disabled',
+                    proxy: 'disabled',
+                },
+            },
+        });
+    });
 });

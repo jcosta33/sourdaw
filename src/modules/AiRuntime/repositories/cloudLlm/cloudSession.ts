@@ -1,6 +1,7 @@
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type HostedLlmProviderInfo } from '../../models/HostedLlmProvider';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
+import { type CompiledProviderAdapter } from '../providerAdapterRegistry';
 
 import type Anthropic from '@anthropic-ai/sdk';
 
@@ -16,6 +17,7 @@ export type OpenAiCompatibleCloudRuntime = Readonly<{
     api_key: string;
     model: string;
     base_url: string;
+    adapter?: CompiledProviderAdapter | null;
 }>;
 
 export type CloudProviderRuntime = AnthropicCloudRuntime | OpenAiCompatibleCloudRuntime;
