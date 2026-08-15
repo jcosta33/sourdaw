@@ -1,0 +1,58 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_e604f8b25b5ae7 50,112-133,149,156-169
+  s_a40848e8f8cca9::t_aef70c17f2e2f6 170-171
+src/modules/AiRuntime/repositories/nativeEngine/streaming.ts
+  s_a40848e8f8cca9::t_f53f4962f9619a 32,36,44,48-51,53,59,80-82,168-172
+  s_a40848e8f8cca9::t_7c99d11fc7da55 62-67
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_0114142b5d6e69 991-992,1012-1013,1038-1039,1053-1065
+src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx
+  s_a40848e8f8cca9::t_623d27895375c6 13,85-87,94-95,102-103,107-108
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixHealthDialog.spec.tsx
+  s_a40848e8f8cca9::t_be64ca22aed994 6-9,13,15-19,25,32,85-87,95-96,98,100,113-118,127,174-177
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_a9795c5c747ed2 11,238-239,303,311-319,380,400,407-431
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+  s_a40848e8f8cca9::t_e604f8b25b5ae7 107-121
+src/modules/AiRuntime/useCases/__tests__/streamHostedModelText.spec.ts
+  s_a40848e8f8cca9::t_e604f8b25b5ae7 1-4,18-20,32-41,43-45
+  s_a40848e8f8cca9::t_36af9e662bc236 5-17,21-31,42
+src/modules/AiRuntime/useCases/__tests__/mixHealthAnalysis.spec.ts
+  s_a40848e8f8cca9::t_be64ca22aed994 3,6,10,12-16,34-35,38-60,65,73,80-92
+  s_a40848e8f8cca9::t_3bc46b609653cc 93-95
+src/modules/AiRuntime/useCases/mixHealthAnalysis.ts
+  s_a40848e8f8cca9::t_623d27895375c6 4,69-71,75,77-80
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiCompatibleChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_e604f8b25b5ae7 80-101
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_a40848e8f8cca9::t_e604f8b25b5ae7 194-213
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_a40848e8f8cca9::t_aa241c86061123 213-214,216-219
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_a40848e8f8cca9::t_e604f8b25b5ae7 46,201-206
+  s_a40848e8f8cca9::t_28a10d75f8535c 207-208
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_a40848e8f8cca9::t_53c27dc0fc84c2 1-128
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion.ts
+  s_a40848e8f8cca9::t_570e2fc42dc8bc 13,24,34-40,46,72,80,96-99,122,171,181-187
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_623d27895375c6 6
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_a40848e8f8cca9::t_56f87e8a0fc998 26,57,120-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5ab888405545d32dc8617dbc4cc017c68a537cc0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
