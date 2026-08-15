@@ -391,7 +391,7 @@ impl LevainEngine {
         channel: u8,
         articulation: u16,
     ) {
-        let art = articulation;
+        let mut art = articulation;
 
         // Realism layer transient (bow scrape onset, etc).
         self.realism.note_on(note);
@@ -415,7 +415,21 @@ impl LevainEngine {
         let current_dynamic = cc1_to_dynamic(cc1_normalized);
 
         // Look up zone BEFORE allocating a voice (avoid stealing a voice for nothing).
-        let candidates_slice = self.zone_map.lookup(art, 0, note, velocity);
+        let mut candidates_slice = self.zone_map.lookup(art, 0, note, velocity);
+
+        // A per-note articulation is a fixed id from the project's 28-name
+        // table, assigned without consulting the instrument the track is
+        // pointed at, and every shipped bank is a subset of that table. An id
+        // the bank has no zones for used to fall straight through to the
+        // fallback tone below — which `commit_sample_bank` disables the moment
+        // real samples load, so the note produced no voice and no sound at all.
+        // Degrade to the articulation the channel is already on, which is what
+        // the same note plays when it carries no per-note articulation.
+        if candidates_slice.is_empty() && art != self.articulation.current {
+            art = self.articulation.current;
+            candidates_slice = self.zone_map.lookup(art, 0, note, velocity);
+        }
+
         if candidates_slice.is_empty() {
             // No samples loaded — use fallback sine tone so the instrument isn't silent.
             self.fallback.note_on(note, gain);
