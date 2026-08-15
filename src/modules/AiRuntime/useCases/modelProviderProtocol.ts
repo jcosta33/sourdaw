@@ -16,6 +16,7 @@ import {
     type ModelProviderSession,
     type ModelProviderUsage,
 } from '../models/ModelProviderProtocol';
+import { classifyAgentDataPolicy } from '../models/AgentDataPolicy';
 
 const MAX_MODEL_PROVIDER_EVENT_BYTES = 64 * 1_024;
 const MAX_MODEL_PROVIDER_REQUEST_BYTES = 1_024 * 1_024;
@@ -437,6 +438,25 @@ function compileRequest(
             'data-policy-unavailable',
             `The ${provider} provider cannot satisfy the requested data policy.`
         );
+    }
+    if (input.dataPolicy === 'remote-allowed' && capabilities.dataPolicies.length === 1) {
+        const categories = input.dataCategories;
+        const disclosure = input.remoteDisclosure;
+        if (
+            !Array.isArray(categories) ||
+            categories.length === 0 ||
+            disclosure === undefined ||
+            disclosure.destination !== 'provider' ||
+            disclosure.disclosedAt > Date.now() ||
+            disclosure.categories.length !== categories.length ||
+            disclosure.categories.some((category, index) => category !== categories[index]) ||
+            classifyAgentDataPolicy({ destination: 'provider', categories }).transmission !== 'allowed'
+        ) {
+            return unavailable(
+                'remote-data-policy-rejected',
+                'The hosted provider request lacks admitted data disclosure.'
+            );
+        }
     }
     if (
         capabilities.contextWindowTokens !== null &&

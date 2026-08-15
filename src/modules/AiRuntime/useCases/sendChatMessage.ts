@@ -11,6 +11,7 @@ import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigu
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import {
     assertRemoteAgentDataPolicy,
+    createRemoteTransmissionDisclosure,
     formatRemoteTransmissionDisclosure,
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
@@ -1061,6 +1062,12 @@ export async function sendChatMessage(
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
             budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+            ...(backend === 'cloud'
+                ? {
+                      dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+                      remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                  }
+                : {}),
         });
         if (compiledProviderRequest.status !== 'ready') {
             throw createAiRuntimeError(compiledProviderRequest.failure.safeMessage);

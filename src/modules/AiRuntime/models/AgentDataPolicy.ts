@@ -27,6 +27,12 @@ export type AgentDataPolicyDecision = {
     retention: AgentDataRetention;
 };
 
+export type RemoteTransmissionDisclosure = {
+    destination: 'provider';
+    categories: AgentDataCategory[];
+    disclosedAt: number;
+};
+
 export const REMOTE_TEXT_AGENT_DATA_CATEGORIES: readonly AgentDataCategory[] = [
     'system-instructions',
     'prompt-text',
@@ -73,7 +79,7 @@ export function classifyAgentDataPolicy(input: {
 }
 
 export function createRemoteTransmissionDisclosure(categories: readonly AgentDataCategory[]) {
-    return { destination: 'provider' as const, categories: [...categories], required: true };
+    return { destination: 'provider' as const, categories: [...categories], disclosedAt: Date.now() };
 }
 
 export function assertRemoteAgentDataPolicy(categories: readonly AgentDataCategory[]): void {

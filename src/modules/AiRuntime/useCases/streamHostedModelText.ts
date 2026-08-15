@@ -1,5 +1,5 @@
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
-import { assertRemoteAgentDataPolicy, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
+import { createRemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type ModelProviderMessage,
@@ -56,7 +56,6 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
     if (providerInfo === null) {
         return unavailableResult(input);
     }
-    assertRemoteAgentDataPolicy(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
 
     const protocol = createModelProviderProtocol({
         provider: providerInfo.provider,
@@ -79,6 +78,8 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
             maxTotalTokens: 32_768 + input.maxOutputTokens,
         },
         dataPolicy: 'remote-allowed',
+        dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+        remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
     });
     if (compiled.status === 'unavailable') {
         return {

@@ -6,7 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
-import { assertRemoteAgentDataPolicy, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
+import { createRemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -370,6 +370,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
                     budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+                    ...(backend === 'cloud'
+                        ? {
+                              dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+                              remoteDisclosure: createRemoteTransmissionDisclosure(REMOTE_TEXT_AGENT_DATA_CATEGORIES),
+                          }
+                        : {}),
                 });
                 if (compiledRequest.status !== 'ready') {
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
@@ -398,7 +404,6 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 let outcome: ToolPlanningOutcome;
 
                 if (backend === 'cloud') {
-                    assertRemoteAgentDataPolicy(REMOTE_TEXT_AGENT_DATA_CATEGORIES);
                     let cloudInference: Promise<ToolCallResult[]>;
                     if (signal === undefined) {
                         cloudInference = generateCloudToolCalls(

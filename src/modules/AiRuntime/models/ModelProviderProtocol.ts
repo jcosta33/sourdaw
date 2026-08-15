@@ -66,6 +66,8 @@ export type ModelProviderRequestInput = Partial<Omit<ModelProviderStreamIdentity
     };
     budget: ModelProviderBudget;
     dataPolicy: 'local-only' | 'remote-allowed';
+    dataCategories?: AgentDataCategory[];
+    remoteDisclosure?: RemoteTransmissionDisclosure;
 };
 
 export type ModelProviderRequest = Omit<ModelProviderRequestInput, keyof ModelProviderStreamIdentity> &
@@ -161,3 +163,4 @@ export type ModelProviderProtocol = {
     compileRequest: (input: ModelProviderRequestInput) => CompiledModelProviderRequest;
     start: (request: ModelProviderRequest) => ModelProviderSession;
 };
+import { type AgentDataCategory, type RemoteTransmissionDisclosure } from './AgentDataPolicy';
