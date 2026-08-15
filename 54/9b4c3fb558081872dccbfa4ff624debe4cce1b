@@ -1,0 +1,23 @@
+src/modules/Arrangement/handlers/device/__tests__/handleAddDevice.spec.ts
+  s_a40848e8f8cca9::t_2808775852e279 59-66
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.spec.ts
+  s_a40848e8f8cca9::t_d773e6b146b613 33,38-39,43-51,83-92
+src/modules/Arrangement/handlers/track/duplicateTrack.ts
+  s_a40848e8f8cca9::t_5b131079373d97 19-23,49-52,80-91,94-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "549b4c3fb558081872dccbfa4ff624debe4cce1b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
