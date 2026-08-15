@@ -1,0 +1,23 @@
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_a40848e8f8cca9::t_904ed22b58ecc1 46
+src-tauri/src/commands/provider_gateway.rs
+  s_a40848e8f8cca9::t_4e7e8c5d3f709a 73,76,339
+src/modules/AiRuntime/repositories/providerAdapterRegistry.ts
+  s_a40848e8f8cca9::t_4e7e8c5d3f709a 129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b4ba99f94f95fcd4da2cb08fd5f6f315019375cc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
