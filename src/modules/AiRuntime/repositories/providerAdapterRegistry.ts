@@ -126,6 +126,7 @@ function compileCanonicalPublicOrigin(value: string): string {
         secondIpv6Segment !== null &&
         (!(firstIpv6Segment >= 0x2000 && firstIpv6Segment <= 0x3fff) ||
             (firstIpv6Segment === 0x2001 && secondIpv6Segment <= 0x01ff) ||
+            firstIpv6Segment === 0x2002 ||
             (firstIpv6Segment === 0x2001 && secondIpv6Segment === 0x0db8) ||
             (firstIpv6Segment === 0x3fff && (secondIpv6Segment & 0xf000) === 0));
     if (

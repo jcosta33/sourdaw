@@ -43,6 +43,7 @@ describe('provider adapter conformance', () => {
         ['IPv4 documentation range', { ...BASE_INSTALLATION, origin: 'https://198.51.100.1' }],
         ['IPv6 translation space', { ...BASE_INSTALLATION, origin: 'https://[64:ff9b:1::1]' }],
         ['IPv6 discard prefix', { ...BASE_INSTALLATION, origin: 'https://[100::1]' }],
+        ['deprecated IPv6 6to4', { ...BASE_INSTALLATION, origin: 'https://[2002:a00:1::1]' }],
         ['IPv6 documentation prefix', { ...BASE_INSTALLATION, origin: 'https://[3fff::1]' }],
         ['IPv6 segment routing test prefix', { ...BASE_INSTALLATION, origin: 'https://[5f00::1]' }],
         ['unknown adapter', { ...BASE_INSTALLATION, adapterId: 'downloaded.javascript.adapter' }],

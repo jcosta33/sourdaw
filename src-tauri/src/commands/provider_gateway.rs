@@ -70,9 +70,10 @@ fn ipv6_is_public_global(address: Ipv6Addr) -> bool {
     let second = segments[1];
     let is_global_unicast = (0x2000..=0x3fff).contains(&first);
     let is_iana_protocol_assignment = first == 0x2001 && second <= 0x01ff;
+    let is_deprecated_6to4 = first == 0x2002;
     let is_documentation =
         (first == 0x2001 && second == 0x0db8) || (first == 0x3fff && (second & 0xf000) == 0);
-    is_global_unicast && !is_iana_protocol_assignment && !is_documentation
+    is_global_unicast && !is_iana_protocol_assignment && !is_deprecated_6to4 && !is_documentation
 }
 
 fn address_is_public_global(address: IpAddr) -> bool {
@@ -335,6 +336,7 @@ mod tests {
             "[64:ff9b:1::1]:443",
             "[100::1]:443",
             "[2001:db8::1]:443",
+            "[2002:a00:1::1]:443",
             "[3fff::1]:443",
             "[5f00::1]:443",
         ] {
