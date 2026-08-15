@@ -262,6 +262,11 @@ export type ProjectMidiNote = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    /** The range the recorded `pitchBend` was captured against. Absent means the
+     *  reader falls back to the MPE default, so it must survive a save. */
+    pitchBendRangeSemitones?: number;
+    channel?: number;
+    articulation?: string;
 };
 
 export type ProjectGrooveSubdivision = '1/8' | '1/16' | '1/32' | '1/16T';
