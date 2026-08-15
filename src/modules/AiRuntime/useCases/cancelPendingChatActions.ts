@@ -6,6 +6,8 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { agentRunLifecycle } from './agentRunLifecycle';
+
 type CancelPendingChatActionsInput = {
     confirmationId: string;
 };
@@ -25,6 +27,9 @@ export function cancelPendingChatActions(input: CancelPendingChatActionsInput): 
     }
 
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
+    if (agentRunLifecycle.get(confirmation.runId)) {
+        agentRunLifecycle.cancel({ runId: confirmation.runId, reason: 'User cancelled the pending confirmation.' });
+    }
     settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'cancelled',

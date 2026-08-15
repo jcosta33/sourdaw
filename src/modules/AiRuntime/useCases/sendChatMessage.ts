@@ -1,10 +1,16 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { executeVersionedCommandBatchEnvelope, generateGroupId } from '#/modules/Command/useCases';
+import {
+    executeVersionedCommandBatchEnvelope,
+    generateGroupId,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
+import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
@@ -30,6 +36,8 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import { agentRunLifecycle } from './agentRunLifecycle';
+import { agentRunWorkLease } from './agentRunWorkLease';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
@@ -60,6 +68,64 @@ type AgentApplyReceipt = Extract<
     { status: 'committed' | 'executed' }
 >['receipt'];
 
+function getAgentRunReceiptIdentity(receipt: NonNullable<AgentApplyReceipt>): string {
+    return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
+}
+
+const AGENT_RUN_PERSISTENCE_WARNING =
+    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
+
+function tryRecordCommittedAgentRunWork(input: {
+    runId: string;
+    receipt: NonNullable<AgentApplyReceipt>;
+    revertGroupId: string;
+    committedRevision?: string;
+}): string | null {
+    try {
+        agentRunLifecycle.recordCommittedWork({
+            runId: input.runId,
+            workId: input.receipt.batchId,
+            receiptIdentity: getAgentRunReceiptIdentity(input.receipt),
+            revertGroupId: input.revertGroupId,
+            renderJobIds: input.receipt.links.render.map((link) => link.jobId),
+            analysisIds: input.receipt.links.analysis.map((link) => link.analysisId),
+            ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
+        });
+        return null;
+    } catch {
+        return AGENT_RUN_PERSISTENCE_WARNING;
+    }
+}
+
+function trySettleAgentRunWorkLease(lease: AgentRunWorkLease, terminalState: AgentRunWorkTerminalState): string | null {
+    try {
+        agentRunWorkLease.settle({
+            runId: lease.runId,
+            workId: lease.workId,
+            cancellationGeneration: lease.cancellationGeneration,
+            idempotencyKey: lease.idempotencyKey,
+            receiptIdentity: lease.receiptIdentity,
+            terminalState,
+        });
+        return null;
+    } catch {
+        return AGENT_RUN_PERSISTENCE_WARNING;
+    }
+}
+
+function recordUnavailableProviderUsage(runId: string, backend: RunnableAiBackend): void {
+    agentRunLifecycle.recordProviderUsage({
+        runId,
+        usage: {
+            provider: backend,
+            model: getBackendModelId(backend),
+            inputTokens: null,
+            outputTokens: null,
+            provenance: 'unavailable',
+        },
+    });
+}
+
 export async function sendChatMessage(
     userText: string,
     options?: SendChatMessageOptions
@@ -86,6 +152,31 @@ export async function sendChatMessage(
         throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
     }
 
+    const runId = `agent-run-${crypto.randomUUID()}`;
+    agentRunLifecycle.create({
+        runId,
+        request: userText,
+        mode: interactionMode,
+        createdRevision: captureProjectRevision(),
+    });
+    agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+    const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
+    const providerReceiptIdentity = `provider:${backend}:${runId}`;
+    const providerLeaseResult = agentRunWorkLease.claim({
+        runId,
+        workId: providerWorkId,
+        ownerKind: 'provider',
+        cleanupOwner: 'provider-adapter',
+        idempotencyKey: providerReceiptIdentity,
+        receiptIdentity: providerReceiptIdentity,
+        idempotent: false,
+        retriable: true,
+    });
+    if (providerLeaseResult.status !== 'claimed') {
+        throw new Error(`Agent provider work could not be claimed: ${providerLeaseResult.status}`);
+    }
+    const providerLease = providerLeaseResult.lease;
+
     setChatGenerating(true);
 
     // ── Prompt Command Mode ──────────────────────────────────────────────
@@ -99,8 +190,17 @@ export async function sendChatMessage(
                 prompt: userText,
                 signal: aborter.signal,
             });
+            agentRunWorkLease.settle({
+                runId,
+                workId: providerWorkId,
+                cancellationGeneration: providerLease.cancellationGeneration,
+                idempotencyKey: providerLease.idempotencyKey,
+                receiptIdentity: providerLease.receiptIdentity,
+                terminalState: 'completed',
+            });
 
             if (aborter.signal.aborted) {
+                agentRunLifecycle.cancel({ runId, reason: 'User cancelled the run before planning completed.' });
                 return undefined;
             }
 
@@ -133,6 +233,34 @@ export async function sendChatMessage(
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
                 if (interactionMode === 'plan') {
+                    agentRunLifecycle.recordPlan({
+                        runId,
+                        summary: confirmationDescription.actionLabels.join('\n'),
+                        commandIds: [],
+                        serializedBatchIdentity: null,
+                        revision: projectRevision,
+                        scope: {
+                            targetIds: confirmationDescription.affectedIds,
+                            targetRanges: [],
+                            protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                            protectedRanges: [],
+                        },
+                        grants: {
+                            allowedOperationPrefixes: [],
+                            create: false,
+                            delete: false,
+                            routing: false,
+                            tempo: false,
+                            master: false,
+                            file: false,
+                            audioUpload: false,
+                            remoteGeneration: false,
+                            autoCommit: false,
+                        },
+                        budgets: { limits: {}, consumed: {} },
+                    });
+                    recordUnavailableProviderUsage(runId, backend);
+                    agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     createStemImportConfirmationResourceLease(result.actions)?.release();
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
@@ -149,14 +277,62 @@ export async function sendChatMessage(
                     intent: userText,
                     projectRevision,
                     requiresConfirmation: result.requiresConfirmation,
-                    runId: assistantMsgId,
+                    runId,
                     mode: interactionMode,
                     protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                     trustCeiling: options?.trustCeiling,
                 });
                 const { commandEnvelopes, commandBatch } = compiledActionExecution;
+                const parsedCommandBatch = parseVersionedCommandBatchEnvelope(
+                    commandBatch.serialized,
+                    commandBatch.authority
+                );
+                if (parsedCommandBatch.status === 'invalid') {
+                    throw new Error(parsedCommandBatch.reason);
+                }
+                const commandIds = parsedCommandBatch.envelope.commands.map((command) => command.commandId);
+                agentRunLifecycle.recordPlan({
+                    runId,
+                    summary: confirmationDescription.actionLabels.join('\n'),
+                    commandIds,
+                    serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
+                    revision: projectRevision,
+                    scope: {
+                        targetIds: [...commandBatch.authority.scope.targetIds],
+                        targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
+                        protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
+                        protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({ ...range })),
+                    },
+                    grants: {
+                        allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
+                        create: commandBatch.authority.grants.create,
+                        delete: commandBatch.authority.grants.delete,
+                        routing: commandBatch.authority.grants.routing,
+                        tempo: commandBatch.authority.grants.tempo,
+                        master: commandBatch.authority.grants.master,
+                        file: commandBatch.authority.grants.file,
+                        audioUpload: commandBatch.authority.grants.audioUpload,
+                        remoteGeneration: commandBatch.authority.grants.remoteGeneration,
+                        autoCommit: commandBatch.authority.grants.autoCommit,
+                    },
+                    budgets: {
+                        limits: { ...commandBatch.authority.budgets },
+                        consumed: { commands: commandIds.length },
+                    },
+                });
+                agentRunLifecycle.recordBatch({
+                    runId,
+                    batch: {
+                        batchId: parsedCommandBatch.envelope.batchId,
+                        commandIds,
+                        status: compiledActionExecution.requiresConfirmation ? 'waiting-for-approval' : 'planned',
+                        receiptIdentity: null,
+                    },
+                });
+                recordUnavailableProviderUsage(runId, backend);
 
                 if (interactionMode === 'preview') {
+                    agentRunLifecycle.transitionPhase({ runId, phase: 'previewing', revision: projectRevision });
                     const resourceLease = createStemImportConfirmationResourceLease(result.actions);
                     const preview = await executeVersionedCommandBatchEnvelope(commandBatch).finally(() =>
                         resourceLease?.release()
@@ -167,6 +343,7 @@ export async function sendChatMessage(
                             isStreaming: false,
                             content: `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
                         });
+                        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                         return undefined;
                     }
                     throw new Error('reason' in preview ? preview.reason : 'Command preview did not produce a preview');
@@ -177,6 +354,7 @@ export async function sendChatMessage(
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
+                        runId,
                         prompt: userText,
                         assistantMessageId: assistantMsgId,
                         actions: result.actions,
@@ -213,6 +391,11 @@ export async function sendChatMessage(
                         pendingActionConfirmationStatus: 'proposed',
                         content: `${confirmationDescription.content}\n\n${describeAgentRiskApproval(agentApproval)}`,
                     });
+                    agentRunLifecycle.transitionPhase({
+                        runId,
+                        phase: 'waiting-for-approval',
+                        revision: projectRevision,
+                    });
                     return undefined;
                 }
 
@@ -224,7 +407,42 @@ export async function sendChatMessage(
                     executionMode: result.executionMode,
                     signal: aborter.signal,
                 };
-                const execution = await executePlannedActions({ ...executionInput, commandBatch });
+                agentRunLifecycle.transitionPhase({ runId, phase: 'executing', revision: projectRevision });
+                const commandReceiptIdentity = `command:${runId}:${parsedCommandBatch.envelope.batchId}`;
+                const commandLeaseResult = agentRunWorkLease.claim({
+                    runId,
+                    workId: parsedCommandBatch.envelope.batchId,
+                    ownerKind: 'command',
+                    cleanupOwner: 'command-executor',
+                    idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
+                    receiptIdentity: commandReceiptIdentity,
+                    idempotent: true,
+                    retriable: true,
+                });
+                if (commandLeaseResult.status !== 'claimed') {
+                    throw new Error(`Agent command work could not be claimed: ${commandLeaseResult.status}`);
+                }
+                let execution: Awaited<ReturnType<typeof executePlannedActions>>;
+                try {
+                    execution = await executePlannedActions({ ...executionInput, commandBatch });
+                } catch (error) {
+                    trySettleAgentRunWorkLease(commandLeaseResult.lease, 'failed');
+                    throw error;
+                }
+                let commandLeaseTerminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
+                if (
+                    execution.status === 'committed' ||
+                    execution.status === 'executed' ||
+                    execution.status === 'no-op'
+                ) {
+                    commandLeaseTerminalState = 'completed';
+                } else if (execution.status === 'cancelled') {
+                    commandLeaseTerminalState = 'cancelled';
+                }
+                const commandLeasePersistenceWarning = trySettleAgentRunWorkLease(
+                    commandLeaseResult.lease,
+                    commandLeaseTerminalState
+                );
 
                 if (execution.status === 'committed') {
                     if (!execution.receipt) {
@@ -238,6 +456,18 @@ export async function sendChatMessage(
                         receiptWarnings.push(
                             `AI history or notification reporting warning: ${execution.reportingWarning}`
                         );
+                    }
+                    const runPersistenceWarning = tryRecordCommittedAgentRunWork({
+                        runId,
+                        receipt: execution.receipt,
+                        revertGroupId: commandGroup.groupId,
+                        committedRevision: captureProjectRevision(),
+                    });
+                    if (runPersistenceWarning) {
+                        receiptWarnings.push(runPersistenceWarning);
+                    }
+                    if (commandLeasePersistenceWarning && !runPersistenceWarning) {
+                        receiptWarnings.push(commandLeasePersistenceWarning);
                     }
                     const actionSummary = execution.actions
                         .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)
@@ -267,6 +497,17 @@ export async function sendChatMessage(
                             `AI history or notification reporting warning: ${execution.reportingWarning}`
                         );
                     }
+                    const runPersistenceWarning = tryRecordCommittedAgentRunWork({
+                        runId,
+                        receipt: execution.receipt,
+                        revertGroupId: commandGroup.groupId,
+                    });
+                    if (runPersistenceWarning) {
+                        receiptWarnings.push(runPersistenceWarning);
+                    }
+                    if (commandLeasePersistenceWarning && !runPersistenceWarning) {
+                        receiptWarnings.push(commandLeasePersistenceWarning);
+                    }
                     const actionSummary = execution.actions
                         .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)
                         .join('\n');
@@ -284,6 +525,17 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'invalidated') {
+                    agentRunLifecycle.recordError({
+                        runId,
+                        error: {
+                            code: 'proposal-invalidated',
+                            message: execution.reason,
+                            occurredAt: Date.now(),
+                            retriable: true,
+                            workId: parsedCommandBatch.envelope.batchId,
+                        },
+                        terminal: true,
+                    });
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         error: execution.reason,
@@ -294,6 +546,7 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'cancelled') {
+                    agentRunLifecycle.cancel({ runId, reason: 'User cancelled before the command committed.' });
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: 'Command cancelled before it committed. No project changes were applied.',
@@ -302,6 +555,12 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'no-op') {
+                    agentRunLifecycle.updateBatchStatus({
+                        runId,
+                        batchId: parsedCommandBatch.envelope.batchId,
+                        status: 'no-op',
+                    });
+                    agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: 'No project changes were needed.',
@@ -310,6 +569,17 @@ export async function sendChatMessage(
                 }
 
                 if (execution.status === 'ambiguous') {
+                    agentRunLifecycle.recordError({
+                        runId,
+                        error: {
+                            code: 'ambiguous-command-outcome',
+                            message: execution.reason,
+                            occurredAt: Date.now(),
+                            retriable: false,
+                            workId: parsedCommandBatch.envelope.batchId,
+                        },
+                        terminal: true,
+                    });
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         error: execution.reason,
@@ -323,7 +593,30 @@ export async function sendChatMessage(
                     error: execution.reason,
                     content: `Failed to execute prompt command atomically: ${execution.reason}`,
                 });
+                agentRunLifecycle.recordError({
+                    runId,
+                    error: {
+                        code: 'command-execution-failed',
+                        message: execution.reason,
+                        occurredAt: Date.now(),
+                        retriable: false,
+                        workId: parsedCommandBatch.envelope.batchId,
+                    },
+                    terminal: true,
+                });
             } else if (result.rejectionReason) {
+                recordUnavailableProviderUsage(runId, backend);
+                agentRunLifecycle.recordError({
+                    runId,
+                    error: {
+                        code: 'planning-rejected',
+                        message: result.rejectionReason,
+                        occurredAt: Date.now(),
+                        retriable: false,
+                        workId: null,
+                    },
+                    terminal: true,
+                });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
                     role: 'user',
@@ -338,6 +631,8 @@ export async function sendChatMessage(
                     error: result.rejectionReason,
                 });
             } else {
+                recordUnavailableProviderUsage(runId, backend);
+                agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
                     role: 'user',
@@ -357,6 +652,29 @@ export async function sendChatMessage(
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
             const proposalInvalidated = error instanceof AiProposalInvalidatedError;
+            agentRunWorkLease.settle({
+                runId,
+                workId: providerWorkId,
+                cancellationGeneration: providerLease.cancellationGeneration,
+                idempotencyKey: providerLease.idempotencyKey,
+                receiptIdentity: providerLease.receiptIdentity,
+                terminalState: 'failed',
+            });
+            if (aborter.signal.aborted || configurationChanged) {
+                agentRunLifecycle.cancel({ runId, reason });
+            } else {
+                agentRunLifecycle.recordError({
+                    runId,
+                    error: {
+                        code: proposalInvalidated ? 'proposal-invalidated' : 'prompt-run-failed',
+                        message: reason,
+                        occurredAt: Date.now(),
+                        retriable: proposalInvalidated,
+                        workId: null,
+                    },
+                    terminal: true,
+                });
+            }
             let failureContent = 'Failed to process prompt command.';
             if (configurationChanged) {
                 failureContent = 'Prompt cancelled because the AI configuration changed.';
@@ -548,6 +866,16 @@ export async function sendChatMessage(
             reasoning,
             error: incompleteError,
         });
+        agentRunWorkLease.settle({
+            runId,
+            workId: providerWorkId,
+            cancellationGeneration: providerLease.cancellationGeneration,
+            idempotencyKey: providerLease.idempotencyKey,
+            receiptIdentity: providerLease.receiptIdentity,
+            terminalState: 'completed',
+        });
+        recordUnavailableProviderUsage(runId, backend);
+        agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
     } catch (error) {
         const errorMessage = (() => {
@@ -576,7 +904,18 @@ export async function sendChatMessage(
             (error instanceof Error && error.name === 'AbortError') ||
             errorMessage === 'AbortedByUser' ||
             errorMessage.includes('AbortError');
+        if (!wasAborted) {
+            agentRunWorkLease.settle({
+                runId,
+                workId: providerWorkId,
+                cancellationGeneration: providerLease.cancellationGeneration,
+                idempotencyKey: providerLease.idempotencyKey,
+                receiptIdentity: providerLease.receiptIdentity,
+                terminalState: 'failed',
+            });
+        }
         if (wasAborted) {
+            agentRunLifecycle.cancel({ runId, reason: errorMessage });
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
@@ -597,6 +936,17 @@ export async function sendChatMessage(
                 llmStatusStore.set(previousLlmStatus ?? { state: 'idle' });
             }
         } else {
+            agentRunLifecycle.recordError({
+                runId,
+                error: {
+                    code: 'provider-stream-failed',
+                    message: errorMessage,
+                    occurredAt: Date.now(),
+                    retriable: true,
+                    workId: null,
+                },
+                terminal: true,
+            });
             const parsed = thinkParser.snapshot();
             const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
             updateChatMessage(assistantMsgId, {

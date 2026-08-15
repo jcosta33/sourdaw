@@ -105,6 +105,7 @@ type PendingActionApprovalSnapshot = {
 
 type PendingActionConfirmationBase = {
     id: string;
+    runId: string;
     prompt: string;
     assistantMessageId: string;
     actionLabels: string[];
@@ -163,6 +164,7 @@ function clonePendingActionConfirmation(confirmation: PendingAppActionConfirmati
 
 type ProposePendingActionConfirmationInput = {
     id: string;
+    runId?: string;
     prompt: string;
     assistantMessageId: string;
     actions: ExecutableRuntimeAction[];
@@ -214,6 +216,7 @@ export function proposePendingActionConfirmation(
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',
         id: input.id,
+        runId: input.runId ?? input.assistantMessageId,
         prompt: input.prompt,
         assistantMessageId: input.assistantMessageId,
         actions: structuredClone(approvalSnapshot.actions),
