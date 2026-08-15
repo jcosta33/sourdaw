@@ -383,6 +383,13 @@ describe('sendChatMessage injectables', () => {
 
         expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        const [routeProjection] = getAgentRunControlProjections();
+        expect(getAgentRun(routeProjection!.runId)).toEqual(
+            expect.objectContaining({
+                modelRoute: { requestedRoute: 'auto', selectedRouteId: 'native:native:native' },
+                providerUsage: [],
+            })
+        );
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
         expect(mocks.updateChatMessage).toHaveBeenCalledWith(
             expect.any(String),

@@ -160,23 +160,6 @@ function trySettleAgentRunWorkLease(
     }
 }
 
-function recordUnavailableProviderUsage(runId: string, backend: RunnableAiBackend): void {
-    const model = getBackendModelId(backend);
-    agentRunLifecycle.recordProviderUsage({
-        runId,
-        usage: {
-            provider: backend,
-            model,
-            inputTokens: null,
-            outputTokens: null,
-            provenance: 'unavailable',
-            routeId: `${backend}:${backend}:${model}`,
-            executor: backend,
-            fallbackReason: 'backend-unavailable',
-        },
-    });
-}
-
 function recordModelProviderUsage(
     runId: string,
     result: ModelProviderResult,
@@ -306,7 +289,6 @@ export async function sendChatMessage(
     if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
-        let promptProviderResultRecorded = false;
         setActiveAborter(aborter);
         const releaseProviderCancellation = agentRunCancellation.bindAbortController({
             runId,
@@ -321,7 +303,6 @@ export async function sendChatMessage(
                 signal: aborter.signal,
                 onProviderResult: (providerResult) => {
                     recordModelProviderUsage(runId, providerResult);
-                    promptProviderResultRecorded = true;
                 },
             });
             agentRunWorkLease.settle({
@@ -406,9 +387,6 @@ export async function sendChatMessage(
                         },
                         budgets: { limits: {}, consumed: {} },
                     });
-                    if (!promptProviderResultRecorded) {
-                        recordUnavailableProviderUsage(runId, backend);
-                    }
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     createStemImportConfirmationResourceLease(result.actions)?.release();
                     updateChatMessage(assistantMsgId, {
@@ -479,10 +457,6 @@ export async function sendChatMessage(
                         receiptIdentity: null,
                     },
                 });
-                if (!promptProviderResultRecorded) {
-                    recordUnavailableProviderUsage(runId, backend);
-                }
-
                 if (interactionMode === 'preview') {
                     const previewWorkId = `preview:${parsedCommandBatch.envelope.batchId}`;
                     const previewReceiptIdentity = `preview:${runId}:${parsedCommandBatch.envelope.batchId}`;
@@ -879,9 +853,6 @@ export async function sendChatMessage(
                     });
                 }
             } else if (result.rejectionReason) {
-                if (!promptProviderResultRecorded) {
-                    recordUnavailableProviderUsage(runId, backend);
-                }
                 agentRunLifecycle.recordError({
                     runId,
                     error: {
@@ -907,9 +878,6 @@ export async function sendChatMessage(
                     error: result.rejectionReason,
                 });
             } else {
-                if (!promptProviderResultRecorded) {
-                    recordUnavailableProviderUsage(runId, backend);
-                }
                 agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
