@@ -127,7 +127,9 @@ export async function requestOpenAiCompatibleProvider({
         headers,
         body,
     });
-    if (response.ok && response.body) {
+    if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+    } else if (response.body) {
         const reader = response.body.getReader();
         let responseBytes = 0;
         try {

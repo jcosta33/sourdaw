@@ -1261,6 +1261,64 @@ describe('sendChatMessage injectables', () => {
         expect(completionUpdate?.[1].content).toContain('Response incomplete');
     });
 
+    it('rejects WebLLM text emitted after its terminal completion', async () => {
+        mocks.backend.value = 'webllm';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.webLlmCreate.mockResolvedValue({
+            async *[Symbol.asyncIterator]() {
+                yield { choices: [{ delta: { content: 'Final answer' }, finish_reason: 'stop' }] };
+                yield { choices: [{ delta: { content: ' late text' }, finish_reason: null }] };
+            },
+        });
+        mocks.webLlmEngine.value = {
+            interruptGenerate: mocks.webLlmInterrupt,
+            chat: { completions: { create: mocks.webLlmCreate } },
+        };
+
+        await sendChatMessage('How should I mix this?');
+
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ error: 'WebLLM stream returned text after completion' })
+        );
+        expect(mocks.updateChatMessage.mock.calls).not.toContainEqual([
+            expect.any(String),
+            expect.objectContaining({ content: expect.stringContaining('late text') }),
+        ]);
+    });
+
+    it('rejects a duplicate WebLLM completion', async () => {
+        mocks.backend.value = 'webllm';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.webLlmCreate.mockResolvedValue({
+            async *[Symbol.asyncIterator]() {
+                yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
+                yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
+            },
+        });
+        mocks.webLlmEngine.value = {
+            interruptGenerate: mocks.webLlmInterrupt,
+            chat: { completions: { create: mocks.webLlmCreate } },
+        };
+
+        await sendChatMessage('How should I mix this?');
+
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ error: 'WebLLM stream returned duplicate completion' })
+        );
+    });
+
     it('preserves partial hosted output when the network stream fails', async () => {
         mocks.backend.value = 'cloud';
         mocks.cloudAvailable.value = true;

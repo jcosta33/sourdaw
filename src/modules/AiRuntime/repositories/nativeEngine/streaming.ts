@@ -1,4 +1,4 @@
-import { isTauri, createChannel } from '#/utils/tauriBridge';
+import { isTauri, createChannel, tauriInvoke } from '#/utils/tauriBridge';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 
@@ -48,12 +48,20 @@ export async function streamNativeCompletion(
             terminal: false,
             bytes: 0,
         };
+        function rejectNativeStream(error: Error): void {
+            if (streamState.error !== null) {
+                return;
+            }
+            streamState.error = error;
+            streamState.terminal = true;
+            void tauriInvoke('cancel_native_llm_generation', { requestId }).catch(() => undefined);
+        }
         channel.onmessage = (event: unknown) => {
-            if (options?.signal?.aborted) {
+            if (options?.signal?.aborted || streamState.error !== null) {
                 return;
             }
             if (!isRecord(event) || typeof event.event !== 'string' || !isRecord(event.data)) {
-                streamState.error = new TypeError('Native provider returned an invalid stream envelope');
+                rejectNativeStream(new TypeError('Native provider returned an invalid stream envelope'));
                 return;
             }
             if (
@@ -62,7 +70,7 @@ export async function streamNativeCompletion(
                 !Number.isSafeInteger(event.data.sequence) ||
                 streamState.terminal
             ) {
-                streamState.error = new TypeError('Native provider returned a cross-request or out-of-order event');
+                rejectNativeStream(new TypeError('Native provider returned a cross-request or out-of-order event'));
                 return;
             }
             try {
@@ -76,7 +84,8 @@ export async function streamNativeCompletion(
                     streamState.nextSequence += 1;
                 }
             } catch (tokenError) {
-                streamState.error = tokenError instanceof Error ? tokenError : new Error(String(tokenError));
+                rejectNativeStream(tokenError instanceof Error ? tokenError : new Error(String(tokenError)));
+                return;
             }
             if (event.event === 'error' && typeof event.data.message === 'string') {
                 streamState.error = new Error(event.data.message);
@@ -163,6 +172,7 @@ export async function streamNativeCompletion(
     });
 
     if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
         throw new Error(`llama-server error ${String(response.status)}`);
     }
 

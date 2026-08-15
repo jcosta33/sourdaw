@@ -1142,10 +1142,14 @@ export async function sendChatMessage(
                     };
                 }>;
                 let sawTerminalReason = false;
+                let sawFinalUsage = false;
 
                 for await (const chunk of asyncChunkGenerator) {
                     if (aborter.signal.aborted) {
                         break;
+                    }
+                    if (sawTerminalReason && !Array.isArray(chunk.choices)) {
+                        throw new Error('WebLLM stream returned an event after completion');
                     }
                     if (!Array.isArray(chunk.choices)) {
                         activeProviderStreamWriter.push({
@@ -1162,6 +1166,34 @@ export async function sendChatMessage(
                     }
                     const choice = chunk.choices[0];
                     const deltaDesc = choice?.delta.content;
+                    if (sawTerminalReason) {
+                        if (chunk.choices.length === 0 && chunk.usage && !sawFinalUsage) {
+                            activeProviderStreamWriter.push({
+                                type: 'usage',
+                                mode: 'final',
+                                usage: {
+                                    inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
+                                    outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
+                                    cachedInputTokens: readProviderTokenCount(
+                                        chunk.usage.prompt_tokens_details?.cached_tokens
+                                    ),
+                                    reasoningTokens: readProviderTokenCount(
+                                        chunk.usage.completion_tokens_details?.reasoning_tokens
+                                    ),
+                                },
+                                provenance: 'provider-reported',
+                            });
+                            sawFinalUsage = true;
+                            continue;
+                        }
+                        if (deltaDesc !== undefined) {
+                            throw new Error('WebLLM stream returned text after completion');
+                        }
+                        if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+                            throw new Error('WebLLM stream returned duplicate completion');
+                        }
+                        throw new Error('WebLLM stream returned an event after completion');
+                    }
                     if (deltaDesc !== undefined) {
                         activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });
                         const parsed = thinkParser.push(deltaDesc);
@@ -1189,6 +1221,7 @@ export async function sendChatMessage(
                             },
                             provenance: 'provider-reported',
                         });
+                        sawFinalUsage = true;
                     }
                 }
                 if (!aborter.signal.aborted && !sawTerminalReason) {

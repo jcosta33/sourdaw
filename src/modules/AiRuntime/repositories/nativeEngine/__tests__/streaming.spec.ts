@@ -233,6 +233,27 @@ describe('streamNativeCompletion', () => {
             );
             expect(onToken).not.toHaveBeenCalled();
         });
+
+        it('closes and cancels the native stream after the first rejected envelope', async () => {
+            const mockChannel: TestChannel = { onmessage: null };
+            mocks.createChannel.mockResolvedValue(mockChannel);
+            mocks.tauriInvoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+                if (command === 'stream_native_completion') {
+                    emitNativeEvent(mockChannel, args, 1, 'token', { text: 'invalid' });
+                    emitNativeEvent(mockChannel, args, 0, 'token', { text: 'must-not-be-exposed' });
+                }
+                return Promise.resolve(undefined);
+            });
+            const onToken = vi.fn();
+
+            await expect(streamNativeCompletion([{ role: 'user', content: 'hi' }], onToken)).rejects.toThrow(
+                'cross-request or out-of-order'
+            );
+
+            expect(onToken).not.toHaveBeenCalled();
+            expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+            expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
+        });
     });
 
     describe('when running in browser (dev mode)', () => {
@@ -279,15 +300,17 @@ describe('streamNativeCompletion', () => {
         });
 
         it('throws an error if fetch fails', async () => {
-            mocks.fetch.mockResolvedValue({
-                ok: false,
-                status: 404,
-                text: () => Promise.resolve('Not Found'),
-            });
+            const cancel = vi.fn();
+            mocks.fetch.mockResolvedValue(
+                new Response(new ReadableStream<Uint8Array>({ cancel }), {
+                    status: 404,
+                })
+            );
 
             await expect(streamNativeCompletion([], vi.fn<(...args: unknown[]) => void>())).rejects.toThrow(
                 'llama-server error 404'
             );
+            expect(cancel).toHaveBeenCalledTimes(1);
         });
 
         it('rejects malformed SSE instead of skipping it', async () => {

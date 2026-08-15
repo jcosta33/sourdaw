@@ -90,6 +90,12 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
                 nextSequence = event.sequence + 1;
             });
             if (outcome.status === 'unavailable') {
+                session.finish(
+                    finishEnvelope({
+                        reason: 'error',
+                        failure: outcome.failure,
+                    })
+                );
                 settled = true;
                 throw createModelProviderFailureError(outcome.failure);
             }
