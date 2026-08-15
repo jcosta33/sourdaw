@@ -42,5 +42,14 @@ export function resolveMidiNoteArticulationId({
     if (deviceType !== 'levain' || articulation === undefined) {
         return null;
     }
+    // The name arrives from a project file, where `isValidMidiArticulation`
+    // accepts any printable string. Indexing the literal directly resolves an
+    // inherited name — `constructor`, `toString`, `__proto__` — to a function,
+    // which is not nullish, so `?? null` would not fire and the function would
+    // reach `port.postMessage` typed as a number and throw on the structured
+    // clone.
+    if (!Object.hasOwn(LEVAIN_ARTICULATION_IDS, articulation)) {
+        return null;
+    }
     return LEVAIN_ARTICULATION_IDS[articulation] ?? null;
 }
