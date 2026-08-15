@@ -14,6 +14,13 @@ export type PendingWorkletEvent = {
     isToaster: boolean;
     /** For Toaster child tracks: fixed pad index (0-15). -1 means derive from pitch. */
     toasterPadIndex: number;
+    /**
+     * MPE member channel the note was recorded on, carried on the note-off as
+     * well as the note-on. Live playback passes it to both; a bounce that
+     * dropped it released every voice at that pitch, so an overlapping unison
+     * on two member channels collapsed in the export but not in the session.
+     */
+    channel?: number;
     /** Levain-only per-note voice articulation, resolved from MIDI project truth. */
     articulationId?: number;
 };

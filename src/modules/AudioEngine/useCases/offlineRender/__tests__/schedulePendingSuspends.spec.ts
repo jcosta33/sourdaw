@@ -60,6 +60,58 @@ describe('schedulePendingSuspends', () => {
         });
     });
 
+    it('addresses both halves of an MPE note to its member channel', () => {
+        // A recorded note carries the member channel it was played on, and live
+        // playback passes it to `noteOff` so releasing one note cannot silence a
+        // different note sounding the same pitch on another channel. A bounce
+        // that drops it releases every voice at that pitch, so the export and
+        // the session disagree on an overlapping unison.
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        const instrumentControls = { noteOn, noteOff };
+        const onEvent: PendingWorkletEvent = {
+            time: 0.5,
+            type: 'on',
+            pitch: 64,
+            velocity: 90,
+            channel: 3,
+            instrumentControls,
+            isToaster: false,
+            toasterPadIndex: -1,
+        };
+        const offEvent: PendingWorkletEvent = { ...onEvent, time: 1, type: 'off', velocity: 0 };
+
+        schedulePendingSuspends({ sampleRate: 48_000 } as OfflineAudioContext, [onEvent, offEvent], 10);
+
+        expect(noteOn).toHaveBeenCalledWith({ noteOrPad: 64, velocity: 90, sampleFrame: 24_000, channel: 3 });
+        expect(noteOff).toHaveBeenCalledWith({ noteOrPad: 64, sampleFrame: 48_000, channel: 3 });
+    });
+
+    it('carries the member channel alongside a Levain articulation', () => {
+        const noteOn = vi.fn();
+        const evt: PendingWorkletEvent = {
+            time: 0.25,
+            type: 'on',
+            pitch: 62,
+            velocity: 96,
+            channel: 5,
+            articulationId: 8,
+            instrumentControls: { noteOn, noteOff: vi.fn() },
+            isToaster: false,
+            toasterPadIndex: -1,
+        };
+
+        schedulePendingSuspends({ sampleRate: 48_000 } as OfflineAudioContext, [evt], 10);
+
+        expect(noteOn).toHaveBeenCalledWith({
+            noteOrPad: 62,
+            velocity: 96,
+            sampleFrame: 12_000,
+            channel: 5,
+            articulationId: 8,
+        });
+    });
+
     it('should use pad + midi note + sampleFrame for Toaster note-on when pad index is set', () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();

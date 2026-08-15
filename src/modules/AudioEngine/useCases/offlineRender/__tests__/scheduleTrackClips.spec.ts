@@ -621,6 +621,99 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         ]);
     });
 
+    it('carries a recorded MPE member channel onto both the note-on and its release', async () => {
+        // The release has to name the same member channel the attack did.
+        // Without it the engine releases every voice at that pitch, so two
+        // notes held at the same pitch on different channels — the thing MPE
+        // exists to voice separately — collapse on the first note-off. Live
+        // playback passes the channel, so only the bounce was wrong.
+        const offlineCtx = makeOfflineCtx();
+        const track = makeMidiTrack();
+        track.devices[0] = { id: 'inst-1', name: 'Levain', type: 'levain', bypassed: false, parameterValues: {} };
+        const midi = makeMidi();
+        midi.notesByClipId['clip-1']![0] = {
+            id: 'note-1',
+            pitch: 60,
+            startBeat: 1,
+            duration: 1,
+            velocity: 100,
+            channel: 3,
+        };
+        const entry = makeInstrumentEntry();
+        entry.deviceType = 'levain';
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx,
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                resolveArticulationId: mocks.resolveArticulationId,
+            },
+            pendingWorkletEvents,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        expect(pendingWorkletEvents.map((event) => [event.type, event.channel])).toEqual([
+            ['on', 3],
+            ['off', 3],
+        ]);
+    });
+
+    it('addresses a note that carries no channel to the base channel, as playback does', async () => {
+        // `scheduleMidiNotes` resolves an absent channel to 0 on both halves.
+        // Leaving it unset offline would release every voice at that pitch and
+        // so disagree with the session on an overlapping unison.
+        const offlineCtx = makeOfflineCtx();
+        const track = makeMidiTrack();
+        track.devices[0] = { id: 'inst-1', name: 'Levain', type: 'levain', bypassed: false, parameterValues: {} };
+        const midi = makeMidi();
+        const entry = makeInstrumentEntry();
+        entry.deviceType = 'levain';
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx,
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                resolveArticulationId: mocks.resolveArticulationId,
+            },
+            pendingWorkletEvents,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        expect(pendingWorkletEvents.map((event) => event.channel)).toEqual([0, 0]);
+    });
+
     it('threads a nonzero render-region offset into automation scheduling', async () => {
         mocks.getCompensationDelay.mockReturnValue(0.05);
 
