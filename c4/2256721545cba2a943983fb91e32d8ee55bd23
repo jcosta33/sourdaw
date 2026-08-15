@@ -1,0 +1,50 @@
+src/modules/PluginHost/repositories/pluginBridge/processAudioIPC.ts
+  s_ab5443e65c7fba::t_71cf3e37ea7dfb 40-48,50,52-53,57,72-87,93
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_ab5443e65c7fba::t_e342357bdec0c2 261
+  s_ab5443e65c7fba::t_9a0c5fe1415e03 83-97
+src-tauri/src/commands/engine_diagnostics.rs
+  s_ab5443e65c7fba::t_3b8f3df2921cdd 95
+  s_ab5443e65c7fba::t_485150c562db89 88-93
+  s_ab5443e65c7fba::t_3dd5a70b8e140f 237-238
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  s_ab5443e65c7fba::t_9c506717705bc6 133-135
+  s_ab5443e65c7fba::t_73e8a7765a8828 55-76,80-92
+  s_ab5443e65c7fba::t_87ac7e37bba43f 77-79
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_ab5443e65c7fba::t_7b70a1cfb86ce6 173,178,180
+  s_ab5443e65c7fba::t_789a4de624a163 431-482
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  s_ab5443e65c7fba::t_46ceca14dcd656 91-108
+  s_ab5443e65c7fba::t_d70440ef804117 3,13-14
+  s_ab5443e65c7fba::t_07ed2a9e6f047a 15-16
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_ab5443e65c7fba::t_7d06e849bbb4ba 191-196,204-241
+  s_ab5443e65c7fba::t_1056aa20ca5f44 197-203
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  s_ab5443e65c7fba::t_f6276b0ae04c17 84-86
+  s_ab5443e65c7fba::t_fb3933e0591f65 32-36
+  s_ab5443e65c7fba::t_cffab5836c00be 1
+crates/daw-engine/src/engine_events.rs
+  s_ab5443e65c7fba::t_a519ece2c5ea09 77-84
+src/modules/AudioEngine/useCases/engineAccess/refreshEngineRtDiagnostics.ts
+  s_ab5443e65c7fba::t_627884dc42b429 13-19,28-36,38-45,47-51
+  s_ab5443e65c7fba::t_dbe20d826c9942 46
+  s_ab5443e65c7fba::t_33571e23a074e5 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c42256721545cba2a943983fb91e32d8ee55bd23",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
