@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
@@ -32,5 +35,15 @@ describe('agent protocol versioning', () => {
             expect(contract.compatibility.behavior.length).toBeGreaterThan(0);
             expect(contract.compatibility.canonicalProjectRequiresCommandReplay).toBe(false);
         }
+    });
+
+    it('uses the owner-published semantic query types for runtime admission', () => {
+        const runtimeSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Project/useCases/semanticProjectQueries.ts'),
+            'utf8'
+        );
+
+        expect(runtimeSource).toContain('SEMANTIC_PROJECT_QUERY_TYPES.includes(input.type)');
+        expect(runtimeSource).not.toMatch(/const QUERY_TYPES\s*=/);
     });
 });
