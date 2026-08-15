@@ -1,0 +1,27 @@
+components.json
+  s_ab5443e65c7fba::t_0d4dedfd0fc06e 15,17-18
+src-tauri/AGENTS.md
+  s_ab5443e65c7fba::t_fe77e86ff61e75 7,9-10,21
+src-tauri/src/commands/pitch_edit.rs
+  s_ab5443e65c7fba::t_e3906db1ce95b6 34,37,47,50,52
+src/components/AGENTS.md
+  s_ab5443e65c7fba::t_5715b1ce7d567b 7,17,19
+src/modules/Collaboration/AGENTS.md
+  s_ab5443e65c7fba::t_2a1ac9f2e5d234 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9ef18e25f34abd5e613e2b141a625512f66dfa94",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
