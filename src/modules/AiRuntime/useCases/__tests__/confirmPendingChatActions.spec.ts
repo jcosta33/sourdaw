@@ -99,6 +99,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('invalidates a confirmed action when the project changes while batch admission is waiting', async () => {
+        configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
             ownedStorage.set({ bpm: action.payload.bpm });
@@ -118,14 +119,32 @@ describe('confirmPendingChatActions transaction admission', () => {
                 validate: () => true,
             },
         });
+        const action = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 128 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-admission', groupLabel: 'Set tempo', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-admission',
+            batchId: 'group-admission',
+            projectId: projectRevision,
+            baseRevision: projectRevision,
+            intent: 'set tempo to 128',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
         const proposal = {
             id: 'confirmation-1',
             prompt: 'set tempo to 128',
             assistantMessageId: 'assistant-1',
-            actions: [{ type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction],
+            actions: [action],
             actionLabels: ['Set tempo'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
             executionMode: 'atomic' as const,
-            projectRevision: captureProjectRevision(),
+            projectRevision,
         };
         proposePendingActionConfirmation(proposal);
 
@@ -162,19 +181,9 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'invalidated',
             content: expect.stringContaining('project changed'),
         });
-
-        proposePendingActionConfirmation({
-            ...proposal,
-            id: 'confirmation-2',
-            projectRevision: captureProjectRevision(),
-        });
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-2' })).resolves.toEqual({
-            status: 'executed',
-        });
-        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 128 } });
     });
 
-    it('executes the immutable command envelope and retains its exact approval label in the receipt', async () => {
+    it('rejects a legacy command-envelope confirmation without an approved outer batch', async () => {
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
             setTempo: {
@@ -213,11 +222,38 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
 
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-envelope' })).resolves.toEqual({
-            status: 'executed',
+            status: 'failed',
+            reason: 'The confirmation has no approved command batch.',
         });
-        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 128 } });
-        expect(chatStore.value?.messages[0]?.content).toContain('Set tempo from 120 BPM to 128 BPM');
-        expect(chatStore.value?.messages[0]?.content).toContain(`Command: v1 ${envelope.commandId}`);
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+    });
+
+    it('rejects a raw-action confirmation without an approved outer batch', async () => {
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>();
+        registerHandlerMap({
+            setTempo: {
+                execute,
+                describe: () => ({ label: 'Set tempo' }),
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const projectRevision = captureProjectRevision();
+        proposePendingActionConfirmation({
+            id: 'confirmation-raw-action',
+            prompt: 'set tempo to 128',
+            assistantMessageId: 'assistant-1',
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            actionLabels: ['Set tempo'],
+            executionMode: 'atomic',
+            projectRevision,
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-raw-action' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'The confirmation has no approved command batch.',
+        });
+        expect(execute).not.toHaveBeenCalled();
     });
 
     it('executes the approved outer command batch instead of the legacy envelope array', async () => {

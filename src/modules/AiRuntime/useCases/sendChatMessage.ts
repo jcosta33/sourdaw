@@ -1,9 +1,10 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { generateGroupId } from '#/modules/Command/useCases';
+import { executeVersionedCommandBatchEnvelope, generateGroupId } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
+import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
@@ -37,6 +38,7 @@ import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { planPromptActions } from './planPromptActions';
+import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
     if (backend === 'native') {
@@ -48,32 +50,46 @@ function getBackendModelId(backend: RunnableAiBackend): string {
     return getActiveModelId();
 }
 
-export async function sendChatMessage(userText: string): Promise<void> {
+type SendChatMessageOptions = {
+    mode?: AgentExecutionMode;
+    trustCeiling?: AgentTrustCeiling;
+};
+
+type AgentApplyReceipt = Extract<
+    Awaited<ReturnType<typeof executePlannedActions>>,
+    { status: 'committed' | 'executed' }
+>['receipt'];
+
+export async function sendChatMessage(
+    userText: string,
+    options?: SendChatMessageOptions
+): Promise<AgentApplyReceipt | undefined> {
     const backend = resolveBackend();
     const state = chatStore.value;
     if (!state || state.isGenerating) {
-        return;
+        return undefined;
     }
+    const interactionMode = resolveAgentExecutionMode({ chatMode: state.chatMode, requestedMode: options?.mode });
 
     // Regular chat streams from one selected backend. Prompt mode delegates
     // readiness and provider fallback to generateToolCalls.
     if (backend === 'none') {
         throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
     }
-    if (state.chatMode !== 'prompt' && backend === 'native' && !isNativeEngineReady()) {
+    if (interactionMode === 'explain' && backend === 'native' && !isNativeEngineReady()) {
         throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
     }
-    if (state.chatMode !== 'prompt' && backend === 'webllm' && !getLlmEngine()) {
+    if (interactionMode === 'explain' && backend === 'webllm' && !getLlmEngine()) {
         throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
     }
-    if (state.chatMode !== 'prompt' && backend === 'cloud' && !isCloudAvailable()) {
+    if (interactionMode === 'explain' && backend === 'cloud' && !isCloudAvailable()) {
         throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
     }
 
     setChatGenerating(true);
 
     // ── Prompt Command Mode ──────────────────────────────────────────────
-    if (state.chatMode === 'prompt') {
+    if (interactionMode !== 'explain') {
         const aborter = new AbortController();
         let prompt_assistant_message_id: string | null = null;
         setActiveAborter(aborter);
@@ -85,7 +101,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
             });
 
             if (aborter.signal.aborted) {
-                return;
+                return undefined;
             }
 
             if (result.actions.length > 0) {
@@ -116,6 +132,14 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
+                if (interactionMode === 'plan') {
+                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        content: `Planned without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                    });
+                    return undefined;
+                }
                 const commandGroup = generateGroupId(userText);
                 const compiledActionExecution = compileAgentActionExecution({
                     actions: result.actions,
@@ -126,9 +150,27 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     projectRevision,
                     requiresConfirmation: result.requiresConfirmation,
                     runId: assistantMsgId,
+                    mode: interactionMode,
                     protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                    trustCeiling: options?.trustCeiling,
                 });
                 const { commandEnvelopes, commandBatch } = compiledActionExecution;
+
+                if (interactionMode === 'preview') {
+                    const resourceLease = createStemImportConfirmationResourceLease(result.actions);
+                    const preview = await executeVersionedCommandBatchEnvelope(commandBatch).finally(() =>
+                        resourceLease?.release()
+                    );
+                    if (preview.status === 'previewed') {
+                        preview.resource.release();
+                        updateChatMessage(assistantMsgId, {
+                            isStreaming: false,
+                            content: `Previewed without changing the project:\n\n${confirmationDescription.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                        });
+                        return undefined;
+                    }
+                    throw new Error('reason' in preview ? preview.reason : 'Command preview did not produce a preview');
+                }
 
                 if (compiledActionExecution.requiresConfirmation) {
                     const { agentApproval } = compiledActionExecution;
@@ -162,7 +204,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                             content:
                                 'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
                         });
-                        return;
+                        return undefined;
                     }
 
                     updateChatMessage(assistantMsgId, {
@@ -171,7 +213,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         pendingActionConfirmationStatus: 'proposed',
                         content: `${confirmationDescription.content}\n\n${describeAgentRiskApproval(agentApproval)}`,
                     });
-                    return;
+                    return undefined;
                 }
 
                 const executionInput = {
@@ -185,6 +227,9 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 const execution = await executePlannedActions({ ...executionInput, commandBatch });
 
                 if (execution.status === 'committed') {
+                    if (!execution.receipt) {
+                        throw new Error('Applied command did not return a verified receipt');
+                    }
                     const receiptWarnings: string[] = [];
                     if (execution.commitWarning) {
                         receiptWarnings.push(`Post-commit project follow-up warning: ${execution.commitWarning}`);
@@ -206,10 +251,13 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         error: warningSummary || undefined,
                         content,
                     });
-                    return;
+                    return execution.receipt;
                 }
 
                 if (execution.status === 'executed') {
+                    if (!execution.receipt) {
+                        throw new Error('Executed command did not return a verified receipt');
+                    }
                     const receiptWarnings: string[] = [];
                     if (execution.executionWarning) {
                         receiptWarnings.push(`Runtime follow-up warning: ${execution.executionWarning}`);
@@ -232,7 +280,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         error: warningSummary || undefined,
                         content,
                     });
-                    return;
+                    return execution.receipt;
                 }
 
                 if (execution.status === 'invalidated') {
@@ -242,7 +290,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         content:
                             'The project changed before this command could commit. Review it and submit the command again.',
                     });
-                    return;
+                    return undefined;
                 }
 
                 if (execution.status === 'cancelled') {
@@ -250,7 +298,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         isStreaming: false,
                         content: 'Command cancelled before it committed. No project changes were applied.',
                     });
-                    return;
+                    return undefined;
                 }
 
                 if (execution.status === 'no-op') {
@@ -258,7 +306,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         isStreaming: false,
                         content: 'No project changes were needed.',
                     });
-                    return;
+                    return undefined;
                 }
 
                 if (execution.status === 'ambiguous') {
@@ -267,7 +315,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         error: execution.reason,
                         content: `The command stopped after an uncertain partial commit: ${execution.reason}. Do not retry it; inspect the project first.`,
                     });
-                    return;
+                    return undefined;
                 }
 
                 updateChatMessage(assistantMsgId, {
@@ -343,7 +391,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
             setActiveAborter(null);
             setChatGenerating(false);
         }
-        return;
+        return undefined;
     }
 
     // ── Regular Chat Mode ───────────────────────────────────────────────
@@ -520,7 +568,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 error: 'Hosted AI configuration changed; this response was cancelled.',
             });
             llmStatusStore.set({ state: 'idle' });
-            return;
+            return undefined;
         }
 
         const wasAborted =
@@ -565,4 +613,5 @@ export async function sendChatMessage(userText: string): Promise<void> {
         setActiveAborter(null);
         setChatGenerating(false);
     }
+    return undefined;
 }

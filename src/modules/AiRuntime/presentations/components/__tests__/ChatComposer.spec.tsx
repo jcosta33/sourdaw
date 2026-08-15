@@ -1,6 +1,6 @@
 import { createRef } from 'react';
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { ChatComposer } from '../ChatComposer';
@@ -10,7 +10,8 @@ describe('ChatComposer', () => {
         const textareaRef = createRef<HTMLTextAreaElement>();
         render(
             <ChatComposer
-                chatMode="chat"
+                executionMode="explain"
+                executionModes={['explain', 'plan', 'preview', 'apply', 'macro']}
                 enableReasoning={false}
                 isGenerating={false}
                 inputValue="hello"
@@ -18,13 +19,13 @@ describe('ChatComposer', () => {
                 textareaRef={textareaRef}
                 onChange={vi.fn()}
                 onKeyDown={vi.fn()}
-                onToggleMode={vi.fn()}
+                onExecutionModeChange={vi.fn()}
                 onToggleReasoning={vi.fn()}
                 onSend={vi.fn()}
                 onStop={vi.fn()}
             />
         );
         expect(screen.getByRole('textbox')).toHaveValue('hello');
-        fireEvent.click(screen.getByRole('button', { name: /command mode/i }));
+        expect(screen.getByRole('combobox', { name: 'Agent execution mode' })).toHaveValue('explain');
     });
 });

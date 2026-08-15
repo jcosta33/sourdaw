@@ -8,7 +8,8 @@ import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
-import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
+
+import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
 function applyTransactionalMutation(
     document: Record<string, unknown>,
@@ -62,7 +63,9 @@ describe('command batch preflight', () => {
                         payload: { trackId: 'track-vocal', gain: 1, expectedGain: 0.8 },
                     },
                 }),
+                canReapplyAfterDivergence: () => true,
                 undoable: true,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -125,7 +128,9 @@ describe('command batch preflight', () => {
                         payload: { trackId: 'track-vocal', gain: 1, expectedGain: 0.8 },
                     },
                 }),
+                canReapplyAfterDivergence: () => true,
                 undoable: true,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -185,7 +190,9 @@ describe('command batch preflight', () => {
                         payload: { trackId: 'track-vocal', gain: 1, expectedGain: 0.8 },
                     },
                 }),
+                canReapplyAfterDivergence: () => true,
                 undoable: true,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -242,6 +249,7 @@ describe('command batch preflight', () => {
         const execute = vi.fn(() => ({ status: 'written' as const }));
         registerHandlerMap({
             addClip: {
+                canReapplyAfterDivergence: () => true,
                 execute,
                 describe: () => ({
                     label: 'Add clip',
@@ -251,6 +259,14 @@ describe('command batch preflight', () => {
                     },
                 }),
                 undoable: true,
+                validate: () => true,
+            },
+            removeClip: {
+                canReapplyAfterDivergence: () => true,
+                execute: () => ({ status: 'written' as const }),
+                describe: () => ({ inverseAction: null, label: 'Remove clip' }),
+                undoable: false,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -310,6 +326,7 @@ describe('command batch preflight', () => {
         const execute = vi.fn(() => ({ status: 'written' as const }));
         registerHandlerMap({
             addClip: {
+                canReapplyAfterDivergence: () => true,
                 execute,
                 describe: () => ({
                     label: 'Add clip',
@@ -319,6 +336,14 @@ describe('command batch preflight', () => {
                     },
                 }),
                 undoable: true,
+                validate: () => true,
+            },
+            removeClip: {
+                canReapplyAfterDivergence: () => true,
+                execute: () => ({ status: 'written' as const }),
+                describe: () => ({ inverseAction: null, label: 'Remove clip' }),
+                undoable: false,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -439,6 +464,7 @@ describe('command batch preflight', () => {
         const execute = vi.fn(() => ({ status: 'written' as const }));
         registerHandlerMap({
             setTrackGain: {
+                canReapplyAfterDivergence: () => true,
                 execute,
                 describe: () => ({
                     label: 'Set gain',
@@ -448,6 +474,7 @@ describe('command batch preflight', () => {
                     },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -604,12 +631,21 @@ describe('command batch preflight', () => {
         });
         registerHandlerMap({
             addClip: {
+                canReapplyAfterDivergence: () => true,
                 execute,
                 describe: () => ({
                     label: 'Add clip',
                     inverseAction: { type: 'removeClip', payload: { clipId: 'clip-1' } },
                 }),
                 undoable: true,
+                validate: () => true,
+            },
+            removeClip: {
+                canReapplyAfterDivergence: () => true,
+                execute: () => ({ status: 'written' as const }),
+                describe: () => ({ inverseAction: null, label: 'Remove clip' }),
+                undoable: false,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');
@@ -693,6 +729,7 @@ describe('command batch preflight', () => {
         });
         registerHandlerMap({
             setTrackGain: {
+                canReapplyAfterDivergence: () => true,
                 execute,
                 describe: () => ({
                     label: 'Set gain',
@@ -702,6 +739,7 @@ describe('command batch preflight', () => {
                     },
                 }),
                 undoable: true,
+                validate: () => true,
             },
         });
         commandProjectRevisionPort.setProvider(() => 'revision-1');

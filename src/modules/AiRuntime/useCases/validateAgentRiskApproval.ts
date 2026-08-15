@@ -14,7 +14,10 @@ export function validateAgentRiskApproval(input: ValidateAgentRiskApprovalInput)
     }
     let current: ReturnType<typeof compileAgentRiskApproval>;
     try {
-        current = compileAgentRiskApproval({ commandBatch: input.commandBatch });
+        current = compileAgentRiskApproval({
+            commandBatch: input.commandBatch,
+            requireExplicitApproval: input.approval.policy.decision === 'confirm',
+        });
     } catch (error) {
         return {
             status: 'invalid' as const,

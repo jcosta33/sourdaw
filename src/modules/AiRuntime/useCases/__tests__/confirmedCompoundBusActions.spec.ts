@@ -6,7 +6,10 @@ import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrang
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    compileVersionedCommandBatchEnvelope,
+    migrateLegacyAppActionToVersionedCommandEnvelope,
     resetActionReplayAuthority,
+    serializeVersionedCommandEnvelope,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
@@ -26,6 +29,7 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
 import {
@@ -67,6 +71,7 @@ const noActionHistoryMetadataPort = {
 };
 
 const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
+const BUS_ALTERNATIVE_ID = 'alternative-ai-00000000-0000-4000-8000-000000000001';
 
 function createVocalsTrack(): Track {
     return {
@@ -107,8 +112,19 @@ function createVocalsTrack(): Track {
 
 function createCompoundActions(includeConflictingSend = false): ExecutableRuntimeAction[] {
     const actions: ExecutableRuntimeAction[] = [
-        { type: 'createBus', payload: { name: 'Vocal Plate', busId: BUS_ID } },
-        { type: 'addDevice', payload: { trackId: BUS_ID, deviceType: 'builtin-reverb' } },
+        {
+            type: 'createBus',
+            payload: {
+                name: 'Vocal Plate',
+                busId: BUS_ID,
+                initialAlternativeId: BUS_ALTERNATIVE_ID,
+                color: '#7b61ff',
+            },
+        },
+        {
+            type: 'addDevice',
+            payload: { trackId: BUS_ID, deviceType: 'builtin-reverb', expectedDeviceIds: [] },
+        },
         {
             type: 'addSend',
             payload: {
@@ -134,14 +150,41 @@ function createCompoundActions(includeConflictingSend = false): ExecutableRuntim
 }
 
 function propose(actions: ExecutableRuntimeAction[], id: string): void {
+    const projectRevision = captureProjectRevision();
+    const commandBatch = compileVersionedCommandBatchEnvelope({
+        runId: id,
+        batchId: id,
+        projectId: projectRevision,
+        baseRevision: projectRevision,
+        intent: 'create a Vocal Plate bus, add Reverb, and route Vocals to it',
+        dynamicEffects: {
+            affectedTrackIds: [],
+            affectedClipIds: [],
+            affectedTargetIds: [],
+            automationPoints: 0,
+            deletedObjects: 0,
+        },
+        commands: actions.map((action) =>
+            serializeVersionedCommandEnvelope(
+                migrateLegacyAppActionToVersionedCommandEnvelope({
+                    action,
+                    expectedEffect: action.type,
+                    normalizedProjectRevision: projectRevision,
+                    options: { groupId: id, groupLabel: 'Create Vocal Plate bus', source: 'prompt' },
+                })
+            )
+        ),
+    });
     proposePendingActionConfirmation({
         id,
         prompt: 'create a Vocal Plate bus, add Reverb, and route Vocals to it',
         assistantMessageId: 'assistant-1',
         actions,
         actionLabels: actions.map((action) => action.type),
+        commandBatch,
+        agentApproval: compileAgentRiskApproval({ commandBatch }),
         executionMode: 'atomic',
-        projectRevision: captureProjectRevision(),
+        projectRevision,
     });
 }
 

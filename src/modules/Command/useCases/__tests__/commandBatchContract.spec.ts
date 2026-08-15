@@ -8,10 +8,11 @@ import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
-import { executeVersionedCommandBatchEnvelope } from '../executeVersionedCommandBatchEnvelope';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { resolveVersionedCommandBatchBindings } from '../resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandBatchEnvelope } from '../serializeVersionedCommandBatchEnvelope';
+
+import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
 const GAIN_COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 const PAN_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
@@ -732,7 +733,7 @@ describe('command batch contract', () => {
         const { execution, receipt } = splitBatchReceipt(result);
         expect(execution).toEqual({
             status: 'rejected',
-            reason: 'Commit batch requires confirmation or the auto-commit grant',
+            reason: 'Commit batch requires an exact approval binding',
             actions: [],
         });
         expect(receipt.outcome).toBe('rejected');

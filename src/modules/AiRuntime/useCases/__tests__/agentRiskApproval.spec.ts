@@ -235,6 +235,17 @@ describe('agent risk approval', () => {
         expect(approval.actionHashes[0]).toMatch(/^canonical-json-utf8:[0-9a-f]+$/);
     });
 
+    it('revalidates an auto-allowed policy without upgrading it to confirmation', () => {
+        const revision = captureProjectRevision();
+        const { commandBatch } = createBatch(revision);
+        const approval = compileAgentRiskApproval({ commandBatch, requireExplicitApproval: false });
+
+        expect(approval.policy.decision).toBe('allow');
+        expect(validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision })).toEqual({
+            status: 'valid',
+        });
+    });
+
     it('escalates an auto-commit registry batch after resolving its exact command scope', () => {
         const revision = captureProjectRevision();
         const context = {

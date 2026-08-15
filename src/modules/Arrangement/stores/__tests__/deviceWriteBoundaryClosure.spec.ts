@@ -462,11 +462,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // neither hydrate a device nor write engine state.
         'src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts': 1,
         // Count provenance: the batch compiler, public barrel, and Workspace
-        // caller compile immutable Command metadata only. The six compiler-file
-        // hits are three preview-compiler references, two batch-envelope compiler
-        // references, and the exported function declaration; none hydrates or
+        // caller compile immutable Command metadata only. The seven compiler-file
+        // hits include preview/compiler references, batch-envelope references,
+        // and the exported function declaration; none hydrates or
         // writes a device.
-        'src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts': 6,
+        'src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts': 7,
         // Count provenance: AC-013 compiles immutable approval and execution
         // metadata. These references are imports, declarations, calls, and
         // ReturnType projections around Command envelope compilers; none loads,
@@ -477,10 +477,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // in-flight gate's doc comment, naming the compiler whose standalone
         // actor fallback the actor re-check mirrors (#1927). Kept rather than
         // reworded: the sentence is the reason the fallback matches. The file
-        // holds no load, compile, or hydration sink — its writes go through
-        // executeAppActionBatch, not a hydration path.
-        'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 1,
+        // holds no load, compile, or hydration sink — its writes go through the
+        // versioned Command executor, not a hydration path.
+        'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': 4,
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
+        // Count provenance: command-palette execution now owns immutable batch
+        // compilation and approval policy in this use case rather than its React
+        // caller. The three hits name compiler metadata only.
+        'src/modules/AiRuntime/useCases/executePromptActionGroup.ts': 3,
+        'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/index.ts': 2,
         'src/modules/AiRuntime/useCases/sendChatMessage.ts': 3,
@@ -495,8 +500,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Command/useCases/compilePartialCommandBatchAcceptance.ts': 4,
         'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
         'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
+        'src/modules/Command/useCases/getCommandDivergenceTargetIds.ts': 2,
         'src/modules/Command/useCases/index.ts': 4,
         'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
+        'src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts': 3,
         'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,
         // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
         // in the editor-readout evaluator's AU-1 delegation note (#747) — the
@@ -600,7 +607,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
         'src/modules/Toaster/useCases/trigger16Level.ts': 5,
         'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 2,
-        'src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts': 2,
         // Count provenance: doc-comment cross-reference to the sibling offline
         // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
         // (#747) — a pure curve-math utility, not a device-write sink.

@@ -9,6 +9,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 
+import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from '../../models/AgentExecutionMode';
 import { type ChatMessage } from '../../models/Chat';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
@@ -247,6 +248,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         chatMode: 'chat',
         enableReasoning: false,
     });
+    const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
+        chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
+    );
 
     // Auto scroll bottom when new message streams
     useEffect(() => {
@@ -259,7 +263,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         if (!inputValue.trim() || chatState?.isGenerating) {
             return;
         }
-        void sendChatMessage(inputValue.trim());
+        void sendChatMessage(inputValue.trim(), { mode: executionMode });
         setInputValue('');
 
         // Return focus to input area after sending
@@ -374,7 +378,8 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 {chatPanelContent}
             </div>
             <ChatComposer
-                chatMode={chatState.chatMode}
+                executionMode={executionMode}
+                executionModes={AGENT_EXECUTION_MODES}
                 enableReasoning={chatState.enableReasoning}
                 isGenerating={chatState.isGenerating}
                 inputValue={inputValue}
@@ -382,7 +387,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 textareaRef={textareaRef}
                 onChange={setInputValue}
                 onKeyDown={handleKeyDown}
-                onToggleMode={() => setChatMode(chatState.chatMode === 'chat' ? 'prompt' : 'chat')}
+                onExecutionModeChange={(mode) => {
+                    setExecutionMode(mode);
+                    setChatMode(mode === 'explain' ? 'chat' : 'prompt');
+                }}
                 onToggleReasoning={toggleReasoning}
                 onSend={handleSend}
                 onStop={stopGenerating}

@@ -37,6 +37,7 @@ function compile(actions: readonly AppAction[], context: ProjectContext, protect
         actions,
         actionLabels: actions.map((action) => action.type),
         autoCommit: true,
+        autoCommitApproval: () => ({ status: 'valid' }),
         context,
         group: { groupId: 'group-1', groupLabel: 'Prompt action' },
         intent: 'Apply the requested changes',
@@ -119,6 +120,24 @@ describe('compilePlannedActionCommandBatch', () => {
             projectId: 'revision-1',
         });
         expect(result.commandBatch.authority.projectId).toBe('revision-1');
+    });
+
+    it('compiles preview authority without a commit grant or approval binding', () => {
+        const result = compilePlannedActionCommandBatch({
+            actions: [{ type: 'clearSolos' }],
+            actionLabels: ['Clear solos'],
+            autoCommit: false,
+            context: { ...baseContext, tracks: [track('track-solo', true)] },
+            group: { groupId: 'group-preview', groupLabel: 'Preview prompt action' },
+            intent: 'Preview the requested changes',
+            mode: 'preview',
+            projectRevision: 'revision-1',
+            runId: 'run-preview',
+        });
+
+        expect(JSON.parse(result.commandBatch.serialized)).toMatchObject({ mode: 'preview' });
+        expect(result.commandBatch.authority.grants.autoCommit).toBe(false);
+        expect(result.commandBatch.approvalBinding).toBeUndefined();
     });
 
     it('binds whole-lane automation transforms to the current lane size and owners', () => {

@@ -312,6 +312,30 @@ describe('sendChatMessage injectables', () => {
         expect(setChatGenerating).not.toHaveBeenCalled();
     });
 
+    it('returns an exact plan without executing or proposing a commit', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
+            rawText: 'plan removing track 1',
+            requiresConfirmation: true,
+        });
+
+        await sendChatMessage('plan removing track 1', { mode: 'plan' });
+
+        expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ content: expect.stringContaining('Planned without changing the project:') })
+        );
+    });
+
     it('should not execute prompt actions that require confirmation', async () => {
         mocks.chatStoreValue.value = {
             messages: [],
@@ -597,7 +621,9 @@ describe('sendChatMessage injectables', () => {
             actions: [{ action, label: 'Mute track' }],
         });
 
-        await sendChatMessage('mute the vocals');
+        const receipt = await sendChatMessage('mute the vocals');
+
+        expect(receipt?.outcome).toBe('committed');
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
             [action],

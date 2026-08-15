@@ -50,6 +50,7 @@ export { describePlannedAction } from './describePlannedAction';
 export { parsePromptToActions } from './parsePromptToActions';
 export { planPromptActions } from './planPromptActions';
 export { executePlannedActions } from './executePlannedActions';
+export { executePromptActionGroup } from './executePromptActionGroup';
 export { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 
 export { onPromptInjection } from './onPromptInjection';
@@ -60,3 +61,7 @@ export { runAiActionWithToast } from './runAiActionWithToast';
 export { isVoiceInputAvailable } from './voiceInput/isVoiceInputAvailable';
 export { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
 export { setVoiceToggleEventBus } from './voiceToggle/voiceToggleEventBus';
+export { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority';
+export { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
+export { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
+export { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';

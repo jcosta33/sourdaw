@@ -9,15 +9,18 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { type CommandApprovalBinding, type CommandApprovalValidationResult } from './commandApprovalBinding';
 import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
 import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
+import { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 import { serializeVersionedCommandBatchEnvelope } from './serializeVersionedCommandBatchEnvelope';
 
 type CompileVersionedCommandBatchEnvelopeInput = {
+    autoCommitApproval?: () => CommandApprovalValidationResult;
     runId: string;
     batchId: string;
     projectId: string;
@@ -36,6 +39,7 @@ type CompileVersionedCommandBatchEnvelopeInput = {
 type CompiledVersionedCommandBatchEnvelope = {
     serialized: string;
     authority: CommandBatchAuthority;
+    approvalBinding?: CommandApprovalBinding;
 };
 
 function parseCommands(serializedCommands: readonly string[]): VersionedCommandEnvelope[] {
@@ -206,5 +210,11 @@ export function compileVersionedCommandBatchEnvelope(
     if (validation.status === 'invalid') {
         throw new Error(validation.reason);
     }
-    return { serialized, authority };
+    if (envelope.grants.autoCommit && !input.autoCommitApproval) {
+        throw new Error('Auto-commit compilation requires producer-owned approval revalidation');
+    }
+    const approvalBinding = input.autoCommitApproval
+        ? issueCommandApprovalBinding({ authority, serialized, validate: input.autoCommitApproval })
+        : undefined;
+    return { serialized, authority, ...(approvalBinding ? { approvalBinding } : {}) };
 }

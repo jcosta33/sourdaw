@@ -2,9 +2,11 @@ import { type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvelope';
 
+import { type CommandApprovalBinding } from './commandApprovalBinding';
 import { commandBatchExecutionAuthorityPort } from './commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from './commandBatchIdempotencyPort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { consumeCommandApprovalBinding } from './consumeCommandApprovalBinding';
 import { createRecoveredVerifiedBatchReceipt } from './createRecoveredVerifiedBatchReceipt';
 import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
@@ -23,6 +25,8 @@ import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEn
 
 type ExecuteVersionedCommandBatchEnvelopeInput = {
     authority: CommandBatchAuthority;
+    approvalBinding?: CommandApprovalBinding;
+    /** @deprecated A boolean is not proof of exact approval and never authorizes execution. */
     confirmed?: boolean;
     serialized: string;
     options?: ExecuteOptions;
@@ -341,10 +345,10 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             };
         }
     }
-    if (!input.confirmed && !parsed.envelope.grants.autoCommit) {
+    if (!input.approvalBinding) {
         const result = {
             status: 'rejected' as const,
-            reason: 'Commit batch requires confirmation or the auto-commit grant',
+            reason: 'Commit batch requires an exact approval binding',
             actions: [] as [],
         };
         return {
@@ -447,6 +451,14 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             normalizedProjectRevision: parsed.envelope.baseRevision,
             options: {
                 ...input.options,
+                authorizeFirstHandler: () => {
+                    const approval = consumeCommandApprovalBinding({
+                        approvalBinding: input.approvalBinding!,
+                        authority: input.authority,
+                        serialized: input.serialized,
+                    });
+                    return approval.status === 'invalid' ? approval.reason : null;
+                },
                 groupId: parsed.envelope.batchId,
                 shouldExecute: () =>
                     (!requiresDurableExecutionAuthority || commandBatchExecutionAuthorityPort.canExecute()) &&

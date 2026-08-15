@@ -51,17 +51,37 @@ vi.mock('remark-gfm', () => ({
 
 vi.mock('../../components/ChatComposer', () => ({
     ChatComposer: ({
+        executionMode,
         onSend,
         onStop,
+        onChange,
+        onExecutionModeChange,
         isGenerating,
         isLlmAvailable,
     }: {
+        executionMode?: string;
         onSend: () => void;
         onStop: () => void;
+        onChange: (value: string) => void;
+        onExecutionModeChange?: (mode: string) => void;
         isGenerating: boolean;
         isLlmAvailable: boolean;
     }) => (
         <div data-testid="chat-composer">
+            <label>
+                Agent execution mode
+                <select value={executionMode} onChange={(event) => onExecutionModeChange?.(event.target.value)}>
+                    <option value="explain">Explain</option>
+                    <option value="plan">Plan</option>
+                    <option value="preview">Preview</option>
+                    <option value="apply">Apply</option>
+                    <option value="macro">Macro</option>
+                </select>
+            </label>
+            <label>
+                Chat message input
+                <input onChange={(event) => onChange(event.target.value)} />
+            </label>
             <button onClick={onSend} disabled={!isLlmAvailable}>
                 Send
             </button>
@@ -72,6 +92,7 @@ vi.mock('../../components/ChatComposer', () => ({
 
 // Import the mocked modules to access mock functions
 const { useStore } = await import('#/infra/store/useStore');
+const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
@@ -132,6 +153,18 @@ describe('ChatPanel', () => {
     it('should render ChatComposer component', () => {
         render(<ChatPanel />);
         expect(screen.getByTestId('chat-composer')).toBeInTheDocument();
+    });
+
+    it('routes the selected execution mode into the agent interaction', () => {
+        render(<ChatPanel />);
+
+        fireEvent.change(screen.getByLabelText('Agent execution mode'), { target: { value: 'plan' } });
+        fireEvent.change(screen.getByLabelText('Chat message input'), {
+            target: { value: 'Outline the chorus' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+        expect(sendChatMessage).toHaveBeenCalledWith('Outline the chorus', { mode: 'plan' });
     });
 
     it('should let the user confirm or cancel pending prompt actions', () => {

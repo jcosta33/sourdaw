@@ -2,8 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import {
-    executeAppActionBatch,
-    executeVersionedCommandBatch,
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
     getVersionedCommandBatchIdempotentReplay,
@@ -31,6 +29,7 @@ import {
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
+import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -166,18 +165,19 @@ function getProtectedAffectedIds(
 
 function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation): string | null {
     const approved = confirmation.approvalSnapshot;
-    if (approved.commandBatch) {
-        if (!approved.agentApproval) {
-            return 'The command batch has no exact risk approval binding.';
-        }
-        const validation = validateAgentRiskApproval({
-            approval: approved.agentApproval,
-            commandBatch: approved.commandBatch,
-            currentRevision: captureProjectRevision(),
-        });
-        if (validation.status === 'invalid') {
-            return validation.reason;
-        }
+    if (!approved.commandBatch) {
+        return 'The confirmation has no approved command batch.';
+    }
+    if (!approved.agentApproval) {
+        return 'The command batch has no exact risk approval binding.';
+    }
+    const validation = validateAgentRiskApproval({
+        approval: approved.agentApproval,
+        commandBatch: approved.commandBatch,
+        currentRevision: captureProjectRevision(),
+    });
+    if (validation.status === 'invalid') {
+        return validation.reason;
     }
     const protectedAffectedIds = getProtectedAffectedIds(confirmation.actions, approved.protectedUnchanged);
     if (protectedAffectedIds.length > 0) {
@@ -473,9 +473,7 @@ export async function confirmPendingChatActions(
     const aborter = new AbortController();
     setChatGenerating(true);
     setActiveAborter(aborter);
-    let batchResult:
-        | Awaited<ReturnType<typeof executeAppActionBatch>>
-        | Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
+    let batchResult: Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
     try {
         const executionOptions = {
             ...group,
@@ -504,29 +502,29 @@ export async function confirmPendingChatActions(
                 return (collaborationStore.value?.localPeerId ?? 'standalone') === approved.agentApproval.localActorId;
             },
         };
-        const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
-        if (commandBatch) {
-            const versionedResult = await executeVersionedCommandBatchEnvelope({
-                authority: commandBatch.authority,
-                confirmed: true,
-                serialized: commandBatch.serialized,
-                options: executionOptions,
-            });
-            if (versionedResult.status === 'previewed') {
-                versionedResult.resource.release();
-                throw new Error('A confirmed command batch cannot execute in preview mode');
-            }
-            batchResult = versionedResult;
-        } else if (commandEnvelopes) {
-            batchResult = await executeVersionedCommandBatch({
-                commands: commandEnvelopes,
-                normalizedProjectRevision: captureProjectRevision(),
-                options: executionOptions,
-            });
-        } else {
-            batchResult = await executeAppActionBatch(confirmation.approvalSnapshot.actions, executionOptions);
+        if (!commandBatch) {
+            throw new Error('The confirmation has no approved command batch.');
         }
+        const approved = confirmation.approvalSnapshot.agentApproval;
+        if (!hasPriorVerifiedBatchReceipt && !approved) {
+            throw new Error('The command batch has no exact risk approval binding.');
+        }
+        const approvalBinding =
+            !hasPriorVerifiedBatchReceipt && approved
+                ? issueAgentCommandApprovalBinding({ approval: approved, commandBatch })
+                : undefined;
+        const versionedResult = await executeVersionedCommandBatchEnvelope({
+            authority: commandBatch.authority,
+            ...(approvalBinding ? { approvalBinding } : {}),
+            serialized: commandBatch.serialized,
+            options: executionOptions,
+        });
+        if (versionedResult.status === 'previewed') {
+            versionedResult.resource.release();
+            throw new Error('A confirmed command batch cannot execute in preview mode');
+        }
+        batchResult = versionedResult;
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         updatePendingActionConfirmationStatus({
@@ -552,6 +550,12 @@ export async function confirmPendingChatActions(
             batchResult.receipt,
             'recoveredExternalEffects' in batchResult && batchResult.recoveredExternalEffects === true
         );
+    }
+
+    const batchFailedBeforeCommit =
+        batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
+    if (batchFailedBeforeCommit && captureProjectRevision() !== confirmation.projectRevision) {
+        return invalidatePendingConfirmation(confirmation);
     }
 
     if (batchResult.status === 'cancelled') {

@@ -5,8 +5,11 @@ import { Brain, Send, Square, Zap } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
+import { type AgentExecutionMode } from '../../models/AgentExecutionMode';
+
 type ChatComposerProps = {
-    chatMode: 'chat' | 'prompt';
+    executionMode: AgentExecutionMode;
+    executionModes: readonly AgentExecutionMode[];
     enableReasoning: boolean;
     isGenerating: boolean;
     inputValue: string;
@@ -14,14 +17,15 @@ type ChatComposerProps = {
     textareaRef: RefObject<HTMLTextAreaElement | null>;
     onChange: (value: string) => void;
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-    onToggleMode: () => void;
+    onExecutionModeChange: (mode: AgentExecutionMode) => void;
     onToggleReasoning: () => void;
     onSend: () => void;
     onStop: () => void;
 };
 
 export const ChatComposer = ({
-    chatMode,
+    executionMode,
+    executionModes,
     enableReasoning,
     isGenerating,
     inputValue,
@@ -29,7 +33,7 @@ export const ChatComposer = ({
     textareaRef,
     onChange,
     onKeyDown,
-    onToggleMode,
+    onExecutionModeChange,
     onToggleReasoning,
     onSend,
     onStop,
@@ -37,7 +41,7 @@ export const ChatComposer = ({
     let placeholderText = 'Send a message... (Shift+Enter for newline)';
     if (isGenerating) {
         placeholderText = 'AI is thinking...';
-    } else if (chatMode === 'prompt') {
+    } else if (executionMode !== 'explain') {
         placeholderText = 'Type a command to execute or generate...';
     }
 
@@ -59,23 +63,23 @@ export const ChatComposer = ({
             }}
         >
             <div className="mb-2 flex items-center justify-between px-1">
-                <button
-                    type="button"
-                    onClick={onToggleMode}
-                    disabled={isGenerating}
-                    className={cn(
-                        'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
-                        chatMode === 'prompt'
-                            ? 'border-primary/30 bg-primary/20 text-primary'
-                            : 'border-border/50 bg-surface-inset text-muted-foreground hover:bg-white/5'
-                    )}
-                    title={
-                        chatMode === 'prompt' ? 'Switch to open-ended chat' : 'Switch to command mode to issue actions'
-                    }
-                >
+                <label className="flex items-center gap-1.5 rounded border border-border/50 bg-surface-inset px-2 py-1 text-[10px] font-medium text-muted-foreground">
                     <Zap className="size-3" />
-                    Command Mode
-                </button>
+                    <span>Mode</span>
+                    <select
+                        aria-label="Agent execution mode"
+                        value={executionMode}
+                        onChange={(event) => onExecutionModeChange(event.target.value as AgentExecutionMode)}
+                        disabled={isGenerating}
+                        className="bg-transparent text-foreground outline-none"
+                    >
+                        {executionModes.map((mode) => (
+                            <option key={mode} value={mode}>
+                                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                            </option>
+                        ))}
+                    </select>
+                </label>
 
                 <button
                     type="button"

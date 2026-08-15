@@ -4,9 +4,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
-    executePlannedActions,
-    compilePlannedActionCommandBatch,
     describePlannedAction,
+    executePromptActionGroup,
     getProjectContext,
     planPromptActions,
     isComplexPrompt,
@@ -24,7 +23,7 @@ import {
     defaultTrackState,
     trackStore,
 } from '#/modules/Arrangement/stores';
-import { generateGroupId, isExecutableAppActionType, requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
@@ -70,15 +69,6 @@ type PromptPreview = {
     requiresConfirmation: boolean;
     projectRevision: string;
     executionMode?: 'atomic';
-};
-
-type ExecutePromptActionGroupInput = {
-    actions: PromptAction[];
-    prompt: string;
-    projectRevision: string;
-    executionMode?: 'atomic';
-    signal?: AbortSignal;
-    successVerb?: 'Executed' | 'Confirmed';
 };
 
 // ── Hook return type ────────────────────────────────────────────────────
@@ -235,47 +225,6 @@ export const usePromptExecution = (): PromptExecutionState => {
         setSelectedIndex(-1);
     }, [value, preview, isFocused, isProcessing, trackState, clipSelection]);
 
-    // ── Execute action group ────────────────────────────────────────────
-    const executeWithGroup = async (input: ExecutePromptActionGroupInput): Promise<void> => {
-        const context = getProjectContext();
-        const group = generateGroupId(input.prompt);
-        const usesVersionedBatch = input.actions.every((action) => isExecutableAppActionType(action.type));
-        const commandBatch = usesVersionedBatch
-            ? compilePlannedActionCommandBatch({
-                  actions: input.actions,
-                  actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
-                  autoCommit: true,
-                  context,
-                  group,
-                  intent: input.prompt,
-                  projectRevision: input.projectRevision,
-                  runId: `prompt-execution-${crypto.randomUUID()}`,
-              }).commandBatch
-            : undefined;
-        const execution = commandBatch
-            ? await executePlannedActions({ ...input, group, commandBatch })
-            : await executePlannedActions({ ...input, group, legacyExecution: true });
-        if (execution.status === 'committed' || execution.status === 'executed') {
-            return;
-        }
-        if (execution.status === 'invalidated' || execution.status === 'failed') {
-            notifyAiChange(`Command not executed: ${execution.reason}`, []);
-            return;
-        }
-        if (execution.status === 'ambiguous') {
-            notifyAiChange(
-                `Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`,
-                []
-            );
-            return;
-        }
-        if (execution.status === 'cancelled') {
-            notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
-            return;
-        }
-        notifyAiChange('No project changes were needed.', []);
-    };
-
     // ── Execute preset directly ─────────────────────────────────────────
     const executePreset = async (result: PromptFuzzyResult): Promise<void> => {
         if (operationRef.current || previewRef.current) {
@@ -309,7 +258,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         setFuzzyResults([]);
         setIsProcessing(true);
         try {
-            await executeWithGroup({
+            await executePromptActionGroup({
                 actions,
                 prompt: result.preset.label,
                 projectRevision,
@@ -370,7 +319,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             if (result.rejectionReason) {
                 notifyAiChange(`Command not executed: ${result.rejectionReason}`, []);
             } else if (result.actions.length > 0) {
-                await executeWithGroup({
+                await executePromptActionGroup({
                     actions: result.actions,
                     prompt: value,
                     projectRevision,
@@ -411,7 +360,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         clearPreview();
         setIsProcessing(true);
         try {
-            await executeWithGroup({
+            await executePromptActionGroup({
                 actions: proposal.actions,
                 prompt: proposal.rawText,
                 projectRevision: proposal.projectRevision,

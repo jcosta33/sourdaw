@@ -1,8 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import {
-    executeAppActionBatch,
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
+    type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -15,7 +15,10 @@ import { recordAiActionGroup } from './recordAiActionGroup';
 
 type CommandBatchInput =
     | {
-          commandBatch: Pick<Parameters<typeof executeVersionedCommandBatchEnvelope>[0], 'authority' | 'serialized'>;
+          commandBatch: Pick<
+              Parameters<typeof executeVersionedCommandBatchEnvelope>[0],
+              'approvalBinding' | 'authority' | 'serialized'
+          >;
           legacyExecution?: never;
       }
     | {
@@ -38,17 +41,21 @@ type ExecutedAction = {
     label: string;
 };
 
+type VerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+
 type ExecutePlannedActionsResult =
     | {
           status: 'committed';
           actions: ExecutedAction[];
           commitWarning?: string;
+          receipt?: VerifiedBatchReceipt;
           reportingWarning?: string;
       }
     | {
           status: 'executed';
           actions: ExecutedAction[];
           executionWarning?: string;
+          receipt?: VerifiedBatchReceipt;
           reportingWarning?: string;
       }
     | { status: 'no-op' }
@@ -61,6 +68,10 @@ function failureReason(error: unknown): string {
 }
 
 export async function executePlannedActions(input: ExecutePlannedActionsInput): Promise<ExecutePlannedActionsResult> {
+    if (input.legacyExecution) {
+        return { status: 'failed', reason: 'Legacy planned-action execution is not authorized' };
+    }
+
     const group = input.group ?? generateGroupId(input.prompt);
     let revisionInvalidated = false;
 
@@ -75,9 +86,10 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         requireCompensation: input.executionMode === 'atomic',
         shouldExecute,
     };
-    const batchResult = input.commandBatch
-        ? await executeVersionedCommandBatchEnvelope({ ...input.commandBatch, options: executionOptions })
-        : await executeAppActionBatch(input.actions, executionOptions);
+    const batchResult = await executeVersionedCommandBatchEnvelope({
+        ...input.commandBatch,
+        options: executionOptions,
+    });
 
     if (batchResult.status === 'previewed') {
         batchResult.resource.release();
@@ -91,6 +103,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
                 status: 'committed',
                 actions: [],
                 ...(replay.warning ? { commitWarning: replay.warning } : {}),
+                receipt: batchResult.receipt,
             };
         }
         if (replay.status === 'executed') {
@@ -98,6 +111,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
                 status: 'executed',
                 actions: [],
                 ...(replay.warning ? { executionWarning: replay.warning } : {}),
+                receipt: batchResult.receipt,
             };
         }
         return replay;
@@ -127,8 +141,12 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     if (!isCommitted && !isExecuted) {
         return { status: 'failed', reason: batchResult.reason };
     }
+    if (!('receipt' in batchResult)) {
+        return { status: 'failed', reason: 'Versioned command execution did not return a verified receipt' };
+    }
 
     const actions = batchResult.actions.map(({ action, label }) => ({ actionType: action.type, label }));
+    const receipt = batchResult.receipt;
     const commitWarning = batchResult.status === 'committed-with-warning' ? batchResult.warning : undefined;
     const executionWarning = batchResult.status === 'executed-with-warning' ? batchResult.warning : undefined;
     const reportingFailures: string[] = [];
@@ -172,6 +190,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
             status: 'executed',
             actions,
             ...(executionWarning ? { executionWarning } : {}),
+            receipt,
             ...(reportingWarning ? { reportingWarning } : {}),
         };
     }
@@ -179,6 +198,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         status: 'committed',
         actions,
         ...(commitWarning ? { commitWarning } : {}),
+        receipt,
         ...(reportingWarning ? { reportingWarning } : {}),
     };
 }
