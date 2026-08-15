@@ -1,11 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    commandBatchPreflightPort,
+    compileVersionedCommandBatchEnvelope,
+    migrateLegacyAppActionToVersionedCommandEnvelope,
+    serializeVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
 
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
-    proposePendingActionConfirmation,
+    proposePendingActionConfirmation as storePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
+import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
@@ -17,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-1' },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
+    executeVersionedCommandBatchEnvelope: vi.fn(),
     describeAction: vi.fn((_action: AppAction) => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
     pushAiActionGroup: vi.fn(),
@@ -36,6 +46,7 @@ vi.mock('#/modules/Command/useCases', async (import_original) => ({
     ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
     executeAppActionBatch: mocks.executeAppActionBatch,
+    executeVersionedCommandBatchEnvelope: mocks.executeVersionedCommandBatchEnvelope,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
 }));
@@ -62,6 +73,47 @@ vi.mock('../notifyAiChange', () => ({
 const pendingAction: AppAction = { type: 'removeTrack', payload: { trackId: 'track-1' } };
 const secondPendingAction: AppAction = { type: 'removeClip', payload: { clipId: 'clip-1' } };
 const runtimeOnlyAction: AppAction = { type: 'setPlayback', payload: { playing: true } };
+const approvedActionsByBatch = new Map<string, AppAction[]>();
+
+function proposePendingActionConfirmation(
+    input: Parameters<typeof storePendingActionConfirmation>[0]
+): ReturnType<typeof storePendingActionConfirmation> {
+    const commands = input.actions.map((action, index) =>
+        serializeVersionedCommandEnvelope(
+            migrateLegacyAppActionToVersionedCommandEnvelope({
+                action,
+                expectedEffect: input.actionLabels[index] ?? action.type,
+                normalizedProjectRevision: input.projectRevision,
+                options: {
+                    groupId: input.groupId ?? input.id,
+                    groupLabel: input.groupLabel ?? input.prompt,
+                    source: 'prompt',
+                },
+            })
+        )
+    );
+    const commandBatch = compileVersionedCommandBatchEnvelope({
+        runId: input.id,
+        batchId: input.groupId ?? input.id,
+        projectId: input.projectRevision,
+        baseRevision: input.projectRevision,
+        intent: input.prompt,
+        commands,
+        dynamicEffects: {
+            affectedTrackIds: [],
+            affectedClipIds: [],
+            affectedTargetIds: [],
+            automationPoints: 0,
+            deletedObjects: 0,
+        },
+    });
+    approvedActionsByBatch.set(commandBatch.serialized, input.actions);
+    return storePendingActionConfirmation({
+        ...input,
+        commandBatch,
+        agentApproval: compileAgentRiskApproval({ commandBatch }),
+    });
+}
 
 function proposePendingAppAction(id: string): void {
     proposePendingActionConfirmation({
@@ -77,7 +129,38 @@ function proposePendingAppAction(id: string): void {
 
 describe('pending chat action confirmation', () => {
     beforeEach(() => {
+        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'revision-1',
+            projectInvariantsValid: true,
+            targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, `fp:${targetId}`])),
+        }));
         vi.clearAllMocks();
+        approvedActionsByBatch.clear();
+        clearHandlerRegistry();
+        registerHandlerMap({
+            removeTrack: {
+                execute: () => undefined,
+                describe: () => ({ label: 'Remove track' }),
+                undoable: false,
+                validate: () => true,
+            },
+            removeClip: {
+                execute: () => undefined,
+                describe: () => ({ label: 'Remove clip' }),
+                undoable: false,
+                validate: () => true,
+            },
+            setPlayback: {
+                execute: () => undefined,
+                describe: () => ({ label: 'Set playback' }),
+                undoable: false,
+                validate: () => true,
+            },
+        });
         clearPendingActionConfirmations();
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.executeAppActionBatch.mockImplementation((actions: Parameters<ExecuteAppActionBatch>[0]) =>
@@ -89,10 +172,19 @@ describe('pending chat action confirmation', () => {
                 })),
             })
         );
+        mocks.executeVersionedCommandBatchEnvelope.mockImplementation(
+            ({ serialized, options }: { serialized: string; options?: Parameters<ExecuteAppActionBatch>[1] }) =>
+                mocks.executeAppActionBatch(approvedActionsByBatch.get(serialized) ?? [], options)
+        );
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.projectRevision.value = 'revision-1';
         chatGenerationState.value = false;
+    });
+
+    afterEach(() => {
+        commandBatchPreflightPort.setProvider(null);
+        clearHandlerRegistry();
     });
 
     it('should execute a proposed action group only after explicit confirmation', async () => {
@@ -259,6 +351,7 @@ describe('pending chat action confirmation', () => {
         });
 
         const firstConfirmation = confirmPendingChatActions({ confirmationId: 'confirm-first' });
+        await vi.waitFor(() => expect(mocks.setActiveAborter).toHaveBeenCalledTimes(1));
         const firstAborter = mocks.setActiveAborter.mock.calls[0]?.[0];
         const secondResult = await confirmPendingChatActions({ confirmationId: 'confirm-second' });
 
