@@ -1,0 +1,19 @@
+src-tauri/src/commands/plugins.rs
+  s_90ce553fc05f75::t_0c31f8e310a3a8 1711-1783
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bbad822d68175bdf5ab06556396c38ebc8d163f3",
+  "prompts": {},
+  "sessions": {
+    "s_90ce553fc05f75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad5bdb957e75419e4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
