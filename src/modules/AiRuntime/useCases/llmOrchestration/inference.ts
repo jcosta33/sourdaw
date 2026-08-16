@@ -11,6 +11,10 @@ import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
+    estimateCompiledProviderRequestTokenCeiling,
+    type ProviderAttemptCostEstimate,
+} from '../../models/ModelProviderBudgetEstimate';
+import {
     type ModelProviderName,
     type ModelProviderRequest,
     type ModelProviderResult,
@@ -97,29 +101,6 @@ export type ProviderAttemptAdmission = {
 };
 
 export type ProviderAttemptAdmissionResult = { status: 'admitted' } | { status: 'rejected'; reason: string };
-
-const COMPILED_PROVIDER_REQUEST_TOKEN_CEILING_METHOD = 'compiled-provider-request-utf8-byte-token-ceiling-v1' as const;
-
-export type ProviderAttemptCostEstimate = {
-    method: typeof COMPILED_PROVIDER_REQUEST_TOKEN_CEILING_METHOD;
-    inputTokenCeiling: number;
-    outputTokenCeiling: number;
-    totalTokenCeiling: number;
-};
-
-function estimateCompiledProviderRequestTokenCeiling(request: ModelProviderRequest): ProviderAttemptCostEstimate {
-    // This bounds prompt tokens without assuming a provider tokenizer: each
-    // non-empty token consumes at least one UTF-8 byte. The serialized request
-    // contains every provider-visible message, schema, and advertised tool.
-    const inputTokenCeiling = new TextEncoder().encode(JSON.stringify(request)).byteLength;
-    const outputTokenCeiling = request.limits.maxOutputTokens;
-    return {
-        method: COMPILED_PROVIDER_REQUEST_TOKEN_CEILING_METHOD,
-        inputTokenCeiling,
-        outputTokenCeiling,
-        totalTokenCeiling: inputTokenCeiling + outputTokenCeiling,
-    };
-}
 
 function createProviderAttemptAdmissionError(reason: string): Error {
     const error = new Error(reason);
@@ -414,6 +395,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 const correlationId = `tool-planning-${crypto.randomUUID()}`;
                 const requestId = streamIdentity?.requestId ?? correlationId;
+                const remoteDisclosure =
+                    backend === 'cloud'
+                        ? remoteTransmissionDisclosure.prepare({
+                              categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                              correlationId,
+                              requestId,
+                          })
+                        : undefined;
                 const compiledRequest = providerProtocol.compileRequest({
                     correlationId,
                     ...(streamIdentity ?? {}),
@@ -433,18 +422,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
                     budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
-                    ...(backend === 'cloud'
-                        ? {
+                    ...(remoteDisclosure === undefined
+                        ? {}
+                        : {
                               dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                              remoteDisclosure: remoteTransmissionDisclosure.issue({
-                                  categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-                                  correlationId,
-                                  requestId,
-                                  ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
-                                  provider: providerName,
-                              }),
-                          }
-                        : {}),
+                              remoteDisclosure,
+                          }),
                 });
                 if (compiledRequest.status !== 'ready') {
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
@@ -461,6 +444,16 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 if (admission?.status === 'rejected') {
                     throw createProviderAttemptAdmissionError(admission.reason);
+                }
+                if (
+                    remoteDisclosure !== undefined &&
+                    !remoteTransmissionDisclosure.publish({
+                        evidence: remoteDisclosure,
+                        ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
+                        provider: providerName,
+                    })
+                ) {
+                    throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
                 }
                 providerSession = providerProtocol.start(providerRequest);
                 providerSource = createModelProviderStreamWriter(providerRequest, providerSession);

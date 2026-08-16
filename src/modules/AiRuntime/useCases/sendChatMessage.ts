@@ -20,6 +20,7 @@ import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
+import { estimateCompiledProviderRequestTokenCeiling } from '../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderFinish,
     type ModelProviderFinishEnvelope,
@@ -224,10 +225,6 @@ function getProviderBudgetCategory(backend: RunnableAiBackend): string {
     return backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
 }
 
-function estimateProviderBudget(prompt: string, backend: RunnableAiBackend): number {
-    return backend === 'cloud' ? Math.ceil(prompt.length / 4) + 1024 : 1;
-}
-
 function recordApplicationToolOnlyPlan(input: {
     runId: string;
     revision: string;
@@ -309,29 +306,6 @@ export async function sendChatMessage(
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
     const providerReceiptIdentity = `provider:${backend}:${runId}`;
-    if (interactionMode === 'explain') {
-        const budgetReservation = agentRunLifecycle.reserveBudget({
-            runId,
-            attemptId: providerReceiptIdentity,
-            category: getProviderBudgetCategory(backend),
-            estimate: estimateProviderBudget(userText, backend),
-            provenance: 'versioned-estimate',
-        });
-        if (budgetReservation.status === 'hard-limit-reached') {
-            agentRunLifecycle.recordError({
-                runId,
-                error: {
-                    code: 'agent-budget-hard-limit',
-                    message: `The ${budgetReservation.reason} budget would be exceeded before provider work starts.`,
-                    occurredAt: Date.now(),
-                    retriable: false,
-                    workId: providerWorkId,
-                },
-                terminal: true,
-            });
-            throw createAiRuntimeError('The agent budget limit was reached before work started.');
-        }
-    }
     const providerLeaseResult = agentRunWorkLease.claim({
         runId,
         workId: providerWorkId,
@@ -1121,6 +1095,14 @@ export async function sendChatMessage(
             role: 'system' | 'user' | 'assistant';
             content: string;
         }> = [{ role: 'system', content: systemPrompt }, ...conversationHistory];
+        const remoteDisclosure =
+            backend === 'cloud'
+                ? remoteTransmissionDisclosure.prepare({
+                      categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                      correlationId: providerReceiptIdentity,
+                      requestId: providerReceiptIdentity,
+                  })
+                : undefined;
         const providerProtocol = createModelProviderProtocol({
             provider: getModelProviderName(backend),
             model: getBackendModelId(backend),
@@ -1138,23 +1120,60 @@ export async function sendChatMessage(
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
             budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
-            ...(backend === 'cloud'
-                ? {
+            ...(remoteDisclosure === undefined
+                ? {}
+                : {
                       dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                      remoteDisclosure: remoteTransmissionDisclosure.issue({
-                          categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-                          correlationId: providerReceiptIdentity,
-                          requestId: providerReceiptIdentity,
-                          runId,
-                          provider: getModelProviderName(backend),
-                      }),
-                  }
-                : {}),
+                      remoteDisclosure,
+                  }),
         });
         if (compiledProviderRequest.status !== 'ready') {
             throw createAiRuntimeError(compiledProviderRequest.failure.safeMessage);
         }
         const providerRequest = compiledProviderRequest.request;
+        const providerEstimate = estimateCompiledProviderRequestTokenCeiling(providerRequest);
+        const budgetReservation = agentRunLifecycle.reserveBudget({
+            runId,
+            attemptId: providerRequest.correlationId,
+            category: getProviderBudgetCategory(backend),
+            estimate: providerEstimate.totalTokenCeiling,
+            provenance: 'versioned-estimate',
+            estimateMethod: providerEstimate.method,
+        });
+        if (budgetReservation.status === 'hard-limit-reached') {
+            agentRunLifecycle.recordError({
+                runId,
+                error: {
+                    code: 'agent-budget-hard-limit',
+                    message: `The ${budgetReservation.reason} budget would be exceeded before provider work starts.`,
+                    occurredAt: Date.now(),
+                    retriable: false,
+                    workId: providerWorkId,
+                },
+                terminal: true,
+            });
+            throw createAiRuntimeError('The agent budget limit was reached before work started.');
+        }
+        if (backend === 'cloud') {
+            if (
+                remoteDisclosure === undefined ||
+                !remoteTransmissionDisclosure.publish({
+                    evidence: remoteDisclosure,
+                    runId,
+                    provider: getModelProviderName(backend),
+                })
+            ) {
+                throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
+            }
+            const remoteCategories = REMOTE_TEXT_AGENT_DATA_CATEGORIES;
+            assertRemoteAgentDataPolicy(remoteCategories);
+            appendChatMessage({
+                id: `msg-${crypto.randomUUID()}`,
+                role: 'assistant',
+                content: formatRemoteTransmissionDisclosure(remoteCategories),
+                timestamp: Date.now(),
+            });
+        }
         providerSession = providerProtocol.start(providerRequest);
         const activeProviderStreamWriter = createModelProviderStreamWriter(providerRequest, providerSession);
         providerStreamWriter = activeProviderStreamWriter;
@@ -1194,14 +1213,6 @@ export async function sendChatMessage(
                 throw createAiRuntimeError(nativeOutcome.finish.finish.failure.safeMessage);
             }
         } else if (backend === 'cloud') {
-            const remoteCategories = REMOTE_TEXT_AGENT_DATA_CATEGORIES;
-            assertRemoteAgentDataPolicy(remoteCategories);
-            appendChatMessage({
-                id: `msg-${crypto.randomUUID()}`,
-                role: 'assistant',
-                content: formatRemoteTransmissionDisclosure(remoteCategories),
-                timestamp: Date.now(),
-            });
             // Cloud: streaming completion via Claude API
             cloudOutcome = await streamCloudChatCompletion(
                 providerRequest.messages,

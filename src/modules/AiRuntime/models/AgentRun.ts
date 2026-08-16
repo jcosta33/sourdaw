@@ -1,6 +1,7 @@
 import { type AgentExecutionMode } from './AgentExecutionMode';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
+import { type ProviderRequestTokenCeilingMethod } from './ModelProviderBudgetEstimate';
 
 export const AGENT_RUN_SCHEMA_VERSION = 1 as const;
 
@@ -44,7 +45,7 @@ export type AgentRunBudgets = {
     consumed: Record<string, number>;
 };
 
-export type AgentRunBudgetEstimateMethod = 'compiled-provider-request-utf8-byte-token-ceiling-v1';
+export type AgentRunBudgetEstimateMethod = ProviderRequestTokenCeilingMethod;
 
 export type AgentRunBudgetAttempt = {
     attemptId: string;
