@@ -1,0 +1,49 @@
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInputTauri.ts
+  s_ab5443e65c7fba::t_db34c5e696bc1b 67-75
+  s_ab5443e65c7fba::t_108600bc518b77 87-91,101,105-106,110-112
+  s_ab5443e65c7fba::t_3c98c80ab3f9cc 113-114
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInputTauri.spec.ts
+  s_ab5443e65c7fba::t_5e1d9c1a709928 192-228
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/listTauriMidiInputs.spec.ts
+  s_ab5443e65c7fba::t_3684d87e78627e 11
+  s_ab5443e65c7fba::t_258c3a9cde9012 49-73,82-112
+  s_ab5443e65c7fba::t_ea3053b2037ce2 113
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInput.ts
+  s_ab5443e65c7fba::t_7f6750959cf996 35
+src/modules/MIDI/repositories/webMidi/lifecycle/resolveTauriMidiPort.ts
+  s_ab5443e65c7fba::t_96bb3d26f71c16 1-20
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_ab5443e65c7fba::t_75e19e39dc79ca 110-116,120-124
+  s_ab5443e65c7fba::t_2c9a5fef742222 149-152,157-171
+  s_ab5443e65c7fba::t_c6fa1221bf29da 17
+src/modules/MIDI/repositories/webMidi/lifecycle/listTauriMidiInputs.ts
+  s_ab5443e65c7fba::t_3d7cb307f4dd6d 43-45,53-62
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.ts
+  s_ab5443e65c7fba::t_215ab30b369935 54-56
+  s_ab5443e65c7fba::t_caacc6ab13c5f0 41
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_ab5443e65c7fba::t_aa53c204e04e6d 458-459
+  s_ab5443e65c7fba::t_0957746e3e6813 494
+  s_ab5443e65c7fba::t_4ebe3f0cf7e30c 439
+  s_ab5443e65c7fba::t_9f75d9e476d86d 419-420
+  s_ab5443e65c7fba::t_aefbdce76692e3 143-146,157-185,503
+  s_ab5443e65c7fba::t_cffd3a42ae59d1 478,485-493,495-502
+  s_ab5443e65c7fba::t_57a00c58d3fe09 200
+  s_ab5443e65c7fba::t_23eb56c83e4051 504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3cb6429d67b6b85073ba5cd92db799491bcf9c07",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
