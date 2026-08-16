@@ -1,0 +1,44 @@
+src/modules/Project/useCases/projectPersistence/fileIO/serializeArrangementTracks.ts
+  s_ab5443e65c7fba::t_657a3d633edaea 8-18
+crates/daw-collab/src/schema.rs
+  s_ab5443e65c7fba::t_ab5e95a8f3843e 1-14
+  s_ab5443e65c7fba::t_66c789b885f4bb 52,54-55
+crates/daw-collab/src/discovery.rs
+  s_ab5443e65c7fba::t_a15ddd7b7e47ff 361
+  s_ab5443e65c7fba::t_2c871d3dca0af7 137,142,255,257-360,362-370
+  s_ab5443e65c7fba::t_12343d957dc4bd 25-66,68-83,256,371
+  s_ab5443e65c7fba::t_10208f19b9f36d 232-235,237,245-254
+  s_ab5443e65c7fba::t_ee3ca90d3d36a0 67
+  s_ab5443e65c7fba::t_0433fe226a718c 84,88,98,372-376
+crates/daw-collab/src/document_store.rs
+  s_ab5443e65c7fba::t_7d324a00de9b19 4
+  s_ab5443e65c7fba::t_81cbbd98e6c13d 23-32,35,39-42,50-57,60-68,73-76,395
+  s_ab5443e65c7fba::t_64860d3a29dfe4 375-378
+  s_ab5443e65c7fba::t_db7828626dc003 161-165
+  s_ab5443e65c7fba::t_f94e4eb7e92df5 358
+  s_ab5443e65c7fba::t_f59c2f79d803f9 72,77-78
+  s_ab5443e65c7fba::t_2f19ce81a1e07d 86,183,186,189,259-270,273,278-309,312-313,323,332,335,357,359-374,379-389,394
+  s_ab5443e65c7fba::t_a8a1732055514f 71,79-82,166-168,178-182,184-185,187-188,190-192,390-393,396-397,400
+src-tauri/src/lib.rs
+  s_ab5443e65c7fba::t_892234fa8bdd8f 129-140
+src-tauri/src/commands/collab.rs
+  s_ab5443e65c7fba::t_eeef899c86dbee 51
+  s_ab5443e65c7fba::t_f5a334fc39be44 191-207
+  s_ab5443e65c7fba::t_05f27e3f2c02a5 208-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "521c793fd79c7d84d1cb09d1cedbcaa0d87e7131",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
