@@ -7,7 +7,17 @@ export type ProviderRouteViewInput = {
     actualRoute: 'browser-local' | 'native-local' | 'remote' | null;
     availability: { status: 'available' | 'unavailable'; reason: string | null };
     capability: { role: string; fidelity: string };
-    fallback: { attempted: boolean; reason: string | null };
+    fallback: {
+        attempted: boolean;
+        reason: string | null;
+        attempts: Array<{
+            provider: string;
+            model: string | null;
+            correlationId: string | null;
+            status: string;
+            reason: string | null;
+        }>;
+    };
     dataPolicy: { categories: string[]; retention: AgentDataRetention };
     cache: { status: 'used' | 'not-used' | 'unavailable'; provenance: ModelProviderUsageProvenance };
     usage: { provenance: ModelProviderUsageProvenance; priceProvenance: ModelProviderUsageProvenance };
@@ -58,8 +68,11 @@ export function getProviderRouteView(run: AgentRun): ProviderRouteView {
         if (usage === undefined) {
             return { status: 'unavailable' as const, reason: 'no-provider-attempt' };
         }
-        if (usage.status === 'unavailable') {
-            return { status: 'unavailable' as const, reason: usage.fallbackReason ?? 'provider-unavailable' };
+        if (usage.status !== 'complete') {
+            return {
+                status: 'unavailable' as const,
+                reason: usage.fallbackReason ?? usage.status ?? 'provider-unavailable',
+            };
         }
         return { status: 'available' as const, reason: null };
     })();
@@ -72,8 +85,17 @@ export function getProviderRouteView(run: AgentRun): ProviderRouteView {
             fidelity: usage?.model ?? 'unavailable',
         },
         fallback: {
-            attempted: usage?.fallbackReason !== null && usage?.fallbackReason !== undefined,
-            reason: usage?.fallbackReason ?? null,
+            attempted: run.providerUsage.some(
+                (attempt) => attempt.fallbackReason !== null && attempt.fallbackReason !== undefined
+            ),
+            reason: [...run.providerUsage].reverse().find((attempt) => attempt.fallbackReason)?.fallbackReason ?? null,
+            attempts: run.providerUsage.map((attempt) => ({
+                provider: attempt.provider,
+                model: attempt.model,
+                correlationId: attempt.correlationId ?? null,
+                status: attempt.status ?? 'unavailable',
+                reason: attempt.fallbackReason ?? null,
+            })),
         },
         dataPolicy: {
             categories: usage?.disclosure?.categories ?? [],

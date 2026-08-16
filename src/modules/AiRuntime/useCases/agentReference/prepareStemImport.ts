@@ -44,7 +44,10 @@ function throwIfAborted(signal?: AbortSignal): void {
     }
 }
 
-export async function prepareStemImport(signal?: AbortSignal) {
+export async function prepareStemImport(
+    signal?: AbortSignal,
+    admitWork?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean
+) {
     const files = await pickFiles({
         multiple: true,
         filters: [{ name: 'Audio stems', extensions: ['wav', 'aif', 'aiff', 'flac', 'mp3', 'ogg', 'm4a'] }],
@@ -64,6 +67,11 @@ export async function prepareStemImport(signal?: AbortSignal) {
     }
     if (totalSourceBytes > MAX_TOTAL_SOURCE_BYTES) {
         throw new Error('The selected stem set must total 1 GiB or less.');
+    }
+    if (
+        !admitWork?.({ analysisCount: files.length, downloadBytes: totalSourceBytes, storageBytes: totalSourceBytes })
+    ) {
+        throw new Error('The selected stem preparation exceeds the user budget.');
     }
 
     const projectTempo = transportStore.value?.tempo ?? 120;

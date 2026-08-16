@@ -19,6 +19,7 @@ type PlanPromptActionsInput = {
     onProviderResult?: (result: ModelProviderResult) => void;
     streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
     onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult;
+    onLocalWorkAttempt?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean;
 };
 
 export async function planPromptActions(input: PlanPromptActionsInput) {
@@ -38,7 +39,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             input.onProviderAttempt
         );
         if (result.preparationRequest === 'stem-import') {
-            const preparedStemImport = await prepareStemImport(input.signal);
+            const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
             if (preparedStemImport.status === 'cancelled') {
                 return {
                     context,

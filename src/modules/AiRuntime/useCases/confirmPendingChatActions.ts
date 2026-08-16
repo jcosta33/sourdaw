@@ -433,8 +433,8 @@ function getIncompleteSectionRenderJobs(confirmation: PendingAppActionConfirmati
     if (!scope) {
         return null;
     }
-    const missingJobIds = scope.jobs.filter((job) => !scope.completedJobIds.has(job.jobId)).map((job) => job.jobId);
-    return missingJobIds.length > 0 ? { jobs: scope.jobs, missingJobIds } : null;
+    const jobs = scope.jobs.filter((job) => !scope.completedJobIds.has(job.jobId));
+    return jobs.length > 0 ? { jobs, missingJobIds: jobs.map((job) => job.jobId) } : null;
 }
 
 async function retryCommittedSectionRenders(

@@ -43,7 +43,19 @@ describe('provider route view', () => {
             actualRoute: 'native-local',
             availability: { status: 'available', reason: null },
             capability: { role: 'tool-planning', fidelity: 'tool-model' },
-            fallback: { attempted: true, reason: 'remote-unavailable' },
+            fallback: {
+                attempted: true,
+                reason: 'remote-unavailable',
+                attempts: [
+                    {
+                        provider: 'openai',
+                        model: 'tool-model',
+                        correlationId: null,
+                        status: 'complete',
+                        reason: 'remote-unavailable',
+                    },
+                ],
+            },
             dataPolicy: {
                 categories: ['prompt-text'],
                 retention: {
@@ -75,6 +87,53 @@ describe('provider route view', () => {
             availability: { status: 'unavailable', reason: 'no-provider-attempt' },
             cache: { status: 'unavailable', provenance: 'unavailable' },
             usage: { provenance: 'unavailable', priceProvenance: 'unavailable' },
+        });
+    });
+
+    it('retains ordered fallback attempts and marks a terminal failure unavailable', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'failed-route-run',
+            request: 'Plan',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'failed-route-run',
+            usage: {
+                provider: 'native',
+                model: 'native',
+                inputTokens: null,
+                outputTokens: null,
+                provenance: 'unavailable',
+                correlationId: 'native-1',
+                status: 'failed',
+                fallbackReason: 'native-unavailable',
+                executor: 'native',
+            },
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'failed-route-run',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: null,
+                outputTokens: null,
+                provenance: 'unavailable',
+                correlationId: 'webllm-2',
+                status: 'cancelled',
+                fallbackReason: 'cancelled',
+                executor: 'webllm',
+            },
+        });
+        expect(getProviderRouteView(agentRunLifecycle.get('failed-route-run')!)).toMatchObject({
+            actualRoute: 'browser-local',
+            availability: { status: 'unavailable', reason: 'cancelled' },
+            fallback: {
+                attempted: true,
+                reason: 'cancelled',
+                attempts: [{ correlationId: 'native-1' }, { correlationId: 'webllm-2' }],
+            },
         });
     });
 });

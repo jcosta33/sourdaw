@@ -205,6 +205,7 @@ function recordModelProviderUsage(
             partialOutputDisposition: result.partialOutputDisposition,
             routeId,
             executor,
+            ...(result.remoteDisclosure ? { disclosure: result.remoteDisclosure } : {}),
             fallbackReason:
                 options.terminal || result.status === 'complete' ? null : (result.failure?.code ?? result.status),
         },
@@ -383,6 +384,23 @@ export async function sendChatMessage(
                     return budgetReservation.status === 'reserved'
                         ? { status: 'admitted' as const }
                         : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
+                },
+                onLocalWorkAttempt: ({ analysisCount, downloadBytes, storageBytes }) => {
+                    const estimates = [
+                        ['localAnalysis', analysisCount],
+                        ['downloadBytes', downloadBytes],
+                        ['storageBytes', storageBytes],
+                    ] as const;
+                    return estimates.every(
+                        ([category, estimate]) =>
+                            agentRunLifecycle.reserveBudget({
+                                runId,
+                                attemptId: `stem-preparation:${category}`,
+                                category,
+                                estimate,
+                                provenance: 'versioned-estimate',
+                            }).status === 'reserved'
+                    );
                 },
             });
             agentRunWorkLease.settle({
