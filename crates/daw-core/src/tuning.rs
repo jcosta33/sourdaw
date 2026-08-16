@@ -1,7 +1,5 @@
 pub mod scala;
 
-use triple_buffer::Output;
-
 #[derive(Clone, Copy, Debug)]
 pub struct TuningTable {
     pub frequencies: [f64; 128],
@@ -76,48 +74,5 @@ impl TuningTable {
             frequencies,
             log2_frequencies,
         }
-    }
-}
-
-pub struct TuningManager {
-    tuning_output: Output<TuningTable>,
-    current_table: TuningTable,
-}
-
-impl TuningManager {
-    pub fn new(tuning_output: Output<TuningTable>) -> Self {
-        Self {
-            tuning_output,
-            current_table: TuningTable::default(),
-        }
-    }
-
-    #[inline]
-    pub fn update(&mut self) {
-        if self.tuning_output.update() {
-            self.current_table = *self.tuning_output.output_buffer();
-        }
-    }
-
-    #[inline]
-    pub fn get_frequency(&self, midi_note: f64) -> f64 {
-        let note = midi_note.clamp(0.0, 127.0);
-        let i = note.floor() as usize;
-        let frac = note.fract();
-
-        if frac < 1e-9 {
-            return self.current_table.frequencies[i];
-        }
-
-        if i >= 127 {
-            return self.current_table.frequencies[127];
-        }
-
-        // Log-space interpolation
-        let l1 = self.current_table.log2_frequencies[i];
-        let l2 = self.current_table.log2_frequencies[i + 1];
-        let interpolated_log2 = l1 + (l2 - l1) * frac;
-
-        2.0_f64.powf(interpolated_log2)
     }
 }

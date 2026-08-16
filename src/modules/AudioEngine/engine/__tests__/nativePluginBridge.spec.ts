@@ -22,10 +22,16 @@ import { processAudioIPC, setPluginBypass } from '#/modules/PluginHost/useCases'
 
 import { createNativePluginBridgeNode } from '../NativePluginBridgeNode';
 
+const mocks = vi.hoisted(() => ({ loggerWarn: vi.fn() }));
+
 vi.mock('#/modules/PluginHost/useCases', () => ({
     processAudioIPC: vi.fn(),
     setPluginBypass: vi.fn(),
     setPluginParameter: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { debug: vi.fn(), warn: mocks.loggerWarn, info: vi.fn(), error: vi.fn() },
 }));
 
 type BridgeMessage = { type: string; audio?: ArrayBuffer };
@@ -88,6 +94,13 @@ function currentNode(): FakeAudioWorkletNode {
 
 async function relayBlock(node: FakeAudioWorkletNode, audio: ArrayBuffer): Promise<void> {
     await node.port.onmessage?.(new MessageEvent<BridgeMessage>('message', { data: { type: 'process', audio } }));
+}
+
+/** Let a fire-and-forget promise chain settle its then/catch/finally links. */
+async function settleControlPath(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 }
 
 function processedSamples(node: FakeAudioWorkletNode): number[] {
@@ -172,15 +185,59 @@ describe('native plugin bridge transport', () => {
     });
 
     it('survives a native graph that refuses the bypass', async () => {
-        // A refusal here is a control-path failure, not an audio one: the
-        // WebAudio chain rebuild still takes the device out of the path, so the
-        // user's bypass holds. Rejecting into an unhandled promise would take
-        // the surrounding UI call with it.
+        // Refusal must never reject into an unhandled promise and take the
+        // surrounding UI call with it. Surviving is not the same as being
+        // harmless: only *engaging* bypass is covered by the WebAudio chain
+        // rebuild, which unroutes the device either way. Releasing it is not
+        // covered at all, which is what the re-assertion below is for.
         vi.mocked(setPluginBypass).mockRejectedValue(new Error('Native engine not running'));
         const bridge = await createNativePluginBridgeNode(new AudioContext(), 'instance-1');
 
         expect(() => bridge.setBypass(true)).not.toThrow();
-        await Promise.resolve();
+        await settleControlPath();
+        expect(mocks.loggerWarn).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-asserts a refused bypass release until the native graph confirms it', async () => {
+        // The asymmetric failure: on `bypassed: false` the WebAudio rebuild
+        // puts the device back into the path unconditionally, while the native
+        // effect can still hold `bypassed == true` because the command was
+        // refused. `process_audio_bridges` then drains every block as
+        // passthrough forever — the device shows enabled, sits in the path,
+        // and is permanently transparent. Nothing else re-asserts native
+        // bypass state, so the relay has to.
+        const bypassCalls: boolean[] = [];
+        vi.mocked(setPluginBypass).mockImplementation(({ bypassed }) => {
+            bypassCalls.push(bypassed);
+            // Refuse the release exactly once. Engaging bypass is left alone,
+            // so a re-send can only come from the value that was refused.
+            const isFirstRelease = !bypassed && bypassCalls.filter((call) => !call).length === 1;
+            return isFirstRelease ? Promise.reject(new Error('command queue full')) : Promise.resolve();
+        });
+        createFakeHost(['instance-1'], 2);
+        const bridge = await createNativePluginBridgeNode(new AudioContext(), 'instance-1');
+        const node = currentNode();
+
+        bridge.setBypass(true);
+        await settleControlPath();
+        bridge.setBypass(false);
+        await settleControlPath();
+
+        expect(bypassCalls).toEqual([true, false]);
+        expect(mocks.loggerWarn).toHaveBeenCalledTimes(1);
+
+        // The host answering a block proves the command path is up again, so
+        // the unconfirmed value goes back out before the next block drains.
+        await relayBlock(node, interleavedBytes([[0.25, -0.25]]));
+        expect(bypassCalls).toEqual([true, false, false]);
+        await settleControlPath();
+
+        // And it stops once confirmed: the re-send runs at audio round-trip
+        // rate, so a confirmed value must never keep re-sending.
+        await relayBlock(node, interleavedBytes([[0.25, -0.25]]));
+        await settleControlPath();
+        expect(bypassCalls).toEqual([true, false, false]);
+        expect(mocks.loggerWarn).toHaveBeenCalledTimes(1);
     });
 
     it('keeps one block in flight and resumes relaying after the host answers', async () => {

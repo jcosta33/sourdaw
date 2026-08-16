@@ -16,6 +16,7 @@
  * the last processed block, so a drop is a stale block rather than a hole.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import { processAudioIPC, setPluginBypass, setPluginParameter } from '#/modules/PluginHost/useCases';
 
 import { DROPOUT_IDX, dropoutCounters } from './dropoutCounter';
@@ -50,6 +51,47 @@ export async function createNativePluginBridgeNode(
 
     // Backpressure: only one IPC round-trip in flight at a time.
     let pendingBlock = false;
+
+    // Bypass is the one control here the WebAudio chain cannot cover for.
+    // Engaging it is safe to lose: the rebuild unroutes this worklet anyway.
+    // Releasing it is not — the rebuild puts the device back in the path
+    // unconditionally, so a refused `set_plugin_bypass` leaves the native
+    // effect bypassed underneath a device the rack shows as enabled, and
+    // every block drains as passthrough for as long as the instance lives.
+    // Nothing else re-asserts native bypass state, so the last requested
+    // value is held here until the native side confirms it, and re-sent on
+    // each completed round trip until it does.
+    let requestedBypass: boolean | null = null;
+    let bypassConfirmed = false;
+    let bypassRefusalLogged = false;
+
+    function sendBypass(bypassed: boolean): void {
+        void setPluginBypass({ instanceId, bypassed })
+            .then(() => {
+                // A later request supersedes this one; only the value still
+                // wanted may be marked as agreed with the native graph.
+                if (requestedBypass === bypassed) {
+                    bypassConfirmed = true;
+                }
+            })
+            .catch((error: unknown) => {
+                // One warning per refused request, not one per re-send: the
+                // re-send runs at audio round-trip rate.
+                if (!bypassRefusalLogged) {
+                    bypassRefusalLogged = true;
+                    logger.warn(
+                        `[WebAudioEngine] Native plugin bypass (${String(bypassed)}) refused, re-asserting: ${String(error)}`
+                    );
+                }
+            });
+    }
+
+    function reassertBypassIfUnconfirmed(): void {
+        if (requestedBypass === null || bypassConfirmed) {
+            return;
+        }
+        sendBypass(requestedBypass);
+    }
 
     type WorkletMessage = { type: string; audio?: ArrayBuffer };
 
@@ -90,6 +132,11 @@ export async function createNativePluginBridgeNode(
                 audioBytes: new Uint8Array(audioBuffer),
             });
 
+            // The host answered, so the command path to this instance is up.
+            // If its bypass state was never confirmed, this is the moment to
+            // put it right — before the next block drains through it.
+            reassertBypassIfUnconfirmed();
+
             if (resultBytes) {
                 // Write the reply into the worklet's own buffer and hand that
                 // same backing store back, so nothing new is allocated per block.
@@ -115,7 +162,9 @@ export async function createNativePluginBridgeNode(
                 instanceId,
                 paramId,
                 value,
-            }).catch(() => {});
+            }).catch((error: unknown) => {
+                logger.warn(`[WebAudioEngine] Native plugin parameter ${paramId} was refused: ${String(error)}`);
+            });
         },
         setBypass(bypassed: boolean) {
             // The chain rebuild that follows unroutes this worklet, but not
@@ -124,7 +173,10 @@ export async function createNativePluginBridgeNode(
             // makes the bypass take effect on the audio thread immediately,
             // and stops MIDI queued while bypassed from banking up into a
             // burst of stale note-ons when it is released.
-            void setPluginBypass({ instanceId, bypassed }).catch(() => {});
+            requestedBypass = bypassed;
+            bypassConfirmed = false;
+            bypassRefusalLogged = false;
+            sendBypass(bypassed);
         },
         destroy() {
             try {

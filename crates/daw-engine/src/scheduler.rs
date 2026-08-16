@@ -29,6 +29,14 @@ pub enum GraphCommand {
     // External plugins (CLAP/VST3/AU)
     AddPlugin(usize, Box<dyn NativePlugin>),
     AddPluginWithBridge(usize, Box<dyn NativePlugin>, PluginAudioBridge),
+    /// Remove a plugin without retiring its audio bridge.
+    ///
+    /// Production removes a plugin only through `RemovePluginWithBridge`, so
+    /// this variant would strand the bridge if anything reached for it. The
+    /// saturation test still needs the shape: it fills the command queue with
+    /// removals to prove that every retirement, live or at shutdown, is handed
+    /// off the callback thread rather than dropped on it.
+    #[cfg(test)]
     RemovePlugin(usize),
     RemovePluginWithBridge(usize),
 
@@ -303,6 +311,7 @@ impl AudioScheduler {
                         None
                     }
                 }
+                #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
                 }

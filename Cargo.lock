@@ -1673,7 +1673,6 @@ name = "daw-core"
 version = "0.1.0"
 dependencies = [
  "serde",
- "triple_buffer",
 ]
 
 [[package]]
