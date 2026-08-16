@@ -1,4 +1,4 @@
-import { type MouseEvent as ReactMouseEvent } from 'react';
+import { type MouseEvent as ReactMouseEvent, type ReactElement, useState } from 'react';
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
@@ -425,6 +425,76 @@ describe('RotaryKnob', () => {
         fireEvent.keyDown(getRoot(container), { key: 'ArrowUp' });
 
         expect(onChange).toHaveBeenCalledWith(5, false);
+    });
+
+    it('steps down from the value a clamping owner committed, not from the refused gesture value', () => {
+        // Linked band macros group-clamp: past the group rail the owner keeps
+        // committing the same number however much further the gesture asks for.
+        // The knob's live value used to keep climbing anyway, because the only
+        // resync fired on a *change* of the value prop and the clamp holds it
+        // still. The first arrow keystroke after such a drag then stepped from
+        // the stranded value, so it asked for something the owner had already
+        // refused and the control read as dead until the keystrokes had walked
+        // all the way back down to the rail.
+        const CLAMP_CEILING = -6;
+        const onChange = vi.fn();
+        const ClampingOwner = (): ReactElement => {
+            const [value, setValue] = useState(-20);
+            return (
+                <RotaryKnob
+                    value={value}
+                    min={-60}
+                    max={0}
+                    step={0.1}
+                    onChange={(next, isTransient) => {
+                        onChange(next, isTransient);
+                        setValue(Math.min(CLAMP_CEILING, next));
+                    }}
+                />
+            );
+        };
+
+        const { container } = render(<ClampingOwner />);
+        const root = getRoot(container);
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 21, clientY: 300 });
+        fireEvent.pointerMove(root, { pointerId: 21, clientY: 0 });
+        fireEvent.pointerUp(root, { pointerId: 21 });
+
+        // The gesture asked for the top of the range and the owner held it at
+        // the rail, so the committed value — the one the user can see — is -6.
+        expect(root).toHaveAttribute('aria-valuenow', String(CLAMP_CEILING));
+
+        onChange.mockClear();
+        fireEvent.keyDown(root, { key: 'ArrowDown' });
+
+        const [requested] = onChange.mock.calls.at(-1) ?? [];
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(requested).toBeLessThan(CLAMP_CEILING);
+        expect(requested).toBeCloseTo(-6.1, 5);
+    });
+
+    it('re-seeds from the prop on a render that kept the value, after an owner refused a keyboard edit', () => {
+        // The owner's answer to an edit is the render that follows it, and here
+        // the answer is "no": the value it hands back is the one it already had.
+        // Resyncing only when the prop *changes* cannot read that answer, so the
+        // live value kept the refused number and the next keystroke stepped from
+        // a place the owner had never accepted.
+        const onChange = vi.fn();
+        const { container, rerender } = render(
+            <RotaryKnob value={-6} onChange={onChange} min={-60} max={0} step={0.1} title="at the group rail" />
+        );
+        const root = getRoot(container);
+
+        fireEvent.keyDown(root, { key: 'ArrowUp' });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBeCloseTo(-5.9, 5);
+
+        rerender(
+            <RotaryKnob value={-6} onChange={onChange} min={-60} max={0} step={0.1} title="held at the group rail" />
+        );
+        fireEvent.keyDown(root, { key: 'ArrowUp' });
+
+        expect(onChange.mock.calls.at(-1)?.[0]).toBeCloseTo(-5.9, 5);
     });
 
     it('checks synchronous keyboard gesture authority and preserves pointer ownership', () => {

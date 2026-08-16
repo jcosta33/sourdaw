@@ -1116,7 +1116,7 @@ const Level3MeterAside = ({ deviceId, targetLufs }: { deviceId: string; targetLu
     const lra = useProofMeter(deviceId, (state) => state.lra);
     const truePeakDb = useProofMeter(deviceId, (state) => state.truePeakDb);
     const correlation = useProofMeter(deviceId, (state) => state.correlation);
-    const samples = useProofLoudnessHistory(deviceId, outputLufs);
+    const samples = useProofLoudnessHistory(deviceId);
 
     return (
         <div className="w-[200px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2">
@@ -1365,9 +1365,8 @@ const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string })
 };
 
 const Level5LoudnessHistory = ({ deviceId, targetLufs }: { deviceId: string; targetLufs: number }): ReactElement => {
-    const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
     const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
-    const samples = useProofLoudnessHistory(deviceId, outputLufs);
+    const samples = useProofLoudnessHistory(deviceId);
 
     return (
         <LoudnessHistory

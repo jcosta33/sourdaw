@@ -266,7 +266,14 @@ function readBoundParamId(expression: string | null): string | null {
     // names it with the key's *value*. Reading the key name in both cases is
     // what produced the phantom `byParam` entry `"key"` — an id no descriptor
     // declares, invisible to `compared` and to the per-device gap pins.
-    const objectArgument = /\(\s*\{\s*(\w+)\s*:\s*(?:'([\w-]+)')?/.exec(expression);
+    //
+    // Anchored to a write-call name (`onPatchChange`, `handlePatchChange`,
+    // `set…`/`update…` and kin), not to any parenthesised object in the handler:
+    // Proof's linked macros open with a pure helper call
+    // (`getLinkedBandValues({ values: … })`) before the write, and an unanchored
+    // scan resolved its first argument key as the bound id — a phantom `values`
+    // binding that also hid the real `onPatchChange` key from the census.
+    const objectArgument = /\b(?:set|update|on|handle)\w*\(\s*\{\s*(\w+)\s*:\s*(?:'([\w-]+)')?/.exec(expression);
     if (objectArgument !== null) {
         const keyName = objectArgument[1]!;
         const keyValue = objectArgument[2];
