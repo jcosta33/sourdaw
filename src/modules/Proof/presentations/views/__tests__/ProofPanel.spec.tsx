@@ -1,7 +1,16 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
-import { proofStore, getProofState, type ProofState } from '../../../stores/proofStore';
+import { persistDeviceParam } from '#/modules/Arrangement/stores';
+
+import { getProofPatchSnapshot, type ProofTarget } from '../../../models/ProofPatch';
+import {
+    proofStore,
+    getProofState,
+    updateProofMeters,
+    type ProofMeterData,
+    type ProofState,
+} from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../../../useCases/proofParamBridge/helpers';
 import { loadProofPatchWithAudio } from '../../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { PROOF_PRESETS } from '../../../useCases/proofPresets';
@@ -26,6 +35,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioSampleRate: () => sampleRateMock(),
     getMasterAnalyser: () => null,
 }));
+
+// Spied, not replaced: the panel calls it once per render of its own body, so
+// it is the measurement of "did the whole desk re-render" for the meter-frame
+// isolation test.
+vi.mock('../../../models/ProofPatch', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../models/ProofPatch')>();
+    return { ...actual, getProofPatchSnapshot: vi.fn(actual.getProofPatchSnapshot) };
+});
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
@@ -107,6 +124,87 @@ const PROOF_ROTARY_REPLACEMENT_CASES = EQ_ROTARY_ENDINGS.flatMap(([end, endGestu
         ([shape, uiLevel, knobIndex, replacement]) => [shape, end, uiLevel, knobIndex, replacement, endGesture] as const
     )
 );
+
+/**
+ * One overshoot, every delivery target. The full sentence is asserted because
+ * the defect was in the words: a target no platform normalizes was announced as
+ * one that does, naming the raw target id as if it were a platform.
+ */
+const ALERT_INTEGRATED_LUFS = -4;
+
+type LoudnessAlertCase = {
+    target: ProofTarget;
+    targetLufs: number;
+    message: string;
+    advice: string;
+};
+
+const LOUDNESS_ALERT_CASES: readonly LoudnessAlertCase[] = [
+    {
+        target: 'streaming',
+        targetLufs: -14,
+        message: 'Your master at -4.0 LUFS will be turned down by 10.0 dB on streaming platforms.',
+        advice: 'Consider targeting -14 LUFS.',
+    },
+    {
+        // A tighter self-imposed streaming target does not change what the
+        // platform does: the turn-down is measured against the platform's own
+        // normalization loudness, never against the user's chosen number.
+        target: 'streaming',
+        targetLufs: -20,
+        message: 'Your master at -4.0 LUFS will be turned down by 10.0 dB on streaming platforms.',
+        advice: 'Consider targeting -20 LUFS.',
+    },
+    {
+        target: 'podcast',
+        targetLufs: -16,
+        message: 'Your master at -4.0 LUFS will be turned down by 12.0 dB on podcast platforms.',
+        advice: 'Consider targeting -16 LUFS.',
+    },
+    {
+        target: 'broadcast',
+        targetLufs: -23,
+        message: 'Your master at -4.0 LUFS will be turned down by 19.0 dB for EBU R128 broadcast delivery.',
+        advice: 'Consider targeting -23 LUFS.',
+    },
+    {
+        target: 'cd',
+        targetLufs: -9,
+        message:
+            'Your master at -4.0 LUFS is 5.0 dB above your CD target, which no platform normalizes. Streaming platforms would still turn it down by 10.0 dB.',
+        advice: 'Consider targeting -9 LUFS.',
+    },
+    {
+        target: 'club',
+        targetLufs: -6,
+        message:
+            'Your master at -4.0 LUFS is 2.0 dB above your Club / DJ target, which no platform normalizes. Streaming platforms would still turn it down by 10.0 dB.',
+        advice: 'Consider targeting -6 LUFS.',
+    },
+    {
+        // A saved custom target the panel must read back, not substitute.
+        target: 'custom',
+        targetLufs: -18,
+        message:
+            'Your master at -4.0 LUFS is 14.0 dB above your custom target, which no platform normalizes. Streaming platforms would still turn it down by 10.0 dB.',
+        advice: 'Consider targeting -18 LUFS.',
+    },
+];
+
+/** One engine meter frame, as the poll delivers it. */
+const METER_FRAME: ProofMeterData = {
+    inputLufs: -6.5,
+    outputLufs: -7.5,
+    outputStLufs: -8.5,
+    integratedLufs: -9.5,
+    truePeakDb: -1.5,
+    lra: 4.5,
+    correlation: 0.75,
+    limiterGrDb: -2.5,
+    dynGr: [-1, -2, -3, -4],
+    tapPeaks: [{ peakL: -5, peakR: -6 }],
+    latency: 64,
+};
 
 type MockedProofBridge = {
     [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
@@ -1161,15 +1259,173 @@ describe('ProofPanel', () => {
         expect(alert).toHaveTextContent(/turned down/);
     });
 
-    it('uses the saved custom target for the loudness warning', () => {
+    // ── The alert must not invent platform normalization for targets that have
+    // none, and must report the turn-down each named platform actually applies.
+    it.each(LOUDNESS_ALERT_CASES)(
+        'states the whole $target loudness warning at $targetLufs LUFS on the play desk',
+        ({ target, targetLufs, message }) => {
+            seedState({
+                uiLevel: 1,
+                integratedLufs: ALERT_INTEGRATED_LUFS,
+                patch: { ...getProofState(DEVICE_ID).patch, target, targetLufs },
+            });
+
+            render(<ProofPanel deviceId={DEVICE_ID} />);
+
+            expect(screen.getByRole('alert').textContent).toBe(message);
+        }
+    );
+
+    it.each(LOUDNESS_ALERT_CASES)(
+        'states the whole $target loudness warning at $targetLufs LUFS on the lab bench',
+        ({ target, targetLufs, message, advice }) => {
+            seedState({
+                uiLevel: 5,
+                integratedLufs: ALERT_INTEGRATED_LUFS,
+                patch: { ...getProofState(DEVICE_ID).patch, target, targetLufs },
+            });
+
+            render(<ProofPanel deviceId={DEVICE_ID} />);
+
+            expect(screen.getByRole('alert').textContent).toBe(`${message} ${advice}`);
+        }
+    );
+
+    it.each([1, 5] as const)('shows no loudness warning at level %s when the master is on target', (uiLevel) => {
         seedState({
-            integratedLufs: -16,
-            patch: { ...getProofState(DEVICE_ID).patch, target: 'custom', targetLufs: -18 },
+            uiLevel,
+            integratedLufs: -14.5,
+            patch: { ...getProofState(DEVICE_ID).patch, target: 'streaming', targetLufs: -14 },
         });
 
         render(<ProofPanel deviceId={DEVICE_ID} />);
 
-        expect(screen.getByRole('alert')).toHaveTextContent('turned down by 2.0 dB');
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('leaves the desk unrendered by a meter frame and still updates the readouts', () => {
+        const snapshot = vi.mocked(getProofPatchSnapshot);
+        seedState({ uiLevel: 3 });
+
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        snapshot.mockClear();
+
+        act(() => {
+            updateProofMeters(DEVICE_ID, METER_FRAME);
+        });
+
+        // The panel body runs `getProofPatchSnapshot` once per render, so a
+        // silent spy is the desk — knobs, sections and gesture ownership —
+        // holding still through the ~62 frames a second the engine pushes.
+        expect(snapshot).not.toHaveBeenCalled();
+        expect(screen.getAllByText('-7.5 LUFS').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('-8.5 LUFS').length).toBeGreaterThan(0);
+
+        // Control: a patch change through the same store still reaches the
+        // desk, so the assertion above cannot pass merely because the spy went
+        // quiet or the subscription broke outright.
+        act(() => {
+            seedState({
+                ...getProofState(DEVICE_ID),
+                patch: { ...getProofState(DEVICE_ID).patch, limCeiling: -0.7 },
+            });
+        });
+        expect(snapshot).toHaveBeenCalled();
+    });
+
+    it('keeps the A/B compare switch out of persisted device data', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ abBypass: false });
+
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        fireEvent.click(screen.getByText('B / wet'));
+
+        // `ab_bypass` is runtime state: a persisted 1 replays as a fully
+        // bypassed Proof chain on the next project load.
+        expect(bridge.setParam).toHaveBeenCalledWith('ab_bypass', 1);
+        expect(getProofState(DEVICE_ID).abBypass).toBe(true);
+        expect(vi.mocked(persistDeviceParam)).not.toHaveBeenCalled();
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+    });
+
+    it('moves linked imager bands by an offset instead of flattening the preset', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const edm = PROOF_PRESETS.find((preset) => preset.id === 'edm');
+        if (!edm) {
+            throw new Error('Expected the EDM factory preset');
+        }
+        seedState({ uiLevel: 2, patch: edm.patch });
+
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const imagerKnob = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[1]!;
+
+        fireEvent.pointerDown(imagerKnob, { button: 0, pointerId: 71, clientY: 100 });
+        fireEvent.pointerMove(imagerKnob, { pointerId: 71, clientY: 80 });
+        fireEvent.pointerUp(imagerKnob, { pointerId: 71 });
+
+        const widths = getProofState(DEVICE_ID).patch.imgBandWidth;
+        expect(widths[2]).toBeGreaterThan(edm.patch.imgBandWidth[2]);
+        // The preset's high-band spread and its mono bass both survive.
+        expect(widths[3] - widths[2]).toBeCloseTo(edm.patch.imgBandWidth[3] - edm.patch.imgBandWidth[2], 5);
+        expect(widths[0]).toBe(edm.patch.imgBandWidth[0]);
+        expect(widths[1]).toBe(edm.patch.imgBandWidth[1]);
+    });
+
+    it('moves linked exciter drives by an offset and leaves the band switches alone', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const warm = PROOF_PRESETS.find((preset) => preset.id === 'warm');
+        if (!warm) {
+            throw new Error('Expected the Warm Master factory preset');
+        }
+        seedState({ uiLevel: 2, patch: warm.patch });
+
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const exciterKnob = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[2]!;
+
+        fireEvent.pointerDown(exciterKnob, { button: 0, pointerId: 72, clientY: 100 });
+        fireEvent.pointerMove(exciterKnob, { pointerId: 72, clientY: 80 });
+        fireEvent.pointerUp(exciterKnob, { pointerId: 72 });
+
+        const bands = getProofState(DEVICE_ID).patch.excBands;
+        const representative = bands[1]!.drive;
+        expect(representative).toBeGreaterThan(warm.patch.excBands[1]!.drive);
+        for (const [bandIndex, band] of bands.entries()) {
+            const original = warm.patch.excBands[bandIndex]!;
+            expect(band.drive - representative).toBeCloseTo(original.drive - warm.patch.excBands[1]!.drive, 5);
+            // The Warm preset deliberately voices band 2 out.
+            expect(band.enabled).toBe(original.enabled);
+        }
+    });
+
+    it('moves linked dynamics thresholds by an offset and keeps the band tilt', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const edm = PROOF_PRESETS.find((preset) => preset.id === 'edm');
+        if (!edm) {
+            throw new Error('Expected the EDM factory preset');
+        }
+        seedState({ uiLevel: 2, patch: edm.patch });
+
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const dynamicsKnob = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[0]!;
+
+        fireEvent.pointerDown(dynamicsKnob, { button: 0, pointerId: 73, clientY: 100 });
+        fireEvent.pointerMove(dynamicsKnob, { pointerId: 73, clientY: 80 });
+        fireEvent.pointerUp(dynamicsKnob, { pointerId: 73 });
+
+        const bands = getProofState(DEVICE_ID).patch.dynBands;
+        const representative = bands[0]!.threshold;
+        expect(representative).toBeGreaterThan(edm.patch.dynBands[0]!.threshold);
+        for (const [bandIndex, band] of bands.entries()) {
+            const original = edm.patch.dynBands[bandIndex]!;
+            expect(band.threshold - representative).toBeCloseTo(
+                original.threshold - edm.patch.dynBands[0]!.threshold,
+                5
+            );
+        }
     });
 
     it.each([3, 5] as const)('draws the saved custom target in Level %s loudness history', (uiLevel) => {

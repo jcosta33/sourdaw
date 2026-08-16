@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { TonalBalance } from '../TonalBalance';
@@ -21,7 +21,15 @@ describe('TonalBalance', () => {
 
     it('should render', () => {
         const { container } = render(
-            <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
+            <TonalBalance
+                status="active"
+                fftData={null}
+                fftVersion={0}
+                sampleRate={44100}
+                fftSize={2048}
+                width={200}
+                height={80}
+            />
         );
         expect(container.querySelector('canvas')).toBeTruthy();
     });
@@ -33,7 +41,15 @@ describe('TonalBalance', () => {
         vi.stubGlobal('devicePixelRatio', 2);
 
         const { container } = render(
-            <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
+            <TonalBalance
+                status="active"
+                fftData={null}
+                fftVersion={0}
+                sampleRate={44100}
+                fftSize={2048}
+                width={200}
+                height={80}
+            />
         );
         const canvas = container.querySelector('canvas');
         if (!(canvas instanceof HTMLCanvasElement)) {
@@ -56,7 +72,15 @@ describe('TonalBalance', () => {
         spyOnGetContext(ctx);
 
         render(
-            <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
+            <TonalBalance
+                status="active"
+                fftData={null}
+                fftVersion={0}
+                sampleRate={44100}
+                fftSize={2048}
+                width={200}
+                height={80}
+            />
         );
 
         // Grid lines + the dashed target curve are stroked; the tolerance band is filled.
@@ -75,7 +99,15 @@ describe('TonalBalance', () => {
         // No throw and nothing to assert on the context — the guard returns early.
         expect(() =>
             render(
-                <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
+                <TonalBalance
+                    status="active"
+                    fftData={null}
+                    fftVersion={0}
+                    sampleRate={44100}
+                    fftSize={2048}
+                    width={200}
+                    height={80}
+                />
             )
         ).not.toThrow();
     });
@@ -89,7 +121,15 @@ describe('TonalBalance', () => {
         // In-band magnitudes (above the -50 dB floor) so the spectrum path is drawn.
         const fftData = new Float32Array(1024).fill(-20);
         render(
-            <TonalBalance fftData={fftData} fftVersion={1} sampleRate={44100} fftSize={2048} width={200} height={80} />
+            <TonalBalance
+                status="active"
+                fftData={fftData}
+                fftVersion={1}
+                sampleRate={44100}
+                fftSize={2048}
+                width={200}
+                height={80}
+            />
         );
 
         // The idle draw makes one gradient (background); the live spectrum area adds a second.
@@ -108,6 +148,7 @@ describe('TonalBalance', () => {
 
             render(
                 <TonalBalance
+                    status="active"
                     fftData={null}
                     fftVersion={0}
                     sampleRate={44100}
@@ -137,10 +178,41 @@ describe('TonalBalance', () => {
 
         const empty = new Float32Array(0);
         render(
-            <TonalBalance fftData={empty} fftVersion={1} sampleRate={44100} fftSize={2048} width={200} height={80} />
+            <TonalBalance
+                status="active"
+                fftData={empty}
+                fftVersion={1}
+                sampleRate={44100}
+                fftSize={2048}
+                width={200}
+                height={80}
+            />
         );
 
         // Only the background gradient is created — no spectrum area gradient.
         expect(createGradientSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['unavailable', true],
+        ['active', false],
+    ] as const)('announces an unavailable analyser and stays quiet when it is %s', (status, announced) => {
+        render(
+            <TonalBalance
+                status={status}
+                fftData={null}
+                fftVersion={0}
+                sampleRate={44100}
+                fftSize={2048}
+                width={200}
+                height={80}
+            />
+        );
+
+        const notice = screen.queryByRole('status');
+        expect(notice !== null).toBe(announced);
+        if (notice) {
+            expect(notice).toHaveTextContent('Spectrum analyser unavailable');
+        }
     });
 });

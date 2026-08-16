@@ -134,4 +134,92 @@ describe('updateProofMeters', () => {
         expect(getProofState('dev').patch.limCeiling).toBe(-3);
         expect(getProofState('dev').abBypass).toBe(true);
     });
+
+    it('publishes nothing when a frame repeats the values already stored', () => {
+        updateProofMeters('dev', meters);
+        const notified: number[] = [];
+        const unsubscribe = proofStore.subscribe(() => notified.push(notified.length));
+
+        // A silent master still pushes frames; identical ones are not news, and
+        // a fresh identity per frame would wake every subscriber for nothing.
+        updateProofMeters('dev', { ...meters, dynGr: [...meters.dynGr], tapPeaks: [{ ...meters.tapPeaks[0]! }] });
+
+        expect(notified).toHaveLength(0);
+        unsubscribe();
+    });
+
+    it('publishes when any single metering value moves', () => {
+        updateProofMeters('dev', meters);
+        const notified: number[] = [];
+        const unsubscribe = proofStore.subscribe(() => notified.push(notified.length));
+
+        updateProofMeters('dev', { ...meters, correlation: 0.79 });
+
+        expect(notified).toHaveLength(1);
+        expect(getProofState('dev').correlation).toBe(0.79);
+        unsubscribe();
+    });
+
+    it('publishes when a tap peak moves inside the array', () => {
+        updateProofMeters('dev', meters);
+        const notified: number[] = [];
+        const unsubscribe = proofStore.subscribe(() => notified.push(notified.length));
+
+        updateProofMeters('dev', { ...meters, tapPeaks: [{ peakL: -6, peakR: -4 }] });
+
+        expect(notified).toHaveLength(1);
+        unsubscribe();
+    });
 });
+
+describe('proof patch isolation', () => {
+    it('gives two devices their own band objects', () => {
+        loadProofPatch({ deviceId: 'a', patch: DEFAULT_PATCH });
+        loadProofPatch({ deviceId: 'b', patch: DEFAULT_PATCH });
+
+        const a = getProofState('a').patch;
+        const b = getProofState('b').patch;
+
+        expect(a.eqBands[0]).not.toBe(b.eqBands[0]);
+        expect(a.dynBands[0]).not.toBe(b.dynBands[0]);
+        expect(a.excBands[0]).not.toBe(b.excBands[0]);
+        expect(a.imgBandWidth).not.toBe(b.imgBandWidth);
+        expect(a.chainOrder).not.toBe(b.chainOrder);
+    });
+
+    it('keeps a loaded patch off the caller object it was handed', () => {
+        const source = { ...DEFAULT_PATCH, eqBands: DEFAULT_PATCH.eqBands.map((band) => ({ ...band })) };
+        loadProofPatch({ deviceId: 'a', patch: source });
+
+        expect(getProofState('a').patch.eqBands[0]).not.toBe(source.eqBands[0]);
+    });
+
+    it('keeps the shipped defaults out of a device that has never been loaded', () => {
+        // A meter frame is enough to materialise a device's state, and that
+        // state must not be a view onto the module-level defaults.
+        updateProofMeters('fresh', meterFrame());
+
+        const patch = getProofState('fresh').patch;
+        expect(patch.eqBands[0]).not.toBe(DEFAULT_PATCH.eqBands[0]);
+        expect(patch.dynBands[0]).not.toBe(DEFAULT_PATCH.dynBands[0]);
+        expect(patch.excBands[0]).not.toBe(DEFAULT_PATCH.excBands[0]);
+        expect(patch).not.toBe(DEFAULT_PROOF_STATE.patch);
+        expect(patch.eqBands[0]).not.toBe(DEFAULT_PROOF_STATE.patch.eqBands[0]);
+    });
+});
+
+function meterFrame(): ProofMeterData {
+    return {
+        inputLufs: -12,
+        outputLufs: -10,
+        outputStLufs: -9,
+        integratedLufs: -14,
+        truePeakDb: -1,
+        lra: 5,
+        correlation: 1,
+        limiterGrDb: 0,
+        dynGr: [0, 0, 0, 0],
+        tapPeaks: [{ peakL: -6, peakR: -6 }],
+        latency: 0,
+    };
+}

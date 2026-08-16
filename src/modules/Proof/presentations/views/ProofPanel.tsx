@@ -10,12 +10,31 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
-import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
-import { getProofPatchSnapshot, type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
-import { proofStore, setProofUiLevel, setProofAbBypass, getProofState, type ProofState } from '../../stores/proofStore';
+import { getLinkedBandValues } from '../../models/LinkedBandValues';
+import { getProofLoudnessAlert } from '../../models/ProofLoudnessAlert';
+import {
+    getProofPatchSnapshot,
+    PROOF_PATCH_RANGES,
+    TARGET_LABELS,
+    TARGET_LUFS,
+    type ProofPatch,
+    type ProofPatchEdit,
+    type ProofTarget,
+} from '../../models/ProofPatch';
+import { PROOF_LOUDNESS_HISTORY_LENGTH } from '../../stores/proofLoudnessHistory';
+import {
+    proofStore,
+    setProofUiLevel,
+    setProofAbBypass,
+    getProofState,
+    DEFAULT_PROOF_STATE,
+    type ProofState,
+} from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
+import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
 import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
@@ -29,6 +48,8 @@ import { ProofImagerSection } from '../components/ProofImagerSection';
 import { ProofLimiterSection } from '../components/ProofLimiterSection';
 import { TonalBalance } from '../components/TonalBalance';
 import { useProofAnalyser } from '../hooks/useProofAnalyser';
+import { useProofLoudnessHistory } from '../hooks/useProofLoudnessHistory';
+import { useProofMeter } from '../hooks/useProofMeter';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,13 +62,12 @@ const MODULE_COLORS = [
     'var(--color-state-danger)',
 ] as const;
 
-const TARGET_OPTIONS: { value: ProofTarget; label: string; lufs: number }[] = [
-    { value: 'streaming', label: 'Streaming', lufs: -14 },
-    { value: 'cd', label: 'CD', lufs: -9 },
-    { value: 'club', label: 'Club / DJ', lufs: -6 },
-    { value: 'broadcast', label: 'Broadcast', lufs: -23 },
-    { value: 'podcast', label: 'Podcast', lufs: -16 },
-];
+// Selectable delivery targets. `custom` is deliberately absent: it is the state
+// a saved project can carry, not one the user picks here. Label and loudness
+// both come from the model so a chip cannot disagree with the alert copy.
+const TARGET_OPTIONS: { value: ProofTarget; label: string; lufs: number }[] = (
+    ['streaming', 'cd', 'club', 'broadcast', 'podcast'] as const
+).map((value) => ({ value, label: TARGET_LABELS[value], lufs: TARGET_LUFS[value] }));
 
 const LEVEL_OPTIONS = [
     { level: 1 as const, label: 'Play', detail: 'Target' },
@@ -131,26 +151,31 @@ const SideCard = ({
 );
 
 type ProofLevelContentProps = {
-    state: ProofState;
+    patch: ProofPatch;
+    uiLevel: ProofState['uiLevel'];
     deviceId: string;
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
     onTargetSelection: (target: ProofTarget) => void;
+    onChainReorder: (order: ProofPatch['chainOrder']) => void;
 };
 
 const ProofLevelContent = ({
-    state,
+    patch,
+    uiLevel,
     deviceId,
     gestureOwner,
     gestureAuthority,
     onPatchChange,
     onTargetSelection,
+    onChainReorder,
 }: ProofLevelContentProps): ReactElement => {
-    if (state.uiLevel === 1) {
+    if (uiLevel === 1) {
         return (
             <Level1Play
-                state={state}
+                patch={patch}
+                deviceId={deviceId}
                 gestureOwner={gestureOwner}
                 gestureAuthority={gestureAuthority}
                 onPatchChange={onPatchChange}
@@ -159,32 +184,10 @@ const ProofLevelContent = ({
         );
     }
 
-    if (state.uiLevel === 2) {
+    if (uiLevel === 2) {
         return (
             <Level2Shape
-                state={state}
-                gestureOwner={gestureOwner}
-                gestureAuthority={gestureAuthority}
-                onPatchChange={onPatchChange}
-            />
-        );
-    }
-
-    if (state.uiLevel === 3) {
-        return (
-            <Level3Build
-                state={state}
-                gestureOwner={gestureOwner}
-                gestureAuthority={gestureAuthority}
-                onPatchChange={onPatchChange}
-            />
-        );
-    }
-
-    if (state.uiLevel === 4) {
-        return (
-            <Level4Route
-                state={state}
+                patch={patch}
                 deviceId={deviceId}
                 gestureOwner={gestureOwner}
                 gestureAuthority={gestureAuthority}
@@ -193,36 +196,184 @@ const ProofLevelContent = ({
         );
     }
 
-    return <Level5Lab state={state} deviceId={deviceId} />;
+    if (uiLevel === 3) {
+        return (
+            <Level3Build
+                patch={patch}
+                deviceId={deviceId}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
+        );
+    }
+
+    if (uiLevel === 4) {
+        return (
+            <Level4Route
+                patch={patch}
+                deviceId={deviceId}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+                onChainReorder={onChainReorder}
+            />
+        );
+    }
+
+    return <Level5Lab patch={patch} deviceId={deviceId} />;
 };
 
-function isModuleBypassed(state: ProofState, moduleIndex: number): boolean {
+function isModuleBypassed(patch: ProofPatch, moduleIndex: number): boolean {
     if (moduleIndex === 0) {
-        return state.patch.eqBypassed;
+        return patch.eqBypassed;
     }
 
     if (moduleIndex === 1) {
-        return state.patch.dynBypassed;
+        return patch.dynBypassed;
     }
 
     if (moduleIndex === 2) {
-        return state.patch.imgBypassed;
+        return patch.imgBypassed;
     }
 
     if (moduleIndex === 3) {
-        return state.patch.excBypassed;
+        return patch.excBypassed;
     }
 
-    return state.patch.limBypassed;
+    return patch.limBypassed;
 }
+
+// ── Meter leaves ─────────────────────────────────────────────────────────────
+//
+// Everything fed by the ~16 ms meter poll is read here rather than at the panel
+// root, so a meter frame re-renders the readout that shows it and leaves the
+// desk — knobs, sections, gesture ownership — untouched.
+
+const areTapPeaksEqual = (a: { peakL: number; peakR: number }, b: { peakL: number; peakR: number }): boolean =>
+    a.peakL === b.peakL && a.peakR === b.peakR;
+
+const areDynGrEqual = (a: readonly number[], b: readonly number[]): boolean =>
+    a.every((value, index) => value === b[index]);
+
+const ProofDeskMetrics = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const inputLufs = useProofMeter(deviceId, (state) => state.inputLufs);
+    const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
+    const truePeakDb = useProofMeter(deviceId, (state) => state.truePeakDb);
+    const lra = useProofMeter(deviceId, (state) => state.lra);
+
+    return (
+        <DawPluginMetricStrip>
+            <DawPluginMetricTile
+                className="proof-window"
+                label="In"
+                value={`${formatLufs(inputLufs)} LUFS`}
+                detail="Incoming loudness"
+            />
+            <DawPluginMetricTile
+                className="proof-window"
+                label="Out"
+                value={`${formatLufs(outputLufs)} LUFS`}
+                detail="Current output"
+            />
+            <DawPluginMetricTile
+                className="proof-window"
+                label="Peak"
+                value={`${formatDb(truePeakDb)} dBTP`}
+                detail="True peak ceiling"
+            />
+            <DawPluginMetricTile
+                className="proof-window"
+                label="LRA"
+                value={`${lra.toFixed(1)} LU`}
+                detail="Loudness range"
+            />
+        </DawPluginMetricStrip>
+    );
+};
+
+const ProofQuickReadMeters = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
+    const correlation = useProofMeter(deviceId, (state) => state.correlation);
+    const limiterGrDb = useProofMeter(deviceId, (state) => state.limiterGrDb);
+
+    return (
+        <>
+            <DawReadoutRow
+                label="Integrated"
+                value={`${formatLufs(integratedLufs)} LUFS`}
+                valueClassName="text-foreground/85"
+            />
+            <DawReadoutRow label="Correlation" value={correlation.toFixed(2)} valueClassName="text-foreground/85" />
+            <DawReadoutRow
+                label="Limiter GR"
+                value={`${Math.abs(limiterGrDb).toFixed(1)} dB`}
+                valueClassName="text-foreground/85"
+            />
+        </>
+    );
+};
+
+const ProofTapMeter = ({
+    deviceId,
+    tapIndex,
+    label,
+}: {
+    deviceId: string;
+    tapIndex: number;
+    label?: string;
+}): ReactElement => {
+    const peaks = useProofMeter(
+        deviceId,
+        (state) => state.tapPeaks[tapIndex] ?? { peakL: -100, peakR: -100 },
+        areTapPeaksEqual
+    );
+
+    return <MiniMeter peakL={peaks.peakL} peakR={peaks.peakR} label={label} />;
+};
+
+const ProofAbCompareChip = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const abBypass = useProofMeter(deviceId, (state) => state.abBypass);
+
+    return (
+        <DawPluginChip
+            active={abBypass}
+            aria-label="A/B compare"
+            aria-pressed={abBypass}
+            tone="mint"
+            size="sm"
+            onClick={() => {
+                const next = !abBypass;
+                // Runtime-only by contract: the engine hears it, the project
+                // never stores it. `setProofParam` keeps `ab_bypass` out of the
+                // persisted device row.
+                setProofParam({ deviceId, name: 'ab_bypass', value: next ? 1 : 0 });
+                setProofAbBypass({ deviceId, abBypass: next });
+            }}
+        >
+            {abBypass ? 'A / dry' : 'B / wet'}
+        </DawPluginChip>
+    );
+};
 
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const allInstances = useStore(proofStore, {});
-    const state: ProofState = allInstances?.[deviceId] ?? getProofState(deviceId);
+    // Two narrow subscriptions instead of one on the whole instances record.
+    // The record gets a new identity on every meter frame — ~62 a second per
+    // open device — so subscribing to it here re-rendered the entire desk on
+    // every frame of every device, and cancelled in-flight knob gestures'
+    // memoization along the way. Patch and desk level change only on a user
+    // edit, so this tree re-renders only when the user changes something.
+    const patch = useStoreSelector(
+        proofStore,
+        (instances) => instances?.[deviceId]?.patch ?? DEFAULT_PROOF_STATE.patch
+    );
+    const uiLevel = useStoreSelector(
+        proofStore,
+        (instances) => instances?.[deviceId]?.uiLevel ?? DEFAULT_PROOF_STATE.uiLevel
+    );
 
-    const { patch, uiLevel } = state;
     const patchSnapshot = getProofPatchSnapshot(patch);
     const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
     const activeGestureTokenRef = useRef(0);
@@ -303,6 +454,16 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const handleTargetSelection = (target: ProofTarget): void => {
         finalizeActiveGesture();
         setProofTarget({ deviceId, target });
+    };
+
+    // Routed through the chain-order use case rather than a raw patch write, so
+    // the module's own door owns the engine reorder and the persisted order.
+    // A pending knob preview still commits first, as it does for every other
+    // committing gesture in the panel.
+    const handleChainReorder = (order: ProofPatch['chainOrder']): void => {
+        finalizeActiveGesture();
+        reorderChain({ deviceId, order });
+        acceptedPatchSnapshotRef.current = null;
     };
 
     const levelMeta = getLevelMeta(uiLevel);
@@ -391,42 +552,19 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <span className="sr-only">{levelMeta.description}</span>
                         </div>
 
-                        <DawPluginMetricStrip>
-                            <DawPluginMetricTile
-                                className="proof-window"
-                                label="In"
-                                value={`${formatLufs(state.inputLufs)} LUFS`}
-                                detail="Incoming loudness"
-                            />
-                            <DawPluginMetricTile
-                                className="proof-window"
-                                label="Out"
-                                value={`${formatLufs(state.outputLufs)} LUFS`}
-                                detail="Current output"
-                            />
-                            <DawPluginMetricTile
-                                className="proof-window"
-                                label="Peak"
-                                value={`${formatDb(state.truePeakDb)} dBTP`}
-                                detail="True peak ceiling"
-                            />
-                            <DawPluginMetricTile
-                                className="proof-window"
-                                label="LRA"
-                                value={`${state.lra.toFixed(1)} LU`}
-                                detail="Loudness range"
-                            />
-                        </DawPluginMetricStrip>
+                        <ProofDeskMetrics deviceId={deviceId} />
                     </div>
 
                     <div className="proof-window min-h-0 flex-1 overflow-auto p-3">
                         <ProofLevelContent
-                            state={state}
+                            patch={patch}
+                            uiLevel={uiLevel}
                             deviceId={deviceId}
                             gestureOwner={gestureOwner}
                             gestureAuthority={gestureAuthority}
                             onPatchChange={handlePatchChange}
                             onTargetSelection={handleTargetSelection}
+                            onChainReorder={handleChainReorder}
                         />
                     </div>
                 </section>
@@ -436,21 +574,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <DawPluginReadoutList>
                             <DawReadoutRow label="Preset" value={patch.name} valueClassName="text-foreground/85" />
                             <DawReadoutRow label="Target" value={targetLabel} valueClassName="text-foreground/85" />
-                            <DawReadoutRow
-                                label="Integrated"
-                                value={`${formatLufs(state.integratedLufs)} LUFS`}
-                                valueClassName="text-foreground/85"
-                            />
-                            <DawReadoutRow
-                                label="Correlation"
-                                value={state.correlation.toFixed(2)}
-                                valueClassName="text-foreground/85"
-                            />
-                            <DawReadoutRow
-                                label="Limiter GR"
-                                value={`${Math.abs(state.limiterGrDb).toFixed(1)} dB`}
-                                valueClassName="text-foreground/85"
-                            />
+                            <ProofQuickReadMeters deviceId={deviceId} />
                         </DawPluginReadoutList>
                     </SideCard>
 
@@ -461,7 +585,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <div className="flex flex-col gap-1.5">
                             {patch.chainOrder.map((moduleIndex, slot) => {
                                 const label = MODULE_LABELS[moduleIndex] ?? '?';
-                                const bypassed = isModuleBypassed(state, moduleIndex);
+                                const bypassed = isModuleBypassed(patch, moduleIndex);
                                 return (
                                     <DawPluginChoiceRow
                                         key={moduleIndex}
@@ -485,20 +609,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
                     <SideCard title="Check" detail="Compare and reset without hunting through the deck.">
                         <div className="flex flex-col gap-2">
-                            <DawPluginChip
-                                active={state.abBypass}
-                                aria-label="A/B compare"
-                                aria-pressed={state.abBypass}
-                                tone="mint"
-                                size="sm"
-                                onClick={() => {
-                                    const next = !state.abBypass;
-                                    setProofParam({ deviceId, name: 'ab_bypass', value: next ? 1 : 0 });
-                                    setProofAbBypass({ deviceId, abBypass: next });
-                                }}
-                            >
-                                {state.abBypass ? 'A / dry' : 'B / wet'}
-                            </DawPluginChip>
+                            <ProofAbCompareChip deviceId={deviceId} />
                             <DawPluginChip
                                 type="button"
                                 tone="mint"
@@ -545,20 +656,20 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
 const Level1Play = ({
-    state,
+    patch,
+    deviceId,
     gestureOwner,
     gestureAuthority,
     onPatchChange,
     onTargetSelection,
 }: {
-    state: ProofState;
+    patch: ProofPatch;
+    deviceId: string;
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
     onTargetSelection: (target: ProofTarget) => void;
 }): ReactElement => {
-    const { patch } = state;
-
     return (
         <div className="flex-1 flex items-center justify-center gap-12 px-8">
             {/* Target selector */}
@@ -585,42 +696,7 @@ const Level1Play = ({
             </div>
 
             {/* Big LUFS meters */}
-            <div className="flex flex-col items-center gap-3">
-                <div className="flex gap-8">
-                    <div className="flex flex-col items-center">
-                        <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Input</span>
-                        <span className="text-2xl font-mono text-foreground tabular-nums">
-                            {formatLufs(state.inputLufs)}
-                        </span>
-                        <span className="text-[8px] text-muted-foreground">LUFS</span>
-                    </div>
-                    <div className="w-px h-16 bg-border/20 self-center" />
-                    <div className="flex flex-col items-center">
-                        <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Output</span>
-                        <span className="text-2xl font-mono text-foreground tabular-nums">
-                            {formatLufs(state.outputLufs)}
-                        </span>
-                        <span className="text-[8px] text-muted-foreground">LUFS</span>
-                    </div>
-                </div>
-                <div className="flex gap-4 text-[8px] text-muted-foreground font-mono">
-                    <span>Integrated: {formatLufs(state.integratedLufs)}</span>
-                    <span>Short-term: {formatLufs(state.outputStLufs)}</span>
-                    <span>Correlation: {state.correlation.toFixed(2)}</span>
-                </div>
-
-                {/* Streaming warning */}
-                {state.integratedLufs > -100 && state.integratedLufs > patch.targetLufs + 1 ? (
-                    <div
-                        role="alert"
-                        aria-live="polite"
-                        className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center"
-                    >
-                        Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by{' '}
-                        {(state.integratedLufs - patch.targetLufs).toFixed(1)} dB on streaming platforms.
-                    </div>
-                ) : null}
-            </div>
+            <Level1Meters patch={patch} deviceId={deviceId} />
 
             {/* Ceiling knob */}
             <div className="flex flex-col items-center gap-1">
@@ -644,20 +720,68 @@ const Level1Play = ({
     );
 };
 
+const Level1Meters = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string }): ReactElement => {
+    const inputLufs = useProofMeter(deviceId, (state) => state.inputLufs);
+    const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
+    const outputStLufs = useProofMeter(deviceId, (state) => state.outputStLufs);
+    const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
+    const correlation = useProofMeter(deviceId, (state) => state.correlation);
+    const alert = getProofLoudnessAlert({
+        target: patch.target,
+        targetLufs: patch.targetLufs,
+        integratedLufs,
+    });
+
+    return (
+        <div className="flex flex-col items-center gap-3">
+            <div className="flex gap-8">
+                <div className="flex flex-col items-center">
+                    <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Input</span>
+                    <span className="text-2xl font-mono text-foreground tabular-nums">{formatLufs(inputLufs)}</span>
+                    <span className="text-[8px] text-muted-foreground">LUFS</span>
+                </div>
+                <div className="w-px h-16 bg-border/20 self-center" />
+                <div className="flex flex-col items-center">
+                    <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Output</span>
+                    <span className="text-2xl font-mono text-foreground tabular-nums">{formatLufs(outputLufs)}</span>
+                    <span className="text-[8px] text-muted-foreground">LUFS</span>
+                </div>
+            </div>
+            <div className="flex gap-4 text-[8px] text-muted-foreground font-mono">
+                <span>Integrated: {formatLufs(integratedLufs)}</span>
+                <span>Short-term: {formatLufs(outputStLufs)}</span>
+                <span>Correlation: {correlation.toFixed(2)}</span>
+            </div>
+
+            {/* Loudness-normalization warning */}
+            {alert ? (
+                <div
+                    role="alert"
+                    aria-live="polite"
+                    className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center"
+                >
+                    {alert.message}
+                </div>
+            ) : null}
+        </div>
+    );
+};
+
 // ── Level 2: Shape ───────────────────────────────────────────────────────────
 
 const Level2Shape = ({
-    state,
+    patch,
+    deviceId,
     gestureOwner,
     gestureAuthority,
     onPatchChange,
 }: {
-    state: ProofState;
+    patch: ProofPatch;
+    deviceId: string;
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
-    const { patch } = state;
     const bypasses = [patch.eqBypassed, patch.dynBypassed, patch.imgBypassed, patch.excBypassed, patch.limBypassed];
     const bypassKeys = ['eqBypassed', 'dynBypassed', 'imgBypassed', 'excBypassed', 'limBypassed'] as const;
 
@@ -666,11 +790,7 @@ const Level2Shape = ({
             {/* Signal chain strip with inline meters */}
             <div className="flex items-center gap-1">
                 {/* Input meter */}
-                <MiniMeter
-                    peakL={state.tapPeaks[0]?.peakL ?? -100}
-                    peakR={state.tapPeaks[0]?.peakR ?? -100}
-                    label="IN"
-                />
+                <ProofTapMeter deviceId={deviceId} tapIndex={0} label="IN" />
 
                 {patch.chainOrder.map((moduleIdx, slot) => {
                     const bypassed = bypasses[moduleIdx] ?? false;
@@ -696,10 +816,7 @@ const Level2Shape = ({
                                 {label}
                             </button>
                             <div className="w-4 h-px bg-border/30" />
-                            <MiniMeter
-                                peakL={state.tapPeaks[tapIdx]?.peakL ?? -100}
-                                peakR={state.tapPeaks[tapIdx]?.peakR ?? -100}
-                            />
+                            <ProofTapMeter deviceId={deviceId} tapIndex={tapIdx} />
                         </div>
                     );
                 })}
@@ -715,7 +832,19 @@ const Level2Shape = ({
                     gestureOwner={gestureOwner}
                     gestureAuthority={gestureAuthority}
                     onChange={(value, isTransient) => {
-                        const bands = patch.dynBands.map((band) => ({ ...band, threshold: value }));
+                        // Macro move: every band shifts by the same offset, so
+                        // the preset's band-to-band threshold tilt survives.
+                        const thresholds = getLinkedBandValues({
+                            values: patch.dynBands.map((band) => band.threshold),
+                            representativeIndex: 0,
+                            requestedValue: value,
+                            min: PROOF_PATCH_RANGES.dynBand.threshold[0],
+                            max: PROOF_PATCH_RANGES.dynBand.threshold[1],
+                        });
+                        const bands = patch.dynBands.map((band, bandIndex) => ({
+                            ...band,
+                            threshold: thresholds[bandIndex] ?? band.threshold,
+                        }));
                         onPatchChange({
                             key: 'dynBands',
                             value: bands,
@@ -741,9 +870,19 @@ const Level2Shape = ({
                     gestureOwner={gestureOwner}
                     gestureAuthority={gestureAuthority}
                     onChange={(value, isTransient) => {
+                        // Bands 2 and 3 move together and keep their spread; the
+                        // low bands stay where the preset put them, mono bass
+                        // included.
+                        const linked = getLinkedBandValues({
+                            values: [patch.imgBandWidth[2], patch.imgBandWidth[3]],
+                            representativeIndex: 0,
+                            requestedValue: value,
+                            min: PROOF_PATCH_RANGES.imgBandWidth[0],
+                            max: PROOF_PATCH_RANGES.imgBandWidth[1],
+                        });
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
-                        widths[2] = value;
-                        widths[3] = value;
+                        widths[2] = linked[0] ?? widths[2];
+                        widths[3] = linked[1] ?? widths[3];
                         onPatchChange({
                             key: 'imgBandWidth',
                             value: widths,
@@ -767,11 +906,27 @@ const Level2Shape = ({
                     gestureOwner={gestureOwner}
                     gestureAuthority={gestureAuthority}
                     onChange={(value, isTransient) => {
-                        const bands = patch.excBands.map((b) => ({
-                            ...b,
-                            drive: value,
-                            enabled: value > 0.01,
-                        }));
+                        const drives = getLinkedBandValues({
+                            values: patch.excBands.map((band) => band.drive),
+                            representativeIndex: 1,
+                            requestedValue: value,
+                            min: PROOF_PATCH_RANGES.excBand.drive[0],
+                            max: PROOF_PATCH_RANGES.excBand.drive[1],
+                        });
+                        // A band switched off is a voicing decision — presets
+                        // ship exciters with a band deliberately out — so the
+                        // macro leaves the switches alone. With every band off
+                        // there is no voicing to protect and nothing to hear, so
+                        // driving up brings the whole module in.
+                        const anyBandEnabled = patch.excBands.some((band) => band.enabled);
+                        const bands = patch.excBands.map((band, bandIndex) => {
+                            const drive = drives[bandIndex] ?? band.drive;
+                            return {
+                                ...band,
+                                drive,
+                                enabled: anyBandEnabled ? band.enabled : drive > 0.01,
+                            };
+                        });
                         onPatchChange({
                             key: 'excBands',
                             value: bands,
@@ -820,18 +975,18 @@ const Level2Shape = ({
 // ── Level 3: Build ───────────────────────────────────────────────────────────
 
 const Level3Build = ({
-    state,
+    patch,
+    deviceId,
     gestureOwner,
     gestureAuthority,
     onPatchChange,
 }: {
-    state: ProofState;
+    patch: ProofPatch;
+    deviceId: string;
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
-    const { patch } = state;
-
     return (
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Module controls — scrollable */}
@@ -843,17 +998,17 @@ const Level3Build = ({
                     onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofDynSection
+                <ProofDynSectionWithMeters
                     patch={patch}
-                    dynGr={state.dynGr}
+                    deviceId={deviceId}
                     gestureOwner={gestureOwner}
                     gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofImagerSection
+                <ProofImagerSectionWithMeters
                     patch={patch}
-                    correlation={state.correlation}
+                    deviceId={deviceId}
                     gestureOwner={gestureOwner}
                     gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
@@ -866,10 +1021,9 @@ const Level3Build = ({
                     onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofLimiterSection
+                <ProofLimiterSectionWithMeters
                     patch={patch}
-                    limiterGrDb={state.limiterGrDb}
-                    truePeakDb={state.truePeakDb}
+                    deviceId={deviceId}
                     gestureOwner={gestureOwner}
                     gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
@@ -877,43 +1031,129 @@ const Level3Build = ({
             </div>
 
             {/* Right: Loudness history + summary */}
-            <div className="w-[200px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2">
-                <LoudnessHistory
-                    momentaryLufs={state.outputLufs}
-                    targetLufs={patch.targetLufs}
-                    integratedLufs={state.integratedLufs}
-                    width={184}
-                    height={120}
-                />
-                <div className="space-y-1 text-[8px] font-mono">
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">Momentary</span>
-                        <span className="text-foreground">{formatLufs(state.outputLufs)} LUFS</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">Short-term</span>
-                        <span className="text-foreground">{formatLufs(state.outputStLufs)} LUFS</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">Integrated</span>
-                        <span className="text-foreground">{formatLufs(state.integratedLufs)} LUFS</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">LRA</span>
-                        <span className="text-foreground">{state.lra.toFixed(1)} LU</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">True Peak</span>
-                        <span
-                            className={state.truePeakDb > -1 ? 'text-[var(--color-state-danger)]' : 'text-foreground'}
-                        >
-                            {formatDb(state.truePeakDb)} dBTP
-                        </span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">Correlation</span>
-                        <span className="text-foreground">{state.correlation.toFixed(2)}</span>
-                    </div>
+            <Level3MeterAside deviceId={deviceId} targetLufs={patch.targetLufs} />
+        </div>
+    );
+};
+
+type SectionWithMetersProps = {
+    patch: ProofPatch;
+    deviceId: string;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: ProofPatchChange;
+};
+
+const ProofDynSectionWithMeters = ({
+    patch,
+    deviceId,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: SectionWithMetersProps): ReactElement => {
+    // Compared by value: the engine hands the store a fresh gain-reduction array
+    // per frame, so identity alone would re-render the whole dynamics section
+    // ~62 times a second while the numbers sit still.
+    const dynGr = useProofMeter(deviceId, (state) => state.dynGr, areDynGrEqual);
+
+    return (
+        <ProofDynSection
+            patch={patch}
+            dynGr={dynGr}
+            gestureOwner={gestureOwner}
+            gestureAuthority={gestureAuthority}
+            onPatchChange={onPatchChange}
+        />
+    );
+};
+
+const ProofImagerSectionWithMeters = ({
+    patch,
+    deviceId,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: SectionWithMetersProps): ReactElement => {
+    const correlation = useProofMeter(deviceId, (state) => state.correlation);
+
+    return (
+        <ProofImagerSection
+            patch={patch}
+            correlation={correlation}
+            gestureOwner={gestureOwner}
+            gestureAuthority={gestureAuthority}
+            onPatchChange={onPatchChange}
+        />
+    );
+};
+
+const ProofLimiterSectionWithMeters = ({
+    patch,
+    deviceId,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: SectionWithMetersProps): ReactElement => {
+    const limiterGrDb = useProofMeter(deviceId, (state) => state.limiterGrDb);
+    const truePeakDb = useProofMeter(deviceId, (state) => state.truePeakDb);
+
+    return (
+        <ProofLimiterSection
+            patch={patch}
+            limiterGrDb={limiterGrDb}
+            truePeakDb={truePeakDb}
+            gestureOwner={gestureOwner}
+            gestureAuthority={gestureAuthority}
+            onPatchChange={onPatchChange}
+        />
+    );
+};
+
+const Level3MeterAside = ({ deviceId, targetLufs }: { deviceId: string; targetLufs: number }): ReactElement => {
+    const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
+    const outputStLufs = useProofMeter(deviceId, (state) => state.outputStLufs);
+    const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
+    const lra = useProofMeter(deviceId, (state) => state.lra);
+    const truePeakDb = useProofMeter(deviceId, (state) => state.truePeakDb);
+    const correlation = useProofMeter(deviceId, (state) => state.correlation);
+    const samples = useProofLoudnessHistory(deviceId, outputLufs);
+
+    return (
+        <div className="w-[200px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2">
+            <LoudnessHistory
+                samples={samples}
+                capacity={PROOF_LOUDNESS_HISTORY_LENGTH}
+                targetLufs={targetLufs}
+                integratedLufs={integratedLufs}
+                width={184}
+                height={120}
+            />
+            <div className="space-y-1 text-[8px] font-mono">
+                <div className="flex justify-between">
+                    <span className="text-muted-foreground">Momentary</span>
+                    <span className="text-foreground">{formatLufs(outputLufs)} LUFS</span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-muted-foreground">Short-term</span>
+                    <span className="text-foreground">{formatLufs(outputStLufs)} LUFS</span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-muted-foreground">Integrated</span>
+                    <span className="text-foreground">{formatLufs(integratedLufs)} LUFS</span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-muted-foreground">LRA</span>
+                    <span className="text-foreground">{lra.toFixed(1)} LU</span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-muted-foreground">True Peak</span>
+                    <span className={truePeakDb > -1 ? 'text-[var(--color-state-danger)]' : 'text-foreground'}>
+                        {formatDb(truePeakDb)} dBTP
+                    </span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-muted-foreground">Correlation</span>
+                    <span className="text-foreground">{correlation.toFixed(2)}</span>
                 </div>
             </div>
         </div>
@@ -923,20 +1163,20 @@ const Level3Build = ({
 // ── Level 4: Route ───────────────────────────────────────────────────────────
 
 const Level4Route = ({
-    state,
+    patch,
     deviceId,
     gestureOwner,
     gestureAuthority,
     onPatchChange,
+    onChainReorder,
 }: {
-    state: ProofState;
+    patch: ProofPatch;
     deviceId: string;
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
+    onChainReorder: (order: ProofPatch['chainOrder']) => void;
 }): ReactElement => {
-    const { patch } = state;
-
     const moveModule = (fromIdx: number, direction: -1 | 1) => {
         const toIdx = fromIdx + direction;
         if (toIdx < 0 || toIdx >= 5) {
@@ -946,7 +1186,7 @@ const Level4Route = ({
         const temp = newOrder[fromIdx]!;
         newOrder[fromIdx] = newOrder[toIdx]!;
         newOrder[toIdx] = temp;
-        onPatchChange({ key: 'chainOrder', value: newOrder });
+        onChainReorder(newOrder);
     };
 
     return (
@@ -1006,12 +1246,7 @@ const Level4Route = ({
             </div>
 
             {/* Latency info */}
-            <div className="flex items-center gap-4 text-[8px] text-muted-foreground">
-                <span>
-                    Reported latency: <span className="text-foreground font-mono">{state.latency} samples</span>
-                    {state.latency > 0 ? ` (${((state.latency / getAudioSampleRate()) * 1000).toFixed(1)}ms)` : ''}
-                </span>
-            </div>
+            <ProofLatencyReadout deviceId={deviceId} />
 
             {/* Input/Output gain */}
             <div className="flex gap-8">
@@ -1060,20 +1295,24 @@ const Level4Route = ({
     );
 };
 
+const ProofLatencyReadout = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const latency = useProofMeter(deviceId, (state) => state.latency);
+
+    return (
+        <div className="flex items-center gap-4 text-[8px] text-muted-foreground">
+            <span>
+                Reported latency: <span className="text-foreground font-mono">{latency} samples</span>
+                {latency > 0 ? ` (${((latency / getAudioSampleRate()) * 1000).toFixed(1)}ms)` : ''}
+            </span>
+        </div>
+    );
+};
+
 // ── Level 5: Lab ─────────────────────────────────────────────────────────────
 
-const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
-    const { patch } = state;
+const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string }): ReactElement => {
     const targetLufs = patch.targetLufs;
-    const delta = state.integratedLufs > -100 ? state.integratedLufs - targetLufs : 0;
-    const { fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
-
-    let platformNormalizationTarget = ` ${patch.target}`;
-    if (patch.target === 'streaming') {
-        platformNormalizationTarget = ' Spotify, Apple Music, and YouTube';
-    } else if (patch.target === 'broadcast') {
-        platformNormalizationTarget = ' broadcast television';
-    }
+    const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 
     return (
         <div className="flex-1 flex min-h-0 overflow-hidden">
@@ -1084,13 +1323,7 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                     <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">
                         Loudness History
                     </span>
-                    <LoudnessHistory
-                        momentaryLufs={state.outputLufs}
-                        targetLufs={targetLufs}
-                        integratedLufs={state.integratedLufs}
-                        width={400}
-                        height={140}
-                    />
+                    <Level5LoudnessHistory deviceId={deviceId} targetLufs={targetLufs} />
                 </div>
 
                 {/* Tonal balance vs Harman target */}
@@ -1099,6 +1332,7 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                         Tonal Balance
                     </span>
                     <TonalBalance
+                        status={status}
                         fftData={fftData}
                         fftVersion={fftVersion}
                         sampleRate={sampleRate}
@@ -1110,37 +1344,10 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                 </div>
 
                 {/* Full metering grid */}
-                <div className="grid grid-cols-3 gap-3">
-                    <MeterCard label="Momentary LUFS" value={formatLufs(state.outputLufs)} unit="LUFS" />
-                    <MeterCard label="Short-term LUFS" value={formatLufs(state.outputStLufs)} unit="LUFS" />
-                    <MeterCard label="Integrated LUFS" value={formatLufs(state.integratedLufs)} unit="LUFS" />
-                    <MeterCard
-                        label="True Peak"
-                        value={formatDb(state.truePeakDb)}
-                        unit="dBTP"
-                        alert={state.truePeakDb > -1}
-                    />
-                    <MeterCard label="LRA" value={state.lra.toFixed(1)} unit="LU" />
-                    <MeterCard
-                        label="Correlation"
-                        value={state.correlation.toFixed(2)}
-                        unit=""
-                        alert={state.correlation < 0.3}
-                    />
-                </div>
+                <Level5MeterGrid deviceId={deviceId} />
 
                 {/* Platform normalization info */}
-                {delta > 1 ? (
-                    <div
-                        role="alert"
-                        aria-live="polite"
-                        className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]"
-                    >
-                        Your master at {formatLufs(state.integratedLufs)}LUFS will be turned down by {delta.toFixed(1)}{' '}
-                        dB on
-                        {platformNormalizationTarget}. Consider targeting {targetLufs}LUFS.
-                    </div>
-                ) : null}
+                <Level5NormalizationAlert deviceId={deviceId} patch={patch} />
 
                 {/* Reset integrated button */}
                 <button
@@ -1152,30 +1359,105 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                 </button>
             </div>
             {/* Right: Input vs Output comparison */}
-            <div className="w-[160px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2 justify-center">
-                <div className="text-center">
-                    <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">Input</span>
-                    <span className="text-lg font-mono text-foreground">{formatLufs(state.inputLufs)}</span>
-                    <span className="text-[7px] text-muted-foreground block">LUFS</span>
-                </div>
-                <div className="w-full h-px bg-border/20" />
-                <div className="text-center">
-                    <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">Output</span>
-                    <span className="text-lg font-mono text-foreground">{formatLufs(state.outputLufs)}</span>
-                    <span className="text-[7px] text-muted-foreground block">LUFS</span>
-                </div>
-                <div className="w-full h-px bg-border/20" />
-                <div className="text-center">
-                    <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">
-                        Gain Applied
-                    </span>
-                    <span className="text-sm font-mono text-foreground">
-                        {state.outputLufs > -100 && state.inputLufs > -100
-                            ? `${state.outputLufs - state.inputLufs > 0 ? '+' : ''}${(state.outputLufs - state.inputLufs).toFixed(1)}`
-                            : '—'}
-                    </span>
-                    <span className="text-[7px] text-muted-foreground block">dB</span>
-                </div>
+            <Level5GainComparison deviceId={deviceId} />
+        </div>
+    );
+};
+
+const Level5LoudnessHistory = ({ deviceId, targetLufs }: { deviceId: string; targetLufs: number }): ReactElement => {
+    const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
+    const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
+    const samples = useProofLoudnessHistory(deviceId, outputLufs);
+
+    return (
+        <LoudnessHistory
+            samples={samples}
+            capacity={PROOF_LOUDNESS_HISTORY_LENGTH}
+            targetLufs={targetLufs}
+            integratedLufs={integratedLufs}
+            width={400}
+            height={140}
+        />
+    );
+};
+
+const Level5MeterGrid = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
+    const outputStLufs = useProofMeter(deviceId, (state) => state.outputStLufs);
+    const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
+    const truePeakDb = useProofMeter(deviceId, (state) => state.truePeakDb);
+    const lra = useProofMeter(deviceId, (state) => state.lra);
+    const correlation = useProofMeter(deviceId, (state) => state.correlation);
+
+    return (
+        <div className="grid grid-cols-3 gap-3">
+            <MeterCard label="Momentary LUFS" value={formatLufs(outputLufs)} unit="LUFS" />
+            <MeterCard label="Short-term LUFS" value={formatLufs(outputStLufs)} unit="LUFS" />
+            <MeterCard label="Integrated LUFS" value={formatLufs(integratedLufs)} unit="LUFS" />
+            <MeterCard label="True Peak" value={formatDb(truePeakDb)} unit="dBTP" alert={truePeakDb > -1} />
+            <MeterCard label="LRA" value={lra.toFixed(1)} unit="LU" />
+            <MeterCard label="Correlation" value={correlation.toFixed(2)} unit="" alert={correlation < 0.3} />
+        </div>
+    );
+};
+
+const Level5NormalizationAlert = ({
+    deviceId,
+    patch,
+}: {
+    deviceId: string;
+    patch: ProofPatch;
+}): ReactElement | null => {
+    const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
+    const alert = getProofLoudnessAlert({
+        target: patch.target,
+        targetLufs: patch.targetLufs,
+        integratedLufs,
+    });
+
+    if (!alert) {
+        return null;
+    }
+
+    return (
+        <div
+            role="alert"
+            aria-live="polite"
+            className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]"
+        >
+            {`${alert.message} ${alert.advice}`}
+        </div>
+    );
+};
+
+const Level5GainComparison = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const inputLufs = useProofMeter(deviceId, (state) => state.inputLufs);
+    const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
+
+    return (
+        <div className="w-[160px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2 justify-center">
+            <div className="text-center">
+                <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">Input</span>
+                <span className="text-lg font-mono text-foreground">{formatLufs(inputLufs)}</span>
+                <span className="text-[7px] text-muted-foreground block">LUFS</span>
+            </div>
+            <div className="w-full h-px bg-border/20" />
+            <div className="text-center">
+                <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">Output</span>
+                <span className="text-lg font-mono text-foreground">{formatLufs(outputLufs)}</span>
+                <span className="text-[7px] text-muted-foreground block">LUFS</span>
+            </div>
+            <div className="w-full h-px bg-border/20" />
+            <div className="text-center">
+                <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">
+                    Gain Applied
+                </span>
+                <span className="text-sm font-mono text-foreground">
+                    {outputLufs > -100 && inputLufs > -100
+                        ? `${outputLufs - inputLufs > 0 ? '+' : ''}${(outputLufs - inputLufs).toFixed(1)}`
+                        : '—'}
+                </span>
+                <span className="text-[7px] text-muted-foreground block">dB</span>
             </div>
         </div>
     );

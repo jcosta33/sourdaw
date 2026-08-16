@@ -23,8 +23,16 @@ type FakeAnalyser = {
     disconnect: ReturnType<typeof vi.fn>;
 };
 
+type FakeContext = {
+    createAnalyser: () => FakeAnalyser;
+    addEventListener: (type: string, listener: () => void) => void;
+    removeEventListener: (type: string, listener: () => void) => void;
+    /** Fires the listeners the hook registered for the context's own events. */
+    emit: (type: string) => void;
+};
+
 type FakeMaster = {
-    context: { createAnalyser: () => FakeAnalyser };
+    context: FakeContext;
     connect: ReturnType<typeof vi.fn>;
     disconnect: ReturnType<typeof vi.fn>;
 };
@@ -34,8 +42,22 @@ function makeFakeMaster(options?: { connectThrows?: boolean }): {
     getCreatedAnalyser: () => FakeAnalyser | null;
 } {
     let created: FakeAnalyser | null = null;
+    const listeners = new Map<string, Set<() => void>>();
     const master: FakeMaster = {
         context: {
+            addEventListener: (type, listener) => {
+                const existing = listeners.get(type) ?? new Set<() => void>();
+                existing.add(listener);
+                listeners.set(type, existing);
+            },
+            removeEventListener: (type, listener) => {
+                listeners.get(type)?.delete(listener);
+            },
+            emit: (type) => {
+                for (const listener of [...(listeners.get(type) ?? [])]) {
+                    listener();
+                }
+            },
             createAnalyser: () => {
                 created = {
                     fftSize: 2048,
@@ -163,6 +185,59 @@ describe('useProofAnalyser', () => {
 
         expect(rafSpy).not.toHaveBeenCalled();
         expect(result.current.fftData).toBeNull();
+        expect(result.current.status).toBe('unavailable');
+    });
+
+    it('reports an unavailable tap with no master analyser at all', () => {
+        mocks.getMasterAnalyser.mockReturnValue(null);
+
+        const { result } = renderHook(() => useProofAnalyser());
+
+        expect(result.current.status).toBe('unavailable');
+    });
+
+    it('reports an active tap from its first delivered frame', () => {
+        const { master } = makeFakeMaster();
+        mocks.getMasterAnalyser.mockReturnValue(master);
+        const { callbacks } = captureAnimationFrames();
+
+        const { result } = renderHook(() => useProofAnalyser());
+
+        // A connected tap that has not produced a frame is not yet proof of a
+        // working spectrum, so the panel starts on the honest state.
+        expect(result.current.status).toBe('unavailable');
+
+        runFrames(callbacks, 1);
+
+        expect(result.current.status).toBe('active');
+    });
+
+    it('retries the failed tap when the audio context changes state', () => {
+        let connectThrows = true;
+        const { master } = makeFakeMaster();
+        master.connect.mockImplementation(() => {
+            if (connectThrows) {
+                throw new Error('context not running');
+            }
+        });
+        mocks.getMasterAnalyser.mockReturnValue(master);
+        const { callbacks } = captureAnimationFrames();
+
+        const { result } = renderHook(() => useProofAnalyser());
+        expect(result.current.status).toBe('unavailable');
+
+        // A suspended context is why the tap failed; resuming it is the event
+        // that makes the tap possible, so the display recovers without the
+        // panel being torn down.
+        connectThrows = false;
+        act(() => {
+            master.context.emit('statechange');
+        });
+
+        runFrames(callbacks, 4);
+
+        expect(result.current.status).toBe('active');
+        expect(result.current.fftData).not.toBeNull();
     });
 
     it('cancels the frame loop and detaches the tap on unmount', () => {
