@@ -1,0 +1,58 @@
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_a40848e8f8cca9::t_6d313cadf07903 57
+  s_a40848e8f8cca9::t_25c081239fb5db 83
+  s_a40848e8f8cca9::t_f8f6561dbbf96e 6,26
+  s_a40848e8f8cca9::t_9baa09d31f8aef 100
+  s_a40848e8f8cca9::t_a619f7a6356e8f 12-13,27,48,54,61-69,120-122
+  s_a40848e8f8cca9::t_9d9b5daca99e0e 55-56,58-60
+  s_a40848e8f8cca9::t_e54b8cca60213f 123-125
+  s_a40848e8f8cca9::t_f375db58344c46 134,163
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_f8f6561dbbf96e 112,117-118
+  s_a40848e8f8cca9::t_d30f2043a53dcc 113
+  s_a40848e8f8cca9::t_5a064c0ec9134c 119-127,268
+  s_a40848e8f8cca9::t_47baed7c10174e 114-116
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_5a064c0ec9134c 10,175,279-285,808
+src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts
+  s_a40848e8f8cca9::t_e9aeb6106734eb 126-156,160-164,175-176,289-290
+  s_a40848e8f8cca9::t_45462640d2d5ab 311-312
+  s_a40848e8f8cca9::t_981109dc0c831a 157-159
+  s_a40848e8f8cca9::t_7f4f4403e714fa 165-167,172-174
+  s_a40848e8f8cca9::t_aa116fc5a6cb91 286-288
+  s_a40848e8f8cca9::t_c99fa092f9da5f 291-293,308-310
+  s_a40848e8f8cca9::t_3c0e4423139e87 313-315
+  s_a40848e8f8cca9::t_6d4142627ed9a6 168-171,294-307,316-332
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_f8f6561dbbf96e 605-609
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_f8f6561dbbf96e 1,21-22
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_9d9b5daca99e0e 439-442,454-455,467-484,579,588-611
+  s_a40848e8f8cca9::t_f8f6561dbbf96e 458
+  s_a40848e8f8cca9::t_6f503535ac2635 612-614
+  s_a40848e8f8cca9::t_26cd73a39812b5 615-616
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_d38b0fdda0b583 15,829-835,837-858,860-867,877-883,886-887,894
+  s_a40848e8f8cca9::t_4b8c251b0a7a94 836,859,868-876
+  s_a40848e8f8cca9::t_e71c000c39c18f 884-885
+  s_a40848e8f8cca9::t_96ada433989c69 888-893
+  s_a40848e8f8cca9::t_74b47bce4b9d36 895-897
+  s_a40848e8f8cca9::t_18ff3ec3cf0adf 898-900,989,1049,1112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8772d440e1e7025a3e29e53d6111ba6acff5b956",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
