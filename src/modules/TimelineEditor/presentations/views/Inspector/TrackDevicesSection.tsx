@@ -148,7 +148,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             // mutation issued by an AI
                                             // prompt already goes through
                                             // this action.
-                                            executeAppAction({
+                                            void executeAppAction({
                                                 type: 'addDevice',
                                                 payload: { trackId: track.id, deviceType: plugin.id },
                                             });
@@ -167,7 +167,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
                                         role="menuitem"
                                         onClick={() => {
-                                            executeAppAction({
+                                            void executeAppAction({
                                                 type: 'addDevice',
                                                 payload: { trackId: track.id, deviceType: plugin.id },
                                             });
@@ -188,7 +188,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 className={cn(menuBtnClass, 'text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
-                                                    executeAppAction({
+                                                    void executeAppAction({
                                                         type: 'addDevice',
                                                         payload: { trackId: track.id, deviceType: plugin.id },
                                                     });
@@ -323,7 +323,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         // action is undoable; the raw use case
                                         // write never entered history (#1938
                                         // precedent for the add path).
-                                        executeAppAction({
+                                        void executeAppAction({
                                             type: 'bypassDevice',
                                             payload: { deviceId: device.id, bypassed: !device.bypassed },
                                         });
@@ -387,7 +387,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         // Action boundary: removeDevice is
                                         // undoable via its restoreDevice
                                         // inverse.
-                                        executeAppAction({
+                                        void executeAppAction({
                                             type: 'removeDevice',
                                             payload: { deviceId: device.id },
                                         });
