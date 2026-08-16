@@ -1,0 +1,109 @@
+src/modules/Arrangement/models/PluginDescriptors/DescriptorGuidance.ts
+  s_a40848e8f8cca9::t_a89a3aaa010fb9 107-117
+  s_a40848e8f8cca9::t_2cec0eb325cd8f 16-23,31-40,43-45
+  s_a40848e8f8cca9::t_2d4da2eea129eb 2,10-12,69,74-75,78-92,96-104
+  s_a40848e8f8cca9::t_4c463f285feeaf 54,56-57,60
+  s_a40848e8f8cca9::t_9ab73d2fc8aaf7 1,3-9,13-15,24-30,41-42,46-53,63-68,70-73,76-77,93-95,105-106,118-128
+  s_a40848e8f8cca9::t_dd283d867d2b8c 55,58-59,61-62
+  s_a40848e8f8cca9::t_953d53543dcc32 129-130
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_a40848e8f8cca9::t_2cec0eb325cd8f 3,5,195-200,203,205-207,209,212-215,218-265
+  s_a40848e8f8cca9::t_2afe701b47c58e 201-202,204
+  s_a40848e8f8cca9::t_4c463f285feeaf 208,210-211,216-217
+  s_a40848e8f8cca9::t_6d920fa9c162a6 73-194,266
+  s_a40848e8f8cca9::t_de55ce9bce09dc 6-8
+  s_a40848e8f8cca9::t_01b18746473f72 267-269
+  s_45ab86edba7517::t_a3a817f4520f3d 9,270-278
+src/modules/Arrangement/models/PluginDescriptors/GuidanceProfiles.ts
+  s_a40848e8f8cca9::t_db81d63f22d46d 21,36-39
+  s_a40848e8f8cca9::t_2d4da2eea129eb 1-20,22-35,40-62
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_a40848e8f8cca9::t_fdce40adf1a459 501-504
+  s_a40848e8f8cca9::t_5cf4d7e0c62366 3-5,15,492-500,505-534
+src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptor.ts
+  s_a40848e8f8cca9::t_b6c7b82b78f623 10-12,99,121-130,135,142-143
+  s_a40848e8f8cca9::t_fdce40adf1a459 131-134,136-141
+src/modules/Arrangement/models/PluginDescriptors/ProofDescriptor.ts
+  s_a40848e8f8cca9::t_b029fe60794138 8-11,60-71,78-79
+  s_a40848e8f8cca9::t_fdce40adf1a459 72-77
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_9ab73d2fc8aaf7 5,22,29,58,69,91-93,98-104,115-121
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_a40848e8f8cca9::t_1443e014359f3e 3-5,40,202-236,243-251
+  s_a40848e8f8cca9::t_fdce40adf1a459 237-242
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_a40848e8f8cca9::t_64ef8edfa2714d 3-5,7,1275-1288,1293-1336,1342-1403,1408-1469,1474,1481-1488,1494,1501-1503,1520-1522,1536-1538,1552-1554,1568-1570,1584-1586,1603-1605,1619-1621,1635-1637,1651-1653,1670-1672,1686-1688,1702-1704,1718-1724
+  s_a40848e8f8cca9::t_fdce40adf1a459 1289-1292,1337-1341,1404-1407,1470-1473,1475-1480,1489-1493,1495-1500,1504-1519,1523-1535,1539-1551,1555-1567,1571-1583,1587-1602,1606-1618,1622-1634,1638-1650,1654-1669,1673-1685,1689-1701,1705-1717
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_a40848e8f8cca9::t_fdce40adf1a459 283-288
+  s_a40848e8f8cca9::t_b029fe60794138 8-11,272-282,289-290
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_a40848e8f8cca9::t_573b7ec218ff58 37-40
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_a40848e8f8cca9::t_ffacd64b82b8b1 3-4,16-36
+  s_ab5443e65c7fba::t_3671eba361e252 37
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptor.ts
+  s_a40848e8f8cca9::t_fdce40adf1a459 166-169,171-176
+  s_a40848e8f8cca9::t_b6c7b82b78f623 11-13,134,156-165,170,177-178
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_a40848e8f8cca9::t_9ab73d2fc8aaf7 122-149,169-170
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptor.ts
+  s_a40848e8f8cca9::t_b029fe60794138 8-11,99-109,116-117
+  s_a40848e8f8cca9::t_fdce40adf1a459 110-115
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptor.ts
+  s_a40848e8f8cca9::t_b6c7b82b78f623 11-13,184,207-214,218-219,226-227
+  s_a40848e8f8cca9::t_fdce40adf1a459 215-217,220-225
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptors.ts
+  s_a40848e8f8cca9::t_fdce40adf1a459 358-360
+  s_a40848e8f8cca9::t_03368b3eef6bd8 3-5,7,346-357,361-410
+src/modules/Arrangement/models/PluginDescriptors/YeastDescriptor.ts
+  s_a40848e8f8cca9::t_b029fe60794138 8-11,73-84,91-92
+  s_a40848e8f8cca9::t_fdce40adf1a459 85-90
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptor.ts
+  s_a40848e8f8cca9::t_b6c7b82b78f623 11-13,101,124-133,139,146-147
+  s_a40848e8f8cca9::t_fdce40adf1a459 134-138,140-145
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptor.ts
+  s_a40848e8f8cca9::t_fdce40adf1a459 120-125
+  s_a40848e8f8cca9::t_b029fe60794138 8-11,109-119,126-127
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  s_a40848e8f8cca9::t_b6c7b82b78f623 10-12,65,87-98,105-106
+  s_a40848e8f8cca9::t_fdce40adf1a459 99-104
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_a40848e8f8cca9::t_fdce40adf1a459 97-102
+  s_a40848e8f8cca9::t_b029fe60794138 8-11,86-96,103-104
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  s_a40848e8f8cca9::t_2cec0eb325cd8f 716-719
+  s_ab5443e65c7fba::t_68acfb8ee6f959 715
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "aaf6cc1724709765ddde4e4f5d085492044809bf",
+  "prompts": {},
+  "sessions": {
+    "s_45ab86edba7517": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00b50-ae91-7591-88c8-d837d511dd80",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
