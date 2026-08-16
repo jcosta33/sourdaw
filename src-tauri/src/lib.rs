@@ -136,6 +136,37 @@ pub fn run() {
                 commands::collab::shutdown_discovery(
                     &app_handle.state::<commands::collab::CollabState>(),
                 );
+
+                let plugin_state = app_handle.state::<state::AppState>();
+
+                // Give every open plugin editor its CLAP `gui.destroy` while
+                // there is still a process to run it in. A plugin that refuses
+                // is reported, never fatal: exit must not be blocked by a
+                // third-party editor.
+                match commands::plugin_gui::close_every_plugin_gui(
+                    Some(app_handle),
+                    plugin_state.inner(),
+                ) {
+                    Ok(report) if !report.1.is_empty() => {
+                        eprintln!(
+                            "[Plugin] editors that did not close on exit: {:?}",
+                            report.1
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        eprintln!("[Plugin] closing plugin editors on exit failed: {error}");
+                    }
+                }
+
+                // Terminal reclamation point for the retirement vec: load and
+                // unload are the only other sweep sites, so without this the
+                // last retirement of a session is never freed and a plugin that
+                // persists settings in `destroy` never gets to. Best effort — a
+                // runtime whose scheduler slot has not dropped yet still
+                // survives, and that residual (the reclaimer-thread
+                // acknowledgment) is tracked separately.
+                plugin_state.sweep_retired_engine_plugins();
             }
         });
 }
