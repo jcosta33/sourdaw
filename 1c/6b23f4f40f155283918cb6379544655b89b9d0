@@ -1,0 +1,30 @@
+crates/daw-engine/src/scheduler.rs
+  s_ab5443e65c7fba::t_39adfe8a501ad2 32-39
+  s_ab5443e65c7fba::t_6bbed791673a4d 314
+src/modules/AudioEngine/engine/__tests__/nativePluginBridge.spec.ts
+  s_ab5443e65c7fba::t_1d371b2e1dd983 25-26,33-34
+  s_ab5443e65c7fba::t_dc09441c7986fa 99-105
+  s_ab5443e65c7fba::t_3c6841f2e9cb84 188-192,197-240
+  s_ab5443e65c7fba::t_9c458736a7eb78 35-36
+src/modules/AudioEngine/engine/NativePluginBridgeNode.ts
+  s_ab5443e65c7fba::t_2b67634c9dcdd3 55-95
+  s_ab5443e65c7fba::t_749da6126ad4dc 135-139
+  s_ab5443e65c7fba::t_7e4e50de261217 165-167,176-179
+  s_ab5443e65c7fba::t_bc96507437fdd6 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1c6b23f4f40f155283918cb6379544655b89b9d0",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
