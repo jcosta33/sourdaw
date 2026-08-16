@@ -38,7 +38,6 @@ const DEFAULT_STATE: SetlistState = {
     currentIndex: 0,
     autoAdvance: false,
     countInBars: 1,
-    totalDuration: 0,
 };
 
 const formatDuration = (seconds: number): string => {
@@ -252,7 +251,13 @@ export const SetlistPanel = (): ReactElement => {
 
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="xs" aria-label="Add setlist item" data-testid="setlist-add-item" onClick={handleAdd}>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                aria-label="Add setlist item"
+                                data-testid="setlist-add-item"
+                                onClick={handleAdd}
+                            >
                                 <Plus className="size-3" aria-hidden="true" />
                                 <span className="ml-1">Add</span>
                             </Button>

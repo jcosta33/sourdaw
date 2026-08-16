@@ -58,7 +58,6 @@ function baseState(overrides: Partial<SetlistState> = {}): SetlistState {
         currentIndex: 0,
         autoAdvance: false,
         countInBars: 1,
-        totalDuration: 0,
         ...overrides,
     };
 }
@@ -81,7 +80,7 @@ describe('setlist undo entries', () => {
         removeSetlistItem('missing');
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
 
-        mockSetlistStore.value = baseState({ items: [baseItem('x')], totalDuration: 10 });
+        mockSetlistStore.value = baseState({ items: [baseItem('x')] });
         removeSetlistItem('x');
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Remove setlist item: x');
@@ -153,7 +152,7 @@ describe('setlist undo entries', () => {
     });
 
     it('removeSetlistItem undo callback restores the removed item, redo re-removes it', () => {
-        const withItem = baseState({ items: [baseItem('x')], totalDuration: 10 });
+        const withItem = baseState({ items: [baseItem('x')] });
         mockSetlistStore.value = withItem;
         removeSetlistItem('x');
         const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;

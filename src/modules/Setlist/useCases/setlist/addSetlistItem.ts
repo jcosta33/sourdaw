@@ -25,10 +25,10 @@ export function addSetlistItem(name: string, estimatedDuration: number = 180): v
     };
 
     const previous: SetlistState = state;
+    const items = [...state.items, item];
     const next: SetlistState = {
         ...state,
-        items: [...state.items, item],
-        totalDuration: state.totalDuration + estimatedDuration,
+        items,
     };
     setlistStore.set(next);
 
