@@ -11,10 +11,10 @@ The desktop shell previously owned a local model lifecycle, inference commands, 
 
 Sourdaw supports browser WebLLM and configured hosted Anthropic, OpenAI, and OpenAI-compatible providers. The Tauri shell does not load, manage, or execute a local language model, and it exposes no language-model command or permission.
 
-Saved backend preferences outside the supported set normalize to automatic mode during preference writes. Automatic mode prefers available WebLLM and can use a configured hosted provider; an explicit supported selection remains fail-closed.
+Saved backend preferences outside the supported set normalize to automatic mode during preference writes. Automatic mode uses available browser WebLLM only and fails closed when it is unavailable. A hosted provider requires explicit selection and the existing remote-data disclosure; explicit selections remain fail-closed.
 
 Provider protocol, data-policy disclosure, token budgets, cancellation, and AgentRun evidence remain provider-neutral. AI-proposed changes continue through the validated command and confirmation boundary; retiring one inference placement does not create a new write path.
 
 ## Consequences
 
-The application no longer ships local-model assets, model lifecycle controls, native inference dependencies, or native inference ACL. Browser-local and hosted operation remain independently selectable and observable.
+The application no longer ships local-model assets, model lifecycle controls, native inference dependencies, or native inference ACL. Browser-local and hosted operation remain independently selectable and observable; Automatic mode never exports prompt data to a hosted provider.

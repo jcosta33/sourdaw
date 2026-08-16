@@ -69,8 +69,6 @@ const mainWebviewDeniedCommands = [
     'collab_stop_browsing',
     'detect_sample_pitch',
     'get_asr_status',
-    'get_model_dir',
-    'get_native_llm_status',
     'hide_all_plugin_guis',
     'load_whisper_model',
     'post_process_audio',

@@ -152,8 +152,8 @@ export const AiSection = (): ReactElement => {
                     <option value="cloud">Hosted provider</option>
                 </select>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                    Choose where prompts run. Automatic prefers WebLLM and uses your configured hosted provider when
-                    needed.
+                    Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts
+                    remotely.
                 </p>
             </FieldGroup>
             <FieldGroup label="Active Backend">

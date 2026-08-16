@@ -1,6 +1,7 @@
 import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -255,6 +256,112 @@ describe('agent run recovery', () => {
 
         expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).toEqual({ recoveredRunIds: [] });
         expect(getAgentRun('run-complete')?.phase).toBe('completed');
+    });
+
+    it('hydrates retired local-provider evidence without restoring an executable route', async () => {
+        createAgentRun({
+            runId: 'retired-provider-run',
+            request: 'Keep the historical completion evidence.',
+            mode: 'explain',
+            createdRevision: 'heads-history',
+            requestedRoute: 'webllm',
+            createdAt: 100,
+        });
+        recordAgentRunProviderUsage({
+            runId: 'retired-provider-run',
+            usage: {
+                attempt: 2,
+                provider: 'webllm',
+                model: 'browser-model',
+                inputTokens: 12,
+                outputTokens: 24,
+                provenance: 'provider-reported',
+            },
+            recordedAt: 101,
+        });
+        const existingRun = readAgentRunState().runs[0];
+        if (existingRun === undefined) {
+            throw new Error('Expected the persisted AgentRun fixture to contain its created run');
+        }
+        const persistedFixture: unknown = {
+            ...readAgentRunState(),
+            runs: [
+                {
+                    ...existingRun,
+                    modelRoute: {
+                        requestedRoute: 'native',
+                        selectedRouteId: 'native:retired-model',
+                    },
+                    providerUsage: [
+                        {
+                            attempt: 2,
+                            provider: 'native',
+                            model: 'retired-model',
+                            inputTokens: 12,
+                            outputTokens: 24,
+                            cachedInputTokens: 3,
+                            provenance: 'provider-reported',
+                            correlationId: 'legacy-correlation',
+                            status: 'failed',
+                            retryable: false,
+                            partialOutputDisposition: 'preserve',
+                            routeId: 'native:retired-model',
+                            executor: 'native',
+                            fallbackReason: 'historical route',
+                            disclosure: {
+                                requestId: 'legacy-request',
+                                categories: ['prompt-text'],
+                                retention: {
+                                    applicationState: 'unknown',
+                                    abuseMonitoring: 'unknown',
+                                    promptCache: 'unknown',
+                                    safetyLegalException: 'unknown',
+                                    unknown: 'unknown',
+                                },
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+        window.localStorage.setItem('sourdaw-agent-runs', stringify(persistedFixture));
+
+        vi.resetModules();
+        const { agentRunStore: hydratedAgentRunStore } = await import('../../stores/agentRunStore');
+
+        expect(hydratedAgentRunStore.value).toMatchObject({
+            runs: [
+                {
+                    runId: 'retired-provider-run',
+                    modelRoute: {
+                        requestedRoute: 'legacy-unknown',
+                        selectedRouteId: 'native:retired-model',
+                    },
+                    providerUsage: [
+                        {
+                            attempt: 2,
+                            provider: 'native',
+                            model: 'retired-model',
+                            inputTokens: 12,
+                            outputTokens: 24,
+                            cachedInputTokens: 3,
+                            provenance: 'provider-reported',
+                            correlationId: 'legacy-correlation',
+                            status: 'failed',
+                            retryable: false,
+                            partialOutputDisposition: 'preserve',
+                            routeId: 'native:retired-model',
+                            executor: 'legacy-unknown',
+                            fallbackReason: 'historical route',
+                            disclosure: {
+                                requestId: 'legacy-request',
+                                categories: ['prompt-text'],
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
     });
 
     it('fails before work starts when the run cannot be persisted durably', () => {
