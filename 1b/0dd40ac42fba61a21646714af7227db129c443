@@ -1,0 +1,36 @@
+src-tauri/src/state.rs
+  s_ab5443e65c7fba::t_4ab952e5c81423 190
+  s_ab5443e65c7fba::t_eff99c0729e0f5 115-121,173-174,184-189,191-223,259-262,264,314,317,320,327,331,338-341,346-420,423-426
+src-tauri/src/commands/plugin_gui.rs
+  s_ab5443e65c7fba::t_0eab4dae0dbf0a 57-58,60-66,68,75-88,234-244,250,339-355,519-523,525-528,537,543-554,562-564,575-579,738-781,790-895
+src-tauri/src/commands/plugins.rs
+  s_ab5443e65c7fba::t_220df51a123b4c 293-297,301,679-696,701-713,764-769,771-776,847-867,873-877,879,1071-1076,1385-1390,1403-1405,1411-1420,1424-1425,1427-1429,1438-1441,1443-1445,1454-1457,1460-1461,1464-1491,1596-1893,2350-2354
+src-tauri/src/lib.rs
+  s_ab5443e65c7fba::t_e331bf1738eaee 139-169
+src-tauri/src/host/native_bridge.rs
+  s_90ce553fc05f75::t_f6e15006db7223 451-458,475-484
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1b0dd40ac42fba61a21646714af7227db129c443",
+  "prompts": {},
+  "sessions": {
+    "s_90ce553fc05f75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad5bdb957e75419e4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
