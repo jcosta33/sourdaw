@@ -42,6 +42,13 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         });
         return { runId, requestId: `planning:${runId}`, cancellationGeneration: 0 };
     })();
+    const autoCreatedRun = input.streamIdentity === undefined;
+    const onProviderAttempt =
+        input.onProviderAttempt ??
+        (() => ({
+            status: 'rejected' as const,
+            reason: 'Provider planning requires an application-owned budget admission.',
+        }));
     let stemImportScope: StemImportPromptScope | undefined;
     let result;
     try {
@@ -53,7 +60,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             undefined,
             input.onProviderResult,
             streamIdentity,
-            input.onProviderAttempt
+            onProviderAttempt
         );
         if (result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
@@ -79,7 +86,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 stemImportScope,
                 input.onProviderResult,
                 streamIdentity,
-                input.onProviderAttempt
+                onProviderAttempt
             );
         }
     } catch (error) {
@@ -106,6 +113,14 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
         }
         throw new AiProposalInvalidatedError();
+    }
+
+    if (autoCreatedRun) {
+        const run = agentRunLifecycle.get(streamIdentity.runId);
+        if (run?.phase === 'created') {
+            agentRunLifecycle.transitionPhase({ runId: run.runId, phase: 'planning' });
+            agentRunLifecycle.transitionPhase({ runId: run.runId, phase: 'completed' });
+        }
     }
 
     return { context, result, projectRevision };

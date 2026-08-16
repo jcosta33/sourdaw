@@ -9,6 +9,26 @@ const MAX_IMPORTED_STRING_LENGTH = 512;
 const MAX_RECEIPTS = 16;
 const MAX_MEASUREMENTS = 16;
 
+function isRelevantLock(
+    lock: NonNullable<ProjectContext['productionBrief']>['locks'][number],
+    context: ProjectContext
+): boolean {
+    if (lock.scope.kind === 'project') {
+        return true;
+    }
+    if (lock.scope.kind === 'track') {
+        return lock.scope.trackId === context.selectedTrackId;
+    }
+    if (lock.scope.kind === 'object') {
+        return (
+            lock.scope.objectId === context.selectedTrackId ||
+            lock.scope.objectId === context.selectedClipId ||
+            context.selectedClipIds.includes(lock.scope.objectId)
+        );
+    }
+    return false;
+}
+
 type BuildAgentContextInput = {
     fixedPolicy: string;
     prompt: string;
@@ -268,12 +288,21 @@ export function buildAgentContext(input: BuildAgentContextInput): { message: str
               id: input.context.productionBrief.id,
               revision: input.context.productionBrief.revision,
               vision: input.context.productionBrief.vision && boundedString(input.context.productionBrief.vision),
-              locks: input.context.productionBrief.locks.slice(0, MAX_CONTEXT_TARGETS).map((lock) => ({
-                  id: lock.id,
-                  scope: lock.scope,
-                  statement: boundedString(lock.statement),
-              })),
+              locks: [...input.context.productionBrief.locks]
+                  .sort(
+                      (left, right) =>
+                          Number(isRelevantLock(right, input.context)) - Number(isRelevantLock(left, input.context))
+                  )
+                  .slice(0, MAX_CONTEXT_TARGETS)
+                  .map((lock) => ({
+                      id: lock.id,
+                      scope: lock.scope,
+                      statement: boundedString(lock.statement),
+                  })),
               omittedLockCount: Math.max(0, input.context.productionBrief.locks.length - MAX_CONTEXT_TARGETS),
+              incompleteRelevantAuthority:
+                  input.context.productionBrief.locks.filter((lock) => isRelevantLock(lock, input.context)).length >
+                  MAX_CONTEXT_TARGETS,
           }
         : null;
 
