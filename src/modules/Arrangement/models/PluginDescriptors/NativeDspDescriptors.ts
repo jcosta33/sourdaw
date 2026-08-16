@@ -1,5 +1,8 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
+import { applyDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
 /**
  * Band names for the Dutch Oven's Decay Rate EQ, in band order.
  *
@@ -9,7 +12,7 @@ import { type PluginDescriptor } from '../DeviceParameterTypes';
 const DECAY_EQ_BAND_LABELS = ['LF', 'LM', 'Mid', 'UM', 'HF', 'Air'] as const;
 
 /** Premium WASM plugin descriptors (Dutch Oven, Scoring). */
-export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
+const NATIVE_DSP_DESCRIPTOR_DATA: PluginDescriptor[] = [
     {
         id: 'dutch-oven',
         name: 'Dutch Oven',
@@ -486,3 +489,46 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
         ],
     },
 ];
+
+const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
+    descriptorGuidance(
+        'dutch-oven',
+        effectGuidance(
+            'Build a spacious reverb tail, then tune damping and wet level in the context of the arrangement.',
+            ['Keep wet level and decay conservative while checking low-frequency build-up.'],
+            ['Algorithm, decay, damping, diffusion, and modulation jointly determine the tail character.'],
+            ['Long bright or frozen tails can mask timing and accumulate energy.'],
+            {
+                availability: 'not-applicable',
+                reason: 'This reverb declares no automatic wet-path output compensation.',
+            }
+        ),
+        declaredControl(
+            'Dutch Oven reverb control',
+            'Changes the generated reverb tail, its tone, or its wet-path balance.',
+            ['Tune algorithm and decay before fine tone and modulation controls.'],
+            ['Long, bright, or frozen tails can obscure source detail.']
+        )
+    ),
+    descriptorGuidance(
+        'native-scoring',
+        effectGuidance(
+            'Generate a reference pitch for tuning and calibration rather than musical processing.',
+            ['Mute the reference output before delivery or recording.'],
+            ['Reference frequency and tone enable together determine the emitted calibration signal.'],
+            ['An enabled reference tone can be unexpectedly audible in a mix.'],
+            { availability: 'not-applicable', reason: 'This utility has no automatic audio-level compensation.' }
+        ),
+        declaredControl(
+            'Reference-tone control',
+            'Changes calibration pitch or whether the reference output is audible.',
+            ['Set frequency before enabling the reference tone.'],
+            ['An enabled reference tone can be audible in exports.']
+        )
+    ),
+];
+
+export const NATIVE_DSP_DESCRIPTORS = applyDescriptorGuidance(
+    NATIVE_DSP_DESCRIPTOR_DATA,
+    NATIVE_DSP_DESCRIPTORS_GUIDANCE
+);

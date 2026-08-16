@@ -119,6 +119,34 @@ export type PluginFormat = 'builtin' | 'vst3' | 'clap' | 'au';
 
 export type PluginPlatform = 'web' | 'native' | 'both';
 
+export type DeviceParameterModulationDeclaration =
+    | { availability: 'available'; mechanism: 'automation'; detail: string }
+    | { availability: 'unavailable'; reason: string }
+    | { availability: 'not-applicable'; reason: string };
+
+export type DeviceGainCompensationDeclaration =
+    | { availability: 'provided'; parameterId: string; detail: string }
+    | { availability: 'unavailable'; reason: string }
+    | { availability: 'not-applicable'; reason: string };
+
+export type DeviceParameterGuidance = {
+    semanticRole: string;
+    perceptualRole: string;
+    typicalRange: { minimum: number; maximum: number };
+    interactions: readonly string[];
+    risks: readonly string[];
+    modulation: DeviceParameterModulationDeclaration;
+};
+
+export type PluginDescriptorGuidance = {
+    usage: string;
+    safety: readonly string[];
+    interactions: readonly string[];
+    risks: readonly string[];
+    gainCompensation: DeviceGainCompensationDeclaration;
+    parameters: Readonly<Record<string, DeviceParameterGuidance>>;
+};
+
 export type PluginDescriptor = {
     id: string;
     name: string;
@@ -138,4 +166,6 @@ export type PluginDescriptor = {
      * stops when its input does.
      */
     tail?: DeviceTailDeclaration;
+    /** Owner-authored operating guidance. Agent projections must not infer it. */
+    guidance?: PluginDescriptorGuidance;
 };

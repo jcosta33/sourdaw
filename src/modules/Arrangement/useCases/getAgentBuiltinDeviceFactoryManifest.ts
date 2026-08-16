@@ -2,6 +2,7 @@ import {
     BUILTIN_PLUGINS,
     isDeviceSupportedOnCurrentPlatform,
     type DeviceParameter,
+    type DeviceParameterGuidance,
     type PluginDescriptor,
 } from '../models/DeviceParameter';
 import { getFactoryPresetContractsByDeviceType } from '../repositories/presets/getFactoryPresetContractsByDeviceType';
@@ -18,12 +19,14 @@ type AgentDeviceParameter = {
     default: number;
     enumValues: readonly string[] | null;
     automatable: boolean;
+    guidance: DeviceParameterGuidance;
 };
 
 type AgentBuiltinDeviceDescriptor = {
     type: string;
     descriptorVersion: string;
     presetVersion: string;
+    guidance: Omit<NonNullable<PluginDescriptor['guidance']>, 'parameters'>;
     vendor: string;
     name: string;
     category: PluginDescriptor['category'];
@@ -52,7 +55,7 @@ function parameterType(parameter: DeviceParameter): AgentDeviceParameter['type']
     throw new Error(`Unsupported device parameter type: ${parameter.type}`);
 }
 
-function toManifestParameter(parameter: DeviceParameter): AgentDeviceParameter {
+function toManifestParameter(parameter: DeviceParameter, guidance: DeviceParameterGuidance): AgentDeviceParameter {
     const type = parameterType(parameter);
     return {
         id: parameter.id,
@@ -63,6 +66,7 @@ function toManifestParameter(parameter: DeviceParameter): AgentDeviceParameter {
         default: parameter.defaultValue,
         enumValues: parameter.choices ?? null,
         automatable: parameter.automatable,
+        guidance,
     };
 }
 
@@ -84,10 +88,20 @@ export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDev
         if (!presetContract) {
             throw new Error(`Built-in preset contract unavailable: ${descriptor.id}`);
         }
+        if (!descriptor.guidance) {
+            throw new Error(`Built-in operating guidance unavailable: ${descriptor.id}`);
+        }
         return {
             type: descriptor.id,
             descriptorVersion,
             presetVersion: presetContract.presetVersion,
+            guidance: {
+                usage: descriptor.guidance.usage,
+                safety: descriptor.guidance.safety,
+                interactions: descriptor.guidance.interactions,
+                risks: descriptor.guidance.risks,
+                gainCompensation: descriptor.guidance.gainCompensation,
+            },
             vendor: descriptor.vendor,
             name: descriptor.name,
             category: descriptor.category,
@@ -98,7 +112,13 @@ export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDev
                 availability: presetContract.availability,
                 identities: presetContract.identities,
             },
-            parameters: descriptor.parameters.map(toManifestParameter),
+            parameters: descriptor.parameters.map((parameter) => {
+                const guidance = descriptor.guidance?.parameters[parameter.id];
+                if (!guidance) {
+                    throw new Error(`Built-in parameter guidance unavailable: ${descriptor.id}/${parameter.id}`);
+                }
+                return toManifestParameter(parameter, guidance);
+            }),
             metadata: { source: 'Arrangement descriptor', confidence: 'declared' },
         };
     });

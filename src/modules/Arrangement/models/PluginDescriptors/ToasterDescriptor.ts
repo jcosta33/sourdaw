@@ -5,7 +5,10 @@
 
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
-export const TOASTER_DESCRIPTOR: PluginDescriptor = {
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+
+const TOASTER_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'toaster',
     name: 'Toaster',
     vendor: 'Sourdaw',
@@ -103,3 +106,22 @@ export const TOASTER_DESCRIPTOR: PluginDescriptor = {
         },
     ],
 };
+
+export const TOASTER_DESCRIPTOR = applySingleDescriptorGuidance(
+    TOASTER_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'toaster',
+        instrumentGuidance(
+            'Program a drum pattern, then balance kit, send, and master controls against the track.',
+            ['Check master and send levels before printing or exporting a pattern.'],
+            ['Kit voices, sequencing, and opaque-kit send effects combine at the instrument output.'],
+            ['Dense patterns and high master level can overload downstream buses.']
+        ),
+        declaredControl(
+            'Drum-machine control',
+            'Changes pattern, kit, voice, or output behavior.',
+            ['Balance kit voices before master output.'],
+            ['Dense patterns can build output level quickly.']
+        )
+    )
+);

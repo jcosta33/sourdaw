@@ -8,6 +8,9 @@
 
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
 const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     // Global
     { id: 'mix', label: 'Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01 },
@@ -128,7 +131,7 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     { id: 'gain', label: 'Band Gain', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5 },
 ];
 
-export const BACTERIA_DESCRIPTOR: PluginDescriptor = {
+const BACTERIA_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'bacteria',
     name: 'Bacteria',
     vendor: 'Sourdaw',
@@ -150,3 +153,26 @@ export const BACTERIA_DESCRIPTOR: PluginDescriptor = {
         hasAutomation: false,
     })),
 };
+
+export const BACTERIA_DESCRIPTOR = applySingleDescriptorGuidance(
+    BACTERIA_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'bacteria',
+        effectGuidance(
+            'Combine creative effect modules while balancing the wet path against the source.',
+            ['Stage input and output conservatively before stacking nonlinear modules.'],
+            ['Module choices, routing, and mix jointly determine the resulting texture.'],
+            ['Stacked drive and feedback modules can build level or obscure transients.'],
+            {
+                availability: 'unavailable',
+                reason: 'Bacteria declares no automatic output compensation across its module chain.',
+            }
+        ),
+        declaredControl(
+            'Creative multi-effect control',
+            'Changes a module choice, its texture, or the processed-signal balance.',
+            ['Balance module settings with input, output, and mix.'],
+            ['Stacked effects can build level or lose clarity.']
+        )
+    )
+);

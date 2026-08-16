@@ -8,6 +8,9 @@
 
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
 const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     // Core
     { id: 'topology', label: 'Topology', min: 0, max: 3, default: 0, unit: '', step: 1 },
@@ -95,7 +98,7 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     { id: 'gainMatchBypass', label: 'Gain Match', min: 0, max: 1, default: 0, unit: '', step: 1 },
 ];
 
-export const GLUTEN_DESCRIPTOR: PluginDescriptor = {
+const GLUTEN_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'gluten',
     name: 'Gluten',
     vendor: 'Sourdaw',
@@ -118,3 +121,27 @@ export const GLUTEN_DESCRIPTOR: PluginDescriptor = {
         hasAutomation: false,
     })),
 };
+
+export const GLUTEN_DESCRIPTOR = applySingleDescriptorGuidance(
+    GLUTEN_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'gluten',
+        effectGuidance(
+            'Use topology and timing to shape bus dynamics, then restore only the level needed for comparison.',
+            ['Confirm sidechain availability before planning ducking and level-match makeup against bypass.'],
+            ['Topology, style, threshold, ratio, timing, and mix determine the bus response together.'],
+            ['Aggressive ratios and makeup can flatten transients or overload the next stage.'],
+            {
+                availability: 'provided',
+                parameterId: 'makeup',
+                detail: 'Gluten makeup gain restores deliberate level after compression.',
+            }
+        ),
+        declaredControl(
+            'Bus-compression control',
+            'Changes topology, reduction depth, timing, or output level.',
+            ['Set topology before threshold, ratio, and timing.'],
+            ['Aggressive compression can remove punch or create pumping.']
+        )
+    )
+);

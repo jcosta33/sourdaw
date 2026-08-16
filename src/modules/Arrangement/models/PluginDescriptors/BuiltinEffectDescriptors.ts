@@ -1,7 +1,10 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
+import { applyDescriptorGuidance, descriptorGuidance, parameterGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
 /** Built-in effect plugin descriptors (EQ, Compressor, Reverb, Delay, etc.) */
-export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
+const BUILTIN_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     {
         id: 'builtin-eq',
         name: 'EQ',
@@ -1269,3 +1272,453 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         ],
     },
 ];
+
+const noExternalModulation = {
+    availability: 'unavailable' as const,
+    reason: 'This descriptor declares no source-specific modulation route beyond its separate automation capability.',
+};
+
+const BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE = [
+    descriptorGuidance(
+        'builtin-eq',
+        effectGuidance(
+            'Shape tonal balance with modest, source-specific band moves.',
+            ['Start with cuts or moves within ±6 dB, then level-match bypass before judging.'],
+            ['Band frequency selects the area, Q sets its width, and gain sets the amount of change.'],
+            ['Narrow boosts can ring, exaggerate resonances, and consume headroom.'],
+            {
+                availability: 'unavailable',
+                reason: 'EQ has no automatic output compensation; level-match bypass manually.',
+            }
+        ),
+        declaredControl(
+            'Parametric EQ control',
+            'Changes the selected part of the spectrum.',
+            ['Audition changes with neighboring bands and source level matched.'],
+            ['Large boosts can reduce headroom and emphasize resonances.']
+        ),
+        {
+            'eq-low-freq': parameterGuidance(
+                'Low-band center frequency',
+                'Selects the bass region that the low band shapes.',
+                60,
+                180,
+                ['Use with low-band gain and Q to choose the breadth of bass shaping.'],
+                ['Very low centers can mask kick and bass fundamentals.'],
+                noExternalModulation
+            ),
+            'eq-mid-gain': parameterGuidance(
+                'Mid-band gain',
+                'Boosts or cuts the selected midrange emphasis.',
+                -6,
+                6,
+                ['Its frequency and Q determine which midrange material changes.'],
+                ['Boosts can add harshness and use output headroom.'],
+                noExternalModulation
+            ),
+            'eq-high-q': parameterGuidance(
+                'High-band Q',
+                'Sets how narrowly the high-band gain is focused.',
+                0.5,
+                3,
+                ['Use with high-band frequency and gain.'],
+                ['High Q can isolate harsh resonances.'],
+                noExternalModulation
+            ),
+        }
+    ),
+    descriptorGuidance(
+        'builtin-compressor',
+        effectGuidance(
+            'Control dynamic range while preserving the source envelope.',
+            ['Level-match makeup gain against bypass and watch for pumping.'],
+            ['Threshold and ratio set reduction; attack and release shape the envelope response.'],
+            ['Fast timing or excessive makeup can flatten transients and clip later stages.'],
+            {
+                availability: 'provided',
+                parameterId: 'comp-makeup',
+                detail: 'Makeup gain restores deliberate level after compression.',
+            }
+        ),
+        declaredControl(
+            'Compressor control',
+            'Changes level reduction or the resulting envelope.',
+            ['Evaluate threshold, ratio, attack, release, and makeup together.'],
+            ['Aggressive settings can pump, dull transients, or raise noise.']
+        ),
+        {
+            'comp-threshold': parameterGuidance(
+                'Compression threshold',
+                'Sets the input level where gain reduction begins.',
+                -30,
+                -12,
+                ['Works with ratio and makeup gain to determine audible reduction.'],
+                ['Low thresholds can over-compress program material.'],
+                noExternalModulation
+            ),
+            'comp-ratio': parameterGuidance(
+                'Compression ratio',
+                'Sets how strongly signal above threshold is reduced.',
+                2,
+                6,
+                ['Use with threshold to choose the amount of gain reduction.'],
+                ['High ratios can make transients and ambience sound constrained.'],
+                noExternalModulation
+            ),
+            'comp-attack': parameterGuidance(
+                'Compression attack time',
+                'Sets how quickly gain reduction catches transients.',
+                5,
+                30,
+                ['Interact with release to determine envelope recovery.'],
+                ['Very fast attacks can remove punch.'],
+                noExternalModulation
+            ),
+            'comp-release': parameterGuidance(
+                'Compression release time',
+                'Sets how quickly gain reduction recovers after peaks.',
+                50,
+                250,
+                ['Set against attack and source tempo to avoid audible pumping.'],
+                ['Very short releases can distort low-frequency material.'],
+                noExternalModulation
+            ),
+            'comp-makeup': parameterGuidance(
+                'Makeup gain',
+                'Restores output level after intentional gain reduction.',
+                0,
+                6,
+                ['Level-match against bypass after threshold and ratio are set.'],
+                ['Excess makeup can clip later devices.'],
+                noExternalModulation
+            ),
+        }
+    ),
+    descriptorGuidance(
+        'builtin-reverb',
+        effectGuidance(
+            'Place a source in an artificial acoustic space with controlled wet level.',
+            ['Use wet mix conservatively and compare in the full arrangement.'],
+            ['Size and decay determine tail density; damping and low cut determine tonal balance.'],
+            ['Long or bright tails can obscure rhythm and accumulate low-frequency energy.'],
+            {
+                availability: 'not-applicable',
+                reason: 'This reverb declares no automatic wet-path output compensation.',
+            }
+        ),
+        declaredControl(
+            'Reverb-space control',
+            'Changes the reverb tail or wet-path balance.',
+            ['Balance decay, damping, low cut, and wet mix together.'],
+            ['Long bright tails can mask timing and source detail.']
+        ),
+        {
+            'rev-mix': parameterGuidance(
+                'Reverb wet mix',
+                'Sets the proportion of reverberated signal in the output.',
+                0.1,
+                0.35,
+                ['Balance with size and decay after setting pre-delay.'],
+                ['High wet mix can push a source behind the arrangement.'],
+                noExternalModulation
+            ),
+        }
+    ),
+    descriptorGuidance(
+        'builtin-delay',
+        effectGuidance(
+            'Create rhythmic repeats while keeping feedback and wet level under control.',
+            ['Increase feedback gradually and leave headroom for repeat accumulation.'],
+            ['Delay time establishes rhythm; feedback establishes repeat count; filters shape repeat tone.'],
+            ['High feedback can build unexpectedly and mask the dry signal.'],
+            { availability: 'not-applicable', reason: 'This delay declares no automatic repeat-level compensation.' }
+        ),
+        declaredControl(
+            'Delay-line control',
+            'Changes repeat timing, tone, or level.',
+            ['Set time and feedback before fine-tuning filters and mix.'],
+            ['High feedback can accumulate energy and obscure timing.']
+        ),
+        {
+            'delay-time': parameterGuidance(
+                'Delay time',
+                'Sets the spacing between repeated echoes.',
+                80,
+                750,
+                ['Use with feedback to establish rhythmic density.'],
+                ['Long unsynced times can clutter rhythmic material.'],
+                noExternalModulation
+            ),
+            'delay-feedback': parameterGuidance(
+                'Delay feedback',
+                'Sets how much delayed signal returns for additional repeats.',
+                0.15,
+                0.65,
+                ['Use with delay time and mix to control repeat density.'],
+                ['High values can run away or mask the dry signal.'],
+                noExternalModulation
+            ),
+        }
+    ),
+    descriptorGuidance(
+        'builtin-gain',
+        effectGuidance(
+            'Trim a signal deliberately before the next processing stage.',
+            ['Watch downstream headroom when adding gain.'],
+            ['Use with later dynamics processors to establish staging.'],
+            ['Positive gain can clip a later device even when this control itself is clean.'],
+            {
+                availability: 'not-applicable',
+                reason: 'A gain utility is the level control itself, not automatic compensation.',
+            }
+        ),
+        declaredControl(
+            'Signal trim',
+            'Changes the signal level entering later devices.',
+            ['Set before downstream dynamics.'],
+            ['Positive trim can clip later stages.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-sidechain-compressor',
+        effectGuidance(
+            'Apply sidechain-aware compression when a supported routing source is connected.',
+            ['Confirm sidechain routing before relying on ducking and level-match makeup gain.'],
+            ['Threshold and ratio react to the sidechain path while attack and release set the ducking envelope.'],
+            ['Incorrect routing or excessive makeup can create unstable level changes.'],
+            {
+                availability: 'provided',
+                parameterId: 'sc-comp-makeup',
+                detail: 'Makeup gain restores deliberate level after sidechain reduction.',
+            }
+        ),
+        declaredControl(
+            'Sidechain compressor control',
+            'Changes ducking depth or timing.',
+            ['Set routing, threshold, ratio, and timing together.'],
+            ['Aggressive ducking can remove musical attacks.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-chorus',
+        effectGuidance(
+            'Add moving detune and width to a source.',
+            ['Keep wet depth moderate to preserve pitch focus.'],
+            ['Rate and depth set movement; feedback and mix set density.'],
+            ['High depth can blur pitch and mono compatibility.'],
+            {
+                availability: 'not-applicable',
+                reason: 'This modulation effect declares no automatic level compensation.',
+            }
+        ),
+        declaredControl(
+            'Chorus modulation control',
+            'Changes moving detune, width, or wet balance.',
+            ['Balance rate, depth, feedback, and mix.'],
+            ['Extreme depth can blur pitch definition.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-phaser',
+        effectGuidance(
+            'Sweep phase-cancelled bands for motion and color.',
+            ['Use feedback sparingly on bright sources.'],
+            ['Rate and depth control the sweep; feedback increases resonance.'],
+            ['High feedback can create sharp resonances.'],
+            { availability: 'not-applicable', reason: 'This phase effect declares no automatic level compensation.' }
+        ),
+        declaredControl(
+            'Phaser control',
+            'Changes phase-sweep motion or resonance.',
+            ['Balance rate, depth, feedback, and stages.'],
+            ['High feedback can sound piercing.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-distortion',
+        effectGuidance(
+            'Add harmonic saturation while staging output into later devices.',
+            ['Lower output after increasing drive and compare bypass at matched level.'],
+            ['Drive creates harmonics; tone filters them; output and mix set level and blend.'],
+            ['High drive can alias, lose transients, and overload later stages.'],
+            { availability: 'unavailable', reason: 'This distortion declares no automatic loudness matching.' }
+        ),
+        declaredControl(
+            'Distortion control',
+            'Changes harmonic density, tone, or blend.',
+            ['Set drive before output and mix.'],
+            ['High drive can reduce headroom and clarity.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-limiter',
+        effectGuidance(
+            'Catch peaks near a chosen output ceiling.',
+            ['Leave ceiling margin for later conversion and compare against bypass.'],
+            ['Threshold drives reduction while release controls recovery and ceiling caps output.'],
+            ['Heavy limiting can flatten transients and raise apparent loudness deceptively.'],
+            { availability: 'unavailable', reason: 'This limiter declares no automatic loudness matching.' }
+        ),
+        declaredControl(
+            'Limiter control',
+            'Changes peak reduction or output ceiling.',
+            ['Set ceiling before driving threshold.'],
+            ['Heavy limiting can remove punch.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-flanger',
+        effectGuidance(
+            'Create short comb-filter motion for color.',
+            ['Keep feedback restrained on full-range material.'],
+            ['Rate and depth sweep the delay; feedback increases comb resonance.'],
+            ['High feedback can cause metallic peaks and level build-up.'],
+            { availability: 'not-applicable', reason: 'This flanger declares no automatic level compensation.' }
+        ),
+        declaredControl(
+            'Flanger control',
+            'Changes comb-filter movement or blend.',
+            ['Balance rate, depth, feedback, and mix.'],
+            ['High feedback can create sharp peaks.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-tremolo',
+        effectGuidance(
+            'Impose rhythmic amplitude movement on a source.',
+            ['Keep depth below full mute unless a hard chop is intentional.'],
+            ['Rate sets rhythm, depth sets level movement, and shape sets contour.'],
+            ['Full depth can remove note audibility between pulses.'],
+            {
+                availability: 'not-applicable',
+                reason: 'This amplitude effect declares no automatic level compensation.',
+            }
+        ),
+        declaredControl(
+            'Tremolo control',
+            'Changes rhythmic amplitude movement.',
+            ['Balance rate, depth, and waveform shape.'],
+            ['Extreme depth can make notes disappear.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-bitcrusher',
+        effectGuidance(
+            'Reduce resolution for deliberate digital texture.',
+            ['Blend wet signal conservatively and reduce output if harshness increases level.'],
+            ['Bit depth and sample rate set degradation; mix sets blend.'],
+            ['Extreme reduction can add harsh aliases and obscure pitch.'],
+            { availability: 'unavailable', reason: 'This bitcrusher declares no automatic loudness compensation.' }
+        ),
+        declaredControl(
+            'Bitcrusher control',
+            'Changes digital resolution or wet blend.',
+            ['Set bit depth and rate before mix.'],
+            ['Extreme reduction can create harsh aliases.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-filter',
+        effectGuidance(
+            'Shape spectral balance with a resonant filter.',
+            ['Raise resonance gradually and level-match after strong filtering.'],
+            ['Cutoff selects the transition region; resonance emphasizes it; type selects topology.'],
+            ['High resonance can whistle or overemphasize a narrow frequency.'],
+            { availability: 'unavailable', reason: 'This filter declares no automatic output compensation.' }
+        ),
+        declaredControl(
+            'Filter control',
+            'Changes the spectral transition or resonance.',
+            ['Set type, cutoff, and resonance together.'],
+            ['High resonance can create piercing peaks.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-autopan',
+        effectGuidance(
+            'Move a source across the stereo field rhythmically.',
+            ['Check mono compatibility before using wide depth on critical material.'],
+            ['Rate sets movement, depth sets width, and shape sets contour.'],
+            ['Extreme depth can make a source unstable in mono.'],
+            { availability: 'not-applicable', reason: 'This pan effect declares no automatic level compensation.' }
+        ),
+        declaredControl(
+            'Auto-pan control',
+            'Changes stereo movement.',
+            ['Balance rate, depth, and shape.'],
+            ['Wide movement can reduce mono stability.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-convolution-reverb',
+        effectGuidance(
+            'Place a source in an impulse-response space.',
+            ['Use wet mix and pre-delay conservatively while checking arrangement masking.'],
+            ['Impulse choice supplies character; filters and mix shape its placement.'],
+            ['Long bright impulses can obscure rhythm and build low-frequency energy.'],
+            {
+                availability: 'not-applicable',
+                reason: 'This convolution reverb declares no automatic wet-path compensation.',
+            }
+        ),
+        declaredControl(
+            'Convolution reverb control',
+            'Changes impulse response timing, tone, or wet balance.',
+            ['Choose the impulse before tuning filters and mix.'],
+            ['Long impulses can mask source detail.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-stereo-widener',
+        effectGuidance(
+            'Adjust stereo width while preserving a stable low-frequency center.',
+            ['Check mono compatibility after widening.'],
+            ['Width, mid/side balance, and mono-bass setting jointly determine stereo stability.'],
+            ['Excess width can collapse or cancel in mono.'],
+            { availability: 'not-applicable', reason: 'This width effect declares no automatic level compensation.' }
+        ),
+        declaredControl(
+            'Stereo-width control',
+            'Changes mid/side balance or low-frequency mono behavior.',
+            ['Check width settings with mono monitoring.'],
+            ['Excess width can cancel in mono.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-deesser',
+        effectGuidance(
+            'Reduce excessive sibilance while preserving intelligibility.',
+            ['Use listen mode to locate the sibilant band, then turn it off before judging.'],
+            ['Frequency selects the band while threshold and range set reduction.'],
+            ['Over-reduction can dull consonants and make vocals lisp.'],
+            { availability: 'unavailable', reason: 'This de-esser declares no automatic output compensation.' }
+        ),
+        declaredControl(
+            'De-esser control',
+            'Changes sibilance detection or reduction.',
+            ['Use listen, frequency, threshold, and range together.'],
+            ['Excess reduction can dull articulation.']
+        )
+    ),
+    descriptorGuidance(
+        'builtin-lufs-meter',
+        effectGuidance(
+            'Measure loudness against a delivery target without changing audio.',
+            ['Treat readings as metering evidence, not a gain command.'],
+            ['Target and window choose the comparison context for the measured loudness.'],
+            ['Chasing short-term readings can cause unnecessary level changes.'],
+            { availability: 'not-applicable', reason: 'This analyzer has no audio gain path to compensate.' }
+        ),
+        declaredControl(
+            'Loudness-meter configuration',
+            'Changes the meter target or time window without processing audio.',
+            ['Choose a window appropriate to the delivery decision.'],
+            ['Changing a target does not change measured audio.']
+        )
+    ),
+];
+
+export const BUILTIN_EFFECT_DESCRIPTORS = applyDescriptorGuidance(
+    BUILTIN_EFFECT_DESCRIPTOR_DATA,
+    BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE
+);

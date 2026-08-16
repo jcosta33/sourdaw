@@ -5,7 +5,10 @@
 
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
-export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+
+const CRUMBS_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'builtin-crumbs',
     name: 'Crumbs',
     vendor: 'Sourdaw',
@@ -266,3 +269,22 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
         },
     ],
 };
+
+export const CRUMBS_DESCRIPTOR = applySingleDescriptorGuidance(
+    CRUMBS_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'builtin-crumbs',
+        instrumentGuidance(
+            'Load or capture a source, then shape its playback, voice stack, and output as one instrument.',
+            ['Check source selection and output gain before adding stacked voices or long release.'],
+            ['Playback, tuning, voice count, envelope, and pan controls jointly determine each note.'],
+            ['Stacked voices, detune, and high gain can build level and blur note definition.']
+        ),
+        declaredControl(
+            'Sample-instrument control',
+            'Changes source playback, voice behavior, tuning, envelope, or output staging.',
+            ['Set source and playback mode before layering voices.'],
+            ['Dense voice stacks can build level and reduce clarity.']
+        )
+    )
+);
