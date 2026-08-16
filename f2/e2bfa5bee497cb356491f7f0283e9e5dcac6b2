@@ -1,0 +1,21 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveDeviceNode.spec.ts
+  s_ab5443e65c7fba::t_21439c4b18e938 27
+src/modules/MIDI/useCases/webMidiInput/resolveDeviceNode.ts
+  s_ab5443e65c7fba::t_25e9221a3dee3b 11-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f2e2bfa5bee497cb356491f7f0283e9e5dcac6b2",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
