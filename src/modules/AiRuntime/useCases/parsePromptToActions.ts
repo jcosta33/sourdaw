@@ -334,23 +334,39 @@ export const parsePromptToActions = inject({ logger })(
                             evidence: builtContext.evidence,
                         });
                     }
-                    return builtContext.message;
+                    return builtContext;
                 };
+                const initialPlanningContext = buildPlanningContext(null);
+                if (!initialPlanningContext.authorityComplete) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason:
+                            'Provider planning rejected: relevant production authority exceeds the bounded context limit.',
+                    };
+                }
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     loopId: `planning-${crypto.randomUUID()}`,
                     terminalToolNames,
                     signal,
-                    requestTurn: async ({ receiptContext }) =>
-                        generateToolPlanningOutcome(
+                    requestTurn: async ({ receiptContext }) => {
+                        const planningContext =
+                            receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
+                        if (!planningContext.authorityComplete) {
+                            throw new Error('Provider planning cannot continue with incomplete relevant authority.');
+                        }
+                        return generateToolPlanningOutcome(
                             systemPrompt,
-                            buildPlanningContext(receiptContext),
+                            planningContext.message,
                             providerToolSchemas,
                             signal,
                             prompt,
                             onProviderResult,
                             streamIdentity,
                             onProviderAttempt
-                        ),
+                        );
+                    },
                 });
                 applicationToolReceiptFields =
                     planningOutcome.receipts.length === 0

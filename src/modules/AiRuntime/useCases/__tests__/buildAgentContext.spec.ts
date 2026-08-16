@@ -158,6 +158,28 @@ describe('buildAgentContext', () => {
         expect(built.evidence.included.validationFailures).toEqual({ total: 24, retained: 16, omitted: 8 });
     });
 
+    it('marks authority incomplete when every bounded lock is relevant to the exact selection', () => {
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'adjust',
+            context: {
+                ...context,
+                productionBrief: {
+                    ...context.productionBrief!,
+                    locks: Array.from({ length: 65 }, (_, index) => ({
+                        id: `lock-${index}`,
+                        scope: { kind: 'track' as const, trackId: 'track-1' },
+                        statement: `Preserve selected track ${index}.`,
+                        createdAt: index,
+                    })),
+                },
+            },
+        });
+
+        expect(built.authorityComplete).toBe(false);
+        expect(built.message).toContain('"incompleteRelevantAuthority":true');
+    });
+
     it('persists and hydrates structured evidence without retaining prompt or project strings', () => {
         agentRunLifecycle.create({
             runId: 'run-context',

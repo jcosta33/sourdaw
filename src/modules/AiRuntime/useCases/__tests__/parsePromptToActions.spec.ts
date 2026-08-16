@@ -1196,6 +1196,44 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('rejects provider planning before adapter start when relevant locks exceed the authority cap', async () => {
+        const lockedContext: ProjectContext = {
+            ...baseContext,
+            selectedTrackId: 'track-1',
+            productionBrief: {
+                schemaVersion: 1,
+                id: 'brief-1',
+                revision: 1,
+                vision: 'Preserve the selected production authority.',
+                references: [],
+                hardConstraints: [],
+                preferences: [],
+                sectionGoals: [],
+                trackRoles: [],
+                locks: Array.from({ length: 65 }, (_, index) => ({
+                    id: `lock-${index}`,
+                    scope: { kind: 'track' as const, trackId: 'track-1' },
+                    statement: `Keep selected track invariant ${index}.`,
+                    createdAt: index,
+                })),
+                decisions: [],
+                unresolvedQuestions: [],
+                sourceRunLinks: [],
+                supersedesBriefId: null,
+                supersededByBriefId: null,
+                createdAt: 1,
+                updatedAt: 1,
+            },
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
+
+        const result = await parsePromptToActions('make the selected track warmer', lockedContext);
+
+        expect(generateToolCalls).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ actions: [], requiresConfirmation: false });
+        expect(result.rejectionReason).toContain('authority');
+    });
+
     it('rejects a provider time signature that does not match the prompt', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(

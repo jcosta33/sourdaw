@@ -234,7 +234,11 @@ function buildRevisionPayload(input: {
     };
 }
 
-export function buildAgentContext(input: BuildAgentContextInput): { message: string; evidence: AgentContextEvidence } {
+export function buildAgentContext(input: BuildAgentContextInput): {
+    authorityComplete: boolean;
+    message: string;
+    evidence: AgentContextEvidence;
+} {
     const revision = input.projectRevision ?? null;
     const projectData = buildProjectData(input.context);
     const snapshot = snapshotProjectData(projectData);
@@ -307,6 +311,7 @@ export function buildAgentContext(input: BuildAgentContextInput): { message: str
         : null;
 
     return {
+        authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
         evidence,
         message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}`,
     };
