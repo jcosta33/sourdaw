@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:d695ccbe5941065141087433ae2963d2aab292f1db379fe2378a7d7b6053fc61
+// @wasm-bindgen-dts crate-source: sha256:e4b95f0b666cbf1147b29dc82930c7e8eeb513c732cb09327dec26ada42ad679
 /* tslint:disable */
 /* eslint-disable */
 
@@ -513,10 +513,9 @@ export class GrinderInstance {
     process(block_size: number): number;
     process_automated(block_size: number): number;
     /**
-     * Clear every amp stage's runtime state without disturbing parameters.
-     * The host calls this on transport stop or seek so filter memories,
-     * envelopes, cabinet ring buffers and meters do not carry the previous
-     * playhead position into the new one.
+     * Clear every amp stage's runtime state without disturbing parameters,
+     * so filter memories, envelopes, cabinet ring buffers and meters do not
+     * carry one playhead position into another on transport stop or seek.
      */
     reset(): void;
     set_param(name: string, value: number): void;

@@ -579,9 +579,8 @@ impl GrinderEngine {
     }
 
     /// Clear every stage's runtime state. Parameters and routing survive;
-    /// filter memories, envelopes, ring buffers and meters do not. Called on
-    /// transport stop or seek so a relocated playhead does not inherit the
-    /// tail of the previous position.
+    /// filter memories, envelopes, ring buffers and meters do not — so a
+    /// relocated playhead does not inherit the tail of the previous position.
     pub fn reset(&mut self) {
         self.input_cond.reset();
         self.gate.reset();

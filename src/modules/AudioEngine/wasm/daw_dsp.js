@@ -1317,10 +1317,9 @@ export class GrinderInstance {
         return ret >>> 0;
     }
     /**
-     * Clear every amp stage's runtime state without disturbing parameters.
-     * The host calls this on transport stop or seek so filter memories,
-     * envelopes, cabinet ring buffers and meters do not carry the previous
-     * playhead position into the new one.
+     * Clear every amp stage's runtime state without disturbing parameters,
+     * so filter memories, envelopes, cabinet ring buffers and meters do not
+     * carry one playhead position into another on transport stop or seek.
      */
     reset() {
         wasm.grinderinstance_reset(this.__wbg_ptr);

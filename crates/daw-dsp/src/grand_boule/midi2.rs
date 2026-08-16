@@ -86,7 +86,7 @@ pub fn parse_ump32(word0: u32) -> Midi2Event {
         0xB0 => Midi2Event::ControlChange {
             channel,
             controller: data1 & 0x7F,
-            value: ((data2 & 0x7F) as u32) << 25,
+            value: upscale_7_to_32(data2 & 0x7F),
         },
         _ => Midi2Event::Ignored,
     }
@@ -198,6 +198,32 @@ fn upscale_7_to_16(value_7bit: u8) -> u16 {
     const REPEAT_MASK: u16 = (1 << REPEAT_BITS) - 1;
 
     let source = (value_7bit & 0x7F) as u16;
+    let mut scaled = source << SCALE_BITS;
+    if source <= SRC_CENTER {
+        return scaled;
+    }
+    let mut repeat = (source & REPEAT_MASK) << (SCALE_BITS - REPEAT_BITS);
+    while repeat != 0 {
+        scaled |= repeat;
+        repeat >>= REPEAT_BITS;
+    }
+    scaled
+}
+
+/// Upscale a 7-bit MIDI 1.0 controller value to the full 32-bit MIDI 2.0
+/// range with the same min-center-max algorithm as [`upscale_7_to_16`]
+/// (M2-104-UM, "Scaling MIDI 1.0 to MIDI 2.0 Values"). A plain `<< 25` left
+/// CC 127 at 4261412864 of 4294967295, so a MIDI 1.0 pedal could never reach
+/// the top of a continuous controller's range.
+fn upscale_7_to_32(value_7bit: u8) -> u32 {
+    const SRC_BITS: u32 = 7;
+    const DST_BITS: u32 = 32;
+    const SCALE_BITS: u32 = DST_BITS - SRC_BITS;
+    const SRC_CENTER: u32 = 1 << (SRC_BITS - 1);
+    const REPEAT_BITS: u32 = SRC_BITS - 1;
+    const REPEAT_MASK: u32 = (1 << REPEAT_BITS) - 1;
+
+    let source = (value_7bit & 0x7F) as u32;
     let mut scaled = source << SCALE_BITS;
     if source <= SRC_CENTER {
         return scaled;
@@ -389,6 +415,21 @@ mod tests {
             Midi2Event::NoteOff { velocity, .. } => assert_eq!(velocity, 65_535),
             other => panic!("unexpected event: {other:?}"),
         }
+    }
+
+    /// A MIDI 1.0 CC value travels the same min-center-max scaling into the
+    /// 32-bit MIDI 2.0 controller range; a plain `<< 25` stopped short of the
+    /// maximum and off-centre at 64.
+    #[test]
+    fn seven_bit_control_change_value_upscales_to_the_full_thirty_two_bit_range() {
+        let value_of = |v7: u32| match parse_ump32(0x20B0_4000 | v7) {
+            Midi2Event::ControlChange { value, .. } => value,
+            other => panic!("unexpected event: {other:?}"),
+        };
+        assert_eq!(value_of(127), u32::MAX);
+        assert_eq!(value_of(64), 0x8000_0000);
+        assert_eq!(value_of(0), 0);
+        assert_eq!(value_of(1), 1 << 25);
     }
 
     #[test]
