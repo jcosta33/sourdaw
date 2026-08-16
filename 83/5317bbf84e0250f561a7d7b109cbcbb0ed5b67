@@ -1,0 +1,31 @@
+public/wasm/manifest.json
+  s_d91dcbe5f07151::t_b92135f145b13a 31-32,35,45-46,49
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_d91dcbe5f07151::t_89097353ddcf22 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_d91dcbe5f07151::t_066b541bd2d365 1
+public/wasm/scoring/scoring.d.ts
+  s_d91dcbe5f07151::t_c82f391f50b4b9 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_d91dcbe5f07151::t_10bf5830a120b4 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_d91dcbe5f07151::t_520fba6bc726a5 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_d91dcbe5f07151::t_8bee2ca45d27a1 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "835317bbf84e0250f561a7d7b109cbcbb0ed5b67",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
