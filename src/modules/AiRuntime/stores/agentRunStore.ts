@@ -9,6 +9,7 @@ import {
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
+    type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
     type AgentRunError,
     type AgentRunProviderUsage,
@@ -183,6 +184,10 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
     const model = readNullableString(value.model);
     const inputTokens = value.inputTokens === null ? null : readNonNegativeInteger(value.inputTokens);
     const outputTokens = value.outputTokens === null ? null : readNonNegativeInteger(value.outputTokens);
+    const cachedInputTokens =
+        value.cachedInputTokens === undefined || value.cachedInputTokens === null
+            ? value.cachedInputTokens
+            : readNonNegativeInteger(value.cachedInputTokens);
     const provenances: AgentRunProviderUsage['provenance'][] = [
         'provider-reported',
         'versioned-estimate',
@@ -256,6 +261,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         model === undefined ||
         (inputTokens === null && value.inputTokens !== null) ||
         (outputTokens === null && value.outputTokens !== null) ||
+        (cachedInputTokens === null && value.cachedInputTokens !== null) ||
         !provenances.some((provenance) => provenance === value.provenance) ||
         correlationId === null ||
         (value.status !== undefined && status === undefined) ||
@@ -274,6 +280,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         model,
         inputTokens,
         outputTokens,
+        ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
         provenance: value.provenance as AgentRunProviderUsage['provenance'],
         ...(correlationId === undefined ? {} : { correlationId }),
         ...(status === undefined ? {} : { status }),
@@ -532,6 +539,51 @@ function readAgentRun(value: unknown): AgentRun | null {
     const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
     const limits = readNumberRecord(value.budgets.limits);
     const consumed = readNumberRecord(value.budgets.consumed);
+    const budgetAttempts = (() => {
+        if (value.budgetAttempts === undefined) {
+            return [];
+        }
+        return readCollection(value.budgetAttempts, (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const attemptId = readString(candidate.attemptId);
+            const category = readString(candidate.category);
+            const reserved =
+                typeof candidate.reserved === 'number' && Number.isFinite(candidate.reserved)
+                    ? candidate.reserved
+                    : null;
+            const actual =
+                typeof candidate.actual === 'number' && Number.isFinite(candidate.actual) ? candidate.actual : null;
+            const provenance = (['provider-reported', 'versioned-estimate', 'unavailable'] as const).find(
+                (value) => value === candidate.provenance
+            );
+            let estimateMethod: AgentRunBudgetAttempt['estimateMethod'] | null = undefined;
+            if (candidate.estimateMethod !== undefined) {
+                estimateMethod =
+                    candidate.estimateMethod === 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                        ? 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                        : null;
+            }
+            return attemptId === null ||
+                category === null ||
+                reserved === null ||
+                actual === null ||
+                provenance === undefined ||
+                estimateMethod === null ||
+                typeof candidate.final !== 'boolean'
+                ? null
+                : {
+                      attemptId,
+                      category,
+                      reserved,
+                      actual,
+                      provenance,
+                      ...(estimateMethod === undefined ? {} : { estimateMethod }),
+                      final: candidate.final,
+                  };
+        });
+    })();
     const plan = (() => {
         if (value.plan === null) {
             return null;
@@ -608,6 +660,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         allowedOperationPrefixes === null ||
         limits === null ||
         consumed === null ||
+        budgetAttempts === null ||
         plan === undefined ||
         batches === null ||
         receipts === null ||
@@ -668,6 +721,7 @@ function readAgentRun(value: unknown): AgentRun | null {
             autoCommit: autoCommitGrant,
         },
         budgets: { limits, consumed },
+        budgetAttempts,
         plan,
         batches,
         receipts,

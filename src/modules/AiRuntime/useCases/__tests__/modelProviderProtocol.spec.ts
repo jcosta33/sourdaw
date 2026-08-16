@@ -172,7 +172,12 @@ describe('modelProviderProtocol', () => {
         expect(forged).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
         expect(mismatched).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
         expect(firstUse).toMatchObject({ status: 'ready' });
-        expect(secondUse).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
+        expect(secondUse).toMatchObject({ status: 'ready' });
+        if (firstUse.status !== 'ready' || secondUse.status !== 'ready') {
+            throw new Error('Expected valid hosted disclosure evidence to compile.');
+        }
+        hosted.start(firstUse.request);
+        expect(() => hosted.start(secondUse.request)).toThrow('lacks admitted data disclosure');
     });
 
     it('publishes the complete provider-neutral protocol surface', () => {

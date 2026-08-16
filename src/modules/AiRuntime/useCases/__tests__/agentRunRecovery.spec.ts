@@ -92,6 +92,7 @@ describe('agent run recovery', () => {
                 model: 'local-model',
                 inputTokens: null,
                 outputTokens: null,
+                cachedInputTokens: null,
                 provenance: 'unavailable',
                 routeId: 'webllm:webllm:local-model',
                 executor: 'webllm',
@@ -223,6 +224,7 @@ describe('agent run recovery', () => {
 
         vi.resetModules();
         const { agentRunStore: hydratedAgentRunStore } = await import('../../stores/agentRunStore');
+        expect(hydratedAgentRunStore.value?.runs[0]?.providerUsage[0]?.cachedInputTokens).toBeNull();
         expect(hydratedAgentRunStore.value?.runs[0]?.providerUsage[0]?.disclosure).toEqual({
             requestId: 'request-recovery',
             categories: ['prompt-text', 'project-context'],

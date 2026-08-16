@@ -32,6 +32,7 @@ import {
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -432,8 +433,8 @@ function getIncompleteSectionRenderJobs(confirmation: PendingAppActionConfirmati
     if (!scope) {
         return null;
     }
-    const missingJobIds = scope.jobs.filter((job) => !scope.completedJobIds.has(job.jobId)).map((job) => job.jobId);
-    return missingJobIds.length > 0 ? { jobs: scope.jobs, missingJobIds } : null;
+    const jobs = scope.jobs.filter((job) => !scope.completedJobIds.has(job.jobId));
+    return jobs.length > 0 ? { jobs, missingJobIds: jobs.map((job) => job.jobId) } : null;
 }
 
 async function retryCommittedSectionRenders(
@@ -473,6 +474,29 @@ async function retryCommittedSectionRenders(
         return { status: 'failed', reason };
     }
 
+    const trackedRun = agentRunLifecycle.get(confirmation.runId);
+    const renderRetryBudget = (() => {
+        if (!trackedRun) {
+            return null;
+        }
+        const retryPrefix = `render-retry:${confirmation.id}:`;
+        const attemptId = `${retryPrefix}${trackedRun.budgetAttempts.filter((attempt) => attempt.attemptId.startsWith(retryPrefix)).length + 1}`;
+        const reservation = agentRunLifecycle.reserveBudget({
+            runId: confirmation.runId,
+            attemptId,
+            category: 'maxRenderJobs',
+            estimate: followUp.jobs.length,
+            provenance: 'versioned-estimate',
+        });
+        return { attemptId, reservation };
+    })();
+    if (renderRetryBudget?.reservation.status === 'hard-limit-reached') {
+        const reason = `The missing section renders exceed the user budget for ${renderRetryBudget.reservation.reason}.`;
+        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
+        return { status: 'failed', reason };
+    }
+
     updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'running' });
     updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
     setChatGenerating(true);
@@ -498,6 +522,15 @@ async function retryCommittedSectionRenders(
         });
         return { status: 'failed', reason };
     } finally {
+        if (renderRetryBudget?.reservation.status === 'reserved') {
+            agentRunLifecycle.reconcileBudgetAttempt({
+                runId: confirmation.runId,
+                attemptId: renderRetryBudget.attemptId,
+                consumed: followUp.jobs.length,
+                mode: 'final',
+                provenance: 'versioned-estimate',
+            });
+        }
         setChatGenerating(false);
     }
 
@@ -591,10 +624,25 @@ export async function confirmPendingChatActions(
         return failApprovalPreflight(confirmation, 'The confirmation has no approved command batch.');
     }
     let trackedWorkLease: AgentRunWorkLease | null = null;
+    let commandBudget: { attemptId: string; estimates: AgentWorkBudgetEstimate[] } | null = null;
     if (agentRunLifecycle.get(confirmation.runId)) {
         const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
         if (parsedCommandBatch.status === 'invalid') {
             return failApprovalPreflight(confirmation, parsedCommandBatch.reason);
+        }
+        const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
+        const budgetReservation = hasPriorVerifiedBatchReceipt
+            ? null
+            : agentWorkBudget.reserveCommandWork({
+                  runId: confirmation.runId,
+                  envelope: parsedCommandBatch.envelope,
+                  attemptId,
+              });
+        if (budgetReservation?.status === 'hard-limit-reached') {
+            return failApprovalPreflight(
+                confirmation,
+                `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`
+            );
         }
         const receiptIdentity = `command:${confirmation.runId}:${parsedCommandBatch.envelope.batchId}`;
         const leaseResult = agentRunWorkLease.claim({
@@ -614,6 +662,9 @@ export async function confirmPendingChatActions(
             );
         }
         trackedWorkLease = leaseResult.lease;
+        if (budgetReservation) {
+            commandBudget = { attemptId, estimates: budgetReservation.estimates };
+        }
     }
 
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'accepted' });
@@ -735,6 +786,12 @@ export async function confirmPendingChatActions(
         setChatGenerating(false);
     }
 
+    const budgetPersistenceWarning = commandBudget
+        ? updateTrackedAgentRun(confirmation, () => {
+              agentWorkBudget.reconcileCommandWork({ runId: confirmation.runId, ...commandBudget });
+          })
+        : null;
+
     let trackedLeaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null };
     if (trackedWorkLease) {
         let terminalState: 'completed' | 'cancelled' | 'failed' = 'failed';
@@ -787,7 +844,13 @@ export async function confirmPendingChatActions(
             ...(executionKind === 'project' ? { revertGroupId: group.groupId } : {}),
             completesRun: trackedLeaseSettlement.accepted,
         });
-        const runPersistenceWarning = receiptPersistenceWarning ?? trackedLeaseSettlement.warning;
+        const runPersistenceWarning = [
+            receiptPersistenceWarning,
+            trackedLeaseSettlement.warning,
+            budgetPersistenceWarning,
+        ]
+            .filter(Boolean)
+            .join(' ');
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(

@@ -1,0 +1,219 @@
+import { describe, expect, it } from 'vitest';
+
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { getProviderRouteView } from '../providerRouteView';
+
+describe('provider route view', () => {
+    it('discloses requested and actual routes, fallback, capability, policy, and usage provenance', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'route-run',
+            request: 'Plan',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+            requestedRoute: 'cloud',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-run',
+            usage: {
+                provider: 'openai',
+                model: 'tool-model',
+                inputTokens: 1,
+                outputTokens: 2,
+                cachedInputTokens: 4,
+                provenance: 'provider-reported',
+                status: 'complete',
+                fallbackReason: 'remote-unavailable',
+                executor: 'native',
+                disclosure: {
+                    requestId: 'request',
+                    categories: ['prompt-text'],
+                    retention: {
+                        applicationState: 'unknown',
+                        abuseMonitoring: 'unknown',
+                        promptCache: 'unknown',
+                        safetyLegalException: 'unknown',
+                        unknown: 'unknown',
+                    },
+                },
+            },
+        });
+        expect(getProviderRouteView(agentRunLifecycle.get('route-run')!)).toEqual({
+            requestedRoute: 'remote',
+            actualRoute: 'native-local',
+            availability: { status: 'available', reason: null },
+            capability: { role: 'tool-planning', fidelity: 'tool-model' },
+            fallback: {
+                attempted: true,
+                reason: 'remote-unavailable',
+                attempts: [
+                    {
+                        provider: 'openai',
+                        model: 'tool-model',
+                        correlationId: null,
+                        status: 'complete',
+                        reason: 'remote-unavailable',
+                    },
+                ],
+            },
+            dataPolicy: {
+                categories: ['prompt-text'],
+                retention: {
+                    applicationState: 'unknown',
+                    abuseMonitoring: 'unknown',
+                    promptCache: 'unknown',
+                    safetyLegalException: 'unknown',
+                    unknown: 'unknown',
+                },
+            },
+            cache: { status: 'used', provenance: 'provider-reported' },
+            usage: {
+                provenance: 'provider-reported',
+                priceProvenance: 'unavailable',
+                estimateMethod: null,
+            },
+        });
+    });
+
+    it('does not invent an actual route when no provider attempt reached durable run truth', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'unattempted-route-run',
+            request: 'Explain the mix.',
+            mode: 'explain',
+            createdRevision: 'revision-a',
+            requestedRoute: 'cloud',
+        });
+
+        expect(getProviderRouteView(agentRunLifecycle.get('unattempted-route-run')!)).toMatchObject({
+            requestedRoute: 'remote',
+            actualRoute: null,
+            availability: { status: 'unavailable', reason: 'no-provider-attempt' },
+            cache: { status: 'unavailable', provenance: 'unavailable' },
+            usage: { provenance: 'unavailable', priceProvenance: 'unavailable', estimateMethod: null },
+        });
+    });
+
+    it('distinguishes unavailable, unused, and used cache evidence from durable provider usage', () => {
+        const cases = [
+            { runId: 'cache-null', cachedInputTokens: null, expected: 'unavailable' },
+            { runId: 'cache-omitted', cachedInputTokens: undefined, expected: 'unavailable' },
+            { runId: 'cache-zero', cachedInputTokens: 0, expected: 'not-used' },
+            { runId: 'cache-used', cachedInputTokens: 3, expected: 'used' },
+        ] as const;
+
+        for (const testCase of cases) {
+            agentRunLifecycle.clear();
+            agentRunLifecycle.create({
+                runId: testCase.runId,
+                request: 'Plan',
+                mode: 'macro',
+                createdRevision: 'revision-a',
+            });
+            agentRunLifecycle.recordProviderUsage({
+                runId: testCase.runId,
+                usage: {
+                    provider: 'openai',
+                    model: 'tool-model',
+                    inputTokens: 1,
+                    outputTokens: 2,
+                    ...(testCase.cachedInputTokens === undefined
+                        ? {}
+                        : { cachedInputTokens: testCase.cachedInputTokens }),
+                    provenance: 'provider-reported',
+                    status: 'complete',
+                    executor: 'cloud',
+                },
+            });
+
+            expect(getProviderRouteView(agentRunLifecycle.get(testCase.runId)!)).toMatchObject({
+                cache: { status: testCase.expected, provenance: 'provider-reported' },
+            });
+        }
+    });
+
+    it('retains ordered fallback attempts and marks a terminal failure unavailable', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'failed-route-run',
+            request: 'Plan',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'failed-route-run',
+            usage: {
+                provider: 'native',
+                model: 'native',
+                inputTokens: null,
+                outputTokens: null,
+                provenance: 'unavailable',
+                correlationId: 'native-1',
+                status: 'failed',
+                fallbackReason: 'native-unavailable',
+                executor: 'native',
+            },
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'failed-route-run',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: null,
+                outputTokens: null,
+                provenance: 'unavailable',
+                correlationId: 'webllm-2',
+                status: 'cancelled',
+                fallbackReason: 'cancelled',
+                executor: 'webllm',
+            },
+        });
+        expect(getProviderRouteView(agentRunLifecycle.get('failed-route-run')!)).toMatchObject({
+            actualRoute: 'browser-local',
+            availability: { status: 'unavailable', reason: 'cancelled' },
+            fallback: {
+                attempted: true,
+                reason: 'cancelled',
+                attempts: [{ correlationId: 'native-1' }, { correlationId: 'webllm-2' }],
+            },
+        });
+    });
+
+    it('discloses the versioned compiled-request estimate used for the provider attempt', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'estimated-route-run',
+            request: 'Plan',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+        });
+        agentRunLifecycle.reserveBudget({
+            runId: 'estimated-route-run',
+            attemptId: 'provider-attempt',
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+            estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'estimated-route-run',
+            usage: {
+                provider: 'openai',
+                model: 'tool-model',
+                inputTokens: 1,
+                outputTokens: 2,
+                provenance: 'provider-reported',
+                correlationId: 'provider-attempt',
+                status: 'complete',
+                executor: 'cloud',
+            },
+        });
+
+        expect(getProviderRouteView(agentRunLifecycle.get('estimated-route-run')!)).toMatchObject({
+            usage: {
+                provenance: 'provider-reported',
+                estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+            },
+        });
+    });
+});

@@ -455,7 +455,7 @@ function compileRequest(
         const disclosure = input.remoteDisclosure;
         if (
             !hasAdmissibleRemoteDataCategories(categories) ||
-            !remoteTransmissionDisclosure.consume({
+            !remoteTransmissionDisclosure.matches({
                 evidence: disclosure,
                 categories,
                 correlationId: input.correlationId,
@@ -505,15 +505,17 @@ function compileRequest(
         return unavailable('invalid-request', 'The model provider request is not valid bounded JSON.');
     }
 
+    const request: ModelProviderRequest = {
+        ...structuredClone(input),
+        runId: input.runId ?? input.correlationId,
+        requestId: input.requestId ?? input.correlationId,
+        cancellationGeneration: input.cancellationGeneration ?? 0,
+        schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+        ...(input.remoteDisclosure === undefined ? {} : { remoteDisclosure: input.remoteDisclosure }),
+    };
     return {
         status: 'ready',
-        request: {
-            ...structuredClone(input),
-            runId: input.runId ?? input.correlationId,
-            requestId: input.requestId ?? input.correlationId,
-            cancellationGeneration: input.cancellationGeneration ?? 0,
-            schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
-        },
+        request,
     };
 }
 
@@ -791,6 +793,21 @@ export function createModelProviderProtocol(input: CreateModelProviderProtocolIn
         capabilities,
         compileRequest: (request) => compileRequest(input.provider, capabilities, request),
         start: (request) => {
+            if (request.dataPolicy === 'remote-allowed' && capabilities.dataPolicies.length === 1) {
+                const categories = request.dataCategories;
+                if (
+                    !hasAdmissibleRemoteDataCategories(categories) ||
+                    !remoteTransmissionDisclosure.consume({
+                        evidence: request.remoteDisclosure,
+                        categories,
+                        correlationId: request.correlationId,
+                        requestId: request.requestId,
+                    }) ||
+                    classifyAgentDataPolicy({ destination: 'provider', categories }).transmission !== 'allowed'
+                ) {
+                    throw new TypeError('The hosted provider request lacks admitted data disclosure.');
+                }
+            }
             const session = createSession({ provider: input.provider, model: input.model ?? null, request });
             return {
                 push(event) {

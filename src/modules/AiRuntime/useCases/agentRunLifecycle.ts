@@ -4,6 +4,7 @@ import {
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
+    type AgentRunBudgetAttempt,
     type AgentRunBudgets,
     type AgentRunError,
     type AgentRunGrants,
@@ -36,6 +37,18 @@ const DEFAULT_GRANTS: AgentRunGrants = {
 };
 
 const DEFAULT_BUDGETS: AgentRunBudgets = { limits: {}, consumed: {} };
+
+function mergeAgentRunBudgets(current: AgentRunBudgets, next: AgentRunBudgets): AgentRunBudgets {
+    const limits = { ...current.limits };
+    for (const [category, limit] of Object.entries(next.limits)) {
+        limits[category] = limits[category] === undefined ? limit : Math.min(limits[category], limit);
+    }
+    const consumed = { ...current.consumed };
+    for (const [category, amount] of Object.entries(next.consumed)) {
+        consumed[category] = Math.max(consumed[category] ?? 0, amount);
+    }
+    return { limits, consumed };
+}
 
 const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 
@@ -117,6 +130,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         scope: structuredClone(input.scope ?? DEFAULT_SCOPE),
         grants: structuredClone(input.grants ?? DEFAULT_GRANTS),
         budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
+        budgetAttempts: [],
         plan: null,
         batches: [],
         receipts: [],
@@ -193,7 +207,7 @@ function recordAgentRunPlan(input: {
         revisions: { ...run.revisions, planned: input.revision },
         scope: structuredClone(input.scope),
         grants: structuredClone(input.grants),
-        budgets: structuredClone(input.budgets),
+        budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
         plan: {
             summary: input.summary,
             commandIds: [...input.commandIds],
@@ -234,7 +248,7 @@ function recordAgentRunApplicationToolEvidence(input: {
             revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
             scope: structuredClone(input.scope),
             grants: structuredClone(input.grants),
-            budgets: structuredClone(input.budgets),
+            budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan,
         };
     });
@@ -299,6 +313,135 @@ function recordAgentRunProviderUsage(input: {
             modelRoute:
                 usage.routeId !== undefined ? { ...run.modelRoute, selectedRouteId: usage.routeId } : run.modelRoute,
             providerUsage: [...run.providerUsage, usage],
+        };
+    });
+}
+
+type AgentRunBudgetReservation = {
+    attemptId: string;
+    category: string;
+    estimate: number;
+    provenance: AgentRunBudgetAttempt['provenance'];
+    estimateMethod?: AgentRunBudgetAttempt['estimateMethod'];
+};
+
+type AgentRunBudgetReservationInput = AgentRunBudgetReservation & {
+    runId: string;
+};
+
+type AgentRunBudgetReservationResult = { status: 'reserved' | 'hard-limit-reached'; reason?: string };
+
+function reserveAgentRunBudgetBatch(input: {
+    runId: string;
+    attempts: readonly AgentRunBudgetReservation[];
+    reservedAt?: number;
+}): AgentRunBudgetReservationResult {
+    const run = getAgentRun(input.runId);
+    if (run === null) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const attemptIds = new Set<string>();
+    const newAttempts: AgentRunBudgetReservation[] = [];
+    const additionalByCategory = new Map<string, number>();
+    for (const attempt of input.attempts) {
+        if (!Number.isFinite(attempt.estimate) || attempt.estimate < 0) {
+            throw new Error('Budget estimate must be a non-negative finite number');
+        }
+        if (attemptIds.has(attempt.attemptId)) {
+            throw new Error(`Duplicate budget attempt: ${attempt.attemptId}`);
+        }
+        attemptIds.add(attempt.attemptId);
+        if (run.budgetAttempts.some((existing) => existing.attemptId === attempt.attemptId)) {
+            continue;
+        }
+        newAttempts.push(attempt);
+        additionalByCategory.set(
+            attempt.category,
+            (additionalByCategory.get(attempt.category) ?? 0) + attempt.estimate
+        );
+    }
+    for (const [category, additional] of additionalByCategory) {
+        const limit = run.budgets.limits[category];
+        const consumed = run.budgets.consumed[category] ?? 0;
+        if (limit !== undefined && consumed + additional > limit) {
+            return { status: 'hard-limit-reached', reason: category };
+        }
+    }
+    if (newAttempts.length === 0) {
+        return { status: 'reserved' };
+    }
+    updateAgentRun(input.runId, input.reservedAt ?? Date.now(), (current) => {
+        const consumed = { ...current.budgets.consumed };
+        for (const [category, additional] of additionalByCategory) {
+            consumed[category] = (consumed[category] ?? 0) + additional;
+        }
+        return {
+            ...current,
+            budgets: { ...current.budgets, consumed },
+            budgetAttempts: [
+                ...current.budgetAttempts,
+                ...newAttempts.map((attempt) => ({
+                    attemptId: attempt.attemptId,
+                    category: attempt.category,
+                    reserved: attempt.estimate,
+                    actual: 0,
+                    provenance: attempt.provenance,
+                    ...(attempt.estimateMethod === undefined ? {} : { estimateMethod: attempt.estimateMethod }),
+                    final: false,
+                })),
+            ],
+        };
+    });
+    return { status: 'reserved' };
+}
+
+function reserveAgentRunBudget(
+    input: AgentRunBudgetReservationInput & { reservedAt?: number }
+): AgentRunBudgetReservationResult {
+    return reserveAgentRunBudgetBatch({ ...input, attempts: [input] });
+}
+
+function reconcileAgentRunBudgetAttempt(input: {
+    runId: string;
+    attemptId: string;
+    consumed: number;
+    mode: 'delta' | 'cumulative' | 'final';
+    provenance: AgentRunBudgetAttempt['provenance'];
+    reconciledAt?: number;
+}): AgentRun {
+    if (!Number.isFinite(input.consumed) || input.consumed < 0) {
+        throw new Error('Budget usage must be a non-negative finite number');
+    }
+    return updateAgentRun(input.runId, input.reconciledAt ?? Date.now(), (run) => {
+        const index = run.budgetAttempts.findIndex((attempt) => attempt.attemptId === input.attemptId);
+        if (index < 0) {
+            throw new Error(`Unknown budget attempt: ${input.attemptId}`);
+        }
+        const previous = run.budgetAttempts[index]!;
+        const actual =
+            input.mode === 'delta' ? previous.actual + input.consumed : Math.max(previous.actual, input.consumed);
+        const additionalCeiling = Math.max(0, actual - previous.reserved);
+        const attempts = [...run.budgetAttempts];
+        attempts[index] = {
+            ...previous,
+            reserved: Math.max(previous.reserved, actual),
+            actual,
+            provenance: input.provenance,
+            final: previous.final || input.mode === 'final',
+        };
+        return {
+            ...run,
+            budgetAttempts: attempts,
+            budgets:
+                additionalCeiling === 0
+                    ? run.budgets
+                    : {
+                          ...run.budgets,
+                          consumed: {
+                              ...run.budgets.consumed,
+                              [previous.category]: (run.budgets.consumed[previous.category] ?? 0) + additionalCeiling,
+                          },
+                      },
         };
     });
 }
@@ -594,6 +737,9 @@ export const agentRunLifecycle = {
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
     recordProviderUsage: recordAgentRunProviderUsage,
+    reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
+    reserveBudget: reserveAgentRunBudget,
+    reserveBudgetBatch: reserveAgentRunBudgetBatch,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
     prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,

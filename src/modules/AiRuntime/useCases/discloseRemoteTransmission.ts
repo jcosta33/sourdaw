@@ -7,19 +7,41 @@ import {
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { notifyAiChange } from './notifyAiChange';
 
-type Admission = { categories: readonly AgentDataCategory[]; correlationId: string; requestId: string };
+type Admission = {
+    categories: readonly AgentDataCategory[];
+    correlationId: string;
+    requestId: string;
+    published: boolean;
+};
 const admissions = new WeakMap<object, Admission>();
 
-function discloseRemoteTransmission(input: {
+type RemoteTransmissionDisclosureInput = {
     categories: readonly AgentDataCategory[];
     correlationId: string;
     requestId: string;
     runId?: string;
     provider?: string;
-}): RemoteTransmissionDisclosure {
-    notifyAiChange('Hosted AI privacy disclosure', [formatRemoteTransmissionDisclosure(input.categories)]);
+};
+
+function prepareRemoteTransmissionDisclosure(
+    input: Pick<RemoteTransmissionDisclosureInput, 'categories' | 'correlationId' | 'requestId'>
+): RemoteTransmissionDisclosure {
     const evidence = {} as RemoteTransmissionDisclosure;
-    admissions.set(evidence, { ...input, categories: [...input.categories] });
+    admissions.set(evidence, { ...input, categories: [...input.categories], published: false });
+    return evidence;
+}
+
+function publishRemoteTransmissionDisclosure(input: {
+    evidence: RemoteTransmissionDisclosure;
+    runId?: string;
+    provider?: string;
+}): boolean {
+    const admission = admissions.get(input.evidence);
+    if (admission === undefined || admission.published) {
+        return false;
+    }
+    admission.published = true;
+    notifyAiChange('Hosted AI privacy disclosure', [formatRemoteTransmissionDisclosure(admission.categories)]);
     if (input.runId !== undefined) {
         agentRunLifecycle.recordProviderUsage({
             runId: input.runId,
@@ -29,11 +51,11 @@ function discloseRemoteTransmission(input: {
                 inputTokens: null,
                 outputTokens: null,
                 provenance: 'unavailable',
-                correlationId: input.correlationId,
+                correlationId: admission.correlationId,
                 status: 'unavailable',
                 disclosure: {
-                    requestId: input.requestId,
-                    categories: [...input.categories],
+                    requestId: admission.requestId,
+                    categories: [...admission.categories],
                     retention: {
                         applicationState: 'unknown',
                         abuseMonitoring: 'unknown',
@@ -45,10 +67,18 @@ function discloseRemoteTransmission(input: {
             },
         });
     }
+    return true;
+}
+
+function discloseRemoteTransmission(input: RemoteTransmissionDisclosureInput): RemoteTransmissionDisclosure {
+    const evidence = prepareRemoteTransmissionDisclosure(input);
+    if (!publishRemoteTransmissionDisclosure({ evidence, runId: input.runId, provider: input.provider })) {
+        throw new Error('Hosted AI privacy disclosure could not be published.');
+    }
     return evidence;
 }
 
-function consumeRemoteTransmissionDisclosure(input: {
+function matchesRemoteTransmissionDisclosure(input: {
     evidence: RemoteTransmissionDisclosure | undefined;
     categories: readonly AgentDataCategory[];
     correlationId: string;
@@ -58,13 +88,26 @@ function consumeRemoteTransmissionDisclosure(input: {
         return false;
     }
     const admission = admissions.get(input.evidence);
-    if (
-        admission === undefined ||
-        admission.correlationId !== input.correlationId ||
-        admission.requestId !== input.requestId ||
-        admission.categories.length !== input.categories.length ||
-        admission.categories.some((category, index) => category !== input.categories[index])
-    ) {
+    return (
+        admission !== undefined &&
+        admission.correlationId === input.correlationId &&
+        admission.requestId === input.requestId &&
+        admission.categories.length === input.categories.length &&
+        !admission.categories.some((category, index) => category !== input.categories[index])
+    );
+}
+
+function consumeRemoteTransmissionDisclosure(input: {
+    evidence: RemoteTransmissionDisclosure | undefined;
+    categories: readonly AgentDataCategory[];
+    correlationId: string;
+    requestId: string;
+}): boolean {
+    if (!matchesRemoteTransmissionDisclosure(input) || input.evidence === undefined) {
+        return false;
+    }
+    const admission = admissions.get(input.evidence)!;
+    if (!admission.published) {
         return false;
     }
     admissions.delete(input.evidence);
@@ -72,6 +115,9 @@ function consumeRemoteTransmissionDisclosure(input: {
 }
 
 export const remoteTransmissionDisclosure = {
+    prepare: prepareRemoteTransmissionDisclosure,
+    publish: publishRemoteTransmissionDisclosure,
+    matches: matchesRemoteTransmissionDisclosure,
     issue: discloseRemoteTransmission,
     consume: consumeRemoteTransmissionDisclosure,
 };

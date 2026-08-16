@@ -104,7 +104,9 @@ const mocks = vi.hoisted(() => {
                     signal?: AbortSignal,
                     projectRevision?: string,
                     stemImportScope?: unknown,
-                    onProviderResult?: (result: ModelProviderResult) => void
+                    onProviderResult?: (result: ModelProviderResult) => void,
+                    streamIdentity?: unknown,
+                    onProviderAttempt?: (input: unknown) => unknown
                 ) => Promise<IntentResult>
             >(),
         getProjectContext: vi.fn<() => ProjectContext>(),
@@ -688,7 +690,8 @@ describe('sendChatMessage injectables', () => {
                 cancellationGeneration: 0,
                 requestId: expect.stringMatching(/^provider:native:agent-run-/),
                 runId: expect.stringMatching(/^agent-run-/),
-            })
+            }),
+            expect.any(Function)
         );
     });
 
@@ -977,6 +980,34 @@ describe('sendChatMessage injectables', () => {
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
     });
 
+    it('does not start explain streaming when compiled system, conversation, and project context exceed its budget', async () => {
+        const context = mocks.getProjectContext();
+        mocks.getProjectContext.mockReturnValue({
+            ...context,
+            tracks: context.tracks.map((track) => ({ ...track, name: 'project context '.repeat(500) })),
+        });
+        mocks.chatStoreValue.value = {
+            messages: Array.from({ length: 24 }, (_, index): ChatMessage => ({
+                id: `history-${index}`,
+                role: index % 2 === 0 ? 'user' : 'assistant',
+                content: 'conversation context '.repeat(500),
+                timestamp: index,
+            })),
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+
+        await sendChatMessage('brief', { budgets: { limits: { localAnalysis: 1_024 }, consumed: {} } });
+
+        expect(mocks.runNativeModelProviderRequest).not.toHaveBeenCalled();
+        const [projection] = getAgentRunControlProjections();
+        expect(projection?.phase).toBe('failed');
+        expect(projection?.errors).toEqual(
+            expect.arrayContaining([expect.objectContaining({ code: 'agent-budget-hard-limit' })])
+        );
+    });
+
     it('marks a token-limited hosted response visibly incomplete', async () => {
         mocks.backend.value = 'cloud';
         mocks.cloudAvailable.value = true;
@@ -1109,6 +1140,7 @@ describe('sendChatMessage injectables', () => {
                 model: 'cloud',
                 inputTokens: 11,
                 outputTokens: 4,
+                cachedInputTokens: 3,
                 provenance: 'provider-reported',
                 correlationId: expect.any(String),
                 status: 'complete',
@@ -1117,12 +1149,23 @@ describe('sendChatMessage injectables', () => {
                 routeId: 'cloud:openai-compatible:cloud',
                 executor: 'cloud',
                 fallbackReason: null,
+                disclosure: expect.objectContaining({
+                    requestId: expect.any(String),
+                    categories: expect.arrayContaining(['prompt-text']),
+                    retention: expect.objectContaining({ applicationState: 'unknown' }),
+                }),
             },
         ]);
         expect(getAgentRun(usageProjection!.runId)?.modelRoute).toEqual({
             requestedRoute: 'auto',
             selectedRouteId: 'cloud:openai-compatible:cloud',
         });
+        expect(getAgentRun(usageProjection!.runId)?.budgetAttempts).toEqual([
+            expect.objectContaining({
+                attemptId: expect.any(String),
+                estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+            }),
+        ]);
     });
 
     it('records each fallback planning attempt with its actual provider and correlation', async () => {

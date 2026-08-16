@@ -45,7 +45,11 @@ import {
     runApplicationOwnedToolLoop,
 } from './applicationOwnedToolLoop';
 import { type ProjectContext } from './getProjectContext';
-import { generateToolPlanningOutcome } from './llmOrchestration/inference';
+import {
+    generateToolPlanningOutcome,
+    type ProviderAttemptAdmission,
+    type ProviderAttemptAdmissionResult,
+} from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { validateActions } from './validateActions';
 
@@ -112,7 +116,8 @@ export const parsePromptToActions = inject({ logger })(
             projectRevision?: string,
             stemImportScope?: StemImportPromptScope,
             onProviderResult?: (result: ModelProviderResult) => void,
-            streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>
+            streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
+            onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
 
@@ -224,7 +229,8 @@ export const parsePromptToActions = inject({ logger })(
                             signal,
                             prompt,
                             onProviderResult,
-                            streamIdentity
+                            streamIdentity,
+                            onProviderAttempt
                         ),
                 });
                 applicationToolReceiptFields =

@@ -11,6 +11,10 @@ import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
+    estimateCompiledProviderRequestTokenCeiling,
+    type ProviderAttemptCostEstimate,
+} from '../../models/ModelProviderBudgetEstimate';
+import {
     type ModelProviderName,
     type ModelProviderRequest,
     type ModelProviderResult,
@@ -87,6 +91,27 @@ function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutc
     return { status: 'complete', toolCalls };
 }
 
+export type ProviderAttemptAdmission = {
+    backend: RunnableAiBackend;
+    provider: ModelProviderName;
+    correlationId: string;
+    request: ModelProviderRequest;
+    estimatedTotalTokens: number;
+    estimate: ProviderAttemptCostEstimate;
+};
+
+export type ProviderAttemptAdmissionResult = { status: 'admitted' } | { status: 'rejected'; reason: string };
+
+function createProviderAttemptAdmissionError(reason: string): Error {
+    const error = new Error(reason);
+    error.name = 'ProviderAttemptAdmissionError';
+    return error;
+}
+
+function isProviderAttemptAdmissionError(error: unknown): error is Error {
+    return error instanceof Error && error.name === 'ProviderAttemptAdmissionError';
+}
+
 async function waitForInference<TResult>(inference: Promise<TResult>, signal?: AbortSignal): Promise<TResult> {
     if (!signal) {
         return inference;
@@ -150,7 +175,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
     async function generateNativeToolCalls(
         providerRequest: ModelProviderRequest,
         toolSchemas: readonly ToolSchema[],
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
+        onProviderResult?: (result: ModelProviderResult) => void
     ): Promise<ToolPlanningOutcome> {
         const toolCalls: ToolCallResult[] = [];
         const nativeOutcome = await runNativeModelProviderRequest({
@@ -236,6 +263,18 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         if (compiledFallback.status === 'unavailable') {
             throw createModelProviderFailureError(compiledFallback.failure);
         }
+        const fallbackEstimate = estimateCompiledProviderRequestTokenCeiling(compiledFallback.request);
+        const fallbackAdmission = onProviderAttempt?.({
+            backend: 'native',
+            provider: 'native',
+            correlationId: compiledFallback.request.correlationId,
+            request: compiledFallback.request,
+            estimatedTotalTokens: fallbackEstimate.totalTokenCeiling,
+            estimate: fallbackEstimate,
+        });
+        if (fallbackAdmission?.status === 'rejected') {
+            throw createProviderAttemptAdmissionError(fallbackAdmission.reason);
+        }
         const fallbackSession = fallbackProtocol.start(compiledFallback.request);
         const fallbackOutcome = await runNativeModelProviderRequest({
             request: compiledFallback.request,
@@ -252,6 +291,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             return { status: 'rejected', reason: fallbackOutcome.finish.finish.failure.safeMessage };
         }
         const fallbackResult = fallbackSession.finish(fallbackOutcome.finish);
+        onProviderResult?.(fallbackResult);
         if (fallbackResult.status !== 'complete') {
             if (fallbackResult.failure !== null) {
                 throw createModelProviderFailureError(fallbackResult.failure);
@@ -270,7 +310,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         signal?: AbortSignal,
         toolSelectionPrompt: string = userMessage,
         onProviderResult?: (result: ModelProviderResult) => void,
-        streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>
+        streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
+        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
@@ -354,6 +395,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 const correlationId = `tool-planning-${crypto.randomUUID()}`;
                 const requestId = streamIdentity?.requestId ?? correlationId;
+                const remoteDisclosure =
+                    backend === 'cloud'
+                        ? remoteTransmissionDisclosure.prepare({
+                              categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                              correlationId,
+                              requestId,
+                          })
+                        : undefined;
                 const compiledRequest = providerProtocol.compileRequest({
                     correlationId,
                     ...(streamIdentity ?? {}),
@@ -373,23 +422,39 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
                     budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
-                    ...(backend === 'cloud'
-                        ? {
+                    ...(remoteDisclosure === undefined
+                        ? {}
+                        : {
                               dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                              remoteDisclosure: remoteTransmissionDisclosure.issue({
-                                  categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-                                  correlationId,
-                                  requestId,
-                                  ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
-                                  provider: providerName,
-                              }),
-                          }
-                        : {}),
+                              remoteDisclosure,
+                          }),
                 });
                 if (compiledRequest.status !== 'ready') {
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
                 }
                 const providerRequest = compiledRequest.request;
+                const estimate = estimateCompiledProviderRequestTokenCeiling(providerRequest);
+                const admission = onProviderAttempt?.({
+                    backend,
+                    provider: providerName,
+                    correlationId: providerRequest.correlationId,
+                    request: providerRequest,
+                    estimatedTotalTokens: estimate.totalTokenCeiling,
+                    estimate,
+                });
+                if (admission?.status === 'rejected') {
+                    throw createProviderAttemptAdmissionError(admission.reason);
+                }
+                if (
+                    remoteDisclosure !== undefined &&
+                    !remoteTransmissionDisclosure.publish({
+                        evidence: remoteDisclosure,
+                        ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
+                        provider: providerName,
+                    })
+                ) {
+                    throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
+                }
                 providerSession = providerProtocol.start(providerRequest);
                 providerSource = createModelProviderStreamWriter(providerRequest, providerSession);
                 const providerSystemPrompt = providerRequest.messages.find(
@@ -445,7 +510,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const generatedOutcome = await waitForInference(generatedInference, signal);
                     outcome = normalizeGeneratedToolPlanningOutcome(generatedOutcome);
                 } else {
-                    outcome = await generateNativeToolCalls(providerRequest, providerTools, signal);
+                    outcome = await generateNativeToolCalls(
+                        providerRequest,
+                        providerTools,
+                        signal,
+                        onProviderAttempt,
+                        reportProviderResult
+                    );
                 }
 
                 if (backend === 'webllm' && outcome.status === 'complete') {
@@ -502,6 +573,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 return outcome;
             } catch (error) {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
+                const isAdmissionRejection = isProviderAttemptAdmissionError(error);
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
                 const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
                 let normalizedAttemptError: Error | null = null;
@@ -564,7 +636,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     }
                     throw createToolPlanningAbortError();
                 }
-                if (isTerminalModelRejection) {
+                if (isTerminalModelRejection || isAdmissionRejection) {
                     llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                     return { status: 'rejected', reason: error.message };
                 }

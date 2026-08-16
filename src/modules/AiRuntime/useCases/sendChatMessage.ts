@@ -15,11 +15,12 @@ import {
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
+import { type AgentRunBudgets, type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
+import { estimateCompiledProviderRequestTokenCeiling } from '../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderFinish,
     type ModelProviderFinishEnvelope,
@@ -100,6 +101,7 @@ function readProviderTokenCount(value: unknown): number | null {
 type SendChatMessageOptions = {
     mode?: AgentExecutionMode;
     trustCeiling?: AgentTrustCeiling;
+    budgets?: AgentRunBudgets;
 };
 
 type AgentApplyReceipt = Extract<
@@ -171,11 +173,24 @@ function trySettleAgentRunWorkLease(
 function recordModelProviderUsage(
     runId: string,
     result: ModelProviderResult,
+    budgetAttemptId: string,
     options: { terminal: boolean } = { terminal: false }
 ): void {
     const executor: RunnableAiBackend =
         result.provider === 'native' || result.provider === 'webllm' ? result.provider : 'cloud';
     const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
+    const existingAttempt = agentRunLifecycle
+        .get(runId)
+        ?.budgetAttempts.some((attempt) => attempt.attemptId === budgetAttemptId);
+    if (!existingAttempt) {
+        agentRunLifecycle.reserveBudget({
+            runId,
+            attemptId: budgetAttemptId,
+            category: getProviderBudgetCategory(executor),
+            estimate: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+            provenance: result.usage.provenance,
+        });
+    }
     agentRunLifecycle.recordProviderUsage({
         runId,
         usage: {
@@ -183,6 +198,7 @@ function recordModelProviderUsage(
             model: result.model,
             inputTokens: result.usage.inputTokens,
             outputTokens: result.usage.outputTokens,
+            cachedInputTokens: result.usage.cachedInputTokens,
             provenance: result.usage.provenance,
             correlationId: result.correlationId,
             status: result.status,
@@ -190,10 +206,23 @@ function recordModelProviderUsage(
             partialOutputDisposition: result.partialOutputDisposition,
             routeId,
             executor,
+            ...(result.remoteDisclosure ? { disclosure: result.remoteDisclosure } : {}),
             fallbackReason:
                 options.terminal || result.status === 'complete' ? null : (result.failure?.code ?? result.status),
         },
     });
+    const consumed = (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0);
+    agentRunLifecycle.reconcileBudgetAttempt({
+        runId,
+        attemptId: budgetAttemptId,
+        consumed,
+        mode: 'final',
+        provenance: result.usage.provenance,
+    });
+}
+
+function getProviderBudgetCategory(backend: RunnableAiBackend): string {
+    return backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
 }
 
 function recordApplicationToolOnlyPlan(input: {
@@ -272,6 +301,7 @@ export async function sendChatMessage(
         createdRevision: captureProjectRevision(),
         requestedRoute,
         selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
+        budgets: options?.budgets,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
@@ -310,12 +340,43 @@ export async function sendChatMessage(
                 prompt: userText,
                 signal: aborter.signal,
                 onProviderResult: (providerResult) => {
-                    recordModelProviderUsage(runId, providerResult);
+                    recordModelProviderUsage(runId, providerResult, providerResult.correlationId);
                 },
                 streamIdentity: {
                     runId,
                     requestId: providerReceiptIdentity,
                     cancellationGeneration: providerLease.cancellationGeneration,
+                },
+                onProviderAttempt: ({ backend: attemptBackend, correlationId, estimatedTotalTokens, estimate }) => {
+                    const budgetReservation = agentRunLifecycle.reserveBudget({
+                        runId,
+                        attemptId: correlationId,
+                        category: getProviderBudgetCategory(attemptBackend),
+                        estimate: estimatedTotalTokens,
+                        provenance: 'versioned-estimate',
+                        estimateMethod: estimate.method,
+                    });
+                    return budgetReservation.status === 'reserved'
+                        ? { status: 'admitted' as const }
+                        : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
+                },
+                onLocalWorkAttempt: ({ analysisCount, downloadBytes, storageBytes }) => {
+                    const estimates = [
+                        ['localAnalysis', analysisCount],
+                        ['downloadBytes', downloadBytes],
+                        ['storageBytes', storageBytes],
+                    ] as const;
+                    return (
+                        agentRunLifecycle.reserveBudgetBatch({
+                            runId,
+                            attempts: estimates.map(([category, estimate]) => ({
+                                attemptId: `stem-preparation:${category}`,
+                                category,
+                                estimate,
+                                provenance: 'versioned-estimate',
+                            })),
+                        }).status === 'reserved'
+                    );
                 },
             });
             agentRunWorkLease.settle({
@@ -458,7 +519,7 @@ export async function sendChatMessage(
                     },
                     budgets: {
                         limits: { ...commandBatch.authority.budgets },
-                        consumed: { commands: commandIds.length },
+                        consumed: {},
                     },
                 });
                 agentRunLifecycle.recordBatch({
@@ -1035,6 +1096,14 @@ export async function sendChatMessage(
             role: 'system' | 'user' | 'assistant';
             content: string;
         }> = [{ role: 'system', content: systemPrompt }, ...conversationHistory];
+        const remoteDisclosure =
+            backend === 'cloud'
+                ? remoteTransmissionDisclosure.prepare({
+                      categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                      correlationId: providerReceiptIdentity,
+                      requestId: providerReceiptIdentity,
+                  })
+                : undefined;
         const providerProtocol = createModelProviderProtocol({
             provider: getModelProviderName(backend),
             model: getBackendModelId(backend),
@@ -1052,23 +1121,60 @@ export async function sendChatMessage(
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
             budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
-            ...(backend === 'cloud'
-                ? {
+            ...(remoteDisclosure === undefined
+                ? {}
+                : {
                       dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-                      remoteDisclosure: remoteTransmissionDisclosure.issue({
-                          categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-                          correlationId: providerReceiptIdentity,
-                          requestId: providerReceiptIdentity,
-                          runId,
-                          provider: getModelProviderName(backend),
-                      }),
-                  }
-                : {}),
+                      remoteDisclosure,
+                  }),
         });
         if (compiledProviderRequest.status !== 'ready') {
             throw createAiRuntimeError(compiledProviderRequest.failure.safeMessage);
         }
         const providerRequest = compiledProviderRequest.request;
+        const providerEstimate = estimateCompiledProviderRequestTokenCeiling(providerRequest);
+        const budgetReservation = agentRunLifecycle.reserveBudget({
+            runId,
+            attemptId: providerRequest.correlationId,
+            category: getProviderBudgetCategory(backend),
+            estimate: providerEstimate.totalTokenCeiling,
+            provenance: 'versioned-estimate',
+            estimateMethod: providerEstimate.method,
+        });
+        if (budgetReservation.status === 'hard-limit-reached') {
+            agentRunLifecycle.recordError({
+                runId,
+                error: {
+                    code: 'agent-budget-hard-limit',
+                    message: `The ${budgetReservation.reason} budget would be exceeded before provider work starts.`,
+                    occurredAt: Date.now(),
+                    retriable: false,
+                    workId: providerWorkId,
+                },
+                terminal: true,
+            });
+            throw createAiRuntimeError('The agent budget limit was reached before work started.');
+        }
+        if (backend === 'cloud') {
+            if (
+                remoteDisclosure === undefined ||
+                !remoteTransmissionDisclosure.publish({
+                    evidence: remoteDisclosure,
+                    runId,
+                    provider: getModelProviderName(backend),
+                })
+            ) {
+                throw createAiRuntimeError('Hosted AI privacy disclosure could not be published.');
+            }
+            const remoteCategories = REMOTE_TEXT_AGENT_DATA_CATEGORIES;
+            assertRemoteAgentDataPolicy(remoteCategories);
+            appendChatMessage({
+                id: `msg-${crypto.randomUUID()}`,
+                role: 'assistant',
+                content: formatRemoteTransmissionDisclosure(remoteCategories),
+                timestamp: Date.now(),
+            });
+        }
         providerSession = providerProtocol.start(providerRequest);
         const activeProviderStreamWriter = createModelProviderStreamWriter(providerRequest, providerSession);
         providerStreamWriter = activeProviderStreamWriter;
@@ -1108,14 +1214,6 @@ export async function sendChatMessage(
                 throw createAiRuntimeError(nativeOutcome.finish.finish.failure.safeMessage);
             }
         } else if (backend === 'cloud') {
-            const remoteCategories = REMOTE_TEXT_AGENT_DATA_CATEGORIES;
-            assertRemoteAgentDataPolicy(remoteCategories);
-            appendChatMessage({
-                id: `msg-${crypto.randomUUID()}`,
-                role: 'assistant',
-                content: formatRemoteTransmissionDisclosure(remoteCategories),
-                timestamp: Date.now(),
-            });
             // Cloud: streaming completion via Claude API
             cloudOutcome = await streamCloudChatCompletion(
                 providerRequest.messages,
@@ -1324,7 +1422,7 @@ export async function sendChatMessage(
             receiptIdentity: providerLease.receiptIdentity,
             terminalState: 'completed',
         });
-        recordModelProviderUsage(runId, providerResult, { terminal: true });
+        recordModelProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
         providerUsageRecorded = true;
         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
@@ -1363,7 +1461,7 @@ export async function sendChatMessage(
                     : providerSession.finish(nativeProviderTerminal);
         }
         if (providerResult && !providerUsageRecorded) {
-            recordModelProviderUsage(runId, providerResult, { terminal: true });
+            recordModelProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
             providerUsageRecorded = true;
         }
         if (configurationChanged) {

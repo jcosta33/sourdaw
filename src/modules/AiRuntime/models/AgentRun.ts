@@ -1,6 +1,7 @@
 import { type AgentExecutionMode } from './AgentExecutionMode';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
+import { type ProviderRequestTokenCeilingMethod } from './ModelProviderBudgetEstimate';
 
 export const AGENT_RUN_SCHEMA_VERSION = 1 as const;
 
@@ -44,6 +45,18 @@ export type AgentRunBudgets = {
     consumed: Record<string, number>;
 };
 
+export type AgentRunBudgetEstimateMethod = ProviderRequestTokenCeilingMethod;
+
+export type AgentRunBudgetAttempt = {
+    attemptId: string;
+    category: string;
+    reserved: number;
+    actual: number;
+    provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
+    estimateMethod?: AgentRunBudgetEstimateMethod;
+    final: boolean;
+};
+
 export type AgentRunPlan = {
     summary: string;
     commandIds: string[];
@@ -79,6 +92,7 @@ export type AgentRunProviderUsage = {
     model: string | null;
     inputTokens: number | null;
     outputTokens: number | null;
+    cachedInputTokens?: number | null;
     provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
     correlationId?: string;
     status?: 'complete' | 'partial' | 'failed' | 'cancelled' | 'unavailable';
@@ -188,6 +202,7 @@ export type AgentRun = {
     scope: AgentRunScope;
     grants: AgentRunGrants;
     budgets: AgentRunBudgets;
+    budgetAttempts: AgentRunBudgetAttempt[];
     plan: AgentRunPlan | null;
     batches: AgentRunBatch[];
     receipts: AgentRunReceipt[];
