@@ -1,13 +1,7 @@
 import { type ReactElement, useState } from 'react';
 
-import {
-    selectTrack,
-    bypassDevice,
-    addDevice,
-    removeDevice,
-    reorderDevices,
-    getPlatformPlugins,
-} from '#/modules/Arrangement/useCases';
+import { selectTrack, reorderDevices, getPlatformPlugins } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { openInspector } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -44,7 +38,15 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             }}
                             onDoubleClick={(event) => {
                                 event.stopPropagation();
-                                bypassDevice(data.id, !data.bypassed);
+                                // Route through the action boundary so the
+                                // bypass lands in one Automerge transaction
+                                // and is undoable — the same mutation issued
+                                // by an AI prompt already goes through this
+                                // action (#1938 precedent).
+                                executeAppAction({
+                                    type: 'bypassDevice',
+                                    payload: { deviceId: data.id, bypassed: !data.bypassed },
+                                });
                             }}
                             title={`${data.name} — click to inspect, double-click to ${data.bypassed ? 'enable' : 'bypass'}`}
                             draggable
@@ -74,7 +76,13 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[10px] text-destructive-foreground hover:bg-destructive group-hover:flex"
                             onClick={(event) => {
                                 event.stopPropagation();
-                                removeDevice(data.id);
+                                // Same boundary routing as bypass: the
+                                // removeDevice action is undoable (its
+                                // restoreDevice inverse snapshots the device).
+                                executeAppAction({
+                                    type: 'removeDevice',
+                                    payload: { deviceId: data.id },
+                                });
                             }}
                             aria-label={`Remove ${data.name}`}
                             title={`Remove ${data.name}`}
@@ -91,7 +99,10 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             key={param.id}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                addDevice(track.id, param.id);
+                                executeAppAction({
+                                    type: 'addDevice',
+                                    payload: { trackId: track.id, deviceType: param.id },
+                                });
                                 setShowAdd(false);
                             }}
                         >
@@ -110,7 +121,10 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             tone="accent"
                             onClick={(event) => {
                                 event.stopPropagation();
-                                addDevice(track.id, fx.name);
+                                executeAppAction({
+                                    type: 'addDevice',
+                                    payload: { trackId: track.id, deviceType: fx.name },
+                                });
                                 setShowAdd(false);
                             }}
                         >
