@@ -137,6 +137,42 @@ describe('startRecording', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
+    // The transport store's playheadPosition is written on discrete events only
+    // (start/stop/pause/seek), so during playback it holds the beat playback
+    // *started* at. Every caller that records from a moving transport therefore
+    // has to name the beat, and that beat — not the store's — has to anchor the
+    // clip and its take.
+    it('anchors the clip and its take at an explicit beat, not the store playhead', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', armed: true, kind: 'audio', clips: [] }],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+
+        const newClips = startRecording(16);
+
+        const firstClip = newClips[0];
+        if (!firstClip) {
+            throw new Error('expected a recorded clip');
+        }
+        expect(firstClip).toMatchObject({ trackId: 't1', startBeat: 16, endBeat: 16 });
+        expect(mocks.addTake).toHaveBeenCalledWith('t1', firstClip.id, expect.any(String), 16, 16);
+    });
+
+    it('resolves the overdub intersection against the explicit beat', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', armed: true, kind: 'midi', clips: [{ id: 'c1', type: 'midi', startBeat: 8, endBeat: 12 }] },
+            ],
+        });
+        // The store playhead (0) sits outside the existing clip, so only the
+        // explicit beat can put the recording inside it and merge the overdub.
+        mocks.transportStoreValue = { playheadPosition: 0, overdubEnabled: true };
+
+        expect(startRecording(9)).toHaveLength(0);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
     it('skips MIDI clip creation when overdubbing inside an active loop region', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
