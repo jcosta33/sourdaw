@@ -1,0 +1,33 @@
+{
+    // Type-resolution and build project for the Electron main process.
+    //
+    // It sits at `electron/` for the same reason `scripts/tsconfig.json` does:
+    // oxlint's type-aware pass discovers the nearest `tsconfig.json` per file,
+    // and the root project covers only `src`.
+    //
+    // Three differences from the root project, each describing how this code
+    // actually executes. It runs in Electron's Node process, so it gets Node's
+    // types and no DOM lib — `document` and `window` do not exist here, and the
+    // fetch/`Response` globals it does use come from `@types/node`. It is
+    // resolved and emitted as real Node ESM (`package.json` declares
+    // `"type": "module"`), so relative imports carry the `.js` specifier Node
+    // requires at runtime. And unlike every other project in the repo it emits:
+    // `pnpm desktop:dev` compiles into `electron/out/`, which is gitignored.
+    //
+    // `pnpm typecheck:electron` runs this project with `--noEmit`, so the gate
+    // never writes build output.
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "lib": ["ES2024"],
+        "types": ["node"],
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
+        "noEmit": false,
+        "outDir": "./out",
+        "rootDir": ".",
+        "sourceMap": true,
+        "paths": {}
+    },
+    "include": ["."],
+    "exclude": ["out"]
+}
