@@ -1,0 +1,30 @@
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_418f0c8867e50d 36,40-41,291-294,384-385,435,440-447,456,460-461,491-503,514,516,519-535,542,546-547
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_a40848e8f8cca9::t_b9440a3c941037 256-259,266-268,270-304,431,463,481
+  s_a40848e8f8cca9::t_35f9ae6f9aec37 15,27-28,36,38,157-255,260-265,305-306,429-430,432-462,464-475,495-496
+  s_a40848e8f8cca9::t_139498e2871d3b 20,476-480,482-494,497
+  s_a40848e8f8cca9::t_7b05127b3bdefe 269
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_a40848e8f8cca9::t_f6bf9754976754 142-147,162-167,176-180,190,198,213-217
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_144426b239f735 222-258
+  s_a40848e8f8cca9::t_edd30fe91a0b9e 110,161-220
+  s_a40848e8f8cca9::t_8d02b925527c04 221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "94bed7e728fb7e38fbc90364952f3497ad7b8dee",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
