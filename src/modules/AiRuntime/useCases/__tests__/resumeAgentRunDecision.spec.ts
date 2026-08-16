@@ -2,12 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
-const { resumeSend } = vi.hoisted(() => ({ resumeSend: vi.fn().mockResolvedValue(undefined) }));
+const { resumeSend } = vi.hoisted(() => ({
+    resumeSend: vi
+        .fn()
+        .mockImplementation(async (_request, options) => options.onResumedRunAdmitted('run-decision-resume-attempt')),
+}));
 
 vi.mock('../sendChatMessage', () => ({ sendChatMessage: resumeSend }));
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunControls } from '../getAgentRunControlProjection';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 
 const grants = {
     allowedOperationPrefixes: ['muteTrack'],
@@ -23,8 +28,12 @@ const grants = {
 };
 const scope = { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
 
-function createPendingDecision(): void {
+function createPendingDecision(input?: {
+    budgets?: { limits: Record<string, number>; consumed: Record<string, number> };
+    schemaIdentity?: string;
+}): void {
     const revision = captureProjectRevision();
+    const budgets = input?.budgets ?? { limits: {}, consumed: {} };
     agentRunLifecycle.create({
         runId: 'run-decision-resume',
         request: 'Mute Bass.',
@@ -32,10 +41,15 @@ function createPendingDecision(): void {
         createdRevision: revision,
         scope,
         grants,
+        budgets,
     });
     agentRunLifecycle.recordDecision({
         runId: 'run-decision-resume',
         decision: {
+            decisionId: 'decision-mute',
+            capabilitySchemaIdentity: input?.schemaIdentity ?? getPlanningProviderSchemaContract().identity,
+            proposalIdentity: 'proposal-mute',
+            budgets,
             revision,
             scope,
             grants,
@@ -64,9 +78,26 @@ describe('resumeAgentRunDecision', () => {
             agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })
         ).resolves.toEqual({
             status: 'resumed',
+            sourceRunId: 'run-decision-resume',
+            runId: 'run-decision-resume-attempt',
+            decisionId: 'decision-mute',
             selectedAlternativeId: 'mute',
         });
-        expect(resumeSend).toHaveBeenCalledWith('Mute Bass.', { mode: 'plan', budgets: { limits: {}, consumed: {} } });
+        expect(resumeSend).toHaveBeenCalledWith(
+            'Mute Bass.',
+            expect.objectContaining({
+                mode: 'plan',
+                scope,
+                grants,
+                budgets: { limits: {}, consumed: {} },
+                resume: expect.objectContaining({
+                    sourceRunId: 'run-decision-resume',
+                    decisionId: 'decision-mute',
+                    selectedAlternativeId: 'mute',
+                    selectedAlternative: { id: 'mute', label: 'Mute Bass', changesAuthority: false },
+                }),
+            })
+        );
         await expect(
             agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })
         ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
@@ -79,5 +110,25 @@ describe('resumeAgentRunDecision', () => {
         await expect(
             agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })
         ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+    });
+
+    it.each([
+        {
+            name: 'a budget exhausted after the decision was persisted',
+            input: { budgets: { limits: { localAnalysis: 1 }, consumed: { localAnalysis: 1 } } },
+        },
+        {
+            name: 'a capability schema identity mismatch',
+            input: { schemaIdentity: 'retired-catalog-schema' },
+        },
+    ])('rejects $name before handoff or provider work', async ({ input }) => {
+        createPendingDecision(input);
+
+        await expect(
+            agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })
+        ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+
+        expect(resumeSend).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get('run-decision-resume')?.decision?.selectedAlternativeId).toBeNull();
     });
 });

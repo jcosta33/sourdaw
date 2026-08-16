@@ -26,6 +26,7 @@ import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoo
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { agentRunControls } from '../getAgentRunControlProjection';
 import { type ProjectContext } from '../getProjectContext';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { sendChatMessage } from '../sendChatMessage';
 
 type MockBackend = 'native' | 'cloud' | 'webllm' | 'none';
@@ -398,6 +399,94 @@ describe('sendChatMessage injectables', () => {
         await sendChatMessage('hello');
 
         expect(setChatGenerating).not.toHaveBeenCalled();
+    });
+
+    it('hands a selected structured decision into a correlated replacement planning run', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        const scope = { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
+        const grants = {
+            allowedOperationPrefixes: ['muteTrack'],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        };
+        agentRunLifecycle.create({
+            runId: 'source-decision-run',
+            request: 'Mute Track 1.',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+            scope,
+            grants,
+            budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+        });
+        agentRunLifecycle.recordDecision({
+            runId: 'source-decision-run',
+            decision: {
+                decisionId: 'decision-mute-track-1',
+                capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                proposalIdentity: 'plan-mute-track-1',
+                budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+                revision: 'revision-1',
+                scope,
+                grants,
+                alternatives: [{ id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false }],
+                reason: 'Choose the bounded interpretation.',
+                selectedAlternativeId: null,
+            },
+        });
+        agentRunLifecycle.requireManualResume({
+            runId: 'source-decision-run',
+            reason: 'Choose the bounded interpretation.',
+            workIds: [],
+        });
+
+        const result = await agentRunControls.resumeDecision({
+            runId: 'source-decision-run',
+            alternativeId: 'mute-track-1',
+        });
+
+        expect(result).toMatchObject({
+            status: 'resumed',
+            sourceRunId: 'source-decision-run',
+            decisionId: 'decision-mute-track-1',
+            selectedAlternativeId: 'mute-track-1',
+        });
+        if (result.status !== 'resumed') {
+            throw new Error('Expected the replacement planning run to be admitted');
+        }
+        expect(getAgentRun(result.runId)).toMatchObject({
+            runId: result.runId,
+            mode: 'plan',
+            resume: {
+                sourceRunId: 'source-decision-run',
+                decisionId: 'decision-mute-track-1',
+                selectedAlternativeId: 'mute-track-1',
+                selectedAlternative: { id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false },
+                proposalIdentity: 'plan-mute-track-1',
+            },
+        });
+        expect(getAgentRun('source-decision-run')?.decision?.selectedAlternativeId).toBe('mute-track-1');
+        expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
+            'Mute Track 1.',
+            expect.anything(),
+            expect.anything(),
+            'revision-1',
+            undefined,
+            expect.any(Function),
+            expect.objectContaining({ runId: result.runId }),
+            expect.any(Function)
+        );
     });
 
     it('returns an exact plan without executing or proposing a commit', async () => {

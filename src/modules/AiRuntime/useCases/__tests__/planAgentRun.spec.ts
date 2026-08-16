@@ -338,6 +338,10 @@ describe('planAgentRun', () => {
         agentRunLifecycle.recordDecision({
             runId: 'run-decision',
             decision: {
+                decisionId: 'decision-vocals',
+                capabilitySchemaIdentity: 'catalog-v1',
+                proposalIdentity: 'proposal-vocals',
+                budgets: { limits: {}, consumed: {} },
                 revision: 'heads-9',
                 scope: { targetIds: ['vocal-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
                 grants: {

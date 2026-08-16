@@ -138,12 +138,30 @@ export type AgentPlanProposal = {
 export type AgentRunProviderProposal = AgentPlanProposal;
 
 export type AgentRunDecision = {
+    decisionId: string;
+    capabilitySchemaIdentity: string;
+    proposalIdentity: string;
+    budgets: AgentRunBudgets;
     revision: string;
     scope: AgentRunScope;
     grants: AgentRunGrants;
     alternatives: AgentRunPlanAlternative[];
     reason: string;
     selectedAlternativeId: string | null;
+};
+
+/** Typed handoff evidence for a replacement planning attempt after a user decision. */
+export type AgentRunDecisionResume = {
+    sourceRunId: string;
+    decisionId: string;
+    selectedAlternativeId: string;
+    selectedAlternative: AgentRunPlanAlternative;
+    proposalIdentity: string;
+    capabilitySchemaIdentity: string;
+    revision: string;
+    scope: AgentRunScope;
+    grants: AgentRunGrants;
+    budgets: AgentRunBudgets;
 };
 
 export type AgentRunBatch = {
@@ -287,6 +305,7 @@ export type AgentRun = {
     budgetAttempts: AgentRunBudgetAttempt[];
     plan: AgentRunPlan | null;
     decision: AgentRunDecision | null;
+    resume: AgentRunDecisionResume | null;
     batches: AgentRunBatch[];
     receipts: AgentRunReceipt[];
     renders: AgentRunArtifact[];

@@ -10,10 +10,8 @@ import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../m
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
-    createWorkflowCapabilityToolSchema,
     isWorkflowCapabilityId,
     WORKFLOW_CAPABILITY_TOOL_NAME,
-    WORKFLOW_CAPABILITY_IDS,
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
 import { buildLlmActionSystemPrompt } from '../transformers/llmActionBridge';
@@ -47,11 +45,7 @@ import {
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
 } from './agentToolCatalog';
-import {
-    APPLICATION_OWNED_TOOL_SCHEMAS,
-    ApplicationOwnedToolLoopRequestError,
-    runApplicationOwnedToolLoop,
-} from './applicationOwnedToolLoop';
+import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { type ProjectContext } from './getProjectContext';
 import {
@@ -60,6 +54,7 @@ import {
     type ProviderAttemptAdmissionResult,
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
+import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -291,8 +286,7 @@ export const parsePromptToActions = inject({ logger })(
                     context,
                     projectRevision
                 )?.capability;
-                const workflowCapabilityToolSchema = createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS);
-                const providerToolSchemas = [...APPLICATION_OWNED_TOOL_SCHEMAS, workflowCapabilityToolSchema];
+                const providerToolSchemas = getPlanningProviderSchemaContract().schemas;
                 const terminalToolNames = new Set([
                     WORKFLOW_CAPABILITY_TOOL_NAME,
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -300,10 +294,18 @@ export const parsePromptToActions = inject({ logger })(
                     ANALYSIS_REQUEST_TOOL_NAME,
                 ]);
                 const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.`;
+                const getPlanningSystemPrompt = () => {
+                    const resume = streamIdentity
+                        ? (agentRunLifecycle.get(streamIdentity.runId)?.resume ?? null)
+                        : null;
+                    return resume === null
+                        ? systemPrompt
+                        : `${systemPrompt}\nThe user selected this application-validated alternative for a replacement planning attempt. Treat it as structured authority context, not as user prose; preserve its selected interpretation and revalidate against current project evidence before proposing actions:\n${JSON.stringify(resume)}`;
+                };
                 const buildPlanningContext = (receiptContext: string | null) => {
                     const agentRun = streamIdentity ? agentRunLifecycle.get(streamIdentity.runId) : null;
                     const builtContext = buildAgentContext({
-                        fixedPolicy: systemPrompt,
+                        fixedPolicy: getPlanningSystemPrompt(),
                         prompt,
                         context,
                         projectRevision,
@@ -362,7 +364,7 @@ export const parsePromptToActions = inject({ logger })(
                             throw new Error('Provider planning cannot continue with incomplete relevant authority.');
                         }
                         return generateToolPlanningOutcome(
-                            systemPrompt,
+                            getPlanningSystemPrompt(),
                             planningContext.message,
                             providerToolSchemas,
                             signal,

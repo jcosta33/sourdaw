@@ -382,6 +382,64 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('passes the persisted selected alternative as typed context to the provider planning request', async () => {
+        const scope = { targetIds: ['track-vocals'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
+        const grants = {
+            allowedOperationPrefixes: ['muteTrack'],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        };
+        agentRunLifecycle.create({
+            runId: 'resumed-planning-attempt',
+            request: 'Mute vocals.',
+            mode: 'plan',
+            createdRevision: 'revision-resume',
+            scope,
+            grants,
+            budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+            resume: {
+                sourceRunId: 'source-decision',
+                decisionId: 'decision-vocals',
+                selectedAlternativeId: 'mute-vocals',
+                selectedAlternative: { id: 'mute-vocals', label: 'Mute vocals only', changesAuthority: false },
+                proposalIdentity: 'proposal-vocals',
+                capabilitySchemaIdentity: 'catalog-v1',
+                revision: 'revision-resume',
+                scope,
+                grants,
+                budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+            },
+        });
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            rejections: [],
+        });
+
+        await parsePromptToActions(
+            'Mute vocals.',
+            baseContext,
+            undefined,
+            'revision-resume',
+            undefined,
+            undefined,
+            { runId: 'resumed-planning-attempt', requestId: 'request-resume', cancellationGeneration: 0 },
+            () => ({ status: 'admitted' })
+        );
+
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('Mute vocals only');
+        expect(firstProviderCall?.[0]).toContain('source-decision');
+        expect(firstProviderCall?.[1]).toContain('Mute vocals only');
+    });
+
     it('rejects a provider plan before confirmation when it conflicts with locked production intent', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
         mockBridgeGroundedLlmToolCalls.mockReturnValue({

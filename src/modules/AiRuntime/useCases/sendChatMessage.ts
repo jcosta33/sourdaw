@@ -15,7 +15,12 @@ import {
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import { type AgentRunBudgets, type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
+import {
+    type AgentRunBudgets,
+    type AgentRunDecisionResume,
+    type AgentRunWorkLease,
+    type AgentRunWorkTerminalState,
+} from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
@@ -66,6 +71,7 @@ import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { createModelProviderProtocol } from './modelProviderProtocol';
 import { planAgentRun } from './planAgentRun';
+import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { planPromptActions } from './planPromptActions';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
@@ -104,7 +110,15 @@ type SendChatMessageOptions = {
     mode?: AgentExecutionMode;
     trustCeiling?: AgentTrustCeiling;
     budgets?: AgentRunBudgets;
+    scope?: AgentRunDecisionResume['scope'];
+    grants?: AgentRunDecisionResume['grants'];
+    resume?: AgentRunDecisionResume;
+    onResumedRunAdmitted?: (runId: string) => void;
 };
+
+function getAgentPlanProposalIdentity(value: unknown): string {
+    return JSON.stringify(value);
+}
 
 type AgentApplyReceipt = Extract<
     Awaited<ReturnType<typeof executePlannedActions>>,
@@ -303,7 +317,10 @@ export async function sendChatMessage(
         createdRevision: captureProjectRevision(),
         requestedRoute,
         selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
+        scope: options?.scope,
+        grants: options?.grants,
         budgets: options?.budgets,
+        resume: options?.resume,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
@@ -322,6 +339,7 @@ export async function sendChatMessage(
         throw new Error(`Agent provider work could not be claimed: ${providerLeaseResult.status}`);
     }
     const providerLease = providerLeaseResult.lease;
+    options?.onResumedRunAdmitted?.(runId);
 
     setChatGenerating(true);
 
@@ -486,6 +504,15 @@ export async function sendChatMessage(
                         agentRunLifecycle.recordDecision({
                             runId,
                             decision: {
+                                decisionId: crypto.randomUUID(),
+                                capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                                proposalIdentity: getAgentPlanProposalIdentity({
+                                    actions: result.actions,
+                                    providerProposal: result.providerProposal ?? null,
+                                    scope: planScope,
+                                    grants: planGrants,
+                                }),
+                                budgets: admittedRun.budgets,
                                 revision: projectRevision,
                                 scope: planScope,
                                 grants: planGrants,
@@ -582,9 +609,22 @@ export async function sendChatMessage(
                         reason: plannedRun.decision.reason,
                         workIds: [],
                     });
+                    const admittedRun = agentRunLifecycle.get(runId);
+                    if (!admittedRun) {
+                        throw new Error('Agent run disappeared before decision persistence.');
+                    }
                     agentRunLifecycle.recordDecision({
                         runId,
                         decision: {
+                            decisionId: crypto.randomUUID(),
+                            capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                            proposalIdentity: getAgentPlanProposalIdentity({
+                                actions: result.actions,
+                                providerProposal: result.providerProposal ?? null,
+                                scope: commandBatch.authority.scope,
+                                grants: commandBatch.authority.grants,
+                            }),
+                            budgets: admittedRun.budgets,
                             revision: projectRevision,
                             scope: {
                                 targetIds: [...commandBatch.authority.scope.targetIds],

@@ -834,7 +834,13 @@ function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefin
         return undefined;
     }
     const grants = value.grants;
+    const decisionId = readString(value.decisionId);
+    const capabilitySchemaIdentity = readString(value.capabilitySchemaIdentity);
+    const proposalIdentity = readString(value.proposalIdentity);
     const revision = readString(value.revision);
+    const budgets = isRecord(value.budgets)
+        ? { limits: readNumberRecord(value.budgets.limits), consumed: readNumberRecord(value.budgets.consumed) }
+        : null;
     const reason = readString(value.reason);
     const selectedAlternativeId = readNullableString(value.selectedAlternativeId);
     const targetIds = readStringArray(value.scope.targetIds);
@@ -864,6 +870,17 @@ function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefin
         'autoCommit',
     ] as const;
     if (
+        decisionId === null ||
+        capabilitySchemaIdentity === null ||
+        proposalIdentity === null ||
+        budgets === null ||
+        budgets.limits === null ||
+        budgets.consumed === null
+    ) {
+        // Older or malformed decision evidence cannot be resumed, but must not erase the enclosing run.
+        return null;
+    }
+    if (
         revision === null ||
         reason === null ||
         selectedAlternativeId === undefined ||
@@ -878,6 +895,10 @@ function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefin
         return undefined;
     }
     return {
+        decisionId,
+        capabilitySchemaIdentity,
+        proposalIdentity,
+        budgets: { limits: budgets.limits, consumed: budgets.consumed },
         revision,
         scope: { targetIds, targetRanges, protectedTargetIds, protectedRanges },
         grants: {
@@ -987,6 +1008,68 @@ function readAgentRun(value: unknown): AgentRun | null {
         protectedRanges: protectedRanges ?? [],
     });
     const decision = readAgentRunDecision(value.decision);
+    const resume =
+        value.resume === undefined || value.resume === null
+            ? null
+            : (() => {
+                  if (!isRecord(value.resume)) {
+                      return null;
+                  }
+                  const sourceRunId = readString(value.resume.sourceRunId);
+                  const decisionId = readString(value.resume.decisionId);
+                  const selectedAlternativeId = readString(value.resume.selectedAlternativeId);
+                  const proposalIdentity = readString(value.resume.proposalIdentity);
+                  const capabilitySchemaIdentity = readString(value.resume.capabilitySchemaIdentity);
+                  const revision = readString(value.resume.revision);
+                  const selectedAlternative = value.resume.selectedAlternative;
+                  const scope = value.resume.scope;
+                  const grants = value.resume.grants;
+                  const budgets = value.resume.budgets;
+                  if (
+                      sourceRunId === null ||
+                      decisionId === null ||
+                      selectedAlternativeId === null ||
+                      proposalIdentity === null ||
+                      capabilitySchemaIdentity === null ||
+                      revision === null ||
+                      !isRecord(selectedAlternative) ||
+                      !isRecord(scope) ||
+                      !isRecord(grants) ||
+                      !isRecord(budgets)
+                  ) {
+                      return null;
+                  }
+                  const parsedDecision = readAgentRunDecision({
+                      decisionId,
+                      capabilitySchemaIdentity,
+                      proposalIdentity,
+                      budgets,
+                      revision,
+                      scope,
+                      grants,
+                      alternatives: [selectedAlternative],
+                      reason: 'resume',
+                      selectedAlternativeId,
+                  });
+                  const alternative = parsedDecision?.alternatives[0];
+                  return parsedDecision === null ||
+                      parsedDecision === undefined ||
+                      alternative === undefined ||
+                      alternative.id !== selectedAlternativeId
+                      ? null
+                      : {
+                            sourceRunId,
+                            decisionId,
+                            selectedAlternativeId,
+                            selectedAlternative: alternative,
+                            proposalIdentity,
+                            capabilitySchemaIdentity,
+                            revision,
+                            scope: parsedDecision.scope,
+                            grants: parsedDecision.grants,
+                            budgets: parsedDecision.budgets,
+                        };
+              })();
     const batches = readCollection(value.batches, readBatch);
     const receipts = readCollection(value.receipts, readReceipt);
     const renders = readCollection(value.renders, readArtifact);
@@ -1110,6 +1193,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         budgetAttempts,
         plan,
         decision,
+        resume,
         batches,
         receipts,
         renders,

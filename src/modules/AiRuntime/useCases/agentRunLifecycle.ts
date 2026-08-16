@@ -8,6 +8,7 @@ import {
     type AgentRunBudgetAttempt,
     type AgentRunBudgets,
     type AgentRunDecision,
+    type AgentRunDecisionResume,
     type AgentRunError,
     type AgentRunGrants,
     type AgentRunPlan,
@@ -79,6 +80,7 @@ type CreateAgentRunInput = {
     scope?: AgentRunScope;
     grants?: AgentRunGrants;
     budgets?: AgentRunBudgets;
+    resume?: AgentRunDecisionResume;
 };
 
 function assertNonEmpty(value: string, field: string): void {
@@ -173,6 +175,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         budgetAttempts: [],
         plan: null,
         decision: null,
+        resume: input.resume ? structuredClone(input.resume) : null,
         batches: [],
         receipts: [],
         renders: [],
@@ -757,7 +760,6 @@ function selectAgentRunDecisionAlternative(input: {
         }
         return {
             ...run,
-            phase: 'planning',
             decision: { ...run.decision, selectedAlternativeId: input.alternativeId },
             manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         };
