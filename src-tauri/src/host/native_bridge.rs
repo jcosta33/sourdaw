@@ -432,6 +432,38 @@ impl SharedClapPlugin {
         })
     }
 
+    /// Read the plugin's *current* parameter values, or `None` when the host's
+    /// own cache is the newer of the two.
+    ///
+    /// A user turning a knob in the plugin's own editor changes values the host
+    /// never wrote, and CLAP gives no host-side notification this binding layer
+    /// surfaces — `clap_host_params.rescan` is a no-op stub here and GUI edits
+    /// reach a host through the process output event list, which this runtime
+    /// does not read. So the values are polled from the plugin on the control
+    /// path instead, through the same CAS seam every other control operation
+    /// uses, and never from the audio thread.
+    ///
+    /// `None` when parameter writes are still queued for the audio thread: those
+    /// were accepted from the host side and have not reached the plugin yet, so
+    /// the plugin would answer with the value they are about to replace and a
+    /// poll would report a knob snapping back. The cache already holds them, and
+    /// it is authoritative until the queue drains.
+    pub fn poll_parameters(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<Vec<PluginParameter>>, String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+
+        self.with_control_locked(timeout, |plugin| {
+            if self.pending_parameters.has_pending() {
+                return Ok(None);
+            }
+
+            Ok(Some(plugin.get_parameters()))
+        })
+    }
+
     pub fn with_control<ResultValue>(
         &self,
         timeout: Duration,

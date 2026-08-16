@@ -223,6 +223,10 @@ pub struct ClapWrapper {
 struct EngineOwnedCommandFixture {
     state: Vec<u8>,
     has_gui: bool,
+    /// Values the fixture answers `get_parameters` with. Writable so a test can
+    /// stage a change the host never made — the plugin-side edit a user performs
+    /// in the plugin's own editor.
+    parameters: Vec<PluginParameter>,
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -500,7 +504,27 @@ impl ClapWrapper {
             output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
             midi_scratch: Vec::with_capacity(MAX_MIDI),
             parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
-            command_fixture: Some(EngineOwnedCommandFixture { state, has_gui }),
+            command_fixture: Some(EngineOwnedCommandFixture {
+                state,
+                has_gui,
+                parameters: Vec::new(),
+            }),
+        }
+    }
+
+    /// Stage the values the fixture reports from `get_parameters`.
+    ///
+    /// Stands in for a plugin-side parameter change: the plugin's own editor
+    /// moved a control, so the plugin's current values no longer match anything
+    /// the host wrote.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn set_engine_owned_command_fixture_parameters(
+        &mut self,
+        parameters: Vec<PluginParameter>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.parameters = parameters;
         }
     }
 
@@ -1340,8 +1364,8 @@ impl AudioPlugin for ClapWrapper {
 
     fn get_parameters(&self) -> Vec<PluginParameter> {
         #[cfg(feature = "engine-owned-command-fixture")]
-        if self.command_fixture.is_some() {
-            return Vec::new();
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.parameters.clone();
         }
 
         if self.params_ext.is_null() || self.plugin.is_null() {

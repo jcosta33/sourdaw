@@ -8,6 +8,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+use crate::commands::plugins::PluginUnloadResult;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,13 +48,55 @@ pub async fn is_plugin_gui_supported(
     Err(format!("No plugin instance: {}", instance_id))
 }
 
+/// Label Tauri gives the window declared in `tauri.conf.json`.
+const MAIN_WINDOW_LABEL: &str = "main";
+
+/// Label prefix every plugin editor window is created under.
+const PLUGIN_WINDOW_LABEL_PREFIX: &str = "plugin-";
+
+/// The DAW window a plugin editor is owned by.
+///
+/// The configured main window normally; failing that, the lowest-labelled window
+/// that is not itself a plugin editor, so a renamed or additional main window
+/// still parents editors instead of silently dropping them to "above
+/// everything". Deterministic by label because `windows()` is a map.
+fn daw_parent_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<tauri::Window<R>> {
+    if let Some(main_window) = app.get_window(MAIN_WINDOW_LABEL) {
+        return Some(main_window);
+    }
+
+    let mut candidates: Vec<(String, tauri::Window<R>)> = app
+        .windows()
+        .into_iter()
+        .filter(|(label, _)| !label.starts_with(PLUGIN_WINDOW_LABEL_PREFIX))
+        .collect();
+    candidates.sort_by(|(left, _), (right, _)| left.cmp(right));
+    candidates.into_iter().next().map(|(_, window)| window)
+}
+
+/// Whether a plugin editor window still needs `always_on_top`.
+///
+/// Only when the platform refused, or had no, parent window. A parented editor
+/// already sits above the DAW and only the DAW: Windows owner windows are always
+/// above their owner, macOS `addChildWindow` orders the child above its parent
+/// and moves it with the parent, and X11/Wayland `transient_for` tells the WM the
+/// same thing. Keeping `always_on_top` on top of that is what put plugin editors
+/// above unrelated applications — a floating editor covering a browser while the
+/// DAW is in the background is not the professional convention. Without a parent
+/// the flag is the only thing keeping the editor reachable, so it stays.
+fn plugin_editor_needs_always_on_top(parented: bool) -> bool {
+    !parented
+}
+
 /// Open the plugin GUI in a floating native window.
 ///
 /// MUST be async — creating windows from sync Tauri commands deadlocks on Windows.
 ///
 /// Flow:
 /// 1. Create a bare native Window (no WebView) via WindowBuilder
-/// 2. Set parent relationship to main window (plugin floats above DAW)
+/// 2. Own it by the DAW window (Windows owner / macOS child window / X11
+///    transient-for), so it floats above the DAW and nothing else. Only an
+///    unparented editor also gets `always_on_top`.
 /// 3. Extract native window handle (NSView/HWND/X11)
 /// 4. Pass handle to ClapWrapper::open_gui() which runs the CLAP GUI lifecycle
 /// 5. Resize the window to match the plugin's preferred size
@@ -101,20 +144,39 @@ pub async fn open_plugin_gui(
     };
 
     // 2. Create a bare native window (no WebView) for the plugin editor
-    let window_label = format!("plugin-{}", instance_id.replace('.', "-").replace(':', "-"));
+    let window_label = format!(
+        "{}{}",
+        PLUGIN_WINDOW_LABEL_PREFIX,
+        instance_id.replace('.', "-").replace(':', "-")
+    );
 
     // Check if window already exists (GUI already open)
     if app.get_window(&window_label).is_some() {
         return Err("Plugin GUI is already open".to_string());
     }
 
-    let plugin_window = tauri::window::WindowBuilder::new(&app, &window_label)
-        .title(&plugin_name)
-        .inner_size(800.0, 600.0)
-        .decorations(true)
-        .resizable(false)
-        .visible(false)
-        .always_on_top(true) // Keep plugin windows above the main DAW window
+    let editor_window_builder = || {
+        tauri::window::WindowBuilder::new(&app, &window_label)
+            .title(&plugin_name)
+            .inner_size(800.0, 600.0)
+            .decorations(true)
+            .resizable(false)
+            .visible(false)
+    };
+
+    let (editor_window_builder, parented) = match daw_parent_window(&app) {
+        Some(parent) => match editor_window_builder().parent(&parent) {
+            Ok(builder) => (builder, true),
+            Err(error) => {
+                eprintln!("[Plugin] platform refused the editor window parent: {error}");
+                (editor_window_builder(), false)
+            }
+        },
+        None => (editor_window_builder(), false),
+    };
+
+    let plugin_window = editor_window_builder
+        .always_on_top(plugin_editor_needs_always_on_top(parented))
         .build()
         .map_err(|e| format!("Failed to create plugin window: {}", e))?;
 
@@ -404,20 +466,53 @@ pub async fn close_plugin_gui(
     Ok(())
 }
 
+/// Record one engine-owned instance's close attempt into the closed/failed
+/// report.
+///
+/// A close of *all* editors is a convergence operation across independent
+/// instances: one that is mid-unload, or that holds its control lock past the
+/// 2 s timeout, says nothing about the others. Propagating its error abandoned
+/// every remaining instance AND the window destruction that follows, so a
+/// single slow plugin left native windows on screen with no owner and no way to
+/// close them. Each outcome is recorded and the pass continues.
+fn record_plugin_gui_close_outcome(
+    report: &mut PluginUnloadResult,
+    instance_id: &str,
+    close_result: Result<(), String>,
+) {
+    match close_result {
+        Ok(()) => report.0.push(instance_id.to_string()),
+        Err(error) => report.1.push(format!("{}: {}", instance_id, error)),
+    }
+}
+
 /// Close ALL plugin GUI windows (called on app exit or minimize).
+///
+/// Returns the instances whose editors closed and, per failing instance, the
+/// reason. Native windows are destroyed either way.
 #[tauri::command]
 pub async fn close_all_plugin_guis(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<PluginUnloadResult, String> {
+    close_every_plugin_gui(Some(&app), state.inner())
+}
+
+fn close_every_plugin_gui<R: tauri::Runtime>(
+    app: Option<&tauri::AppHandle<R>>,
+    state: &AppState,
+) -> Result<PluginUnloadResult, String> {
+    let mut report = PluginUnloadResult::default();
+
     // Close all CLAP GUIs
     {
         let mut plugins = state
             .plugins
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-        for instance in plugins.values_mut() {
+        for (instance_id, instance) in plugins.iter_mut() {
             instance.close_gui();
+            report.0.push(instance_id.clone());
         }
     }
 
@@ -430,15 +525,15 @@ pub async fn close_all_plugin_guis(
     };
 
     for instance_id in engine_instance_ids {
-        state
-            .inner()
-            .with_engine_plugin_control(&instance_id, |plugin| {
-                plugin.close_gui();
-                Ok(())
-            })?;
+        let close_result = state.with_engine_plugin_control(&instance_id, |plugin| {
+            plugin.close_gui();
+            Ok(())
+        });
+        record_plugin_gui_close_outcome(&mut report, &instance_id, close_result);
     }
 
-    // Destroy all native windows
+    // Destroy all native windows. Unconditional: a window whose plugin refused
+    // to close its editor is exactly the window that must not be left behind.
     let labels: Vec<String> = {
         let mut windows = state
             .plugin_windows
@@ -450,12 +545,14 @@ pub async fn close_all_plugin_guis(
     };
 
     for label in labels {
-        if let Some(win) = app.get_window(&label) {
-            let _ = win.destroy();
+        if let Some(app) = app {
+            if let Some(win) = app.get_window(&label) {
+                let _ = win.destroy();
+            }
         }
     }
 
-    Ok(())
+    Ok(report)
 }
 
 /// Hide all plugin GUI windows (called when DAW is minimized).
@@ -535,8 +632,67 @@ mod tests {
                 name: "Engine Owned Fixture".to_string(),
                 parameters: Vec::new(),
                 has_gui,
+                bridge: None,
+                relay_scratch: crate::state::PluginRelayScratch::default(),
             },
         );
+    }
+
+    /// One instance failing to close its editor used to abandon every instance
+    /// after it AND the window destruction, leaving native windows on screen
+    /// with no owner and no way to close them.
+    #[test]
+    fn closing_every_gui_continues_past_an_instance_that_refuses() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "refusing-instance", true);
+        insert_engine_owned_fixture(&state, "healthy-instance", true);
+        // An instance mid-unload rejects public control — the exact case that
+        // used to abort the pass.
+        engine_fixture_runtime(&state, "refusing-instance").begin_unload();
+        {
+            let mut windows = state.plugin_windows.lock().expect("plugin_windows lock");
+            windows.insert("refusing-instance".into(), "plugin-refusing".into());
+            windows.insert("healthy-instance".into(), "plugin-healthy".into());
+        }
+
+        let report = close_every_plugin_gui(Some(app.handle()), state.inner())
+            .expect("a refusing instance must not fail the whole pass");
+
+        assert_eq!(
+            report.0,
+            ["healthy-instance"],
+            "the instances that did close must be reported"
+        );
+        assert_eq!(report.1.len(), 1);
+        assert!(
+            report.1[0].starts_with("refusing-instance: "),
+            "the error report must name the instance that failed, got: {:?}",
+            report.1
+        );
+        assert!(
+            state
+                .plugin_windows
+                .lock()
+                .expect("plugin_windows lock")
+                .is_empty(),
+            "every native window must be destroyed even when an instance refuses"
+        );
+    }
+
+    /// The editor window is owned by the DAW window on every platform Tauri
+    /// parents on, and that ownership is what keeps it above the DAW. Stacking
+    /// `always_on_top` on it is what put plugin editors above unrelated apps.
+    #[test]
+    fn a_parented_editor_window_does_not_also_float_above_every_application() {
+        assert!(!plugin_editor_needs_always_on_top(true));
+    }
+
+    /// With no parent the flag is the only thing keeping the editor reachable
+    /// above the DAW, so it stays.
+    #[test]
+    fn an_unparented_editor_window_keeps_the_always_on_top_fallback() {
+        assert!(plugin_editor_needs_always_on_top(false));
     }
 
     #[test]

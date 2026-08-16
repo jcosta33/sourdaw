@@ -6,7 +6,7 @@ use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
-use daw_engine::audio_bridge::create_audio_bridge;
+use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
@@ -147,6 +147,35 @@ fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginReg
     registry
 }
 
+/// Replace the scanned roots' share of the registry with this scan's results.
+///
+/// Recovers a poisoned lock instead of skipping the write. Skipping it let the
+/// scan report success with a full plugin list while the registry stayed as it
+/// was, so every later `load_plugin` refused with "not found in registry. Run a
+/// scan first" — for a scan the user had just run, with no way to tell the two
+/// apart. The registry is a lookup table derived entirely from this scan's own
+/// results, so no panic elsewhere can leave it in a state this rebuild does not
+/// correct.
+fn publish_scan_results_in_registry(
+    plugin_registry: &Mutex<HashMap<String, PluginRegistryEntry>>,
+    authorized_paths: &[PathBuf],
+    scanned_paths: &[PathBuf],
+    scan_complete: bool,
+    plugins: &[ScannedPlugin],
+) {
+    let mut registry = plugin_registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    registry.retain(|_, entry| {
+        let path = Path::new(&entry.path);
+        if scan_complete {
+            return !authorized_paths.iter().any(|root| path.starts_with(root));
+        }
+        !scanned_paths.iter().any(|scanned| scanned == path)
+    });
+    registry.extend(index_scanned_plugins(plugins));
+}
+
 #[tauri::command]
 pub async fn scan_plugins(
     paths: Vec<String>,
@@ -225,16 +254,13 @@ pub async fn scan_plugins(
     // Populate the plugin registry so load_plugin can find them. The scanner
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
     // recover the id it had thrown away.
-    if let Ok(mut registry) = state.plugin_registry.lock() {
-        registry.retain(|_, entry| {
-            let path = Path::new(&entry.path);
-            if scan_complete {
-                return !authorized_paths.iter().any(|root| path.starts_with(root));
-            }
-            !scanned_paths.iter().any(|scanned| scanned == path)
-        });
-        registry.extend(index_scanned_plugins(&plugins));
-    }
+    publish_scan_results_in_registry(
+        &state.plugin_registry,
+        &authorized_paths,
+        &scanned_paths,
+        scan_complete,
+        &plugins,
+    );
 
     if !scan_complete {
         return Err("Plugin scan did not complete within safety limits".to_string());
@@ -278,11 +304,20 @@ pub async fn load_plugin(
 
     match entry.format.as_str() {
         "clap" => {
-            let clap_id = if entry.clap_id.is_empty() {
-                entry.name.clone()
-            } else {
-                entry.clap_id.clone()
-            };
+            // A CLAP id is the descriptor's own reverse-DNS identifier and the
+            // key the entry point resolves a plugin by. The display name is not
+            // one: substituting it produced a wrapper failure that named a
+            // plugin that was found and blamed something else, and two plugins
+            // sharing a display name would have resolved to each other. An empty
+            // id means the scan of this file yielded no usable descriptor, so
+            // say that, and say which file.
+            if entry.clap_id.is_empty() {
+                return Err(format!(
+                    "CLAP plugin {} reports no descriptor id in the registry entry for {}. Rescan the plugin directory.",
+                    entry.path, plugin_id.0
+                ));
+            }
+            let clap_id = entry.clap_id.clone();
 
             // Query the real device sample rate so the plugin is activated at the correct rate.
             let sample_rate = cpal::default_host()
@@ -340,15 +375,10 @@ pub async fn load_plugin(
                     let (bridge, bridge_handle) = create_audio_bridge(id);
                     let shared_plugin = Arc::new(SharedClapPlugin::new(wrapper));
 
-                    let mut bridges = state
-                        .audio_bridges
-                        .lock()
-                        .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
                     let mut engine_plugins = state
                         .engine_plugins
                         .lock()
                         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-                    bridges.insert(id, bridge_handle);
                     engine_plugins.insert(
                         instance_id.0.clone(),
                         crate::state::EnginePluginInstanceData {
@@ -357,6 +387,8 @@ pub async fn load_plugin(
                             name: name.clone(),
                             parameters: params.clone(),
                             has_gui,
+                            bridge: Some(bridge_handle),
+                            relay_scratch: crate::state::PluginRelayScratch::default(),
                         },
                     );
 
@@ -365,11 +397,9 @@ pub async fn load_plugin(
                         Box::new(ClapPluginSlot::new(shared_plugin)),
                         bridge,
                     ) {
-                        bridges.remove(&id);
                         engine_plugins.remove(&instance_id.0);
                         return Err(error);
                     }
-
                     Some(id)
                 } else {
                     eprintln!(
@@ -388,6 +418,15 @@ pub async fn load_plugin(
                     None
                 }
             };
+
+            if engine_plugin_id.is_some() {
+                // A load is the moment the process is about to want the memory a
+                // previous unload could not free yet. Sweep once the new
+                // instance is safely in the scheduler and the engine lock is
+                // released — the CLAP teardown a sweep may run belongs on this
+                // thread, but not inside another subsystem's critical section.
+                state.sweep_retired_engine_plugins();
+            }
 
             let instance = PluginInstance {
                 instance_id: instance_id.clone(),
@@ -573,14 +612,16 @@ async fn unload_plugin_runtime(
         }
         runtime.retire();
 
-        match state.audio_bridges.lock() {
-            Ok(mut bridges) => {
-                bridges.remove(&engine_plugin_id);
-            }
-            Err(poisoned) => {
-                poisoned.into_inner().remove(&engine_plugin_id);
-            }
-        }
+        // The instance record owned this instance's bridge handle, so removing
+        // it above already dropped the ring. Nothing keyed by engine_plugin_id
+        // is left to clean up.
+        //
+        // Reclaim what earlier unloads had to keep. This runtime is not a
+        // candidate yet — `runtime` is still a live reference here and the
+        // scheduler removal was only queued — so the sweep frees the previous
+        // generation, not this one.
+        drop(runtime);
+        state.sweep_retired_engine_plugins();
         return Ok(());
     }
 
@@ -665,16 +706,41 @@ pub async fn get_plugin_parameters(
         }
     }
 
-    let engine_plugins = state
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        match engine_plugins.get(&instance_id.0) {
+            Some(instance) => {
+                instance.runtime.ensure_public_control_allowed()?;
+                Arc::clone(&instance.runtime)
+            }
+            None => return Err(format!("No plugin instance: {}", instance_id.0)),
+        }
+    };
+
+    // Poll the plugin rather than answer from the cache. The cache only ever
+    // recorded writes this host made, so a user turning a knob in the plugin's
+    // own editor left it stale forever — and every reader of this command, UI
+    // and automation alike, read the value from before the user touched it.
+    //
+    // The lock is released first: the poll runs on the control seam, which can
+    // wait on the audio thread, and holding the instance map across that would
+    // stall every other command for the same reason.
+    let polled_parameters = runtime.poll_parameters(std::time::Duration::from_secs(2))?;
+
+    let mut engine_plugins = state
         .engine_plugins
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    if let Some(instance) = engine_plugins.get(&instance_id.0) {
-        instance.runtime.ensure_public_control_allowed()?;
-        return Ok(instance.parameters.clone());
+    let instance = engine_plugins
+        .get_mut(&instance_id.0)
+        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
+    if let Some(parameters) = polled_parameters {
+        instance.parameters = parameters;
     }
-
-    Err(format!("No plugin instance: {}", instance_id.0))
+    Ok(instance.parameters.clone())
 }
 
 /// Header carrying the percent-encoded plugin instance id for
@@ -799,6 +865,13 @@ pub async fn set_plugin_state_bytes(
 
 // ── Native audio engine ────────────────────────────────────────────────
 
+/// Start the native CPAL audio engine and take the engine-owned plugin path.
+///
+/// Registered and callable, but nothing in the shipped app calls it yet: the
+/// production bootstrap that decides when native processing activates is
+/// tracked separately, so `state.engine` stays `None` and `load_plugin` takes
+/// the command-owned branch. Everything reached only through `state.engine`
+/// runs today under test alone.
 #[tauri::command]
 
 pub async fn start_native_engine(state: tauri::State<'_, AppState>) -> Result<String, String> {
@@ -935,6 +1008,16 @@ pub async fn update_plugin_transport(
 /// no bridge at all, which degrades to an unprocessed dry signal rather than to
 /// a visible error. The instance id is the identifier both sides already agree
 /// on, so the engine id is resolved here, where it is actually known.
+///
+/// Runs once per render quantum per bridged plugin — ~2.7 ms apart at 48 kHz —
+/// so it takes exactly one lock and performs exactly one lookup: the instance
+/// record owns its ring and its de-interleave scratch, and both come back
+/// together. Two sequential mutex takes on this path were two chances per block
+/// to wait behind an unrelated control command.
+///
+/// One allocation remains, and it is the return value: the processed block is
+/// handed to the IPC layer by value, so its buffer cannot be pooled here. Every
+/// intermediate buffer is preallocated.
 #[tauri::command]
 
 pub async fn process_plugin_audio(
@@ -942,33 +1025,23 @@ pub async fn process_plugin_audio(
     audio_bytes: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
-    let engine_plugin_id = engine_plugin_id_for_instance(&instance_id, state.inner())?;
-
-    let mut bridges = state
-        .audio_bridges
+    let mut engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
-
-    let bridge = bridges
-        .get_mut(&engine_plugin_id)
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    let instance = engine_plugins
+        .get_mut(&instance_id)
+        .ok_or_else(|| format!("No engine plugin for instance {}", instance_id))?;
+    let engine_plugin_id = instance.engine_plugin_id;
+    let relay_scratch = &mut instance.relay_scratch;
+    let bridge = instance
+        .bridge
+        .as_mut()
         .ok_or_else(|| format!("No audio bridge for plugin {}", engine_plugin_id))?;
 
-    // Interpret raw bytes as interleaved f32 samples
-    let num_floats = audio_bytes.len() / 4;
-    let num_samples = num_floats / 2;
-
-    let audio_data: Vec<f32> = audio_bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
-        .collect();
-
-    // De-interleave input
-    let mut left = vec![0.0f32; num_samples];
-    let mut right = vec![0.0f32; num_samples];
-    for i in 0..num_samples {
-        left[i] = audio_data[i * 2];
-        right[i] = audio_data[i * 2 + 1];
-    }
+    // Interleaved stereo f32: two samples, four bytes each, per frame.
+    const BYTES_PER_FRAME: usize = 2 * std::mem::size_of::<f32>();
+    let frames = audio_bytes.len() / BYTES_PER_FRAME;
 
     // Push input to the audio thread. A refusal means the input ring was full,
     // so this block never reaches the plugin — and on the native sampler's
@@ -978,7 +1051,27 @@ pub async fn process_plugin_audio(
     // condition being reported is the engine already running behind. So it is
     // counted where `engine_rt_diagnostics` can see it, alongside the engine's
     // own output-side and backlog counters.
-    if !bridge.push_input(&left, &right) {
+    //
+    // A block past the bridge's capacity is refused by `push_input` itself, so
+    // it is refused here without de-interleaving it — the scratch stays sized
+    // to what the bridge accepts and never has to grow.
+    let block_accepted = if frames > MAX_BLOCK_FRAMES {
+        false
+    } else {
+        relay_scratch.left.clear();
+        relay_scratch.right.clear();
+        for frame in audio_bytes.chunks_exact(BYTES_PER_FRAME) {
+            relay_scratch
+                .left
+                .push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
+            relay_scratch
+                .right
+                .push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
+        }
+        bridge.push_input(&relay_scratch.left, &relay_scratch.right)
+    };
+
+    if !block_accepted {
         state
             .bridge_input_blocks_refused
             .fetch_add(1, AtomicOrdering::Relaxed);
@@ -991,7 +1084,7 @@ pub async fn process_plugin_audio(
         // frame count, so a quantum other than 128 round-trips whole instead of
         // being silently clipped to the first 128 frames.
         let n = output.frames;
-        let mut result = Vec::with_capacity(n * 2 * 4);
+        let mut result = Vec::with_capacity(n * BYTES_PER_FRAME);
         for i in 0..n {
             result.extend_from_slice(&output.left[i].to_le_bytes());
             result.extend_from_slice(&output.right[i].to_le_bytes());
@@ -1036,11 +1129,21 @@ mod tests {
         instance_id: &str,
         state_bytes: Vec<u8>,
     ) {
-        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+        insert_engine_owned_fixture_with_bridge(state, instance_id, state_bytes, None);
+    }
+
+    fn insert_engine_owned_fixture_with_bridge(
+        state: &tauri::State<'_, AppState>,
+        instance_id: &str,
+        state_bytes: Vec<u8>,
+        bridge: Option<daw_engine::audio_bridge::PluginAudioBridgeHandle>,
+    ) {
+        let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
             "Engine Owned Fixture",
             state_bytes,
             true,
         );
+        wrapper.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.25)]);
         let parameters = wrapper.get_parameters();
         let runtime = Arc::new(SharedClapPlugin::new(wrapper));
         let mut engine_plugins = state
@@ -1055,8 +1158,26 @@ mod tests {
                 name: "Engine Owned Fixture".to_string(),
                 parameters,
                 has_gui: true,
+                bridge,
+                relay_scratch: crate::state::PluginRelayScratch::default(),
             },
         );
+    }
+
+    fn engine_fixture_runtime(
+        state: &tauri::State<'_, AppState>,
+        instance_id: &str,
+    ) -> Arc<SharedClapPlugin> {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        Arc::clone(
+            &engine_plugins
+                .get(instance_id)
+                .expect("engine fixture should exist")
+                .runtime,
+        )
     }
 
     /// A bypass toggle addressed to an instance the engine never took must say
@@ -1130,15 +1251,15 @@ mod tests {
     fn a_refused_input_block_is_counted_while_an_accepted_one_is_not() {
         let app = command_test_app();
         let state = app.state::<AppState>();
-        insert_engine_owned_fixture(&state, "instance-input-refusal", Vec::new());
         // Hold the RT side alive so the ring refuses only because it is full,
         // not because its consumer went away.
         let (_bridge, bridge_handle) = create_audio_bridge(17);
-        state
-            .audio_bridges
-            .lock()
-            .expect("audio bridges lock should be available")
-            .insert(17, bridge_handle);
+        insert_engine_owned_fixture_with_bridge(
+            &state,
+            "instance-input-refusal",
+            Vec::new(),
+            Some(bridge_handle),
+        );
 
         let block_bytes = vec![0u8; 128 * 2 * 4];
 
@@ -1157,11 +1278,14 @@ mod tests {
         );
 
         {
-            let mut bridges = state
-                .audio_bridges
+            let mut engine_plugins = state
+                .engine_plugins
                 .lock()
-                .expect("audio bridges lock should be available");
-            let bridge = bridges.get_mut(&17).expect("bridge should be registered");
+                .expect("engine_plugins lock should be available");
+            let bridge = engine_plugins
+                .get_mut("instance-input-refusal")
+                .and_then(|instance| instance.bridge.as_mut())
+                .expect("bridge should be registered");
             let left = [0.0_f32; 128];
             while bridge.push_input(&left, &left) {}
         }
@@ -1195,6 +1319,225 @@ mod tests {
                 .load(AtomicOrdering::Relaxed),
             2,
             "every refused block must add to the count, not overwrite it"
+        );
+    }
+
+    /// The relay ran once per render quantum and allocated its de-interleave
+    /// buffers every time. They are preallocated on the instance now: the same
+    /// storage must serve consecutive blocks, including blocks of different
+    /// lengths, without moving.
+    #[test]
+    fn the_relay_refills_one_preallocated_scratch_buffer_across_blocks() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        let (_bridge, bridge_handle) = create_audio_bridge(17);
+        insert_engine_owned_fixture_with_bridge(
+            &state,
+            "instance-scratch",
+            Vec::new(),
+            Some(bridge_handle),
+        );
+
+        let scratch_address = || {
+            let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+            let instance = engine_plugins
+                .get("instance-scratch")
+                .expect("fixture should exist");
+            (
+                instance.relay_scratch.left.as_ptr(),
+                instance.relay_scratch.left.capacity(),
+                instance.relay_scratch.left.len(),
+            )
+        };
+
+        let (address_before, capacity_before, _) = scratch_address();
+        assert_eq!(
+            capacity_before, MAX_BLOCK_FRAMES,
+            "the scratch must be sized once to the largest block the bridge accepts"
+        );
+
+        tauri::async_runtime::block_on(process_plugin_audio(
+            "instance-scratch".to_string(),
+            vec![0u8; 128 * 2 * 4],
+            app.state::<AppState>(),
+        ))
+        .expect("a 128-frame block should round-trip");
+        let (address_after_short, capacity_after_short, frames_after_short) = scratch_address();
+        assert_eq!(
+            frames_after_short, 128,
+            "the block must be de-interleaved into the instance's own scratch"
+        );
+
+        tauri::async_runtime::block_on(process_plugin_audio(
+            "instance-scratch".to_string(),
+            vec![0u8; 256 * 2 * 4],
+            app.state::<AppState>(),
+        ))
+        .expect("a 256-frame block should round-trip");
+        let (address_after_long, capacity_after_long, frames_after_long) = scratch_address();
+
+        assert_eq!(frames_after_long, 256);
+        assert_eq!(
+            (address_before, capacity_before),
+            (address_after_short, capacity_after_short),
+            "the relay must reuse its buffer, not allocate a new one per block"
+        );
+        assert_eq!(
+            (address_before, capacity_before),
+            (address_after_long, capacity_after_long),
+            "a longer block must fit the preallocated capacity without moving it"
+        );
+    }
+
+    /// A block past the bridge's capacity is refused, and refusing it must not
+    /// be the thing that grows the preallocated scratch.
+    #[test]
+    fn an_oversized_block_is_refused_without_resizing_the_relay_scratch() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        let (_bridge, bridge_handle) = create_audio_bridge(17);
+        insert_engine_owned_fixture_with_bridge(
+            &state,
+            "instance-oversized",
+            Vec::new(),
+            Some(bridge_handle),
+        );
+
+        let oversized = vec![0u8; (MAX_BLOCK_FRAMES + 1) * 2 * 4];
+        tauri::async_runtime::block_on(process_plugin_audio(
+            "instance-oversized".to_string(),
+            oversized,
+            app.state::<AppState>(),
+        ))
+        .expect("an oversized block must not fail the round trip");
+
+        assert_eq!(
+            state
+                .bridge_input_blocks_refused
+                .load(AtomicOrdering::Relaxed),
+            1,
+            "a block the plugin never received must be counted"
+        );
+        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+        let instance = engine_plugins
+            .get("instance-oversized")
+            .expect("fixture should exist");
+        assert_eq!(
+            instance.relay_scratch.left.capacity(),
+            MAX_BLOCK_FRAMES,
+            "an oversized block must not grow the scratch past what the bridge accepts"
+        );
+    }
+
+    /// The cache only ever recorded writes this host made, so a knob turned in
+    /// the plugin's own editor never reached any reader of this command.
+    #[test]
+    fn get_plugin_parameters_reports_a_change_made_inside_the_plugin() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-plugin-side-change", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "instance-plugin-side-change");
+
+        // The user moved the control in the plugin's editor: the plugin's value
+        // changed and the host wrote nothing.
+        runtime
+            .with_control(Duration::from_secs(2), |plugin| {
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
+                Ok(())
+            })
+            .expect("fixture control access should succeed");
+
+        let parameters = tauri::async_runtime::block_on(get_plugin_parameters(
+            PluginInstanceId("instance-plugin-side-change".to_string()),
+            app.state::<AppState>(),
+        ))
+        .expect("parameters should resolve");
+
+        assert_eq!(
+            parameters.iter().map(|p| p.value).collect::<Vec<_>>(),
+            vec![0.9],
+            "a parameter changed inside the plugin must reach the command"
+        );
+    }
+
+    /// The other half: a host write that the audio thread has not applied yet is
+    /// newer than anything the plugin can report, so polling must not roll it
+    /// back to the value it is about to replace.
+    #[test]
+    fn get_plugin_parameters_keeps_a_write_the_audio_thread_has_not_applied() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-pending-write", Vec::new());
+
+        tauri::async_runtime::block_on(set_plugin_parameter(
+            PluginInstanceId("instance-pending-write".to_string()),
+            7,
+            0.75,
+            app.state::<AppState>(),
+        ))
+        .expect("the parameter write should be accepted");
+
+        let parameters = tauri::async_runtime::block_on(get_plugin_parameters(
+            PluginInstanceId("instance-pending-write".to_string()),
+            app.state::<AppState>(),
+        ))
+        .expect("parameters should resolve");
+
+        assert_eq!(
+            parameters.iter().map(|p| p.value).collect::<Vec<_>>(),
+            vec![0.75],
+            "a queued write must not be reported as the value it is replacing"
+        );
+    }
+
+    /// An empty descriptor id used to be replaced by the display name, which is
+    /// not a CLAP id: the load failed later, blaming the plugin's own entry
+    /// point for an id this host invented.
+    #[test]
+    fn load_plugin_refuses_a_clap_entry_with_no_descriptor_id() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "clap-without-descriptor-id".to_string(),
+                PluginRegistryEntry {
+                    path: "/plugins/no-descriptor-id.clap".to_string(),
+                    clap_id: String::new(),
+                    format: "clap".to_string(),
+                    name: "Nameless".to_string(),
+                },
+            );
+
+        let result = tauri::async_runtime::block_on(load_plugin(
+            PluginId("clap-without-descriptor-id".to_string()),
+            PluginInstanceId("clap-instance".to_string()),
+            state.clone(),
+        ));
+
+        let error = result.expect_err("a registry entry with no CLAP id must not load");
+        assert!(
+            error.contains("/plugins/no-descriptor-id.clap"),
+            "the refusal must name the file, got: {error}"
+        );
+        assert!(
+            !error.contains("Nameless"),
+            "the display name must not stand in for a CLAP id, got: {error}"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("clap-instance")
+                && !state
+                    .plugins
+                    .lock()
+                    .expect("plugins lock")
+                    .contains_key("clap-instance"),
+            "a refused load must leave no instance behind"
         );
     }
 
@@ -1597,6 +1940,38 @@ mod tests {
         assert_eq!(
             entry.path, "/plugins/collides.clap",
             "the path-hash owner keeps the key"
+        );
+    }
+
+    /// A poisoned registry lock used to be swallowed, so the scan returned
+    /// plugins while the registry stayed empty and every later load blamed the
+    /// user for not scanning.
+    #[test]
+    fn a_poisoned_registry_still_receives_the_scan_results() {
+        let plugin_registry: Mutex<HashMap<String, PluginRegistryEntry>> =
+            Mutex::new(HashMap::new());
+
+        let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = plugin_registry.lock().expect("first lock should succeed");
+            panic!("poison the registry lock");
+        }));
+        assert!(poisoning.is_err());
+        assert!(plugin_registry.is_poisoned());
+
+        publish_scan_results_in_registry(
+            &plugin_registry,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let registry = plugin_registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(
+            registry.contains_key("aaaa1111"),
+            "a scan that reports plugins must leave them resolvable"
         );
     }
 
