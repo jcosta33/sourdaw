@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  h_1228e573df1f42 1-149
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  h_1228e573df1f42 190,192-197
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_1228e573df1f42 310-313,318-321,323,446-449,454-457,459
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  h_1228e573df1f42 1-163
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_1228e573df1f42 3,7-13,267,277,329-448,462,479,553-555,557-560,562,570,595-604
+src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts
+  h_1228e573df1f42 1-70
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_1228e573df1f42 27,43,64-110,245-251,309-320,335,358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5f1c569d79f3022b439fd9e8549efce257020b1a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
