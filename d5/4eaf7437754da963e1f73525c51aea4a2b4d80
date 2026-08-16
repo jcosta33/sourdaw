@@ -1,0 +1,14 @@
+tests/e2e/aiBackendPreference.spec.ts
+  h_1228e573df1f42 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d54eaf7437754da963e1f73525c51aea4a2b4d80",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
