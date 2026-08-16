@@ -16,6 +16,8 @@ import {
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
+import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
+import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
@@ -52,6 +54,8 @@ type BridgeGroundedLlmToolCallsInput = {
     markerSignatures?: readonly MarkerPlanningSignature[];
     sectionSignatures?: readonly SectionPlanningSignature[];
     prompt: string;
+    compilerEvidence?: ArbitraryCommandListEvidence;
+    projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;
 };
 
@@ -3908,8 +3912,21 @@ export function bridgeGroundedLlmToolCalls({
     markerSignatures = [],
     sectionSignatures = [],
     prompt,
+    compilerEvidence,
+    projectRevision,
     workflowCapabilityId,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    if (compilerEvidence !== undefined) {
+        const compilerValidation = validateArbitraryCommandListEvidence({
+            evidence: compilerEvidence,
+            calls,
+            context,
+            revision: projectRevision,
+        });
+        if (compilerValidation.status === 'rejected') {
+            return { actions: [], rejections: [rejection(0, '<batch>', compilerValidation.reason)] };
+        }
+    }
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({
             calls,
@@ -4436,7 +4453,9 @@ export function bridgeGroundedLlmToolCalls({
         const sameActionCalls = effectiveCalls.filter((candidate) => candidate.name === call.name);
         const sameActionCallCount = sameActionCalls.length;
         let grounded: ToolCallResult | LlmActionRejection;
-        if (
+        if (compilerEvidence !== undefined) {
+            grounded = call;
+        } else if (
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
             (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||

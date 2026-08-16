@@ -539,6 +539,8 @@ export const parsePromptToActions = inject({ logger })(
                     markerSignatures,
                     sectionSignatures,
                     prompt,
+                    compilerEvidence: compiledList.compilerEvidence,
+                    projectRevision,
                     workflowCapabilityId,
                 });
                 for (const rejected of bridged.rejections) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
 const context = {
     tempo: 120,
@@ -199,6 +200,77 @@ describe('compileArbitraryCommandList', () => {
             protectedExclusions: ['track-kick'],
             preconditions: [expect.objectContaining({ stableId: 'track-hat' })],
         });
+    });
+
+    it('rejects forged or stale compiler evidence before it can bypass prompt grounding', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result.status).toBe('accepted');
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context,
+                revision: 'revision-2',
+            }).status
+        ).toBe('rejected');
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: result.compilerEvidence,
+                calls: result.compilerEvidence.commands,
+                context: {
+                    ...context,
+                    tracks: context.tracks.map((track) =>
+                        track.id === 'track-kick' ? { ...track, muted: true } : track
+                    ),
+                },
+                revision: 'revision-1',
+            }).status
+        ).toBe('rejected');
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: {
+                    ...result.compilerEvidence,
+                    commands: [
+                        ...result.compilerEvidence.commands,
+                        { name: 'muteTrack', arguments: { trackId: 'track-hat', muted: true } },
+                    ],
+                },
+                calls: result.compilerEvidence.commands,
+                context,
+                revision: 'revision-1',
+            }).status
+        ).toBe('rejected');
     });
 
     it.each([

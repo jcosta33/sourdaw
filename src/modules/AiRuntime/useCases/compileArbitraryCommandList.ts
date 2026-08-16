@@ -1,5 +1,6 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 
+import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ProjectContext } from '../models/ProjectContext';
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -23,7 +24,7 @@ type Candidate = {
     enabled?: boolean;
 };
 
-type SelectorEvidence = {
+export type ArbitraryCommandListSelectorEvidence = {
     itemId: string;
     stableIds: string[];
     excludedIds: string[];
@@ -31,10 +32,28 @@ type SelectorEvidence = {
     preconditions: Array<{ stableId: string; fingerprint: string }>;
 };
 
+type CompiledItemEvidence = {
+    itemId: string;
+    dependsOn: string[];
+    stableIds: string[];
+    commandStart: number;
+    commandCount: number;
+};
+
+export type ArbitraryCommandListEvidence = {
+    schemaVersion: 1;
+    snapshotRevision: string;
+    proposalScope: AgentPlanProposal['scope'];
+    selectors: ArbitraryCommandListSelectorEvidence[];
+    items: CompiledItemEvidence[];
+    commands: ToolCallResult[];
+};
+
 type AcceptedCompilation = {
     status: 'accepted';
     calls: ToolCallResult[];
-    evidence: SelectorEvidence[];
+    evidence: ArbitraryCommandListSelectorEvidence[];
+    compilerEvidence?: ArbitraryCommandListEvidence;
     snapshotRevision: string;
 };
 
@@ -216,7 +235,7 @@ function resolveSelector(input: {
     selector: ReturnType<typeof parseSelector> & { status?: never };
     protectedTargetIds: ReadonlySet<string>;
     itemId: string;
-}): { stableIds: string[]; evidence: SelectorEvidence } | RejectedCompilation {
+}): { stableIds: string[]; evidence: ArbitraryCommandListSelectorEvidence } | RejectedCompilation {
     const candidates = input.candidates.filter((candidate) => {
         if (candidate.entity !== input.selector.entity) {
             return false;
@@ -348,11 +367,13 @@ export function compileArbitraryCommandList(input: {
     const candidates = collectCandidates(input.context);
     const protectedTargetIds = new Set(plan?.scope.protectedTargetIds ?? []);
     const commands: ToolCallResult[] = [];
-    const evidence: SelectorEvidence[] = [];
+    const evidence: ArbitraryCommandListSelectorEvidence[] = [];
+    const compiledItems: CompiledItemEvidence[] = [];
     const orderedTargetIds: string[] = [];
     const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
 
     for (const [index, item] of items.entries()) {
+        const commandStart = commands.length;
         if (!hasOnlyKeys(item, ['id', 'name', 'arguments', 'selector', 'repeat', 'dependsOn'])) {
             return { status: 'rejected', reason: 'Structured command item contains unsupported authority fields.' };
         }
@@ -411,6 +432,13 @@ export function compileArbitraryCommandList(input: {
                     reason: 'Structured command list exceeds the application command budget.',
                 };
             }
+            compiledItems.push({
+                itemId: item.id,
+                dependsOn,
+                stableIds: [],
+                commandStart,
+                commandCount: commands.length - commandStart,
+            });
             continue;
         }
         const selector = parseSelector(item.selector);
@@ -457,6 +485,13 @@ export function compileArbitraryCommandList(input: {
         if (commands.length > MAX_COMMANDS) {
             return { status: 'rejected', reason: 'Structured command list exceeds the application command budget.' };
         }
+        compiledItems.push({
+            itemId: item.id,
+            dependsOn,
+            stableIds: [...resolved.stableIds],
+            commandStart,
+            commandCount: commands.length - commandStart,
+        });
     }
     if (!hasExactScope(plan, orderedTargetIds)) {
         return {
@@ -468,6 +503,17 @@ export function compileArbitraryCommandList(input: {
         status: 'accepted',
         snapshotRevision: input.revision,
         evidence,
+        compilerEvidence:
+            plan === null
+                ? undefined
+                : {
+                      schemaVersion: 1,
+                      snapshotRevision: input.revision,
+                      proposalScope: structuredClone(plan.scope),
+                      selectors: structuredClone(evidence),
+                      items: structuredClone(compiledItems),
+                      commands: structuredClone(commands),
+                  },
         calls: input.calls.map((call) =>
             call === proposal ? { name: call.name, arguments: { plan: proposal.arguments.plan, commands } } : call
         ),
