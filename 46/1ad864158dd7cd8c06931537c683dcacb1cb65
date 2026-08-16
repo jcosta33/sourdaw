@@ -1,0 +1,50 @@
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_ce7b7e02e80354 519,578
+  s_a40848e8f8cca9::t_54d8fd1f6245fa 532,535-536,538-539,553-554,559-570,579-580,584-598
+  s_a40848e8f8cca9::t_1de1b96e2c1b7b 506-509,517-518,520-524,571-577,581-583,599-600,850
+  s_a40848e8f8cca9::t_de5148ab965797 533-534,537,540,552
+  s_a40848e8f8cca9::t_780b6dc442433d 4,510-516,525-531,541-551,555-558,729-730
+  s_a40848e8f8cca9::t_bb1f608c7e8e2e 774
+src/modules/AiRuntime/models/AgentContext.ts
+  s_a40848e8f8cca9::t_6d18e410107c8f 1,20-24,27-35
+  s_a40848e8f8cca9::t_8cc86e3b50a2c0 2-19,25-26
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_780b6dc442433d 1
+  s_a40848e8f8cca9::t_6d18e410107c8f 221
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_a64d4259f4fd82 341,476,520,537,560,578
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_15770a50082530 43
+  s_a40848e8f8cca9::t_ce7b7e02e80354 19
+  s_a40848e8f8cca9::t_fa21af66c7aee1 298-335
+  s_a40848e8f8cca9::t_780b6dc442433d 54
+  s_a40848e8f8cca9::t_54aea71f740b85 336-338
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_a40848e8f8cca9::t_d39406ab4d6392 2-3,6-35,39-77,81-87,100-107,111-119,126-137,139-142,165-166
+  s_a40848e8f8cca9::t_57d23ec386d408 88-99
+  s_a40848e8f8cca9::t_ce7b7e02e80354 138
+  s_a40848e8f8cca9::t_780b6dc442433d 5,36-38,108-110,120-125,151-156
+  s_a40848e8f8cca9::t_0fcc3f14aa60f0 1,4,78-80,143-150,157-164
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_a40848e8f8cca9::t_6d18e410107c8f 1-4,13,69
+  s_a40848e8f8cca9::t_382c9f8639039e 5-12,14-15,17-68,70-93
+  s_a40848e8f8cca9::t_ce7b7e02e80354 16
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_1de1b96e2c1b7b 1,159,167-177,749
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "461ad864158dd7cd8c06931537c683dcacb1cb65",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
