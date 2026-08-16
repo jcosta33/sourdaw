@@ -21,11 +21,13 @@ import {
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
+import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { agentRunControls } from '../getAgentRunControlProjection';
 import { type ProjectContext } from '../getProjectContext';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { sendChatMessage } from '../sendChatMessage';
 
 type MockBackend = 'native' | 'cloud' | 'webllm' | 'none';
@@ -398,6 +400,118 @@ describe('sendChatMessage injectables', () => {
         await sendChatMessage('hello');
 
         expect(setChatGenerating).not.toHaveBeenCalled();
+    });
+
+    it('rejects a correlated replacement run when provider planning omits the selected interpretation', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        const scope = { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
+        const grants = {
+            allowedOperationPrefixes: ['muteTrack'],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        };
+        const sourceActions = [
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: false, expectedMuted: true } },
+        ];
+        agentRunLifecycle.create({
+            runId: 'source-decision-run',
+            request: 'Mute Track 1.',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+            scope,
+            grants,
+            budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+        });
+        agentRunLifecycle.recordDecision({
+            runId: 'source-decision-run',
+            decision: {
+                decisionId: 'decision-mute-track-1',
+                capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: sourceActions,
+                    providerProposal: null,
+                    scope,
+                    grants,
+                }),
+                budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+                revision: 'revision-1',
+                scope,
+                grants,
+                alternatives: [{ id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false }],
+                reason: 'Choose the bounded interpretation.',
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            },
+        });
+        agentRunLifecycle.requireManualResume({
+            runId: 'source-decision-run',
+            reason: 'Choose the bounded interpretation.',
+            workIds: [],
+        });
+
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } }],
+            rawText: 'Mute Track 1.',
+            requiresConfirmation: false,
+        });
+
+        const [firstResult, secondResult] = await Promise.all([
+            agentRunControls.resumeDecision({ runId: 'source-decision-run', alternativeId: 'mute-track-1' }),
+            agentRunControls.resumeDecision({ runId: 'source-decision-run', alternativeId: 'mute-track-1' }),
+        ]);
+
+        expect(firstResult).toMatchObject({ status: 'rejected' });
+        expect(secondResult).toMatchObject({ status: 'rejected' });
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(1);
+        const replacementRun = getAgentRunControlProjections().find(
+            (projection) => projection.runId !== 'source-decision-run'
+        );
+        expect(replacementRun).toBeDefined();
+        if (!replacementRun) {
+            throw new Error('Expected the replacement planning run to be retained for correlation');
+        }
+        expect(getAgentRun(replacementRun.runId)).toMatchObject({
+            mode: 'plan',
+            resume: {
+                sourceRunId: 'source-decision-run',
+                decisionId: 'decision-mute-track-1',
+                selectedAlternativeId: 'mute-track-1',
+                selectedAlternative: { id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false },
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: sourceActions,
+                    providerProposal: null,
+                    scope,
+                    grants,
+                }),
+            },
+            plan: null,
+        });
+        expect(getAgentRun('source-decision-run')?.decision).toMatchObject({
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        });
+        expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
+            'Mute Track 1.',
+            expect.anything(),
+            expect.anything(),
+            'revision-1',
+            undefined,
+            expect.any(Function),
+            expect.objectContaining({ runId: replacementRun.runId }),
+            expect.any(Function)
+        );
     });
 
     it('returns an exact plan without executing or proposing a commit', async () => {
@@ -824,6 +938,17 @@ describe('sendChatMessage injectables', () => {
             rawText: 'mute the vocals',
             requiresConfirmation: false,
             executionMode: 'atomic',
+            providerProposal: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Mute track-1.',
+                constraints: [],
+                scope: { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                capabilityIds: ['muteTrack'],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Verify track identity.'],
+                stoppingConditions: ['Stop if application validation fails.'],
+            },
         });
         mocks.executeAppActionBatch.mockResolvedValue({
             status: 'committed',

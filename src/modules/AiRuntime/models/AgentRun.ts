@@ -63,6 +63,106 @@ export type AgentRunPlan = {
     commandIds: string[];
     serializedBatchIdentity: string | null;
     applicationToolReceipts?: ApplicationToolReceipt[];
+    revision: string | null;
+    classification: 'simple' | 'complex';
+    showPlanPanel: boolean;
+    objective: string;
+    interpretedConstraints: string[];
+    scope: AgentRunScope;
+    steps: AgentRunPlanStep[];
+    expectedImpact: AgentRunPlanExpectedImpact;
+    capabilities: AgentRunPlanCapability[];
+    risks: string[];
+    approvalPoints: AgentRunPlanApprovalPoint[];
+    validationStrategy: string[];
+    stoppingConditions: string[];
+    alternatives: AgentRunPlanAlternative[];
+    needsUserDecision: boolean;
+};
+
+export type AgentRunPlanStep = {
+    order: number;
+    actionType: string;
+    description: string;
+};
+
+export type AgentRunPlanExpectedImpact = {
+    project: string[];
+    audible: { status: 'not-claimed'; reason: string };
+};
+
+export type AgentRunPlanCapability = {
+    id: string;
+    source: 'action-catalog' | 'application-tool-catalog' | 'budget' | 'asset' | 'data-policy';
+    prerequisite: string;
+    status: 'available' | 'required' | 'unavailable';
+};
+
+export type AgentRunPlanApprovalPoint = {
+    kind: 'command-confirmation' | 'user-decision';
+    reason: string;
+};
+
+export type AgentRunPlanAlternative = {
+    id: string;
+    label: string;
+    changesAuthority: boolean;
+};
+
+export const AGENT_PLAN_UNCERTAINTY = [
+    'ambiguous-target',
+    'exploratory-outcome',
+    'conflicted-constraints',
+    'capability-mismatch',
+] as const;
+
+export type AgentPlanUncertainty = (typeof AGENT_PLAN_UNCERTAINTY)[number];
+
+/**
+ * Provider-authored intent evidence. It is inert until application-owned scope,
+ * grants, budgets, and assets admit the corresponding command batch.
+ */
+export type AgentPlanProposal = {
+    semantic: { classification: 'simple' | 'complex'; uncertainty: AgentPlanUncertainty[] };
+    objective: string;
+    constraints: string[];
+    scope: AgentRunScope;
+    capabilityIds: string[];
+    assetIds: string[];
+    alternatives: AgentRunPlanAlternative[];
+    validationStrategy: string[];
+    stoppingConditions: string[];
+};
+
+/** @deprecated Keep the persisted name stable while the proposal contract is shared by all providers. */
+export type AgentRunProviderProposal = AgentPlanProposal;
+
+export type AgentRunDecision = {
+    decisionId: string;
+    capabilitySchemaIdentity: string;
+    proposalIdentity: string;
+    budgets: AgentRunBudgets;
+    revision: string;
+    scope: AgentRunScope;
+    grants: AgentRunGrants;
+    alternatives: AgentRunPlanAlternative[];
+    reason: string;
+    selectedAlternativeId: string | null;
+    resumeAttemptId: string | null;
+};
+
+/** Typed handoff evidence for a replacement planning attempt after a user decision. */
+export type AgentRunDecisionResume = {
+    sourceRunId: string;
+    decisionId: string;
+    selectedAlternativeId: string;
+    selectedAlternative: AgentRunPlanAlternative;
+    proposalIdentity: string;
+    capabilitySchemaIdentity: string;
+    revision: string;
+    scope: AgentRunScope;
+    grants: AgentRunGrants;
+    budgets: AgentRunBudgets;
 };
 
 export type AgentRunBatch = {
@@ -205,6 +305,8 @@ export type AgentRun = {
     budgets: AgentRunBudgets;
     budgetAttempts: AgentRunBudgetAttempt[];
     plan: AgentRunPlan | null;
+    decision: AgentRunDecision | null;
+    resume: AgentRunDecisionResume | null;
     batches: AgentRunBatch[];
     receipts: AgentRunReceipt[];
     renders: AgentRunArtifact[];

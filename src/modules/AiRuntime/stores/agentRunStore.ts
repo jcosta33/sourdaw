@@ -12,7 +12,9 @@ import {
     type AgentRunBatch,
     type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
+    type AgentRunDecision,
     type AgentRunError,
+    type AgentRunPlan,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
@@ -657,6 +659,270 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
     };
 }
 
+function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): AgentRunPlan | null | undefined {
+    if (value === null) {
+        return null;
+    }
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    const summary = readString(value.summary);
+    const commandIds = readStringArray(value.commandIds);
+    const serializedBatchIdentity = readNullableString(value.serializedBatchIdentity);
+    const applicationToolReceipts =
+        value.applicationToolReceipts === undefined
+            ? []
+            : readCollection(value.applicationToolReceipts, readApplicationToolReceipt);
+    if (
+        summary === null ||
+        commandIds === null ||
+        serializedBatchIdentity === undefined ||
+        applicationToolReceipts === null
+    ) {
+        return undefined;
+    }
+    if (value.revision === undefined) {
+        return {
+            summary,
+            commandIds,
+            serializedBatchIdentity,
+            applicationToolReceipts,
+            revision: null,
+            classification: 'simple',
+            showPlanPanel: false,
+            objective: summary,
+            interpretedConstraints: [],
+            scope: structuredClone(fallbackScope),
+            steps: [],
+            expectedImpact: {
+                project: [],
+                audible: { status: 'not-claimed', reason: 'No audible result is claimed by a legacy plan.' },
+            },
+            capabilities: [],
+            risks: [],
+            approvalPoints: [],
+            validationStrategy: [],
+            stoppingConditions: [],
+            alternatives: [],
+            needsUserDecision: false,
+        };
+    }
+    const revision = readNullableString(value.revision);
+    const classification =
+        value.classification === 'simple' || value.classification === 'complex' ? value.classification : null;
+    const showPlanPanel = value.showPlanPanel;
+    const objective = readString(value.objective);
+    const interpretedConstraints = readStringArray(value.interpretedConstraints);
+    const planScope = isRecord(value.scope)
+        ? {
+              targetIds: readStringArray(value.scope.targetIds),
+              targetRanges: readRanges(value.scope.targetRanges),
+              protectedTargetIds: readStringArray(value.scope.protectedTargetIds),
+              protectedRanges: readRanges(value.scope.protectedRanges),
+          }
+        : null;
+    const steps = readCollection(value.steps, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const order = readNonNegativeInteger(candidate.order);
+        const actionType = readString(candidate.actionType);
+        const description = readString(candidate.description);
+        return order === null || order === 0 || actionType === null || description === null
+            ? null
+            : { order, actionType, description };
+    });
+    const expectedImpact =
+        isRecord(value.expectedImpact) && isRecord(value.expectedImpact.audible)
+            ? {
+                  project: readStringArray(value.expectedImpact.project),
+                  audible:
+                      value.expectedImpact.audible.status === 'not-claimed'
+                          ? { status: 'not-claimed' as const, reason: readString(value.expectedImpact.audible.reason) }
+                          : null,
+              }
+            : null;
+    const capabilities = readCollection(value.capabilities, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const prerequisite = readString(candidate.prerequisite);
+        const source = ['action-catalog', 'application-tool-catalog', 'budget', 'asset', 'data-policy'].find(
+            (entry) => entry === candidate.source
+        );
+        const status = ['available', 'required', 'unavailable'].find((entry) => entry === candidate.status);
+        return id === null || prerequisite === null || source === undefined || status === undefined
+            ? null
+            : { id, prerequisite, source, status };
+    });
+    const risks = readStringArray(value.risks);
+    const approvalPoints = readCollection(value.approvalPoints, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const reason = readString(candidate.reason);
+        const kind = ['command-confirmation', 'user-decision'].find((entry) => entry === candidate.kind);
+        return reason === null || kind === undefined ? null : { kind, reason };
+    });
+    const validationStrategy = readStringArray(value.validationStrategy);
+    const stoppingConditions = readStringArray(value.stoppingConditions);
+    const alternatives = readCollection(value.alternatives, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const label = readString(candidate.label);
+        return id === null || label === null || typeof candidate.changesAuthority !== 'boolean'
+            ? null
+            : { id, label, changesAuthority: candidate.changesAuthority };
+    });
+    return revision === undefined ||
+        classification === null ||
+        typeof showPlanPanel !== 'boolean' ||
+        objective === null ||
+        interpretedConstraints === null ||
+        planScope === null ||
+        planScope.targetIds === null ||
+        planScope.targetRanges === null ||
+        planScope.protectedTargetIds === null ||
+        planScope.protectedRanges === null ||
+        steps === null ||
+        expectedImpact === null ||
+        expectedImpact.project === null ||
+        expectedImpact.audible === null ||
+        expectedImpact.audible.reason === null ||
+        capabilities === null ||
+        risks === null ||
+        approvalPoints === null ||
+        validationStrategy === null ||
+        stoppingConditions === null ||
+        alternatives === null ||
+        typeof value.needsUserDecision !== 'boolean'
+        ? undefined
+        : {
+              summary,
+              commandIds,
+              serializedBatchIdentity,
+              applicationToolReceipts,
+              revision,
+              classification,
+              showPlanPanel,
+              objective,
+              interpretedConstraints,
+              scope: planScope as AgentRun['scope'],
+              steps,
+              expectedImpact: {
+                  project: expectedImpact.project,
+                  audible: { status: 'not-claimed', reason: expectedImpact.audible.reason },
+              },
+              capabilities: capabilities as AgentRunPlan['capabilities'],
+              risks,
+              approvalPoints: approvalPoints as AgentRunPlan['approvalPoints'],
+              validationStrategy,
+              stoppingConditions,
+              alternatives,
+              needsUserDecision: value.needsUserDecision,
+          };
+}
+
+function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefined {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    if (!isRecord(value) || !isRecord(value.scope) || !isRecord(value.grants)) {
+        return undefined;
+    }
+    const grants = value.grants;
+    const decisionId = readString(value.decisionId);
+    const capabilitySchemaIdentity = readString(value.capabilitySchemaIdentity);
+    const proposalIdentity = readString(value.proposalIdentity);
+    const revision = readString(value.revision);
+    const budgets = isRecord(value.budgets)
+        ? { limits: readNumberRecord(value.budgets.limits), consumed: readNumberRecord(value.budgets.consumed) }
+        : null;
+    const reason = readString(value.reason);
+    const selectedAlternativeId = readNullableString(value.selectedAlternativeId);
+    // A persisted decision from before resumptions were leased was not claimed.
+    const resumeAttemptId = value.resumeAttemptId === undefined ? null : readNullableString(value.resumeAttemptId);
+    const targetIds = readStringArray(value.scope.targetIds);
+    const targetRanges = readRanges(value.scope.targetRanges);
+    const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
+    const protectedRanges = readRanges(value.scope.protectedRanges);
+    const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
+    const alternatives = readCollection(value.alternatives, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const label = readString(candidate.label);
+        return id === null || label === null || typeof candidate.changesAuthority !== 'boolean'
+            ? null
+            : { id, label, changesAuthority: candidate.changesAuthority };
+    });
+    const grantNames = [
+        'create',
+        'delete',
+        'routing',
+        'tempo',
+        'master',
+        'file',
+        'audioUpload',
+        'remoteGeneration',
+        'autoCommit',
+    ] as const;
+    if (
+        decisionId === null ||
+        capabilitySchemaIdentity === null ||
+        proposalIdentity === null ||
+        budgets === null ||
+        budgets.limits === null ||
+        budgets.consumed === null
+    ) {
+        // Older or malformed decision evidence cannot be resumed, but must not erase the enclosing run.
+        return null;
+    }
+    if (
+        revision === null ||
+        reason === null ||
+        selectedAlternativeId === undefined ||
+        resumeAttemptId === undefined ||
+        targetIds === null ||
+        targetRanges === null ||
+        protectedTargetIds === null ||
+        protectedRanges === null ||
+        allowedOperationPrefixes === null ||
+        alternatives === null ||
+        grantNames.some((name) => typeof grants[name] !== 'boolean')
+    ) {
+        return undefined;
+    }
+    return {
+        decisionId,
+        capabilitySchemaIdentity,
+        proposalIdentity,
+        budgets: { limits: budgets.limits, consumed: budgets.consumed },
+        revision,
+        scope: { targetIds, targetRanges, protectedTargetIds, protectedRanges },
+        grants: {
+            allowedOperationPrefixes,
+            create: grants.create as boolean,
+            delete: grants.delete as boolean,
+            routing: grants.routing as boolean,
+            tempo: grants.tempo as boolean,
+            master: grants.master as boolean,
+            file: grants.file as boolean,
+            audioUpload: grants.audioUpload as boolean,
+            remoteGeneration: grants.remoteGeneration as boolean,
+            autoCommit: grants.autoCommit as boolean,
+        },
+        alternatives,
+        reason,
+        selectedAlternativeId,
+        resumeAttemptId,
+    };
+}
+
 function readAgentRun(value: unknown): AgentRun | null {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION) {
         return null;
@@ -739,27 +1005,76 @@ function readAgentRun(value: unknown): AgentRun | null {
                   };
         });
     })();
-    const plan = (() => {
-        if (value.plan === null) {
-            return null;
-        }
-        if (!isRecord(value.plan)) {
-            return undefined;
-        }
-        const summary = readString(value.plan.summary);
-        const commandIds = readStringArray(value.plan.commandIds);
-        const serializedBatchIdentity = readNullableString(value.plan.serializedBatchIdentity);
-        const applicationToolReceipts =
-            value.plan.applicationToolReceipts === undefined
-                ? []
-                : readCollection(value.plan.applicationToolReceipts, readApplicationToolReceipt);
-        return summary === null ||
-            commandIds === null ||
-            serializedBatchIdentity === undefined ||
-            applicationToolReceipts === null
-            ? undefined
-            : { summary, commandIds, serializedBatchIdentity, applicationToolReceipts };
-    })();
+    const plan = readAgentRunPlan(value.plan, {
+        targetIds: targetIds ?? [],
+        targetRanges: targetRanges ?? [],
+        protectedTargetIds: protectedTargetIds ?? [],
+        protectedRanges: protectedRanges ?? [],
+    });
+    const decision = readAgentRunDecision(value.decision);
+    const resume =
+        value.resume === undefined || value.resume === null
+            ? null
+            : (() => {
+                  if (!isRecord(value.resume)) {
+                      return null;
+                  }
+                  const sourceRunId = readString(value.resume.sourceRunId);
+                  const decisionId = readString(value.resume.decisionId);
+                  const selectedAlternativeId = readString(value.resume.selectedAlternativeId);
+                  const proposalIdentity = readString(value.resume.proposalIdentity);
+                  const capabilitySchemaIdentity = readString(value.resume.capabilitySchemaIdentity);
+                  const revision = readString(value.resume.revision);
+                  const selectedAlternative = value.resume.selectedAlternative;
+                  const scope = value.resume.scope;
+                  const grants = value.resume.grants;
+                  const budgets = value.resume.budgets;
+                  if (
+                      sourceRunId === null ||
+                      decisionId === null ||
+                      selectedAlternativeId === null ||
+                      proposalIdentity === null ||
+                      capabilitySchemaIdentity === null ||
+                      revision === null ||
+                      !isRecord(selectedAlternative) ||
+                      !isRecord(scope) ||
+                      !isRecord(grants) ||
+                      !isRecord(budgets)
+                  ) {
+                      return null;
+                  }
+                  const parsedDecision = readAgentRunDecision({
+                      decisionId,
+                      capabilitySchemaIdentity,
+                      proposalIdentity,
+                      budgets,
+                      revision,
+                      scope,
+                      grants,
+                      alternatives: [selectedAlternative],
+                      reason: 'resume',
+                      selectedAlternativeId,
+                      resumeAttemptId: null,
+                  });
+                  const alternative = parsedDecision?.alternatives[0];
+                  return parsedDecision === null ||
+                      parsedDecision === undefined ||
+                      alternative === undefined ||
+                      alternative.id !== selectedAlternativeId
+                      ? null
+                      : {
+                            sourceRunId,
+                            decisionId,
+                            selectedAlternativeId,
+                            selectedAlternative: alternative,
+                            proposalIdentity,
+                            capabilitySchemaIdentity,
+                            revision,
+                            scope: parsedDecision.scope,
+                            grants: parsedDecision.grants,
+                            budgets: parsedDecision.budgets,
+                        };
+              })();
     const batches = readCollection(value.batches, readBatch);
     const receipts = readCollection(value.receipts, readReceipt);
     const renders = readCollection(value.renders, readArtifact);
@@ -819,6 +1134,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         consumed === null ||
         budgetAttempts === null ||
         plan === undefined ||
+        decision === undefined ||
         batches === null ||
         receipts === null ||
         renders === null ||
@@ -881,6 +1197,8 @@ function readAgentRun(value: unknown): AgentRun | null {
         budgets: { limits, consumed },
         budgetAttempts,
         plan,
+        decision,
+        resume,
         batches,
         receipts,
         renders,

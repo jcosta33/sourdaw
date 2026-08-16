@@ -1,3 +1,4 @@
+import { type AgentRunProviderProposal } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
@@ -17,4 +18,6 @@ export type IntentResult = {
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Correlated, bounded receipts produced by application-owned read tools during provider planning. */
     applicationToolReceipts?: ApplicationToolReceipt[];
+    /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
+    providerProposal?: AgentRunProviderProposal;
 };

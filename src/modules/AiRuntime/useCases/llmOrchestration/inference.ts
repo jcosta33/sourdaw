@@ -31,6 +31,7 @@ import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import {
     parseToolPlanningOutcome,
     type ToolCallResult,
@@ -88,7 +89,14 @@ function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutc
             arguments: Object.fromEntries(Object.entries(call.arguments)),
         });
     }
-    return { status: 'complete', toolCalls };
+    return {
+        status: 'complete',
+        toolCalls,
+        proposal:
+            value.proposal === undefined
+                ? extractAgentPlanProposal(toolCalls)
+                : normalizeAgentPlanProposal(value.proposal),
+    };
 }
 
 export type ProviderAttemptAdmission = {
@@ -194,7 +202,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         }
         if (nativeOutcome.finish.finish.reason === 'stop') {
             logger.info(`[AI Engine] (native/structured) ${String(toolCalls.length)} tool call(s)`);
-            return { status: 'complete', toolCalls };
+            return { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
         }
         if (nativeOutcome.finish.finish.reason === 'cancelled') {
             throw createToolPlanningAbortError();
@@ -494,7 +502,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         );
                     }
                     const toolCalls = await waitForInference(cloudInference, signal);
-                    outcome = { status: 'complete', toolCalls };
+                    outcome = { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
                 } else if (backend === 'webllm') {
                     if (!isWebLlmLoaded()) {
                         await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
@@ -547,13 +555,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
+                    const normalizedToolCalls = normalizedResult.output.toolCalls.map((call, index) => ({
+                        ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
+                        name: call.name,
+                        arguments: call.arguments,
+                    }));
                     outcome = {
                         status: 'complete',
-                        toolCalls: normalizedResult.output.toolCalls.map((call, index) => ({
-                            ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
-                            name: call.name,
-                            arguments: call.arguments,
-                        })),
+                        toolCalls: normalizedToolCalls,
+                        proposal: extractAgentPlanProposal(normalizedToolCalls),
                     };
                 } else {
                     const rejectedResult = providerSource.finish({

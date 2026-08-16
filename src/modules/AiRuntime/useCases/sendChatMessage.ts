@@ -15,7 +15,12 @@ import {
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import { type AgentRunBudgets, type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
+import {
+    type AgentRunBudgets,
+    type AgentRunDecisionResume,
+    type AgentRunWorkLease,
+    type AgentRunWorkTerminalState,
+} from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
@@ -48,6 +53,7 @@ import {
 } from '../stores/chatStore';
 import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
+import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlanProposal';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from './agentRunLifecycle';
@@ -65,6 +71,8 @@ import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { createModelProviderProtocol } from './modelProviderProtocol';
+import { planAgentRun } from './planAgentRun';
+import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { planPromptActions } from './planPromptActions';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
@@ -103,7 +111,22 @@ type SendChatMessageOptions = {
     mode?: AgentExecutionMode;
     trustCeiling?: AgentTrustCeiling;
     budgets?: AgentRunBudgets;
+    scope?: AgentRunDecisionResume['scope'];
+    grants?: AgentRunDecisionResume['grants'];
+    resume?: AgentRunDecisionResume;
+    onResumedRunAdmitted?: (runId: string) => void;
+    onResumedPlanAccepted?: () => void;
 };
+
+function assertResumedProposalIdentity(
+    input: { proposalIdentity: string } | undefined,
+    value: Parameters<typeof getAgentPlanProposalIdentity>[0]
+): void {
+    const proposalIdentity = getAgentPlanProposalIdentity(value);
+    if (input && proposalIdentity !== input.proposalIdentity) {
+        throw new Error('The replacement provider plan no longer matches the selected decision interpretation.');
+    }
+}
 
 type AgentApplyReceipt = Extract<
     Awaited<ReturnType<typeof executePlannedActions>>,
@@ -302,7 +325,10 @@ export async function sendChatMessage(
         createdRevision: captureProjectRevision(),
         requestedRoute,
         selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
+        scope: options?.scope,
+        grants: options?.grants,
         budgets: options?.budgets,
+        resume: options?.resume,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
@@ -321,6 +347,24 @@ export async function sendChatMessage(
         throw new Error(`Agent provider work could not be claimed: ${providerLeaseResult.status}`);
     }
     const providerLease = providerLeaseResult.lease;
+    try {
+        options?.onResumedRunAdmitted?.(runId);
+    } catch (error) {
+        try {
+            agentRunWorkLease.settle({
+                runId,
+                workId: providerWorkId,
+                leaseId: providerLease.leaseId,
+                cancellationGeneration: providerLease.cancellationGeneration,
+                idempotencyKey: providerLease.idempotencyKey,
+                receiptIdentity: providerLease.receiptIdentity,
+                terminalState: 'failed',
+            });
+        } finally {
+            agentRunLifecycle.transitionPhase({ runId, phase: 'failed' });
+        }
+        throw error;
+    }
 
     setChatGenerating(true);
 
@@ -390,6 +434,9 @@ export async function sendChatMessage(
                 terminalState: 'completed',
             });
 
+            if (options?.resume && result.actions.length === 0) {
+                throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
+            }
             if (result.actions.length === 0) {
                 recordApplicationToolOnlyPlan({
                     runId,
@@ -435,6 +482,90 @@ export async function sendChatMessage(
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
                 if (interactionMode === 'plan') {
+                    const admittedRun = agentRunLifecycle.get(runId);
+                    if (!admittedRun) {
+                        throw new Error('Agent run disappeared before plan materialization.');
+                    }
+                    const plannedAuthority = compileAgentActionExecution({
+                        actions: result.actions,
+                        actionLabels: confirmationDescription.actionLabels,
+                        context,
+                        group: generateGroupId(userText),
+                        intent: userText,
+                        projectRevision,
+                        requiresConfirmation: result.requiresConfirmation,
+                        runId,
+                        mode: 'apply',
+                        protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                        trustCeiling: options?.trustCeiling,
+                    }).commandBatch.authority;
+                    const planScope = {
+                        targetIds: [...plannedAuthority.scope.targetIds],
+                        targetRanges: plannedAuthority.scope.targetRanges.map((range) => ({ ...range })),
+                        protectedTargetIds: [...plannedAuthority.scope.protectedTargetIds],
+                        protectedRanges: plannedAuthority.scope.protectedRanges.map((range) => ({ ...range })),
+                    };
+                    const planGrants = {
+                        ...plannedAuthority.grants,
+                        allowedOperationPrefixes: [...plannedAuthority.grants.allowedOperationPrefixes],
+                    };
+                    assertResumedProposalIdentity(options?.resume, {
+                        actions: result.actions,
+                        providerProposal: result.providerProposal ?? null,
+                        scope: planScope,
+                        grants: planGrants,
+                    });
+                    const plannedRun = planAgentRun({
+                        request: userText,
+                        revision: projectRevision,
+                        actions: result.actions,
+                        actionLabels: confirmationDescription.actionLabels,
+                        scope: planScope,
+                        grants: planGrants,
+                        budgets: admittedRun.budgets,
+                        requiresConfirmation: false,
+                        applicationToolReceipts: result.applicationToolReceipts,
+                        providerProposal: result.providerProposal,
+                        requireProviderProposal: result.executionMode === 'atomic',
+                    });
+                    if (plannedRun.status === 'needs-user-decision') {
+                        createStemImportConfirmationResourceLease(result.actions)?.release();
+                        agentRunLifecycle.requireManualResume({
+                            runId,
+                            reason: plannedRun.decision.reason,
+                            workIds: [],
+                        });
+                        agentRunLifecycle.recordDecision({
+                            runId,
+                            decision: {
+                                decisionId: crypto.randomUUID(),
+                                capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                                proposalIdentity: getAgentPlanProposalIdentity({
+                                    actions: result.actions,
+                                    providerProposal: result.providerProposal ?? null,
+                                    scope: planScope,
+                                    grants: planGrants,
+                                }),
+                                budgets: admittedRun.budgets,
+                                revision: projectRevision,
+                                scope: planScope,
+                                grants: planGrants,
+                                alternatives: plannedRun.decision.alternatives,
+                                reason: plannedRun.decision.reason,
+                                selectedAlternativeId: null,
+                                resumeAttemptId: null,
+                            },
+                        });
+                        updateChatMessage(assistantMsgId, {
+                            isStreaming: false,
+                            content: `Choose one before I continue:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
+                        });
+                        return undefined;
+                    }
+                    if (plannedRun.status === 'rejected') {
+                        throw new Error(plannedRun.reason);
+                    }
+                    options?.onResumedPlanAccepted?.();
                     agentRunLifecycle.recordPlan({
                         runId,
                         summary: confirmationDescription.actionLabels.join('\n'),
@@ -442,25 +573,10 @@ export async function sendChatMessage(
                         serializedBatchIdentity: null,
                         applicationToolReceipts: result.applicationToolReceipts ?? [],
                         revision: projectRevision,
-                        scope: {
-                            targetIds: confirmationDescription.affectedIds,
-                            targetRanges: [],
-                            protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
-                            protectedRanges: [],
-                        },
-                        grants: {
-                            allowedOperationPrefixes: [],
-                            create: false,
-                            delete: false,
-                            routing: false,
-                            tempo: false,
-                            master: false,
-                            file: false,
-                            audioUpload: false,
-                            remoteGeneration: false,
-                            autoCommit: false,
-                        },
-                        budgets: { limits: {}, consumed: {} },
+                        scope: planScope,
+                        grants: planGrants,
+                        budgets: admittedRun.budgets,
+                        plan: plannedRun.plan,
                     });
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -493,6 +609,102 @@ export async function sendChatMessage(
                     throw new Error(parsedCommandBatch.reason);
                 }
                 const commandIds = parsedCommandBatch.envelope.commands.map((command) => command.commandId);
+                assertResumedProposalIdentity(options?.resume, {
+                    actions: result.actions,
+                    providerProposal: result.providerProposal ?? null,
+                    scope: commandBatch.authority.scope,
+                    grants: commandBatch.authority.grants,
+                });
+                const plannedRun = planAgentRun({
+                    request: userText,
+                    revision: projectRevision,
+                    actions: result.actions,
+                    actionLabels: confirmationDescription.actionLabels,
+                    scope: {
+                        targetIds: [...commandBatch.authority.scope.targetIds],
+                        targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
+                        protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
+                        protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({ ...range })),
+                    },
+                    grants: {
+                        allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
+                        create: commandBatch.authority.grants.create,
+                        delete: commandBatch.authority.grants.delete,
+                        routing: commandBatch.authority.grants.routing,
+                        tempo: commandBatch.authority.grants.tempo,
+                        master: commandBatch.authority.grants.master,
+                        file: commandBatch.authority.grants.file,
+                        audioUpload: commandBatch.authority.grants.audioUpload,
+                        remoteGeneration: commandBatch.authority.grants.remoteGeneration,
+                        autoCommit: commandBatch.authority.grants.autoCommit,
+                    },
+                    budgets: { limits: { ...commandBatch.authority.budgets }, consumed: {} },
+                    requiresConfirmation: compiledActionExecution.requiresConfirmation,
+                    applicationToolReceipts: result.applicationToolReceipts,
+                    providerProposal: result.providerProposal,
+                    requireProviderProposal: result.executionMode === 'atomic',
+                });
+                if (plannedRun.status === 'needs-user-decision') {
+                    options?.onResumedPlanAccepted?.();
+                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    agentRunLifecycle.requireManualResume({
+                        runId,
+                        reason: plannedRun.decision.reason,
+                        workIds: [],
+                    });
+                    const admittedRun = agentRunLifecycle.get(runId);
+                    if (!admittedRun) {
+                        throw new Error('Agent run disappeared before decision persistence.');
+                    }
+                    agentRunLifecycle.recordDecision({
+                        runId,
+                        decision: {
+                            decisionId: crypto.randomUUID(),
+                            capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                            proposalIdentity: getAgentPlanProposalIdentity({
+                                actions: result.actions,
+                                providerProposal: result.providerProposal ?? null,
+                                scope: commandBatch.authority.scope,
+                                grants: commandBatch.authority.grants,
+                            }),
+                            budgets: admittedRun.budgets,
+                            revision: projectRevision,
+                            scope: {
+                                targetIds: [...commandBatch.authority.scope.targetIds],
+                                targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
+                                protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
+                                protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({
+                                    ...range,
+                                })),
+                            },
+                            grants: {
+                                allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
+                                create: commandBatch.authority.grants.create,
+                                delete: commandBatch.authority.grants.delete,
+                                routing: commandBatch.authority.grants.routing,
+                                tempo: commandBatch.authority.grants.tempo,
+                                master: commandBatch.authority.grants.master,
+                                file: commandBatch.authority.grants.file,
+                                audioUpload: commandBatch.authority.grants.audioUpload,
+                                remoteGeneration: commandBatch.authority.grants.remoteGeneration,
+                                autoCommit: commandBatch.authority.grants.autoCommit,
+                            },
+                            alternatives: plannedRun.decision.alternatives,
+                            reason: plannedRun.decision.reason,
+                            selectedAlternativeId: null,
+                            resumeAttemptId: null,
+                        },
+                    });
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        content: `Choose one before I can prepare this run:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
+                    });
+                    return undefined;
+                }
+                if (plannedRun.status === 'rejected') {
+                    throw new Error(plannedRun.reason);
+                }
+                options?.onResumedPlanAccepted?.();
                 agentRunLifecycle.recordPlan({
                     runId,
                     summary: confirmationDescription.actionLabels.join('\n'),
@@ -521,6 +733,11 @@ export async function sendChatMessage(
                     budgets: {
                         limits: { ...commandBatch.authority.budgets },
                         consumed: {},
+                    },
+                    plan: {
+                        ...plannedRun.plan,
+                        commandIds,
+                        serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
                     },
                 });
                 agentRunLifecycle.recordBatch({

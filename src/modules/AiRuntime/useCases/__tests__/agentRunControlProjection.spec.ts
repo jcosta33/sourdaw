@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunControls } from '../getAgentRunControlProjection';
@@ -12,6 +14,7 @@ const {
     get: getAgentRun,
     recordCommittedWork: recordAgentRunCommittedWork,
     recordError: recordAgentRunError,
+    recordDecision: recordAgentRunDecision,
     requireManualResume: requireAgentRunManualResume,
 } = agentRunLifecycle;
 const { claim: claimAgentRunWorkLease, settle: settleAgentRunWorkLease } = agentRunWorkLease;
@@ -77,6 +80,7 @@ describe('agent run control projection', () => {
             cancellation: { requested: false, acknowledgement: 'none' },
             allowedActions: { cancel: true, resume: false, retryWorkIds: ['analysis-1'] },
             manualResumeReason: 'Analysis failed after the project batch committed.',
+            resumeRejectionReason: 'The pending decision is unavailable or already consumed.',
             committedReceipts: [
                 {
                     workId: 'batch-1',
@@ -165,5 +169,56 @@ describe('agent run control projection', () => {
             allowedActions: { cancel: false, resume: false, retryWorkIds: [] },
         });
         expect(getAgentRun('run-cancel')?.cancellation.backendAcknowledgedAt).toBe(113);
+    });
+
+    it('withholds a stale decision resume control and exposes the re-preview reason', () => {
+        const scope = { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
+        const grants = {
+            allowedOperationPrefixes: ['muteTrack'],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        };
+        createAgentRun({
+            runId: 'run-stale-decision',
+            request: 'Mute Track 1.',
+            mode: 'plan',
+            createdRevision: captureProjectRevision(),
+            scope,
+            grants,
+            budgets: { limits: {}, consumed: {} },
+        });
+        recordAgentRunDecision({
+            runId: 'run-stale-decision',
+            decision: {
+                decisionId: 'decision-stale',
+                capabilitySchemaIdentity: 'current-schema',
+                proposalIdentity: 'proposal-stale',
+                budgets: { limits: {}, consumed: {} },
+                revision: 'obsolete-revision',
+                scope,
+                grants,
+                alternatives: [{ id: 'mute', label: 'Mute Track 1', changesAuthority: false }],
+                reason: 'Choose the bounded interpretation.',
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            },
+        });
+        requireAgentRunManualResume({
+            runId: 'run-stale-decision',
+            reason: 'Choose the bounded interpretation.',
+            workIds: [],
+        });
+
+        expect(getAgentRunControlProjection('run-stale-decision')).toMatchObject({
+            allowedActions: { resume: false },
+            resumeRejectionReason: 'The project revision changed while the decision was pending.',
+        });
     });
 });

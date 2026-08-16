@@ -12,6 +12,7 @@ import {
     createWorkflowCapabilityToolSchema,
     WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
 } from '../../../models/WorkflowCapability';
+import { getAgentToolCatalogSchemas } from '../../agentToolCatalog';
 import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../applicationOwnedToolLoop';
 import { generateToolCalls as generateCompatibleToolCalls } from '../generateToolCalls';
 import { generateToolPlanningOutcome as generateToolCalls } from '../inference';
@@ -135,8 +136,26 @@ vi.mock('../../modelProviderProtocol', async (importOriginal) => {
 });
 
 function completePlan<TToolCall>(toolCalls: TToolCall[]) {
-    return { status: 'complete' as const, toolCalls };
+    return { status: 'complete' as const, toolCalls, proposal: null };
 }
+
+const SERIALIZED_AGENT_PLAN_CALL = {
+    name: 'command.batch.propose',
+    arguments: {
+        commands: [{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+        plan: {
+            semantic: { classification: 'complex', uncertainty: ['ambiguous-target'] },
+            objective: 'Mute the selected bass track.',
+            constraints: ['Do not change routing.'],
+            scope: { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            capabilityIds: ['muteTrack'],
+            assetIds: [],
+            alternatives: [],
+            validationStrategy: ['Verify track identity.'],
+            stoppingConditions: ['Stop if the selected track changes.'],
+        },
+    },
+};
 
 describe('generateToolPlanningOutcome', () => {
     beforeEach(() => {
@@ -207,6 +226,30 @@ describe('generateToolPlanningOutcome', () => {
             ])
         );
     });
+
+    it.each(['native', 'cloud', 'webllm'] as const)(
+        'carries one serialized AgentPlanProposal through the %s adapter into the shared planning outcome',
+        async (backend) => {
+            mocks.backendChain.value = [backend];
+            if (backend === 'native') {
+                mocks.nativeEngineReady.value = true;
+                mocks.generateNativeToolCalls.mockResolvedValue([SERIALIZED_AGENT_PLAN_CALL]);
+            } else if (backend === 'cloud') {
+                mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
+                mocks.generateCloudToolCalls.mockResolvedValue([SERIALIZED_AGENT_PLAN_CALL]);
+            } else {
+                mocks.isWebLlmLoaded.mockReturnValue(true);
+                mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([SERIALIZED_AGENT_PLAN_CALL]));
+            }
+
+            await expect(
+                generateToolCalls('sys', 'mute the selected bass track', getAgentToolCatalogSchemas())
+            ).resolves.toMatchObject({
+                status: 'complete',
+                proposal: SERIALIZED_AGENT_PLAN_CALL.arguments.plan,
+            });
+        }
+    );
 
     it('preserves normalized native lifecycle unavailability for provider fallback evidence', async () => {
         mocks.backendChain.value = ['native'];
