@@ -36,6 +36,7 @@ vi.mock('../../engine/TrackNode', () => ({
             onDeviceLoaded?: (trackId: string, device: unknown) => void;
             onDeviceRemoved?: (trackId: string, device: unknown) => void;
             reconnectRoutingForTrack?: (trackId: string) => void;
+            onAsyncRuntimeGraphMutation?: (mutation: { application: 'applied' | 'needs-reconcile' }) => void;
         };
         private outputDestination: unknown;
         dispose = vi.fn();
@@ -104,6 +105,9 @@ vi.mock('../../engine/TrackNode', () => ({
             return changed;
         });
         rebuildChain = vi.fn(() => this.deps.reconnectRoutingForTrack?.(this.trackId));
+        completeAsyncDevicePromotion = vi.fn((application: 'applied' | 'needs-reconcile' = 'applied') => {
+            this.deps.onAsyncRuntimeGraphMutation?.({ application });
+        });
         notifyDeviceLoaded(device: unknown) {
             this.strip.deviceNodes.push(device);
             this.deps.onDeviceLoaded?.(this.trackId, device);
@@ -116,6 +120,7 @@ vi.mock('../../engine/TrackNode', () => ({
                 onDeviceLoaded?: (trackId: string, device: unknown) => void;
                 onDeviceRemoved?: (trackId: string, device: unknown) => void;
                 reconnectRoutingForTrack?: (trackId: string) => void;
+                onAsyncRuntimeGraphMutation?: (mutation: { application: 'applied' | 'needs-reconcile' }) => void;
             }
         ) {
             this.trackId = id;
@@ -191,6 +196,7 @@ function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
 type MockTrackNode = {
     notifyDeviceLoaded(device: unknown): void;
     rebuildChain(): void;
+    completeAsyncDevicePromotion(application?: 'applied' | 'needs-reconcile'): void;
     setOutput: Mock;
 };
 
@@ -424,6 +430,38 @@ describe('AudioEngine', () => {
         });
         expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
         expect(engine.getRuntimeGraphRevision()).toBeGreaterThan(staleDelta.correlation.appRevision);
+    });
+
+    it('rejects a delta compiled before an asynchronous device promotion reaches the live graph', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const revisionBeforePromotion = engine.getRuntimeGraphRevision();
+
+        getMockTrackNode(engine, 'source').completeAsyncDevicePromotion();
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforePromotion + 1);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a delta after an asynchronous device path reports that reconciliation is required', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const revisionBeforeReconcile = engine.getRuntimeGraphRevision();
+
+        getMockTrackNode(engine, 'source').completeAsyncDevicePromotion('needs-reconcile');
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeReconcile + 1);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
     });
 
     it('rejects a delta after a device is added then removed back to the same topology', () => {

@@ -41,7 +41,13 @@ export type TrackNodeDeps = {
     reconnectRoutingForTrack?: (trackId: string) => void;
     onDeviceLoaded?: (trackId: string, device: BuiltinDeviceNode) => void;
     onDeviceRemoved?: (trackId: string, device: BuiltinDeviceNode) => void;
+    onAsyncRuntimeGraphMutation?: (mutation: AsyncRuntimeGraphMutation) => void;
 };
+
+export type AsyncRuntimeGraphMutation = Readonly<{
+    application: 'applied' | 'needs-reconcile';
+    reason: string;
+}>;
 
 type PendingDeviceLoad = {
     abortController: AbortController;
@@ -385,6 +391,13 @@ export class TrackNode {
         }
     }
 
+    private reportAsyncRuntimeGraphMutation(
+        application: AsyncRuntimeGraphMutation['application'],
+        reason: string
+    ): void {
+        this.deps.onAsyncRuntimeGraphMutation?.(Object.freeze({ application, reason }));
+    }
+
     private rollbackPromotedDevice(readinessToken: DeviceReadinessToken): boolean {
         const pendingLoad = this._pendingDeviceLoads.get(readinessToken.deviceId);
         if (
@@ -406,6 +419,10 @@ export class TrackNode {
         if (!failedDevice) {
             return false;
         }
+        this.reportAsyncRuntimeGraphMutation(
+            'needs-reconcile',
+            `Async device promotion for ${readinessToken.deviceId} rolled back after a live graph failure`
+        );
         this.strip.deviceNodes[index] = pendingLoad.placeholder;
         pendingLoad.abortController.abort();
         try {
@@ -594,6 +611,7 @@ export class TrackNode {
         }
 
         let deviceLoadNotificationStarted = false;
+        let promotionPublished = false;
         try {
             for (const [name, value] of pendingLoad.parameterWrites) {
                 finalDn.controller?.setParam(name, value);
@@ -602,12 +620,26 @@ export class TrackNode {
                 finalDn.controller?.setBypass?.(pendingLoad.bypassed);
                 finalDn.bypassed = pendingLoad.bypassed;
             }
+            // This owner callback reserves the next runtime graph generation
+            // before the placeholder reference changes, so no caller can apply
+            // a delta in the promotion/rebuild gap with the old generation.
+            this.reportAsyncRuntimeGraphMutation(
+                'applied',
+                `Async device ${deviceId} promoted from its placeholder into the live graph`
+            );
             this.strip.deviceNodes[index] = finalDn;
+            promotionPublished = true;
             if (this.deps.onDeviceLoaded) {
                 deviceLoadNotificationStarted = true;
                 this.deps.onDeviceLoaded(this.trackId, finalDn);
             }
         } catch (error) {
+            if (promotionPublished) {
+                this.reportAsyncRuntimeGraphMutation(
+                    'needs-reconcile',
+                    `Async device ${deviceId} promotion failed after a live graph mutation`
+                );
+            }
             if (pendingLoad.placeholder) {
                 this.strip.deviceNodes[index] = pendingLoad.placeholder;
             }
@@ -643,6 +675,10 @@ export class TrackNode {
         if (readinessToken) {
             this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'runtime' });
         }
+        this.reportAsyncRuntimeGraphMutation(
+            'needs-reconcile',
+            `Loaded device ${deviceId} failed at runtime and requires graph reconciliation`
+        );
         replacementDn.bypassed = failedDn.bypassed;
         this.strip.deviceNodes[index] = replacementDn;
         this._pendingDeviceLoads.get(deviceId)?.abortController.abort();
@@ -669,6 +705,10 @@ export class TrackNode {
 
             const precedingDeviceIds = this.strip.deviceNodes.slice(0, index).map((device) => device.deviceId);
             const { bypassed, type } = replacementDn;
+            this.reportAsyncRuntimeGraphMutation(
+                'needs-reconcile',
+                `Recovered device ${deviceId} is rebuilding its live graph slot`
+            );
             this.invalidatePendingDeviceLoad({ deviceId });
             this.strip.deviceNodes.splice(index, 1);
             this.destroyRejectedDeviceNode(replacementDn);

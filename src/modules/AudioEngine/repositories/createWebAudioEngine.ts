@@ -12,7 +12,7 @@ import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../en
 import { BusNode } from '../engine/BusNode';
 import { createDeviceReadinessDiagnostics } from '../engine/deviceReadinessDiagnostics';
 import { dropoutCounters } from '../engine/dropoutCounter';
-import { TrackNode } from '../engine/TrackNode';
+import { TrackNode, type AsyncRuntimeGraphMutation } from '../engine/TrackNode';
 import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeltaNode,
@@ -424,6 +424,13 @@ class AudioEngineImpl implements AudioEngine {
             value: result.value,
             runtimeRevision: result.changed ? this.advanceRuntimeGraphRevision() : this.runtimeGraphRevision,
         });
+    }
+
+    private recordAsyncRuntimeGraphMutation(mutation: AsyncRuntimeGraphMutation): void {
+        this.mutateRuntimeGraph(() => ({ value: undefined, changed: true }));
+        if (mutation.application === 'needs-reconcile') {
+            logger.warn(`[AudioEngine] ${mutation.reason}`);
+        }
     }
 
     private hasRuntimeOutputDestination(outputId: string): boolean {
@@ -1108,6 +1115,7 @@ class AudioEngineImpl implements AudioEngine {
                     reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
                     onDeviceLoaded: (id) => this.reconcileToasterParent(id),
                     onDeviceRemoved: (id, device) => this.handleDeviceRemoved(id, device),
+                    onAsyncRuntimeGraphMutation: (mutation) => this.recordAsyncRuntimeGraphMutation(mutation),
                 });
             }
             this.trackNodes.set(trackId, node);

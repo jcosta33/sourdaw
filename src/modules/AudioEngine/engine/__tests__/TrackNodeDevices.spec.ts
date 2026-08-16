@@ -785,6 +785,43 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(pendingDevicePromises.size).toBe(0);
         });
 
+        it('reports exactly one owner-owned graph mutation when an async placeholder promotes and rebuilds', async () => {
+            const deferred = installDeferredWasmDevice({ requiresContent: false });
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { onAsyncRuntimeGraphMutation }));
+            track.addDevice('wasm-1', 'levain');
+
+            deferred.resolve(createLoadedDevice().device);
+            await Promise.resolve();
+
+            expect(onAsyncRuntimeGraphMutation).toHaveBeenCalledTimes(1);
+            expect(onAsyncRuntimeGraphMutation).toHaveBeenCalledWith(
+                expect.objectContaining({ application: 'applied' })
+            );
+        });
+
+        it('reports reconciliation truth after a promoted async node rebuild fails and rolls back', async () => {
+            const deferred = installDeferredWasmDevice({ requiresContent: false });
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { onAsyncRuntimeGraphMutation }));
+            track.addDevice('wasm-1', 'levain');
+            vi.spyOn(track, 'rebuildChain').mockImplementationOnce(() => {
+                throw new Error('promoted graph failed');
+            });
+
+            deferred.resolve(createLoadedDevice().device);
+            await Promise.resolve();
+
+            expect(onAsyncRuntimeGraphMutation).toHaveBeenNthCalledWith(
+                1,
+                expect.objectContaining({ application: 'applied' })
+            );
+            expect(onAsyncRuntimeGraphMutation).toHaveBeenNthCalledWith(
+                2,
+                expect.objectContaining({ application: 'needs-reconcile' })
+            );
+        });
+
         it('reports a settled descriptor-owned placeholder that never loaded as failed', async () => {
             const deferred = installDeferredWasmDevice({ controller: { setParam: vi.fn() } });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
@@ -807,7 +844,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         it('recovers a terminally failed loaded device once and preserves its bypass', async () => {
             const deferred = installDeferredWasmDevice();
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics, onAsyncRuntimeGraphMutation }));
             track.addDevice('first', 'builtin-gain');
             track.addDevice('wasm-1', 'levain', undefined, ['first']);
             track.addDevice('last', 'builtin-gain');
@@ -827,6 +865,11 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'wasm-1', 'last']);
             expect(track.strip.deviceNodes[1]).toBe(deferred.placeholder);
             expect(track.getDeviceLoadState('wasm-1')).toBe('pending');
+            expect(onAsyncRuntimeGraphMutation.mock.calls.map(([mutation]) => mutation.application)).toEqual([
+                'applied',
+                'needs-reconcile',
+                'needs-reconcile',
+            ]);
 
             const recovered = createLoadedDevice();
             deferred.resolve(recovered.device);
@@ -978,10 +1021,16 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const deferred = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
             const onDeviceLoaded = vi.fn();
+            const onAsyncRuntimeGraphMutation = vi.fn();
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
             const track = new TrackNode(
                 't1',
-                makeDeps(ctx, { pendingDevicePromises, onDeviceLoaded, readinessDiagnostics })
+                makeDeps(ctx, {
+                    pendingDevicePromises,
+                    onDeviceLoaded,
+                    onAsyncRuntimeGraphMutation,
+                    readinessDiagnostics,
+                })
             );
             track.addDevice('wasm-1', 'levain');
             const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
@@ -997,6 +1046,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(loaded.node.disconnect).toHaveBeenCalled();
             expect(scheduleRebuild).not.toHaveBeenCalled();
             expect(onDeviceLoaded).not.toHaveBeenCalled();
+            expect(onAsyncRuntimeGraphMutation).not.toHaveBeenCalled();
             expect(readinessDiagnostics.snapshot()).toMatchObject({
                 counts: { requested: 1, cancelled: 1 },
                 devices: [],
@@ -1006,11 +1056,46 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await Promise.resolve();
         });
 
+        it('does not report or resurrect an async device after its track node is disposed', () => {
+            const deferred = installDeferredWasmDevice();
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { onAsyncRuntimeGraphMutation }));
+            track.addDevice('wasm-1', 'levain');
+            track.dispose();
+            const loaded = createLoadedDevice();
+
+            deferred.resolve(loaded.device);
+
+            expect(track.strip.deviceNodes).toEqual([]);
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+            expect(onAsyncRuntimeGraphMutation).not.toHaveBeenCalled();
+        });
+
+        it('does not report a second mutation when an already-promoted generation repeats its completion', async () => {
+            const deferred = installDeferredWasmDevice({ requiresContent: false });
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { onAsyncRuntimeGraphMutation }));
+            track.addDevice('wasm-1', 'levain');
+            deferred.resolve(createLoadedDevice().device);
+            await Promise.resolve();
+            const mutationCount = onAsyncRuntimeGraphMutation.mock.calls.length;
+            const duplicate = createLoadedDevice();
+
+            deferred.resolve(duplicate.device);
+
+            expect(duplicate.dispose).toHaveBeenCalledTimes(1);
+            expect(onAsyncRuntimeGraphMutation).toHaveBeenCalledTimes(mutationCount);
+        });
+
         it('keeps same-id replacement readiness when a removed generation resolves late', async () => {
             const oldGeneration = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode(
+                't1',
+                makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics, onAsyncRuntimeGraphMutation })
+            );
             track.addDevice('wasm-1', 'levain');
 
             track.removeDevice('wasm-1');
@@ -1019,6 +1104,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const newDevice = createLoadedDevice();
             newGeneration.resolve(newDevice.device);
             await Promise.resolve();
+            const mutationsAfterCurrentPromotion = onAsyncRuntimeGraphMutation.mock.calls.length;
 
             expect(readinessDiagnostics.snapshot()).toMatchObject({
                 counts: { requested: 2 },
@@ -1031,6 +1117,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(oldDevice.dispose).toHaveBeenCalledTimes(1);
             expect(oldDevice.node.disconnect).toHaveBeenCalled();
             expect(track.strip.deviceNodes).toEqual([newDevice.device]);
+            expect(onAsyncRuntimeGraphMutation).toHaveBeenCalledTimes(mutationsAfterCurrentPromotion);
             expect(readinessDiagnostics.snapshot().devices).toMatchObject([
                 { deviceId: 'wasm-1', status: 'content-pending' },
             ]);
