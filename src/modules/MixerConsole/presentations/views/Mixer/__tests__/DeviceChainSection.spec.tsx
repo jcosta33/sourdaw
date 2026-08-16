@@ -143,5 +143,14 @@ describe('DeviceChainSection', () => {
             payload: { trackId: 'track-7', deviceType: 'plug-1' },
         });
         expect(screen.queryByText('+ Delay Line')).not.toBeInTheDocument();
+
+        // The MIDI FX menu passes the factory NAME (its id is not a catalog
+        // device type), exactly as the raw call did.
+        fireEvent.click(screen.getByText('+ add'));
+        fireEvent.click(screen.getByText('♪ Chord Generator'));
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'addDevice',
+            payload: { trackId: 'track-7', deviceType: 'Chord Generator' },
+        });
     });
 });
