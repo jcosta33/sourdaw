@@ -142,8 +142,16 @@ function createMixerContext(): ProjectContext {
     };
 }
 
-function completePlan<TToolCall>(toolCalls: TToolCall[]) {
-    return { status: 'complete' as const, toolCalls };
+function completePlan<TToolCall extends { name: string; arguments: Record<string, unknown> }>(toolCalls: TToolCall[]) {
+    const workflowCalls = toolCalls.filter((call) => call.name === 'selectWorkflowCapability');
+    const commandCalls = toolCalls.filter((call) => call.name !== 'selectWorkflowCapability');
+    return {
+        status: 'complete' as const,
+        toolCalls:
+            commandCalls.length === 0
+                ? workflowCalls
+                : [...workflowCalls, { name: 'command.batch.propose', arguments: { commands: commandCalls } }],
+    };
 }
 
 function createGlueProviderContext(): ProjectContext {
@@ -1184,7 +1192,10 @@ describe('parsePromptToActions', () => {
     });
 
     it('rejects a provider tool that was not advertised before bridge grounding', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
+        vi.mocked(generateToolCalls).mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'saveProject', arguments: {} }],
+        });
         const result = await parsePromptToActions('save the project', baseContext);
 
         expect(result).toEqual({

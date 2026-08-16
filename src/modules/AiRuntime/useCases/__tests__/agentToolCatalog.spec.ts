@@ -106,6 +106,25 @@ describe('agent tool catalog', () => {
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
     });
 
+    it('rejects a direct primitive provider call before grounding when it did not enter through a catalog proposal', async () => {
+        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ id: 'direct-set-tempo', name: 'setTempo', arguments: { bpm: 128 } }],
+        });
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            rejections: [],
+        });
+
+        const result = await parsePromptToActions('set the tempo to 128', context, undefined, 'revision-2');
+
+        expect(result).toMatchObject({
+            actions: [],
+            rejectionReason: 'Provider planning rejected: Provider requested an unavailable application tool.',
+        });
+        expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
+    });
+
     it('rejects command discovery that attempts registry enumeration and accepts only named bounded pages', async () => {
         const requestTurn = vi
             .fn()

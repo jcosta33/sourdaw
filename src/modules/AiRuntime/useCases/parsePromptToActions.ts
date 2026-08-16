@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { markerStore } from '#/modules/Arrangement/stores';
-import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -291,7 +291,6 @@ export const parsePromptToActions = inject({ logger })(
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
                     RENDER_REQUEST_TOOL_NAME,
                     ANALYSIS_REQUEST_TOOL_NAME,
-                    ...getExecutableAppActionToolSchemas().map((schema) => schema.function.name),
                 ]);
                 const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.`;
                 const userMessage = buildLlmActionUserMessage({

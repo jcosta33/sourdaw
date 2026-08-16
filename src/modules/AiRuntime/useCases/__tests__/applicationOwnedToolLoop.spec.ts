@@ -99,7 +99,12 @@ describe('application-owned tool loop', () => {
             })
             .mockResolvedValueOnce({
                 status: 'complete',
-                toolCalls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
+                    },
+                ],
             });
         mockBridgeGroundedLlmToolCalls.mockImplementation(({ calls }: { calls: Array<{ name: string }> }) => {
             expect(calls).toEqual([{ name: 'setTempo', arguments: { bpm: 128 } }]);
