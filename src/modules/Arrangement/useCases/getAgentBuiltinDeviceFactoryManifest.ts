@@ -4,8 +4,10 @@ import {
     type DeviceParameter,
     type PluginDescriptor,
 } from '../models/DeviceParameter';
+import { getFactoryPresetContractsByDeviceType } from '../repositories/presets/getFactoryPresetContractsByDeviceType';
 
 import { getDeviceContractVersionForCommand } from './getDeviceContractVersionForCommand';
+import { getFactoryPresets } from './soundPresetLibrary';
 
 type AgentDeviceParameter = {
     id: string;
@@ -21,12 +23,17 @@ type AgentDeviceParameter = {
 type AgentBuiltinDeviceDescriptor = {
     type: string;
     descriptorVersion: string;
+    presetVersion: string;
     vendor: string;
     name: string;
     category: PluginDescriptor['category'];
     platform: NonNullable<PluginDescriptor['platform']>;
     availability: 'available' | 'unavailable-on-platform';
     tail: PluginDescriptor['tail'] | null;
+    presets: {
+        availability: 'available' | 'none';
+        identities: readonly { id: string; name: string }[];
+    };
     parameters: readonly AgentDeviceParameter[];
     metadata: { source: 'Arrangement descriptor'; confidence: 'declared' };
 };
@@ -61,20 +68,36 @@ function toManifestParameter(parameter: DeviceParameter): AgentDeviceParameter {
 
 /** Arrangement owns catalog descriptors, never live node topology or latency. */
 export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDeviceDescriptor[] {
+    const presetContracts = new Map(
+        getFactoryPresetContractsByDeviceType(
+            getFactoryPresets(),
+            BUILTIN_PLUGINS.map((descriptor) => descriptor.id)
+        ).map((contract) => [contract.type, contract])
+    );
+
     return BUILTIN_PLUGINS.map((descriptor) => {
         const descriptorVersion = getDeviceContractVersionForCommand(descriptor.id);
         if (!descriptorVersion) {
             throw new Error(`Built-in descriptor fingerprint unavailable: ${descriptor.id}`);
         }
+        const presetContract = presetContracts.get(descriptor.id);
+        if (!presetContract) {
+            throw new Error(`Built-in preset contract unavailable: ${descriptor.id}`);
+        }
         return {
             type: descriptor.id,
             descriptorVersion,
+            presetVersion: presetContract.presetVersion,
             vendor: descriptor.vendor,
             name: descriptor.name,
             category: descriptor.category,
             platform: descriptor.platform ?? 'both',
             availability: isDeviceSupportedOnCurrentPlatform(descriptor.id) ? 'available' : 'unavailable-on-platform',
             tail: descriptor.tail ?? null,
+            presets: {
+                availability: presetContract.availability,
+                identities: presetContract.identities,
+            },
             parameters: descriptor.parameters.map(toManifestParameter),
             metadata: { source: 'Arrangement descriptor', confidence: 'declared' },
         };

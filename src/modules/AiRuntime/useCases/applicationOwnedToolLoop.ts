@@ -468,12 +468,13 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
     const builtins = descriptors.map((descriptor) => {
         const runtime = runtimeByType.get(descriptor.type);
         const runtimeVersion = runtime?.runtimeVersion ?? 'runtime-v1:unavailable';
-        const compositeVersion = `builtin-factory-v1:${descriptor.descriptorVersion}:${runtimeVersion}`;
+        const compositeVersion = `builtin-factory-v2:${descriptor.descriptorVersion}:${descriptor.presetVersion}:${runtimeVersion}`;
         return {
             ...descriptor,
             version: compositeVersion,
             versions: {
                 descriptor: descriptor.descriptorVersion,
+                preset: descriptor.presetVersion,
                 runtime: runtimeVersion,
                 composite: compositeVersion,
             },

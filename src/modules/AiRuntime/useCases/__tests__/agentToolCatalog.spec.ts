@@ -138,8 +138,9 @@ describe('agent tool catalog', () => {
                                 type: 'builtin-sidechain-compressor',
                                 versions: {
                                     descriptor: expect.stringMatching(/^descriptor-v1:[0-9a-f]{8}$/),
+                                    preset: expect.stringMatching(/^preset-v1:[0-9a-f]{8}$/),
                                     runtime: expect.stringMatching(/^runtime-v1:[0-9a-f]{8}$/),
-                                    composite: expect.stringMatching(/^builtin-factory-v1:/),
+                                    composite: expect.stringMatching(/^builtin-factory-v2:/),
                                 },
                                 runtime: {
                                     live: {
