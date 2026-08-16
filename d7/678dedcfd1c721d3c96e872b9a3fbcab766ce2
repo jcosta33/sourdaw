@@ -1,0 +1,44 @@
+crates/daw-plugin-host/src/clap_wrapper.rs
+  h_1228e573df1f42 226-229,507-527,1367-1368
+src-tauri/src/commands/plugin_gui.rs
+  h_1228e573df1f42 11,51-92,99-101,149-153,160-181,234-244,250,339-355,499-528,533-554,561-564,566,575-579,583-587,590-591,603-606,610,690-755,758-900
+src-tauri/src/commands/plugins.rs
+  h_1228e573df1f42 9,150-178,257-263,293-297,301,312-325,395-396,427-435,620-629,679-696,701-713,733-757,761-776,778,847-867,873-877,879,921-927,1064-1076,1084-1085,1087-1095,1098-1100,1110-1130,1143,1188-1197,1202,1217-1218,1223-1238,1313-1318,1337-1338,1340-1344,1381-2017,2420-2456
+src-tauri/src/host/native_bridge.rs
+  h_1228e573df1f42 435-484
+src-tauri/src/lib.rs
+  h_1228e573df1f42 139-169
+src-tauri/src/state.rs
+  h_1228e573df1f42 2,63-84,91-98,115-121,126-129,173-225,257-265,308-465
+src/modules/SessionLauncher/useCases/loopStation/__tests__/stopSlot.spec.ts
+  h_1228e573df1f42 43,58-86,94-181
+src/modules/SessionLauncher/useCases/loopStation/stopSlot.ts
+  h_1228e573df1f42 3-12,20-28
+src/modules/SessionLauncher/useCases/loopStation/toggleRecord.ts
+  h_1228e573df1f42 48-55
+src/modules/Setlist/presentations/views/SetlistPanel.tsx
+  h_1228e573df1f42 254-260
+src/modules/Setlist/useCases/setlist/__tests__/addSetlistItem.spec.ts
+  h_1228e573df1f42 46,100
+src/modules/Setlist/useCases/setlist/__tests__/removeSetlistItem.spec.ts
+  h_1228e573df1f42 48
+src/modules/Setlist/useCases/setlist/__tests__/setlistUndo.spec.ts
+  h_1228e573df1f42 83,155
+src/modules/Setlist/useCases/setlist/__tests__/updateSetlistItem.spec.ts
+  h_1228e573df1f42 51-69
+src/modules/Setlist/useCases/setlist/addSetlistItem.ts
+  h_1228e573df1f42 28,31
+src/modules/Setlist/useCases/setlist/updateSetlistItem.ts
+  h_1228e573df1f42 16,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d7678dedcfd1c721d3c96e872b9a3fbcab766ce2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
