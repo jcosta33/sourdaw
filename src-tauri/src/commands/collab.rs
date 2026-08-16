@@ -48,7 +48,7 @@ pub fn collab_create_project(
     name: String,
     sample_rate: u32,
 ) -> Result<bool, String> {
-    let store = DocumentStore::create_project(&name, sample_rate);
+    let store = DocumentStore::create_project(&name, sample_rate)?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     *guard = Some(store);
     Ok(true)
@@ -186,5 +186,24 @@ pub fn collab_get_nearby_sessions(
     match guard.as_ref() {
         Some(discovery) => Ok(discovery.get_nearby_sessions()),
         None => Ok(vec![]),
+    }
+}
+
+/// Retire LAN discovery as the application exits.
+///
+/// `LanDiscovery` is held in managed state for the whole process lifetime, so
+/// without an explicit exit hook the mDNS daemon thread, the browse thread, and
+/// any live advertisement outlive the quit: peers keep seeing the session as
+/// joinable until the record's TTL expires, and joining it fails. Called from
+/// the `RunEvent::Exit` arm in `lib.rs`.
+pub fn shutdown_discovery(state: &CollabState) {
+    let Ok(mut guard) = state.discovery.lock() else {
+        return;
+    };
+    let Some(discovery) = guard.take() else {
+        return;
+    };
+    if let Err(error) = discovery.shutdown() {
+        eprintln!("[Collab] Failed to shut down LAN discovery: {error}");
     }
 }

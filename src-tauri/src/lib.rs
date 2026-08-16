@@ -126,6 +126,16 @@ pub fn run() {
             host::latency_watcher::start(app.handle().clone(), engine_plugins);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Quit is the only chance to retire the mDNS advertisement and the
+            // discovery threads. Skipping it leaves peers a joinable ghost
+            // session until the record's TTL expires.
+            if let tauri::RunEvent::Exit = event {
+                commands::collab::shutdown_discovery(
+                    &app_handle.state::<commands::collab::CollabState>(),
+                );
+            }
+        });
 }
