@@ -13,9 +13,10 @@ export function updateSetlistItem(id: string, updates: Partial<Omit<SetlistItem,
     }
 
     const previous: SetlistState = state;
+    const items = state.items.map((i) => (i.id === id ? { ...i, ...updates } : i));
     const next: SetlistState = {
         ...state,
-        items: state.items.map((i) => (i.id === id ? { ...i, ...updates } : i)),
+        items,
     };
     setlistStore.set(next);
 

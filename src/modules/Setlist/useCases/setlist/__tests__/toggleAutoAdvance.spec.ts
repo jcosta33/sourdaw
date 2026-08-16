@@ -19,7 +19,6 @@ function emptySetlist(overrides: Partial<SetlistState> = {}): SetlistState {
         currentIndex: 0,
         autoAdvance: false,
         countInBars: 1,
-        totalDuration: 0,
         ...overrides,
     };
 }

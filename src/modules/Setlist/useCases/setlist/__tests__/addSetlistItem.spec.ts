@@ -43,14 +43,13 @@ describe('addSetlistItem', () => {
         vi.clearAllMocks();
     });
 
-    it('appends item and updates totalDuration', () => {
+    it('appends the item to the set', () => {
         const state: SetlistState = {
             name: 'S',
             items: [],
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         };
         mockSetlistStore.value = state;
 
@@ -73,7 +72,6 @@ describe('addSetlistItem', () => {
         const expectedState: SetlistState = {
             ...state,
             items: [expectedItem],
-            totalDuration: 60,
         };
         expect(mockSetlistStore.set).toHaveBeenCalledWith(expectedState);
     });
@@ -93,14 +91,13 @@ describe('addSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         };
 
         addSetlistItem('Encore');
 
         expect(mockSetlistStore.set).toHaveBeenCalledWith(
             expect.objectContaining({
-                totalDuration: 180,
+                items: [expect.objectContaining({ estimatedDuration: 180 })],
             })
         );
     });
@@ -113,7 +110,6 @@ describe('addSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 6,
         };
 
         addSetlistItem('Wraps around', 1);

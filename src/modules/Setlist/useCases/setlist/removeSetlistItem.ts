@@ -34,7 +34,6 @@ export function removeSetlistItem(id: string): void {
         ...state,
         items,
         currentIndex,
-        totalDuration: state.totalDuration - removed.estimatedDuration,
     };
     setlistStore.set(next);
 

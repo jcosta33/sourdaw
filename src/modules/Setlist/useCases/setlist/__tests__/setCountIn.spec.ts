@@ -24,7 +24,6 @@ describe('setCountIn', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         };
         mockSetlistStore.value = state;
 

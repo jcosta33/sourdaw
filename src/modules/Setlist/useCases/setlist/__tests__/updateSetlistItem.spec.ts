@@ -41,12 +41,30 @@ describe('updateSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 1,
         };
         mockSetlistStore.value = state;
 
         updateSetlistItem('x', { name: 'New' });
         const next = mockSetlistStore.set.mock.calls[0]![0];
         expect(next.items[0]!.name).toBe('New');
+    });
+
+    it('applies an estimatedDuration edit to the item (F7)', () => {
+        // Durations live only on the items now: the stored set total was
+        // write-only and went stale on edits, so it was removed rather than
+        // maintained. Anything needing a set total sums the items at read time.
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('x'), item('y')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+        };
+
+        updateSetlistItem('x', { estimatedDuration: 241 });
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.items[0]!.estimatedDuration).toBe(241);
+        expect(next.items[1]!.estimatedDuration).toBe(1);
     });
 });

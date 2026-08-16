@@ -88,7 +88,6 @@ function seed(overrides: Partial<SetlistState> = {}): void {
         currentIndex: 0,
         autoAdvance: false,
         countInBars: 1,
-        totalDuration: 0,
         ...overrides,
     });
 }

@@ -44,7 +44,6 @@ describe('nextItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 1,
         };
 
         nextItem();
