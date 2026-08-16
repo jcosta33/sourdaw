@@ -1,0 +1,48 @@
+scripts/health-gates-web.sh
+  s_0a3429e31e555d::t_d3f506b54a2c92 16
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_d30a54e4edf231 261-265,268-278,280-285,292-299,301-302,304-312,319,325
+  s_0a3429e31e555d::t_51fc623f46d154 89,96-114,216-218,224-226,286-291
+  s_0a3429e31e555d::t_07232ba8087bc0 197,205-206
+  s_0a3429e31e555d::t_659e6d4f88906a 4,37-39,44-46
+  s_0a3429e31e555d::t_9190cb3c1aa158 50,78-88,90-92,279,300
+  s_0a3429e31e555d::t_0d457f75f2e0c8 94-95,118-122
+  s_0a3429e31e555d::t_03ea1226e8870d 138-139,177-196,198-204,207-212,215,223,230-256
+  s_0a3429e31e555d::t_5707b0a765a03c 257
+scripts/test-health-gate-scripts.sh
+  s_0a3429e31e555d::t_d3f506b54a2c92 33-35,105,133-153,174,199,297
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_07232ba8087bc0 81-82,85-86,88-90
+  s_0a3429e31e555d::t_4f1c899515c218 112,121-127,132,136
+  s_0a3429e31e555d::t_dc7f9acf05cb75 24,83-84,87
+  s_0a3429e31e555d::t_bf0529b73b257e 34-36,43-45,63,67-70,72,75-77,91-99,110-111,113,119-120,128-131,133-135
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_7729b4058b0a97 7,10-67,83-94,105-155,379-383,482,497-507,509-522,571-575,577,582,609-673,906-908,913-915,920-922,927-929,934-936
+  s_0a3429e31e555d::t_6f27ae3a2a4cfa 578,674-905,909-912,916-919,923-926,930-933,937
+  s_0a3429e31e555d::t_5f6220f21e5199 583-608
+  s_ab5443e65c7fba::t_4d5a982143a6e5 576,579-581
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6cf1c2a92faec4e0a0c74a83514912e432d8c637",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
