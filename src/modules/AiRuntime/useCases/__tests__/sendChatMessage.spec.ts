@@ -977,6 +977,15 @@ describe('sendChatMessage injectables', () => {
         expect(batchOptions.shouldExecute()).toBe(false);
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: mute the vocals', ['muteTrack']);
+        const committedRun = getAgentRunControlProjections().find((projection) => projection.phase === 'completed');
+        expect(getAgentRun(committedRun!.runId)?.saga.steps).toEqual([
+            expect.objectContaining({
+                stepId: expect.stringMatching(/^command:/),
+                owner: 'command',
+                state: 'committed',
+                receiptIdentity: expect.any(String),
+            }),
+        ]);
 
         mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
             mocks.projectRevision.value = 'revision-2';
@@ -1129,7 +1138,13 @@ describe('sendChatMessage injectables', () => {
         const [projection] = getAgentRunControlProjections();
         expect(projection?.phase).toBe('failed');
         expect(projection?.errors).toEqual(
-            expect.arrayContaining([expect.objectContaining({ code: 'agent-budget-hard-limit' })])
+            expect.arrayContaining([
+                expect.objectContaining({
+                    code: 'agent.budget',
+                    category: 'budget',
+                    message: 'This run has reached its available budget.',
+                }),
+            ])
         );
     });
 
@@ -2169,7 +2184,19 @@ describe('sendChatMessage injectables', () => {
         });
         expect(getAgentRun(proposal.runId)).toMatchObject({
             phase: 'failed',
-            errors: [{ code: 'confirmed-command-rejected', message: later_failure.message }],
+            errors: [
+                expect.objectContaining({
+                    code: 'agent.project',
+                    category: 'project',
+                    message: 'The project could not accept this change.',
+                    related: expect.objectContaining({
+                        targetIds: expect.arrayContaining(['track-1', 'clip-1']),
+                        commandIds: [expect.any(String), expect.any(String)],
+                        workIds: [expect.any(String)],
+                        receiptIdentities: [],
+                    }),
+                }),
+            ],
             committedWork: [],
             workLeases: [
                 { workId: 'provider-planning', terminalState: 'completed' },
@@ -2210,8 +2237,9 @@ describe('sendChatMessage injectables', () => {
             phase: 'failed',
             errors: [
                 expect.objectContaining({
-                    code: 'confirmation-not-retained',
-                    retriable: true,
+                    code: 'agent.budget',
+                    category: 'budget',
+                    retriable: false,
                     workId: expect.any(String),
                 }),
             ],
@@ -2313,6 +2341,16 @@ describe('sendChatMessage injectables', () => {
                 { workId: 'provider-planning', terminalState: 'completed' },
                 { ownerKind: 'command', terminalState: 'completed' },
             ],
+            saga: {
+                steps: [
+                    expect.objectContaining({
+                        stepId: expect.stringMatching(/^command:/),
+                        owner: 'command',
+                        state: 'committed',
+                        receiptIdentity: expect.stringContaining(proposal.runId),
+                    }),
+                ],
+            },
         });
 
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
@@ -2330,7 +2368,7 @@ describe('sendChatMessage injectables', () => {
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
         const combinedFailureUpdate = mocks.updateChatMessage.mock.lastCall;
         expect(combinedFailureUpdate?.[0]).toBe(assistant_message?.id);
-        expect(combinedFailureUpdate?.[1].error).toBe(warning);
+        expect(combinedFailureUpdate?.[1].error).toContain(warning);
         expect(combinedFailureUpdate?.[1].content).toMatch(/committed with a follow-up warning.*do not retry/is);
     });
 

@@ -12,16 +12,25 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
     const runs = state.runs.map((run): AgentRun => {
         const hasUnsettledLease = run.workLeases.some((lease) => lease.terminalState === null);
         const hasLiveTemporaryAsset = run.temporaryAssets.some((asset) => asset.status === 'live');
+        const hasUnsettledSaga = run.saga.steps.some(
+            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+        );
         if (
-            TERMINAL_PHASES.has(run.phase) ||
-            (run.phase === 'paused' && !hasUnsettledLease && !hasLiveTemporaryAsset)
+            (TERMINAL_PHASES.has(run.phase) && !hasUnsettledSaga) ||
+            (run.phase === 'paused' && !hasUnsettledLease && !hasLiveTemporaryAsset && !hasUnsettledSaga)
         ) {
             return run;
         }
         recoveredRunIds.push(run.runId);
-        const orphanedWorkIds = run.workLeases
-            .filter((lease) => lease.terminalState === null)
-            .map((lease) => lease.workId);
+        const orphanedWorkIds = [
+            ...run.workLeases.filter((lease) => lease.terminalState === null).map((lease) => lease.workId),
+            ...run.saga.steps
+                .filter(
+                    (step) =>
+                        step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+                )
+                .map((step) => step.workId),
+        ];
         return {
             ...run,
             phase: 'paused',
@@ -34,7 +43,7 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             manualResume: {
                 required: true,
                 reason: 'The application restarted before this run finished. Its exact continuation is unavailable; start a new run from the retained request and receipts.',
-                workIds: orphanedWorkIds,
+                workIds: [...new Set(orphanedWorkIds)],
                 requiredAt: recoveredAt,
             },
             errors: [
@@ -43,7 +52,13 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
                     category: 'internal',
                     source: 'restart-recovery',
                     occurredAt: recoveredAt,
-                    related: { workIds: orphanedWorkIds },
+                    related: {
+                        workIds: [...new Set(orphanedWorkIds)],
+                        receiptIdentities: run.saga.steps
+                            .filter((step) => step.receiptIdentity !== null && step.state !== 'committed')
+                            .map((step) => step.receiptIdentity)
+                            .filter((receiptIdentity): receiptIdentity is string => receiptIdentity !== null),
+                    },
                     retry: orphanedWorkIds.every((workId) =>
                         run.retriableWork.some((work) => work.workId === workId && work.idempotent && work.retriable)
                     )

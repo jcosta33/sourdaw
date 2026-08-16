@@ -13,7 +13,12 @@ import {
 import { captureProjectRevision, isDrumPreviewBranchPlanApplied } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
-import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
+import {
+    type AgentRunErrorCategory,
+    type AgentRunErrorRemediation,
+    type AgentRunWorkLease,
+    type AgentRunWorkTerminalState,
+} from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
 import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
@@ -36,11 +41,11 @@ import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
-import { createAgentSagaStep } from './createAgentSagaStep';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
 import { notifyAiChange } from './notifyAiChange';
+import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ConfirmPendingChatActionsInput = {
@@ -74,6 +79,10 @@ const AGENT_RUN_PERSISTENCE_WARNING =
 const AGENT_RUN_STALE_COMPLETION_WARNING =
     'Agent work completed after its run lease was cancelled or replaced. The durable receipt was retained without reopening the terminal run.';
 
+function getVerifiedReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
+    return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
+}
+
 function updateTrackedAgentRun(confirmation: PendingAppActionConfirmation, update: () => void): string | null {
     if (!agentRunLifecycle.get(confirmation.runId)) {
         return null;
@@ -89,17 +98,45 @@ function updateTrackedAgentRun(confirmation: PendingAppActionConfirmation, updat
 
 function recordTrackedAgentRunFailure(
     confirmation: PendingAppActionConfirmation,
-    input: { code: string; message: string; retriable: boolean; workId?: string }
+    input: {
+        category: AgentRunErrorCategory;
+        retriable: boolean;
+        workId?: string;
+        receiptIdentity?: string;
+        compensation?: AgentRunErrorRemediation['compensation'];
+        knownDomain?: boolean;
+    }
 ): void {
+    const parsedBatch = confirmation.approvalSnapshot.commandBatch
+        ? parseVersionedCommandBatchEnvelope(
+              confirmation.approvalSnapshot.commandBatch.serialized,
+              confirmation.approvalSnapshot.commandBatch.authority
+          )
+        : null;
+    const commandIds =
+        parsedBatch?.status === 'valid' ? parsedBatch.envelope.commands.map((command) => command.commandId) : [];
+    const batchWorkId = parsedBatch?.status === 'valid' ? parsedBatch.envelope.batchId : undefined;
+    const workIds: string[] = [];
+    if (input.workId) {
+        workIds.push(input.workId);
+    } else if (batchWorkId) {
+        workIds.push(batchWorkId);
+    }
     updateTrackedAgentRun(confirmation, () => {
         agentRunLifecycle.recordError({
             runId: confirmation.runId,
             error: normalizeAgentFailure({
-                category: input.code.includes('ambiguous') ? 'conflict' : 'project',
+                category: input.category,
                 source: 'command-execution',
-                related: { workIds: input.workId ? [input.workId] : [] },
+                related: {
+                    targetIds: confirmation.affectedIds,
+                    commandIds,
+                    workIds,
+                    receiptIdentities: input.receiptIdentity ? [input.receiptIdentity] : [],
+                },
                 retry: input.retriable ? 'owner-proven-idempotent' : 'never',
-                knownDomain: true,
+                ...(input.compensation ? { compensation: input.compensation } : {}),
+                knownDomain: input.knownDomain ?? true,
             }),
             terminal: true,
         });
@@ -110,86 +147,26 @@ function recordTrackedAgentRunReceipt(
     confirmation: PendingAppActionConfirmation,
     receipt: CommandVerifiedBatchReceipt,
     input?: { revertGroupId?: string; completesRun?: boolean }
-): string | null {
-    return updateTrackedAgentRun(confirmation, () => {
-        agentRunLifecycle.recordCommittedWork({
+): { warning: string | null; effectsPending: boolean } {
+    let effectsPending = false;
+    const warning = updateTrackedAgentRun(confirmation, () => {
+        const recorded = recordAgentRunReceiptSaga({
             runId: confirmation.runId,
-            workId: receipt.batchId,
-            receiptIdentity: `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`,
+            receipt,
+            actions: confirmation.actions,
             ...(input?.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             ...(input?.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
             committedRevision: captureProjectRevision(),
-            renderJobIds: receipt.links.render.map((link) => link.jobId),
-            analysisIds: receipt.links.analysis.map((link) => link.analysisId),
         });
-        const receiptIdentity = `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
-        agentRunLifecycle.recordSagaStep({
-            runId: confirmation.runId,
-            step: createAgentSagaStep({
-                stepId: `command:${receipt.batchId}`,
-                order: 0,
-                owner: 'command',
-                workId: receipt.batchId,
-                receiptIdentity,
-                state: 'committed',
-                relatedArtifactIds: [],
-                updatedAt: Date.now(),
-                compensationAvailable: Boolean(input?.revertGroupId),
-            }),
-        });
-        for (const [index, link] of receipt.links.render.entries()) {
-            agentRunLifecycle.recordSagaStep({
-                runId: confirmation.runId,
-                step: createAgentSagaStep({
-                    stepId: `render:${link.jobId}`,
-                    order: index + 1,
-                    owner: 'render',
-                    workId: link.jobId,
-                    receiptIdentity,
-                    state: 'external-pending',
-                    relatedArtifactIds: [link.jobId],
-                    updatedAt: Date.now(),
-                    compensationAvailable: false,
-                }),
-            });
-        }
-        for (const [index, link] of receipt.links.analysis.entries()) {
-            agentRunLifecycle.recordSagaStep({
-                runId: confirmation.runId,
-                step: createAgentSagaStep({
-                    stepId: `analysis:${link.analysisId}`,
-                    order: receipt.links.render.length + index + 1,
-                    owner: 'analysis',
-                    workId: link.analysisId,
-                    receiptIdentity,
-                    state: 'external-pending',
-                    relatedArtifactIds: [link.analysisId],
-                    updatedAt: Date.now(),
-                    compensationAvailable: false,
-                }),
-            });
-        }
+        effectsPending = recorded.effectsPending;
         const importedStems = confirmation.actions.flatMap((action) =>
             action.type === 'importStemSet' ? action.payload.stems : []
         );
         if (importedStems.length > 0) {
-            agentRunLifecycle.recordSagaStep({
-                runId: confirmation.runId,
-                step: createAgentSagaStep({
-                    stepId: `import:${receipt.batchId}`,
-                    order: receipt.links.render.length + receipt.links.analysis.length + 1,
-                    owner: 'import',
-                    workId: receipt.batchId,
-                    receiptIdentity,
-                    state: 'committed',
-                    relatedArtifactIds: importedStems.map((stem) => stem.stemId),
-                    updatedAt: Date.now(),
-                    compensationAvailable: false,
-                }),
-            });
             preparedStemImportResources.release({ runId: confirmation.runId, stems: importedStems });
         }
     });
+    return { warning, effectsPending };
 }
 
 type TrackedAgentRunWorkLeaseSettlement = {
@@ -233,7 +210,7 @@ function settleVerifiedBatchReplay(
             ...(replay.status === 'committed' && confirmation.groupId ? { revertGroupId: confirmation.groupId } : {}),
             completesRun: leaseSettlement.accepted,
         });
-        const runPersistenceWarning = receiptPersistenceWarning ?? leaseSettlement.warning;
+        const runPersistenceWarning = receiptPersistenceWarning.warning ?? leaseSettlement.warning;
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
@@ -250,7 +227,9 @@ function settleVerifiedBatchReplay(
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
             error: [replay.warning, runPersistenceWarning].filter(Boolean).join(' ') || undefined,
-            content,
+            content: receiptPersistenceWarning.effectsPending
+                ? `${content} External render or analysis effects remain pending; this run is not complete.`
+                : content,
         });
         return { status: 'executed' };
     }
@@ -297,10 +276,11 @@ function settleVerifiedBatchReplay(
         error: replay.reason,
     });
     recordTrackedAgentRunFailure(confirmation, {
-        code: `verified-replay-${replay.status}`,
-        message: replay.reason,
+        category: replay.status === 'ambiguous' ? 'conflict' : 'project',
         retriable: false,
         workId: receipt.batchId,
+        receiptIdentity: getVerifiedReceiptIdentity(receipt),
+        ...(replay.status === 'ambiguous' ? { compensation: 'manual-repair' as const } : {}),
     });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'failed',
@@ -679,19 +659,19 @@ export async function confirmPendingChatActions(
 
     const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
     if (approvalPreflightFailure) {
-        return failApprovalPreflight(confirmation, approvalPreflightFailure);
+        return failApprovalPreflight(confirmation, approvalPreflightFailure, 'authorization');
     }
 
     const commandBatch = confirmation.approvalSnapshot.commandBatch;
     if (!commandBatch) {
-        return failApprovalPreflight(confirmation, 'The confirmation has no approved command batch.');
+        return failApprovalPreflight(confirmation, 'The confirmation has no approved command batch.', 'authorization');
     }
     let trackedWorkLease: AgentRunWorkLease | null = null;
     let commandBudget: { attemptId: string; estimates: AgentWorkBudgetEstimate[] } | null = null;
     if (agentRunLifecycle.get(confirmation.runId)) {
         const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
         if (parsedCommandBatch.status === 'invalid') {
-            return failApprovalPreflight(confirmation, parsedCommandBatch.reason);
+            return failApprovalPreflight(confirmation, parsedCommandBatch.reason, 'schema');
         }
         const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
         const budgetReservation = hasPriorVerifiedBatchReceipt
@@ -704,7 +684,8 @@ export async function confirmPendingChatActions(
         if (budgetReservation?.status === 'hard-limit-reached') {
             return failApprovalPreflight(
                 confirmation,
-                `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`
+                `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`,
+                'budget'
             );
         }
         const receiptIdentity = `command:${confirmation.runId}:${parsedCommandBatch.envelope.batchId}`;
@@ -721,7 +702,8 @@ export async function confirmPendingChatActions(
         if (leaseResult.status !== 'claimed') {
             return failApprovalPreflight(
                 confirmation,
-                `The confirmed command work could not be claimed: ${leaseResult.status}`
+                `The confirmed command work could not be claimed: ${leaseResult.status}`,
+                'conflict'
             );
         }
         trackedWorkLease = leaseResult.lease;
@@ -826,9 +808,10 @@ export async function confirmPendingChatActions(
         }
         if (canUpdateTrackedRun) {
             recordTrackedAgentRunFailure(confirmation, {
-                code: 'confirmed-command-failed',
-                message: reason,
+                category: error instanceof AiProposalInvalidatedError ? 'conflict' : 'internal',
                 retriable: false,
+                ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
+                knownDomain: error instanceof AiProposalInvalidatedError,
             });
         }
         updatePendingActionConfirmationStatus({
@@ -908,7 +891,7 @@ export async function confirmPendingChatActions(
             completesRun: trackedLeaseSettlement.accepted,
         });
         const runPersistenceWarning = [
-            receiptPersistenceWarning,
+            receiptPersistenceWarning.warning,
             trackedLeaseSettlement.warning,
             budgetPersistenceWarning,
         ]
@@ -983,6 +966,9 @@ export async function confirmPendingChatActions(
                 });
             }
             let content = `Executed after confirmation:\n\n${executionReceipt}`;
+            if (receiptPersistenceWarning.effectsPending) {
+                content = `${content}\n\nExternal render or analysis effects remain pending; this run is not complete.`;
+            }
             if (batchResult.status === 'committed-with-warning') {
                 content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
                 if (incompleteSectionRenders) {
@@ -1052,9 +1038,10 @@ export async function confirmPendingChatActions(
 
     if (batchResult.status === 'ambiguous') {
         recordTrackedAgentRunFailure(confirmation, {
-            code: 'ambiguous-command-outcome',
-            message: batchResult.reason,
+            category: 'conflict',
             retriable: false,
+            ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
+            compensation: 'manual-repair',
         });
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({
@@ -1075,10 +1062,16 @@ export async function confirmPendingChatActions(
         status: 'failed',
         error: batchResult.reason,
     });
+    let failureCategory: AgentRunErrorCategory = 'project';
+    if (batchResult.status === 'conflicted') {
+        failureCategory = 'conflict';
+    } else if (batchResult.status === 'rejected') {
+        failureCategory = 'authorization';
+    }
     recordTrackedAgentRunFailure(confirmation, {
-        code: 'confirmed-command-rejected',
-        message: batchResult.reason,
+        category: failureCategory,
         retriable: false,
+        ...(trackedWorkLease ? { workId: trackedWorkLease.workId } : {}),
     });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'failed',
@@ -1091,11 +1084,11 @@ export async function confirmPendingChatActions(
 
 function failApprovalPreflight(
     confirmation: PendingAppActionConfirmation,
-    reason: string
+    reason: string,
+    category: AgentRunErrorCategory
 ): ConfirmPendingChatActionsResult {
     recordTrackedAgentRunFailure(confirmation, {
-        code: 'approval-preflight-failed',
-        message: reason,
+        category,
         retriable: true,
     });
     updatePendingActionConfirmationStatus({

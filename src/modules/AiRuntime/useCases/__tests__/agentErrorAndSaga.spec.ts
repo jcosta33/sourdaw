@@ -168,4 +168,42 @@ describe('agent error and saga contract', () => {
         });
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('"saga"');
     });
+
+    it('does not complete or skip recovery when a receipt still has external saga work', () => {
+        agentRunLifecycle.create({
+            runId: 'run-terminal-pending-saga',
+            request: 'Render the chorus.',
+            mode: 'macro',
+            createdRevision: 'heads-a',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordSagaStep({
+            runId: 'run-terminal-pending-saga',
+            step: createAgentSagaStep({
+                stepId: 'render:pending',
+                order: 1,
+                owner: 'render',
+                workId: 'render-pending',
+                receiptIdentity: 'receipt-pending',
+                state: 'external-pending',
+                relatedArtifactIds: ['render-pending'],
+                updatedAt: 2,
+                compensationAvailable: false,
+            }),
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: 'run-terminal-pending-saga',
+            workId: 'batch-pending',
+            receiptIdentity: 'receipt-pending',
+            committedAt: 3,
+        });
+
+        expect(agentRunLifecycle.get('run-terminal-pending-saga')?.phase).not.toBe('completed');
+        expect(recoverInterruptedAgentRuns({ recoveredAt: 4 })).toEqual({
+            recoveredRunIds: ['run-terminal-pending-saga'],
+        });
+        expect(getAgentRunSagaProjection('run-terminal-pending-saga')).toMatchObject([
+            { stepId: 'render:pending', state: 'manual-repair' },
+        ]);
+    });
 });

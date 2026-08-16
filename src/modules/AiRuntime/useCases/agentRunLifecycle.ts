@@ -577,7 +577,14 @@ function recordAgentRunSagaStep(input: { runId: string; step: AgentRunSagaStep; 
             ...run.saga.steps.filter((step) => step.stepId !== input.step.stepId),
             structuredClone(input.step),
         ].sort((left, right) => left.order - right.order);
-        return { ...run, saga: { schemaVersion: 1, steps } };
+        const hasUnsettledExternalSagaStep = steps.some(
+            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+        );
+        return {
+            ...run,
+            phase: hasUnsettledExternalSagaStep && run.committedWork.length > 0 ? 'partially-completed' : run.phase,
+            saga: { schemaVersion: 1, steps },
+        };
     });
 }
 
@@ -639,7 +646,13 @@ function recordAgentRunCommittedWork(input: {
         const receipts = [...run.receipts.filter((receipt) => receipt.workId !== input.workId), committedWork];
         const renderJobIds = input.renderJobIds ?? [];
         const analysisIds = input.analysisIds ?? [];
+        const hasUnsettledExternalSagaStep = run.saga.steps.some(
+            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+        );
         const phase = (() => {
+            if (hasUnsettledExternalSagaStep) {
+                return 'partially-completed' as const;
+            }
             if (input.completesRun !== false) {
                 return 'completed' as const;
             }
