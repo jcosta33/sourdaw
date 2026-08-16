@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo, type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
@@ -13,31 +13,11 @@ import '../store';
 
 import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
+import { listTauriMidiInputs } from './listTauriMidiInputs';
+import { resolveTauriMidiPort } from './resolveTauriMidiPort';
 import { selectMidiInputTauri } from './selectMidiInputTauri';
 
-type TauriMidiDevice = { index: number; name: string };
 type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
-
-function isTauriMidiDevice(value: unknown): value is TauriMidiDevice {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-    if (!('index' in value) || !('name' in value)) {
-        return false;
-    }
-
-    return Number.isInteger(value.index) && typeof value.name === 'string';
-}
-
-/**
- * The device list arrives over IPC, so it is `unknown` until proven otherwise.
- * A bare cast let a malformed payload through as `id: "undefined"`, which then
- * reached `open_midi_input` as `NaN`. Same guard shape as the message-event
- * validation one file over.
- */
-function isTauriMidiDeviceList(value: unknown): value is TauriMidiDevice[] {
-    return Array.isArray(value) && value.every(isTauriMidiDevice);
-}
 
 function enumerateInputs(): MidiInputInfo[] {
     const access = getMidiAccess();
@@ -127,17 +107,21 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 // Always (re-)attach: covers first load AND re-init after page
                 // navigation where selectedInputId may already be set but
                 // the onmidimessage handler was never wired to this access object.
-                const targetId = state.selectedInputId ?? inputs[0]!.id;
+                //
+                // The saved preference outranks live session state here: the
+                // live id can be a stand-in from an earlier init that fell back
+                // while the preferred device was unplugged, and resolving from
+                // it would adopt the stand-in as the target on every init after
+                // the first.
+                const targetId = readPersistedInputId() ?? state.selectedInputId ?? inputs[0]!.id;
                 const input = access.inputs.get(targetId) ?? access.inputs.get(inputs[0]!.id);
                 if (input) {
                     attachInput({ input, onMidiMessage });
-                    // `state.selectedInputId` is seeded from the saved
-                    // preference, so a startup with that device unplugged
-                    // resolves it, misses, and falls back. Persisting the
-                    // stand-in rebinds the controller for good — and the replug
-                    // restore in `onStateChange` cannot undo it, because it only
-                    // fires while the saved id differs from the selected one.
-                    setState({ selectedInputId: input.id }, { persistSelection: input.id === targetId });
+                    // Never persist from init. Only an explicit selection is a
+                    // user choice; whatever init resolves — the saved device or
+                    // a session stand-in for it — is already remembered or must
+                    // not be.
+                    setState({ selectedInputId: input.id }, { persistSelection: false });
                 }
             }
 
@@ -150,27 +134,41 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
     if (isTauri()) {
         try {
             setTauriMode(true);
-            const devices = await tauriInvoke('list_midi_inputs');
-            if (!isTauriMidiDeviceList(devices)) {
-                throw new TypeError('list_midi_inputs returned an invalid device list');
-            }
-            const inputs: MidiInputInfo[] = devices.map((data) => ({
-                id: String(data.index),
-                name: data.name,
+            const ports = await listTauriMidiInputs();
+            const inputs: MidiInputInfo[] = ports.map((port) => ({
+                id: port.id,
+                name: port.name,
                 manufacturer: 'System',
             }));
             setState({ inputs, isSupported: true });
 
-            if (inputs.length > 0) {
+            if (ports.length > 0) {
                 // Always (re-)open: covers first load AND re-init after app
                 // restart where selectedInputId is persisted in localStorage but
                 // the Tauri IPC port has NOT been opened yet for this session.
-                const targetId = state.selectedInputId ?? inputs[0]!.id;
-                const targetInput = inputs.find((index) => index.id === targetId) ?? inputs[0]!;
-                await selectMidiInputTauri({ portIndex: Number(targetInput.id), onMidiMessage });
-                // Same rule as the Web MIDI path: a stand-in for an absent
-                // device is this session's choice, never the saved one.
-                setState({ selectedInputId: targetInput.id }, { persistSelection: targetInput.id === targetId });
+                //
+                // Saved preference first, for the same reason as the Web MIDI
+                // branch: live state can hold an earlier init's stand-in.
+                const targetId = readPersistedInputId() ?? state.selectedInputId ?? ports[0]!.id;
+                // A saved id matching no present port is absent, whether the
+                // device is unplugged or the id predates stable identity and is
+                // still a bare enumeration index. Either way it resolves to
+                // nothing rather than to whoever holds that slot now.
+                const targetPort = resolveTauriMidiPort(ports, targetId) ?? ports[0]!;
+                try {
+                    await selectMidiInputTauri({
+                        portIndex: targetPort.portIndex,
+                        portName: targetPort.name,
+                        onMidiMessage,
+                    });
+                    // Never persist from init — same rule as the Web MIDI path.
+                    setState({ selectedInputId: targetPort.id }, { persistSelection: false });
+                } catch (error) {
+                    // The enumeration succeeded and is already published; one
+                    // port that refused to open must not take the whole MIDI
+                    // surface down with it.
+                    logger.warn('[MIDI] Failed to open startup MIDI input:', error);
+                }
             }
 
             return true;

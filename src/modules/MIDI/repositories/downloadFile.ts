@@ -1,4 +1,14 @@
 /**
+ * How long the object URL stays resolvable after the click.
+ *
+ * A next-tick revoke only guarantees the click handler has returned; it does
+ * not guarantee the browser has started reading the blob, and a large export
+ * revoked mid-read saves nothing. Matches the project-export anchor path
+ * (`Project/repositories/project/downloadProjectFile.ts`).
+ */
+const OBJECT_URL_LIFETIME_MS = 1000;
+
+/**
  * Repository: Browser file download helper.
  * Wraps Blob creation, URL.createObjectURL, and anchor-based downloads.
  */
@@ -18,5 +28,5 @@ export function downloadBlob(data: BlobPart, filename: string, mimeType: string)
     setTimeout(() => {
         alpha.remove();
         URL.revokeObjectURL(url);
-    }, 0);
+    }, OBJECT_URL_LIFETIME_MS);
 }
