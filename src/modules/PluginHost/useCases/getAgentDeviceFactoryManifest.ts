@@ -1,5 +1,5 @@
-import { defaultPluginScanState, pluginScanStore } from '../stores/pluginScanStore';
 import { type ScannedPluginParameter } from '../models/ScannedPlugin';
+import { defaultPluginScanState, pluginScanStore } from '../stores/pluginScanStore';
 
 const EXTERNAL_FACTORY_VERSION_PREFIX = 'external-factory-v1';
 const MAX_PUBLIC_SCAN_TEXT_LENGTH = 128;
@@ -113,6 +113,24 @@ function unavailableParameterContract(reason: string): ParameterContract {
     };
 }
 
+function isScannedPluginParameter(value: unknown): value is ScannedPluginParameter {
+    if (value === null || typeof value !== 'object') {
+        return false;
+    }
+    const parameter = value as Record<string, unknown>;
+    return (
+        typeof parameter.id === 'number' &&
+        typeof parameter.name === 'string' &&
+        typeof parameter.min_value === 'number' &&
+        typeof parameter.max_value === 'number' &&
+        typeof parameter.default_value === 'number' &&
+        typeof parameter.is_automatable === 'boolean' &&
+        typeof parameter.is_modulatable === 'boolean' &&
+        typeof parameter.is_stepped === 'boolean' &&
+        typeof parameter.is_enum === 'boolean'
+    );
+}
+
 function parameterContract(plugin: ScannedFactory): ParameterContract {
     if (!Array.isArray(plugin.parameters)) {
         return unavailableParameterContract(
@@ -129,7 +147,11 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
     }
     const ids = new Set<number>();
     const parameters: PublicParameter[] = [];
-    for (const parameter of plugin.parameters) {
+    for (const untrustedParameter of plugin.parameters) {
+        if (!isScannedPluginParameter(untrustedParameter)) {
+            return unavailableParameterContract(PARAMETER_SCAN_FAILED_REASON);
+        }
+        const parameter = untrustedParameter;
         const name = parameter.name.normalize('NFC');
         if (
             !Number.isSafeInteger(parameter.id) ||
@@ -146,11 +168,7 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
             !Number.isFinite(parameter.default_value) ||
             !Number.isFinite(parameter.max_value) ||
             parameter.min_value > parameter.default_value ||
-            parameter.default_value > parameter.max_value ||
-            typeof parameter.is_automatable !== 'boolean' ||
-            typeof parameter.is_modulatable !== 'boolean' ||
-            typeof parameter.is_stepped !== 'boolean' ||
-            typeof parameter.is_enum !== 'boolean'
+            parameter.default_value > parameter.max_value
         ) {
             return unavailableParameterContract(PARAMETER_SCAN_FAILED_REASON);
         }
@@ -259,6 +277,23 @@ export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
                               source: PARAMETER_DESCRIPTOR_SOURCE,
                               reason: parameterMetadata.reason,
                           };
+                const configuration = (() => {
+                    if (conflict) {
+                        return {
+                            availability: 'unavailable' as const,
+                            reason: 'Conflicting scan records for one canonical factory identity.',
+                            source: 'plugin-scan' as const,
+                        };
+                    }
+                    if (parameterMetadata.availability === 'unavailable') {
+                        return {
+                            availability: 'unavailable' as const,
+                            reason: parameterMetadata.reason,
+                            source: 'plugin-scan' as const,
+                        };
+                    }
+                    return { availability: 'available' as const, source: 'plugin-scan' as const };
+                })();
                 return {
                     type,
                     version,
@@ -285,19 +320,7 @@ export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
                             ? parameterMetadata.parameters.length
                             : publicFactory.parameterCount,
                     parameterDescriptors,
-                    configuration: {
-                        availability: (conflict || parameterMetadata.availability === 'unavailable'
-                            ? 'unavailable'
-                            : 'available') as 'available' | 'unavailable',
-                        ...(conflict || parameterMetadata.availability === 'unavailable'
-                            ? {
-                                  reason: conflict
-                                      ? 'Conflicting scan records for one canonical factory identity.'
-                                      : parameterMetadata.reason,
-                              }
-                            : {}),
-                        source: 'plugin-scan' as const,
-                    },
+                    configuration,
                     metadata: {
                         source: 'plugin-scan',
                         confidence: parameterMetadata.availability === 'available' ? 'declared' : 'inferred',

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
 
-import { defaultPluginScanState, pluginScanStore } from '../../stores/pluginScanStore';
 import { type ScannedPlugin } from '../../models/ScannedPlugin';
+import { defaultPluginScanState, pluginScanStore } from '../../stores/pluginScanStore';
 import { getAgentDeviceFactoryManifest } from '../getAgentDeviceFactoryManifest';
 
 describe('agent device factory manifest', () => {
@@ -209,6 +209,40 @@ describe('agent device factory manifest', () => {
         };
         pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [scannedPlugin] });
 
+        expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toEqual([
+            expect.objectContaining({
+                parameters: [],
+                parameterDescriptors: expect.objectContaining({ availability: 'unavailable' }),
+                configuration: expect.objectContaining({ availability: 'unavailable' }),
+            }),
+        ]);
+    });
+
+    it.each([
+        ['a null parameter', null],
+        ['a primitive parameter', 'not-a-parameter'],
+        ['an object missing a name', {}],
+        ['an object with a null name', { name: null }],
+        ['an object with a non-string name', { name: 7 }],
+    ])('fails closed without throwing for %s', (_label, malformedParameter) => {
+        const scannedPlugin = {
+            id: 'scan-id',
+            clap_id: 'org.example.effect',
+            name: 'Example Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/example.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 1,
+            has_custom_ui: true,
+            parameters: [malformedParameter],
+        } as unknown as ScannedPlugin;
+        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [scannedPlugin] });
+
+        expect(() => getAgentDeviceFactoryManifest(['clap:org.example.effect'])).not.toThrow();
         expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toEqual([
             expect.objectContaining({
                 parameters: [],
