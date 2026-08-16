@@ -1,16 +1,15 @@
 /// Per-voice streaming ring buffer.
 ///
-/// Each active voice that plays a streamed sample owns a pair of ring
-/// buffers (ping-pong) filled by the background I/O thread. The audio
-/// thread only reads from the ring buffer — never writes or allocates.
+/// Each active voice that plays a streamed sample owns one circular buffer
+/// per channel, read one frame at a time and refilled in blocks. Both halves
+/// take `&mut self`: this is a single-owner structure, and the integration
+/// layer is what decides which thread touches it when.
 ///
 /// Budget: 64KB per voice (~186ms at 44.1kHz mono f32).
 ///
-/// This module provides the data structures. The actual `rtrb`-based
-/// implementation requires the `rtrb` crate, which lives in the
-/// integration layer (daw-engine / src-tauri). This module defines
-/// the interface and a simple fallback for WASM (where disk streaming
-/// is not applicable — samples are fully in memory).
+/// Reading and writing allocate nothing — capacity is fixed at construction —
+/// which is the property the audio thread needs from whichever side of the
+/// handoff it ends up on.
 use super::super::types::{FADE_UNDERRUN_SAMPLES, STREAM_BUF_SIZE};
 
 /// Number of f32 samples that fit in one stream buffer.
@@ -29,7 +28,6 @@ pub enum StreamStatus {
 
 /// Streaming buffer state for a single voice.
 ///
-/// In the native path, this wraps `rtrb` ring buffers.
 /// In WASM, samples are fully in memory and this is unused.
 #[derive(Debug)]
 pub struct VoiceStreamBuffer {
@@ -97,9 +95,16 @@ impl VoiceStreamBuffer {
         (left, right, status)
     }
 
-    /// Write samples into the buffer (called by the I/O thread).
+    /// Write samples into the buffer (called by the reader side).
     ///
     /// Returns the number of samples actually written.
+    ///
+    /// A short right channel — a truncated read at end-of-file, a source that
+    /// went mono mid-stream — is filled with silence rather than left holding
+    /// whatever the previous pass wrote there. Skipping those positions left
+    /// the ring's stale right-channel content paired with fresh left-channel
+    /// frames, so the voice played an unrelated fragment of the file in one
+    /// ear.
     pub fn write(&mut self, left: &[f32], right: &[f32]) -> usize {
         let space = self.capacity - self.available;
         let to_write = left.len().min(space);
@@ -109,8 +114,8 @@ impl VoiceStreamBuffer {
         for i in 0..to_write {
             let pos = (write_pos + i) % self.capacity;
             self.buffer_left[pos] = left[i];
-            if self.is_stereo && i < right.len() {
-                self.buffer_right[pos] = right[i];
+            if self.is_stereo {
+                self.buffer_right[pos] = right.get(i).copied().unwrap_or(0.0);
             }
         }
 
@@ -139,6 +144,70 @@ impl VoiceStreamBuffer {
         self.read_pos = 0;
         self.available = 0;
         self.underrun_fade = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Fill the ring with `value` in both channels and read it all back, so the
+    /// underlying storage holds that value everywhere and the read cursor is
+    /// back at the start.
+    fn primed_buffer(value: f32) -> VoiceStreamBuffer {
+        let mut buffer = VoiceStreamBuffer::new(true);
+        let filler = vec![value; STREAM_FRAMES];
+        assert_eq!(
+            buffer.write(&filler, &filler),
+            STREAM_FRAMES,
+            "the priming write did not fill the ring"
+        );
+        for _ in 0..STREAM_FRAMES {
+            buffer.read();
+        }
+        assert_eq!(buffer.buffered_samples(), 0, "the ring did not drain");
+        buffer
+    }
+
+    /// Audit F13: a write whose right channel is shorter than its left — a
+    /// truncated read at end-of-file — skipped the leftover positions instead
+    /// of clearing them, so the ring's *previous* right-channel contents were
+    /// paired with the new left-channel frames and one ear played an unrelated
+    /// fragment of the file.
+    #[test]
+    fn a_short_right_channel_is_zero_filled_rather_than_left_stale() {
+        const STALE: f32 = 0.75;
+        const FRESH: f32 = -0.25;
+        const LEFT_FRAMES: usize = 8;
+        const RIGHT_FRAMES: usize = 4;
+
+        let mut buffer = primed_buffer(STALE);
+        let left = vec![FRESH; LEFT_FRAMES];
+        let right = vec![FRESH; RIGHT_FRAMES];
+        assert_eq!(buffer.write(&left, &right), LEFT_FRAMES);
+
+        for frame in 0..LEFT_FRAMES {
+            let (out_left, out_right, _) = buffer.read();
+            assert_eq!(out_left, FRESH, "left channel at frame {frame}");
+            let expected_right = if frame < RIGHT_FRAMES { FRESH } else { 0.0 };
+            assert_eq!(
+                out_right, expected_right,
+                "right channel at frame {frame} read {out_right}; the shortfall is carrying the \
+                 previous write's data instead of silence"
+            );
+        }
+    }
+
+    /// A mono buffer has no right storage at all, so a short right channel is
+    /// nothing to fill and the left channel must still come through.
+    #[test]
+    fn a_mono_buffer_ignores_the_right_channel_entirely() {
+        let mut buffer = VoiceStreamBuffer::new(false);
+        assert_eq!(buffer.write(&[0.5, 0.25], &[]), 2);
+
+        let (left, right, _) = buffer.read();
+        assert_eq!(left, 0.5);
+        assert_eq!(right, 0.5, "a mono buffer mirrors its left channel");
     }
 }
 

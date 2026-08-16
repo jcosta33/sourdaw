@@ -1,8 +1,16 @@
 /// Cytomic/Zavalishin Topology-Preserving Transform (TPT) State Variable Filter.
 ///
 /// Provides simultaneous lowpass, highpass, bandpass, and notch outputs.
-/// Implements 2x oversampling when resonance Q > 10 to prevent aliasing
-/// artifacts from high-resonance self-oscillation.
+///
+/// Above Q = 10 the filter runs its integrators at twice the sample rate to
+/// keep high-resonance self-oscillation stable. The rate change is the whole
+/// of it: the input is held across both sub-samples (zero-order hold) and the
+/// two sub-sample outputs are averaged back down. That average is a two-tap
+/// half-band-ish decimator, not a polyphase one, so this buys the stability of
+/// a doubled integration rate and a gentle roll-off near Nyquist — not the
+/// alias rejection of true polyphase oversampling. It is unity in the
+/// passband, which is the property that matters at the Q = 10 threshold: the
+/// two sides of it have to sound like the same filter.
 ///
 /// Reference: Zavalishin, "The Art of VA Filter Design" (2018), Chapter 4.
 use std::f32::consts::PI;
@@ -50,9 +58,10 @@ pub struct TptSvf {
     resonance: f32,
     sample_rate: f32,
 
-    // Oversampling state (second set of integrators for 2x mode).
-    ic1eq_os: f32,
-    ic2eq_os: f32,
+    // True while the integrators are running at 2x the sample rate. There is no
+    // second integrator pair: both sub-samples run through `ic1eq`/`ic2eq`,
+    // which is what makes the 2x pass a continuation of the same filter state
+    // rather than a parallel one.
     oversample: bool,
 }
 
@@ -69,8 +78,6 @@ impl TptSvf {
             cutoff: 1000.0,
             resonance: 0.0,
             sample_rate,
-            ic1eq_os: 0.0,
-            ic2eq_os: 0.0,
             oversample: false,
         };
         filter.update_coefficients(1000.0, 0.0);
@@ -121,8 +128,6 @@ impl TptSvf {
     pub fn reset(&mut self) {
         self.ic1eq = 0.0;
         self.ic2eq = 0.0;
-        self.ic1eq_os = 0.0;
-        self.ic2eq_os = 0.0;
     }
 
     // ── Internal ───────────────────────────────────────────────────────
@@ -148,27 +153,31 @@ impl TptSvf {
         }
     }
 
-    /// 2x oversampled processing for high-resonance stability.
+    /// 2x-rate processing for high-resonance stability.
+    ///
+    /// Zero-order hold on the way up — the same input drives both sub-samples,
+    /// which is what a held (staircase) upsampler produces — and an average on
+    /// the way down. The average is the decimator: taking only the second tick
+    /// would keep an image the 2x-rate filter has not removed.
+    ///
+    /// This used to halve the input before both ticks, which is the amplitude
+    /// correction a *zero-stuffed* upsampler needs and is wrong for a held one:
+    /// it cost 6 dB of passband level, so crossing Q = 10 on the resonance knob
+    /// dropped the filter's output by half.
     fn process_oversampled(&mut self, input: f32) -> SvfOutput {
-        // Upsample: insert zero between samples, then filter.
-        // Simplified: process the input twice at double rate.
-        let half_input = input * 0.5;
-
-        // First half-sample
         let mut s1 = self.ic1eq;
         let mut s2 = self.ic2eq;
-        let _out1 = self.tick(half_input, &mut s1, &mut s2);
+        let first = self.tick(input, &mut s1, &mut s2);
+        let second = self.tick(input, &mut s1, &mut s2);
         self.ic1eq = s1;
         self.ic2eq = s2;
 
-        // Second half-sample (the actual output)
-        let mut s1 = self.ic1eq;
-        let mut s2 = self.ic2eq;
-        let out2 = self.tick(half_input, &mut s1, &mut s2);
-        self.ic1eq = s1;
-        self.ic2eq = s2;
-
-        out2
+        SvfOutput {
+            lowpass: 0.5 * (first.lowpass + second.lowpass),
+            highpass: 0.5 * (first.highpass + second.highpass),
+            bandpass: 0.5 * (first.bandpass + second.bandpass),
+            notch: 0.5 * (first.notch + second.notch),
+        }
     }
 
     fn update_coefficients(&mut self, cutoff_hz: f32, resonance: f32) {

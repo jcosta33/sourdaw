@@ -1192,6 +1192,7 @@ fn load_levain_bank(instance: &mut daw_dsp::levain::LevainInstance, frame_count:
         sample_id,
         0,
         69,
+        0.0,
         0,
         127,
         0,

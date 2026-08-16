@@ -468,6 +468,75 @@ fn crumbs_note_on_does_not_allocate_in_any_mode() {
     );
 }
 
+/// `CrumbsCommand::AddSample` is drained inside the process callback — the
+/// native host pops its command ring there, and the worklet dispatches port
+/// messages on the render thread — so filing a sample in the pool is an
+/// audio-thread operation whatever its name suggests.
+///
+/// It used to grow the pool's slot vector with a push loop, which allocates
+/// (audit F4). Nothing else guards it: every other crumbs test in this file
+/// pools its samples *before* arming the interceptor, which is exactly the
+/// shape that let the allocation live in a "management thread" path that the
+/// audio thread reaches on every sample load.
+///
+/// The `Arc`s and their PCM are built outside the guard, because that half is
+/// genuinely the sender's work: the command carries a pointer, and the audio
+/// thread only files it. Ids are fresh, as the command side's monotonic
+/// counter guarantees, so no slot is overwritten and nothing is dropped inside
+/// the guarded region either.
+#[test]
+fn crumbs_add_sample_command_does_not_allocate() {
+    use std::sync::Arc;
+
+    use daw_dsp::crumbs::engine::CrumbsEngine;
+    use daw_dsp::crumbs::sample::SampleData;
+    use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode};
+
+    const STAGED: usize = 8;
+
+    let frames = 4_800_usize;
+    let pcm: Vec<f32> = (0..frames)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect();
+
+    let mut engine = CrumbsEngine::new(SAMPLE_RATE);
+    engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Quick));
+
+    let staged: Vec<Arc<SampleData>> = (0..STAGED)
+        .map(|_| Arc::new(SampleData::from_mono(pcm.clone(), SAMPLE_RATE as u32)))
+        .collect();
+    let mut left = vec![0.0_f32; BLOCK];
+    let mut right = vec![0.0_f32; BLOCK];
+
+    assert_no_alloc(|| {
+        for (id, sample) in staged.iter().enumerate() {
+            engine.handle_command(CrumbsCommand::AddSample {
+                id: id as u32,
+                data: Arc::clone(sample),
+            });
+            engine.handle_command(CrumbsCommand::SetActiveSample(id as u32));
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 60,
+                velocity: 100,
+            });
+            engine.process_block(&mut left, &mut right);
+        }
+    });
+
+    // The guarded loop must have actually filed the samples and played them,
+    // or a `set` that silently dropped every write would be trivially
+    // allocation-free.
+    assert_eq!(
+        engine.sample_pool().count(),
+        STAGED,
+        "the guarded AddSample commands did not reach the pool, so the guard covered a no-op"
+    );
+    assert!(
+        peak(&left) > 1e-6,
+        "the guarded region rendered silence, so the samples it filed never reached a voice"
+    );
+}
+
 #[test]
 fn crumbs_process_does_not_allocate_with_a_sample_playing() {
     use daw_dsp::crumbs::CrumbsInstance;
@@ -1355,6 +1424,7 @@ fn levain_process_does_not_allocate_with_notes_held() {
         sample_id,   // sample_id
         0,           // articulation_id
         69,          // root_note
+        0.0,         // tune_cents
         0,           // lo_key
         127,         // hi_key
         0,           // lo_vel
@@ -1385,6 +1455,7 @@ fn levain_process_does_not_allocate_with_notes_held() {
         sample_id,
         0,
         69,
+        0.0,
         0,
         127,
         0,
@@ -1461,6 +1532,7 @@ fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
         sample_id,   // sample_id
         0,           // articulation_id
         69,          // root_note
+        0.0,         // tune_cents
         0,           // lo_key
         127,         // hi_key
         0,           // lo_vel

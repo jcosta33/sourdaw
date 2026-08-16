@@ -169,6 +169,15 @@ impl LevainInstance {
     }
 
     /// Add a zone to the zone map. Call build_zone_map() after all zones are added.
+    ///
+    /// `tune_cents` is the zone's authored fine tuning, in cents against
+    /// `root_note`. It crosses the boundary as an `f32` because that is the
+    /// widest numeric the worklet port hands over without a lossy narrowing on
+    /// the JS side, and is rounded into `SampleRef`'s `i16` here — the engine's
+    /// own unit. Hardcoding it to zero here dropped every detuned zone's tuning
+    /// on the floor: `LevainVoice::start` is the only reader and it reads the
+    /// `SampleRef` field, so a bank that tuned a zone played at the untuned
+    /// pitch in the browser while the native path honoured it.
     #[allow(clippy::too_many_arguments)]
     pub fn add_zone(
         &mut self,
@@ -176,6 +185,7 @@ impl LevainInstance {
         sample_id: u32,
         articulation_id: u16,
         root_note: u8,
+        tune_cents: f32,
         lo_key: u8,
         hi_key: u8,
         lo_vel: u8,
@@ -200,6 +210,13 @@ impl LevainInstance {
             2 => LoopMode::PingPong,
             _ => LoopMode::NoLoop,
         };
+        // A non-finite or out-of-range tuning is a malformed bank, not a reason
+        // to abort the load: clamp into the field's range and carry on.
+        let tune_cents = if tune_cents.is_finite() {
+            tune_cents.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
+        } else {
+            0
+        };
         let zone = Zone {
             id: zone_id,
             key: KeyRange {
@@ -218,7 +235,7 @@ impl LevainInstance {
             sample: SampleRef {
                 sample_id,
                 root_key: root_note,
-                tune_cents: 0,
+                tune_cents,
                 start: 0,
                 end: 0, // will use full sample if 0
                 loop_mode: lm,

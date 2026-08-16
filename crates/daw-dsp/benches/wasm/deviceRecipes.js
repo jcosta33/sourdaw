@@ -981,7 +981,7 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
         const instance = new dsp.LevainInstance(SAMPLE_RATE, 64);
         const sampleId = instance.add_sample(loopSample(frameCount), frameCount, 1, SAMPLE_RATE);
         instance.add_zone(
-            0, sampleId, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frameCount, 0, 0.0, 0.005, 0.1, 1.0, 0.3
+            0, sampleId, 0, 69, 0.0, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frameCount, 0, 0.0, 0.005, 0.1, 1.0, 0.3
         );
         instance.build_zone_map(1, 1);
         for (const note of spreadNotes(struck)) {

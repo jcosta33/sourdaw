@@ -380,7 +380,12 @@ impl LevainEngine {
             return; // consumed as keyswitch
         }
 
-        self.note_on_with_channel_and_articulation(note, velocity, channel, self.articulation.current);
+        self.note_on_with_channel_and_articulation(
+            note,
+            velocity,
+            channel,
+            self.articulation.current,
+        );
     }
 
     /// Note-on with an immutable per-note articulation selected by project truth.
@@ -490,9 +495,12 @@ impl LevainEngine {
                 // next note-on takes the slot and the remembered index then
                 // addresses a different, sounding note. Releasing on a stale
                 // index cuts that note off mid-sound.
-                if self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
-                    voice.active && voice.note == from_note
-                }) {
+                if self
+                    .voice_pool
+                    .voices
+                    .get(from_voice)
+                    .is_some_and(|voice| voice.active && voice.note == from_note)
+                {
                     self.voice_pool.voices[from_voice].release();
                 }
                 let voice = &mut self.voice_pool.voices[voice_idx];
@@ -538,9 +546,12 @@ impl LevainEngine {
                 // sounding *someone else's* note, and gliding it would drag
                 // that note to this pitch instead of slurring the one the
                 // player is actually holding.
-                if self.voice_pool.voices.get(from_voice).is_some_and(|voice| {
-                    voice.active && voice.note == from_note
-                }) {
+                if self
+                    .voice_pool
+                    .voices
+                    .get(from_voice)
+                    .is_some_and(|voice| voice.active && voice.note == from_note)
+                {
                     // The incoming zone enters at the outgoing stream's own
                     // playhead, so the slur adds no second attack. This is
                     // the fallback for an interval the bank has no recorded
@@ -1009,13 +1020,13 @@ impl LevainEngine {
         ];
 
         for neighbour_idx in neighbours.into_iter().flatten() {
-            let representative_velocity =
-                (((neighbour_idx as f32 + 0.5) / num_layers as f32) * 127.0)
-                    .round()
-                    .clamp(0.0, 127.0) as u8;
-            let candidates =
-                self.zone_map
-                    .lookup(articulation, 0, note, representative_velocity);
+            let representative_velocity = (((neighbour_idx as f32 + 0.5) / num_layers as f32)
+                * 127.0)
+                .round()
+                .clamp(0.0, 127.0) as u8;
+            let candidates = self
+                .zone_map
+                .lookup(articulation, 0, note, representative_velocity);
             let found = candidates.iter().copied().find(|&id| {
                 id != primary_zone_id
                     && self
@@ -1081,11 +1092,11 @@ mod tests {
     use std::sync::Arc;
 
     use super::LevainEngine;
-    use crate::levain::voice::crossfade_rate_for;
     use crate::levain::types::{
         AdsrParams, Dynamic, KeyRange, LegatoTransition, LoopMode, SampleRef, TransitionType,
         VelRange, Zone, MAX_ARTICULATIONS,
     };
+    use crate::levain::voice::crossfade_rate_for;
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const SAMPLE_FRAMES: u32 = 4_800;
@@ -1825,9 +1836,7 @@ mod tests {
         let full_vel = VelRange { lo: 0, hi: 127 };
         engine.add_zone(wide_zone(0, sample_id, full_vel, false));
         engine.add_zone(wide_zone(1, sample_id, full_vel, true));
-        engine
-            .build_zone_map(1, 1)
-            .expect("zone map should build");
+        engine.build_zone_map(1, 1).expect("zone map should build");
 
         engine.note_on(60, 100);
         // Hold long enough that `ReleaseTracker`'s duration scale clears its
@@ -1858,17 +1867,13 @@ mod tests {
         fn single_zone_engine(freq_hz: f32) -> LevainEngine {
             let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
             let data: Vec<f32> = (0..SAMPLE_FRAMES)
-                .map(|frame| {
-                    (std::f32::consts::TAU * freq_hz * frame as f32 / SAMPLE_RATE).sin()
-                })
+                .map(|frame| (std::f32::consts::TAU * freq_hz * frame as f32 / SAMPLE_RATE).sin())
                 .collect();
             let sample_id = engine
                 .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
                 .expect("test sample should fit the bank");
             engine.add_zone(wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false));
-            engine
-                .build_zone_map(1, 1)
-                .expect("zone map should build");
+            engine.build_zone_map(1, 1).expect("zone map should build");
             engine
         }
 
@@ -1942,9 +1947,7 @@ mod tests {
         // unmistakable by zero-crossing rate alone.
         let transition_period = 6u32;
         let transition_data: Vec<f32> = (0..SAMPLE_FRAMES)
-            .map(|frame| {
-                (frame % transition_period) as f32 / transition_period as f32 * 2.0 - 1.0
-            })
+            .map(|frame| (frame % transition_period) as f32 / transition_period as f32 * 2.0 - 1.0)
             .collect();
 
         let sustain_sample = engine
@@ -1960,9 +1963,7 @@ mod tests {
             VelRange { lo: 0, hi: 127 },
             false,
         ));
-        engine
-            .build_zone_map(1, 1)
-            .expect("zone map should build");
+        engine.build_zone_map(1, 1).expect("zone map should build");
 
         engine.add_legato_transition(LegatoTransition {
             interval: 4, // 64 - 60
@@ -2030,9 +2031,7 @@ mod tests {
                 VelRange { lo: 0, hi: 127 },
                 false,
             ));
-            engine
-                .build_zone_map(1, 1)
-                .expect("zone map should build");
+            engine.build_zone_map(1, 1).expect("zone map should build");
             engine.add_legato_transition(LegatoTransition {
                 interval: 4,
                 transition_type: TransitionType::Slurred,
@@ -2321,21 +2320,25 @@ mod tests {
 
     /// F14 — `loop_crossfade` is stored on every voice and was never read, so
     /// a loop whose start and end aren't waveform-continuous clicks on every
-    /// repeat despite the doc promising an equal-power seam crossfade.
+    /// repeat despite the doc promising a seam crossfade.
     #[test]
     fn loop_crossfade_smooths_the_seam_instead_of_clicking() {
         fn render_stepped_loop(loop_crossfade: u32) -> Vec<f32> {
             let mut engine = LevainEngine::new(SAMPLE_RATE, 4);
             let loop_len = 480u32; // 10 ms at 48 kHz
+            let loop_start = 240u32; // pre-roll the fade blends against
+            let total = loop_start + loop_len;
             // A ramp that is continuous everywhere except the wrap from just
             // under +1.0 back to -1.0 isolates the loop-seam discontinuity:
             // it is the *only* click in the waveform, so `max_delta` below
-            // measures the seam and nothing else.
-            let data: Vec<f32> = (0..loop_len)
-                .map(|i| (i as f32 / loop_len as f32) * 2.0 - 1.0)
+            // measures the seam and nothing else. The ramp keeps its slope
+            // through the pre-roll before `loop_start` — the fade consumes
+            // that material, so it must lead into the loop continuously.
+            let data: Vec<f32> = (0..total)
+                .map(|i| (i as f32 - loop_start as f32) / loop_len as f32 * 2.0 - 1.0)
                 .collect();
             let sample_id = engine
-                .add_sample(data, loop_len, 1, SAMPLE_RATE)
+                .add_sample(data, total, 1, SAMPLE_RATE)
                 .expect("test sample should fit the bank");
             engine.add_zone(Zone {
                 id: 0,
@@ -2351,10 +2354,10 @@ mod tests {
                     root_key: 60,
                     tune_cents: 0,
                     start: 0,
-                    end: loop_len,
+                    end: total,
                     loop_mode: LoopMode::Forward,
-                    loop_start: 0,
-                    loop_end: loop_len,
+                    loop_start,
+                    loop_end: total,
                     loop_crossfade,
                 },
                 amp_env: AdsrParams {
@@ -2365,9 +2368,7 @@ mod tests {
                 },
                 gain_db: 0.0,
             });
-            engine
-                .build_zone_map(1, 1)
-                .expect("zone map should build");
+            engine.build_zone_map(1, 1).expect("zone map should build");
             engine.note_on(60, 100);
             render(&mut engine, 40)
         }
@@ -2386,6 +2387,19 @@ mod tests {
             click_with < click_without * 0.5,
             "loop_crossfade must smooth the seam discontinuity: \
              {click_without} -> {click_with}"
+        );
+        // A correct fade spreads the wrap's 2.0 discontinuity across its
+        // 96-frame span, so the residual per-sample step is bounded by the
+        // spread step plus the ramp's own slope. A shadow read anchored at
+        // `loop_start + offset` instead hands over to the wrapped playhead
+        // with a step of span × slope (0.4) — an order of magnitude above
+        // this bound — while still passing the ratio check above.
+        let residual_bound = (2.0 / 96.0 + 2.0 / 480.0) * 1.5;
+        assert!(
+            click_with < residual_bound,
+            "the crossfaded seam still stepped by {click_with} against a correct-fade \
+             residual bound of {residual_bound}; the shadow read is not converging on \
+             loop_start"
         );
     }
 
@@ -2526,7 +2540,11 @@ mod tests {
         let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
         let data: Vec<f32> = (0..SAMPLE_FRAMES)
             .map(|frame| {
-                let level = if frame < ONSET_FRAMES { 1.0 } else { BODY_LEVEL };
+                let level = if frame < ONSET_FRAMES {
+                    1.0
+                } else {
+                    BODY_LEVEL
+                };
                 ((frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0) * level
             })
             .collect();
