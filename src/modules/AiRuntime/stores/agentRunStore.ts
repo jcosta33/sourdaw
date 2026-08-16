@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
+import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
@@ -502,6 +503,101 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     };
 }
 
+function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
+    if (value === null) {
+        return null;
+    }
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== AGENT_CONTEXT_SCHEMA_VERSION ||
+        !isRecord(value.selection) ||
+        !isRecord(value.included) ||
+        !isRecord(value.delta)
+    ) {
+        return null;
+    }
+    const included = value.included;
+    const revision = readNullableString(value.revision);
+    const trackId = readNullableString(value.selection.trackId);
+    const clipId = readNullableString(value.selection.clipId);
+    const clipIds = readStringArray(value.selection.clipIds);
+    const deltaBaseRevision = readNullableString(value.delta.baseRevision);
+    const counts = [
+        'receiptCount',
+        'capabilitySchemaCount',
+        'validationFailureCount',
+        'measurementCount',
+        'trackCount',
+    ] as const;
+    const grants = (() => {
+        const rawGrants = value.grants;
+        if (rawGrants === null) {
+            return null;
+        }
+        if (!isRecord(rawGrants)) {
+            return undefined;
+        }
+        const allowedOperationPrefixes = readStringArray(rawGrants.allowedOperationPrefixes);
+        const flags = [
+            'create',
+            'delete',
+            'routing',
+            'tempo',
+            'master',
+            'file',
+            'audioUpload',
+            'remoteGeneration',
+            'autoCommit',
+        ] as const;
+        if (allowedOperationPrefixes === null || !flags.every((flag) => typeof rawGrants[flag] === 'boolean')) {
+            return undefined;
+        }
+        return {
+            allowedOperationPrefixes,
+            ...Object.fromEntries(flags.map((flag) => [flag, rawGrants[flag]])),
+        } as AgentContextEvidence['grants'];
+    })();
+    const budgets = (() => {
+        if (value.budgets === null) {
+            return null;
+        }
+        if (!isRecord(value.budgets)) {
+            return undefined;
+        }
+        const limits = readNumberRecord(value.budgets.limits);
+        const consumed = readNumberRecord(value.budgets.consumed);
+        return limits === null || consumed === null ? undefined : { limits, consumed };
+    })();
+    if (
+        revision === undefined ||
+        trackId === undefined ||
+        clipId === undefined ||
+        clipIds === null ||
+        deltaBaseRevision === undefined ||
+        (value.delta.mode !== 'full' && value.delta.mode !== 'delta') ||
+        !counts.every((key) => readNonNegativeInteger(included[key]) !== null) ||
+        grants === undefined ||
+        budgets === undefined
+    ) {
+        return null;
+    }
+    return {
+        schemaVersion: AGENT_CONTEXT_SCHEMA_VERSION,
+        revision,
+        selection: { trackId, clipId, clipIds },
+        grants,
+        budgets,
+        included: {
+            receiptCount: readNonNegativeInteger(included.receiptCount)!,
+            capabilitySchemaCount: readNonNegativeInteger(included.capabilitySchemaCount)!,
+            validationFailureCount: readNonNegativeInteger(included.validationFailureCount)!,
+            measurementCount: readNonNegativeInteger(included.measurementCount)!,
+            trackCount: readNonNegativeInteger(included.trackCount)!,
+        },
+        delta: { mode: value.delta.mode, baseRevision: deltaBaseRevision },
+    };
+}
+
 function readAgentRun(value: unknown): AgentRun | null {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION) {
         return null;
@@ -630,6 +726,8 @@ function readAgentRun(value: unknown): AgentRun | null {
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
     const workLeases = readCollection(value.workLeases, readWorkLease);
+    const contextEvidence =
+        value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
     const cancellationGeneration = readNonNegativeInteger(value.cancellation.generation);
     const requestedAt = readNullableTimestamp(value.cancellation.requestedAt);
     const cancellationReason = readNullableString(value.cancellation.reason);
@@ -673,6 +771,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         retriableWork === null ||
         temporaryAssets === null ||
         workLeases === null ||
+        (contextEvidence === null && value.contextEvidence !== undefined && value.contextEvidence !== null) ||
         cancellationGeneration === null ||
         requestedAt === undefined ||
         cancellationReason === undefined ||
@@ -748,6 +847,7 @@ function readAgentRun(value: unknown): AgentRun | null {
             requiredAt: manualResumeRequiredAt,
         },
         workLeases,
+        contextEvidence,
         createdAt,
         updatedAt,
     };

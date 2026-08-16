@@ -11,7 +11,6 @@ const {
     mockLogger,
     mockBridgeGroundedLlmToolCalls,
     mockBuildLlmActionSystemPrompt,
-    mockBuildLlmActionUserMessage,
     mockDoesProductionBriefAllowActionBatch,
     markerStoreValue,
 } = vi.hoisted(() => ({
@@ -23,7 +22,6 @@ const {
     },
     mockBridgeGroundedLlmToolCalls: vi.fn(),
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
-    mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
     mockDoesProductionBriefAllowActionBatch: vi.fn(() => true),
     markerStoreValue: {
         value: {
@@ -80,7 +78,6 @@ vi.mock('../../transformers/llmActionBridge', async () => {
     return {
         ...actual,
         buildLlmActionSystemPrompt: mockBuildLlmActionSystemPrompt,
-        buildLlmActionUserMessage: mockBuildLlmActionUserMessage,
     };
 });
 
@@ -235,7 +232,6 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockReset();
         mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
-        mockBuildLlmActionUserMessage.mockClear();
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(true);
         markerStoreValue.value = { markers: [], sections: [] };
     });
@@ -342,7 +338,7 @@ describe('parsePromptToActions', () => {
 
         const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
         expect(firstProviderCall?.[0]).toContain('command system prompt');
-        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[1]).toContain('fixed_policy:');
         expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -354,10 +350,6 @@ describe('parsePromptToActions', () => {
             ])
         );
         expect(firstProviderCall?.[4]).toBe('make the project faster');
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
-            prompt: 'make the project faster',
-            context: baseContext,
-        });
         expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith({
             calls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
             context: baseContext,
@@ -481,7 +473,7 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
         const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
         expect(firstProviderCall?.[0]).toContain('command system prompt');
-        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[1]).toContain('untrusted_project_data:');
         expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -525,7 +517,7 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBe(
             'Provider action rejected: addMarker: Requested marker already exists at that beat'
         );
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider marker removal from local state without serializing marker identity', async () => {
@@ -542,10 +534,7 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
-            prompt: 'delete marker Chorus at beat 16',
-            context: baseContext,
-        });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider marker color from local state without serializing marker identity', async () => {
@@ -568,7 +557,7 @@ describe('parsePromptToActions', () => {
             },
         ]);
         expect(result.requiresConfirmation).toBe(false);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider section removal from local state without serializing section identity', async () => {
@@ -586,7 +575,7 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('section-internal');
     });
 
     it('proposes grounded non-destructive clip normalization as one atomic action', async () => {
