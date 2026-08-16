@@ -191,6 +191,43 @@ describe('CCGenerator', () => {
         });
     });
 
+    describe('inverted min / max', () => {
+        // Same 1-second sweep the shape specs use.
+        function emittedValues(gen: CCGenerator): number[] {
+            const output: MidiEvent[] = [];
+            gen.processMidi([], output, { ...transport, blockStartSamples: 0, blockEndSamples: 44_100 });
+            return output
+                .filter((event) => event.kind.type === 'cc')
+                .map((event) => (event.kind.type === 'cc' ? event.kind.value : -1));
+        }
+
+        it('reads an inverted output range as the same range instead of inverting the LFO', () => {
+            // No UI reaches this pair; a stored project, a CRDT merge, or an
+            // AI-authored action can. Applied in the stored order the span
+            // `max - min` goes negative, so a sawUp ramps DOWN — the shape the
+            // user selected plays backwards.
+            const inverted = new CCGenerator('cc-inverted');
+            const ordered = new CCGenerator('cc-ordered');
+            for (const gen of [inverted, ordered]) {
+                gen.setParam('shape', 3); // sawUp
+                gen.setParam('sync', 0);
+                gen.setParam('free_rate_hz', 0.5); // half a cycle — no wrap in the window
+            }
+            inverted.setParam('min', 100);
+            inverted.setParam('max', 20);
+            ordered.setParam('min', 20);
+            ordered.setParam('max', 100);
+
+            const values = emittedValues(inverted);
+            expect(values).toEqual(emittedValues(ordered));
+            expect(Math.min(...values)).toBeGreaterThanOrEqual(20);
+            expect(Math.max(...values)).toBeLessThanOrEqual(100);
+            // sawUp still ramps UP. Applied in the stored order the negative
+            // span would run the same shape backwards.
+            expect(values.at(-1)!).toBeGreaterThan(values[0]!);
+        });
+    });
+
     describe('transport stopped', () => {
         it('emits no CC while transport.isPlaying is false', () => {
             const gen = new CCGenerator('stopped');

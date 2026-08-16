@@ -40,7 +40,14 @@ export class Transposer extends BaseMidiProcessor {
                     offset += (this.rngState % (this.randomRange * 2 + 1)) - this.randomRange;
                 }
 
-                const note = Math.max(this.clampMin, Math.min(this.clampMax, event.kind.note + offset));
+                // `clamp_min` and `clamp_max` are interchangeable ends of one
+                // range, so read them in order. No UI reaches an inverted pair,
+                // but a stored project, a CRDT merge, or an AI-authored action
+                // can set one: the outer `Math.max` would then win outright and
+                // pin every note to `clamp_min`, above the requested ceiling.
+                const low = Math.min(this.clampMin, this.clampMax);
+                const high = Math.max(this.clampMin, this.clampMax);
+                const note = Math.max(low, Math.min(high, event.kind.note + offset));
                 this.noteVoices.push(event.trackId, (event.kind.channel << 7) | event.kind.note, note);
 
                 const transformed: MidiEvent = {

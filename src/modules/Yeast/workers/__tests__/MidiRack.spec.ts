@@ -126,6 +126,23 @@ class PassthroughProcessor implements MidiProcessor {
     }
 }
 
+/** Pass-through that records every event it is handed, in arrival order. */
+class RecordingProcessor extends PassthroughProcessor {
+    constructor(
+        id: string,
+        private readonly seen: MidiEvent[]
+    ) {
+        super(id);
+    }
+
+    override processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
+        for (const event of input) {
+            this.seen.push(event);
+            output.push(event);
+        }
+    }
+}
+
 /** Processor that always throws inside processMidi (audio-thread fault). */
 class ThrowingProcessor extends PassthroughProcessor {
     override processMidi(): void {
@@ -1107,6 +1124,98 @@ describe('MidiRack', () => {
             expect(noteOns).toBe(2);
             expect(offs).toHaveLength(noteOns); // exactly one off per on
             expect(new Set(offs).size).toBe(offs.length); // no duplicate note+time off
+        });
+
+        it('never re-enters a generated note as chain input when a step lands exactly on the block boundary', () => {
+            // 48 kHz, 120 bpm, rate_denom 1 → one arp step every 4 beats =
+            // 96000 samples = exactly 750 × 128-sample blocks. The step
+            // therefore falls on `blockEnd` of block 749 ([95872, 96000)).
+            //
+            // The generator loop condition is `lastStep + stepLen <= blockEnd`,
+            // so the Note On is emitted with timeSamples === blockEnd; the rack
+            // separator keeps `timeSamples < blockEndSamples`, so the event is
+            // parked in the rack scheduled queue and re-drained into the CHAIN
+            // TOP on the next block — where the Arpeggiator ingests its own
+            // output as a fresh held note.
+            //
+            // A block is half-open: the chain's output for [blockStart, blockEnd)
+            // must contain nothing at or beyond blockEnd, and nothing the rack
+            // defers may ever be re-processed as input.
+            const rack = new MidiRack('rack-a');
+            const seenAtChainTop: MidiEvent[] = [];
+            rack.addProcessor(new RecordingProcessor('probe-1', seenAtChainTop));
+            const arp = new Arpeggiator('arp-1');
+            arp.setParam('rate_denom', 1); // 4 beats per step
+            rack.addProcessor(arp, 'arpeggiator');
+
+            const boundaryTransport: TransportInfo = { ...transport, sampleRate: 48_000, bpm: 120 };
+            const generatedOns: string[] = [];
+            for (let block = 0; block < 760; block++) {
+                const start = block * 128;
+                const input = block === 0 ? [noteOn(0, 60)] : [];
+                const out = rack.processBlock(
+                    input,
+                    start,
+                    start + 128,
+                    { ...boundaryTransport, ppqPosition: start / 24_000 },
+                    'track-a'
+                );
+                for (const event of out) {
+                    if (isNoteOn(event) && event.noteInstanceId?.startsWith('arp-1:generated:')) {
+                        generatedOns.push(`${event.kind.note}@${event.timeSamples}`);
+                    }
+                }
+            }
+
+            // No event the arp generated is ever fed back into the chain top.
+            expect(
+                seenAtChainTop
+                    .filter((event) => event.noteInstanceId?.startsWith('arp-1:generated:'))
+                    .map((event) => `${event.noteInstanceId}@${event.timeSamples}`)
+            ).toEqual([]);
+            // The boundary step still reaches the host. The Arpeggiator only
+            // passes through non-note events, so a generated Note On re-fed as
+            // chain input is swallowed outright — the note never sounds.
+            expect(generatedOns).toEqual(['60@96000']);
+        });
+
+        it('never re-enters a swung arp note as chain input', () => {
+            // The boundary case is not special: swing (and ratchets) displace a
+            // generated Note On far past the block that computed it. At 1/8 and
+            // 120 bpm a step is 11025 samples, so full swing offsets every odd
+            // step by 5512 samples — 43 blocks beyond its own block end. The
+            // rack must defer those to the block that contains them, never
+            // re-enter them at the chain top.
+            const rack = new MidiRack('rack-a');
+            const seenAtChainTop: MidiEvent[] = [];
+            rack.addProcessor(new RecordingProcessor('probe-1', seenAtChainTop));
+            const arp = new Arpeggiator('arp-1');
+            arp.setParam('swing', 1);
+            rack.addProcessor(arp, 'arpeggiator');
+
+            const swungOns: number[] = [];
+            for (let block = 0; block < 400; block++) {
+                const start = block * 128;
+                const input = block === 0 ? [noteOn(0, 60)] : [];
+                const out = rack.processBlock(
+                    input,
+                    start,
+                    start + 128,
+                    { ...transport, ppqPosition: start / 22050 },
+                    'track-a'
+                );
+                for (const event of out) {
+                    if (isNoteOn(event) && event.noteInstanceId?.startsWith('arp-1:generated:')) {
+                        swungOns.push(event.timeSamples);
+                    }
+                }
+            }
+
+            expect(seenAtChainTop.filter((event) => event.noteInstanceId?.startsWith('arp-1:generated:'))).toEqual([]);
+            // Steps at 11025, 22050, 33075, 44100 across the 51200-sample span;
+            // each odd step carries the full 5512.5-sample swing offset and
+            // still arrives, in the block that contains it.
+            expect(swungOns).toEqual([11025, 27562.5, 33075, 49612.5]);
         });
 
         it('panics audible state and clears NoteRepeater delay queues before a new discontinuity epoch', () => {

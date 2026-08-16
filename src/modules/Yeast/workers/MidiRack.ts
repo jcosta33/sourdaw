@@ -33,6 +33,7 @@ export class MidiRack {
     // processor chain loop. `separateOutput` is the persistent return buffer.
     private scratchA: MidiEvent[] = [];
     private scratchB: MidiEvent[] = [];
+    private deferredOutput: MidiEvent[] = [];
     private separateOutput: MidiEvent[] = [];
     private lifecycleOutput: MidiEvent[] = [];
     private readonly preview: YeastPreviewSidecar;
@@ -222,14 +223,19 @@ export class MidiRack {
         transport.blockStartSamples = blockStartSamples;
         transport.blockEndSamples = blockEndSamples;
 
-        // 1. Drain scheduled events directly into scratchA — avoids the
-        // intermediate `drained` + spread-merge allocation (§149.1).
+        // 1. Release events the chain deferred in an earlier block. A deferred
+        // event has already traversed the whole chain; re-entering it at the
+        // chain top would process it a second time and let a generator ingest
+        // its own output as a fresh held note. Deferred events therefore
+        // rejoin this block's OUTPUT, never its input.
+        const deferred = this.deferredOutput;
+        deferred.length = 0;
+        const scheduledTrackId = preserveInputTrackIds ? undefined : trackId;
+        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, deferred, scheduledTrackId);
+
+        // 2. The chain's input is this block's own input events.
         const current0 = this.scratchA;
         current0.length = 0;
-        const scheduledTrackId = preserveInputTrackIds ? undefined : trackId;
-        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0, scheduledTrackId);
-
-        // 2. Merge with input events.
         for (let index = 0; index < inputEvents.length; index++) {
             const event = inputEvents[index]!;
             if (preserveInputTrackIds) {
@@ -296,6 +302,14 @@ export class MidiRack {
         }
         const current = input;
 
+        // 3b. Merge in the events deferred by earlier blocks (see step 1):
+        // downstream of the chain, so they are separated, tracked and previewed
+        // exactly like the events this block produced.
+        for (const event of deferred) {
+            current.push(event);
+        }
+        deferred.length = 0;
+
         // 4. Sort final output
         current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
         for (const event of current) {
@@ -303,11 +317,17 @@ export class MidiRack {
         }
         preview?.recordTerminalEvents(current, trackId);
 
-        // 5. Separate: events in this block go to output, future events go to
-        // the scheduled queue. `separateOutput` is a persistent scratch buffer;
-        // the caller consumes it synchronously before the next processBlock
-        // call (the Yeast Worker posts it via structuredClone, and the
-        // main-thread fallback iterates it before returning).
+        // 5. Separate: events this block contains go to output, events at or
+        // beyond `blockEndSamples` are deferred to the block that contains
+        // them. This is the single enforcement point for the half-open block
+        // contract on `MidiProcessor.processMidi` — a processor that emits
+        // past the window (a step landing exactly on the boundary, a swung or
+        // ratcheted arp note, a strummed tone, a delayed echo) still reaches
+        // the host at its own time and never re-enters the chain.
+        // `separateOutput` is a persistent scratch buffer; the caller consumes
+        // it synchronously before the next processBlock call (the Yeast Worker
+        // posts it via structuredClone, and the main-thread fallback iterates
+        // it before returning).
         const finalOutput = this.separateOutput;
         finalOutput.length = 0;
         for (const event of lifecycleOutput) {
