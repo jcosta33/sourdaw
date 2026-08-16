@@ -1,0 +1,14 @@
+tests/e2e/mixerStripDeviceChain.spec.ts
+  h_1228e573df1f42 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8d18ac2773e64101b955974b1426ccd643373a03",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
