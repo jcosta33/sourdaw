@@ -88,6 +88,7 @@ export type AgentRunProviderUsage = {
     model: string | null;
     inputTokens: number | null;
     outputTokens: number | null;
+    cachedInputTokens?: number | null;
     provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
     correlationId?: string;
     status?: 'complete' | 'partial' | 'failed' | 'cancelled' | 'unavailable';

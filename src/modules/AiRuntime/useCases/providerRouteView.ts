@@ -9,6 +9,7 @@ export type ProviderRouteViewInput = {
     capability: { role: string; fidelity: string };
     fallback: { attempted: boolean; reason: string | null };
     dataPolicy: { categories: string[]; retention: AgentDataRetention };
+    cache: { status: 'used' | 'not-used' | 'unavailable'; provenance: ModelProviderUsageProvenance };
     usage: { provenance: ModelProviderUsageProvenance; priceProvenance: ModelProviderUsageProvenance };
 };
 
@@ -25,6 +26,16 @@ const UNKNOWN_RETENTION: AgentDataRetention = {
     safetyLegalException: 'unknown',
     unknown: 'unknown',
 };
+
+function getCacheRouteView(usage: AgentRun['providerUsage'][number] | undefined) {
+    if (usage === undefined) {
+        return { status: 'unavailable' as const, provenance: 'unavailable' as const };
+    }
+    return {
+        status: (usage.cachedInputTokens ?? 0) > 0 ? ('used' as const) : ('not-used' as const),
+        provenance: usage.provenance,
+    };
+}
 
 export function getProviderRouteView(run: AgentRun): ProviderRouteView {
     const usage = run.providerUsage.at(-1);
@@ -68,6 +79,7 @@ export function getProviderRouteView(run: AgentRun): ProviderRouteView {
             categories: usage?.disclosure?.categories ?? [],
             retention: usage?.disclosure?.retention ?? UNKNOWN_RETENTION,
         },
+        cache: getCacheRouteView(usage),
         usage: { provenance: usage?.provenance ?? 'unavailable', priceProvenance: 'unavailable' },
     });
 }

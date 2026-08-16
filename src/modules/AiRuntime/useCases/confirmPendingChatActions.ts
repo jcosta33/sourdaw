@@ -32,7 +32,7 @@ import {
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
-import { reconcileAgentCommandWork, reserveAgentCommandWork, type AgentWorkBudgetEstimate } from './agentWorkBudget';
+import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -633,7 +633,7 @@ export async function confirmPendingChatActions(
         const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
         const budgetReservation = hasPriorVerifiedBatchReceipt
             ? null
-            : reserveAgentCommandWork({
+            : agentWorkBudget.reserveCommandWork({
                   runId: confirmation.runId,
                   envelope: parsedCommandBatch.envelope,
                   attemptId,
@@ -786,9 +786,11 @@ export async function confirmPendingChatActions(
         setChatGenerating(false);
     }
 
-    if (commandBudget) {
-        reconcileAgentCommandWork({ runId: confirmation.runId, ...commandBudget });
-    }
+    const budgetPersistenceWarning = commandBudget
+        ? updateTrackedAgentRun(confirmation, () => {
+              agentWorkBudget.reconcileCommandWork({ runId: confirmation.runId, ...commandBudget });
+          })
+        : null;
 
     let trackedLeaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null };
     if (trackedWorkLease) {
@@ -842,7 +844,13 @@ export async function confirmPendingChatActions(
             ...(executionKind === 'project' ? { revertGroupId: group.groupId } : {}),
             completesRun: trackedLeaseSettlement.accepted,
         });
-        const runPersistenceWarning = receiptPersistenceWarning ?? trackedLeaseSettlement.warning;
+        const runPersistenceWarning = [
+            receiptPersistenceWarning,
+            trackedLeaseSettlement.warning,
+            budgetPersistenceWarning,
+        ]
+            .filter(Boolean)
+            .join(' ');
         settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         const approvalLabelsByCommandId = getApprovalLabelsByCommandId(confirmation);
         const executedLabels: PendingActionExecution[] = batchResult.actions.map(

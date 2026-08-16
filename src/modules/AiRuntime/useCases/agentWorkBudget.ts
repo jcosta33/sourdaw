@@ -25,11 +25,11 @@ function estimateCommandBatchWork(envelope: CommandBatchWorkEnvelope): AgentWork
     ].filter((estimate) => estimate.amount > 0);
 }
 
-export function reserveAgentCommandWork(input: {
-    runId: string;
-    envelope: CommandBatchWorkEnvelope;
-    attemptId: string;
-}): { status: 'reserved' | 'hard-limit-reached'; reason?: string; estimates: AgentWorkBudgetEstimate[] } {
+function reserveAgentCommandWork(input: { runId: string; envelope: CommandBatchWorkEnvelope; attemptId: string }): {
+    status: 'reserved' | 'hard-limit-reached';
+    reason?: string;
+    estimates: AgentWorkBudgetEstimate[];
+} {
     const estimates = estimateCommandBatchWork(input.envelope);
     const run = agentRunLifecycle.get(input.runId);
     if (run === null) {
@@ -57,7 +57,7 @@ export function reserveAgentCommandWork(input: {
     return { status: 'reserved', estimates };
 }
 
-export function reconcileAgentCommandWork(input: {
+function reconcileAgentCommandWork(input: {
     runId: string;
     attemptId: string;
     estimates: readonly AgentWorkBudgetEstimate[];
@@ -72,3 +72,8 @@ export function reconcileAgentCommandWork(input: {
         });
     }
 }
+
+export const agentWorkBudget = {
+    reconcileCommandWork: reconcileAgentCommandWork,
+    reserveCommandWork: reserveAgentCommandWork,
+} as const;

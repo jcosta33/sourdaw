@@ -20,6 +20,7 @@ describe('provider route view', () => {
                 model: 'tool-model',
                 inputTokens: 1,
                 outputTokens: 2,
+                cachedInputTokens: 4,
                 provenance: 'provider-reported',
                 status: 'complete',
                 fallbackReason: 'remote-unavailable',
@@ -53,6 +54,7 @@ describe('provider route view', () => {
                     unknown: 'unknown',
                 },
             },
+            cache: { status: 'used', provenance: 'provider-reported' },
             usage: { provenance: 'provider-reported', priceProvenance: 'unavailable' },
         });
     });
@@ -71,6 +73,7 @@ describe('provider route view', () => {
             requestedRoute: 'remote',
             actualRoute: null,
             availability: { status: 'unavailable', reason: 'no-provider-attempt' },
+            cache: { status: 'unavailable', provenance: 'unavailable' },
             usage: { provenance: 'unavailable', priceProvenance: 'unavailable' },
         });
     });

@@ -104,7 +104,9 @@ const mocks = vi.hoisted(() => {
                     signal?: AbortSignal,
                     projectRevision?: string,
                     stemImportScope?: unknown,
-                    onProviderResult?: (result: ModelProviderResult) => void
+                    onProviderResult?: (result: ModelProviderResult) => void,
+                    streamIdentity?: unknown,
+                    onProviderAttempt?: (input: unknown) => unknown
                 ) => Promise<IntentResult>
             >(),
         getProjectContext: vi.fn<() => ProjectContext>(),
@@ -688,7 +690,8 @@ describe('sendChatMessage injectables', () => {
                 cancellationGeneration: 0,
                 requestId: expect.stringMatching(/^provider:native:agent-run-/),
                 runId: expect.stringMatching(/^agent-run-/),
-            })
+            }),
+            expect.any(Function)
         );
     });
 
@@ -1109,6 +1112,7 @@ describe('sendChatMessage injectables', () => {
                 model: 'cloud',
                 inputTokens: 11,
                 outputTokens: 4,
+                cachedInputTokens: 3,
                 provenance: 'provider-reported',
                 correlationId: expect.any(String),
                 status: 'complete',

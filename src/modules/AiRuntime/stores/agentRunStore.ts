@@ -183,6 +183,10 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
     const model = readNullableString(value.model);
     const inputTokens = value.inputTokens === null ? null : readNonNegativeInteger(value.inputTokens);
     const outputTokens = value.outputTokens === null ? null : readNonNegativeInteger(value.outputTokens);
+    const cachedInputTokens =
+        value.cachedInputTokens === undefined || value.cachedInputTokens === null
+            ? value.cachedInputTokens
+            : readNonNegativeInteger(value.cachedInputTokens);
     const provenances: AgentRunProviderUsage['provenance'][] = [
         'provider-reported',
         'versioned-estimate',
@@ -256,6 +260,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         model === undefined ||
         (inputTokens === null && value.inputTokens !== null) ||
         (outputTokens === null && value.outputTokens !== null) ||
+        (cachedInputTokens === null && value.cachedInputTokens !== null) ||
         !provenances.some((provenance) => provenance === value.provenance) ||
         correlationId === null ||
         (value.status !== undefined && status === undefined) ||
@@ -274,6 +279,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         model,
         inputTokens,
         outputTokens,
+        ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
         provenance: value.provenance as AgentRunProviderUsage['provenance'],
         ...(correlationId === undefined ? {} : { correlationId }),
         ...(status === undefined ? {} : { status }),

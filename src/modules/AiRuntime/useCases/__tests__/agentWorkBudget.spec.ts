@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { reserveAgentCommandWork } from '../agentWorkBudget';
+import { agentWorkBudget } from '../agentWorkBudget';
 
 describe('agent work budget', () => {
     it('reserves command, render, import, storage, and dynamic effect work before execution', () => {
@@ -22,7 +22,7 @@ describe('agent work budget', () => {
             },
         });
 
-        const reserved = reserveAgentCommandWork({
+        const reserved = agentWorkBudget.reserveCommandWork({
             runId: 'local-work-run',
             attemptId: 'batch-a:1',
             envelope: {
@@ -57,10 +57,14 @@ describe('agent work budget', () => {
                 { operation: 'renderProjectSections', objectReferences: [], arguments: { sectionIds: ['chorus'] } },
             ] as never,
         };
-        expect(reserveAgentCommandWork({ runId: 'limited-work-run', attemptId: 'batch-a:1', envelope })).toMatchObject({
+        expect(
+            agentWorkBudget.reserveCommandWork({ runId: 'limited-work-run', attemptId: 'batch-a:1', envelope })
+        ).toMatchObject({
             status: 'reserved',
         });
-        expect(reserveAgentCommandWork({ runId: 'limited-work-run', attemptId: 'batch-b:1', envelope })).toMatchObject({
+        expect(
+            agentWorkBudget.reserveCommandWork({ runId: 'limited-work-run', attemptId: 'batch-b:1', envelope })
+        ).toMatchObject({
             status: 'hard-limit-reached',
             reason: 'maxRenderJobs',
         });

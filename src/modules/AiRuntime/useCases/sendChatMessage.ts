@@ -178,6 +178,18 @@ function recordModelProviderUsage(
     const executor: RunnableAiBackend =
         result.provider === 'native' || result.provider === 'webllm' ? result.provider : 'cloud';
     const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
+    const existingAttempt = agentRunLifecycle
+        .get(runId)
+        ?.budgetAttempts.some((attempt) => attempt.attemptId === budgetAttemptId);
+    if (!existingAttempt) {
+        agentRunLifecycle.reserveBudget({
+            runId,
+            attemptId: budgetAttemptId,
+            category: getProviderBudgetCategory(executor),
+            estimate: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+            provenance: result.usage.provenance,
+        });
+    }
     agentRunLifecycle.recordProviderUsage({
         runId,
         usage: {
@@ -185,6 +197,7 @@ function recordModelProviderUsage(
             model: result.model,
             inputTokens: result.usage.inputTokens,
             outputTokens: result.usage.outputTokens,
+            cachedInputTokens: result.usage.cachedInputTokens,
             provenance: result.usage.provenance,
             correlationId: result.correlationId,
             status: result.status,
