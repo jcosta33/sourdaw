@@ -1,0 +1,67 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_d99dee2fcf005f 2,461-487
+src/modules/AudioEngine/useCases/__tests__/agentBuiltinDeviceRuntimeManifest.spec.ts
+  s_a40848e8f8cca9::t_9ffc03ec0a5d62 4-5,59-61,67-69,71-73
+  s_a40848e8f8cca9::t_c50b7f391457e6 1-3,6-58,62-66,70,74-77
+src/modules/AudioEngine/repositories/deviceNodeFactory.ts
+  s_a40848e8f8cca9::t_9a75f68548c10a 10-13,110
+  s_a40848e8f8cca9::t_333a661188a452 115
+  s_a40848e8f8cca9::t_c797c205c03749 14
+  s_a40848e8f8cca9::t_c4e159b05979dd 40-64,67-95
+  s_a40848e8f8cca9::t_89193aa9429c59 96
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_a40848e8f8cca9::t_bd200df9e848ca 5
+  s_a40848e8f8cca9::t_110c26f0a84b47 781-785
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_a40848e8f8cca9::t_35f5acc9f15533 206-211,239-251,261,267-289,291
+  s_a40848e8f8cca9::t_0513703414602e 16
+src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts
+  s_a40848e8f8cca9::t_1211ffa2bc646a 13,38-40
+src/modules/AudioEngine/repositories/deviceStrategy/FaustDeviceStrategy.ts
+  s_a40848e8f8cca9::t_edf91593ff8dbd 3,53-57
+  s_a40848e8f8cca9::t_a1f191c0ed46a6 58
+src/modules/AudioEngine/useCases/getAgentBuiltinDeviceRuntimeManifest.ts
+  s_a40848e8f8cca9::t_4755ea007773fa 1-7,11-12,14,18-19,23-61
+  s_a40848e8f8cca9::t_628dc56bdd1c7a 8,10,13,15-17
+  s_a40848e8f8cca9::t_769fa516386843 9,20-22
+src/modules/AudioEngine/repositories/devices/dynamics/createSidechainCompressorFallback.ts
+  s_a40848e8f8cca9::t_0220b9454639d6 17
+  s_a40848e8f8cca9::t_6f99b4c86c142a 1
+  s_a40848e8f8cca9::t_526ed8eef8a909 14-16,18
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_9d29d369b639af 47
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_a40848e8f8cca9::t_115fcf2e15db29 156,296,455,601,741,794-805,865,932,994,1089,1189,1232,1367-1372,1455
+  s_a40848e8f8cca9::t_20e9cb318367f9 14,57,64-92
+  s_a40848e8f8cca9::t_13f63c363c7c67 93
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_50a21660d70255 1-8,21,23,27-28,62-63
+  s_a40848e8f8cca9::t_1508ed55564b43 64-81
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_a40848e8f8cca9::t_aa933b69efc1ab 7-8,11-19
+  s_a40848e8f8cca9::t_8b72b4b616b391 5
+src/modules/AudioEngine/models/BuiltinDeviceRuntime.ts
+  s_a40848e8f8cca9::t_7c5da9865c4d24 39,41-43,45-65
+  s_a40848e8f8cca9::t_eb3cfcb16e3e9e 10-20,22-25,30-38,66-97
+  s_a40848e8f8cca9::t_f37f68648adcf1 26-29
+  s_a40848e8f8cca9::t_53b7caeda194de 40,44
+  s_a40848e8f8cca9::t_ecf97a194c58d2 1-9,21
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_6290a1991da6d9 118,124,132-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "287e987522ee9601888961d2d3b175325641aaef",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
