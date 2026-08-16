@@ -8,6 +8,7 @@ import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeY
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
 
@@ -125,9 +126,9 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
 
         if (noteData.fermenterDeviceId) {
             const strip = audioEngine.getTrackStrip(instrumentTrackId);
-            const deviceNode = strip?.deviceNodes.find(
-                (candidate) => candidate.deviceId === noteData.fermenterDeviceId
-            );
+            // By instance id alone: a note-off has to release the very node its
+            // note-on latched onto, so it must not fall back to the device kind.
+            const deviceNode = resolveDeviceNode(strip, { deviceId: noteData.fermenterDeviceId });
             if (deviceNode?.fermenterControls) {
                 deviceNode.fermenterControls.noteOff(note, dispatchFrame, noteData.channel);
             }
@@ -137,9 +138,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
 
         if (noteData.grandBouleDeviceId) {
             const strip = audioEngine.getTrackStrip(instrumentTrackId);
-            const deviceNode = strip?.deviceNodes.find(
-                (candidate) => candidate.deviceId === noteData.grandBouleDeviceId
-            );
+            const deviceNode = resolveDeviceNode(strip, { deviceId: noteData.grandBouleDeviceId });
             if (deviceNode?.grandBouleControls) {
                 deviceNode.grandBouleControls.noteOff(note, dispatchFrame, releaseVelocity, noteData.channel);
             }
@@ -153,7 +152,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         if (noteData.levainDeviceId) {
             const strip = audioEngine.getTrackStrip(instrumentTrackId);
             const levainId = noteData.levainDeviceId;
-            const deviceNode = strip?.deviceNodes.find((candidate) => candidate.deviceId === levainId);
+            const deviceNode = resolveDeviceNode(strip, { deviceId: levainId });
             if (deviceNode?.levainControls) {
                 deviceNode.levainControls.noteOff(note, dispatchFrame, noteData.channel);
             }
