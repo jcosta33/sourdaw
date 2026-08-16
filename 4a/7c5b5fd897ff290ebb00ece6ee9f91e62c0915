@@ -1,0 +1,64 @@
+crates/daw-engine/src/audio_thread.rs
+  h_1228e573df1f42 3,11,19-23,142-151,154-155,161-162,168-174,226-277,282-283,307-326,335,396,443-539
+crates/daw-engine/src/engine_events.rs
+  h_1228e573df1f42 1-212
+crates/daw-engine/src/lib.rs
+  h_1228e573df1f42 3,10,16,19-43,49,54-56,58-71,74-80,87,96-104,195-259
+src-tauri/src/commands/engine_diagnostics.rs
+  h_1228e573df1f42 1-305
+src-tauri/src/commands/mod.rs
+  h_1228e573df1f42 7
+src-tauri/src/commands/plugins.rs
+  h_1228e573df1f42 17,938-950,1038-1112
+src-tauri/src/lib.rs
+  h_1228e573df1f42 70
+src-tauri/src/state.rs
+  h_1228e573df1f42 9,92-97,118
+src/modules/AudioEngine/models/EngineRtDiagnostics.ts
+  h_1228e573df1f42 1-58
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  h_1228e573df1f42 1-134
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  h_1228e573df1f42 1-94
+src/modules/AudioEngine/services/engineDiagnosticsReadFailureLatch.ts
+  h_1228e573df1f42 1-34
+src/modules/AudioEngine/stores/engineRtDiagnosticsStore.ts
+  h_1228e573df1f42 1-32
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  h_1228e573df1f42 1-192
+src/modules/AudioEngine/useCases/engineAccess/refreshEngineRtDiagnostics.ts
+  h_1228e573df1f42 1-64
+src/modules/AudioEngine/useCases/index.ts
+  h_1228e573df1f42 70
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  h_1228e573df1f42 3,21-22,162-255
+src/modules/PluginHost/repositories/pluginBridge/loadPlugin.ts
+  h_1228e573df1f42 15
+src/modules/PluginHost/repositories/pluginBridge/processAudioIPC.ts
+  h_1228e573df1f42 1,39-60,72-93
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  h_1228e573df1f42 32-42
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  h_1228e573df1f42 121-161
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  h_1228e573df1f42 82-92
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  h_1228e573df1f42 83-97,261
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  h_1228e573df1f42 173,178,180,431-482
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  h_1228e573df1f42 12,25,635-667
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  h_1228e573df1f42 9,111-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4a7c5b5fd897ff290ebb00ece6ee9f91e62c0915",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
