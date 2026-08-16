@@ -1,0 +1,25 @@
+src/modules/AiRuntime/models/__tests__/AgentDataPolicy.spec.ts
+  s_1c5d441e441988::t_d19d1ea8dbe8ce 3
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_1c5d441e441988::t_65ec8d80465242 70-100
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inferenceDataPolicy.spec.ts
+  s_1c5d441e441988::t_22130a4a411682 11,15,22-23,29-31,38
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_1c5d441e441988::t_b8d85070f719f1 1,31-39,457
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0437ccbe835dd633a97dfbbe66ae3d48fe685dfe",
+  "prompts": {},
+  "sessions": {
+    "s_1c5d441e441988": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa407d2bb1c9eb9cb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
