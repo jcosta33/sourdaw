@@ -54,6 +54,8 @@ pub struct ScannedPlugin {
 pub struct ClapParameterDescriptor {
     pub id: u32,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
     pub min_value: f64,
     pub max_value: f64,
     pub default_value: f64,
@@ -633,6 +635,30 @@ unsafe fn bounded_parameter_name(value: &[std::os::raw::c_char]) -> Result<Strin
     Ok(name.to_string())
 }
 
+unsafe fn bounded_parameter_module(
+    value: &[std::os::raw::c_char],
+) -> Result<Option<String>, String> {
+    let Some(length) = value.iter().position(|character| *character == 0) else {
+        return Err("CLAP parameter module is not null terminated".to_string());
+    };
+    if length == 0 {
+        return Ok(None);
+    }
+    if length > MAX_SCANNED_PARAMETER_NAME_BYTES {
+        return Err("CLAP parameter module exceeds scanner bounds".to_string());
+    }
+    let bytes = value[..length]
+        .iter()
+        .map(|character| *character as u8)
+        .collect::<Vec<_>>();
+    let module = std::str::from_utf8(&bytes)
+        .map_err(|_| "CLAP parameter module is not valid UTF-8".to_string())?;
+    if module.chars().any(char::is_control) {
+        return Err("CLAP parameter module contains control characters".to_string());
+    }
+    Ok(Some(module.to_string()))
+}
+
 unsafe fn extract_parameters_from_extension(
     plugin: *const clap_sys::plugin::clap_plugin,
     parameters: &clap_plugin_params,
@@ -668,14 +694,17 @@ unsafe fn extract_parameters_from_extension(
             return Err("CLAP parameter metadata has invalid numeric bounds".to_string());
         }
         let name = bounded_parameter_name(&info.name)?;
-        metadata_bytes =
-            metadata_bytes.saturating_add(name.len() + std::mem::size_of::<u32>() + 32);
+        let module = bounded_parameter_module(&info.module)?;
+        metadata_bytes = metadata_bytes.saturating_add(
+            name.len() + module.as_ref().map_or(0, String::len) + std::mem::size_of::<u32>() + 32,
+        );
         if metadata_bytes > MAX_SCANNED_PARAMETER_METADATA_BYTES {
             return Err("CLAP parameter metadata exceeds scanner bounds".to_string());
         }
         descriptors.push(ClapParameterDescriptor {
             id: info.id,
             name,
+            module,
             min_value: info.min_value,
             max_value: info.max_value,
             default_value: info.default_value,
@@ -871,10 +900,16 @@ mod parameter_metadata_tests {
             default_value: 0.0,
         };
         let name = b"Gain\0";
+        let module = b"Dynamics\0";
         std::ptr::copy_nonoverlapping(
             name.as_ptr() as *const c_char,
             parameter.name.as_mut_ptr(),
             name.len(),
+        );
+        std::ptr::copy_nonoverlapping(
+            module.as_ptr() as *const c_char,
+            parameter.module.as_mut_ptr(),
+            module.len(),
         );
         *info = parameter;
         true
@@ -1063,6 +1098,7 @@ mod parameter_metadata_tests {
             vec![ClapParameterDescriptor {
                 id: 7,
                 name: "Gain".to_string(),
+                module: Some("Dynamics".to_string()),
                 min_value: -12.0,
                 max_value: 12.0,
                 default_value: 0.0,

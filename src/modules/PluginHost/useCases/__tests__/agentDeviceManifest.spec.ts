@@ -91,6 +91,7 @@ describe('agent device factory manifest', () => {
             parameters: Array<{
                 id: number;
                 name: string;
+                module?: string;
                 min_value: number;
                 max_value: number;
                 default_value: number;
@@ -116,6 +117,7 @@ describe('agent device factory manifest', () => {
                 {
                     id: 7,
                     name: 'Gain',
+                    module: 'Dynamics',
                     min_value: -12,
                     max_value: 12,
                     default_value: 0,
@@ -139,6 +141,7 @@ describe('agent device factory manifest', () => {
                     {
                         id: 'clap-param:7',
                         name: 'Gain',
+                        module: { availability: 'available', value: 'Dynamics' },
                         type: {
                             availability: 'unavailable',
                             reason: 'CLAP parameter metadata does not declare a value type.',
@@ -214,6 +217,44 @@ describe('agent device factory manifest', () => {
                 parameters: [],
                 parameterDescriptors: expect.objectContaining({ availability: 'unavailable' }),
                 configuration: expect.objectContaining({ availability: 'unavailable' }),
+            }),
+        ]);
+    });
+
+    it('fails closed for an overlong scanner parameter module', () => {
+        const scannedPlugin: ScannedPlugin = {
+            id: 'scan-id',
+            clap_id: 'org.example.effect',
+            name: 'Example Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/example.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 1,
+            has_custom_ui: true,
+            parameters: [
+                {
+                    id: 7,
+                    name: 'Gain',
+                    module: 'm'.repeat(129),
+                    min_value: -12,
+                    max_value: 12,
+                    default_value: 0,
+                    is_automatable: true,
+                    is_modulatable: true,
+                    is_stepped: false,
+                    is_enum: false,
+                },
+            ],
+        };
+        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [scannedPlugin] });
+        expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toEqual([
+            expect.objectContaining({
+                parameters: [],
+                parameterDescriptors: expect.objectContaining({ availability: 'unavailable' }),
             }),
         ]);
     });

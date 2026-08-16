@@ -10,6 +10,7 @@
 export type ScannedPluginParameter = {
     id: number;
     name: string;
+    module?: string;
     min_value: number;
     max_value: number;
     default_value: number;

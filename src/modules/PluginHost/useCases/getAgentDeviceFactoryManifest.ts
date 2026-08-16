@@ -36,6 +36,7 @@ type PublicScannedFactory = {
 type PublicParameter = {
     id: string;
     name: string;
+    module: { availability: 'available'; value: string } | { availability: 'unavailable'; reason: string };
     type: { availability: 'unavailable'; reason: string };
     unit: { availability: 'unavailable'; reason: string };
     bounds: { minimum: number; maximum: number };
@@ -121,6 +122,7 @@ function isScannedPluginParameter(value: unknown): value is ScannedPluginParamet
     return (
         typeof parameter.id === 'number' &&
         typeof parameter.name === 'string' &&
+        (parameter.module === undefined || typeof parameter.module === 'string') &&
         typeof parameter.min_value === 'number' &&
         typeof parameter.max_value === 'number' &&
         typeof parameter.default_value === 'number' &&
@@ -153,6 +155,7 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
         }
         const parameter = untrustedParameter;
         const name = parameter.name.normalize('NFC');
+        const module = parameter.module === undefined ? undefined : parameter.module.normalize('NFC');
         if (
             !Number.isSafeInteger(parameter.id) ||
             parameter.id < 0 ||
@@ -164,6 +167,13 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
                 const codePoint = character.codePointAt(0)!;
                 return codePoint <= 0x1f || codePoint === 0x7f;
             }) ||
+            (module !== undefined &&
+                (module.length === 0 ||
+                    Array.from(module).length > MAX_SCANNED_PARAMETER_NAME_LENGTH ||
+                    Array.from(module).some((character) => {
+                        const codePoint = character.codePointAt(0)!;
+                        return codePoint <= 0x1f || codePoint === 0x7f;
+                    }))) ||
             !Number.isFinite(parameter.min_value) ||
             !Number.isFinite(parameter.default_value) ||
             !Number.isFinite(parameter.max_value) ||
@@ -176,6 +186,13 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
         parameters.push({
             id: `clap-param:${parameter.id}`,
             name,
+            module:
+                module === undefined
+                    ? {
+                          availability: 'unavailable',
+                          reason: 'CLAP parameter metadata does not declare a module.',
+                      }
+                    : { availability: 'available', value: module },
             type: {
                 availability: 'unavailable',
                 reason: 'CLAP parameter metadata does not declare a value type.',
@@ -208,6 +225,7 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
             parameters.flatMap((parameter) => [
                 parameter.id,
                 parameter.name,
+                parameter.module.availability === 'available' ? parameter.module.value : 'unavailable',
                 String(parameter.bounds.minimum),
                 String(parameter.bounds.maximum),
                 String(parameter.default),
