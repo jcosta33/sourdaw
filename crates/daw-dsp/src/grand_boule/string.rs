@@ -323,9 +323,12 @@ impl ModalString {
         }
 
         // f32-precision partials (200 Hz and above). Tight inner loop over
-        // SoA arrays for auto-vectorization.
+        // SoA arrays for auto-vectorization. Partials below 200 Hz occupy the
+        // first `f64_partials` slots and had their f32 coefficients zeroed by
+        // `configure`, so starting there skips slots that can only ever add
+        // zero — up to 8 wasted iterations per unison per polarization.
         let n = self.active_partials;
-        for index in 0..n {
+        for index in self.f64_partials..n {
             let y = self.c0[index] * (input - self.x2[index])
                 + self.c1[index] * self.y1[index]
                 + self.c2[index] * self.y2[index];

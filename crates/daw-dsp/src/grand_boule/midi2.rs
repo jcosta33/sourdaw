@@ -64,7 +64,7 @@ pub fn parse_ump32(word0: u32) -> Midi2Event {
         0x80 => Midi2Event::NoteOff {
             channel,
             note: data1 & 0x7F,
-            velocity: ((data2 & 0x7F) as u16) << 9,
+            velocity: upscale_7_to_16(data2 & 0x7F),
         },
         0x90 => {
             let v7 = data2 & 0x7F;
@@ -78,7 +78,7 @@ pub fn parse_ump32(word0: u32) -> Midi2Event {
                 Midi2Event::NoteOn {
                     channel,
                     note: data1 & 0x7F,
-                    velocity: (v7 as u16) << 9,
+                    velocity: upscale_7_to_16(v7),
                     pitch_offset_q24: 0,
                 }
             }
@@ -86,7 +86,7 @@ pub fn parse_ump32(word0: u32) -> Midi2Event {
         0xB0 => Midi2Event::ControlChange {
             channel,
             controller: data1 & 0x7F,
-            value: ((data2 & 0x7F) as u32) << 25,
+            value: upscale_7_to_32(data2 & 0x7F),
         },
         _ => Midi2Event::Ignored,
     }
@@ -114,6 +114,13 @@ pub fn parse_ump64(word0: u32, word1: u32) -> Midi2Event {
             velocity: value16_high,
         },
         0x90 => {
+            // Unlike the MIDI 1.0 path above, a velocity of zero is NOT a
+            // note-off here: MIDI 2.0 (M2-104-UM) makes 0x0000 a valid Note On
+            // velocity, and the 1.0→2.0 translation rules require a conforming
+            // translator to emit a real Note Off for 1.0's velocity-0 idiom —
+            // so inferring a release from zero would swallow the quietest note
+            // a 2.0 source can send and release whatever sounds at that pitch.
+            //
             // Attribute type 0x03 = pitch 7.9 (7 bits note + 9 bits cents /
             // 512). We expand it to Q24 semitones: whole semitones are the
             // difference between the attribute note and the base note.
@@ -143,7 +150,10 @@ pub fn parse_ump64(word0: u32, word1: u32) -> Midi2Event {
         }
         0xB0 => Midi2Event::ControlChange {
             channel,
-            controller: (word0 & 0x7F) as u8,
+            // The controller index lives in byte 3 of the header word, the
+            // same slot the note number is read from above. The low byte is
+            // reserved and is always zero on a conforming source.
+            controller: ((word0 >> 8) & 0x7F) as u8,
             value: word1,
         },
         _ => Midi2Event::Ignored,
@@ -159,8 +169,67 @@ fn attribute_pitch_to_q24(base_note: u8, attribute_data: u16) -> i32 {
     let fraction_512 = (attribute_data & 0x1FF) as i32;
     let whole_semitones = note - base_note as i32;
     let whole_q24 = whole_semitones << 24;
-    let fraction_q24 = (fraction_512 << 24) / 512;
+    // `fraction_512` spans 0..=511, so `fraction_512 << 24` overflows an i32
+    // from 128 upwards and wraps negative — a fraction of a quarter semitone
+    // or more used to detune downwards. Widen the intermediate.
+    let fraction_q24 = ((fraction_512 as i64 * (1i64 << 24)) / 512) as i32;
     whole_q24 + fraction_q24
+}
+
+/// Upscale a 7-bit MIDI 1.0 value to the full 16-bit MIDI 2.0 range using the
+/// min-center-max scaling algorithm of the MIDI 2.0 UMP specification
+/// (M2-104-UM, "Scaling MIDI 1.0 to MIDI 2.0 Values"): the lower half of the
+/// range is a plain left shift, and the upper half repeats the significant
+/// bits down through the vacated low bits so that the source maximum maps to
+/// the destination maximum. A plain `<< 9` leaves 127 at 65024 of 65535, so a
+/// MIDI 1.0 keyboard could never reach full velocity.
+fn upscale_7_to_16(value_7bit: u8) -> u16 {
+    const SRC_BITS: u32 = 7;
+    const DST_BITS: u32 = 16;
+    const SCALE_BITS: u32 = DST_BITS - SRC_BITS;
+    const SRC_CENTER: u16 = 1 << (SRC_BITS - 1);
+    // The bits repeated into the vacated low bits exclude the sign-like top
+    // bit that selects the upper half.
+    const REPEAT_BITS: u32 = SRC_BITS - 1;
+    const REPEAT_MASK: u16 = (1 << REPEAT_BITS) - 1;
+
+    let source = (value_7bit & 0x7F) as u16;
+    let mut scaled = source << SCALE_BITS;
+    if source <= SRC_CENTER {
+        return scaled;
+    }
+    let mut repeat = (source & REPEAT_MASK) << (SCALE_BITS - REPEAT_BITS);
+    while repeat != 0 {
+        scaled |= repeat;
+        repeat >>= REPEAT_BITS;
+    }
+    scaled
+}
+
+/// Upscale a 7-bit MIDI 1.0 controller value to the full 32-bit MIDI 2.0
+/// range with the same min-center-max algorithm as [`upscale_7_to_16`]
+/// (M2-104-UM, "Scaling MIDI 1.0 to MIDI 2.0 Values"). A plain `<< 25` left
+/// CC 127 at 4261412864 of 4294967295, so a MIDI 1.0 pedal could never reach
+/// the top of a continuous controller's range.
+fn upscale_7_to_32(value_7bit: u8) -> u32 {
+    const SRC_BITS: u32 = 7;
+    const DST_BITS: u32 = 32;
+    const SCALE_BITS: u32 = DST_BITS - SRC_BITS;
+    const SRC_CENTER: u32 = 1 << (SRC_BITS - 1);
+    const REPEAT_BITS: u32 = SRC_BITS - 1;
+    const REPEAT_MASK: u32 = (1 << REPEAT_BITS) - 1;
+
+    let source = (value_7bit & 0x7F) as u32;
+    let mut scaled = source << SCALE_BITS;
+    if source <= SRC_CENTER {
+        return scaled;
+    }
+    let mut repeat = (source & REPEAT_MASK) << (SCALE_BITS - REPEAT_BITS);
+    while repeat != 0 {
+        scaled |= repeat;
+        repeat >>= REPEAT_BITS;
+    }
+    scaled
 }
 
 /// Convert a 16-bit MIDI 2.0 velocity to a normalised `[0, 1]` float at
@@ -254,6 +323,111 @@ mod tests {
     fn velocity_unit_is_full_range() {
         assert_eq!(velocity_to_unit(0), 0.0);
         assert!((velocity_to_unit(0xFFFF) - 1.0).abs() < 1.0e-6);
+    }
+
+    /// F5: `fraction_512 << 24` overflowed an i32 from 128 upwards, so a
+    /// quarter-semitone-up request detuned downwards.
+    #[test]
+    fn pitch_attribute_fraction_at_a_quarter_semitone_detunes_upwards() {
+        // Note-on, note 60, attribute type 0x03 (pitch 7.9), attribute note
+        // 60 with fraction 128/512 — a quarter semitone up, no whole shift.
+        let word0 = 0x4090_3C03;
+        let word1 = 0xFFFF_0000 | (((60u32 << 9) | 128) & 0xFFFF);
+        match parse_ump64(word0, word1) {
+            Midi2Event::NoteOn {
+                pitch_offset_q24, ..
+            } => {
+                assert_eq!(pitch_offset_q24, 1 << 22);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    /// F5: the top of the fraction range must stay positive and monotonic.
+    #[test]
+    fn pitch_attribute_fraction_at_the_top_of_the_range_stays_positive() {
+        let word0 = 0x4090_3C03;
+        let word1 = 0xFFFF_0000 | (((60u32 << 9) | 511) & 0xFFFF);
+        match parse_ump64(word0, word1) {
+            Midi2Event::NoteOn {
+                pitch_offset_q24, ..
+            } => {
+                assert_eq!(pitch_offset_q24, ((1 << 24) / 512) * 511);
+                assert!(pitch_offset_q24 > 0);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    /// F6: the controller index lives in byte 3, not the reserved low byte.
+    #[test]
+    fn parses_midi2_control_change_controller_number() {
+        // Message type 4, CC op 0xB0, controller 64 (sustain), reserved 0.
+        let word0 = 0x40B0_4000;
+        let word1 = 0x8000_0000;
+        match parse_ump64(word0, word1) {
+            Midi2Event::ControlChange {
+                controller, value, ..
+            } => {
+                assert_eq!(controller, 64);
+                assert_eq!(value, 0x8000_0000);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    /// MIDI 2.0 conformance: a UMP64 note-on with velocity 0x0000 is a valid
+    /// Note On (M2-104-UM), not the MIDI 1.0 note-off idiom — conforming
+    /// 1.0→2.0 translators emit a real Note Off for that idiom, so inferring a
+    /// release here would swallow the quietest note a 2.0 source can send.
+    #[test]
+    fn midi2_note_on_with_zero_velocity_stays_a_note_on() {
+        let word0 = 0x4090_4500;
+        let word1 = 0x0000_0000;
+        match parse_ump64(word0, word1) {
+            Midi2Event::NoteOn { note, velocity, .. } => {
+                assert_eq!(note, 69);
+                assert_eq!(velocity, 0);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    /// F15b: min-center-max upscaling reaches both the centre and the top of
+    /// the 16-bit range; a plain `<< 9` stops at 65024.
+    #[test]
+    fn seven_bit_velocity_upscales_to_the_full_sixteen_bit_range() {
+        let velocity_of = |v7: u32| match parse_ump32(0x2090_3C00 | v7) {
+            Midi2Event::NoteOn { velocity, .. } => velocity,
+            other => panic!("unexpected event: {other:?}"),
+        };
+        assert_eq!(velocity_of(127), 65_535);
+        assert_eq!(velocity_of(64), 32_768);
+        assert_eq!(velocity_of(1), 512);
+    }
+
+    /// F15b: release velocity travels the same scaling path.
+    #[test]
+    fn seven_bit_release_velocity_upscales_to_full_scale() {
+        match parse_ump32(0x2080_3C7F) {
+            Midi2Event::NoteOff { velocity, .. } => assert_eq!(velocity, 65_535),
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    /// A MIDI 1.0 CC value travels the same min-center-max scaling into the
+    /// 32-bit MIDI 2.0 controller range; a plain `<< 25` stopped short of the
+    /// maximum and off-centre at 64.
+    #[test]
+    fn seven_bit_control_change_value_upscales_to_the_full_thirty_two_bit_range() {
+        let value_of = |v7: u32| match parse_ump32(0x20B0_4000 | v7) {
+            Midi2Event::ControlChange { value, .. } => value,
+            other => panic!("unexpected event: {other:?}"),
+        };
+        assert_eq!(value_of(127), u32::MAX);
+        assert_eq!(value_of(64), 0x8000_0000);
+        assert_eq!(value_of(0), 0);
+        assert_eq!(value_of(1), 1 << 25);
     }
 
     #[test]

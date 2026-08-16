@@ -9,21 +9,21 @@
   "packages": {
     "daw-dsp": {
       "crate": "crates/daw-dsp",
-      "crateSourceHash": "sha256:591abe3e9ffb14f83f3d5951ace41899054755184b021ccba4cfbdc73910ac97",
+      "crateSourceHash": "sha256:8ce4c69d5af36f64ca49e39eba794baccadc62311d412d8989d54740dbd4218e",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
-        "public/wasm/daw-dsp/daw_dsp.js": "sha256:3f7ab09f0ac48cdf1690dcfd4fa56e175728a2d221ba5cd77c54066a3d87efaf",
-        "public/wasm/daw-dsp/daw_dsp_bg.wasm": "sha256:2f529eb40fc71b400ba1f562cab34b3e30beaaf207af3ba23825d734d6f73d53",
-        "public/wasm/daw-dsp/daw_dsp.d.ts": "sha256:c0b2ed61957a8b3f4355ffeb3fc04810ae144b4394292b7ac43043b3d0a61ecb",
-        "public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts": "sha256:bf206b7a67d1a32629c2d0ef00053899cdb9e63a0c7de53e02aeafacfb36b89a",
+        "public/wasm/daw-dsp/daw_dsp.js": "sha256:a5b64228b531b8cb108f3f08d14c6a5576073eceb0312ca44f336a433f04e4b4",
+        "public/wasm/daw-dsp/daw_dsp_bg.wasm": "sha256:19685d67e7eb9398d0319070e45069946a1cbb1121b5f9dc31147374e56daa95",
+        "public/wasm/daw-dsp/daw_dsp.d.ts": "sha256:8b53cdacadba046a7acd130d257fc8de1054502f81522ea293a200c05206bb63",
+        "public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts": "sha256:2e05aabd4911692f39fc705420412ce89851b7c7ce1b80bc0d527a04d5d3ad33",
         "public/wasm/daw-dsp/package.json": "sha256:f267baf6685da8a939785e34ecfcda4b5d707aa456a7109a1330fd5f52211000",
-        "src/modules/AudioEngine/wasm/daw_dsp.js": "sha256:0be45c8464baec311943d7cf0b01aace64b31d7c3cedf24340d192b93db15bc2",
-        "src/modules/AudioEngine/wasm/daw_dsp.d.ts": "sha256:c0b2ed61957a8b3f4355ffeb3fc04810ae144b4394292b7ac43043b3d0a61ecb"
+        "src/modules/AudioEngine/wasm/daw_dsp.js": "sha256:b73b69790bc530bd40221006706ef8ba1e587b899f8ec0fa6eaee4c771f63b73",
+        "src/modules/AudioEngine/wasm/daw_dsp.d.ts": "sha256:8b53cdacadba046a7acd130d257fc8de1054502f81522ea293a200c05206bb63"
       }
     },
     "proof-chamber": {
       "crate": "crates/proof-chamber",
-      "crateSourceHash": "sha256:9b52af88c4302a1d9583725ec340e29887b0d25752784c47dd000a0c2dec0b7a",
+      "crateSourceHash": "sha256:0ae2d81cf027d37c63d6803b5624492e0cdd71223d88be6163e6d2120ad7ca0e",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/proof-chamber/proof_chamber.js": "sha256:7df8399e45b903c728fe51bb5d7ccdb1f0f08bb892bf8b0c34051aff4cefa879",
@@ -37,7 +37,7 @@
     },
     "scoring": {
       "crate": "crates/scoring",
-      "crateSourceHash": "sha256:1efb231e69ff548844d52d28ac286c053444a40a35e98cdc807c856808d692c4",
+      "crateSourceHash": "sha256:2fe2c58ee9070732ec8d79ca7605f31d9303a1e3bbe65344528ae8585405dfd8",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/scoring/scoring.js": "sha256:e25729137072e455d875cdb60796f29a300dc226e5d21b01c045e59811b2e122",

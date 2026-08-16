@@ -230,7 +230,17 @@ impl GrinderEngine {
             // Cabinet
             "cabType" => self.cabinet_mode = CabinetMode::from_index(value.round().max(0.0) as u32),
             "routingMode" => {
-                self.routing_mode = RoutingMode::from_index(value.round().max(0.0) as u32)
+                let next = RoutingMode::from_index(value.round().max(0.0) as u32);
+                // The dual chain only runs under DualAmp, so its state froze
+                // at whatever the last DualAmp sample left behind. Clear it on
+                // entry or that stale energy replays as a pop.
+                if next == RoutingMode::DualAmp && self.routing_mode != RoutingMode::DualAmp {
+                    self.dual_power_amp.reset();
+                    self.dual_transformer.reset();
+                    self.dual_speaker.reset();
+                    self.dual_cabinet.reset();
+                }
+                self.routing_mode = next;
             }
             "cabIrSlot" => {
                 self.cab_ir_slot = value.round().max(0.0) as u32;
@@ -241,6 +251,10 @@ impl GrinderEngine {
                 let enabled = value > 0.5;
                 self.cabinet.set_enabled(enabled);
                 self.dual_cabinet.set_enabled(enabled);
+                // The parametric speaker is a cabinet stage too: without this
+                // the toggle is inaudible in Parametric and Both cab modes.
+                self.speaker.set_enabled(enabled);
+                self.dual_speaker.set_enabled(enabled);
             }
             "mic1Enabled" | "mic1Gain" | "mic1PositionX" | "mic1PositionY" | "mic1Distance"
             | "mic2Enabled" | "mic2Gain" | "mic2PositionX" | "mic2PositionY" | "mic2Distance"
@@ -255,7 +269,18 @@ impl GrinderEngine {
             }
 
             // Neural
-            "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
+            "engineMode" => {
+                let was_capture = self.neural.engine_mode() == EngineMode::Capture;
+                self.neural.set_param(name, value);
+                // Capture mode skips the circuit preamp and tone stack, so
+                // their filter state froze on entry. Clear it when the circuit
+                // path comes back or the stale memory replays as a pop.
+                if was_capture && self.neural.engine_mode() != EngineMode::Capture {
+                    self.preamp.reset();
+                    self.tone_stack.reset();
+                }
+            }
+            "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
             | "neuralCpuBudget" | "neuralModelSlot" | "neuralModelMode" => {
                 self.neural.set_param(name, value);
             }
@@ -449,12 +474,21 @@ impl GrinderEngine {
             signal = self.process_supported_pedal_chain(signal, false);
 
             let amp_input = signal;
-            let circuit_preamp = self.preamp.process_sample(amp_input);
-            let circuit_amp = self.tone_stack.process_sample(circuit_preamp);
-            let neural_capture = self.neural.process_capture(amp_input);
             let neural_mode = self.neural.engine_mode();
             let neural_mix = self.neural.mix();
             let neural_placement = self.neural.placement();
+
+            // The circuit preamp and tone stack only reach the output in
+            // Circuit and Hybrid modes. Capture mode replaces them outright,
+            // so running them there is pure audio-thread cost for a value the
+            // selector below discards.
+            let circuit_amp = if neural_mode == EngineMode::Capture {
+                0.0
+            } else {
+                let circuit_preamp = self.preamp.process_sample(amp_input);
+                self.tone_stack.process_sample(circuit_preamp)
+            };
+            let neural_capture = self.neural.process_capture(amp_input);
 
             let mut rig_capture_signal = None;
             signal = match (neural_mode, neural_placement) {
@@ -486,15 +520,23 @@ impl GrinderEngine {
             );
             if should_run_circuit_rig {
                 let primary_back_emf = self.speaker.back_emf();
-                let dual_back_emf = self.dual_speaker.back_emf();
                 let primary_power = self
                     .power_amp
                     .process_sample(signal + primary_back_emf * 0.1);
-                let dual_power = self
-                    .dual_power_amp
-                    .process_sample(signal * 0.94 + dual_back_emf * 0.08);
                 let primary_transformer = self.transformer.process_sample(primary_power);
-                let dual_transformer = self.dual_transformer.process_sample(dual_power);
+
+                // Only DualAmp routing reads the second amp chain. Every other
+                // routing mode used to run a whole extra power amp and output
+                // transformer per sample and throw the result away.
+                let dual_transformer = if self.routing_mode == RoutingMode::DualAmp {
+                    let dual_back_emf = self.dual_speaker.back_emf();
+                    let dual_power = self
+                        .dual_power_amp
+                        .process_sample(signal * 0.94 + dual_back_emf * 0.08);
+                    self.dual_transformer.process_sample(dual_power)
+                } else {
+                    0.0
+                };
 
                 let pa_peak = primary_transformer.abs().max(dual_transformer.abs());
                 if pa_peak > self.power_amp_peak {
@@ -507,7 +549,6 @@ impl GrinderEngine {
 
                 // Post-amp pedals
                 signal = self.process_supported_pedal_chain(signal, true);
-
             } else {
                 self.power_amp_peak *= self.meter_decay_coeff;
             }
@@ -556,6 +597,40 @@ impl GrinderEngine {
                 self.output_peak *= self.meter_decay_coeff;
             }
         }
+    }
+
+    /// Clear every stage's runtime state. Parameters and routing survive;
+    /// filter memories, envelopes, ring buffers and meters do not — so a
+    /// relocated playhead does not inherit the tail of the previous position.
+    pub fn reset(&mut self) {
+        self.input_cond.reset();
+        self.gate.reset();
+        self.preamp.reset();
+        self.tone_stack.reset();
+        self.power_amp.reset();
+        self.dual_power_amp.reset();
+        self.transformer.reset();
+        self.dual_transformer.reset();
+        self.cabinet.reset();
+        self.dual_cabinet.reset();
+        self.speaker.reset();
+        self.dual_speaker.reset();
+        self.neural.reset();
+
+        self.pre_od.reset();
+        self.pre_dist.reset();
+        self.pre_fuzz.reset();
+        self.pre_comp.reset();
+        self.post_od.reset();
+        self.post_dist.reset();
+        self.post_fuzz.reset();
+        self.post_comp.reset();
+
+        self.fat_low_state = 0.0;
+        self.input_peak = 0.0;
+        self.preamp_peak = 0.0;
+        self.power_amp_peak = 0.0;
+        self.output_peak = 0.0;
     }
 
     pub fn input_db(&self) -> f32 {
@@ -783,7 +858,7 @@ fn rebuild_supported_pedal_order(order_values: [f32; 4]) -> [SupportedPedalSlot;
 
 #[cfg(test)]
 mod tests {
-    use super::{rebuild_supported_pedal_order, GrinderEngine, SupportedPedalSlot};
+    use super::{linear_to_db, rebuild_supported_pedal_order, GrinderEngine, SupportedPedalSlot};
 
     fn average_abs_output_for_channel(channel: u32, gain: f32) -> f32 {
         let mut engine = GrinderEngine::new(48_000.0);
@@ -1029,6 +1104,73 @@ mod tests {
         );
     }
 
+    /// F4: the `cabEnabled` handler has to reach `SpeakerModel`, or the
+    /// toggle does nothing in Parametric and Both cabinet modes.
+    #[test]
+    fn cab_enabled_is_audible_in_parametric_and_both_cab_modes() {
+        for cab_type in [1.0_f32, 2.0] {
+            let engaged = average_abs_output_for_cab_config(|engine| {
+                engine.set_param("cabType", cab_type);
+                engine.set_param("cabEnabled", 1.0);
+            });
+            let bypassed = average_abs_output_for_cab_config(|engine| {
+                engine.set_param("cabType", cab_type);
+                engine.set_param("cabEnabled", 0.0);
+            });
+
+            assert!(
+                (engaged - bypassed).abs() > 1.0e-3,
+                "cabEnabled must change the output in cab mode {cab_type} (engaged={engaged}, bypassed={bypassed})"
+            );
+        }
+    }
+
+    /// F13-4: every Grinder stage has a `reset`, and until now nothing called
+    /// them. A reset must drop the ringing tail the previous position left in
+    /// the filters and cabinet buffers.
+    #[test]
+    fn engine_reset_clears_the_ringing_tail_and_the_meters() {
+        fn tail_after(reset_between: bool) -> f32 {
+            let mut engine = GrinderEngine::new(48_000.0);
+            engine.set_param("channel", 2.0);
+            engine.set_param("gain", 8.0);
+            engine.set_param("master", 6.0);
+
+            let total = 2048;
+            let mut left = vec![0.0_f32; total];
+            let mut right = vec![0.0_f32; total];
+            for n in 0..total {
+                let phase = (n as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+                left[n] = phase.sin() * 0.3;
+                right[n] = left[n];
+            }
+            engine.process_block(&mut left, &mut right);
+
+            if reset_between {
+                engine.reset();
+                assert_eq!(
+                    engine.output_db(),
+                    linear_to_db(0.0),
+                    "reset must clear the output meter"
+                );
+            }
+
+            let mut silence_left = vec![0.0_f32; 256];
+            let mut silence_right = vec![0.0_f32; 256];
+            engine.process_block(&mut silence_left, &mut silence_right);
+            silence_left.iter().map(|sample| sample.abs()).sum::<f32>()
+        }
+
+        let ringing = tail_after(false);
+        let cleared = tail_after(true);
+
+        assert!(ringing > 0.0, "the amp should ring on into the next block");
+        assert!(
+            cleared < ringing * 0.01,
+            "reset must drop the tail (ringing={ringing}, cleared={cleared})"
+        );
+    }
+
     #[test]
     fn cab_type_changes_the_live_signal_path() {
         let ir_only = average_abs_output_for_cab_config(|engine| {
@@ -1145,6 +1287,72 @@ mod tests {
         assert!(
             max_delta > 1.0e-3,
             "neuralCustomConvWeight0_1 must alter the capture output (max delta {max_delta})"
+        );
+    }
+
+    fn drive_sine_blocks(engine: &mut GrinderEngine, blocks: usize) {
+        let total = 512;
+        let mut left = vec![0.0_f32; total];
+        let mut right = vec![0.0_f32; total];
+        for block in 0..blocks {
+            for n in 0..total {
+                let index = block * total + n;
+                let phase = (index as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+                left[n] = phase.sin() * 0.3;
+                right[n] = left[n];
+            }
+            engine.process_block(&mut left, &mut right);
+        }
+    }
+
+    /// The dual chain only runs under DualAmp routing, so its state freezes at
+    /// whatever the last DualAmp sample left behind. Re-entering the mode must
+    /// start from cleared state, not replay that stale energy as a pop.
+    #[test]
+    fn re_entering_dual_amp_routing_clears_the_frozen_dual_chain_state() {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("cabType", 1.0); // Parametric, so the dual speaker runs
+        engine.set_param("routingMode", 3.0); // DualAmp
+        drive_sine_blocks(&mut engine, 8);
+        assert!(
+            engine.dual_speaker.back_emf().abs() > 0.0,
+            "the DualAmp run must leave real dual-chain state behind for the re-entry to clear"
+        );
+
+        engine.set_param("routingMode", 0.0); // Serial: the dual chain freezes
+        engine.set_param("routingMode", 3.0); // back to DualAmp
+
+        assert_eq!(
+            engine.dual_speaker.back_emf(),
+            0.0,
+            "entering DualAmp must clear the dual chain's frozen state"
+        );
+    }
+
+    /// Capture mode skips the circuit preamp and tone stack, freezing their
+    /// filter state on entry. Leaving Capture must clear it: a probe through
+    /// the returned stages has to match a never-charged engine exactly.
+    #[test]
+    fn leaving_capture_mode_clears_the_frozen_circuit_stage_state() {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("gain", 8.0);
+        drive_sine_blocks(&mut engine, 8); // charge the circuit path in Circuit mode
+
+        engine.set_param("engineMode", 1.0); // Capture: circuit stages freeze
+        engine.set_param("engineMode", 0.0); // back to Circuit
+
+        let mut fresh = GrinderEngine::new(48_000.0);
+        fresh.set_param("gain", 8.0);
+        let probe = 0.25_f32;
+        assert_eq!(
+            engine.preamp.process_sample(probe),
+            fresh.preamp.process_sample(probe),
+            "the preamp must return from Capture with cleared filter state"
+        );
+        assert_eq!(
+            engine.tone_stack.process_sample(probe),
+            fresh.tone_stack.process_sample(probe),
+            "the tone stack must return from Capture with cleared filter state"
         );
     }
 }

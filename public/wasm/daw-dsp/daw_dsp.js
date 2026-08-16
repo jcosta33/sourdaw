@@ -1056,6 +1056,9 @@ export class GrinderInstance {
         return ret;
     }
     /**
+     * Static per-tier CPU estimate for the selected neural tier and budget —
+     * not a measurement of the running host. Present it as an expected cost,
+     * never as observed load.
      * @returns {number}
      */
     get_neural_cpu_percent() {
@@ -1135,6 +1138,14 @@ export class GrinderInstance {
     process_automated(block_size) {
         const ret = wasm.grinderinstance_process_automated(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Clear every amp stage's runtime state without disturbing parameters,
+     * so filter memories, envelopes, cabinet ring buffers and meters do not
+     * carry one playhead position into another on transport stop or seek.
+     */
+    reset() {
+        wasm.grinderinstance_reset(this.__wbg_ptr);
     }
     /**
      * @param {string} name
