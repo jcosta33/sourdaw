@@ -1,0 +1,27 @@
+src/modules/PluginHost/useCases/getAgentDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_cb956bac9ae07c 5-41,47-48,56
+  s_a40848e8f8cca9::t_c02e2896be751e 49-51,53-55
+  s_a40848e8f8cca9::t_b750b432a55595 57-59
+  s_a40848e8f8cca9::t_aadfa423fbac46 52,60-97
+src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts
+  s_a40848e8f8cca9::t_fd66a3cb7509e7 73-75,88,94,106-107
+  s_a40848e8f8cca9::t_04db2f927326ef 66
+  s_a40848e8f8cca9::t_33356e74f85d70 76-87,89-92,95-98,100-105
+  s_a40848e8f8cca9::t_37d89a07c3b79f 64,93,99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5023ccc8f806b90fe9025f38d13d1bbb083fcb93",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
