@@ -15,7 +15,7 @@ import {
     REMOTE_TEXT_AGENT_DATA_CATEGORIES,
 } from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
+import { type AgentRunBudgets, type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
@@ -100,6 +100,7 @@ function readProviderTokenCount(value: unknown): number | null {
 type SendChatMessageOptions = {
     mode?: AgentExecutionMode;
     trustCeiling?: AgentTrustCeiling;
+    budgets?: AgentRunBudgets;
 };
 
 type AgentApplyReceipt = Extract<
@@ -171,6 +172,7 @@ function trySettleAgentRunWorkLease(
 function recordModelProviderUsage(
     runId: string,
     result: ModelProviderResult,
+    budgetAttemptId: string,
     options: { terminal: boolean } = { terminal: false }
 ): void {
     const executor: RunnableAiBackend =
@@ -194,6 +196,22 @@ function recordModelProviderUsage(
                 options.terminal || result.status === 'complete' ? null : (result.failure?.code ?? result.status),
         },
     });
+    const consumed = (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0);
+    agentRunLifecycle.reconcileBudgetAttempt({
+        runId,
+        attemptId: budgetAttemptId,
+        consumed,
+        mode: 'final',
+        provenance: result.usage.provenance,
+    });
+}
+
+function getProviderBudgetCategory(backend: RunnableAiBackend): string {
+    return backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
+}
+
+function estimateProviderBudget(prompt: string, backend: RunnableAiBackend): number {
+    return backend === 'cloud' ? Math.ceil(prompt.length / 4) + 1024 : 1;
 }
 
 function recordApplicationToolOnlyPlan(input: {
@@ -272,10 +290,32 @@ export async function sendChatMessage(
         createdRevision: captureProjectRevision(),
         requestedRoute,
         selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
+        budgets: options?.budgets,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
     const providerReceiptIdentity = `provider:${backend}:${runId}`;
+    const budgetReservation = agentRunLifecycle.reserveBudget({
+        runId,
+        attemptId: providerReceiptIdentity,
+        category: getProviderBudgetCategory(backend),
+        estimate: estimateProviderBudget(userText, backend),
+        provenance: 'versioned-estimate',
+    });
+    if (budgetReservation.status === 'hard-limit-reached') {
+        agentRunLifecycle.recordError({
+            runId,
+            error: {
+                code: 'agent-budget-hard-limit',
+                message: `The ${budgetReservation.reason} budget would be exceeded before provider work starts.`,
+                occurredAt: Date.now(),
+                retriable: false,
+                workId: providerWorkId,
+            },
+            terminal: true,
+        });
+        throw createAiRuntimeError('The agent budget limit was reached before work started.');
+    }
     const providerLeaseResult = agentRunWorkLease.claim({
         runId,
         workId: providerWorkId,
@@ -310,7 +350,7 @@ export async function sendChatMessage(
                 prompt: userText,
                 signal: aborter.signal,
                 onProviderResult: (providerResult) => {
-                    recordModelProviderUsage(runId, providerResult);
+                    recordModelProviderUsage(runId, providerResult, providerReceiptIdentity);
                 },
                 streamIdentity: {
                     runId,
@@ -1324,7 +1364,7 @@ export async function sendChatMessage(
             receiptIdentity: providerLease.receiptIdentity,
             terminalState: 'completed',
         });
-        recordModelProviderUsage(runId, providerResult, { terminal: true });
+        recordModelProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
         providerUsageRecorded = true;
         agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
         llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
@@ -1363,7 +1403,7 @@ export async function sendChatMessage(
                     : providerSession.finish(nativeProviderTerminal);
         }
         if (providerResult && !providerUsageRecorded) {
-            recordModelProviderUsage(runId, providerResult, { terminal: true });
+            recordModelProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });
             providerUsageRecorded = true;
         }
         if (configurationChanged) {

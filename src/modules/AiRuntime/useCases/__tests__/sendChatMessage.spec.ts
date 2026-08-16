@@ -1117,6 +1117,11 @@ describe('sendChatMessage injectables', () => {
                 routeId: 'cloud:openai-compatible:cloud',
                 executor: 'cloud',
                 fallbackReason: null,
+                disclosure: expect.objectContaining({
+                    requestId: expect.any(String),
+                    categories: expect.arrayContaining(['prompt-text']),
+                    retention: expect.objectContaining({ applicationState: 'unknown' }),
+                }),
             },
         ]);
         expect(getAgentRun(usageProjection!.runId)?.modelRoute).toEqual({
