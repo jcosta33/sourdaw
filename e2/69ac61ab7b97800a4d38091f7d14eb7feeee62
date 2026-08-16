@@ -1,0 +1,95 @@
+crates/daw-dsp/src/grinder/engine.rs
+  s_ab5443e65c7fba::t_7f6f56cef01e88 581-615
+  s_ab5443e65c7fba::t_244d9c2bc1a248 506-518
+  s_ab5443e65c7fba::t_02ccf0fbc977df 841
+  s_ab5443e65c7fba::t_e940d9c9faf1db 244-247
+  s_ab5443e65c7fba::t_531d0a732f5b2f 460-470
+  s_ab5443e65c7fba::t_0d9c03dbd72989 1087-1153
+  s_ab5443e65c7fba::t_9c9027d2c45c56 471
+crates/daw-dsp/src/grinder/cabinet.rs
+  s_ab5443e65c7fba::t_5c44b6e0835dfa 7-12,16-21
+  s_ab5443e65c7fba::t_ed10dcfc9541ae 154-155,157-160
+  s_ab5443e65c7fba::t_fa8bdc7a7504e7 408
+  s_ab5443e65c7fba::t_a75296ea2d98e2 58-62
+  s_ab5443e65c7fba::t_cab3d180b936c8 88-89,91,93-94,96-100,106-107,109-114
+  s_ab5443e65c7fba::t_7d1ad1af9c5179 352-355
+  s_ab5443e65c7fba::t_41deacd97b2d64 337,444-489
+  s_ab5443e65c7fba::t_4b52342026a62a 179,182
+  s_ab5443e65c7fba::t_b6e5763f96754d 280-291
+  s_ab5443e65c7fba::t_15a0c4682d68df 311,327,332-336
+  s_ab5443e65c7fba::t_8473e0a734b3f6 122,134,146,338
+crates/daw-dsp/src/grinder/neural.rs
+  s_ab5443e65c7fba::t_2434278de8f8cb 306-310
+  s_ab5443e65c7fba::t_71e6783bafdc05 361-364
+  s_ab5443e65c7fba::t_6f01ab55266416 491
+  s_ab5443e65c7fba::t_a2c281cd2d1fde 515-556
+crates/daw-dsp/src/grand_boule/voice.rs
+  s_ab5443e65c7fba::t_8ddb651b86ee9d 457-458
+  s_ab5443e65c7fba::t_0e4863206a2549 605-613,635
+  s_ab5443e65c7fba::t_d8aae4393e6295 131-142
+  s_ab5443e65c7fba::t_0d4fa5192258d2 44-50
+  s_ab5443e65c7fba::t_b54a8b4f127760 183-186
+  s_ab5443e65c7fba::t_f3a667ba2ca237 311-312
+  s_ab5443e65c7fba::t_d62c6fc27ec7d2 624-634
+  s_ab5443e65c7fba::t_dd3655a2fa3644 671-733
+  s_ab5443e65c7fba::t_cfe3a3853600b2 614,636,734
+crates/daw-dsp/src/grand_boule/midi2.rs
+  s_ab5443e65c7fba::t_8368e9f8019bdb 67,81
+  s_ab5443e65c7fba::t_7f5cbbd6be7e60 176-179,183-210
+  s_ab5443e65c7fba::t_a49f5b4cab54b8 306-393
+  s_ab5443e65c7fba::t_ce3370caa4c523 117-127
+  s_ab5443e65c7fba::t_67ebdfd73b5305 157-160
+  s_ab5443e65c7fba::t_216cc934437c4b 211-212
+crates/daw-dsp/src/grand_boule/string.rs
+  s_ab5443e65c7fba::t_3244956ce40397 326-329,331
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_ab5443e65c7fba::t_4c3a8f892c6bb1 16
+  s_ab5443e65c7fba::t_353ce8e2a3ef02 12
+  s_ab5443e65c7fba::t_a6cf58c99e5c7e 158,163-179
+  s_ab5443e65c7fba::t_bcd76918821178 180-181,790-792,794-940
+  s_ab5443e65c7fba::t_5dd692c421ee69 540-550
+  s_ab5443e65c7fba::t_374f541556f700 379-387
+  s_ab5443e65c7fba::t_04ca8d39f76074 114-116
+  s_ab5443e65c7fba::t_558f7eb331a68c 426-433
+  s_ab5443e65c7fba::t_c9c09e5f7da7b3 495-504
+  s_ab5443e65c7fba::t_b2661070881b76 685-692
+  s_ab5443e65c7fba::t_6d4863f5353052 786-789,793
+  s_ab5443e65c7fba::t_e59f8ff18b2e8f 182
+crates/daw-dsp/tests/grinder_ir_slot_rt.rs
+  s_ab5443e65c7fba::t_017a07b8e1b2a7 1-37
+crates/daw-dsp/src/grinder/mod.rs
+  s_ab5443e65c7fba::t_28b2bda8515ac0 162-164
+  s_ab5443e65c7fba::t_829199ac698294 77-84
+crates/daw-dsp/src/grand_boule/mechanical_noise.rs
+  s_ab5443e65c7fba::t_f0b6d7616c45f6 98-103,106
+  s_ab5443e65c7fba::t_6010a4c9460e91 38-42
+  s_ab5443e65c7fba::t_6aed3af6d64e78 124-131,135-137
+  s_ab5443e65c7fba::t_2098e2225a9367 155-159
+  s_ab5443e65c7fba::t_7d2f238d1ef416 59-61
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_ab5443e65c7fba::t_6420f5923fcee0 102
+  s_ab5443e65c7fba::t_234e4873576e5b 124
+  s_ab5443e65c7fba::t_36021410b2ff68 141
+  s_ab5443e65c7fba::t_9bb933b62d15f9 9
+  s_ab5443e65c7fba::t_979b8e28422c3c 1-8,10-55,57-65,67-77,79-101,103-104,127-140,142
+  s_ab5443e65c7fba::t_f9fd8111c3f5b9 66
+  s_ab5443e65c7fba::t_62f3e9a493d2aa 105-123,125-126
+  s_ab5443e65c7fba::t_6fc86dde872e1b 56
+  s_ab5443e65c7fba::t_4faf5e10fbed5d 78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e269ac61ab7b97800a4d38091f7d14eb7feeee62",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
