@@ -73,6 +73,13 @@ export type WasmPackageSpec = {
     /** Crate directory, relative to the repo root. */
     crateDir: string;
     /**
+     * The `package.json` script that rebuilds this package. It is not derivable
+     * from `id` (`daw-dsp` builds via `wasm:dsp`, `daw-wasm-decoder` via
+     * `wasm:decoder`), and every drift message tells the reader to run it — a
+     * guessed name sends them to a script that does not exist.
+     */
+    buildScript: string;
+    /**
      * Files that embed a wasm-bindgen schema id and must all agree. The glue
      * `.js` and the `_bg.wasm` binary of a coherent build share one id; a
      * mismatch is the #657 drift signature.
@@ -94,6 +101,34 @@ export type WasmPackageManifest = {
     artifacts: Record<string, string>;
 };
 
+/**
+ * What the generator is allowed to treat as freshly built.
+ *
+ * `crateSourceHash` is a *record of what the committed artifacts were built
+ * from*, not a reading of the current crate. Recomputing it for every package on
+ * every run turns it into the latter: a partial rebuild followed by
+ * `pnpm wasm:manifest` re-stamps untouched packages with a source hash their
+ * artifacts were never built from, and freshness rule 3 can no longer go red
+ * (#2053; the incident is commit a8db18165).
+ */
+export type WasmManifestOptions = {
+    /** The manifest as committed before this run, or `null` when none exists. */
+    previous: WasmManifest | null;
+    /**
+     * Package ids the caller asserts were just rebuilt. Only needed when a
+     * rebuild emitted byte-identical artifacts — otherwise the byte comparison
+     * against `previous` detects the rebuild on its own.
+     */
+    rebuilt: ReadonlySet<string>;
+};
+
+/** The provenance decision for one package, and why it was reached. */
+export type CrateSourceProvenance = {
+    crateSourceHash: string;
+    /** True when the hash was re-derived from the live crate source. */
+    refreshed: boolean;
+};
+
 export type WasmManifest = {
     comment: string;
     toolchain: WasmToolchain;
@@ -104,11 +139,18 @@ export type WasmManifest = {
  * The four wasm packages built by `pnpm wasm:all`. `daw-wasm-decoder` has no
  * worklet glue (built `--no-typescript`, no gen script), so it fingerprints only
  * its served pair.
+ *
+ * That absence matters for provenance. A stamped `.d.ts` moves bytes on every
+ * crate-source change, so "the artifacts moved" is a complete rebuild signal for
+ * the other three. The decoder has no stamp, so a source edit that compiles to
+ * identical bytes leaves no signal — which is why `pnpm wasm:decoder` declares
+ * itself to the generator with `--package daw-wasm-decoder`.
  */
 const wasmPackages: readonly WasmPackageSpec[] = [
     {
         id: 'daw-dsp',
         crateDir: 'crates/daw-dsp',
+        buildScript: 'wasm:dsp',
         schemaSources: [
             'public/wasm/daw-dsp/daw_dsp.js',
             'public/wasm/daw-dsp/daw_dsp_bg.wasm',
@@ -132,6 +174,7 @@ const wasmPackages: readonly WasmPackageSpec[] = [
     {
         id: 'proof-chamber',
         crateDir: 'crates/proof-chamber',
+        buildScript: 'wasm:proof-chamber',
         schemaSources: [
             'public/wasm/proof-chamber/proof_chamber.js',
             'public/wasm/proof-chamber/proof_chamber_bg.wasm',
@@ -155,6 +198,7 @@ const wasmPackages: readonly WasmPackageSpec[] = [
     {
         id: 'scoring',
         crateDir: 'crates/scoring',
+        buildScript: 'wasm:scoring',
         schemaSources: [
             'public/wasm/scoring/scoring.js',
             'public/wasm/scoring/scoring_bg.wasm',
@@ -178,6 +222,7 @@ const wasmPackages: readonly WasmPackageSpec[] = [
     {
         id: 'daw-wasm-decoder',
         crateDir: 'crates/daw-wasm-decoder',
+        buildScript: 'wasm:decoder',
         schemaSources: [
             'public/wasm/daw-wasm-decoder/daw_wasm_decoder.js',
             'public/wasm/daw-wasm-decoder/daw_wasm_decoder_bg.wasm',
@@ -502,7 +547,53 @@ function regenerateDeclarations(id: string): void {
     }
 }
 
-function buildPackageManifest(spec: WasmPackageSpec): WasmPackageManifest {
+/** Byte-for-byte equality of two recorded artifact hash maps (same keys, same hashes). */
+function artifactRecordsAgree(recorded: Record<string, string>, current: Record<string, string>): boolean {
+    const recordedKeys = Object.keys(recorded).sort();
+    const currentKeys = Object.keys(current).sort();
+    if (recordedKeys.length !== currentKeys.length) {
+        return false;
+    }
+    return recordedKeys.every((key, index) => currentKeys[index] === key && recorded[key] === current[key]);
+}
+
+/**
+ * Decide the `crateSourceHash` a package carries in the manifest about to be
+ * written — the anti-laundering rule of #2053.
+ *
+ * The hash is re-derived from the live crate source only when this run has
+ * evidence that the package was actually rebuilt:
+ *  - the caller named it (`--package <id>` / `--all`), which covers a rebuild
+ *    that happened to emit byte-identical artifacts, or
+ *  - its committed artifacts no longer match what the previous manifest
+ *    recorded — the build wrote something, or
+ *  - there is no previous record to preserve (new package, or first manifest).
+ *
+ * Otherwise the previous hash is preserved untouched, and `liveCrateSourceHash`
+ * is never even consulted: an untouched package cannot absorb a source change it
+ * was not built from, so `pnpm wasm:verify` rule 3 stays red until that package
+ * is genuinely rebuilt.
+ */
+function resolveCrateSourceProvenance(input: {
+    previousPackage: WasmPackageManifest | undefined;
+    currentArtifacts: Record<string, string>;
+    declaredRebuilt: boolean;
+    liveCrateSourceHash: () => string;
+}): CrateSourceProvenance {
+    const { previousPackage, currentArtifacts, declaredRebuilt, liveCrateSourceHash } = input;
+    if (previousPackage === undefined || declaredRebuilt) {
+        return { crateSourceHash: liveCrateSourceHash(), refreshed: true };
+    }
+    if (!artifactRecordsAgree(previousPackage.artifacts, currentArtifacts)) {
+        return { crateSourceHash: liveCrateSourceHash(), refreshed: true };
+    }
+    return { crateSourceHash: previousPackage.crateSourceHash, refreshed: false };
+}
+
+function buildPackageManifest(
+    spec: WasmPackageSpec,
+    options: WasmManifestOptions
+): { manifest: WasmPackageManifest; refreshed: boolean } {
     const schemaHashes = new Set(spec.schemaSources.map((file) => extractSchemaHash(file)));
     const [schemaHash] = [...schemaHashes];
     if (schemaHashes.size !== 1 || schemaHash === undefined) {
@@ -515,21 +606,47 @@ function buildPackageManifest(spec: WasmPackageSpec): WasmPackageManifest {
         artifacts[artifact] = hashFile(artifact);
     }
 
+    const provenance = resolveCrateSourceProvenance({
+        previousPackage: options.previous?.packages[spec.id],
+        currentArtifacts: artifacts,
+        declaredRebuilt: options.rebuilt.has(spec.id),
+        liveCrateSourceHash: () => hashCrateClosure(spec.crateDir),
+    });
+
     return {
-        crate: spec.crateDir,
-        crateSourceHash: hashCrateClosure(spec.crateDir),
-        schemaHash,
-        artifacts,
+        manifest: {
+            crate: spec.crateDir,
+            crateSourceHash: provenance.crateSourceHash,
+            schemaHash,
+            artifacts,
+        },
+        refreshed: provenance.refreshed,
     };
 }
 
-/** Assemble a fresh manifest from the current committed artifacts and sources. */
-function buildManifest(): WasmManifest {
+/** A written manifest plus which packages had their crate-source provenance re-derived. */
+export type WasmManifestBuild = {
+    manifest: WasmManifest;
+    /** Ids whose `crateSourceHash` was re-derived from the live crate source. */
+    refreshed: readonly string[];
+    /** Ids whose recorded `crateSourceHash` was carried over untouched. */
+    preserved: readonly string[];
+};
+
+/**
+ * Assemble the manifest from the current committed artifacts, preserving the
+ * recorded crate-source provenance of every package this run did not rebuild.
+ */
+function buildManifest(options: WasmManifestOptions): WasmManifestBuild {
     const packages: Record<string, WasmPackageManifest> = {};
+    const refreshed: string[] = [];
+    const preserved: string[] = [];
     for (const spec of wasmPackages) {
-        packages[spec.id] = buildPackageManifest(spec);
+        const built = buildPackageManifest(spec, options);
+        packages[spec.id] = built.manifest;
+        (built.refreshed ? refreshed : preserved).push(spec.id);
     }
-    return {
+    const manifest: WasmManifest = {
         comment:
             'Generated by scripts/gen-wasm-manifest.ts during `pnpm wasm:all`. ' +
             'Do not edit by hand — run `pnpm wasm:verify` to check drift.',
@@ -541,6 +658,7 @@ function buildManifest(): WasmManifest {
         },
         packages,
     };
+    return { manifest, refreshed, preserved };
 }
 
 function requireObject(value: unknown, label: string): Record<string, unknown> {
@@ -606,6 +724,60 @@ function readManifest(): WasmManifest {
     };
 }
 
+/**
+ * The committed manifest, or `null` when there is none to preserve provenance
+ * from. A manifest that exists but cannot be parsed is an error, not an absence:
+ * silently treating it as missing would recompute every `crateSourceHash` and
+ * reintroduce the laundering this module exists to prevent.
+ */
+function readPreviousManifest(): WasmManifest | null {
+    if (!existsSync(manifestPath)) {
+        return null;
+    }
+    return readManifest();
+}
+
+/**
+ * Package ids the caller declares were just rebuilt, parsed from the generator's
+ * CLI arguments: `--all`, `--package <id>`, or `--package=<id>`. An unknown id or
+ * flag throws — a typo must not silently degrade into "nothing was rebuilt".
+ */
+function parseRebuiltPackageIds(argv: readonly string[]): ReadonlySet<string> {
+    const known = new Set(wasmPackages.map((spec) => spec.id));
+    const rebuilt = new Set<string>();
+    const remaining = [...argv];
+    while (remaining.length > 0) {
+        const argument = remaining.shift();
+        if (argument === undefined) {
+            continue;
+        }
+        if (argument === '--all') {
+            for (const id of known) {
+                rebuilt.add(id);
+            }
+            continue;
+        }
+        const inline = /^--package=(.+)$/.exec(argument);
+        let id: string | undefined;
+        if (inline) {
+            id = firstCapture(inline, 'the --package argument');
+        } else if (argument === '--package') {
+            id = remaining.shift();
+        }
+        if (id === undefined) {
+            throw new Error(
+                `Unrecognised argument "${argument}". Usage: gen-wasm-manifest.ts [--all] [--package <id>]…, ` +
+                    `where <id> is one of: ${[...known].join(', ')}.`
+            );
+        }
+        if (!known.has(id)) {
+            throw new Error(`Unknown wasm package id "${id}". Known ids: ${[...known].join(', ')}.`);
+        }
+        rebuilt.add(id);
+    }
+    return rebuilt;
+}
+
 export const wasmArtifacts = {
     repoRoot,
     manifestPath,
@@ -620,6 +792,9 @@ export const wasmArtifacts = {
     rustToolchainChannel,
     buildManifest,
     readManifest,
+    readPreviousManifest,
+    parseRebuiltPackageIds,
+    resolveCrateSourceProvenance,
     extractDeclarationStamp,
     regenerateDeclarations,
 };
