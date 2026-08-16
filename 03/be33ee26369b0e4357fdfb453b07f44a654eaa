@@ -1,0 +1,63 @@
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_ab5443e65c7fba::t_d677abc0ae89b3 65-66
+  s_ab5443e65c7fba::t_b224e3743ee7c8 15-24,31
+  s_ab5443e65c7fba::t_725f97cb34033b 80
+  s_ab5443e65c7fba::t_520fcbf8b59e37 39
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  s_ab5443e65c7fba::t_d76852b1a600ed 28-34
+  s_ab5443e65c7fba::t_b8e31c5193a1dc 11
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_ab5443e65c7fba::t_265b49cec469b8 309-341
+  s_ab5443e65c7fba::t_5c5865465c4781 558-583
+  s_ab5443e65c7fba::t_b3844cb1f903c6 641-643
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_ab5443e65c7fba::t_d17d7bd600bfcc 140-175
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_ab5443e65c7fba::t_92c616f59c8655 79-84
+  s_ab5443e65c7fba::t_effbccbf2a18a1 17
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_ab5443e65c7fba::t_6f71f3cda153f8 4,6,13-17
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_ab5443e65c7fba::t_1a2b8a1ab1cc7d 382,384-385
+  s_ab5443e65c7fba::t_ca479a1b21c98f 401
+  s_ab5443e65c7fba::t_3f196a7c73011d 413,416
+  s_ab5443e65c7fba::t_6cb03649c2f11d 447,452,467,473,487,497,605,613
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_ab5443e65c7fba::t_3a09c94f21097c 133-140
+  s_ab5443e65c7fba::t_f1b74158aaa900 13-16,21
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_ab5443e65c7fba::t_107bab11aae78a 55-74,79
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ab5443e65c7fba::t_bedc6d4c04a782 351-357
+  s_ab5443e65c7fba::t_be5a677940b41c 390-392
+  s_ab5443e65c7fba::t_754c621fcda243 161-171
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_ab5443e65c7fba::t_eee966fc082bea 20-24,26
+  s_ab5443e65c7fba::t_3acbf8ca08728c 40
+src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts
+  s_ab5443e65c7fba::t_ed75a7d8fba893 84-108
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ab5443e65c7fba::t_ece904871ec34d 1493,1643,1650-1653,1717
+  s_ab5443e65c7fba::t_a222a08639f5d4 191-192,210,212,222,241,274,285,300,311,330,349,386,401,413,461,490,551,574,609,653,677,725,745,762,783,812,856,887,935,937,962,997,1041-1042,1076,1097,1152,1185,1211,1238,1257,1289,1331,1383,1416,1461,1475,1512,1531,1549,1569,1589,1607,1637,1666,1702,1704,1727,1747,1760,1773,1811,1828,1853,1880,1909,1924,1941,1974,1993
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ab5443e65c7fba::t_dfc5222b583df0 337-344
+  s_ab5443e65c7fba::t_07a3d8fff2832f 203,206
+  s_ab5443e65c7fba::t_46bd78a8ab6656 698-700
+  s_ab5443e65c7fba::t_5dc51ce3a29fe5 744
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "03be33ee26369b0e4357fdfb453b07f44a654eaa",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
