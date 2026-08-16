@@ -169,14 +169,25 @@ impl GrandBouleEngine {
     ///
     /// Applied to the steal-tail slots as well as the playable pool: a steal
     /// swaps a tail slot into the pool, so a slot left on the old tier would
-    /// hand the wrong quality to the next note struck through it.
+    /// hand the wrong quality to the next note struck through it. Sounding
+    /// voices only record the configuration — swapping the physics model under
+    /// a live string state is an audible discontinuity, so they finish on the
+    /// tier they were struck with and the next strike picks up the new one.
     pub fn set_voice_quality(&mut self, quality: VoiceQuality) {
         self.voice_quality = quality;
         for voice in self.voices.iter_mut() {
-            voice.set_quality(quality);
+            if voice.is_idle() {
+                voice.set_quality(quality);
+            } else {
+                voice.set_configured_quality(quality);
+            }
         }
         for tail in self.steal_tails.iter_mut() {
-            tail.set_quality(quality);
+            if tail.is_idle() {
+                tail.set_quality(quality);
+            } else {
+                tail.set_configured_quality(quality);
+            }
         }
     }
 
@@ -843,10 +854,37 @@ mod tests {
         );
 
         engine.set_param("quality", 0.0);
-        assert!(engine
+        assert!(
+            engine
+                .voices
+                .iter()
+                .filter(|voice| voice.is_idle())
+                .all(|voice| voice.quality() == VoiceQuality::Standard),
+            "idle voices must take the new tier immediately"
+        );
+        let sounding = engine
             .voices
             .iter()
-            .all(|voice| voice.quality() == VoiceQuality::Standard));
+            .find(|voice| !voice.is_idle())
+            .expect("the struck voice is still sounding");
+        assert_eq!(
+            sounding.quality(),
+            VoiceQuality::High,
+            "a sounding voice keeps the model it was struck with; swapping the \
+             physics mid-note is an audible discontinuity"
+        );
+
+        engine.note_on(64, 0.8);
+        let restruck = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle() && voice.midi_note() == 64)
+            .expect("the second strike must allocate a voice");
+        assert_eq!(
+            restruck.quality(),
+            VoiceQuality::Standard,
+            "the next strike picks up the tier configured while others sounded"
+        );
     }
 
     /// F13-1: the pedal-down thump was defined and never triggered.

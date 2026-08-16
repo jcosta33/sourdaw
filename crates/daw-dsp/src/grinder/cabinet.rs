@@ -5,9 +5,12 @@ use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 /// Longest IR head this convolver keeps. The buffers are sized to it once at
-/// construction and filled in place afterwards: `load_ir_slot` and
-/// `load_builtin` are reachable from `set_param("cabIrSlot", …)`, which the
-/// AudioWorklet calls on the audio thread, so neither may allocate.
+/// construction and filled in place afterwards: `load_builtin` is the path
+/// `set_param("cabIrSlot", …)` reaches from the audio thread, so it must not
+/// allocate, and `tests/grinder_ir_slot_rt.rs` pins that. `load_ir_slot`
+/// (user-supplied IR data) has no caller yet; it follows the same in-place
+/// discipline so wiring it later cannot reintroduce the allocation, but it is
+/// not under the allocation guard until it is reachable.
 const MAX_HEAD_LENGTH: usize = 128;
 
 /// Non-uniform partitioned convolution: short head (time-domain) + long tail (FFT).
@@ -331,8 +334,14 @@ impl SpeakerModel {
 
     /// `cabEnabled` gates the parametric speaker too, not just the IR
     /// convolver — otherwise the cabinet-disable toggle is inaudible in the
-    /// Parametric and Both cabinet modes.
+    /// Parametric and Both cabinet modes. Disabling also clears the runtime
+    /// state: `process_sample` returns before writing `back_emf_state`, so a
+    /// stale value would keep feeding the power amp, and stale filter memory
+    /// would pop on re-enable.
     pub fn set_enabled(&mut self, enabled: bool) {
+        if !enabled && self.enabled {
+            self.reset();
+        }
         self.enabled = enabled;
     }
 
@@ -442,14 +451,33 @@ mod tests {
     }
 
     /// F4: `cabEnabled` has to reach the parametric speaker, not only the IR
-    /// convolver. A disabled speaker passes its input through untouched.
+    /// convolver. A disabled speaker passes its input through untouched, and
+    /// disabling mid-signal clears the runtime state — the bypass returns
+    /// before writing `back_emf_state`, so without the clear the last enabled
+    /// sample's back-EMF would feed the power amp for as long as the cabinet
+    /// stays off.
     #[test]
     fn a_disabled_speaker_model_is_a_bit_exact_bypass() {
         let mut speaker = SpeakerModel::new(48_000.0);
         speaker.set_param("cabResonanceFreq", 120.0);
         speaker.set_param("coneBreakup", 0.8);
         speaker.set_param("backEmf", 0.6);
+
+        for index in 0..2_048 {
+            let phase = (index as f32 * 2.0 * std::f32::consts::PI * 90.0) / 48_000.0;
+            speaker.process_sample(phase.sin() * 0.4);
+        }
+        assert!(
+            speaker.back_emf().abs() > 0.0,
+            "the enabled run must leave real back-EMF behind for the disable to clear"
+        );
+
         speaker.set_enabled(false);
+        assert_eq!(
+            speaker.back_emf(),
+            0.0,
+            "disabling must clear the back-EMF the bypass can no longer overwrite"
+        );
 
         for index in 0..2_048 {
             let phase = (index as f32 * 2.0 * std::f32::consts::PI * 90.0) / 48_000.0;

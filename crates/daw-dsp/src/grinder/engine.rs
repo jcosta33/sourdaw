@@ -230,7 +230,17 @@ impl GrinderEngine {
             // Cabinet
             "cabType" => self.cabinet_mode = CabinetMode::from_index(value.round().max(0.0) as u32),
             "routingMode" => {
-                self.routing_mode = RoutingMode::from_index(value.round().max(0.0) as u32)
+                let next = RoutingMode::from_index(value.round().max(0.0) as u32);
+                // The dual chain only runs under DualAmp, so its state froze
+                // at whatever the last DualAmp sample left behind. Clear it on
+                // entry or that stale energy replays as a pop.
+                if next == RoutingMode::DualAmp && self.routing_mode != RoutingMode::DualAmp {
+                    self.dual_power_amp.reset();
+                    self.dual_transformer.reset();
+                    self.dual_speaker.reset();
+                    self.dual_cabinet.reset();
+                }
+                self.routing_mode = next;
             }
             "cabIrSlot" => {
                 self.cab_ir_slot = value.round().max(0.0) as u32;
@@ -259,7 +269,18 @@ impl GrinderEngine {
             }
 
             // Neural
-            "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
+            "engineMode" => {
+                let was_capture = self.neural.engine_mode() == EngineMode::Capture;
+                self.neural.set_param(name, value);
+                // Capture mode skips the circuit preamp and tone stack, so
+                // their filter state froze on entry. Clear it when the circuit
+                // path comes back or the stale memory replays as a pop.
+                if was_capture && self.neural.engine_mode() != EngineMode::Capture {
+                    self.preamp.reset();
+                    self.tone_stack.reset();
+                }
+            }
+            "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
             | "neuralCpuBudget" | "neuralModelSlot" | "neuralModelMode" => {
                 self.neural.set_param(name, value);
             }
@@ -1266,6 +1287,72 @@ mod tests {
         assert!(
             max_delta > 1.0e-3,
             "neuralCustomConvWeight0_1 must alter the capture output (max delta {max_delta})"
+        );
+    }
+
+    fn drive_sine_blocks(engine: &mut GrinderEngine, blocks: usize) {
+        let total = 512;
+        let mut left = vec![0.0_f32; total];
+        let mut right = vec![0.0_f32; total];
+        for block in 0..blocks {
+            for n in 0..total {
+                let index = block * total + n;
+                let phase = (index as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+                left[n] = phase.sin() * 0.3;
+                right[n] = left[n];
+            }
+            engine.process_block(&mut left, &mut right);
+        }
+    }
+
+    /// The dual chain only runs under DualAmp routing, so its state freezes at
+    /// whatever the last DualAmp sample left behind. Re-entering the mode must
+    /// start from cleared state, not replay that stale energy as a pop.
+    #[test]
+    fn re_entering_dual_amp_routing_clears_the_frozen_dual_chain_state() {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("cabType", 1.0); // Parametric, so the dual speaker runs
+        engine.set_param("routingMode", 3.0); // DualAmp
+        drive_sine_blocks(&mut engine, 8);
+        assert!(
+            engine.dual_speaker.back_emf().abs() > 0.0,
+            "the DualAmp run must leave real dual-chain state behind for the re-entry to clear"
+        );
+
+        engine.set_param("routingMode", 0.0); // Serial: the dual chain freezes
+        engine.set_param("routingMode", 3.0); // back to DualAmp
+
+        assert_eq!(
+            engine.dual_speaker.back_emf(),
+            0.0,
+            "entering DualAmp must clear the dual chain's frozen state"
+        );
+    }
+
+    /// Capture mode skips the circuit preamp and tone stack, freezing their
+    /// filter state on entry. Leaving Capture must clear it: a probe through
+    /// the returned stages has to match a never-charged engine exactly.
+    #[test]
+    fn leaving_capture_mode_clears_the_frozen_circuit_stage_state() {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("gain", 8.0);
+        drive_sine_blocks(&mut engine, 8); // charge the circuit path in Circuit mode
+
+        engine.set_param("engineMode", 1.0); // Capture: circuit stages freeze
+        engine.set_param("engineMode", 0.0); // back to Circuit
+
+        let mut fresh = GrinderEngine::new(48_000.0);
+        fresh.set_param("gain", 8.0);
+        let probe = 0.25_f32;
+        assert_eq!(
+            engine.preamp.process_sample(probe),
+            fresh.preamp.process_sample(probe),
+            "the preamp must return from Capture with cleared filter state"
+        );
+        assert_eq!(
+            engine.tone_stack.process_sample(probe),
+            fresh.tone_stack.process_sample(probe),
+            "the tone stack must return from Capture with cleared filter state"
         );
     }
 }

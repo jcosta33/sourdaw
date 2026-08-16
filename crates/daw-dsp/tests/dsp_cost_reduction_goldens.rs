@@ -5,6 +5,14 @@
 //! is sensitive to every bit of every sample while staying readable. The
 //! expected values were captured from the implementations these changes
 //! replaced; a change that alters the output, in any mode, moves the hash.
+//!
+//! Scope: the hashes pin same-platform equivalence, captured and checked on
+//! the same toolchain and libm. The renders pass through f32 transcendentals
+//! (`tanh`, `exp`, `sin`) whose last-bit rounding is not specified across C
+//! runtimes, so a different platform may legitimately produce different
+//! hashes. If one of these fails after a toolchain or platform change and the
+//! DSP is untouched, re-capture the values on the new platform in their own
+//! commit; a failure after a DSP edit is a real behavioural change.
 
 use daw_dsp::grand_boule::engine::GrandBouleEngine;
 use daw_dsp::grand_boule::mechanical_noise::{MechanicalNoise, NoiseEvent};

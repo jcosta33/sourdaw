@@ -12,6 +12,7 @@ use super::longitudinal::LongitudinalBank;
 use super::parameters::{
     hammer_exponent_p, hammer_mass_kg, hammer_stiffness_k, hammer_strike_ratio, key_fundamental_hz,
 };
+use crate::primitives::flush_denormal;
 
 /// Hammer oversampling factor — 4× keeps the Störmer-Verlet integrator stable
 /// for top-octave keys without being too expensive.
@@ -200,6 +201,14 @@ impl PianoVoice {
     pub fn set_quality(&mut self, quality: VoiceQuality) {
         self.configured_quality = quality;
         self.quality = quality;
+    }
+
+    /// Record a new configured tier without touching the live one. Sounding
+    /// voices keep the model they were struck with — swapping the physics
+    /// mid-note discontinues the string state audibly — and pick up the new
+    /// tier on their next strike, when `note_on` copies configured to live.
+    pub fn set_configured_quality(&mut self, quality: VoiceQuality) {
+        self.configured_quality = quality;
     }
 
     pub fn stage(&self) -> VoiceStage {
@@ -606,8 +615,10 @@ impl PianoVoice {
         // whole `Active` stage, so it says nothing about how loud a held note
         // still is; this follower does, and it keeps tracking through the
         // release ramp because `output` already carries `amplitude`.
-        self.decay_envelope +=
-            self.decay_follower_coefficient * (output.abs() - self.decay_envelope);
+        self.decay_envelope = flush_denormal(
+            self.decay_envelope
+                + self.decay_follower_coefficient * (output.abs() - self.decay_envelope),
+        );
         if self.decay_envelope > self.decay_peak {
             self.decay_peak = self.decay_envelope;
         }

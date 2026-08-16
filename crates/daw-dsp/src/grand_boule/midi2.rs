@@ -114,17 +114,13 @@ pub fn parse_ump64(word0: u32, word1: u32) -> Midi2Event {
             velocity: value16_high,
         },
         0x90 => {
-            // A 16-bit velocity of zero is a note-off, exactly as a 7-bit
-            // velocity of zero is on the MIDI 1.0 path above. Hosts that
-            // translate MIDI 1.0 note-off-as-velocity-0 into a UMP64 note-on
-            // otherwise leave the note sounding forever.
-            if value16_high == 0 {
-                return Midi2Event::NoteOff {
-                    channel,
-                    note,
-                    velocity: 0,
-                };
-            }
+            // Unlike the MIDI 1.0 path above, a velocity of zero is NOT a
+            // note-off here: MIDI 2.0 (M2-104-UM) makes 0x0000 a valid Note On
+            // velocity, and the 1.0→2.0 translation rules require a conforming
+            // translator to emit a real Note Off for 1.0's velocity-0 idiom —
+            // so inferring a release from zero would swallow the quietest note
+            // a 2.0 source can send and release whatever sounds at that pitch.
+            //
             // Attribute type 0x03 = pitch 7.9 (7 bits note + 9 bits cents /
             // 512). We expand it to Q24 semitones: whole semitones are the
             // difference between the attribute note and the base note.
@@ -380,14 +376,16 @@ mod tests {
         }
     }
 
-    /// F15a: a 16-bit velocity of zero releases the note instead of playing a
-    /// quiet one that never stops.
+    /// MIDI 2.0 conformance: a UMP64 note-on with velocity 0x0000 is a valid
+    /// Note On (M2-104-UM), not the MIDI 1.0 note-off idiom — conforming
+    /// 1.0→2.0 translators emit a real Note Off for that idiom, so inferring a
+    /// release here would swallow the quietest note a 2.0 source can send.
     #[test]
-    fn midi2_note_on_with_zero_velocity_is_a_note_off() {
+    fn midi2_note_on_with_zero_velocity_stays_a_note_on() {
         let word0 = 0x4090_4500;
         let word1 = 0x0000_0000;
         match parse_ump64(word0, word1) {
-            Midi2Event::NoteOff { note, velocity, .. } => {
+            Midi2Event::NoteOn { note, velocity, .. } => {
                 assert_eq!(note, 69);
                 assert_eq!(velocity, 0);
             }
