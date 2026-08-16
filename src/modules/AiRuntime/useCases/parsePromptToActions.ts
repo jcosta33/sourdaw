@@ -47,6 +47,7 @@ import {
 } from './agentToolCatalog';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
+import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { type ProjectContext } from './getProjectContext';
 import {
     generateToolPlanningOutcome,
@@ -78,7 +79,7 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
         if (
             Object.keys(proposal.arguments).some((key) => key !== 'commands' && key !== 'plan') ||
             !Array.isArray(proposal.arguments.commands) ||
-            normalizeAgentPlanProposal(proposal.arguments.plan) === null
+            (proposal.arguments.plan !== undefined && normalizeAgentPlanProposal(proposal.arguments.plan) === null)
         ) {
             return {
                 status: 'invalid' as const,
@@ -400,7 +401,21 @@ export const parsePromptToActions = inject({ logger })(
                 }
                 const providerProposal =
                     planningOutcome.proposal ?? extractAgentPlanProposal(planningOutcome.toolCalls);
-                const expandedProposal = expandCatalogProposals(planningOutcome.toolCalls);
+                const compiledList = compileArbitraryCommandList({
+                    calls: planningOutcome.toolCalls,
+                    context,
+                    revision: projectRevision ?? '',
+                });
+                if (compiledList.status === 'rejected') {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        rejectionReason: `Provider action rejected: ${compiledList.reason}`,
+                    };
+                }
+                const expandedProposal = expandCatalogProposals(compiledList.calls);
                 if (expandedProposal.status === 'invalid') {
                     return {
                         actions: [],
