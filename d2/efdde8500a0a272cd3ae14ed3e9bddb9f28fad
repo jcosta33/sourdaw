@@ -1,0 +1,43 @@
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_d91dcbe5f07151::t_4737c51d72f5a5 8-16,82-89,91,263-297
+crates/daw-dsp/src/bacteria/distortion.rs
+  s_d91dcbe5f07151::t_e048cf64b340f8 17-23,129-138,145,326-370
+crates/daw-dsp/src/bacteria/engine.rs
+  s_d91dcbe5f07151::t_03db6b7389f464 31-32,297-301,303-305,344-346,348-353,355,358,387-390,393-394,405-406,485-489,1572-1643
+crates/daw-dsp/src/bacteria/hilbert.rs
+  s_ab5443e65c7fba::t_42b0bec34934ba 9-18,89-93,104-112,114,137,179-198,201-203,207,243,252-253,257-261,266-277,290-332,342-344,348,357,365-422,427,432,448,460,480,491,497,502,506-564
+crates/daw-dsp/src/bacteria/lofi.rs
+  s_ab5443e65c7fba::t_136b873861f4fb 59-65,127-131,150,155-176,349-393
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_1acc671942070e 1,836-854,934-963
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_1f07d517c74aaf 1,5-23,103-132
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_dd91ab2236a2c4 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_844ef17ec59a3d 1,836-854,934-963
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d2efdde8500a0a272cd3ae14ed3e9bddb9f28fad",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
