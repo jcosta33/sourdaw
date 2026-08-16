@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
+import type { RuntimeGraphDelta } from '../../models/RuntimeGraphDelta';
 
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
 // nodes that AudioEngineImpl reads directly (preFaderTap / analyserNode for
@@ -17,8 +19,32 @@ function makeStripNode() {
     };
 }
 
-vi.mock('../../engine/TrackNode', () => ({
-    TrackNode: class {
+vi.mock('../../engine/TrackNode', () => {
+    class RuntimeGraphMutationFailure extends Error {
+        constructor(
+            public readonly mutation: { application: 'needs-reconcile'; reason: string },
+            public readonly cause: unknown,
+            public readonly rollbackError?: unknown
+        ) {
+            super(cause instanceof Error ? cause.message : String(cause));
+            this.name = 'RuntimeGraphMutationFailure';
+        }
+    }
+
+    class RuntimeGraphMutationRejected extends Error {
+        public readonly rejection: { reason: string };
+
+        constructor(
+            reason: string,
+            public readonly cause: unknown
+        ) {
+            super(cause instanceof Error ? cause.message : String(cause));
+            this.name = 'RuntimeGraphMutationRejected';
+            this.rejection = Object.freeze({ reason });
+        }
+    }
+
+    class TrackNode {
         trackId: string;
         strip: {
             trackId: string;
@@ -35,31 +61,147 @@ vi.mock('../../engine/TrackNode', () => ({
             onDeviceLoaded?: (trackId: string, device: unknown) => void;
             onDeviceRemoved?: (trackId: string, device: unknown) => void;
             reconnectRoutingForTrack?: (trackId: string) => void;
+            onAsyncRuntimeGraphMutation?: (mutation: { application: 'applied' | 'needs-reconcile' }) => void;
         };
         private outputDestination: unknown;
+        private shouldFailNextAddDevicePrecondition = false;
+        private shouldFailNextAddDeviceRebuild = false;
+        private shouldFailAddDeviceRollback = false;
+        private shouldFailNextRemoveDevicePrecondition = false;
+        private shouldFailNextRemoveDeviceRebuild = false;
         dispose = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
         setOutput = vi.fn((outputId: string) => {
+            const changed = this.strip.outputId !== outputId;
             this.strip.outputId = outputId;
             this.strip.analyserNode.disconnect(this.outputDestination);
             const destination = outputId === 'hw_out' ? this.deps.masterGainNode : this.deps.getTrackGainNode(outputId);
             this.strip.analyserNode.connect(destination ?? this.deps.masterGainNode);
             this.outputDestination = destination ?? this.deps.masterGainNode;
+            return changed;
         });
+        addDevice = vi.fn(
+            (deviceId: string, type: string, _externalInstanceId?: string, precedingDeviceIds?: readonly string[]) => {
+                if (
+                    this.strip.deviceNodes.some(
+                        (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
+                    )
+                ) {
+                    return false;
+                }
+                if (this.shouldFailNextAddDevicePrecondition) {
+                    this.shouldFailNextAddDevicePrecondition = false;
+                    throw new Error('mock device addition precondition failed');
+                }
+                const device = { deviceId, type, dispose: vi.fn() };
+                let targetIndex = this.strip.deviceNodes.length;
+                if (precedingDeviceIds !== undefined) {
+                    const precedingIds = new Set(precedingDeviceIds);
+                    targetIndex = 0;
+                    for (const [index, candidate] of this.strip.deviceNodes.entries()) {
+                        if (precedingIds.has((candidate as { deviceId?: string }).deviceId ?? '')) {
+                            targetIndex = index + 1;
+                        }
+                    }
+                }
+                this.strip.deviceNodes.splice(targetIndex, 0, device);
+                try {
+                    this.rebuildChain();
+                } catch (error) {
+                    this.strip.deviceNodes = this.strip.deviceNodes.filter((candidate) => candidate !== device);
+                    (device as { dispose?: () => void }).dispose?.();
+                    try {
+                        this.rebuildChain();
+                    } catch (rollbackError) {
+                        throw new RuntimeGraphMutationFailure(
+                            {
+                                application: 'needs-reconcile',
+                                reason: `Device ${deviceId} was added before its graph rebuild and rollback failed`,
+                            },
+                            error,
+                            rollbackError
+                        );
+                    }
+                    throw error;
+                }
+                return true;
+            }
+        );
         getPeakLevel = vi.fn().mockReturnValue(0.5);
         removeDevice = vi.fn((deviceId: string) => {
             const device = this.strip.deviceNodes.find(
                 (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
             );
             if (!device) {
-                return;
+                return false;
+            }
+            if (this.shouldFailNextRemoveDevicePrecondition) {
+                this.shouldFailNextRemoveDevicePrecondition = false;
+                throw new Error('mock device removal precondition failed');
             }
             this.strip.deviceNodes = this.strip.deviceNodes.filter((candidate) => candidate !== device);
             this.deps.onDeviceRemoved?.(this.trackId, device);
+            (device as { dispose?: () => void }).dispose?.();
+            try {
+                this.rebuildChain();
+            } catch (error) {
+                throw new RuntimeGraphMutationFailure(
+                    {
+                        application: 'needs-reconcile',
+                        reason: `Device ${deviceId} was removed before its graph rebuild failed`,
+                    },
+                    error
+                );
+            }
+            return true;
         });
-        rebuildChain = vi.fn(() => this.deps.reconnectRoutingForTrack?.(this.trackId));
+        updateBypass = vi.fn((deviceId: string, bypassed: boolean) => {
+            const device = this.strip.deviceNodes.find(
+                (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
+            ) as { bypassed?: boolean } | undefined;
+            if (!device) {
+                return false;
+            }
+            const changed = device.bypassed !== bypassed;
+            device.bypassed = bypassed;
+            if (changed) {
+                this.rebuildChain();
+            }
+            return changed;
+        });
+        failNextRemoveDeviceRebuild = vi.fn(() => {
+            this.shouldFailNextRemoveDeviceRebuild = true;
+        });
+        failNextRemoveDevicePrecondition = vi.fn(() => {
+            this.shouldFailNextRemoveDevicePrecondition = true;
+        });
+        failNextAddDevicePrecondition = vi.fn(() => {
+            this.shouldFailNextAddDevicePrecondition = true;
+        });
+        failNextAddDeviceRebuild = vi.fn((rollbackFails = false) => {
+            this.shouldFailNextAddDeviceRebuild = true;
+            this.shouldFailAddDeviceRollback = rollbackFails;
+        });
+        rebuildChain = vi.fn(() => {
+            if (this.shouldFailNextAddDeviceRebuild) {
+                this.shouldFailNextAddDeviceRebuild = false;
+                throw new Error('mock device addition graph rebuild failed');
+            }
+            if (this.shouldFailAddDeviceRollback) {
+                this.shouldFailAddDeviceRollback = false;
+                throw new Error('mock device addition graph rollback failed');
+            }
+            if (this.shouldFailNextRemoveDeviceRebuild) {
+                this.shouldFailNextRemoveDeviceRebuild = false;
+                throw new Error('mock device removal graph rebuild failed');
+            }
+            this.deps.reconnectRoutingForTrack?.(this.trackId);
+        });
+        completeAsyncDevicePromotion = vi.fn((application: 'applied' | 'needs-reconcile' = 'applied') => {
+            this.deps.onAsyncRuntimeGraphMutation?.({ application });
+        });
         notifyDeviceLoaded(device: unknown) {
             this.strip.deviceNodes.push(device);
             this.deps.onDeviceLoaded?.(this.trackId, device);
@@ -72,6 +214,7 @@ vi.mock('../../engine/TrackNode', () => ({
                 onDeviceLoaded?: (trackId: string, device: unknown) => void;
                 onDeviceRemoved?: (trackId: string, device: unknown) => void;
                 reconnectRoutingForTrack?: (trackId: string) => void;
+                onAsyncRuntimeGraphMutation?: (mutation: { application: 'applied' | 'needs-reconcile' }) => void;
             }
         ) {
             this.trackId = id;
@@ -86,8 +229,10 @@ vi.mock('../../engine/TrackNode', () => ({
                 deviceNodes: [],
             };
         }
-    },
-}));
+    }
+
+    return { TrackNode, RuntimeGraphMutationFailure, RuntimeGraphMutationRejected };
+});
 
 vi.mock('../../engine/BusNode', () => ({
     BusNode: class {
@@ -147,6 +292,13 @@ function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
 type MockTrackNode = {
     notifyDeviceLoaded(device: unknown): void;
     rebuildChain(): void;
+    completeAsyncDevicePromotion(application?: 'applied' | 'needs-reconcile'): void;
+    failNextAddDevicePrecondition(): void;
+    failNextAddDeviceRebuild(rollbackFails?: boolean): void;
+    failNextRemoveDevicePrecondition(): void;
+    failNextRemoveDeviceRebuild(): void;
+    setOutput: Mock;
+    strip: { deviceNodes: unknown[] };
 };
 
 function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
@@ -167,9 +319,98 @@ function setPadTrackOutput(
     engine.setTrackOutput(trackId, outputId, { toasterParentTrackId, padIndex });
 }
 
+function loadToasterPadControls(engine: AudioEngine, toasterParentTrackId: string) {
+    const controls = {
+        connectPadOutput: vi.fn(),
+        disconnectPadOutput: vi.fn(),
+        setPadDryRouted: vi.fn(),
+    };
+    getMockTrackNode(engine, toasterParentTrackId).notifyDeviceLoaded({
+        deviceId: `${toasterParentTrackId}-toaster`,
+        type: 'toaster',
+        nodes: [],
+        toasterControls: controls,
+    });
+    return controls;
+}
+
+function getToasterPadRoutes(engine: AudioEngine): Map<string, unknown> {
+    return (engine as unknown as { toasterPadRoutes: Map<string, unknown> }).toasterPadRoutes;
+}
+
+function createRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [
+            { id: 'source', kind: 'audio', devices: [] },
+            { id: 'target', kind: 'bus', devices: [] },
+        ],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'target' }],
+        parameters: [] as const,
+    };
+}
+
+function createMasterRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [{ id: 'source', kind: 'audio', devices: [] }],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'master' }],
+        parameters: [] as const,
+    };
+}
+
+function createDeviceRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [
+            {
+                id: 'source',
+                kind: 'audio',
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
+            },
+            { id: 'target', kind: 'bus', devices: [] },
+        ],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'target' }],
+        parameters: [] as const,
+    };
+}
+
+function createRuntimeOutputDeltaWithDevices(
+    appRevision: number,
+    sourceDevices: ReadonlyArray<{ id: string; type: string }>,
+    targetDevices: ReadonlyArray<{ id: string; type: string }> = []
+): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [
+            {
+                id: 'source',
+                kind: 'audio',
+                devices: sourceDevices.map((device) => ({ ...device, parameterIds: [] })),
+            },
+            {
+                id: 'target',
+                kind: 'bus',
+                devices: targetDevices.map((device) => ({ ...device, parameterIds: [] })),
+            },
+        ],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'target' }],
+        parameters: [] as const,
+    };
+}
+
 describe('AudioEngine', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
+    let currentProjectRevision: string;
 
     class FakeWorkletNode {
         port = { postMessage: vi.fn() };
@@ -192,7 +433,12 @@ describe('AudioEngine', () => {
             }
         );
 
+        currentProjectRevision = 'project-revision-1';
         engine = createAudioEngine(asAudioContext(mockCtx));
+        engine.setRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => expectedProjectRevision === currentProjectRevision
+        );
+        engine.setRuntimeGraphTopologyValidator(() => true);
     });
 
     it('should initialize with master nodes', () => {
@@ -251,6 +497,691 @@ describe('AudioEngine', () => {
         expect(source.analyserNode.connect).toHaveBeenCalledWith(deviceSendGain);
         expect(deviceSendGain.connect).toHaveBeenCalledWith(deviceBus.gainNode);
         expect(ordinarySendGain.connect).toHaveBeenCalledWith(ordinaryBus.gainNode);
+    });
+
+    it('does not route an unvalidated output edge to the master bus', () => {
+        const source = engine.ensureTrackStrip('source');
+
+        engine.setTrackOutput('source', 'missing-runtime-destination');
+
+        expect(source.outputId).not.toBe('missing-runtime-destination');
+        expect(source.analyserNode.connect).not.toHaveBeenCalledWith(engine.masterGainNode);
+    });
+
+    it('applies a revision-correlated immutable output delta once and rejects its stale replay', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const delta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+
+        const applied = engine.applyRuntimeGraphDelta(delta);
+        const staleReplay = engine.applyRuntimeGraphDelta(delta);
+
+        expect(applied).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 2, projectRevision: 'project-revision-1' },
+            runtimeRevision: 3,
+        });
+        expect(source.outputId).toBe('target');
+        expect(staleReplay).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+    });
+
+    it('rejects a delta compiled before target deletion reroutes its source and the target is recreated', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.setTrackOutput('source', 'target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+
+        engine.removeTrackStrip('target');
+        expect(source.outputId).toBe('hw_out');
+        engine.ensureTrackStrip('target');
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(engine.getRuntimeGraphRevision()).toBeGreaterThan(staleDelta.correlation.appRevision);
+    });
+
+    it('rejects a delta compiled before an asynchronous device promotion reaches the live graph', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const revisionBeforePromotion = engine.getRuntimeGraphRevision();
+
+        getMockTrackNode(engine, 'source').completeAsyncDevicePromotion();
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforePromotion + 1);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a delta after an asynchronous device path reports that reconciliation is required', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const revisionBeforeReconcile = engine.getRuntimeGraphRevision();
+
+        getMockTrackNode(engine, 'source').completeAsyncDevicePromotion('needs-reconcile');
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeReconcile + 1);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('invalidates a stale delta when device removal mutates the live strip before its rebuild fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        const revisionBeforeRemoval = engine.getRuntimeGraphRevision();
+        const staleDelta = createDeviceRuntimeOutputDelta(revisionBeforeRemoval);
+        const source = getMockTrackNode(engine, 'source');
+        source.failNextRemoveDeviceRebuild();
+
+        expect(() => engine.removeDeviceFromStrip('source', 'compressor')).toThrow(
+            'mock device removal graph rebuild failed'
+        );
+
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeRemoval + 1);
+        vi.mocked(source.setOutput).mockClear();
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(source.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('advances once for a successful device removal but not for a pre-effect failure', () => {
+        engine.ensureTrackStrip('source');
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        const source = getMockTrackNode(engine, 'source');
+        const beforePreconditionFailure = engine.getRuntimeGraphRevision();
+        source.failNextRemoveDevicePrecondition();
+
+        expect(() => engine.removeDeviceFromStrip('source', 'compressor')).toThrow(
+            'mock device removal precondition failed'
+        );
+        expect(source.strip.deviceNodes).toHaveLength(1);
+        expect(engine.getRuntimeGraphRevision()).toBe(beforePreconditionFailure);
+
+        engine.removeDeviceFromStrip('source', 'compressor');
+
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(beforePreconditionFailure + 1);
+    });
+
+    it('invalidates a stale delta when add mutates the live graph and its rollback also fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const revisionBeforeAdd = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeAdd);
+        const source = getMockTrackNode(engine, 'source');
+        source.failNextAddDeviceRebuild(true);
+
+        expect(() => engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor')).toThrow(
+            'mock device addition graph rebuild failed'
+        );
+
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd + 1);
+        vi.mocked(source.setOutput).mockClear();
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(source.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('does not advance for fully compensated or pre-effect add failures and advances once for success', () => {
+        engine.ensureTrackStrip('source');
+        const source = getMockTrackNode(engine, 'source');
+        const revisionBeforeAdd = engine.getRuntimeGraphRevision();
+        source.failNextAddDeviceRebuild();
+
+        expect(() => engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor')).toThrow(
+            'mock device addition graph rebuild failed'
+        );
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd);
+
+        source.failNextAddDevicePrecondition();
+        expect(() => engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor')).toThrow(
+            'mock device addition precondition failed'
+        );
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd);
+
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd + 1);
+
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd + 1);
+    });
+
+    it('rejects a delta after a device is added then removed back to the same topology', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+
+        engine.addDeviceToStrip('source', 'transient-device', 'builtin-compressor');
+        engine.removeDeviceFromStrip('source', 'transient-device');
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a delta after a device reorder cycle restores the original canonical order', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.addDeviceToStrip('source', 'device-a', 'builtin-compressor');
+        engine.addDeviceToStrip('source', 'device-b', 'builtin-limiter');
+        const staleDelta = createRuntimeOutputDeltaWithDevices(engine.getRuntimeGraphRevision(), [
+            { id: 'device-a', type: 'builtin-compressor' },
+            { id: 'device-b', type: 'builtin-limiter' },
+        ]);
+
+        engine.removeDeviceFromStrip('source', 'device-b');
+        engine.addDeviceToStrip('source', 'device-b', 'builtin-limiter', undefined, []);
+        engine.removeDeviceFromStrip('source', 'device-b');
+        engine.addDeviceToStrip('source', 'device-b', 'builtin-limiter', undefined, ['device-a']);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a delta after a bypass cycle changes the active device path and restores it', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        const staleDelta = createRuntimeOutputDeltaWithDevices(engine.getRuntimeGraphRevision(), [
+            { id: 'compressor', type: 'builtin-compressor' },
+        ]);
+
+        engine.updateDeviceBypass('source', 'compressor', true);
+        engine.updateDeviceBypass('source', 'compressor', false);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects deltas across sidechain route creation and removal without treating alignment writes as topology', () => {
+        engine.ensureTrackStrip('source');
+        const target = engine.ensureTrackStrip('target');
+        target.deviceNodes.push({
+            deviceId: 'sidechain-compressor',
+            type: 'builtin-sidechain-compressor',
+            inputNode: makeStripNode() as unknown as AudioNode,
+        } as never);
+        const deltaBeforeWire = createRuntimeOutputDeltaWithDevices(
+            engine.getRuntimeGraphRevision(),
+            [],
+            [{ id: 'sidechain-compressor', type: 'builtin-sidechain-compressor' }]
+        );
+
+        engine.wireSidechainRoute('source', 'target', 'sidechain-compressor');
+        const revisionAfterWire = engine.getRuntimeGraphRevision();
+        engine.refreshSidechainAlignment(() => 0.01);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionAfterWire);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+        const afterWire = engine.applyRuntimeGraphDelta(deltaBeforeWire);
+
+        expect(afterWire).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+
+        const deltaBeforeUnwire = createRuntimeOutputDeltaWithDevices(
+            engine.getRuntimeGraphRevision(),
+            [],
+            [{ id: 'sidechain-compressor', type: 'builtin-sidechain-compressor' }]
+        );
+        engine.unwireSidechainRoute('source', 'sidechain-compressor');
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+        const afterUnwire = engine.applyRuntimeGraphDelta(deltaBeforeUnwire);
+
+        expect(afterUnwire).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('advances once for a new send topology, skips level writes, and advances for a tap change', () => {
+        engine.ensureTrackStrip('source');
+        const initialRevision = engine.getRuntimeGraphRevision();
+
+        engine.setSend('source', 'bus', 0.25, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(initialRevision + 1);
+
+        engine.setSend('source', 'bus', 0.75, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(initialRevision + 1);
+
+        engine.setSend('source', 'bus', 0.75, true);
+        expect(engine.getRuntimeGraphRevision()).toBe(initialRevision + 2);
+    });
+
+    it('does not publish a second revision when a bus facade follows its already-removed track strip', () => {
+        engine.ensureBusStrip('bus');
+        const beforeRemoval = engine.getRuntimeGraphRevision();
+
+        engine.removeTrackStrip('bus');
+        engine.removeBusStrip('bus');
+
+        expect(engine.getRuntimeGraphRevision()).toBe(beforeRemoval + 1);
+    });
+
+    it('does not advance for idempotent, rejected, or absent graph commands', () => {
+        engine.ensureTrackStrip('source');
+        const revision = engine.getRuntimeGraphRevision();
+
+        engine.ensureTrackStrip('source');
+        engine.setTrackOutput('source', 'missing-runtime-destination');
+        engine.removeDeviceFromStrip('source', 'absent-device');
+        engine.removeSend('source', 'absent-bus');
+        engine.unwireSidechainRoute('source', 'absent-device');
+        engine.removeTrackStrip('absent-track');
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revision);
+
+        engine.setTrackOutput('source', 'master');
+        const revisionAfterRoute = engine.getRuntimeGraphRevision();
+        engine.setTrackOutput('source', 'master');
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionAfterRoute);
+    });
+
+    it('applies current project deltas to master and track outputs', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+
+        const masterResult = engine.applyRuntimeGraphDelta(
+            createMasterRuntimeOutputDelta(engine.getRuntimeGraphRevision())
+        );
+        const trackResult = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+        expect(masterResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 3 });
+        expect(trackResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 4 });
+        expect(getMockTrackNode(engine, 'source').setOutput).toHaveBeenNthCalledWith(1, 'master');
+        expect(source.outputId).toBe('target');
+    });
+
+    it('rejects a stale project delta before the live output mutation', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        currentProjectRevision = 'project-revision-A';
+        const delta: RuntimeGraphDelta = {
+            ...createRuntimeOutputDelta(engine.getRuntimeGraphRevision()),
+            correlation: { appRevision: engine.getRuntimeGraphRevision(), projectRevision: currentProjectRevision },
+        };
+        currentProjectRevision = 'project-revision-B';
+
+        const result = engine.applyRuntimeGraphDelta(delta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('project revision'),
+        });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(source.outputId).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
+    });
+
+    it('rejects a same-id device with a different supported factory type before the live output mutation', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const wrongType: RuntimeGraphDelta = {
+            ...delta,
+            nodes: [
+                {
+                    ...delta.nodes[0]!,
+                    devices: [{ id: 'compressor', type: 'builtin-limiter', parameterIds: ['attack', 'ratio'] }],
+                },
+                delta.nodes[1]!,
+            ],
+        };
+
+        const result = engine.applyRuntimeGraphDelta(wrongType);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
+    });
+
+    it.each([
+        [
+            'different supported node kind',
+            (delta: RuntimeGraphDelta) => ({ ...delta.nodes[0]!, kind: 'midi' as const }),
+        ],
+        [
+            'stale parameter ids',
+            (delta: RuntimeGraphDelta) => ({
+                ...delta.nodes[0]!,
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'release'] }],
+            }),
+        ],
+        [
+            'missing parameter ids',
+            (delta: RuntimeGraphDelta) => ({
+                ...delta.nodes[0]!,
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack'] }],
+            }),
+        ],
+        [
+            'extra parameter ids',
+            (delta: RuntimeGraphDelta) => ({
+                ...delta.nodes[0]!,
+                devices: [
+                    { id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio', 'threshold'] },
+                ],
+            }),
+        ],
+    ])('rejects %s before the live output mutation', (_label, mutateSource) => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        engine.setRuntimeGraphTopologyValidator((nodes) => JSON.stringify(nodes) === JSON.stringify(delta.nodes));
+        const mismatch: RuntimeGraphDelta = {
+            ...delta,
+            nodes: [mutateSource(delta), delta.nodes[1]!],
+        };
+
+        const result = engine.applyRuntimeGraphDelta(mismatch);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
+    });
+
+    it('rejects duplicate parameter ids before the live output mutation', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const duplicateParameterIds: RuntimeGraphDelta = {
+            ...delta,
+            nodes: [
+                {
+                    ...delta.nodes[0]!,
+                    devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'attack'] }],
+                },
+                delta.nodes[1]!,
+            ],
+        };
+
+        const result = engine.applyRuntimeGraphDelta(duplicateParameterIds);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(source.outputId).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
+    });
+
+    it('applies unchanged exact topology to a terminal output', () => {
+        const source = engine.ensureTrackStrip('source');
+        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        const delta: RuntimeGraphDelta = {
+            schemaVersion: 1,
+            command: 'set-track-output',
+            correlation: { appRevision: engine.getRuntimeGraphRevision(), projectRevision: 'project-revision-1' },
+            nodes: [
+                {
+                    id: 'source',
+                    kind: 'audio',
+                    devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
+                },
+            ],
+            edges: [{ kind: 'output', sourceId: 'source', targetId: 'master' }],
+            parameters: [],
+        };
+        engine.setRuntimeGraphTopologyValidator((nodes) => JSON.stringify(nodes) === JSON.stringify(delta.nodes));
+
+        const result = engine.applyRuntimeGraphDelta(delta);
+
+        expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 2 });
+        expect(source.outputId).toBe('master');
+    });
+
+    it('requires reconciliation without claiming compensation when an accepted output delta partially fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const sourceNode = getMockTrackNode(engine, 'source');
+        sourceNode.setOutput.mockImplementationOnce(() => {
+            throw new RuntimeGraphMutationFailure(
+                {
+                    application: 'needs-reconcile',
+                    reason: 'destination disconnected during host apply and restoration failed',
+                },
+                new Error('destination disconnected during host apply'),
+                new Error('destination restore failed')
+            );
+        });
+
+        const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'needs-reconcile',
+            compensation: 'failed',
+            runtimeRevision: 3,
+        });
+    });
+
+    it('rejects a restored output delta failure without advancing the runtime graph revision', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const sourceNode = getMockTrackNode(engine, 'source');
+        sourceNode.setOutput.mockImplementationOnce(() => {
+            throw new RuntimeGraphMutationRejected(
+                'Track source output target was restored after a live route failure',
+                new Error('output connect failed')
+            );
+        });
+
+        const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(revisionBeforeOutput));
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('restored'),
+        });
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput);
+    });
+
+    it('invalidates a stale delta when a Toaster pad route changes before output restoration fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        const source = getMockTrackNode(engine, 'source');
+        source.setOutput.mockImplementationOnce(() => {
+            throw new RuntimeGraphMutationFailure(
+                {
+                    application: 'needs-reconcile',
+                    reason: 'Toaster pad route changed before output restoration failed',
+                },
+                new Error('output connect failed'),
+                new Error('output restore failed')
+            );
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4)).toThrow(
+            'output connect failed'
+        );
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        vi.mocked(source.setOutput).mockClear();
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(source.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('advances once for a Toaster output route and not for its no-op or pre-effect rejection', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+
+        setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        expect(controls.connectPadOutput).toHaveBeenCalledTimes(1);
+
+        setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        expect(controls.connectPadOutput).toHaveBeenCalledTimes(1);
+
+        const source = getMockTrackNode(engine, 'source');
+        source.setOutput.mockImplementationOnce(() => {
+            throw new RuntimeGraphMutationRejected(
+                'Track source output hw_out failed before changing its live route',
+                new Error('output disconnect failed')
+            );
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'hw_out', 'toaster-parent', 4)).toThrow(
+            'output disconnect failed'
+        );
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+    });
+
+    it('restores output and pad state after connectPadOutput fails', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        controls.connectPadOutput.mockImplementationOnce(() => {
+            throw new Error('pad output connect failed');
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4)).toThrow(
+            'pad output connect failed'
+        );
+
+        expect(source.outputId).toBeUndefined();
+        expect(getToasterPadRoutes(engine).has('source')).toBe(false);
+        expect(controls.disconnectPadOutput).toHaveBeenCalledWith(4, source.gainNode);
+        expect(controls.setPadDryRouted).toHaveBeenLastCalledWith(4, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput);
+
+        expect(engine.applyRuntimeGraphDelta(staleDelta)).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+    });
+
+    it('restores output and pad state after setPadDryRouted fails', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        controls.setPadDryRouted.mockImplementationOnce(() => {
+            throw new Error('pad dry route failed');
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4)).toThrow(
+            'pad dry route failed'
+        );
+
+        expect(source.outputId).toBeUndefined();
+        expect(getToasterPadRoutes(engine).has('source')).toBe(false);
+        expect(controls.disconnectPadOutput).toHaveBeenCalledWith(4, source.gainNode);
+        expect(controls.setPadDryRouted).toHaveBeenLastCalledWith(4, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput);
+
+        expect(engine.applyRuntimeGraphDelta(staleDelta)).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+    });
+
+    it('invalidates a stale delta when Toaster pad restoration fails after an output change', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        const connectError = new Error('pad output connect failed');
+        const rollbackError = new Error('pad output rollback failed');
+        controls.connectPadOutput.mockImplementationOnce(() => {
+            throw connectError;
+        });
+        controls.disconnectPadOutput.mockImplementationOnce(() => {
+            throw rollbackError;
+        });
+
+        try {
+            setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
+            throw new Error('expected the Toaster transaction to fail');
+        } catch (error) {
+            expect(error).toBeInstanceOf(RuntimeGraphMutationFailure);
+            expect(error).toMatchObject({ cause: connectError, rollbackError });
+        }
+
+        expect(source.outputId).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        const sourceNode = getMockTrackNode(engine, 'source');
+        vi.mocked(sourceNode.setOutput).mockClear();
+
+        expect(engine.applyRuntimeGraphDelta(staleDelta)).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(sourceNode.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('does not touch the live graph when compiled device order no longer matches it', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        source.deviceNodes.push({ deviceId: 'runtime-device' } as never);
+
+        const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(source.outputId).toBeUndefined();
     });
 
     it('routes a Toaster pad through the child chain across reroute, rebuild, replacement, and reset', () => {

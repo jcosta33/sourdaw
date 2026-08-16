@@ -110,7 +110,7 @@ function checkPackages(manifest: WasmManifest): void {
             if (actual !== recorded.schemaHash) {
                 fail(
                     `${source}: wasm-bindgen schema "${actual}" != package "${spec.id}" schema "${recorded.schemaHash}" ` +
-                        `(glue/binary drift — regenerate with \`pnpm wasm:${spec.id} && pnpm wasm:manifest\`)`
+                        `(glue/binary drift — regenerate with \`pnpm ${spec.buildScript} && pnpm wasm:manifest\`)`
                 );
             }
         }
@@ -120,7 +120,7 @@ function checkPackages(manifest: WasmManifest): void {
         if (currentSourceHash !== recorded.crateSourceHash) {
             fail(
                 `${spec.crateDir}: source hash ${currentSourceHash} != manifest ${recorded.crateSourceHash} — ` +
-                    `crate changed — run \`pnpm wasm:${spec.id} && pnpm wasm:manifest\``
+                    `crate changed — run \`pnpm ${spec.buildScript} && pnpm wasm:manifest\``
             );
         }
 
@@ -154,7 +154,7 @@ function checkDeclarations(): void {
             if (stamp === null) {
                 fail(
                     `${relPath}: no crate-source provenance stamp (missing or unstamped) — ` +
-                        `regenerate with \`pnpm wasm:${spec.id} && pnpm wasm:manifest\``
+                        `regenerate with \`pnpm ${spec.buildScript} && pnpm wasm:manifest\``
                 );
                 continue;
             }
@@ -162,7 +162,7 @@ function checkDeclarations(): void {
                 fail(
                     `${relPath}: declaration crate-source stamp ${stamp} != crate ${crateSourceHash} — ` +
                         `the .d.ts is stale for the current ${spec.crateDir} (WB-4 / #732 blind spot); ` +
-                        `regenerate with \`pnpm wasm:${spec.id} && pnpm wasm:manifest\``
+                        `regenerate with \`pnpm ${spec.buildScript} && pnpm wasm:manifest\``
                 );
             }
         }
