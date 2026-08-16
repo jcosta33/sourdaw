@@ -27,7 +27,7 @@ describe('agent run recovery', () => {
         vi.restoreAllMocks();
     });
 
-    it('persists a schema-versioned run and pauses orphaned work without losing committed truth', () => {
+    it('persists a schema-versioned run and pauses orphaned work without losing committed truth', async () => {
         createAgentRun({
             runId: 'run-recovery',
             request: 'Render the comparison, analyze it, then apply the chosen mix.',
@@ -92,10 +92,22 @@ describe('agent run recovery', () => {
                 model: 'local-model',
                 inputTokens: null,
                 outputTokens: null,
+                cachedInputTokens: null,
                 provenance: 'unavailable',
                 routeId: 'webllm:webllm:local-model',
                 executor: 'webllm',
                 fallbackReason: null,
+                disclosure: {
+                    requestId: 'request-recovery',
+                    categories: ['prompt-text', 'project-context'],
+                    retention: {
+                        applicationState: 'unknown',
+                        abuseMonitoring: 'unknown',
+                        promptCache: 'unknown',
+                        safetyLegalException: 'unknown',
+                        unknown: 'unknown',
+                    },
+                },
             },
             recordedAt: 109,
         });
@@ -160,6 +172,17 @@ describe('agent run recovery', () => {
                     provider: 'webllm',
                     provenance: 'unavailable',
                     routeId: 'webllm:webllm:local-model',
+                    disclosure: {
+                        requestId: 'request-recovery',
+                        categories: ['prompt-text', 'project-context'],
+                        retention: {
+                            applicationState: 'unknown',
+                            abuseMonitoring: 'unknown',
+                            promptCache: 'unknown',
+                            safetyLegalException: 'unknown',
+                            unknown: 'unknown',
+                        },
+                    },
                 },
             ],
             committedWork: [
@@ -198,6 +221,21 @@ describe('agent run recovery', () => {
         expect(stored).toContain('"schemaVersion":1');
         expect(stored).toContain('run-recovery');
         expect(stored).toContain('webllm:webllm:local-model');
+
+        vi.resetModules();
+        const { agentRunStore: hydratedAgentRunStore } = await import('../../stores/agentRunStore');
+        expect(hydratedAgentRunStore.value?.runs[0]?.providerUsage[0]?.cachedInputTokens).toBeNull();
+        expect(hydratedAgentRunStore.value?.runs[0]?.providerUsage[0]?.disclosure).toEqual({
+            requestId: 'request-recovery',
+            categories: ['prompt-text', 'project-context'],
+            retention: {
+                applicationState: 'unknown',
+                abuseMonitoring: 'unknown',
+                promptCache: 'unknown',
+                safetyLegalException: 'unknown',
+                unknown: 'unknown',
+            },
+        });
     });
 
     it('leaves terminal runs unchanged during restart recovery', () => {

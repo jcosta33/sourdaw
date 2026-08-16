@@ -1,6 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
+import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
+import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
     AGENT_RUN_PHASES,
@@ -8,8 +10,11 @@ import {
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
+    type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
+    type AgentRunDecision,
     type AgentRunError,
+    type AgentRunPlan,
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
@@ -182,6 +187,10 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
     const model = readNullableString(value.model);
     const inputTokens = value.inputTokens === null ? null : readNonNegativeInteger(value.inputTokens);
     const outputTokens = value.outputTokens === null ? null : readNonNegativeInteger(value.outputTokens);
+    const cachedInputTokens =
+        value.cachedInputTokens === undefined || value.cachedInputTokens === null
+            ? value.cachedInputTokens
+            : readNonNegativeInteger(value.cachedInputTokens);
     const provenances: AgentRunProviderUsage['provenance'][] = [
         'provider-reported',
         'versioned-estimate',
@@ -213,12 +222,49 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
     const executor =
         value.executor === undefined ? undefined : executors.find((candidate) => candidate === value.executor);
     const fallbackReason = value.fallbackReason === undefined ? undefined : readNullableString(value.fallbackReason);
+    const disclosure = (() => {
+        if (value.disclosure === undefined) {
+            return undefined;
+        }
+        if (!isRecord(value.disclosure)) {
+            return null;
+        }
+        const requestId = readString(value.disclosure.requestId);
+        const categories = readStringArray(value.disclosure.categories);
+        const retention = value.disclosure.retention;
+        if (
+            requestId === null ||
+            categories === null ||
+            !categories.every((category) => AGENT_DATA_CATEGORIES.some((known) => known === category)) ||
+            !isRecord(retention) ||
+            retention.applicationState !== 'unknown' ||
+            retention.abuseMonitoring !== 'unknown' ||
+            retention.promptCache !== 'unknown' ||
+            retention.safetyLegalException !== 'unknown' ||
+            retention.unknown !== 'unknown' ||
+            Object.keys(retention).length !== 5
+        ) {
+            return null;
+        }
+        return {
+            requestId,
+            categories: categories as AgentDataCategory[],
+            retention: {
+                applicationState: 'unknown' as const,
+                abuseMonitoring: 'unknown' as const,
+                promptCache: 'unknown' as const,
+                safetyLegalException: 'unknown' as const,
+                unknown: 'unknown' as const,
+            },
+        };
+    })();
     if (
         provider === null ||
         (value.attempt !== undefined && (attempt === null || attempt === undefined || attempt < 1)) ||
         model === undefined ||
         (inputTokens === null && value.inputTokens !== null) ||
         (outputTokens === null && value.outputTokens !== null) ||
+        (cachedInputTokens === null && value.cachedInputTokens !== null) ||
         !provenances.some((provenance) => provenance === value.provenance) ||
         correlationId === null ||
         (value.status !== undefined && status === undefined) ||
@@ -226,7 +272,8 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         (value.partialOutputDisposition !== undefined && partialOutputDisposition === undefined) ||
         routeId === null ||
         (value.executor !== undefined && executor === undefined) ||
-        (value.fallbackReason !== undefined && fallbackReason === undefined)
+        (value.fallbackReason !== undefined && fallbackReason === undefined) ||
+        disclosure === null
     ) {
         return null;
     }
@@ -236,6 +283,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         model,
         inputTokens,
         outputTokens,
+        ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
         provenance: value.provenance as AgentRunProviderUsage['provenance'],
         ...(correlationId === undefined ? {} : { correlationId }),
         ...(status === undefined ? {} : { status }),
@@ -244,6 +292,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         ...(routeId === undefined ? {} : { routeId }),
         ...(executor === undefined ? {} : { executor }),
         ...(fallbackReason === undefined ? {} : { fallbackReason }),
+        ...(disclosure === undefined ? {} : { disclosure }),
     };
 }
 
@@ -456,6 +505,424 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     };
 }
 
+function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
+    if (value === null) {
+        return null;
+    }
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== AGENT_CONTEXT_SCHEMA_VERSION ||
+        !isRecord(value.selection) ||
+        !isRecord(value.included) ||
+        !isRecord(value.delta) ||
+        !isRecord(value.snapshot)
+    ) {
+        return null;
+    }
+    const included = value.included;
+    const revision = readNullableString(value.revision);
+    const trackId = readNullableString(value.selection.trackId);
+    const clipId = readNullableString(value.selection.clipId);
+    const clipIds = readStringArray(value.selection.clipIds);
+    const deltaBaseRevision = readNullableString(value.delta.baseRevision);
+    const deltaCurrentRevision = readNullableString(value.delta.currentRevision);
+    const snapshot = (() => {
+        const rawSnapshot = value.snapshot;
+        const identity = readString(rawSnapshot.identity);
+        const selectedTrack = (() => {
+            if (rawSnapshot.selectedTrack === null) {
+                return null;
+            }
+            if (!isRecord(rawSnapshot.selectedTrack)) {
+                return undefined;
+            }
+            const id = readString(rawSnapshot.selectedTrack.id);
+            const digest = readString(rawSnapshot.selectedTrack.digest);
+            return id === null || digest === null ? undefined : { id, digest };
+        })();
+        const selectableTargets = readCollection(rawSnapshot.selectableTargets, (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const id = readString(candidate.id);
+            const digest = readString(candidate.digest);
+            return id === null || digest === null ? null : { id, digest };
+        });
+        if (
+            identity === null ||
+            typeof rawSnapshot.tempo !== 'number' ||
+            !Number.isFinite(rawSnapshot.tempo) ||
+            !Array.isArray(rawSnapshot.timeSignature) ||
+            rawSnapshot.timeSignature.length !== 2 ||
+            !rawSnapshot.timeSignature.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
+            selectedTrack === undefined ||
+            selectableTargets === null ||
+            readNonNegativeInteger(rawSnapshot.targetCount) === null ||
+            typeof rawSnapshot.truncated !== 'boolean'
+        ) {
+            return undefined;
+        }
+        return {
+            identity,
+            tempo: rawSnapshot.tempo,
+            timeSignature: [rawSnapshot.timeSignature[0], rawSnapshot.timeSignature[1]] as [number, number],
+            selectedTrack,
+            selectableTargets,
+            targetCount: readNonNegativeInteger(rawSnapshot.targetCount)!,
+            truncated: rawSnapshot.truncated,
+        };
+    })();
+    const validationFailures = (() => {
+        if (!isRecord(included.validationFailures)) {
+            return undefined;
+        }
+        const total = readNonNegativeInteger(included.validationFailures.total);
+        const retained = readNonNegativeInteger(included.validationFailures.retained);
+        const omitted = readNonNegativeInteger(included.validationFailures.omitted);
+        return total === null || retained === null || omitted === null || total !== retained + omitted
+            ? undefined
+            : { total, retained, omitted };
+    })();
+    const grants = (() => {
+        const rawGrants = value.grants;
+        if (rawGrants === null) {
+            return null;
+        }
+        if (!isRecord(rawGrants)) {
+            return undefined;
+        }
+        const allowedOperationPrefixes = readStringArray(rawGrants.allowedOperationPrefixes);
+        const flags = [
+            'create',
+            'delete',
+            'routing',
+            'tempo',
+            'master',
+            'file',
+            'audioUpload',
+            'remoteGeneration',
+            'autoCommit',
+        ] as const;
+        if (allowedOperationPrefixes === null || !flags.every((flag) => typeof rawGrants[flag] === 'boolean')) {
+            return undefined;
+        }
+        return {
+            allowedOperationPrefixes,
+            ...Object.fromEntries(flags.map((flag) => [flag, rawGrants[flag]])),
+        } as AgentContextEvidence['grants'];
+    })();
+    const budgets = (() => {
+        if (value.budgets === null) {
+            return null;
+        }
+        if (!isRecord(value.budgets)) {
+            return undefined;
+        }
+        const limits = readNumberRecord(value.budgets.limits);
+        const consumed = readNumberRecord(value.budgets.consumed);
+        return limits === null || consumed === null ? undefined : { limits, consumed };
+    })();
+    if (
+        revision === undefined ||
+        trackId === undefined ||
+        clipId === undefined ||
+        clipIds === null ||
+        deltaBaseRevision === undefined ||
+        deltaCurrentRevision === undefined ||
+        (value.delta.mode !== 'full' && value.delta.mode !== 'delta') ||
+        readNonNegativeInteger(included.receiptCount) === null ||
+        readNonNegativeInteger(included.capabilitySchemaCount) === null ||
+        readNonNegativeInteger(included.measurementCount) === null ||
+        readNonNegativeInteger(included.trackCount) === null ||
+        validationFailures === undefined ||
+        snapshot === undefined ||
+        grants === undefined ||
+        budgets === undefined
+    ) {
+        return null;
+    }
+    return {
+        schemaVersion: AGENT_CONTEXT_SCHEMA_VERSION,
+        revision,
+        selection: { trackId, clipId, clipIds },
+        grants,
+        budgets,
+        included: {
+            receiptCount: readNonNegativeInteger(included.receiptCount)!,
+            capabilitySchemaCount: readNonNegativeInteger(included.capabilitySchemaCount)!,
+            validationFailures,
+            measurementCount: readNonNegativeInteger(included.measurementCount)!,
+            trackCount: readNonNegativeInteger(included.trackCount)!,
+        },
+        snapshot,
+        delta: { mode: value.delta.mode, baseRevision: deltaBaseRevision, currentRevision: deltaCurrentRevision },
+    };
+}
+
+function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): AgentRunPlan | null | undefined {
+    if (value === null) {
+        return null;
+    }
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    const summary = readString(value.summary);
+    const commandIds = readStringArray(value.commandIds);
+    const serializedBatchIdentity = readNullableString(value.serializedBatchIdentity);
+    const applicationToolReceipts =
+        value.applicationToolReceipts === undefined
+            ? []
+            : readCollection(value.applicationToolReceipts, readApplicationToolReceipt);
+    if (
+        summary === null ||
+        commandIds === null ||
+        serializedBatchIdentity === undefined ||
+        applicationToolReceipts === null
+    ) {
+        return undefined;
+    }
+    if (value.revision === undefined) {
+        return {
+            summary,
+            commandIds,
+            serializedBatchIdentity,
+            applicationToolReceipts,
+            revision: null,
+            classification: 'simple',
+            showPlanPanel: false,
+            objective: summary,
+            interpretedConstraints: [],
+            scope: structuredClone(fallbackScope),
+            steps: [],
+            expectedImpact: {
+                project: [],
+                audible: { status: 'not-claimed', reason: 'No audible result is claimed by a legacy plan.' },
+            },
+            capabilities: [],
+            risks: [],
+            approvalPoints: [],
+            validationStrategy: [],
+            stoppingConditions: [],
+            alternatives: [],
+            needsUserDecision: false,
+        };
+    }
+    const revision = readNullableString(value.revision);
+    const classification =
+        value.classification === 'simple' || value.classification === 'complex' ? value.classification : null;
+    const showPlanPanel = value.showPlanPanel;
+    const objective = readString(value.objective);
+    const interpretedConstraints = readStringArray(value.interpretedConstraints);
+    const planScope = isRecord(value.scope)
+        ? {
+              targetIds: readStringArray(value.scope.targetIds),
+              targetRanges: readRanges(value.scope.targetRanges),
+              protectedTargetIds: readStringArray(value.scope.protectedTargetIds),
+              protectedRanges: readRanges(value.scope.protectedRanges),
+          }
+        : null;
+    const steps = readCollection(value.steps, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const order = readNonNegativeInteger(candidate.order);
+        const actionType = readString(candidate.actionType);
+        const description = readString(candidate.description);
+        return order === null || order === 0 || actionType === null || description === null
+            ? null
+            : { order, actionType, description };
+    });
+    const expectedImpact =
+        isRecord(value.expectedImpact) && isRecord(value.expectedImpact.audible)
+            ? {
+                  project: readStringArray(value.expectedImpact.project),
+                  audible:
+                      value.expectedImpact.audible.status === 'not-claimed'
+                          ? { status: 'not-claimed' as const, reason: readString(value.expectedImpact.audible.reason) }
+                          : null,
+              }
+            : null;
+    const capabilities = readCollection(value.capabilities, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const prerequisite = readString(candidate.prerequisite);
+        const source = ['action-catalog', 'application-tool-catalog', 'budget', 'asset', 'data-policy'].find(
+            (entry) => entry === candidate.source
+        );
+        const status = ['available', 'required', 'unavailable'].find((entry) => entry === candidate.status);
+        return id === null || prerequisite === null || source === undefined || status === undefined
+            ? null
+            : { id, prerequisite, source, status };
+    });
+    const risks = readStringArray(value.risks);
+    const approvalPoints = readCollection(value.approvalPoints, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const reason = readString(candidate.reason);
+        const kind = ['command-confirmation', 'user-decision'].find((entry) => entry === candidate.kind);
+        return reason === null || kind === undefined ? null : { kind, reason };
+    });
+    const validationStrategy = readStringArray(value.validationStrategy);
+    const stoppingConditions = readStringArray(value.stoppingConditions);
+    const alternatives = readCollection(value.alternatives, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const label = readString(candidate.label);
+        return id === null || label === null || typeof candidate.changesAuthority !== 'boolean'
+            ? null
+            : { id, label, changesAuthority: candidate.changesAuthority };
+    });
+    return revision === undefined ||
+        classification === null ||
+        typeof showPlanPanel !== 'boolean' ||
+        objective === null ||
+        interpretedConstraints === null ||
+        planScope === null ||
+        planScope.targetIds === null ||
+        planScope.targetRanges === null ||
+        planScope.protectedTargetIds === null ||
+        planScope.protectedRanges === null ||
+        steps === null ||
+        expectedImpact === null ||
+        expectedImpact.project === null ||
+        expectedImpact.audible === null ||
+        expectedImpact.audible.reason === null ||
+        capabilities === null ||
+        risks === null ||
+        approvalPoints === null ||
+        validationStrategy === null ||
+        stoppingConditions === null ||
+        alternatives === null ||
+        typeof value.needsUserDecision !== 'boolean'
+        ? undefined
+        : {
+              summary,
+              commandIds,
+              serializedBatchIdentity,
+              applicationToolReceipts,
+              revision,
+              classification,
+              showPlanPanel,
+              objective,
+              interpretedConstraints,
+              scope: planScope as AgentRun['scope'],
+              steps,
+              expectedImpact: {
+                  project: expectedImpact.project,
+                  audible: { status: 'not-claimed', reason: expectedImpact.audible.reason },
+              },
+              capabilities: capabilities as AgentRunPlan['capabilities'],
+              risks,
+              approvalPoints: approvalPoints as AgentRunPlan['approvalPoints'],
+              validationStrategy,
+              stoppingConditions,
+              alternatives,
+              needsUserDecision: value.needsUserDecision,
+          };
+}
+
+function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefined {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    if (!isRecord(value) || !isRecord(value.scope) || !isRecord(value.grants)) {
+        return undefined;
+    }
+    const grants = value.grants;
+    const decisionId = readString(value.decisionId);
+    const capabilitySchemaIdentity = readString(value.capabilitySchemaIdentity);
+    const proposalIdentity = readString(value.proposalIdentity);
+    const revision = readString(value.revision);
+    const budgets = isRecord(value.budgets)
+        ? { limits: readNumberRecord(value.budgets.limits), consumed: readNumberRecord(value.budgets.consumed) }
+        : null;
+    const reason = readString(value.reason);
+    const selectedAlternativeId = readNullableString(value.selectedAlternativeId);
+    // A persisted decision from before resumptions were leased was not claimed.
+    const resumeAttemptId = value.resumeAttemptId === undefined ? null : readNullableString(value.resumeAttemptId);
+    const targetIds = readStringArray(value.scope.targetIds);
+    const targetRanges = readRanges(value.scope.targetRanges);
+    const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
+    const protectedRanges = readRanges(value.scope.protectedRanges);
+    const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
+    const alternatives = readCollection(value.alternatives, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const label = readString(candidate.label);
+        return id === null || label === null || typeof candidate.changesAuthority !== 'boolean'
+            ? null
+            : { id, label, changesAuthority: candidate.changesAuthority };
+    });
+    const grantNames = [
+        'create',
+        'delete',
+        'routing',
+        'tempo',
+        'master',
+        'file',
+        'audioUpload',
+        'remoteGeneration',
+        'autoCommit',
+    ] as const;
+    if (
+        decisionId === null ||
+        capabilitySchemaIdentity === null ||
+        proposalIdentity === null ||
+        budgets === null ||
+        budgets.limits === null ||
+        budgets.consumed === null
+    ) {
+        // Older or malformed decision evidence cannot be resumed, but must not erase the enclosing run.
+        return null;
+    }
+    if (
+        revision === null ||
+        reason === null ||
+        selectedAlternativeId === undefined ||
+        resumeAttemptId === undefined ||
+        targetIds === null ||
+        targetRanges === null ||
+        protectedTargetIds === null ||
+        protectedRanges === null ||
+        allowedOperationPrefixes === null ||
+        alternatives === null ||
+        grantNames.some((name) => typeof grants[name] !== 'boolean')
+    ) {
+        return undefined;
+    }
+    return {
+        decisionId,
+        capabilitySchemaIdentity,
+        proposalIdentity,
+        budgets: { limits: budgets.limits, consumed: budgets.consumed },
+        revision,
+        scope: { targetIds, targetRanges, protectedTargetIds, protectedRanges },
+        grants: {
+            allowedOperationPrefixes,
+            create: grants.create as boolean,
+            delete: grants.delete as boolean,
+            routing: grants.routing as boolean,
+            tempo: grants.tempo as boolean,
+            master: grants.master as boolean,
+            file: grants.file as boolean,
+            audioUpload: grants.audioUpload as boolean,
+            remoteGeneration: grants.remoteGeneration as boolean,
+            autoCommit: grants.autoCommit as boolean,
+        },
+        alternatives,
+        reason,
+        selectedAlternativeId,
+        resumeAttemptId,
+    };
+}
+
 function readAgentRun(value: unknown): AgentRun | null {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION) {
         return null;
@@ -493,27 +960,121 @@ function readAgentRun(value: unknown): AgentRun | null {
     const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
     const limits = readNumberRecord(value.budgets.limits);
     const consumed = readNumberRecord(value.budgets.consumed);
-    const plan = (() => {
-        if (value.plan === null) {
-            return null;
+    const budgetAttempts = (() => {
+        if (value.budgetAttempts === undefined) {
+            return [];
         }
-        if (!isRecord(value.plan)) {
-            return undefined;
-        }
-        const summary = readString(value.plan.summary);
-        const commandIds = readStringArray(value.plan.commandIds);
-        const serializedBatchIdentity = readNullableString(value.plan.serializedBatchIdentity);
-        const applicationToolReceipts =
-            value.plan.applicationToolReceipts === undefined
-                ? []
-                : readCollection(value.plan.applicationToolReceipts, readApplicationToolReceipt);
-        return summary === null ||
-            commandIds === null ||
-            serializedBatchIdentity === undefined ||
-            applicationToolReceipts === null
-            ? undefined
-            : { summary, commandIds, serializedBatchIdentity, applicationToolReceipts };
+        return readCollection(value.budgetAttempts, (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const attemptId = readString(candidate.attemptId);
+            const category = readString(candidate.category);
+            const reserved =
+                typeof candidate.reserved === 'number' && Number.isFinite(candidate.reserved)
+                    ? candidate.reserved
+                    : null;
+            const actual =
+                typeof candidate.actual === 'number' && Number.isFinite(candidate.actual) ? candidate.actual : null;
+            const provenance = (['provider-reported', 'versioned-estimate', 'unavailable'] as const).find(
+                (value) => value === candidate.provenance
+            );
+            let estimateMethod: AgentRunBudgetAttempt['estimateMethod'] | null = undefined;
+            if (candidate.estimateMethod !== undefined) {
+                estimateMethod =
+                    candidate.estimateMethod === 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                        ? 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                        : null;
+            }
+            return attemptId === null ||
+                category === null ||
+                reserved === null ||
+                actual === null ||
+                provenance === undefined ||
+                estimateMethod === null ||
+                typeof candidate.final !== 'boolean'
+                ? null
+                : {
+                      attemptId,
+                      category,
+                      reserved,
+                      actual,
+                      provenance,
+                      ...(estimateMethod === undefined ? {} : { estimateMethod }),
+                      final: candidate.final,
+                  };
+        });
     })();
+    const plan = readAgentRunPlan(value.plan, {
+        targetIds: targetIds ?? [],
+        targetRanges: targetRanges ?? [],
+        protectedTargetIds: protectedTargetIds ?? [],
+        protectedRanges: protectedRanges ?? [],
+    });
+    const decision = readAgentRunDecision(value.decision);
+    const resume =
+        value.resume === undefined || value.resume === null
+            ? null
+            : (() => {
+                  if (!isRecord(value.resume)) {
+                      return null;
+                  }
+                  const sourceRunId = readString(value.resume.sourceRunId);
+                  const decisionId = readString(value.resume.decisionId);
+                  const selectedAlternativeId = readString(value.resume.selectedAlternativeId);
+                  const proposalIdentity = readString(value.resume.proposalIdentity);
+                  const capabilitySchemaIdentity = readString(value.resume.capabilitySchemaIdentity);
+                  const revision = readString(value.resume.revision);
+                  const selectedAlternative = value.resume.selectedAlternative;
+                  const scope = value.resume.scope;
+                  const grants = value.resume.grants;
+                  const budgets = value.resume.budgets;
+                  if (
+                      sourceRunId === null ||
+                      decisionId === null ||
+                      selectedAlternativeId === null ||
+                      proposalIdentity === null ||
+                      capabilitySchemaIdentity === null ||
+                      revision === null ||
+                      !isRecord(selectedAlternative) ||
+                      !isRecord(scope) ||
+                      !isRecord(grants) ||
+                      !isRecord(budgets)
+                  ) {
+                      return null;
+                  }
+                  const parsedDecision = readAgentRunDecision({
+                      decisionId,
+                      capabilitySchemaIdentity,
+                      proposalIdentity,
+                      budgets,
+                      revision,
+                      scope,
+                      grants,
+                      alternatives: [selectedAlternative],
+                      reason: 'resume',
+                      selectedAlternativeId,
+                      resumeAttemptId: null,
+                  });
+                  const alternative = parsedDecision?.alternatives[0];
+                  return parsedDecision === null ||
+                      parsedDecision === undefined ||
+                      alternative === undefined ||
+                      alternative.id !== selectedAlternativeId
+                      ? null
+                      : {
+                            sourceRunId,
+                            decisionId,
+                            selectedAlternativeId,
+                            selectedAlternative: alternative,
+                            proposalIdentity,
+                            capabilitySchemaIdentity,
+                            revision,
+                            scope: parsedDecision.scope,
+                            grants: parsedDecision.grants,
+                            budgets: parsedDecision.budgets,
+                        };
+              })();
     const batches = readCollection(value.batches, readBatch);
     const receipts = readCollection(value.receipts, readReceipt);
     const renders = readCollection(value.renders, readArtifact);
@@ -539,6 +1100,8 @@ function readAgentRun(value: unknown): AgentRun | null {
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
     const workLeases = readCollection(value.workLeases, readWorkLease);
+    const contextEvidence =
+        value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
     const cancellationGeneration = readNonNegativeInteger(value.cancellation.generation);
     const requestedAt = readNullableTimestamp(value.cancellation.requestedAt);
     const cancellationReason = readNullableString(value.cancellation.reason);
@@ -569,7 +1132,9 @@ function readAgentRun(value: unknown): AgentRun | null {
         allowedOperationPrefixes === null ||
         limits === null ||
         consumed === null ||
+        budgetAttempts === null ||
         plan === undefined ||
+        decision === undefined ||
         batches === null ||
         receipts === null ||
         renders === null ||
@@ -581,6 +1146,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         retriableWork === null ||
         temporaryAssets === null ||
         workLeases === null ||
+        (contextEvidence === null && value.contextEvidence !== undefined && value.contextEvidence !== null) ||
         cancellationGeneration === null ||
         requestedAt === undefined ||
         cancellationReason === undefined ||
@@ -629,7 +1195,10 @@ function readAgentRun(value: unknown): AgentRun | null {
             autoCommit: autoCommitGrant,
         },
         budgets: { limits, consumed },
+        budgetAttempts,
         plan,
+        decision,
+        resume,
         batches,
         receipts,
         renders,
@@ -655,6 +1224,7 @@ function readAgentRun(value: unknown): AgentRun | null {
             requiredAt: manualResumeRequiredAt,
         },
         workLeases,
+        contextEvidence,
         createdAt,
         updatedAt,
     };

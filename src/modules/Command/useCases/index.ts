@@ -51,6 +51,7 @@ export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelo
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 export { executeVersionedCommandBatchEnvelope } from './executeVersionedCommandBatchEnvelope';
 export { getVersionedCommandBatchIdempotentReplay } from './getVersionedCommandBatchIdempotentReplay';
+export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';

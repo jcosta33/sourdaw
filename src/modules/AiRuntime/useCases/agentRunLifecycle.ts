@@ -1,12 +1,17 @@
+import { type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import {
     AGENT_RUN_SCHEMA_VERSION,
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
+    type AgentRunBudgetAttempt,
     type AgentRunBudgets,
+    type AgentRunDecision,
+    type AgentRunDecisionResume,
     type AgentRunError,
     type AgentRunGrants,
+    type AgentRunPlan,
     type AgentRunPhase,
     type AgentRunProviderUsage,
     type AgentRunScope,
@@ -37,6 +42,18 @@ const DEFAULT_GRANTS: AgentRunGrants = {
 
 const DEFAULT_BUDGETS: AgentRunBudgets = { limits: {}, consumed: {} };
 
+function mergeAgentRunBudgets(current: AgentRunBudgets, next: AgentRunBudgets): AgentRunBudgets {
+    const limits = { ...current.limits };
+    for (const [category, limit] of Object.entries(next.limits)) {
+        limits[category] = limits[category] === undefined ? limit : Math.min(limits[category], limit);
+    }
+    const consumed = { ...current.consumed };
+    for (const [category, amount] of Object.entries(next.consumed)) {
+        consumed[category] = Math.max(consumed[category] ?? 0, amount);
+    }
+    return { limits, consumed };
+}
+
 const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 
 const ALLOWED_PHASE_TRANSITIONS: Record<AgentRunPhase, ReadonlySet<AgentRunPhase>> = {
@@ -63,6 +80,7 @@ type CreateAgentRunInput = {
     scope?: AgentRunScope;
     grants?: AgentRunGrants;
     budgets?: AgentRunBudgets;
+    resume?: AgentRunDecisionResume;
 };
 
 function assertNonEmpty(value: string, field: string): void {
@@ -83,6 +101,43 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
     runs[index] = next;
     persistAgentRunState({ ...state, runs });
     return structuredClone(next);
+}
+
+function createLegacyAgentRunPlan(input: {
+    summary: string;
+    commandIds: string[];
+    serializedBatchIdentity: string | null;
+    applicationToolReceipts: ApplicationToolReceipt[];
+    revision: string;
+    scope: AgentRunScope;
+}): AgentRunPlan {
+    return {
+        summary: input.summary,
+        commandIds: [...input.commandIds],
+        serializedBatchIdentity: input.serializedBatchIdentity,
+        applicationToolReceipts: structuredClone(input.applicationToolReceipts),
+        revision: input.revision,
+        classification: 'simple',
+        showPlanPanel: false,
+        objective: input.summary,
+        interpretedConstraints: [`Plan is bound to project revision ${input.revision}.`],
+        scope: structuredClone(input.scope),
+        steps: [],
+        expectedImpact: {
+            project: [],
+            audible: {
+                status: 'not-claimed',
+                reason: 'No audible result is claimed by a persisted legacy plan.',
+            },
+        },
+        capabilities: [],
+        risks: [],
+        approvalPoints: [],
+        validationStrategy: ['Revalidate the persisted project revision before resuming.'],
+        stoppingConditions: ['Stop if the persisted project revision is no longer current.'],
+        alternatives: [],
+        needsUserDecision: false,
+    };
 }
 
 function clearAgentRuns(): void {
@@ -117,7 +172,10 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         scope: structuredClone(input.scope ?? DEFAULT_SCOPE),
         grants: structuredClone(input.grants ?? DEFAULT_GRANTS),
         budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
+        budgetAttempts: [],
         plan: null,
+        decision: null,
+        resume: input.resume ? structuredClone(input.resume) : null,
         batches: [],
         receipts: [],
         renders: [],
@@ -141,11 +199,23 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         temporaryAssets: [],
         manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         workLeases: [],
+        contextEvidence: null,
         createdAt,
         updatedAt: createdAt,
     };
     persistAgentRunState({ ...state, runs: [...state.runs, run] });
     return structuredClone(run);
+}
+
+function recordAgentRunContextEvidence(input: {
+    runId: string;
+    evidence: AgentContextEvidence;
+    recordedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
+        ...run,
+        contextEvidence: structuredClone(input.evidence),
+    }));
 }
 
 function transitionAgentRunPhase(input: {
@@ -185,6 +255,7 @@ function recordAgentRunPlan(input: {
     scope: AgentRunScope;
     grants: AgentRunGrants;
     budgets: AgentRunBudgets;
+    plan?: AgentRunPlan;
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
@@ -193,13 +264,25 @@ function recordAgentRunPlan(input: {
         revisions: { ...run.revisions, planned: input.revision },
         scope: structuredClone(input.scope),
         grants: structuredClone(input.grants),
-        budgets: structuredClone(input.budgets),
-        plan: {
-            summary: input.summary,
-            commandIds: [...input.commandIds],
-            serializedBatchIdentity: input.serializedBatchIdentity,
-            applicationToolReceipts: structuredClone(input.applicationToolReceipts ?? []),
-        },
+        budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
+        plan: structuredClone(
+            input.plan ??
+                createLegacyAgentRunPlan({
+                    summary: input.summary,
+                    commandIds: input.commandIds,
+                    serializedBatchIdentity: input.serializedBatchIdentity,
+                    applicationToolReceipts: input.applicationToolReceipts ?? [],
+                    revision: input.revision,
+                    scope: input.scope,
+                })
+        ),
+    }));
+}
+
+function recordAgentRunDecision(input: { runId: string; decision: AgentRunDecision; recordedAt?: number }): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
+        ...run,
+        decision: structuredClone(input.decision),
     }));
 }
 
@@ -216,12 +299,14 @@ function recordAgentRunApplicationToolEvidence(input: {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
         const plan =
             run.plan === null
-                ? {
+                ? createLegacyAgentRunPlan({
                       summary: input.summary,
                       commandIds: [],
                       serializedBatchIdentity: null,
-                      applicationToolReceipts: structuredClone(input.applicationToolReceipts),
-                  }
+                      applicationToolReceipts: input.applicationToolReceipts,
+                      revision: input.revision,
+                      scope: input.scope,
+                  })
                 : {
                       ...run.plan,
                       applicationToolReceipts: structuredClone(input.applicationToolReceipts),
@@ -234,7 +319,7 @@ function recordAgentRunApplicationToolEvidence(input: {
             revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
             scope: structuredClone(input.scope),
             grants: structuredClone(input.grants),
-            budgets: structuredClone(input.budgets),
+            budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan,
         };
     });
@@ -277,19 +362,157 @@ function recordAgentRunProviderUsage(input: {
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
-        if (
-            input.usage.correlationId !== undefined &&
-            run.providerUsage.some((usage) => usage.correlationId === input.usage.correlationId)
-        ) {
-            return run;
-        }
         const usage = structuredClone(input.usage);
+        const existingIndex =
+            usage.correlationId === undefined
+                ? -1
+                : run.providerUsage.findIndex((candidate) => candidate.correlationId === usage.correlationId);
+        if (existingIndex >= 0) {
+            const existing = run.providerUsage[existingIndex]!;
+            const providerUsage = [...run.providerUsage];
+            providerUsage[existingIndex] = {
+                ...existing,
+                ...usage,
+                attempt: existing.attempt,
+                disclosure: existing.disclosure ?? usage.disclosure,
+            };
+            return { ...run, providerUsage };
+        }
         usage.attempt ??= run.providerUsage.length + 1;
         return {
             ...run,
             modelRoute:
                 usage.routeId !== undefined ? { ...run.modelRoute, selectedRouteId: usage.routeId } : run.modelRoute,
             providerUsage: [...run.providerUsage, usage],
+        };
+    });
+}
+
+type AgentRunBudgetReservation = {
+    attemptId: string;
+    category: string;
+    estimate: number;
+    provenance: AgentRunBudgetAttempt['provenance'];
+    estimateMethod?: AgentRunBudgetAttempt['estimateMethod'];
+};
+
+type AgentRunBudgetReservationInput = AgentRunBudgetReservation & {
+    runId: string;
+};
+
+type AgentRunBudgetReservationResult = { status: 'reserved' | 'hard-limit-reached'; reason?: string };
+
+function reserveAgentRunBudgetBatch(input: {
+    runId: string;
+    attempts: readonly AgentRunBudgetReservation[];
+    reservedAt?: number;
+}): AgentRunBudgetReservationResult {
+    const run = getAgentRun(input.runId);
+    if (run === null) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const attemptIds = new Set<string>();
+    const newAttempts: AgentRunBudgetReservation[] = [];
+    const additionalByCategory = new Map<string, number>();
+    for (const attempt of input.attempts) {
+        if (!Number.isFinite(attempt.estimate) || attempt.estimate < 0) {
+            throw new Error('Budget estimate must be a non-negative finite number');
+        }
+        if (attemptIds.has(attempt.attemptId)) {
+            throw new Error(`Duplicate budget attempt: ${attempt.attemptId}`);
+        }
+        attemptIds.add(attempt.attemptId);
+        if (run.budgetAttempts.some((existing) => existing.attemptId === attempt.attemptId)) {
+            continue;
+        }
+        newAttempts.push(attempt);
+        additionalByCategory.set(
+            attempt.category,
+            (additionalByCategory.get(attempt.category) ?? 0) + attempt.estimate
+        );
+    }
+    for (const [category, additional] of additionalByCategory) {
+        const limit = run.budgets.limits[category];
+        const consumed = run.budgets.consumed[category] ?? 0;
+        if (limit !== undefined && consumed + additional > limit) {
+            return { status: 'hard-limit-reached', reason: category };
+        }
+    }
+    if (newAttempts.length === 0) {
+        return { status: 'reserved' };
+    }
+    updateAgentRun(input.runId, input.reservedAt ?? Date.now(), (current) => {
+        const consumed = { ...current.budgets.consumed };
+        for (const [category, additional] of additionalByCategory) {
+            consumed[category] = (consumed[category] ?? 0) + additional;
+        }
+        return {
+            ...current,
+            budgets: { ...current.budgets, consumed },
+            budgetAttempts: [
+                ...current.budgetAttempts,
+                ...newAttempts.map((attempt) => ({
+                    attemptId: attempt.attemptId,
+                    category: attempt.category,
+                    reserved: attempt.estimate,
+                    actual: 0,
+                    provenance: attempt.provenance,
+                    ...(attempt.estimateMethod === undefined ? {} : { estimateMethod: attempt.estimateMethod }),
+                    final: false,
+                })),
+            ],
+        };
+    });
+    return { status: 'reserved' };
+}
+
+function reserveAgentRunBudget(
+    input: AgentRunBudgetReservationInput & { reservedAt?: number }
+): AgentRunBudgetReservationResult {
+    return reserveAgentRunBudgetBatch({ ...input, attempts: [input] });
+}
+
+function reconcileAgentRunBudgetAttempt(input: {
+    runId: string;
+    attemptId: string;
+    consumed: number;
+    mode: 'delta' | 'cumulative' | 'final';
+    provenance: AgentRunBudgetAttempt['provenance'];
+    reconciledAt?: number;
+}): AgentRun {
+    if (!Number.isFinite(input.consumed) || input.consumed < 0) {
+        throw new Error('Budget usage must be a non-negative finite number');
+    }
+    return updateAgentRun(input.runId, input.reconciledAt ?? Date.now(), (run) => {
+        const index = run.budgetAttempts.findIndex((attempt) => attempt.attemptId === input.attemptId);
+        if (index < 0) {
+            throw new Error(`Unknown budget attempt: ${input.attemptId}`);
+        }
+        const previous = run.budgetAttempts[index]!;
+        const actual =
+            input.mode === 'delta' ? previous.actual + input.consumed : Math.max(previous.actual, input.consumed);
+        const additionalCeiling = Math.max(0, actual - previous.reserved);
+        const attempts = [...run.budgetAttempts];
+        attempts[index] = {
+            ...previous,
+            reserved: Math.max(previous.reserved, actual),
+            actual,
+            provenance: input.provenance,
+            final: previous.final || input.mode === 'final',
+        };
+        return {
+            ...run,
+            budgetAttempts: attempts,
+            budgets:
+                additionalCeiling === 0
+                    ? run.budgets
+                    : {
+                          ...run.budgets,
+                          consumed: {
+                              ...run.budgets.consumed,
+                              [previous.category]: (run.budgets.consumed[previous.category] ?? 0) + additionalCeiling,
+                          },
+                      },
         };
     });
 }
@@ -457,6 +680,45 @@ function releaseAgentRunTemporaryAsset(input: {
     });
 }
 
+function prepareAgentRunTemporaryAssetCleanup(input: {
+    runId: string;
+    assetId: string;
+    cleanupOwner: string;
+    preparedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.preparedAt ?? Date.now(), (run) => {
+        const asset = run.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
+        if (!asset) {
+            throw new Error(`Unknown temporary asset: ${input.assetId}`);
+        }
+        if (asset.cleanupOwner !== input.cleanupOwner) {
+            throw new Error(`Temporary asset cleanup owner changed: ${input.assetId}`);
+        }
+        if (asset.status === 'released') {
+            return run;
+        }
+        return {
+            ...run,
+            temporaryAssets: run.temporaryAssets.map((candidate) =>
+                candidate.assetId === input.assetId ? { ...candidate, status: 'cleanup-pending' } : candidate
+            ),
+        };
+    });
+}
+
+function forgetAgentRunTemporaryAsset(input: { runId: string; assetId: string; cleanupOwner: string }): AgentRun {
+    return updateAgentRun(input.runId, Date.now(), (run) => {
+        const asset = run.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
+        if (!asset || asset.cleanupOwner !== input.cleanupOwner) {
+            throw new Error(`Temporary asset cannot be forgotten: ${input.assetId}`);
+        }
+        return {
+            ...run,
+            temporaryAssets: run.temporaryAssets.filter((candidate) => candidate.assetId !== input.assetId),
+        };
+    });
+}
+
 function requireAgentRunManualResume(input: {
     runId: string;
     reason: string;
@@ -477,6 +739,63 @@ function requireAgentRunManualResume(input: {
                 workIds: [...new Set(input.workIds)],
                 requiredAt,
             },
+        };
+    });
+}
+
+function claimAgentRunDecisionResume(input: { runId: string; attemptId: string; claimedAt?: number }): AgentRun {
+    assertNonEmpty(input.attemptId, 'attemptId');
+    return updateAgentRun(input.runId, input.claimedAt ?? Date.now(), (run) => {
+        if (run.phase !== 'paused' || run.cancellation.requestedAt !== null || run.decision === null) {
+            throw new Error('Agent run has no resumable decision.');
+        }
+        if (run.decision.selectedAlternativeId !== null || run.decision.resumeAttemptId !== null) {
+            throw new Error('Agent run decision was already consumed or claimed.');
+        }
+        return { ...run, decision: { ...run.decision, resumeAttemptId: input.attemptId } };
+    });
+}
+
+function releaseAgentRunDecisionResumeClaim(input: {
+    runId: string;
+    attemptId: string;
+    releasedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.releasedAt ?? Date.now(), (run) => {
+        if (run.decision?.resumeAttemptId !== input.attemptId || run.decision.selectedAlternativeId !== null) {
+            return run;
+        }
+        return { ...run, decision: { ...run.decision, resumeAttemptId: null } };
+    });
+}
+
+function selectAgentRunDecisionAlternative(input: {
+    runId: string;
+    alternativeId: string;
+    attemptId?: string;
+    selectedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.selectedAt ?? Date.now(), (run) => {
+        if (run.phase !== 'paused' || run.cancellation.requestedAt !== null || run.decision === null) {
+            throw new Error('Agent run has no resumable decision.');
+        }
+        if (run.decision.selectedAlternativeId !== null) {
+            throw new Error('Agent run decision was already consumed.');
+        }
+        if (
+            input.attemptId === undefined
+                ? run.decision.resumeAttemptId !== null
+                : run.decision.resumeAttemptId !== input.attemptId
+        ) {
+            throw new Error('Agent run decision is not claimed by this replacement attempt.');
+        }
+        if (!run.decision.alternatives.some((alternative) => alternative.id === input.alternativeId)) {
+            throw new Error('Agent run decision alternative is unavailable.');
+        }
+        return {
+            ...run,
+            decision: { ...run.decision, selectedAlternativeId: input.alternativeId, resumeAttemptId: null },
+            manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         };
     });
 }
@@ -536,16 +855,26 @@ export const agentRunLifecycle = {
     acknowledgeCancellation: acknowledgeAgentRunCancellation,
     cancel: cancelAgentRun,
     clear: clearAgentRuns,
+    claimDecisionResume: claimAgentRunDecisionResume,
     create: createAgentRun,
     get: getAgentRun,
+    forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,
+    recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
+    recordDecision: recordAgentRunDecision,
     recordProviderUsage: recordAgentRunProviderUsage,
+    reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
+    reserveBudget: reserveAgentRunBudget,
+    reserveBudgetBatch: reserveAgentRunBudgetBatch,
+    selectDecisionAlternative: selectAgentRunDecisionAlternative,
+    releaseDecisionResumeClaim: releaseAgentRunDecisionResumeClaim,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
+    prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
     requireManualResume: requireAgentRunManualResume,
     transitionPhase: transitionAgentRunPhase,

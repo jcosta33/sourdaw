@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
-
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -13,7 +12,6 @@ const {
     mockLogger,
     mockBridgeGroundedLlmToolCalls,
     mockBuildLlmActionSystemPrompt,
-    mockBuildLlmActionUserMessage,
     mockDoesProductionBriefAllowActionBatch,
     markerStoreValue,
 } = vi.hoisted(() => ({
@@ -25,7 +23,6 @@ const {
     },
     mockBridgeGroundedLlmToolCalls: vi.fn(),
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
-    mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
     mockDoesProductionBriefAllowActionBatch: vi.fn(() => true),
     markerStoreValue: {
         value: {
@@ -82,7 +79,6 @@ vi.mock('../../transformers/llmActionBridge', async () => {
     return {
         ...actual,
         buildLlmActionSystemPrompt: mockBuildLlmActionSystemPrompt,
-        buildLlmActionUserMessage: mockBuildLlmActionUserMessage,
     };
 });
 
@@ -144,8 +140,60 @@ function createMixerContext(): ProjectContext {
     };
 }
 
-function completePlan<TToolCall>(toolCalls: TToolCall[]) {
-    return { status: 'complete' as const, toolCalls };
+type CompletePlanOutcome = {
+    status: 'complete';
+    toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
+};
+
+function completePlan<TToolCall extends { name: string; arguments: Record<string, unknown> }>(
+    toolCalls: TToolCall[]
+): CompletePlanOutcome {
+    const workflowCalls = toolCalls.filter((call) => call.name === 'selectWorkflowCapability');
+    const commandCalls = toolCalls.filter((call) => call.name !== 'selectWorkflowCapability');
+    if (commandCalls.length === 0) {
+        return { status: 'complete', toolCalls: workflowCalls };
+    }
+    const commandNames = [...new Set(commandCalls.map((call) => call.name))];
+    let providerTurn = 0;
+    const catalogPlan: CompletePlanOutcome = {
+        status: 'complete',
+        toolCalls: [
+            {
+                name: 'agent.catalog.discover',
+                arguments: { category: 'command', names: commandNames },
+            },
+        ],
+    };
+    const proposalPlan: CompletePlanOutcome = {
+        status: 'complete',
+        toolCalls: [
+            ...workflowCalls,
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    commands: commandCalls,
+                    plan: {
+                        semantic: { classification: 'simple', uncertainty: [] },
+                        objective: 'Execute the grounded command batch.',
+                        constraints: [],
+                        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                        capabilityIds: commandNames,
+                        assetIds: [],
+                        alternatives: [],
+                        validationStrategy: ['Validate the grounded command batch.'],
+                        stoppingConditions: ['Stop if application validation fails.'],
+                    },
+                },
+            },
+        ],
+    };
+    // Each planning run has a bounded discovery turn followed by its proposal turn.
+    return {
+        then(resolve: (outcome: CompletePlanOutcome) => unknown) {
+            providerTurn = providerTurn === 0 ? 1 : 0;
+            return Promise.resolve(resolve(providerTurn === 1 ? catalogPlan : proposalPlan));
+        },
+    } as unknown as CompletePlanOutcome;
 }
 
 function createGlueProviderContext(): ProjectContext {
@@ -196,6 +244,7 @@ function createGlueProviderContext(): ProjectContext {
 
 describe('parsePromptToActions', () => {
     beforeEach(() => {
+        agentRunLifecycle.clear();
         vi.clearAllMocks();
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
@@ -204,7 +253,6 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockReset();
         mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
-        mockBuildLlmActionUserMessage.mockClear();
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(true);
         markerStoreValue.value = { markers: [], sections: [] };
     });
@@ -246,6 +294,97 @@ describe('parsePromptToActions', () => {
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
             { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
         ]);
+        expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it.each([
+        {
+            name: 'executes one generic semantic bulk selector without per-target prompt grounding',
+            prompt: 'mute all audio tracks',
+            arguments_: { muted: true },
+            expectedActions: [
+                { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+                { type: 'muteTrack', payload: { trackId: 'track-guitar', muted: true, expectedMuted: false } },
+            ],
+        },
+        {
+            name: 'rejects a negated operation despite compiler-resolved target IDs',
+            prompt: 'do not mute any audio tracks',
+            arguments_: { muted: true },
+            expectedActions: [],
+        },
+        {
+            name: 'rejects a non-requested parameter despite compiler-resolved target IDs',
+            prompt: 'mute all audio tracks',
+            arguments_: { muted: false },
+            expectedActions: [],
+        },
+    ])('$name', async ({ prompt, arguments_, expectedActions }) => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-mute-track',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['muteTrack'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'semantic-mute-tracks',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Mute all audio tracks.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: ['track-vocals', 'track-guitar'],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate selector preconditions.'],
+                                stoppingConditions: ['Stop if the project revision changes.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'mute-audio-tracks',
+                                        name: 'muteTrack',
+                                        arguments: arguments_,
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { kind: 'audio' },
+                                            quantity: { unit: 'targets', exactly: 2 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(prompt, createMixerContext(), undefined, 'revision-1');
+
+        expect(generateToolCalls).toHaveBeenCalledTimes(2);
+        expect(result.actions).toEqual(expectedActions);
+        if (expectedActions.length === 0) {
+            expect(result.rejectionReason).toBeDefined();
+            return;
+        }
+        expect(result.rejectionReason).toBeUndefined();
         expect(result.requiresConfirmation).toBe(true);
     });
 
@@ -309,23 +448,20 @@ describe('parsePromptToActions', () => {
 
         const result = await parsePromptToActions('make the project faster', baseContext);
 
-        expect(generateToolCalls).toHaveBeenCalledWith(
-            expect.stringContaining('command system prompt'),
-            'command user message',
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('command system prompt');
+        expect(firstProviderCall?.[1]).toContain('fixed_policy:');
+        expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
                 }),
-                ...getExecutableAppActionToolSchemas(),
-            ]),
-            undefined,
-            'make the project faster',
-            undefined
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+            ])
         );
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
-            prompt: 'make the project faster',
-            context: baseContext,
-        });
+        expect(firstProviderCall?.[4]).toBe('make the project faster');
         expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith({
             calls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
             context: baseContext,
@@ -335,6 +471,64 @@ describe('parsePromptToActions', () => {
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.executionMode).toBe('atomic');
+    });
+
+    it('passes the persisted selected alternative as typed context to the provider planning request', async () => {
+        const scope = { targetIds: ['track-vocals'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
+        const grants = {
+            allowedOperationPrefixes: ['muteTrack'],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        };
+        agentRunLifecycle.create({
+            runId: 'resumed-planning-attempt',
+            request: 'Mute vocals.',
+            mode: 'plan',
+            createdRevision: 'revision-resume',
+            scope,
+            grants,
+            budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+            resume: {
+                sourceRunId: 'source-decision',
+                decisionId: 'decision-vocals',
+                selectedAlternativeId: 'mute-vocals',
+                selectedAlternative: { id: 'mute-vocals', label: 'Mute vocals only', changesAuthority: false },
+                proposalIdentity: 'proposal-vocals',
+                capabilitySchemaIdentity: 'catalog-v1',
+                revision: 'revision-resume',
+                scope,
+                grants,
+                budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+            },
+        });
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            rejections: [],
+        });
+
+        await parsePromptToActions(
+            'Mute vocals.',
+            baseContext,
+            undefined,
+            'revision-resume',
+            undefined,
+            undefined,
+            { runId: 'resumed-planning-attempt', requestId: 'request-resume', cancellationGeneration: 0 },
+            () => ({ status: 'admitted' })
+        );
+
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('Mute vocals only');
+        expect(firstProviderCall?.[0]).toContain('source-decision');
+        expect(firstProviderCall?.[1]).toContain('Mute vocals only');
     });
 
     it('rejects a provider plan before confirmation when it conflicts with locked production intent', async () => {
@@ -350,12 +544,15 @@ describe('parsePromptToActions', () => {
         expect(mockDoesProductionBriefAllowActionBatch).toHaveBeenCalledWith([
             { type: 'setTempo', payload: { bpm: 128 } },
         ]);
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             actions: [],
             rawText: 'make the project faster',
             requiresConfirmation: false,
             rejectionReason: 'Provider action conflicts with locked production intent.',
         });
+        expect(result.applicationToolReceipts).toMatchObject([
+            { toolName: 'agent.catalog.discover', status: 'success' },
+        ]);
     });
 
     it('proposes an explicit provider time-signature command as one confirmable atomic action', async () => {
@@ -444,19 +641,56 @@ describe('parsePromptToActions', () => {
         expect(result.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
-        expect(generateToolCalls).toHaveBeenCalledWith(
-            expect.stringContaining('command system prompt'),
-            'command user message',
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('command system prompt');
+        expect(firstProviderCall?.[1]).toContain('untrusted_project_data:');
+        expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
                 }),
-                ...getExecutableAppActionToolSchemas(),
-            ]),
-            undefined,
-            'enable punch in/out',
-            undefined
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+            ])
         );
+        expect(firstProviderCall?.[4]).toBe('enable punch in/out');
+    });
+
+    it('bounds persisted validation failures before the normalized provider request', async () => {
+        agentRunLifecycle.create({
+            runId: 'run-with-failures',
+            request: 'enable punch in/out',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+        });
+        for (let index = 0; index < 24; index += 1) {
+            agentRunLifecycle.recordError({
+                runId: 'run-with-failures',
+                error: {
+                    code: `failure-${index}`,
+                    message: 'safe stored failure',
+                    occurredAt: index + 1,
+                    retriable: false,
+                    workId: null,
+                },
+            });
+        }
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setPunchEnabled', arguments: { enabled: true } }])
+        );
+
+        await parsePromptToActions('enable punch in/out', baseContext, undefined, 'revision-2', undefined, undefined, {
+            runId: 'run-with-failures',
+            requestId: 'request-1',
+            cancellationGeneration: 0,
+        });
+
+        const message = vi.mocked(generateToolCalls).mock.calls[0]?.[1];
+        expect(message).toContain('failure-23');
+        expect(message).not.toContain('failure-0');
+        expect(message).toContain('"omitted":8');
     });
 
     it('proposes a grounded provider marker as one reversible atomic action', async () => {
@@ -489,7 +723,7 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBe(
             'Provider action rejected: addMarker: Requested marker already exists at that beat'
         );
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider marker removal from local state without serializing marker identity', async () => {
@@ -506,10 +740,7 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
-            prompt: 'delete marker Chorus at beat 16',
-            context: baseContext,
-        });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider marker color from local state without serializing marker identity', async () => {
@@ -532,7 +763,7 @@ describe('parsePromptToActions', () => {
             },
         ]);
         expect(result.requiresConfirmation).toBe(false);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider section removal from local state without serializing section identity', async () => {
@@ -550,7 +781,7 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('section-internal');
     });
 
     it('proposes grounded non-destructive clip normalization as one atomic action', async () => {
@@ -607,15 +838,17 @@ describe('parsePromptToActions', () => {
 
     it('proposes grounded non-destructive clip stretch controls as atomic actions', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
-            completePlan([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }])
-        );
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
-            completePlan([{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }])
-        );
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
-            completePlan([{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 4 } }])
-        );
+        const plans = [
+            completePlan([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }]),
+            completePlan([{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }]),
+            completePlan([{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 4 } }]),
+        ];
+        let planIndex = 0;
+        vi.mocked(generateToolCalls).mockImplementation(async () => {
+            const plan = plans[Math.floor(planIndex / 2)];
+            planIndex += 1;
+            return plan;
+        });
         const providerContext: ProjectContext = {
             ...baseContext,
             tracks: [
@@ -680,7 +913,7 @@ describe('parsePromptToActions', () => {
 
     it('proposes a grounded cross-track clip move as one atomic action', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
+        vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 {
                     name: 'moveClip',
@@ -1131,6 +1364,44 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('rejects provider planning before adapter start when relevant locks exceed the authority cap', async () => {
+        const lockedContext: ProjectContext = {
+            ...baseContext,
+            selectedTrackId: 'track-1',
+            productionBrief: {
+                schemaVersion: 1,
+                id: 'brief-1',
+                revision: 1,
+                vision: 'Preserve the selected production authority.',
+                references: [],
+                hardConstraints: [],
+                preferences: [],
+                sectionGoals: [],
+                trackRoles: [],
+                locks: Array.from({ length: 65 }, (_, index) => ({
+                    id: `lock-${index}`,
+                    scope: { kind: 'track' as const, trackId: 'track-1' },
+                    statement: `Keep selected track invariant ${index}.`,
+                    createdAt: index,
+                })),
+                decisions: [],
+                unresolvedQuestions: [],
+                sourceRunLinks: [],
+                supersedesBriefId: null,
+                supersededByBriefId: null,
+                createdAt: 1,
+                updatedAt: 1,
+            },
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
+
+        const result = await parsePromptToActions('make the selected track warmer', lockedContext);
+
+        expect(generateToolCalls).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ actions: [], requiresConfirmation: false });
+        expect(result.rejectionReason).toContain('authority');
+    });
+
     it('rejects a provider time signature that does not match the prompt', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
@@ -1184,7 +1455,10 @@ describe('parsePromptToActions', () => {
     });
 
     it('rejects a provider tool that was not advertised before bridge grounding', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
+        vi.mocked(generateToolCalls).mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'saveProject', arguments: {} }],
+        });
         const result = await parsePromptToActions('save the project', baseContext);
 
         expect(result).toEqual({
@@ -1205,12 +1479,15 @@ describe('parsePromptToActions', () => {
 
         const result = await parsePromptToActions('set tempo to 128', baseContext);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             actions: [],
             rawText: 'set tempo to 128',
             requiresConfirmation: false,
             rejectionReason: 'Provider action failed runtime validation: saveProject',
         });
+        expect(result.applicationToolReceipts).toMatchObject([
+            { toolName: 'agent.catalog.discover', status: 'success' },
+        ]);
     });
 
     it('returns a rejected provider planning outcome without bridging it', async () => {

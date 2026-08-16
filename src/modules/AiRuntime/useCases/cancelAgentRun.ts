@@ -159,6 +159,34 @@ function recordTemporaryAssetCleanupFailure(input: {
     });
 }
 
+async function cleanupAgentRunTemporaryAsset(input: {
+    runId: string;
+    assetId: string;
+    cleanupOwner: string;
+    requestedAt?: number;
+}): Promise<{ status: 'deleted' | 'failed'; assetId: string }> {
+    const key = temporaryAssetKey(input.runId, input.assetId);
+    const registration = temporaryAssetCleanupRegistrations.get(key);
+    if (!registration || registration.cleanupOwner !== input.cleanupOwner || registration.inFlight) {
+        return { status: 'failed', assetId: input.assetId };
+    }
+    try {
+        agentRunLifecycle.prepareTemporaryAssetCleanup({
+            runId: input.runId,
+            assetId: input.assetId,
+            cleanupOwner: input.cleanupOwner,
+            preparedAt: input.requestedAt,
+        });
+        registration.inFlight = true;
+        await registration.cleanup();
+        finishTemporaryAssetCleanup({ key, registration, releasedAt: input.requestedAt ?? Date.now() });
+        return { status: 'deleted', assetId: input.assetId };
+    } catch (error) {
+        recordTemporaryAssetCleanupFailure({ registration, error, occurredAt: input.requestedAt ?? Date.now() });
+        return { status: 'failed', assetId: input.assetId };
+    }
+}
+
 function bindAgentRunAbortController(input: {
     runId: string;
     lease: AgentRunWorkLease;
@@ -306,6 +334,7 @@ async function cancelAgentRun(input: {
 export const agentRunCancellation = {
     bindAbortController: bindAgentRunAbortController,
     cancel: cancelAgentRun,
+    cleanupTemporaryAsset: cleanupAgentRunTemporaryAsset,
     registerTemporaryAssetCleanup: registerAgentRunTemporaryAssetCleanup,
     registerWorkCancellation: registerAgentRunWorkCancellation,
 } as const;

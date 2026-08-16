@@ -1,6 +1,15 @@
+import { type AgentPlanProposal } from '../models/AgentRun';
+
+import { extractAgentPlanProposal } from './normalizeAgentPlanProposal';
+
 export type ToolCallResult = { id?: string; name: string; arguments: Record<string, unknown> };
 export type ToolPlanningOutcome =
-    { status: 'complete'; toolCalls: ToolCallResult[] } | { status: 'rejected'; reason: string };
+    | { status: 'complete'; toolCalls: ToolCallResult[]; proposal: AgentPlanProposal | null }
+    | { status: 'rejected'; reason: string };
+
+function completeOutcome(toolCalls: ToolCallResult[]): ToolPlanningOutcome {
+    return { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
+}
 const MALFORMED_REASON = 'Model returned a malformed tool-call batch.';
 const EMPTY_REASON = 'Model returned an empty tool-planning response.';
 const NON_TOOL_REASON = 'Model returned a non-tool response instead of a complete tool-call batch.';
@@ -23,7 +32,7 @@ export function parseToolPlanningOutcome(content: string): ToolPlanningOutcome {
         toolCalls = parseXmlSequence(trimmed);
     }
     if (toolCalls !== null) {
-        return { status: 'complete', toolCalls };
+        return completeOutcome(toolCalls);
     }
     const hasToolSyntax =
         /```|<\/?(?:tool_call|function)>|"(?:name|actions|tool_calls|arguments|parameters)"|\n\s*[[{]/.test(trimmed);

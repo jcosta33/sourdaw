@@ -190,6 +190,32 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('applies capability kind filtering before target evidence is accepted', () => {
+        const project = createProjectState();
+        project.tracks = [
+            ...project.tracks,
+            { ...project.tracks[0]!, id: 'track-vca', name: 'VCA', kind: 'vca' },
+            { ...project.tracks[0]!, id: 'track-bus', name: 'Bus', kind: 'bus' },
+        ];
+
+        expect(
+            resolveAgentReference({
+                prompt: 'arm VCA',
+                assertedId: 'track-vca',
+                capability: 'armable-track',
+                context: project,
+            })
+        ).toMatchObject({ status: 'rejected', reason: 'ungrounded-target' });
+        expect(
+            resolveAgentReference({
+                prompt: 'route to Bus',
+                assertedId: 'track-bus',
+                capability: 'output',
+                context: project,
+            })
+        ).toEqual({ status: 'resolved', id: 'track-bus', evidence: 'exact-name' });
+    });
+
     it('rejects ambiguous names, mismatched assertions, and incidental substrings', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];

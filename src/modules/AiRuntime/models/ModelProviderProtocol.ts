@@ -1,3 +1,5 @@
+import { type AgentDataCategory, type AgentDataRetention, type RemoteTransmissionDisclosure } from './AgentDataPolicy';
+
 export const MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION = 2 as const;
 
 export const MODEL_PROVIDER_NAMES = ['native', 'webllm', 'anthropic', 'openai', 'openai-compatible'] as const;
@@ -66,6 +68,8 @@ export type ModelProviderRequestInput = Partial<Omit<ModelProviderStreamIdentity
     };
     budget: ModelProviderBudget;
     dataPolicy: 'local-only' | 'remote-allowed';
+    dataCategories?: AgentDataCategory[];
+    remoteDisclosure?: RemoteTransmissionDisclosure;
 };
 
 export type ModelProviderRequest = Omit<ModelProviderRequestInput, keyof ModelProviderStreamIdentity> &
@@ -146,6 +150,11 @@ export type ModelProviderResult = {
     partialOutputDisposition: ModelProviderPartialOutputDisposition;
     failure: ModelProviderFailure | null;
     ignoredProviderEvents: string[];
+    remoteDisclosure?: {
+        requestId: string;
+        categories: AgentDataCategory[];
+        retention: AgentDataRetention;
+    };
 };
 
 export type CompiledModelProviderRequest =

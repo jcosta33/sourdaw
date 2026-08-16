@@ -1,6 +1,8 @@
+import { type AgentContextEvidence } from './AgentContext';
 import { type AgentExecutionMode } from './AgentExecutionMode';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
+import { type ProviderRequestTokenCeilingMethod } from './ModelProviderBudgetEstimate';
 
 export const AGENT_RUN_SCHEMA_VERSION = 1 as const;
 
@@ -44,11 +46,123 @@ export type AgentRunBudgets = {
     consumed: Record<string, number>;
 };
 
+export type AgentRunBudgetEstimateMethod = ProviderRequestTokenCeilingMethod;
+
+export type AgentRunBudgetAttempt = {
+    attemptId: string;
+    category: string;
+    reserved: number;
+    actual: number;
+    provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
+    estimateMethod?: AgentRunBudgetEstimateMethod;
+    final: boolean;
+};
+
 export type AgentRunPlan = {
     summary: string;
     commandIds: string[];
     serializedBatchIdentity: string | null;
     applicationToolReceipts?: ApplicationToolReceipt[];
+    revision: string | null;
+    classification: 'simple' | 'complex';
+    showPlanPanel: boolean;
+    objective: string;
+    interpretedConstraints: string[];
+    scope: AgentRunScope;
+    steps: AgentRunPlanStep[];
+    expectedImpact: AgentRunPlanExpectedImpact;
+    capabilities: AgentRunPlanCapability[];
+    risks: string[];
+    approvalPoints: AgentRunPlanApprovalPoint[];
+    validationStrategy: string[];
+    stoppingConditions: string[];
+    alternatives: AgentRunPlanAlternative[];
+    needsUserDecision: boolean;
+};
+
+export type AgentRunPlanStep = {
+    order: number;
+    actionType: string;
+    description: string;
+};
+
+export type AgentRunPlanExpectedImpact = {
+    project: string[];
+    audible: { status: 'not-claimed'; reason: string };
+};
+
+export type AgentRunPlanCapability = {
+    id: string;
+    source: 'action-catalog' | 'application-tool-catalog' | 'budget' | 'asset' | 'data-policy';
+    prerequisite: string;
+    status: 'available' | 'required' | 'unavailable';
+};
+
+export type AgentRunPlanApprovalPoint = {
+    kind: 'command-confirmation' | 'user-decision';
+    reason: string;
+};
+
+export type AgentRunPlanAlternative = {
+    id: string;
+    label: string;
+    changesAuthority: boolean;
+};
+
+export const AGENT_PLAN_UNCERTAINTY = [
+    'ambiguous-target',
+    'exploratory-outcome',
+    'conflicted-constraints',
+    'capability-mismatch',
+] as const;
+
+export type AgentPlanUncertainty = (typeof AGENT_PLAN_UNCERTAINTY)[number];
+
+/**
+ * Provider-authored intent evidence. It is inert until application-owned scope,
+ * grants, budgets, and assets admit the corresponding command batch.
+ */
+export type AgentPlanProposal = {
+    semantic: { classification: 'simple' | 'complex'; uncertainty: AgentPlanUncertainty[] };
+    objective: string;
+    constraints: string[];
+    scope: AgentRunScope;
+    capabilityIds: string[];
+    assetIds: string[];
+    alternatives: AgentRunPlanAlternative[];
+    validationStrategy: string[];
+    stoppingConditions: string[];
+};
+
+/** @deprecated Keep the persisted name stable while the proposal contract is shared by all providers. */
+export type AgentRunProviderProposal = AgentPlanProposal;
+
+export type AgentRunDecision = {
+    decisionId: string;
+    capabilitySchemaIdentity: string;
+    proposalIdentity: string;
+    budgets: AgentRunBudgets;
+    revision: string;
+    scope: AgentRunScope;
+    grants: AgentRunGrants;
+    alternatives: AgentRunPlanAlternative[];
+    reason: string;
+    selectedAlternativeId: string | null;
+    resumeAttemptId: string | null;
+};
+
+/** Typed handoff evidence for a replacement planning attempt after a user decision. */
+export type AgentRunDecisionResume = {
+    sourceRunId: string;
+    decisionId: string;
+    selectedAlternativeId: string;
+    selectedAlternative: AgentRunPlanAlternative;
+    proposalIdentity: string;
+    capabilitySchemaIdentity: string;
+    revision: string;
+    scope: AgentRunScope;
+    grants: AgentRunGrants;
+    budgets: AgentRunBudgets;
 };
 
 export type AgentRunBatch = {
@@ -79,6 +193,7 @@ export type AgentRunProviderUsage = {
     model: string | null;
     inputTokens: number | null;
     outputTokens: number | null;
+    cachedInputTokens?: number | null;
     provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
     correlationId?: string;
     status?: 'complete' | 'partial' | 'failed' | 'cancelled' | 'unavailable';
@@ -87,6 +202,17 @@ export type AgentRunProviderUsage = {
     routeId?: string;
     executor?: RunnableAiBackend;
     fallbackReason?: string | null;
+    disclosure?: {
+        requestId: string;
+        categories: string[];
+        retention: {
+            applicationState: 'unknown';
+            abuseMonitoring: 'unknown';
+            promptCache: 'unknown';
+            safetyLegalException: 'unknown';
+            unknown: 'unknown';
+        };
+    };
 };
 
 export type AgentRunModelRoute = {
@@ -177,7 +303,10 @@ export type AgentRun = {
     scope: AgentRunScope;
     grants: AgentRunGrants;
     budgets: AgentRunBudgets;
+    budgetAttempts: AgentRunBudgetAttempt[];
     plan: AgentRunPlan | null;
+    decision: AgentRunDecision | null;
+    resume: AgentRunDecisionResume | null;
     batches: AgentRunBatch[];
     receipts: AgentRunReceipt[];
     renders: AgentRunArtifact[];
@@ -191,6 +320,7 @@ export type AgentRun = {
     temporaryAssets: AgentRunTemporaryAsset[];
     manualResume: AgentRunManualResume;
     workLeases: AgentRunWorkLease[];
+    contextEvidence: AgentContextEvidence | null;
     createdAt: number;
     updatedAt: number;
 };

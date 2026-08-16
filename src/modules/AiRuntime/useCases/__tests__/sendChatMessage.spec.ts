@@ -21,11 +21,13 @@ import {
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
+import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { agentRunControls } from '../getAgentRunControlProjection';
 import { type ProjectContext } from '../getProjectContext';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { sendChatMessage } from '../sendChatMessage';
 
 type MockBackend = 'native' | 'cloud' | 'webllm' | 'none';
@@ -104,7 +106,9 @@ const mocks = vi.hoisted(() => {
                     signal?: AbortSignal,
                     projectRevision?: string,
                     stemImportScope?: unknown,
-                    onProviderResult?: (result: ModelProviderResult) => void
+                    onProviderResult?: (result: ModelProviderResult) => void,
+                    streamIdentity?: unknown,
+                    onProviderAttempt?: (input: unknown) => unknown
                 ) => Promise<IntentResult>
             >(),
         getProjectContext: vi.fn<() => ProjectContext>(),
@@ -398,6 +402,118 @@ describe('sendChatMessage injectables', () => {
         expect(setChatGenerating).not.toHaveBeenCalled();
     });
 
+    it('rejects a correlated replacement run when provider planning omits the selected interpretation', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        const scope = { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
+        const grants = {
+            allowedOperationPrefixes: ['muteTrack'],
+            create: false,
+            delete: false,
+            routing: false,
+            tempo: false,
+            master: false,
+            file: false,
+            audioUpload: false,
+            remoteGeneration: false,
+            autoCommit: false,
+        };
+        const sourceActions = [
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: false, expectedMuted: true } },
+        ];
+        agentRunLifecycle.create({
+            runId: 'source-decision-run',
+            request: 'Mute Track 1.',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+            scope,
+            grants,
+            budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+        });
+        agentRunLifecycle.recordDecision({
+            runId: 'source-decision-run',
+            decision: {
+                decisionId: 'decision-mute-track-1',
+                capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: sourceActions,
+                    providerProposal: null,
+                    scope,
+                    grants,
+                }),
+                budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+                revision: 'revision-1',
+                scope,
+                grants,
+                alternatives: [{ id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false }],
+                reason: 'Choose the bounded interpretation.',
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            },
+        });
+        agentRunLifecycle.requireManualResume({
+            runId: 'source-decision-run',
+            reason: 'Choose the bounded interpretation.',
+            workIds: [],
+        });
+
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } }],
+            rawText: 'Mute Track 1.',
+            requiresConfirmation: false,
+        });
+
+        const [firstResult, secondResult] = await Promise.all([
+            agentRunControls.resumeDecision({ runId: 'source-decision-run', alternativeId: 'mute-track-1' }),
+            agentRunControls.resumeDecision({ runId: 'source-decision-run', alternativeId: 'mute-track-1' }),
+        ]);
+
+        expect(firstResult).toMatchObject({ status: 'rejected' });
+        expect(secondResult).toMatchObject({ status: 'rejected' });
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(1);
+        const replacementRun = getAgentRunControlProjections().find(
+            (projection) => projection.runId !== 'source-decision-run'
+        );
+        expect(replacementRun).toBeDefined();
+        if (!replacementRun) {
+            throw new Error('Expected the replacement planning run to be retained for correlation');
+        }
+        expect(getAgentRun(replacementRun.runId)).toMatchObject({
+            mode: 'plan',
+            resume: {
+                sourceRunId: 'source-decision-run',
+                decisionId: 'decision-mute-track-1',
+                selectedAlternativeId: 'mute-track-1',
+                selectedAlternative: { id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false },
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: sourceActions,
+                    providerProposal: null,
+                    scope,
+                    grants,
+                }),
+            },
+            plan: null,
+        });
+        expect(getAgentRun('source-decision-run')?.decision).toMatchObject({
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        });
+        expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
+            'Mute Track 1.',
+            expect.anything(),
+            expect.anything(),
+            'revision-1',
+            undefined,
+            expect.any(Function),
+            expect.objectContaining({ runId: replacementRun.runId }),
+            expect.any(Function)
+        );
+    });
+
     it('returns an exact plan without executing or proposing a commit', async () => {
         mocks.chatStoreValue.value = {
             messages: [],
@@ -688,7 +804,8 @@ describe('sendChatMessage injectables', () => {
                 cancellationGeneration: 0,
                 requestId: expect.stringMatching(/^provider:native:agent-run-/),
                 runId: expect.stringMatching(/^agent-run-/),
-            })
+            }),
+            expect.any(Function)
         );
     });
 
@@ -821,6 +938,17 @@ describe('sendChatMessage injectables', () => {
             rawText: 'mute the vocals',
             requiresConfirmation: false,
             executionMode: 'atomic',
+            providerProposal: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Mute track-1.',
+                constraints: [],
+                scope: { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                capabilityIds: ['muteTrack'],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Verify track identity.'],
+                stoppingConditions: ['Stop if application validation fails.'],
+            },
         });
         mocks.executeAppActionBatch.mockResolvedValue({
             status: 'committed',
@@ -977,6 +1105,34 @@ describe('sendChatMessage injectables', () => {
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
     });
 
+    it('does not start explain streaming when compiled system, conversation, and project context exceed its budget', async () => {
+        const context = mocks.getProjectContext();
+        mocks.getProjectContext.mockReturnValue({
+            ...context,
+            tracks: context.tracks.map((track) => ({ ...track, name: 'project context '.repeat(500) })),
+        });
+        mocks.chatStoreValue.value = {
+            messages: Array.from({ length: 24 }, (_, index): ChatMessage => ({
+                id: `history-${index}`,
+                role: index % 2 === 0 ? 'user' : 'assistant',
+                content: 'conversation context '.repeat(500),
+                timestamp: index,
+            })),
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+
+        await sendChatMessage('brief', { budgets: { limits: { localAnalysis: 1_024 }, consumed: {} } });
+
+        expect(mocks.runNativeModelProviderRequest).not.toHaveBeenCalled();
+        const [projection] = getAgentRunControlProjections();
+        expect(projection?.phase).toBe('failed');
+        expect(projection?.errors).toEqual(
+            expect.arrayContaining([expect.objectContaining({ code: 'agent-budget-hard-limit' })])
+        );
+    });
+
     it('marks a token-limited hosted response visibly incomplete', async () => {
         mocks.backend.value = 'cloud';
         mocks.cloudAvailable.value = true;
@@ -1021,6 +1177,76 @@ describe('sendChatMessage injectables', () => {
         );
         expect(completionUpdate?.[1].content).toContain('Partial answer');
         expect(completionUpdate?.[1].content).toContain('Response incomplete');
+    });
+
+    it('sends the canonical bounded authority context to native, hosted, and WebLLM regular-chat adapters', async () => {
+        const projectContext = mocks.getProjectContext();
+        mocks.getProjectContext.mockReturnValue({
+            ...projectContext,
+            internalProjectDump: 'UNRELATED_RAW_PROJECT_DATA_MUST_NOT_REACH_A_PROVIDER',
+        } as ProjectContext);
+
+        const adapterContexts: string[] = [];
+
+        mocks.backend.value = 'native';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        await sendChatMessage('Explain the current mix.');
+        const nativeRequest = mocks.runNativeModelProviderRequest.mock.calls.at(-1)?.[0].request;
+        adapterContexts.push(nativeRequest?.messages[0]?.content ?? '');
+        clearAgentRuns();
+
+        mocks.backend.value = 'cloud';
+        mocks.cloudAvailable.value = true;
+        llmStatusStore.set({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        await sendChatMessage('Explain the current mix.');
+        adapterContexts.push(mocks.streamCloudChatCompletion.mock.calls.at(-1)?.[0][0]?.content ?? '');
+        clearAgentRuns();
+
+        mocks.backend.value = 'webllm';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.webLlmCreate.mockResolvedValue({
+            async *[Symbol.asyncIterator]() {
+                yield { choices: [{ delta: { content: 'Complete answer' }, finish_reason: 'stop' }] };
+            },
+        });
+        mocks.webLlmEngine.value = {
+            interruptGenerate: mocks.webLlmInterrupt,
+            chat: { completions: { create: mocks.webLlmCreate } },
+        };
+        await sendChatMessage('Explain the current mix.');
+        const webLlmMessages = mocks.webLlmCreate.mock.calls.at(-1)?.[0].messages as
+            Array<{ content: string }> | undefined;
+        adapterContexts.push(webLlmMessages?.[0]?.content ?? '');
+
+        for (const adapterContext of adapterContexts) {
+            expect(adapterContext).toMatch(
+                /fixed_policy[\s\S]*run_authority[\s\S]*user_request[\s\S]*production_brief_and_locks[\s\S]*revision_and_selection/
+            );
+            expect(adapterContext).toContain('untrusted_user_string');
+            expect(adapterContext).toContain('revision-1');
+            expect(adapterContext).not.toContain('UNRELATED_RAW_PROJECT_DATA_MUST_NOT_REACH_A_PROVIDER');
+        }
+        const [projection] = getAgentRunControlProjections();
+        expect(getAgentRun(projection!.runId)?.contextEvidence).toMatchObject({
+            revision: 'revision-1',
+            delta: { mode: 'full', baseRevision: null },
+        });
     });
 
     it('marks a zero-output native length result visibly incomplete', async () => {
@@ -1109,6 +1335,7 @@ describe('sendChatMessage injectables', () => {
                 model: 'cloud',
                 inputTokens: 11,
                 outputTokens: 4,
+                cachedInputTokens: 3,
                 provenance: 'provider-reported',
                 correlationId: expect.any(String),
                 status: 'complete',
@@ -1117,12 +1344,23 @@ describe('sendChatMessage injectables', () => {
                 routeId: 'cloud:openai-compatible:cloud',
                 executor: 'cloud',
                 fallbackReason: null,
+                disclosure: expect.objectContaining({
+                    requestId: expect.any(String),
+                    categories: expect.arrayContaining(['prompt-text']),
+                    retention: expect.objectContaining({ applicationState: 'unknown' }),
+                }),
             },
         ]);
         expect(getAgentRun(usageProjection!.runId)?.modelRoute).toEqual({
             requestedRoute: 'auto',
             selectedRouteId: 'cloud:openai-compatible:cloud',
         });
+        expect(getAgentRun(usageProjection!.runId)?.budgetAttempts).toEqual([
+            expect.objectContaining({
+                attemptId: expect.any(String),
+                estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+            }),
+        ]);
     });
 
     it('records each fallback planning attempt with its actual provider and correlation', async () => {

@@ -3,6 +3,8 @@ import { type AgentRunError, type AgentRunPhase } from '../models/AgentRun';
 import { readAgentRunState } from '../stores/agentRunStore';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { getAgentRunDecisionResumeAdmission } from './getAgentRunDecisionResumeAdmission';
+import { resumeAgentRunDecision } from './resumeAgentRunDecision';
 
 type AgentRunControlProjection = {
     runId: string;
@@ -20,6 +22,7 @@ type AgentRunControlProjection = {
         retryWorkIds: string[];
     };
     manualResumeReason: string | null;
+    resumeRejectionReason: string | null;
     committedReceipts: Array<{
         workId: string;
         receiptIdentity: string;
@@ -62,6 +65,7 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
                 )
         )
         .map((work) => work.workId);
+    const resumeAdmission = getAgentRunDecisionResumeAdmission(run);
     return {
         runId: run.runId,
         schemaVersion: run.schemaVersion,
@@ -74,10 +78,11 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
         },
         allowedActions: {
             cancel: !TERMINAL_PHASES.has(run.phase),
-            resume: false,
+            resume: resumeAdmission.status === 'admitted',
             retryWorkIds,
         },
         manualResumeReason: run.manualResume.reason,
+        resumeRejectionReason: resumeAdmission.status === 'rejected' ? resumeAdmission.reason : null,
         committedReceipts: run.committedWork.map((work) => ({
             workId: work.workId,
             receiptIdentity: work.receiptIdentity,
@@ -99,4 +104,5 @@ function getAgentRunControlProjections(): AgentRunControlProjection[] {
 export const agentRunControls = {
     get: getAgentRunControlProjection,
     list: getAgentRunControlProjections,
+    resumeDecision: resumeAgentRunDecision,
 } as const;
