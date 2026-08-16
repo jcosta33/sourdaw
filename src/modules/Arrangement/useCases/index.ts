@@ -249,6 +249,7 @@ export { getPluginById } from './getPluginById';
 export { clampDeviceParameterValue } from './clampDeviceParameterValue';
 export { quantiseDeviceParameterValue } from './quantiseDeviceParameterValue';
 export { isDeviceParameterAutomatable } from './isDeviceParameterAutomatable';
+export { getAgentBuiltinDeviceFactoryManifest } from './getAgentBuiltinDeviceFactoryManifest';
 
 // ── Command handler access ────────────────────────────────────────────────────
 

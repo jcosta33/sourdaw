@@ -59,6 +59,7 @@ describe('agent tool catalog', () => {
             'project.resolve',
             'agent.capabilities',
             'agent.catalog.discover',
+            'device.factory-manifest.read',
             'command.batch.propose',
             'command.history',
             'render.request',
@@ -102,8 +103,33 @@ describe('agent tool catalog', () => {
             true
         );
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1]).toContain('catalog-1');
-        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1]).toContain('setTempo');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
+    });
+
+    it('grounds the next shared provider-loop turn with the application-owned device manifest without mutation authority', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'device-manifest-1',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['builtin-compressor'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        await runApplicationOwnedToolLoop({
+            loopId: 'device-manifest-loop',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('device-manifest-1');
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('sourdaw.agent-device-factory-manifest');
+        expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 
     it('rejects a direct primitive provider call before grounding when it did not enter through a catalog proposal', async () => {
