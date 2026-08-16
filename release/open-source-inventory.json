@@ -1,0 +1,468 @@
+{
+    "schemaVersion": 1,
+    "baseline": "1de2caa08fa1872c33bdcc836dd2152741d9adda",
+    "surfaces": [
+        {
+            "id": "project-source",
+            "kind": "source",
+            "retention": "keep",
+            "owner": "OS-10",
+            "releaseModes": ["source"],
+            "paths": ["package.json", "server/package.json", "pnpm-lock.yaml", "Cargo.lock", "Cargo.toml", "crates/**"],
+            "sourceFiles": [
+                "src/modules/AiRuntime/repositories/mcpToolAdapter/toMcpTools.ts",
+                "src/types/file-system-access.d.ts"
+            ],
+            "sources": ["git:github.com/jcosta33/sourdaw", "package.json", "server/package.json", "Cargo.toml"],
+            "revisions": ["1de2caa08fa1872c33bdcc836dd2152741d9adda", "pnpm-lock.yaml", "Cargo.lock"],
+            "digests": ["git:1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "licenses": ["pending:OS-10"],
+            "productSurfaces": ["repository source"],
+            "evidence": ["Git history and the dependency manifests named in paths."],
+            "obligations": ["Apply Apache-2.0 metadata without erasing third-party notices."]
+        },
+        {
+            "id": "desktop-shell",
+            "kind": "distribution",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "desktop"],
+            "paths": ["src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"],
+            "sourceFiles": ["src-tauri/tauri.conf.json"],
+            "sources": ["https://github.com/tauri-apps/tauri", "src-tauri/Cargo.toml"],
+            "revisions": ["Cargo.lock"],
+            "digests": ["pending:OS-07-final-desktop-package"],
+            "licenses": ["pending:OS-07"],
+            "productSurfaces": ["desktop application shell"],
+            "evidence": ["src-tauri/Cargo.toml"],
+            "obligations": [
+                "Reconcile the final desktop shell and every bundled runtime notice after campaign 2037 settles."
+            ]
+        },
+        {
+            "id": "stable-audio-open-small",
+            "kind": "model-stack",
+            "retention": "remove-proven-incompatible",
+            "owner": "OS-02",
+            "releaseModes": ["source", "desktop"],
+            "paths": ["src-tauri/sidecar/**", "src-tauri/src/commands/audio_gen.rs"],
+            "sourceFiles": ["src-tauri/src/commands/ai_audio.rs"],
+            "sources": [
+                "https://huggingface.co/stabilityai/stable-audio-open-small",
+                "src-tauri/sidecar/requirements.txt"
+            ],
+            "revisions": ["unbounded Python requirements"],
+            "digests": ["sha256:4bef152b260bb7ac65daabd591a673195f6c9b0e9eeb330bce6e834530388b0d"],
+            "licenses": ["Stability AI Community License"],
+            "productSurfaces": ["local audio generation"],
+            "evidence": ["Stable Audio Open Small model terms restrict commercial use."],
+            "obligations": ["Remove the model-specific sidecar, command, download, and product reachability."]
+        },
+        {
+            "id": "demucs-mansfieldplumbing",
+            "kind": "model-stack",
+            "retention": "remove-proven-incompatible",
+            "owner": "OS-02",
+            "releaseModes": ["web", "desktop"],
+            "paths": [
+                "src-tauri/src/commands/ai_audio.rs",
+                "src/modules/AudioAnalysis/repositories/browserStemSeparation.ts"
+            ],
+            "sourceFiles": [
+                "src-tauri/src/commands/ai_audio.rs",
+                "src/modules/AudioAnalysis/repositories/browserStemSeparation.ts"
+            ],
+            "sources": ["https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT"],
+            "revisions": ["125b3e0aa9b553f625e92a6c2a1cf5d214be2ec0", "mutable main reference"],
+            "digests": ["unrecorded; removal required"],
+            "licenses": ["CC-BY-NC-4.0", "Meta Research License"],
+            "productSurfaces": ["browser stem separation", "desktop stem separation"],
+            "evidence": ["MansfieldPlumbing Demucs declares CC-BY-NC-4.0 and a research license."],
+            "obligations": ["Remove only this model's download and invocation surfaces."]
+        },
+        {
+            "id": "nsf-hifigan-openvpi",
+            "kind": "model-stack",
+            "retention": "remove-proven-incompatible",
+            "owner": "OS-02",
+            "releaseModes": ["web", "source"],
+            "paths": ["scripts/upload-vocoder-to-hf.sh", "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts"],
+            "sourceFiles": ["scripts/upload-vocoder-to-hf.sh", "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts"],
+            "sources": [
+                "https://github.com/openvpi/vocoders/releases/tag/nsf-hifigan-44.1k-hop512-128bin-2024.02",
+                "https://huggingface.co/jcosta33/vocoder-models"
+            ],
+            "revisions": ["nsf-hifigan-44.1k-hop512-128bin-2024.02", "mutable main reference"],
+            "digests": ["unrecorded; removal required"],
+            "licenses": ["CC-BY-NC-SA-4.0"],
+            "productSurfaces": ["browser singing-synthesis vocoder", "model mirror"],
+            "evidence": ["OpenVPI publishes the selected vocoder under CC-BY-NC-SA-4.0."],
+            "obligations": ["Remove the mirror, download, catalog entry, and dependent capability reachability."]
+        },
+        {
+            "id": "webllm-qwen-artifacts",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": [
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts"
+            ],
+            "sourceFiles": [
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts"
+            ],
+            "sources": [
+                "https://huggingface.co/mlc-ai",
+                "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs-bin"
+            ],
+            "revisions": [
+                "Qwen3-1.7B 80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
+                "Qwen3-4B a5c9fab855e3ccbdfed2e7e69683d75f30332161",
+                "Qwen3-8B b3d55c289eae58f77095f5b68c895eeea358ee09",
+                "WASM 025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
+            ],
+            "digests": [
+                "sha256:932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255",
+                "sha256:2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f",
+                "sha256:7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb"
+            ],
+            "licenses": ["pending:OS-04-exact-quantized-artifacts"],
+            "productSurfaces": ["browser-local language model"],
+            "evidence": [
+                "The manifest pins artifacts but does not prove the exact quantized repositories' license chain."
+            ],
+            "obligations": ["Admit exact artifacts and notices or remove their product surface."]
+        },
+        {
+            "id": "whisper-model",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["desktop"],
+            "paths": ["src-tauri/src/commands/speech.rs"],
+            "sourceFiles": ["src-tauri/src/commands/speech.rs"],
+            "sources": ["https://huggingface.co/ggerganov/whisper.cpp"],
+            "revisions": ["5359861c739e955e79d9a303bcbc70fb988958b1"],
+            "digests": ["sha256:a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"],
+            "licenses": ["pending:OS-04-complete-stack"],
+            "productSurfaces": ["desktop speech transcription"],
+            "evidence": ["The current URL pins one whisper.cpp artifact revision."],
+            "obligations": ["Record the complete artifact, runtime, license, hash, and notice chain before admission."]
+        },
+        {
+            "id": "kokoro-model",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": [
+                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/useCases/renderKokoroTts.ts"
+            ],
+            "sourceFiles": [
+                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/useCases/renderKokoroTts.ts"
+            ],
+            "sources": ["https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX"],
+            "revisions": ["mutable main reference"],
+            "digests": ["pending:OS-04-model-and-voice-hashes"],
+            "licenses": ["pending:OS-04-complete-stack"],
+            "productSurfaces": ["browser text-to-speech", "desktop text-to-speech"],
+            "evidence": [
+                "The current model and voice URLs use mutable main references without complete artifact notices."
+            ],
+            "obligations": ["Pin and hash every model and voice artifact, then record its complete license chain."]
+        },
+        {
+            "id": "ddsp-models",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["src/modules/BrowserAi/models/DdspInstrumentCatalog.ts"],
+            "sourceFiles": ["src/modules/BrowserAi/models/DdspInstrumentCatalog.ts"],
+            "sources": ["https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"],
+            "revisions": ["mutable checkpoint directories"],
+            "digests": ["pending:OS-04-checkpoint-hashes"],
+            "licenses": ["Apache-2.0 claim pending exact-artifact verification"],
+            "productSurfaces": ["browser DDSP instruments", "desktop DDSP instruments"],
+            "evidence": ["The catalog claims Apache-2.0 but uses mutable unverified checkpoint directories."],
+            "obligations": ["Pin, hash, and verify each exact checkpoint and transitive runtime before admission."]
+        },
+        {
+            "id": "basic-pitch-model",
+            "kind": "bundled-model-stack",
+            "retention": "keep-with-obligations",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["package.json", "pnpm-lock.yaml", "src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts"],
+            "sourceFiles": [],
+            "sources": ["https://www.npmjs.com/package/@spotify/basic-pitch"],
+            "revisions": ["@spotify/basic-pitch 1.0.1"],
+            "digests": [
+                "sha512:SAxiFi9ZnyhGdhWEOS9YVhdunZiKzI3I5zOccZzDzQRr4s00Ii9lphqlPMMfby3iYa7TSupB2g8yuu1kJ6gL+Q=="
+            ],
+            "licenses": ["Apache-2.0"],
+            "productSurfaces": ["polyphonic audio-to-MIDI"],
+            "evidence": ["The production dependency bundles the browser model and lockfile integrity."],
+            "obligations": ["Carry Apache-2.0 attribution and verify the bundled model follows the package grant."]
+        },
+        {
+            "id": "cloud-ai-providers",
+            "kind": "external-service",
+            "retention": "keep-with-obligations",
+            "owner": "OS-03",
+            "releaseModes": ["desktop"],
+            "paths": [
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts",
+                "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
+                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
+                "src-tauri/src/commands/provider_gateway.rs"
+            ],
+            "sourceFiles": [
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
+                "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts"
+            ],
+            "sources": [
+                "https://api.anthropic.com/v1/messages",
+                "https://api.openai.com/v1",
+                "user-supplied OpenAI-compatible endpoint"
+            ],
+            "revisions": [
+                "Anthropic API 2023-06-01",
+                "OpenAI chat completions v1",
+                "adapter builtin.openai-compatible.chat-completions.v1"
+            ],
+            "digests": ["not-applicable:remote-service"],
+            "licenses": ["provider API terms"],
+            "productSurfaces": ["desktop hosted inference", "desktop custom provider"],
+            "evidence": ["Production code targets the public Anthropic and OpenAI API origins."],
+            "obligations": ["Keep credentials and transport native; expose no secret-bearing web surface."]
+        },
+        {
+            "id": "collaboration-stun",
+            "kind": "external-service",
+            "retention": "keep",
+            "owner": "OS-01",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["src/modules/Collaboration/repositories/peerConnection.ts"],
+            "sourceFiles": ["src/modules/Collaboration/repositories/peerConnection.ts"],
+            "sources": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"],
+            "revisions": ["live STUN endpoints"],
+            "digests": ["not-applicable:external-service"],
+            "licenses": ["not-applicable:network-service"],
+            "productSurfaces": ["peer-to-peer collaboration discovery"],
+            "evidence": ["Production WebRTC configuration names two Google STUN endpoints and no TURN relay."],
+            "obligations": [
+                "Keep the endpoints accurate and disclose the network dependency where release documentation requires it."
+            ]
+        },
+        {
+            "id": "grand-boule",
+            "kind": "patent-directed-component",
+            "retention": "defer-behind-admission",
+            "owner": "OS-05",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["crates/daw-dsp/src/grand_boule/**"],
+            "sourceFiles": [],
+            "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
+            "revisions": ["1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "digests": ["git:1de2caa08fa1872c33bdcc836dd2152741d9adda:crates/daw-dsp/src/grand_boule"],
+            "licenses": ["pending:OS-05-patent-and-parameter-source-review"],
+            "productSurfaces": ["Grand Boule piano engine", "piano controls and presets"],
+            "evidence": ["Current research follows an active patent without a complete claim-to-code map."],
+            "obligations": [
+                "Prove independence, design around mapped overlap, or keep the component unreleased without deleting it."
+            ]
+        },
+        {
+            "id": "levain-sample-bank",
+            "kind": "sample-bank",
+            "retention": "keep-with-obligations",
+            "owner": "OS-06",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["public/samples/levain/**"],
+            "sourceFiles": ["scripts/download-levain-samples-direct.ts", "scripts/download-levain-samples.ts"],
+            "sources": ["https://github.com/sgossner/VSCO-2-CE"],
+            "revisions": ["mutable master reference"],
+            "digests": ["pending:OS-06-file-level-reconciliation"],
+            "licenses": ["CC0-1.0 claim pending complete bank reconciliation"],
+            "productSurfaces": ["bundled Levain orchestral sample bank"],
+            "evidence": ["One file matches CC0 VSCO-2-CE; the full bank lacks immutable file-level reconciliation."],
+            "obligations": [
+                "Pin one upstream revision and map every retained file by source path, hash, and license without relocating the bank."
+            ]
+        },
+        {
+            "id": "faust-runtime",
+            "kind": "bundled-binary",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["public/faust/**"],
+            "sourceFiles": [],
+            "sources": ["https://www.npmjs.com/package/@grame/faustwasm", "public/faust/"],
+            "revisions": ["checked files match @grame/faustwasm 0.15.7; package lock selects 0.16.5"],
+            "digests": ["pending:OS-07-version-matched-package-proof"],
+            "licenses": ["LGPL-3.0"],
+            "productSurfaces": ["browser Faust compiler", "desktop Faust compiler"],
+            "evidence": ["Checked Faust binaries match an older LGPL dependency version and lack a source route."],
+            "obligations": [
+                "Supply version-matched source, LGPL text, attribution, and modification notice or replace the component."
+            ]
+        },
+        {
+            "id": "project-wasm",
+            "kind": "generated-binary",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["public/wasm/**"],
+            "sourceFiles": [],
+            "sources": ["crates/daw-dsp/", "crates/daw-wasm-decoder/", "crates/proof-chamber/", "crates/scoring/"],
+            "revisions": ["1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "digests": ["public/wasm/manifest.json"],
+            "licenses": ["pending:OS-10-project-grant", "dependency terms from Cargo.lock"],
+            "productSurfaces": ["browser DSP", "desktop webview DSP"],
+            "evidence": ["WASM packages map to workspace Rust sources and carry generated manifests."],
+            "obligations": ["Keep generated hashes, package metadata, project grant, and third-party notices aligned."]
+        },
+        {
+            "id": "generated-audio-worklets",
+            "kind": "generated-binary",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["public/audio/worklets/**"],
+            "sourceFiles": [],
+            "sources": ["tracked project worklet sources and generators"],
+            "revisions": ["1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "digests": ["pending:OS-07-source-to-output-map"],
+            "licenses": ["pending:OS-10-project-grant"],
+            "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
+            "evidence": ["Tracked worklet processors are shipped from the public release tree."],
+            "obligations": [
+                "Map every generated processor to its source and carry the project and dependency notices into distributions."
+            ]
+        },
+        {
+            "id": "online-sample-sources",
+            "kind": "external-content",
+            "retention": "keep-with-obligations",
+            "owner": "OS-08",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx"],
+            "sourceFiles": ["src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx"],
+            "sources": [
+                "https://github.com/LMMS/assets/tree/master/Samples",
+                "https://github.com/sgossner/VCSL",
+                "https://github.com/sfzinstruments",
+                "https://theremin.music.uiowa.edu/MIS.html",
+                "https://philharmonia.co.uk/resources/sound-samples/",
+                "https://archive.org/",
+                "https://dig.ccmixter.org/",
+                "https://opengameart.org/"
+            ],
+            "revisions": ["live per-item sources"],
+            "digests": ["not-applicable:linked-external-content"],
+            "licenses": ["per-item terms pending:OS-08"],
+            "productSurfaces": ["online sample browser"],
+            "evidence": ["Current collection-level labels overstate item-level reuse rights."],
+            "obligations": ["Resolve and display the exact selected item's current terms before claiming reuse rights."]
+        },
+        {
+            "id": "owner-visual-assets",
+            "kind": "asset",
+            "retention": "keep-with-obligations",
+            "owner": "OS-08",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "public/favicon.ico",
+                "public/icon-192.png",
+                "public/icon-transparent.png",
+                "public/icon.png",
+                "public/logo-parts/**",
+                "sourdaw.png",
+                "src-tauri/icons/**"
+            ],
+            "sourceFiles": [],
+            "sources": ["owner-authored Git history"],
+            "revisions": ["1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "digests": ["git:1de2caa08fa1872c33bdcc836dd2152741d9adda:public/logo-parts"],
+            "licenses": ["pending:OS-08-owner-attestation"],
+            "productSurfaces": ["application icons", "brand logo", "release screenshots"],
+            "evidence": ["Repository history proves custody but no external provenance record."],
+            "obligations": ["Record owner attestation or replace any asset whose origin cannot be established."]
+        },
+        {
+            "id": "third-party-marks",
+            "kind": "product-names",
+            "retention": "keep-with-obligations",
+            "owner": "OS-08",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "src/modules/Toaster/repositories/toasterPresets.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/GrandBoule/models/GrandBouleMorphState.ts"
+            ],
+            "sourceFiles": [],
+            "sources": ["current product names and preset labels in the named files"],
+            "revisions": ["1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "digests": ["git:1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "licenses": ["trademark disposition pending:OS-08"],
+            "productSurfaces": ["presets", "model selectors", "public screenshots"],
+            "evidence": ["Current product copy names third-party instruments, processors, and marks."],
+            "obligations": ["Keep only defensible descriptive use; rename, replace, or remove the rest."]
+        },
+        {
+            "id": "community-links",
+            "kind": "external-service",
+            "retention": "keep",
+            "owner": "OS-11",
+            "releaseModes": ["web", "desktop"],
+            "paths": [
+                "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
+                "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+                "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx"
+            ],
+            "sourceFiles": [
+                "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
+                "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+                "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx"
+            ],
+            "sources": ["https://discord.gg/bJHmmfY4"],
+            "revisions": ["live invite"],
+            "digests": ["not-applicable:external-service"],
+            "licenses": ["not-applicable:community-link"],
+            "productSurfaces": ["alpha notice", "mobile gate", "status bar help"],
+            "evidence": ["Current product surfaces link to the project Discord invite."],
+            "obligations": ["Keep public project links accurate and intentional."]
+        },
+        {
+            "id": "current-product-documents",
+            "kind": "documentation",
+            "retention": "keep-with-obligations",
+            "owner": "OS-09",
+            "releaseModes": ["source"],
+            "paths": [".agents/specs/**", "docs/**", "README.md"],
+            "sourceFiles": [],
+            "sources": ["git:github.com/jcosta33/sourdaw"],
+            "revisions": ["1de2caa08fa1872c33bdcc836dd2152741d9adda"],
+            "digests": [
+                "git:1de2caa08fa1872c33bdcc836dd2152741d9adda:.agents/specs",
+                "git:1de2caa08fa1872c33bdcc836dd2152741d9adda:docs"
+            ],
+            "licenses": ["pending:OS-10-project-grant"],
+            "productSurfaces": ["current specifications", "architecture documentation", "public README"],
+            "evidence": [
+                "Current documents contain rejected model choices and release claims that require reconciliation."
+            ],
+            "obligations": ["State shipping truth and keep useful future intent only behind explicit admission gates."]
+        }
+    ]
+}

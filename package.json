@@ -20,6 +20,7 @@
         "test:full": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- vitest run",
         "test:collection-scope": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- node --experimental-strip-types scripts/checkVitestCollectionScope.ts",
         "test:command-schema": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node scripts/generateVersionedCommandArgumentSchemas.mjs --check",
+        "test:release-inventory": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/checkReleaseInventory.ts",
         "test:barrel-mocks": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- node --experimental-strip-types scripts/checkBarrelMockCoverage.ts",
         "test:e2e": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended --require-target -- playwright test",
         "test:e2e:full": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- playwright test",
