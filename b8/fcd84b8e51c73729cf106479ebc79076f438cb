@@ -1,0 +1,23 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_ab5443e65c7fba::t_f1b28913be09c1 170
+  s_ab5443e65c7fba::t_dada3b117ab1c2 191
+  s_ab5443e65c7fba::t_2c9dca273f42c0 326
+  s_ab5443e65c7fba::t_be9c350205544d 151
+  s_ab5443e65c7fba::t_b1cf014fa1adf6 390
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b8fcd84b8e51c73729cf106479ebc79076f438cb",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
