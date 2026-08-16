@@ -1518,13 +1518,13 @@ mod tests {
         ));
 
         let error = result.expect_err("a registry entry with no CLAP id must not load");
-        assert!(
-            error.contains("/plugins/no-descriptor-id.clap"),
-            "the refusal must name the file, got: {error}"
-        );
-        assert!(
-            !error.contains("Nameless"),
-            "the display name must not stand in for a CLAP id, got: {error}"
+        // Exact, because the substitute id produced a library-load failure that
+        // also named the file: only the refusal's own wording distinguishes
+        // "this entry carries no CLAP id" from "the file would not load".
+        assert_eq!(
+            error,
+            "CLAP plugin /plugins/no-descriptor-id.clap reports no descriptor id in the registry \
+             entry for clap-without-descriptor-id. Rescan the plugin directory."
         );
         assert!(
             !state
