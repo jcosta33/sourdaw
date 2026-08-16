@@ -7,6 +7,14 @@ type DeleteTimelineMapsTimeRangeInput = {
 };
 
 export function deleteTimelineMapsTimeRange(input: DeleteTimelineMapsTimeRangeInput): void {
+    // Mirrors `prepareTimelineMapTimeOperation`'s `isValidOperation`, which only
+    // accepts `endBeat > startBeat`: an inverted range would shift surviving
+    // changes the wrong direction, and a degenerate (zero-length) range has
+    // nothing to delete. Both no-op rather than guess a swapped or clamped range.
+    if (input.endBeat <= input.startBeat) {
+        return;
+    }
+
     const duration = input.endBeat - input.startBeat;
 
     const tempoState = tempoMapStore.value;

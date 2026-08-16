@@ -105,4 +105,18 @@ describe('deleteTimelineMapsTimeRange', () => {
         expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
         expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledOnce();
     });
+
+    it('no-ops on an inverted range instead of shifting surviving changes the wrong direction', () => {
+        deleteTimelineMapsTimeRange({ startBeat: 6, endBeat: 3 });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('no-ops on a degenerate zero-length range', () => {
+        deleteTimelineMapsTimeRange({ startBeat: 4, endBeat: 4 });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
 });

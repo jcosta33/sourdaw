@@ -96,13 +96,18 @@ describe('transportStore', () => {
         expect(transportStore.value).toEqual(defaultTransportState);
     });
 
-    it('should sanitize invalid durable CRDT fields to default transport state without throwing', async () => {
+    it('should sanitize a durable CRDT payload that fully collapses to default state without throwing', async () => {
+        // Every case here either invalidates a single field with no other field
+        // present, or triggers a cross-field invariant reset (loop/punch trio)
+        // whose reset fields are the only ones the payload touched — so the
+        // whole result still equals the full default. Per-field preservation
+        // alongside a *surviving* valid field is covered separately below.
         const invalid_payloads = [
             { label: 'low tempo', payload: { tempo: 19 } },
             { label: 'high tempo', payload: { tempo: 301 } },
             { label: 'zero numerator', payload: { timeSignatureNumerator: 0 } },
             { label: 'unsupported denominator', payload: { timeSignatureDenominator: 3 } },
-            { label: 'negative loop start', payload: { loopStart: -1, loopEnd: 4 } },
+            { label: 'negative loop start', payload: { loopStart: -1 } },
             { label: 'inverted loop bounds', payload: { loopStart: 8, loopEnd: 4 } },
             { label: 'enabled zero-length loop', payload: { isLooping: true, loopStart: 8, loopEnd: 8 } },
             { label: 'non-boolean loop toggle', payload: { isLooping: 'true' } },
@@ -138,6 +143,48 @@ describe('transportStore', () => {
             expect(transportStore.value, invalid_payload.label).toEqual(defaultTransportState);
             await flush_pending_frame();
         }
+    });
+
+    it('should reset only the invalid field and preserve every other valid durable field (per-field fallback)', async () => {
+        fake_doc.transport = { tempo: 999, metronomeVolume: 0.5 };
+
+        expect(() => transportStore.hydrate()).not.toThrow();
+
+        expect(transportStore.value).toEqual({
+            ...defaultTransportState,
+            tempo: defaultTransportState.tempo,
+            metronomeVolume: 0.5,
+        });
+    });
+
+    it('should reset only the loop trio when the loop configuration is invalid, preserving tempo and master gain', async () => {
+        fake_doc.transport = { tempo: 140, masterGain: 90, loopStart: 8, loopEnd: 4 };
+
+        expect(() => transportStore.hydrate()).not.toThrow();
+
+        expect(transportStore.value).toEqual({
+            ...defaultTransportState,
+            tempo: 140,
+            masterGain: 90,
+            isLooping: defaultTransportState.isLooping,
+            loopStart: defaultTransportState.loopStart,
+            loopEnd: defaultTransportState.loopEnd,
+        });
+    });
+
+    it('should reset only the punch trio when the punch configuration is invalid, preserving tempo and master gain', async () => {
+        fake_doc.transport = { tempo: 140, masterGain: 90, punchInBeat: 8, punchOutBeat: 4 };
+
+        expect(() => transportStore.hydrate()).not.toThrow();
+
+        expect(transportStore.value).toEqual({
+            ...defaultTransportState,
+            tempo: 140,
+            masterGain: 90,
+            punchInEnabled: defaultTransportState.punchInEnabled,
+            punchInBeat: defaultTransportState.punchInBeat,
+            punchOutBeat: defaultTransportState.punchOutBeat,
+        });
     });
 
     it('should merge valid partial durable CRDT hydration over defaults without preserving stale cached fields', () => {

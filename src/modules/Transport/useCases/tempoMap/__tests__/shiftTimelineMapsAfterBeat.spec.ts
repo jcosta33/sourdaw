@@ -123,4 +123,24 @@ describe('shiftTimelineMapsAfterBeat', () => {
             changes: [{ id: 'tempo-at', beat: 6, tempo: 120, curve: 'instant' }],
         });
     });
+
+    it('clamps a shift that would land below beat 0 to beat 0 instead of leaving it negative', () => {
+        // A large negative deltaBeats (e.g. deleting more than exists before the
+        // shift point) must not leave a permanently active negative-beat change.
+        tempoMapStoreValue.value = {
+            changes: [{ id: 'tempo-at', beat: 4, tempo: 120, curve: 'instant' }],
+        };
+        timeSignatureMapStoreValue.value = {
+            changes: [{ id: 'sig-at', beat: 4, numerator: 5, denominator: 4 }],
+        };
+
+        shiftTimelineMapsAfterBeat({ atBeat: 4, deltaBeats: -10 });
+
+        expect(tempoMapStoreSet).toHaveBeenCalledWith({
+            changes: [{ id: 'tempo-at', beat: 0, tempo: 120, curve: 'instant' }],
+        });
+        expect(timeSignatureMapStoreSet).toHaveBeenCalledWith({
+            changes: [{ id: 'sig-at', beat: 0, numerator: 5, denominator: 4 }],
+        });
+    });
 });
