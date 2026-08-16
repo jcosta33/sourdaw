@@ -772,8 +772,13 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             return;
         }
         const notesOff = [...notesOffByTrack].map(([trackId, noteOffs]) => ({ trackId, noteOffs }));
-        for (const handler of notesOffHandlers) {
-            handler(notesOff);
+        const handlers = [...notesOffHandlers];
+        for (const handler of handlers) {
+            try {
+                handler(notesOff);
+            } catch {
+                // A failed/reentrant observer cannot affect this delivery snapshot.
+            }
         }
     };
 

@@ -1,4 +1,10 @@
-import { sanitize_tempo_map_state, type TempoChange, type TempoMapStoreState } from '../../stores/tempoMapStore';
+import {
+    sanitize_tempo_map_state,
+    MIN_TEMPO_MAP_TEMPO,
+    MAX_TEMPO_MAP_TEMPO,
+    type TempoChange,
+    type TempoMapStoreState,
+} from '../../stores/tempoMapStore';
 import {
     sanitize_time_signature_map_state,
     type TimeSignatureChange,
@@ -61,8 +67,6 @@ type ReadTimeSignatureChangeResult = {
     encoded: EncodedTimeSignatureChange;
 };
 
-const MIN_TEMPO = 20;
-const MAX_TEMPO = 999;
 const MIN_TIME_SIGNATURE_PART = 1;
 const MAX_TIME_SIGNATURE_PART = 32;
 
@@ -177,8 +181,8 @@ function readTempoChange(value: unknown): ReadTempoChangeResult | null {
         properties.beat < 0 ||
         typeof properties.tempo !== 'number' ||
         !Number.isFinite(properties.tempo) ||
-        properties.tempo < MIN_TEMPO ||
-        properties.tempo > MAX_TEMPO ||
+        properties.tempo < MIN_TEMPO_MAP_TEMPO ||
+        properties.tempo > MAX_TEMPO_MAP_TEMPO ||
         (properties.curve !== 'instant' && properties.curve !== 'linear')
     ) {
         return null;
@@ -339,7 +343,7 @@ function decodeTempoChange(value: unknown): TempoChange | null {
 
     const beat = decodeNumber(properties.beat);
     const tempo = decodeNumber(properties.tempo);
-    if (beat === null || beat < 0 || tempo === null || tempo < MIN_TEMPO || tempo > MAX_TEMPO) {
+    if (beat === null || beat < 0 || tempo === null || tempo < MIN_TEMPO_MAP_TEMPO || tempo > MAX_TEMPO_MAP_TEMPO) {
         return null;
     }
     return {

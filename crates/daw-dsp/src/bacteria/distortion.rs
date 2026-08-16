@@ -14,6 +14,13 @@ use super::stft::SmudgeProcessor;
 /// Channels the band chain runs through one `DistortionProcessor`.
 const CHANNELS: usize = 2;
 
+/// Ceiling on `sampleRateReduce`, matching the range the panel declares.
+///
+/// The divider is the length of the sample-and-hold window, so leaving it
+/// unbounded lets an automation spike park a channel on one held sample for an
+/// arbitrary stretch — and that same window is what survives a mode change.
+const MAX_SR_DIVIDER: u32 = 64;
+
 /// Distortion mode selector.
 #[derive(Clone, Copy, PartialEq)]
 pub enum DistortionMode {
@@ -54,19 +61,25 @@ pub struct DistortionProcessor {
     sr_reduce: u32,       // sample rate divider
     tube_bias: f32,       // 0–1
     breakdown_depth: f32, // 0–4 octaves
-    sr_counter: u32,      // sample-rate reduction counter
-    sr_hold: f32,         // held sample for SR reduction
+
+    /// Per-channel sample-and-hold state for Bitcrush's rate reduction.
+    ///
+    /// Same reason as `smudge`: one shared counter is advanced by both the
+    /// left and the right call, so the hold lands on whichever channel happens
+    /// to line up with the divider. At an odd divider the two channels
+    /// alternate, and each one is handed the other's held sample — a silent
+    /// channel comes back carrying the loud one.
+    sr_counter: [u32; CHANNELS], // sample-rate reduction counter
+    sr_hold: [f32; CHANNELS], // held sample for SR reduction
 
     /// Per-channel Smudge state.
     ///
     /// The band chain runs **one** `DistortionProcessor` for both channels —
     /// `engine.rs` calls `process_sample` for left and then right off the same
-    /// instance. Every other mode here is memoryless or carries only a
-    /// scalar hold, so sharing costs them nothing worse than the sample-rate
-    /// counter they already share. An overlap-add transform is different: a
-    /// single STFT would receive `L₀, R₀, L₁, R₁, …` and analyse a 2048-point
-    /// window of interleaved stereo, whose spectrum belongs to neither
-    /// channel. Hence one processor per channel.
+    /// instance. The memoryless shapers do not care. An overlap-add transform
+    /// is different: a single STFT would receive `L₀, R₀, L₁, R₁, …` and
+    /// analyse a 2048-point window of interleaved stereo, whose spectrum
+    /// belongs to neither channel. Hence one processor per channel.
     smudge: [SmudgeProcessor; CHANNELS],
 }
 
@@ -81,8 +94,8 @@ impl DistortionProcessor {
             sr_reduce: 1,
             tube_bias: 0.5,
             breakdown_depth: 1.0,
-            sr_counter: 0,
-            sr_hold: 0.0,
+            sr_counter: [0; CHANNELS],
+            sr_hold: [0.0; CHANNELS],
             smudge: [SmudgeProcessor::new(), SmudgeProcessor::new()],
         }
     }
@@ -113,13 +126,23 @@ impl DistortionProcessor {
                         channel.reset();
                     }
                 }
+                // Bitcrush's sample-and-hold is stranded state on the same
+                // argument, just shorter: up to `sr_reduce - 1` samples of
+                // whatever the band was playing before, flushed the moment the
+                // mode comes back. Cleared on every mode change rather than
+                // only on the way out of Bitcrush, because arriving at Bitcrush
+                // with a stale hold is the audible half.
+                if next != self.mode {
+                    self.sr_counter = [0; CHANNELS];
+                    self.sr_hold = [0.0; CHANNELS];
+                }
                 self.mode = next;
             }
             "drive" => self.drive = value,
             "asymmetry" => self.asymmetry = value,
             "foldbackThreshold" => self.fold_threshold = value.max(0.01),
             "bitDepth" => self.bit_depth = (value as u32).clamp(1, 24),
-            "sampleRateReduce" => self.sr_reduce = (value as u32).max(1),
+            "sampleRateReduce" => self.sr_reduce = (value as u32).clamp(1, MAX_SR_DIVIDER),
             "tubeBias" => self.tube_bias = value,
             "breakdownDepth" => self.breakdown_depth = value,
             _ => {}
@@ -128,10 +151,11 @@ impl DistortionProcessor {
 
     /// Process a single sample through the selected distortion algorithm.
     ///
-    /// `channel` selects the per-channel state Smudge needs; every other mode
-    /// ignores it. Out-of-range indices clamp to the right channel rather than
-    /// panicking on the audio thread.
+    /// `channel` selects the per-channel state Smudge and Bitcrush need; every
+    /// other mode ignores it. Out-of-range indices clamp to the right channel
+    /// rather than panicking on the audio thread.
     pub fn process_sample(&mut self, input: f32, channel: usize) -> f32 {
+        let channel = channel.min(CHANNELS - 1);
         let drive_linear = 1.0 + self.drive * 0.2; // scale drive to useful range
         let driven = input * drive_linear;
 
@@ -140,14 +164,14 @@ impl DistortionProcessor {
             DistortionMode::HardClip => self.hard_clip(driven),
             DistortionMode::Foldback => self.foldback(driven),
             DistortionMode::Wavefold => self.wavefold(driven),
-            DistortionMode::Bitcrush => self.bitcrush(driven),
+            DistortionMode::Bitcrush => self.bitcrush(driven, channel),
             DistortionMode::Tube => self.tube(driven),
             DistortionMode::Smudge => {
                 // "Blurs transients before distortion": the spectral blur is a
                 // pre-stage, and the shaper it feeds is this mode's base soft
                 // clip. Drive has already been applied, so the blur sees the
                 // driven signal exactly as the other modes do.
-                let blurred = self.smudge[channel.min(CHANNELS - 1)].process_sample(driven);
+                let blurred = self.smudge[channel].process_sample(driven);
                 self.soft_clip(blurred)
             }
             DistortionMode::Breakdown | DistortionMode::Custom => {
@@ -199,15 +223,15 @@ impl DistortionProcessor {
         (x * std::f32::consts::PI).sin()
     }
 
-    /// Bit depth and sample rate reduction.
-    fn bitcrush(&mut self, x: f32) -> f32 {
+    /// Bit depth and sample rate reduction, on `channel`'s own hold clock.
+    fn bitcrush(&mut self, x: f32, channel: usize) -> f32 {
         // Sample rate reduction
-        self.sr_counter += 1;
-        if self.sr_counter >= self.sr_reduce {
-            self.sr_counter = 0;
-            self.sr_hold = x;
+        self.sr_counter[channel] += 1;
+        if self.sr_counter[channel] >= self.sr_reduce {
+            self.sr_counter[channel] = 0;
+            self.sr_hold[channel] = x;
         }
-        let held = self.sr_hold;
+        let held = self.sr_hold[channel];
 
         // Bit depth reduction
         let levels = 2.0_f32.powi(self.bit_depth as i32);
@@ -224,5 +248,124 @@ impl DistortionProcessor {
         };
         // Mix in even harmonics from bias
         sat * 0.9 + biased.tanh() * 0.1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::PI;
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const BITCRUSH: f32 = 4.0;
+    /// Odd on purpose. With one shared counter the two channels take turns
+    /// owning the hold at any odd divider, so each is handed the other's
+    /// sample; an even divider hides it by always landing on the same channel.
+    const DIVIDER: u32 = 3;
+
+    fn bitcrush_processor() -> DistortionProcessor {
+        let mut distortion = DistortionProcessor::new();
+        distortion.set_param("distortionMode", BITCRUSH);
+        distortion.set_param("sampleRateReduce", DIVIDER as f32);
+        distortion
+    }
+
+    /// Rate reduction runs on a per-channel clock: a silent channel stays
+    /// silent no matter what the other one is doing.
+    #[test]
+    fn bitcrush_does_not_hand_one_channel_the_other_channels_held_sample() {
+        let mut distortion = bitcrush_processor();
+
+        let mut left_out = Vec::new();
+        let mut right_out = Vec::new();
+        for n in 0..512 {
+            let left = (2.0 * PI * 440.0 * n as f32 / SAMPLE_RATE).sin() * 0.5;
+            left_out.push(distortion.process_sample(left, 0));
+            right_out.push(distortion.process_sample(0.0, 1));
+        }
+
+        let peak = |samples: &[f32]| samples.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+        let right_peak = peak(&right_out);
+        assert!(
+            right_peak < 1e-6,
+            "silent right channel came back peaking at {right_peak} — \
+             it is being handed the left channel's held sample"
+        );
+        assert!(
+            peak(&left_out) > 0.05,
+            "left channel produced nothing, so the silence check proves nothing"
+        );
+    }
+
+    /// And the hold really lasts `sampleRateReduce` of that channel's own
+    /// samples, not of the interleaved stream.
+    #[test]
+    fn bitcrush_holds_each_channel_for_its_own_divider() {
+        let mut distortion = bitcrush_processor();
+
+        let mut left_out = Vec::new();
+        for n in 0..512 {
+            let left = (2.0 * PI * 440.0 * n as f32 / SAMPLE_RATE).sin() * 0.5;
+            left_out.push(distortion.process_sample(left, 0));
+            distortion.process_sample(0.0, 1);
+        }
+
+        // The counter reaches the divider on the third left sample, so holds
+        // start at index 2 and each spans exactly `DIVIDER` samples.
+        let step = DIVIDER as usize;
+        for start in (2..left_out.len() - step).step_by(step) {
+            for offset in 1..step {
+                assert_eq!(
+                    left_out[start],
+                    left_out[start + offset],
+                    "left hold starting at {start} broke at offset {offset}"
+                );
+            }
+        }
+    }
+
+    /// Leaving and re-entering Bitcrush must not replay the sample it was
+    /// holding when it left.
+    ///
+    /// The same argument the Smudge exit-clear is written for, one stage over
+    /// and shorter: a held sample is up to `sampleRateReduce - 1` samples of
+    /// whatever the band was playing, flushed over whatever it is playing when
+    /// the mode comes back.
+    #[test]
+    fn changing_mode_drops_the_bitcrush_hold() {
+        let mut distortion = bitcrush_processor();
+        for n in 0..64 {
+            let left = (2.0 * PI * 440.0 * n as f32 / SAMPLE_RATE).sin() * 0.9;
+            distortion.process_sample(left, 0);
+            distortion.process_sample(left, 1);
+        }
+        assert!(
+            distortion.sr_hold.iter().any(|h| h.abs() > 0.1),
+            "the hold never filled, so the clear below proves nothing"
+        );
+
+        distortion.set_param("distortionMode", 0.0);
+        distortion.set_param("distortionMode", BITCRUSH);
+
+        let mut peak = 0.0_f32;
+        for _ in 0..64 {
+            peak = peak.max(distortion.process_sample(0.0, 0).abs());
+            peak = peak.max(distortion.process_sample(0.0, 1).abs());
+        }
+        assert!(
+            peak < 1e-6,
+            "re-entering Bitcrush over silence replayed {peak} of the previous \
+             engagement's held sample"
+        );
+    }
+
+    /// An unbounded divider is an unbounded sample-and-hold window.
+    #[test]
+    fn the_sample_rate_divider_is_clamped_to_the_declared_range() {
+        let mut distortion = DistortionProcessor::new();
+        distortion.set_param("sampleRateReduce", 4_000.0);
+        assert_eq!(distortion.sr_reduce, MAX_SR_DIVIDER);
+        distortion.set_param("sampleRateReduce", -3.0);
+        assert_eq!(distortion.sr_reduce, 1);
     }
 }

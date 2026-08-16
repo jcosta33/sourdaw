@@ -41,7 +41,49 @@ export type TrackNodeDeps = {
     reconnectRoutingForTrack?: (trackId: string) => void;
     onDeviceLoaded?: (trackId: string, device: BuiltinDeviceNode) => void;
     onDeviceRemoved?: (trackId: string, device: BuiltinDeviceNode) => void;
+    onAsyncRuntimeGraphMutation?: (mutation: AsyncRuntimeGraphMutation) => void;
 };
+
+export type TrackNodeRuntimeGraphMutation = Readonly<{
+    application: 'applied' | 'needs-reconcile';
+    reason: string;
+}>;
+
+export type AsyncRuntimeGraphMutation = TrackNodeRuntimeGraphMutation;
+
+/**
+ * A TrackNode mutation changed live topology before its final graph operation
+ * threw. The AudioEngine owns invalidation, so callers must not infer rollback.
+ */
+export class RuntimeGraphMutationFailure extends Error {
+    constructor(
+        public readonly mutation: TrackNodeRuntimeGraphMutation,
+        public readonly cause: unknown,
+        /** Failed compensation operation, if the original live mutation was not restored. */
+        public readonly rollbackError?: unknown
+    ) {
+        super(cause instanceof Error ? cause.message : String(cause));
+        this.name = 'RuntimeGraphMutationFailure';
+    }
+}
+
+export type TrackNodeRuntimeGraphRejection = Readonly<{
+    reason: string;
+}>;
+
+/** A prepared graph mutation failed before an untrusted live effect remained. */
+export class RuntimeGraphMutationRejected extends Error {
+    public readonly rejection: TrackNodeRuntimeGraphRejection;
+
+    constructor(
+        reason: string,
+        public readonly cause: unknown
+    ) {
+        super(cause instanceof Error ? cause.message : String(cause));
+        this.name = 'RuntimeGraphMutationRejected';
+        this.rejection = Object.freeze({ reason });
+    }
+}
 
 type PendingDeviceLoad = {
     abortController: AbortController;
@@ -324,13 +366,72 @@ export class TrackNode {
         return peak;
     }
 
-    public setOutput(outputId: string): void {
+    public setOutput(outputId: string): boolean {
+        if (this.strip.outputId === outputId) {
+            return false;
+        }
+
+        let nextDestination: AudioNode;
+        try {
+            const adjustmentBus = this.deps.getAdjustmentBusForTrack?.(this.trackId) ?? null;
+            nextDestination = adjustmentBus ?? this.getOutputDestination(outputId);
+        } catch (error) {
+            throw new RuntimeGraphMutationRejected(
+                `Track ${this.trackId} output ${outputId} could not resolve a live destination`,
+                error
+            );
+        }
+        const previousDestination = this._outputDestination;
+        if (previousDestination === nextDestination) {
+            this.strip.outputId = outputId;
+            return true;
+        }
+
+        let previousDestinationDisconnected = false;
+        try {
+            if (previousDestination) {
+                this.strip.analyserNode.disconnect(previousDestination);
+                previousDestinationDisconnected = true;
+            }
+            this.strip.analyserNode.connect(nextDestination);
+        } catch (error) {
+            if (!previousDestinationDisconnected) {
+                throw new RuntimeGraphMutationRejected(
+                    `Track ${this.trackId} output ${outputId} failed before changing its live route`,
+                    error
+                );
+            }
+            try {
+                this.strip.analyserNode.disconnect(nextDestination);
+                if (previousDestination) {
+                    this.strip.analyserNode.connect(previousDestination);
+                }
+            } catch (rollbackError) {
+                throw new RuntimeGraphMutationFailure(
+                    Object.freeze({
+                        application: 'needs-reconcile',
+                        reason: `Track ${this.trackId} output ${outputId} changed before route restoration failed`,
+                    }),
+                    error,
+                    rollbackError
+                );
+            }
+            throw new RuntimeGraphMutationRejected(
+                `Track ${this.trackId} output ${outputId} was restored after a live route failure`,
+                error
+            );
+        }
+
         this.strip.outputId = outputId;
-        this.routeOutput();
+        this._outputDestination = nextDestination;
+        return true;
     }
 
     public getDefaultDestination(): AudioNode {
-        const { outputId } = this.strip;
+        return this.getOutputDestination(this.strip.outputId);
+    }
+
+    private getOutputDestination(outputId: string | undefined): AudioNode {
         const { masterGainNode, getBusGainNode, getTrackGainNode } = this.deps;
         if (outputId === 'hw_out' || !outputId) {
             return masterGainNode;
@@ -383,6 +484,13 @@ export class TrackNode {
         }
     }
 
+    private reportAsyncRuntimeGraphMutation(
+        application: AsyncRuntimeGraphMutation['application'],
+        reason: string
+    ): void {
+        this.deps.onAsyncRuntimeGraphMutation?.(Object.freeze({ application, reason }));
+    }
+
     private rollbackPromotedDevice(readinessToken: DeviceReadinessToken): boolean {
         const pendingLoad = this._pendingDeviceLoads.get(readinessToken.deviceId);
         if (
@@ -404,6 +512,10 @@ export class TrackNode {
         if (!failedDevice) {
             return false;
         }
+        this.reportAsyncRuntimeGraphMutation(
+            'needs-reconcile',
+            `Async device promotion for ${readinessToken.deviceId} rolled back after a live graph failure`
+        );
         this.strip.deviceNodes[index] = pendingLoad.placeholder;
         pendingLoad.abortController.abort();
         try {
@@ -592,6 +704,7 @@ export class TrackNode {
         }
 
         let deviceLoadNotificationStarted = false;
+        let promotionPublished = false;
         try {
             for (const [name, value] of pendingLoad.parameterWrites) {
                 finalDn.controller?.setParam(name, value);
@@ -600,12 +713,26 @@ export class TrackNode {
                 finalDn.controller?.setBypass?.(pendingLoad.bypassed);
                 finalDn.bypassed = pendingLoad.bypassed;
             }
+            // This owner callback reserves the next runtime graph generation
+            // before the placeholder reference changes, so no caller can apply
+            // a delta in the promotion/rebuild gap with the old generation.
+            this.reportAsyncRuntimeGraphMutation(
+                'applied',
+                `Async device ${deviceId} promoted from its placeholder into the live graph`
+            );
             this.strip.deviceNodes[index] = finalDn;
+            promotionPublished = true;
             if (this.deps.onDeviceLoaded) {
                 deviceLoadNotificationStarted = true;
                 this.deps.onDeviceLoaded(this.trackId, finalDn);
             }
         } catch (error) {
+            if (promotionPublished) {
+                this.reportAsyncRuntimeGraphMutation(
+                    'needs-reconcile',
+                    `Async device ${deviceId} promotion failed after a live graph mutation`
+                );
+            }
             if (pendingLoad.placeholder) {
                 this.strip.deviceNodes[index] = pendingLoad.placeholder;
             }
@@ -641,6 +768,10 @@ export class TrackNode {
         if (readinessToken) {
             this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'runtime' });
         }
+        this.reportAsyncRuntimeGraphMutation(
+            'needs-reconcile',
+            `Loaded device ${deviceId} failed at runtime and requires graph reconciliation`
+        );
         replacementDn.bypassed = failedDn.bypassed;
         this.strip.deviceNodes[index] = replacementDn;
         this._pendingDeviceLoads.get(deviceId)?.abortController.abort();
@@ -667,6 +798,10 @@ export class TrackNode {
 
             const precedingDeviceIds = this.strip.deviceNodes.slice(0, index).map((device) => device.deviceId);
             const { bypassed, type } = replacementDn;
+            this.reportAsyncRuntimeGraphMutation(
+                'needs-reconcile',
+                `Recovered device ${deviceId} is rebuilding its live graph slot`
+            );
             this.invalidatePendingDeviceLoad({ deviceId });
             this.strip.deviceNodes.splice(index, 1);
             this.destroyRejectedDeviceNode(replacementDn);
@@ -750,18 +885,29 @@ export class TrackNode {
         throw error;
     }
 
+    private throwUncompensatedDeviceAddFailure(deviceId: string, error: unknown, rollbackError: unknown): never {
+        throw new RuntimeGraphMutationFailure(
+            Object.freeze({
+                application: 'needs-reconcile',
+                reason: `Device ${deviceId} was added before its live graph rebuild and rollback failed`,
+            }),
+            error,
+            rollbackError
+        );
+    }
+
     public addDevice(
         deviceId: string,
         deviceType: string,
         externalInstanceId?: string,
         precedingDeviceIds?: readonly string[]
-    ): void {
+    ): boolean {
         if (this._disposed) {
-            return;
+            return false;
         }
         if (this.strip.deviceNodes.some((d) => d.deviceId === deviceId)) {
             logger.debug(`Device ${deviceId} already exists on track ${this.trackId}`);
-            return;
+            return false;
         }
 
         const { context } = this.deps;
@@ -899,7 +1045,7 @@ export class TrackNode {
             } else {
                 if (!descriptor) {
                     this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'node' });
-                    return;
+                    return false;
                 }
                 const pendingLoad: PendingDeviceLoad = {
                     abortController: new AbortController(),
@@ -957,12 +1103,17 @@ export class TrackNode {
             try {
                 this.rebuildChain();
             } catch (error) {
-                this.invalidatePendingDeviceLoad({ deviceId, failureStage: 'graph' });
-                this.strip.deviceNodes = this.strip.deviceNodes.filter((device) => device.deviceId !== deviceId);
-                this.destroyRejectedDeviceNode(dn);
+                try {
+                    this.invalidatePendingDeviceLoad({ deviceId, failureStage: 'graph' });
+                    this.strip.deviceNodes = this.strip.deviceNodes.filter((device) => device.deviceId !== deviceId);
+                    this.destroyRejectedDeviceNode(dn);
+                    this.rebuildChain();
+                } catch (rollbackError) {
+                    this.throwUncompensatedDeviceAddFailure(deviceId, error, rollbackError);
+                }
                 throw error;
             }
-            return;
+            return true;
         }
         this.deps.readinessDiagnostics.markNodeReady({ token: readinessToken });
         try {
@@ -970,19 +1121,20 @@ export class TrackNode {
             this.deps.readinessDiagnostics.markGraphReady({ token: readinessToken });
         } catch (error) {
             this._failedDeviceLoads.add(deviceId);
-            this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'graph' });
-            this.strip.deviceNodes.splice(targetIndex, 1);
-            this.destroyRejectedDeviceNode(dn);
             try {
+                this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'graph' });
+                this.strip.deviceNodes.splice(targetIndex, 1);
+                this.destroyRejectedDeviceNode(dn);
                 this.rebuildChain();
             } catch (rollbackError) {
-                logger.warn(`[WebAudioEngine] Synchronous device graph rollback failed: ${String(rollbackError)}`);
+                this.throwUncompensatedDeviceAddFailure(deviceId, error, rollbackError);
             }
             throw error;
         }
+        return true;
     }
 
-    public removeDevice(deviceId: string): void {
+    public removeDevice(deviceId: string): boolean {
         this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true, clearFailure: true });
         const readinessToken = this._deviceReadinessTokens.get(deviceId);
         if (readinessToken) {
@@ -993,13 +1145,24 @@ export class TrackNode {
         this._runtimeRecoveryAttempts.delete(deviceId);
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
-            return;
+            return false;
         }
 
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
-        this.deps.onDeviceRemoved?.(this.trackId, dn);
-        this.destroyPublishedDeviceNode(dn);
-        this.rebuildChain();
+        try {
+            this.deps.onDeviceRemoved?.(this.trackId, dn);
+            this.destroyPublishedDeviceNode(dn);
+            this.rebuildChain();
+        } catch (error) {
+            throw new RuntimeGraphMutationFailure(
+                Object.freeze({
+                    application: 'needs-reconcile',
+                    reason: `Device ${deviceId} was removed before its live graph rebuild failed`,
+                }),
+                error
+            );
+        }
+        return true;
     }
 
     public updateParam(deviceId: string, paramId: string, value: number): void {
@@ -1047,11 +1210,12 @@ export class TrackNode {
         dn?.controller?.keyOff?.(0, pitch, velocity, time);
     }
 
-    public updateBypass(deviceId: string, bypassed: boolean): void {
+    public updateBypass(deviceId: string, bypassed: boolean): boolean {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
-            return;
+            return false;
         }
+        const changed = dn.bypassed !== bypassed;
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (pendingLoad && !pendingLoad.resolved) {
             pendingLoad.bypassed = bypassed;
@@ -1069,10 +1233,11 @@ export class TrackNode {
         // summed into the strip), so even a synth whose controller cannot release
         // voices is removed from the audible path. Idempotent for effects whose
         // own setBypass already set dn.bypassed + scheduled a rebuild.
-        if (dn.bypassed !== bypassed) {
+        if (changed) {
             dn.bypassed = bypassed;
             this.scheduleRebuildChain();
         }
+        return changed;
     }
 
     public dispose(): void {

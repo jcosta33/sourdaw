@@ -105,7 +105,6 @@ type SelectMidiNotesForSchedulerWindowInput = {
     midiOffsetBeats: number;
     fromBeat: number;
     toBeat: number;
-    lastScheduledBeat: number;
 };
 type SelectYeastNotesForSchedulerWindowInput = {
     notes: readonly ScheduledMidiNote[];
@@ -199,15 +198,12 @@ function selectMidiNotesForSchedulerWindow({
     midiOffsetBeats,
     fromBeat,
     toBeat,
-    lastScheduledBeat,
 }: SelectMidiNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
     const { maxDurationBeats, orderByNote, sortedNotes } = getScheduledMidiNoteIndex(notes);
-    const schedulerStartBeat = Math.max(fromBeat, lastScheduledBeat);
-    const schedulesClipBoundary =
-        iterationStartBeat >= fromBeat && iterationStartBeat < toBeat && iterationStartBeat >= lastScheduledBeat;
+    const schedulesClipBoundary = iterationStartBeat >= fromBeat && iterationStartBeat < toBeat;
     const leadingIntervalLookbehindBeats = schedulesClipBoundary ? maxDurationBeats : 0;
     const sourceStartBeat =
-        schedulerStartBeat -
+        fromBeat -
         iterationStartBeat +
         midiOffsetBeats -
         MIDI_NOTE_GROOVE_LOOKAROUND_BEATS -
@@ -338,11 +334,18 @@ function getSourceOccurrenceOffset({
     return Math.floor(beatsFromSourceStart / loopLength);
 }
 
+/**
+ * Emit every MIDI event whose start beat falls in the half-open window
+ * `[fromBeat, toBeat)`.
+ *
+ * `fromBeat` is the scheduler's monotonic high-water mark: the transport passes
+ * `schedulerSession.lastScheduledBeat`, which is exactly where the previous
+ * window ended, so a note already emitted can never be emitted twice.
+ */
 export async function scheduleMidiNotes(
     fromBeat: number,
     toBeat: number,
     accumulatedPosition: number,
-    lastScheduledBeat: number,
     scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
@@ -692,7 +695,9 @@ export async function scheduleMidiNotes(
                         midiOffsetBeats: clipMidiOffset,
                         fromBeat,
                         toBeat,
-                        lastScheduledBeat,
+                        // The window start IS the high-water mark here; the loop
+                        // selector keeps the two separate for its own callers.
+                        lastScheduledBeat: fromBeat,
                         grooveLookaroundBeats: MIDI_NOTE_GROOVE_LOOKAROUND_BEATS,
                     });
                 } else {
@@ -702,7 +707,6 @@ export async function scheduleMidiNotes(
                         midiOffsetBeats: clipMidiOffset,
                         fromBeat,
                         toBeat,
-                        lastScheduledBeat,
                     });
                 }
                 const notesAreAbsolute = yeastDevice !== undefined;
@@ -737,11 +741,7 @@ export async function scheduleMidiNotes(
 
                     for (const projectedNote of projectedNotes) {
                         const unswungStartBeat = projectedNote.startBeat;
-                        if (
-                            unswungStartBeat < fromBeat ||
-                            unswungStartBeat >= toBeat ||
-                            unswungStartBeat < lastScheduledBeat
-                        ) {
+                        if (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat) {
                             continue;
                         }
                         if (!isCurrent()) {
