@@ -44,10 +44,26 @@ export type TrackNodeDeps = {
     onAsyncRuntimeGraphMutation?: (mutation: AsyncRuntimeGraphMutation) => void;
 };
 
-export type AsyncRuntimeGraphMutation = Readonly<{
+export type TrackNodeRuntimeGraphMutation = Readonly<{
     application: 'applied' | 'needs-reconcile';
     reason: string;
 }>;
+
+export type AsyncRuntimeGraphMutation = TrackNodeRuntimeGraphMutation;
+
+/**
+ * A TrackNode mutation changed live topology before its final graph operation
+ * threw. The AudioEngine owns invalidation, so callers must not infer rollback.
+ */
+export class RuntimeGraphMutationFailure extends Error {
+    constructor(
+        public readonly mutation: TrackNodeRuntimeGraphMutation,
+        public readonly cause: unknown
+    ) {
+        super(cause instanceof Error ? cause.message : String(cause));
+        this.name = 'RuntimeGraphMutationFailure';
+    }
+}
 
 type PendingDeviceLoad = {
     abortController: AbortController;
@@ -1040,9 +1056,19 @@ export class TrackNode {
         }
 
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
-        this.deps.onDeviceRemoved?.(this.trackId, dn);
-        this.destroyPublishedDeviceNode(dn);
-        this.rebuildChain();
+        try {
+            this.deps.onDeviceRemoved?.(this.trackId, dn);
+            this.destroyPublishedDeviceNode(dn);
+            this.rebuildChain();
+        } catch (error) {
+            throw new RuntimeGraphMutationFailure(
+                Object.freeze({
+                    application: 'needs-reconcile',
+                    reason: `Device ${deviceId} was removed before its live graph rebuild failed`,
+                }),
+                error
+            );
+        }
         return true;
     }
 

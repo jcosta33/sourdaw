@@ -12,7 +12,7 @@ import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../en
 import { BusNode } from '../engine/BusNode';
 import { createDeviceReadinessDiagnostics } from '../engine/deviceReadinessDiagnostics';
 import { dropoutCounters } from '../engine/dropoutCounter';
-import { TrackNode, type AsyncRuntimeGraphMutation } from '../engine/TrackNode';
+import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeRuntimeGraphMutation } from '../engine/TrackNode';
 import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeltaNode,
@@ -426,7 +426,7 @@ class AudioEngineImpl implements AudioEngine {
         });
     }
 
-    private recordAsyncRuntimeGraphMutation(mutation: AsyncRuntimeGraphMutation): void {
+    private recordRuntimeGraphMutation(mutation: TrackNodeRuntimeGraphMutation): void {
         this.mutateRuntimeGraph(() => ({ value: undefined, changed: true }));
         if (mutation.application === 'needs-reconcile') {
             logger.warn(`[AudioEngine] ${mutation.reason}`);
@@ -1115,7 +1115,7 @@ class AudioEngineImpl implements AudioEngine {
                     reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
                     onDeviceLoaded: (id) => this.reconcileToasterParent(id),
                     onDeviceRemoved: (id, device) => this.handleDeviceRemoved(id, device),
-                    onAsyncRuntimeGraphMutation: (mutation) => this.recordAsyncRuntimeGraphMutation(mutation),
+                    onAsyncRuntimeGraphMutation: (mutation) => this.recordRuntimeGraphMutation(mutation),
                 });
             }
             this.trackNodes.set(trackId, node);
@@ -1337,10 +1337,17 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.mutateRuntimeGraph(() => ({
-            value: undefined,
-            changed: this.trackNodes.get(trackId)?.removeDevice(deviceId) ?? false,
-        }));
+        try {
+            this.mutateRuntimeGraph(() => ({
+                value: undefined,
+                changed: this.trackNodes.get(trackId)?.removeDevice(deviceId) ?? false,
+            }));
+        } catch (error) {
+            if (error instanceof RuntimeGraphMutationFailure) {
+                this.recordRuntimeGraphMutation(error.mutation);
+            }
+            throw error;
+        }
     }
 
     public updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {

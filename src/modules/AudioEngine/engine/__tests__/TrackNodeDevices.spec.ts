@@ -4,7 +4,7 @@ import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__
 
 import { type BuiltinDeviceNode, type SendNode } from '../../models/AudioEngineState';
 import { createDeviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
-import { TrackNode, type TrackNodeDeps } from '../TrackNode';
+import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeDeps } from '../TrackNode';
 
 const mocks = vi.hoisted(() => ({
     hasSharedArrayBuffer: vi.fn(() => true),
@@ -323,6 +323,35 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(onDeviceRemoved).toHaveBeenCalledWith('t1', expect.objectContaining({ deviceId: 'dev-1' }));
             // With no devices the dry path reconnects gain → preFaderTap.
             expect(gainNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
+        });
+
+        it('reports needs-reconcile truth when removal changed the live strip before rebuild failure', () => {
+            const onDeviceRemoved = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { onDeviceRemoved }));
+            const { node, controller } = pushControllerDevice(track);
+            vi.spyOn(track, 'rebuildChain').mockImplementationOnce(() => {
+                throw new Error('removal graph rebuild failed');
+            });
+
+            let failure: unknown;
+            try {
+                track.removeDevice('dev-1');
+            } catch (error) {
+                failure = error;
+            }
+
+            expect(failure).toBeInstanceOf(RuntimeGraphMutationFailure);
+            if (!(failure instanceof RuntimeGraphMutationFailure)) {
+                throw new Error('Expected a runtime graph mutation failure');
+            }
+            expect(failure.mutation).toMatchObject({
+                application: 'needs-reconcile',
+                reason: expect.stringContaining('removed'),
+            });
+            expect(track.strip.deviceNodes).toHaveLength(0);
+            expect(onDeviceRemoved).toHaveBeenCalledWith('t1', expect.objectContaining({ deviceId: 'dev-1' }));
+            expect(controller.destroy).toHaveBeenCalledTimes(1);
+            expect(node.disconnect).toHaveBeenCalled();
         });
 
         it('uses dispose for factory devices without a controller and ignores unknown ids', () => {

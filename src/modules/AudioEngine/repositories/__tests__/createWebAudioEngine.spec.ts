@@ -18,8 +18,18 @@ function makeStripNode() {
     };
 }
 
-vi.mock('../../engine/TrackNode', () => ({
-    TrackNode: class {
+vi.mock('../../engine/TrackNode', () => {
+    class RuntimeGraphMutationFailure extends Error {
+        constructor(
+            public readonly mutation: { application: 'needs-reconcile'; reason: string },
+            public readonly cause: unknown
+        ) {
+            super(cause instanceof Error ? cause.message : String(cause));
+            this.name = 'RuntimeGraphMutationFailure';
+        }
+    }
+
+    class TrackNode {
         trackId: string;
         strip: {
             trackId: string;
@@ -39,6 +49,8 @@ vi.mock('../../engine/TrackNode', () => ({
             onAsyncRuntimeGraphMutation?: (mutation: { application: 'applied' | 'needs-reconcile' }) => void;
         };
         private outputDestination: unknown;
+        private shouldFailNextRemoveDevicePrecondition = false;
+        private shouldFailNextRemoveDeviceRebuild = false;
         dispose = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
@@ -61,7 +73,7 @@ vi.mock('../../engine/TrackNode', () => ({
                 ) {
                     return false;
                 }
-                const device = { deviceId, type };
+                const device = { deviceId, type, dispose: vi.fn() };
                 let targetIndex = this.strip.deviceNodes.length;
                 if (precedingDeviceIds !== undefined) {
                     const precedingIds = new Set(precedingDeviceIds);
@@ -85,9 +97,24 @@ vi.mock('../../engine/TrackNode', () => ({
             if (!device) {
                 return false;
             }
+            if (this.shouldFailNextRemoveDevicePrecondition) {
+                this.shouldFailNextRemoveDevicePrecondition = false;
+                throw new Error('mock device removal precondition failed');
+            }
             this.strip.deviceNodes = this.strip.deviceNodes.filter((candidate) => candidate !== device);
             this.deps.onDeviceRemoved?.(this.trackId, device);
-            this.rebuildChain();
+            (device as { dispose?: () => void }).dispose?.();
+            try {
+                this.rebuildChain();
+            } catch (error) {
+                throw new RuntimeGraphMutationFailure(
+                    {
+                        application: 'needs-reconcile',
+                        reason: `Device ${deviceId} was removed before its graph rebuild failed`,
+                    },
+                    error
+                );
+            }
             return true;
         });
         updateBypass = vi.fn((deviceId: string, bypassed: boolean) => {
@@ -104,7 +131,19 @@ vi.mock('../../engine/TrackNode', () => ({
             }
             return changed;
         });
-        rebuildChain = vi.fn(() => this.deps.reconnectRoutingForTrack?.(this.trackId));
+        failNextRemoveDeviceRebuild = vi.fn(() => {
+            this.shouldFailNextRemoveDeviceRebuild = true;
+        });
+        failNextRemoveDevicePrecondition = vi.fn(() => {
+            this.shouldFailNextRemoveDevicePrecondition = true;
+        });
+        rebuildChain = vi.fn(() => {
+            if (this.shouldFailNextRemoveDeviceRebuild) {
+                this.shouldFailNextRemoveDeviceRebuild = false;
+                throw new Error('mock device removal graph rebuild failed');
+            }
+            this.deps.reconnectRoutingForTrack?.(this.trackId);
+        });
         completeAsyncDevicePromotion = vi.fn((application: 'applied' | 'needs-reconcile' = 'applied') => {
             this.deps.onAsyncRuntimeGraphMutation?.({ application });
         });
@@ -135,8 +174,10 @@ vi.mock('../../engine/TrackNode', () => ({
                 deviceNodes: [],
             };
         }
-    },
-}));
+    }
+
+    return { TrackNode, RuntimeGraphMutationFailure };
+});
 
 vi.mock('../../engine/BusNode', () => ({
     BusNode: class {
@@ -197,7 +238,10 @@ type MockTrackNode = {
     notifyDeviceLoaded(device: unknown): void;
     rebuildChain(): void;
     completeAsyncDevicePromotion(application?: 'applied' | 'needs-reconcile'): void;
+    failNextRemoveDevicePrecondition(): void;
+    failNextRemoveDeviceRebuild(): void;
     setOutput: Mock;
+    strip: { deviceNodes: unknown[] };
 };
 
 function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
@@ -462,6 +506,51 @@ describe('AudioEngine', () => {
 
         expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
         expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('invalidates a stale delta when device removal mutates the live strip before its rebuild fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        const revisionBeforeRemoval = engine.getRuntimeGraphRevision();
+        const staleDelta = createDeviceRuntimeOutputDelta(revisionBeforeRemoval);
+        const source = getMockTrackNode(engine, 'source');
+        source.failNextRemoveDeviceRebuild();
+
+        expect(() => engine.removeDeviceFromStrip('source', 'compressor')).toThrow(
+            'mock device removal graph rebuild failed'
+        );
+
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeRemoval + 1);
+        vi.mocked(source.setOutput).mockClear();
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(source.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('advances once for a successful device removal but not for a pre-effect failure', () => {
+        engine.ensureTrackStrip('source');
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        const source = getMockTrackNode(engine, 'source');
+        const beforePreconditionFailure = engine.getRuntimeGraphRevision();
+        source.failNextRemoveDevicePrecondition();
+
+        expect(() => engine.removeDeviceFromStrip('source', 'compressor')).toThrow(
+            'mock device removal precondition failed'
+        );
+        expect(source.strip.deviceNodes).toHaveLength(1);
+        expect(engine.getRuntimeGraphRevision()).toBe(beforePreconditionFailure);
+
+        engine.removeDeviceFromStrip('source', 'compressor');
+
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(beforePreconditionFailure + 1);
     });
 
     it('rejects a delta after a device is added then removed back to the same topology', () => {
