@@ -17,7 +17,10 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
-import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
+import {
+    type CompilerResolvedTargetOverride,
+    validateArbitraryCommandListEvidence,
+} from '../validateArbitraryCommandListEvidence';
 
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
@@ -71,6 +74,7 @@ type GroundToolCallInput = {
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
+    resolvedTargetOverrides?: readonly CompilerResolvedTargetOverride[];
     visibleGroundedCalls: readonly ToolCallResult[];
     visiblePlannedTrackCreations: readonly ToolCallResult[];
     workflowCapabilityId?: WorkflowCapabilityId;
@@ -126,6 +130,7 @@ type ResolveActionPromptScopeInput = {
     actionOrdinal: number;
     assertedArguments: Readonly<Record<string, unknown>>;
     catalog: GroundingCatalog;
+    compilerExpandedTargets?: boolean;
     context: ProjectContext;
     prompt: string;
     plannedActionNames: readonly string[];
@@ -1485,6 +1490,7 @@ function resolveActionPromptScope({
     actionOrdinal,
     assertedArguments,
     catalog,
+    compilerExpandedTargets = false,
     context,
     prompt,
     plannedActionNames,
@@ -1682,10 +1688,11 @@ function resolveActionPromptScope({
             matchingScopes.push({ ...clause, directional: true, matchedIntentPhrase: directionalIntentPhrase });
         }
     }
-    if (matchingScopes.length !== sameActionCallCount) {
+    const appliesOneExplicitScopeToCompilerExpansion = compilerExpandedTargets && matchingScopes.length === 1;
+    if (!appliesOneExplicitScopeToCompilerExpansion && matchingScopes.length !== sameActionCallCount) {
         return null;
     }
-    const selectedScope = matchingScopes[actionOrdinal];
+    const selectedScope = matchingScopes[appliesOneExplicitScopeToCompilerExpansion ? 0 : actionOrdinal];
     if (!selectedScope) {
         return null;
     }
@@ -3445,6 +3452,7 @@ function groundToolCall({
     index,
     prompt,
     plannedActionNames,
+    resolvedTargetOverrides,
     sameActionAssertedArguments,
     sameActionCallCount,
     visibleGroundedCalls,
@@ -3470,6 +3478,7 @@ function groundToolCall({
         actionOrdinal,
         assertedArguments: call.arguments,
         catalog,
+        compilerExpandedTargets: resolvedTargetOverrides !== undefined,
         context,
         prompt,
         plannedActionNames,
@@ -3672,6 +3681,23 @@ function groundToolCall({
                 );
             }
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
+            continue;
+        }
+        const compilerTargetOverride = resolvedTargetOverrides?.find(
+            (override) => override.argument === targetRule.argument
+        );
+        if (compilerTargetOverride !== undefined) {
+            if (
+                targetRule.capability !== compilerTargetOverride.capability ||
+                assertedValue !== compilerTargetOverride.stableId
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Compiler-resolved target ${targetRule.argument} does not match the command target contract`
+                );
+            }
+            groundedArguments[targetRule.argument] = compilerTargetOverride.stableId;
             continue;
         }
         const bulkSiblingTargetIds =
@@ -3916,6 +3942,7 @@ export function bridgeGroundedLlmToolCalls({
     projectRevision,
     workflowCapabilityId,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
     if (compilerEvidence !== undefined) {
         const compilerValidation = validateArbitraryCommandListEvidence({
             evidence: compilerEvidence,
@@ -3926,6 +3953,7 @@ export function bridgeGroundedLlmToolCalls({
         if (compilerValidation.status === 'rejected') {
             return { actions: [], rejections: [rejection(0, '<batch>', compilerValidation.reason)] };
         }
+        compilerTargetOverridesByCallIndex = compilerValidation.targetOverridesByCallIndex;
     }
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({
@@ -4453,9 +4481,7 @@ export function bridgeGroundedLlmToolCalls({
         const sameActionCalls = effectiveCalls.filter((candidate) => candidate.name === call.name);
         const sameActionCallCount = sameActionCalls.length;
         let grounded: ToolCallResult | LlmActionRejection;
-        if (compilerEvidence !== undefined) {
-            grounded = call;
-        } else if (
+        if (
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
             (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||
@@ -4475,6 +4501,7 @@ export function bridgeGroundedLlmToolCalls({
                 plannedActionNames: effectiveCalls.map((candidate) => candidate.name),
                 sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
                 sameActionCallCount,
+                resolvedTargetOverrides: compilerTargetOverridesByCallIndex?.get(index),
                 visibleGroundedCalls: acceptedGroundedCalls,
                 visiblePlannedTrackCreations,
                 workflowCapabilityId,

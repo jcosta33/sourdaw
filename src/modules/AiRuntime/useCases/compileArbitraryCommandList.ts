@@ -34,10 +34,13 @@ export type ArbitraryCommandListSelectorEvidence = {
 
 type CompiledItemEvidence = {
     itemId: string;
+    commandName: string;
     dependsOn: string[];
     stableIds: string[];
     commandStart: number;
     commandCount: number;
+    targetArgument?: string;
+    targetCapability?: string;
 };
 
 export type ArbitraryCommandListEvidence = {
@@ -434,6 +437,7 @@ export function compileArbitraryCommandList(input: {
             }
             compiledItems.push({
                 itemId: item.id,
+                commandName: item.name,
                 dependsOn,
                 stableIds: [],
                 commandStart,
@@ -487,10 +491,13 @@ export function compileArbitraryCommandList(input: {
         }
         compiledItems.push({
             itemId: item.id,
+            commandName: item.name,
             dependsOn,
             stableIds: [...resolved.stableIds],
             commandStart,
             commandCount: commands.length - commandStart,
+            targetArgument: selector.targetArgument,
+            targetCapability: targetRule.capability,
         });
     }
     if (!hasExactScope(plan, orderedTargetIds)) {

@@ -21,6 +21,12 @@ type Candidate = {
     enabled?: boolean;
 };
 
+export type CompilerResolvedTargetOverride = {
+    argument: string;
+    capability: string;
+    stableId: string;
+};
+
 function collectCandidates(context: ProjectContext): Candidate[] {
     const tracks = context.tracks.map((track) => ({
         id: track.id,
@@ -77,7 +83,9 @@ export function validateArbitraryCommandListEvidence(input: {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     revision: string | undefined;
-}): { status: 'accepted' } | { status: 'rejected'; reason: string } {
+}):
+    | { status: 'accepted'; targetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> }
+    | { status: 'rejected'; reason: string } {
     const { evidence } = input;
     if (evidence.schemaVersion !== 1 || input.revision !== evidence.snapshotRevision || input.revision === undefined) {
         return { status: 'rejected', reason: 'Structured command compiler evidence is stale.' };
@@ -124,6 +132,7 @@ export function validateArbitraryCommandListEvidence(input: {
     }
     const itemIds = new Set<string>();
     const resolvedTargetIds: string[] = [];
+    const targetOverridesByCallIndex = new Map<number, readonly CompilerResolvedTargetOverride[]>();
     let commandCursor = 0;
     for (const item of evidence.items) {
         if (
@@ -145,6 +154,47 @@ export function validateArbitraryCommandListEvidence(input: {
         if (selector === undefined && item.stableIds.length > 0) {
             return { status: 'rejected', reason: 'Structured command compiler evidence contains unproven targets.' };
         }
+        if (
+            !evidence.commands
+                .slice(item.commandStart, item.commandStart + item.commandCount)
+                .every((command) => command.name === item.commandName)
+        ) {
+            return { status: 'rejected', reason: 'Structured command compiler evidence command order is invalid.' };
+        }
+        if (selector === undefined) {
+            if (item.targetArgument !== undefined || item.targetCapability !== undefined) {
+                return {
+                    status: 'rejected',
+                    reason: 'Structured command compiler evidence target override is invalid.',
+                };
+            }
+        } else {
+            if (
+                item.targetArgument === undefined ||
+                item.targetCapability === undefined ||
+                item.commandCount % item.stableIds.length !== 0
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: 'Structured command compiler evidence target override is invalid.',
+                };
+            }
+            const repeatsPerTarget = item.commandCount / item.stableIds.length;
+            for (let offset = 0; offset < item.commandCount; offset += 1) {
+                const stableId = item.stableIds[Math.floor(offset / repeatsPerTarget)];
+                const commandIndex = item.commandStart + offset;
+                const command = evidence.commands[commandIndex];
+                if (stableId === undefined || command?.arguments[item.targetArgument] !== stableId) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Structured command compiler evidence target order is invalid.',
+                    };
+                }
+                targetOverridesByCallIndex.set(commandIndex, [
+                    { argument: item.targetArgument, capability: item.targetCapability, stableId },
+                ]);
+            }
+        }
         itemIds.add(item.itemId);
         resolvedTargetIds.push(...item.stableIds);
         commandCursor += item.commandCount;
@@ -156,5 +206,5 @@ export function validateArbitraryCommandListEvidence(input: {
     ) {
         return { status: 'rejected', reason: 'Structured command compiler evidence scope was enlarged or omitted.' };
     }
-    return { status: 'accepted' };
+    return { status: 'accepted', targetOverridesByCallIndex };
 }

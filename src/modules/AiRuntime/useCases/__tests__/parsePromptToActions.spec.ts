@@ -297,7 +297,29 @@ describe('parsePromptToActions', () => {
         expect(result.requiresConfirmation).toBe(true);
     });
 
-    it('executes one generic semantic bulk selector without per-target prompt grounding', async () => {
+    it.each([
+        {
+            name: 'executes one generic semantic bulk selector without per-target prompt grounding',
+            prompt: 'mute all audio tracks',
+            arguments_: { muted: true },
+            expectedActions: [
+                { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+                { type: 'muteTrack', payload: { trackId: 'track-guitar', muted: true, expectedMuted: false } },
+            ],
+        },
+        {
+            name: 'rejects a negated operation despite compiler-resolved target IDs',
+            prompt: 'do not mute any audio tracks',
+            arguments_: { muted: true },
+            expectedActions: [],
+        },
+        {
+            name: 'rejects a non-requested parameter despite compiler-resolved target IDs',
+            prompt: 'mute all audio tracks',
+            arguments_: { muted: false },
+            expectedActions: [],
+        },
+    ])('$name', async ({ prompt, arguments_, expectedActions }) => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls)
             .mockResolvedValueOnce({
@@ -339,7 +361,7 @@ describe('parsePromptToActions', () => {
                                     {
                                         id: 'mute-audio-tracks',
                                         name: 'muteTrack',
-                                        arguments: { muted: true },
+                                        arguments: arguments_,
                                         selector: {
                                             targetArgument: 'trackId',
                                             entity: 'track',
@@ -354,19 +376,15 @@ describe('parsePromptToActions', () => {
                 ],
             });
 
-        const result = await parsePromptToActions(
-            'mute all audio tracks',
-            createMixerContext(),
-            undefined,
-            'revision-1'
-        );
+        const result = await parsePromptToActions(prompt, createMixerContext(), undefined, 'revision-1');
 
         expect(generateToolCalls).toHaveBeenCalledTimes(2);
+        expect(result.actions).toEqual(expectedActions);
+        if (expectedActions.length === 0) {
+            expect(result.rejectionReason).toBeDefined();
+            return;
+        }
         expect(result.rejectionReason).toBeUndefined();
-        expect(result.actions).toEqual([
-            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
-            { type: 'muteTrack', payload: { trackId: 'track-guitar', muted: true, expectedMuted: false } },
-        ]);
         expect(result.requiresConfirmation).toBe(true);
     });
 
