@@ -1,0 +1,47 @@
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_42cf62e7333808 114-120
+  s_a40848e8f8cca9::t_b37350bc7bba56 109-111,124-128,130-131
+  s_a40848e8f8cca9::t_7e448942c0fdc1 62,112-113,121-123,129,132
+  s_a40848e8f8cca9::t_79009d2e8d4c60 133-134
+src/modules/PluginHost/useCases/getAgentDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_c54cd25d27b134 1-8,10,36-38,40-41
+  s_a40848e8f8cca9::t_42cf62e7333808 9,11-35,39
+src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts
+  s_a40848e8f8cca9::t_06876c02b7ee8f 12,27
+  s_a40848e8f8cca9::t_2bd3ad27452bac 17,25
+  s_a40848e8f8cca9::t_7366602b391f62 1-11,13-16,18-24,26,28-30
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_de3b94184ad3c5 28-32,53
+  s_a40848e8f8cca9::t_c54cd25d27b134 1-27,33-52,54-94
+src/modules/Arrangement/useCases/index.ts
+  s_a40848e8f8cca9::t_c54cd25d27b134 252
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_f3cd793abd74ce 428,444-458
+  s_a40848e8f8cca9::t_de3b94184ad3c5 429-434,838
+  s_a40848e8f8cca9::t_42cf62e7333808 440
+  s_a40848e8f8cca9::t_cb324bb4b2ecd3 1,13,427,435-439,441-443,459-473,610-611
+src/modules/PluginHost/useCases/index.ts
+  s_a40848e8f8cca9::t_c54cd25d27b134 28
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_a40848e8f8cca9::t_42cf62e7333808 111-112
+  s_a40848e8f8cca9::t_cb324bb4b2ecd3 9,108-110,114
+  s_a40848e8f8cca9::t_8b9dc3b2e4d20b 113
+  s_a40848e8f8cca9::t_1ff41e094f42db 115-117
+  s_a40848e8f8cca9::t_5bbdb7f875b13c 118-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "05b31c99785fa75bb70e4b7c7266ea1d7d261d74",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
