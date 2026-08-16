@@ -36,6 +36,12 @@ export type RuntimeGraphDeltaDevice = Readonly<{
     parameterIds: readonly string[];
 }>;
 
+/**
+ * Composition-owned authority for comparing an opaque compiled revision with
+ * the project snapshot that is current immediately before a live graph write.
+ */
+export type RuntimeGraphProjectRevisionValidator = (expectedProjectRevision: string) => boolean;
+
 export type RuntimeGraphOutputEdge = Readonly<{
     kind: 'output';
     sourceId: string;

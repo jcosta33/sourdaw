@@ -183,9 +183,21 @@ function createRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
     };
 }
 
+function createMasterRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [{ id: 'source', kind: 'audio', devices: [] }],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'master' }],
+        parameters: [] as const,
+    };
+}
+
 describe('AudioEngine', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
+    let currentProjectRevision: string;
 
     class FakeWorkletNode {
         port = { postMessage: vi.fn() };
@@ -208,7 +220,11 @@ describe('AudioEngine', () => {
             }
         );
 
+        currentProjectRevision = 'project-revision-1';
         engine = createAudioEngine(asAudioContext(mockCtx));
+        engine.setRuntimeGraphProjectRevisionValidator(
+            (expectedProjectRevision) => expectedProjectRevision === currentProjectRevision
+        );
     });
 
     it('should initialize with master nodes', () => {
@@ -298,6 +314,43 @@ describe('AudioEngine', () => {
             application: 'not-applied',
             reason: expect.stringContaining('stale'),
         });
+    });
+
+    it('applies current project deltas to master and track outputs', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+
+        const masterResult = engine.applyRuntimeGraphDelta(
+            createMasterRuntimeOutputDelta(engine.getRuntimeGraphRevision())
+        );
+        const trackResult = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+        expect(masterResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1 });
+        expect(trackResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 2 });
+        expect(getMockTrackNode(engine, 'source').setOutput).toHaveBeenNthCalledWith(1, 'master');
+        expect(source.outputId).toBe('target');
+    });
+
+    it('rejects a stale project delta before the live output mutation', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        currentProjectRevision = 'project-revision-A';
+        const delta: RuntimeGraphDelta = {
+            ...createRuntimeOutputDelta(engine.getRuntimeGraphRevision()),
+            correlation: { appRevision: engine.getRuntimeGraphRevision(), projectRevision: currentProjectRevision },
+        };
+        currentProjectRevision = 'project-revision-B';
+
+        const result = engine.applyRuntimeGraphDelta(delta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('project revision'),
+        });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(source.outputId).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(0);
     });
 
     it('requires reconciliation without claiming compensation when an accepted output delta partially fails', () => {

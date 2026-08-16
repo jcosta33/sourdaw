@@ -146,5 +146,6 @@ export { commitPitchEdit } from './audioAnalysis/commitPitchEdit';
 export { processPitchEditWasm } from './audioAnalysis/processPitchEditWasm';
 export { compileAudioGraphTopology } from './compileAudioGraphTopology';
 export { compileRuntimeGraphDelta } from './compileRuntimeGraphDelta';
+export { configureRuntimeGraphProjectRevisionValidator } from './configureRuntimeGraphProjectRevisionValidator';
 export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';

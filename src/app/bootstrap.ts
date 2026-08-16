@@ -45,6 +45,7 @@ import {
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureOfflineYeastMidiProcessing,
+    configureRuntimeGraphProjectRevisionValidator,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -177,6 +178,9 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+configureRuntimeGraphProjectRevisionValidator(
+    (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+);
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
     captureCommandBatchPreflightState({ assetReferences: [], projectDocument, targetIds })

@@ -17,6 +17,7 @@ import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeltaNode,
     type RuntimeGraphDeltaResult,
+    type RuntimeGraphProjectRevisionValidator,
 } from '../models/RuntimeGraphDelta';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
@@ -297,6 +298,7 @@ class AudioEngineImpl implements AudioEngine {
     private transportView: Float64Array | null;
     private transportSeqView: Int32Array | null;
     private runtimeGraphRevision = 0;
+    private runtimeGraphProjectRevisionValidator: RuntimeGraphProjectRevisionValidator | null = null;
     private initPromise: Promise<void> | null = null;
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
@@ -775,6 +777,10 @@ class AudioEngineImpl implements AudioEngine {
         return this.runtimeGraphRevision;
     }
 
+    public setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator): void {
+        this.runtimeGraphProjectRevisionValidator = validator;
+    }
+
     /**
      * The sole consumer for compiled output-topology deltas. It runs only on the
      * main/control thread, after the compiler has bounded and frozen its input;
@@ -796,6 +802,30 @@ class AudioEngineImpl implements AudioEngine {
                 acceptance: 'rejected' as const,
                 application: 'not-applied' as const,
                 reason: 'Runtime graph delta is stale for the live engine revision',
+            });
+        }
+        if (!this.runtimeGraphProjectRevisionValidator) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta cannot validate its project revision',
+            });
+        }
+        let isCurrentProjectRevision: boolean;
+        try {
+            isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+        } catch (error) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
+            });
+        }
+        if (!isCurrentProjectRevision) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta is stale for the current project revision',
             });
         }
 
