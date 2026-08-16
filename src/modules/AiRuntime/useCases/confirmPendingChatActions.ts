@@ -29,12 +29,14 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
+import { createAgentSagaStep } from './createAgentSagaStep';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { issueAgentCommandApprovalBinding } from './issueAgentCommandApprovalBinding';
@@ -92,13 +94,13 @@ function recordTrackedAgentRunFailure(
     updateTrackedAgentRun(confirmation, () => {
         agentRunLifecycle.recordError({
             runId: confirmation.runId,
-            error: {
-                code: input.code,
-                message: input.message,
-                occurredAt: Date.now(),
-                retriable: input.retriable,
-                workId: input.workId ?? null,
-            },
+            error: normalizeAgentFailure({
+                category: input.code.includes('ambiguous') ? 'conflict' : 'project',
+                source: 'command-execution',
+                related: { workIds: input.workId ? [input.workId] : [] },
+                retry: input.retriable ? 'owner-proven-idempotent' : 'never',
+                knownDomain: true,
+            }),
             terminal: true,
         });
     });
@@ -120,10 +122,71 @@ function recordTrackedAgentRunReceipt(
             renderJobIds: receipt.links.render.map((link) => link.jobId),
             analysisIds: receipt.links.analysis.map((link) => link.analysisId),
         });
+        const receiptIdentity = `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
+        agentRunLifecycle.recordSagaStep({
+            runId: confirmation.runId,
+            step: createAgentSagaStep({
+                stepId: `command:${receipt.batchId}`,
+                order: 0,
+                owner: 'command',
+                workId: receipt.batchId,
+                receiptIdentity,
+                state: 'committed',
+                relatedArtifactIds: [],
+                updatedAt: Date.now(),
+                compensationAvailable: Boolean(input?.revertGroupId),
+            }),
+        });
+        for (const [index, link] of receipt.links.render.entries()) {
+            agentRunLifecycle.recordSagaStep({
+                runId: confirmation.runId,
+                step: createAgentSagaStep({
+                    stepId: `render:${link.jobId}`,
+                    order: index + 1,
+                    owner: 'render',
+                    workId: link.jobId,
+                    receiptIdentity,
+                    state: 'external-pending',
+                    relatedArtifactIds: [link.jobId],
+                    updatedAt: Date.now(),
+                    compensationAvailable: false,
+                }),
+            });
+        }
+        for (const [index, link] of receipt.links.analysis.entries()) {
+            agentRunLifecycle.recordSagaStep({
+                runId: confirmation.runId,
+                step: createAgentSagaStep({
+                    stepId: `analysis:${link.analysisId}`,
+                    order: receipt.links.render.length + index + 1,
+                    owner: 'analysis',
+                    workId: link.analysisId,
+                    receiptIdentity,
+                    state: 'external-pending',
+                    relatedArtifactIds: [link.analysisId],
+                    updatedAt: Date.now(),
+                    compensationAvailable: false,
+                }),
+            });
+        }
         const importedStems = confirmation.actions.flatMap((action) =>
             action.type === 'importStemSet' ? action.payload.stems : []
         );
         if (importedStems.length > 0) {
+            agentRunLifecycle.recordSagaStep({
+                runId: confirmation.runId,
+                step: createAgentSagaStep({
+                    stepId: `import:${receipt.batchId}`,
+                    order: receipt.links.render.length + receipt.links.analysis.length + 1,
+                    owner: 'import',
+                    workId: receipt.batchId,
+                    receiptIdentity,
+                    state: 'committed',
+                    relatedArtifactIds: importedStems.map((stem) => stem.stemId),
+                    updatedAt: Date.now(),
+                    compensationAvailable: false,
+                }),
+            });
             preparedStemImportResources.release({ runId: confirmation.runId, stems: importedStems });
         }
     });

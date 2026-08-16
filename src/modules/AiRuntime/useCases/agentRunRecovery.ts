@@ -1,6 +1,8 @@
 import { type AgentRun } from '../models/AgentRun';
 import { persistAgentRunState, readAgentRunState } from '../stores/agentRunStore';
 
+import { normalizeAgentFailure } from './agentErrorAndSaga';
+
 const TERMINAL_PHASES = new Set(['completed', 'failed', 'cancelled', 'partially-completed']);
 
 export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): { recoveredRunIds: string[] } {
@@ -37,16 +39,30 @@ export function recoverInterruptedAgentRuns(input?: { recoveredAt?: number }): {
             },
             errors: [
                 ...run.errors,
-                {
-                    code: 'interrupted-by-restart',
-                    message: 'The application restarted before this run reached a terminal state.',
+                normalizeAgentFailure({
+                    category: 'internal',
+                    source: 'restart-recovery',
                     occurredAt: recoveredAt,
-                    retriable: orphanedWorkIds.every((workId) =>
+                    related: { workIds: orphanedWorkIds },
+                    retry: orphanedWorkIds.every((workId) =>
                         run.retriableWork.some((work) => work.workId === workId && work.idempotent && work.retriable)
-                    ),
-                    workId: null,
-                },
+                    )
+                        ? 'owner-proven-idempotent'
+                        : 'never',
+                    compensation: run.saga.steps.some((step) => step.state === 'external-pending')
+                        ? 'manual-repair'
+                        : 'not-needed',
+                    knownDomain: true,
+                }),
             ],
+            saga: {
+                schemaVersion: 1,
+                steps: run.saga.steps.map((step) =>
+                    step.state === 'external-pending'
+                        ? { ...step, state: 'manual-repair', updatedAt: recoveredAt }
+                        : step
+                ),
+            },
             updatedAt: recoveredAt,
         };
     });

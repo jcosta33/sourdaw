@@ -4,6 +4,7 @@ import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 
+import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
 import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
@@ -131,6 +132,23 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         if (stemImportScope) {
             discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
         }
+        let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
+        if (error instanceof AiProposalInvalidatedError) {
+            category = 'conflict';
+        } else if (input.signal?.aborted) {
+            category = 'cancellation';
+        }
+        agentRunLifecycle.recordError({
+            runId: streamIdentity.runId,
+            error: normalizeAgentFailure({
+                category,
+                source: 'provider-planning',
+                related: { workIds: [streamIdentity.requestId] },
+                retry: category === 'provider' ? 'read-only' : 'never',
+                knownDomain: category !== 'provider',
+            }),
+            terminal: true,
+        });
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);
         throw error;

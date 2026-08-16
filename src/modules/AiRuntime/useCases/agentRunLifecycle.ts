@@ -14,6 +14,7 @@ import {
     type AgentRunPlan,
     type AgentRunPhase,
     type AgentRunProviderUsage,
+    type AgentRunSagaStep,
     type AgentRunScope,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
@@ -186,6 +187,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         },
         providerUsage: [],
         errors: [],
+        saga: { schemaVersion: 1, steps: [] },
         cancellation: {
             generation: 0,
             requestedAt: null,
@@ -560,6 +562,61 @@ function recordAgentRunError(input: {
     });
 }
 
+/** Records only application-owned saga facts; external owners still perform effects and compensation. */
+function recordAgentRunSagaStep(input: { runId: string; step: AgentRunSagaStep; recordedAt?: number }): AgentRun {
+    const recordedAt = input.recordedAt ?? input.step.updatedAt;
+    return updateAgentRun(input.runId, recordedAt, (run) => {
+        const existing = run.saga.steps.find((step) => step.stepId === input.step.stepId);
+        if (existing && existing.order !== input.step.order) {
+            throw new Error(`Agent saga step order changed: ${input.step.stepId}`);
+        }
+        if (input.step.order < 0 || !Number.isInteger(input.step.order)) {
+            throw new Error('Agent saga step order must be a non-negative integer');
+        }
+        const steps = [
+            ...run.saga.steps.filter((step) => step.stepId !== input.step.stepId),
+            structuredClone(input.step),
+        ].sort((left, right) => left.order - right.order);
+        return { ...run, saga: { schemaVersion: 1, steps } };
+    });
+}
+
+function recordAgentRunSagaCompensation(input: {
+    runId: string;
+    stepId: string;
+    state: Extract<AgentRunSagaStep['state'], 'compensated' | 'uncompensated' | 'manual-repair'>;
+    error?: string;
+    recordedAt?: number;
+}): AgentRun {
+    const recordedAt = input.recordedAt ?? Date.now();
+    return updateAgentRun(input.runId, recordedAt, (run) => {
+        const step = run.saga.steps.find((candidate) => candidate.stepId === input.stepId);
+        if (!step) {
+            throw new Error(`Unknown agent saga step: ${input.stepId}`);
+        }
+        return {
+            ...run,
+            saga: {
+                schemaVersion: 1,
+                steps: run.saga.steps.map((candidate) =>
+                    candidate.stepId !== input.stepId
+                        ? candidate
+                        : {
+                              ...candidate,
+                              state: input.state,
+                              compensation: {
+                                  ...candidate.compensation,
+                                  attempts: candidate.compensation.attempts + 1,
+                                  lastError: input.error ?? null,
+                              },
+                              updatedAt: recordedAt,
+                          }
+                ),
+            },
+        };
+    });
+}
+
 function recordAgentRunCommittedWork(input: {
     runId: string;
     workId: string;
@@ -864,6 +921,8 @@ export const agentRunLifecycle = {
     recordCommittedWork: recordAgentRunCommittedWork,
     recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
+    recordSagaStep: recordAgentRunSagaStep,
+    recordSagaCompensation: recordAgentRunSagaCompensation,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
     recordDecision: recordAgentRunDecision,

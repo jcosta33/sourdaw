@@ -226,7 +226,60 @@ export type AgentRunError = {
     occurredAt: number;
     retriable: boolean;
     workId: string | null;
+    /** Application-owned classification. Never contains provider output or secrets. */
+    category?: AgentRunErrorCategory;
+    related?: AgentRunErrorRelated;
+    remediation?: AgentRunErrorRemediation;
+    cause?: AgentRunErrorCause;
 };
+
+export const AGENT_RUN_ERROR_CATEGORIES = [
+    'schema',
+    'authorization',
+    'resolution',
+    'conflict',
+    'project',
+    'device',
+    'plugin',
+    'asset',
+    'render',
+    'analysis',
+    'provider',
+    'network',
+    'budget',
+    'cancellation',
+    'internal',
+] as const;
+export type AgentRunErrorCategory = (typeof AGENT_RUN_ERROR_CATEGORIES)[number];
+export type AgentRunErrorRelated = {
+    targetIds: string[];
+    commandIds: string[];
+    workIds: string[];
+    receiptIdentities: string[];
+    artifactIds: string[];
+};
+export type AgentRunErrorRemediation = {
+    retry: 'never' | 'read-only' | 'owner-proven-idempotent';
+    userAction: 'none' | 'review-scope' | 'resolve-conflict' | 'retry-later' | 'manual-repair' | 'reconfigure';
+    compensation: 'not-needed' | 'available' | 'attempted' | 'completed' | 'uncompensated' | 'manual-repair';
+};
+export type AgentRunErrorCause = { kind: 'known-domain' | 'unknown-internal'; source: string };
+
+export const AGENT_RUN_SAGA_SCHEMA_VERSION = 1 as const;
+export type AgentRunSagaStepState =
+    'pending' | 'external-pending' | 'committed' | 'compensated' | 'uncompensated' | 'manual-repair';
+export type AgentRunSagaStep = {
+    stepId: string;
+    order: number;
+    owner: 'provider' | 'command' | 'render' | 'analysis' | 'import' | 'external-effect';
+    workId: string;
+    receiptIdentity: string | null;
+    state: AgentRunSagaStepState;
+    compensation: { available: boolean; attempts: number; lastError: string | null };
+    relatedArtifactIds: string[];
+    updatedAt: number;
+};
+export type AgentRunSaga = { schemaVersion: typeof AGENT_RUN_SAGA_SCHEMA_VERSION; steps: AgentRunSagaStep[] };
 
 export type AgentRunCancellation = {
     generation: number;
@@ -314,6 +367,7 @@ export type AgentRun = {
     modelRoute: AgentRunModelRoute;
     providerUsage: AgentRunProviderUsage[];
     errors: AgentRunError[];
+    saga: AgentRunSaga;
     cancellation: AgentRunCancellation;
     committedWork: AgentRunCommittedWork[];
     retriableWork: AgentRunRetriableWork[];
