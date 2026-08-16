@@ -38,7 +38,7 @@ describe('selectMidiInput', () => {
         expect(setStateMock).not.toHaveBeenCalled();
 
         await vi.waitFor(() => expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }));
-        expect(selectMidiInputTauriMock).toHaveBeenCalledWith({ portIndex: 2, onMidiMessage });
+        expect(selectMidiInputTauriMock).toHaveBeenCalledWith({ portIndex: 2, portName: 'Launchkey', onMidiMessage });
     });
 
     it('re-resolves the port index at select time rather than trusting the drawn list', async () => {
@@ -51,7 +51,9 @@ describe('selectMidiInput', () => {
 
         selectMidiInput({ deviceId: 'Built-in', onMidiMessage });
 
-        await vi.waitFor(() => expect(selectMidiInputTauriMock).toHaveBeenCalledWith({ portIndex: 1, onMidiMessage }));
+        await vi.waitFor(() =>
+            expect(selectMidiInputTauriMock).toHaveBeenCalledWith({ portIndex: 1, portName: 'Built-in', onMidiMessage })
+        );
     });
 
     it('commits nothing when the requested native port is no longer enumerated', async () => {

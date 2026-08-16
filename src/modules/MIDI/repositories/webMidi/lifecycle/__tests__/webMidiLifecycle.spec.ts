@@ -140,7 +140,10 @@ describe('initWebMidi', () => {
         expect(attachInput).toHaveBeenCalledWith({ input: standIn, onMidiMessage });
     });
 
-    it('still remembers the device it attached when that is the one asked for', async () => {
+    it('attaches the saved device without rewriting the preference it came from', async () => {
+        // Init never persists: whatever it resolves is either the saved device
+        // (already remembered) or a stand-in (must not be). Only an explicit
+        // selection writes the preference.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         const input = { id: 'launchkey', name: 'Launchkey' };
         const mockAccess = { inputs: new Map([['launchkey', input]]), onstatechange: null };
@@ -151,7 +154,35 @@ describe('initWebMidi', () => {
 
         await initWebMidi({ onMidiMessage });
 
-        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'launchkey' }, { persistSelection: true });
+        expect(attachInput).toHaveBeenCalledWith({ input, onMidiMessage });
+        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'launchkey' }, { persistSelection: false });
+    });
+
+    it('does not adopt an earlier fallback as the preference on a second init', async () => {
+        // Boot with the saved device unplugged: init falls back to the
+        // built-in and writes it into live session state. The picker mounting
+        // (or Refresh) runs init again, which now reads that stand-in out of
+        // live state. Resolving the target from live state instead of the
+        // saved preference persisted the stand-in here — permanently
+        // overwriting the user's device with one they never chose.
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        const standIn = { id: 'built-in', name: 'Built-in' };
+        const mockAccess = { inputs: new Map([['built-in', standIn]]), onstatechange: null };
+        requestMidiAccessMock.mockResolvedValue(mockAccess);
+        getMidiAccessMock.mockReturnValue(mockAccess);
+        readPersistedInputIdMock.mockReturnValue('launchkey');
+
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'launchkey' });
+        await initWebMidi({ onMidiMessage });
+
+        // Second init sees the stand-in as the live selection.
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'built-in' });
+        await initWebMidi({ onMidiMessage });
+
+        const persistedSelectionWrites = setStateMock.mock.calls.filter(
+            ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
+        );
+        expect(persistedSelectionWrites).toEqual([]);
     });
 
     it('should fallback to Tauri if Web MIDI fails', async () => {
@@ -166,7 +197,7 @@ describe('initWebMidi', () => {
         expect(result).toBe(true);
         expect(setTauriModeMock).toHaveBeenCalledWith(true);
         expect(tauriInvoke).toHaveBeenCalledWith('list_midi_inputs');
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, portName: 'Tauri MIDI', onMidiMessage });
     });
 
     it('rejects a malformed list_midi_inputs payload instead of opening a NaN port', async () => {
@@ -385,8 +416,8 @@ describe('initWebMidi', () => {
         expect(setStateMock).toHaveBeenCalledWith({
             inputs: [expect.objectContaining({ id: 'in-1', name: 'Unknown Device', manufacturer: 'Unknown' })],
         });
-        // The attached device is the one asked for, so the preference is saved.
-        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'in-1' }, { persistSelection: true });
+        // Init resolves and attaches, but never writes the preference.
+        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'in-1' }, { persistSelection: false });
     });
 
     it('does not overwrite the saved preference on the Tauri path either', async () => {
@@ -405,7 +436,7 @@ describe('initWebMidi', () => {
             ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
         );
         expect(persistedSelectionWrites).toEqual([]);
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, portName: 'Built-in', onMidiMessage });
     });
 
     it('re-opens the saved native device after the enumeration order changes', async () => {
@@ -424,8 +455,8 @@ describe('initWebMidi', () => {
 
         await initWebMidi({ onMidiMessage });
 
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 1, onMidiMessage });
-        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }, { persistSelection: true });
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 1, portName: 'Launchkey', onMidiMessage });
+        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }, { persistSelection: false });
     });
 
     it('treats a persisted enumeration index as absent instead of grabbing that port', async () => {
@@ -444,11 +475,31 @@ describe('initWebMidi', () => {
 
         await initWebMidi({ onMidiMessage });
 
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, portName: 'Built-in', onMidiMessage });
         const persistedSelectionWrites = setStateMock.mock.calls.filter(
             ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
         );
         expect(persistedSelectionWrites).toEqual([]);
+    });
+
+    it('keeps MIDI alive when the startup port refuses to open', async () => {
+        // The enumeration succeeded and was published; one port failing to
+        // open must not flip the whole surface to unsupported — that renders
+        // "MIDI not supported" with no Refresh button and no recovery short of
+        // an app restart.
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
+        vi.mocked(selectMidiInputTauri).mockRejectedValueOnce(new Error('device busy'));
+
+        const result = await initWebMidi({ onMidiMessage });
+
+        expect(result).toBe(true);
+        expect(setStateMock).not.toHaveBeenCalledWith({ isSupported: false });
+        expect(setStateMock).toHaveBeenCalledWith(
+            expect.objectContaining({ isSupported: true, inputs: [expect.objectContaining({ id: 'Built-in' })] })
+        );
     });
 
     it('publishes native inputs under their stable ids', async () => {

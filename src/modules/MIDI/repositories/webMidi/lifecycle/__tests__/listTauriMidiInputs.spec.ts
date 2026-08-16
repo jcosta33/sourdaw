@@ -8,6 +8,7 @@ vi.mock('#/utils/tauriBridge', () => ({
 }));
 
 import { listTauriMidiInputs } from '../listTauriMidiInputs';
+import { resolveTauriMidiPort } from '../resolveTauriMidiPort';
 
 describe('listTauriMidiInputs', () => {
     beforeEach(() => {
@@ -45,13 +46,68 @@ describe('listTauriMidiInputs', () => {
         const ports = await listTauriMidiInputs();
 
         // Nothing but the order separates two units of the same controller, so
-        // those fall back to an index-qualified id; the unique one must not.
-        expect(ports.map((port) => port.id)).toEqual(['MPK Mini #0', 'Built-in', 'MPK Mini #2']);
+        // those fall back to an ordinal-qualified id; the unique one must not.
+        expect(ports.map((port) => port.id)).toEqual(['MPK Mini #0', 'Built-in', 'MPK Mini #1']);
+        expect(ports[2]?.portIndex).toBe(2);
+    });
+
+    it('keeps colliding ids stable when an unrelated device leaves', async () => {
+        // Qualified by the global enumeration index, unplugging the Built-in —
+        // a device the user never touched — would renumber "MPK Mini #2" to
+        // "#1" and strand the saved selection on the other unit.
+        tauriInvokeMock.mockResolvedValue([
+            { index: 0, name: 'MPK Mini' },
+            { index: 1, name: 'Built-in' },
+            { index: 2, name: 'MPK Mini' },
+        ]);
+        const before = await listTauriMidiInputs();
+
+        tauriInvokeMock.mockResolvedValue([
+            { index: 0, name: 'MPK Mini' },
+            { index: 1, name: 'MPK Mini' },
+        ]);
+        const after = await listTauriMidiInputs();
+
+        expect(before.filter((port) => port.name === 'MPK Mini').map((port) => port.id)).toEqual(
+            after.map((port) => port.id)
+        );
     });
 
     it('rejects a payload that is not a device list', async () => {
         tauriInvokeMock.mockResolvedValue([{ name: 'Built-in' }]);
 
         await expect(listTauriMidiInputs()).rejects.toThrow(TypeError);
+    });
+});
+
+describe('resolveTauriMidiPort', () => {
+    const port = (id: string, name: string, portIndex: number) => ({ id, name, portIndex });
+
+    it('resolves an exact id match', () => {
+        const ports = [port('MPK Mini #0', 'MPK Mini', 0), port('MPK Mini #1', 'MPK Mini', 1)];
+
+        expect(resolveTauriMidiPort(ports, 'MPK Mini #1')).toBe(ports[1]);
+    });
+
+    it('resolves a qualified id to the lone survivor of its name', () => {
+        // Saved while two units were plugged in; only one remains, so its id
+        // dropped the qualifier. The name still identifies it unambiguously.
+        const ports = [port('Built-in', 'Built-in', 0), port('MPK Mini', 'MPK Mini', 1)];
+
+        expect(resolveTauriMidiPort(ports, 'MPK Mini #1')).toBe(ports[1]);
+    });
+
+    it('refuses to guess between identical units', () => {
+        // Saved unqualified while one unit was present; two are now. Picking
+        // either is the misgrab the stable id exists to prevent.
+        const ports = [port('MPK Mini #0', 'MPK Mini', 0), port('MPK Mini #1', 'MPK Mini', 1)];
+
+        expect(resolveTauriMidiPort(ports, 'MPK Mini')).toBeUndefined();
+    });
+
+    it('resolves a legacy bare index to nothing', () => {
+        const ports = [port('Built-in', 'Built-in', 0), port('Launchkey', 'Launchkey', 1)];
+
+        expect(resolveTauriMidiPort(ports, '1')).toBeUndefined();
     });
 });

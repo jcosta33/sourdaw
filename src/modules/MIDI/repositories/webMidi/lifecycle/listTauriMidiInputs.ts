@@ -40,7 +40,9 @@ function isTauriMidiDeviceList(value: unknown): value is TauriMidiDevice[] {
  * midir exposes exactly one durable property per port — its name — so that is
  * the identity. Two ports can still carry the same name (two units of the same
  * controller, or one device exposing several ports); nothing but their order
- * separates them, so those, and only those, are qualified by index.
+ * separates them, so those, and only those, are qualified — by their ordinal
+ * among the same-named ports, not the global enumeration index, so that an
+ * unrelated device joining or leaving cannot renumber them.
  */
 function buildPortIds(devices: readonly TauriMidiDevice[]): TauriMidiPort[] {
     const nameCounts = new Map<string, number>();
@@ -48,11 +50,16 @@ function buildPortIds(devices: readonly TauriMidiDevice[]): TauriMidiPort[] {
         nameCounts.set(device.name, (nameCounts.get(device.name) ?? 0) + 1);
     }
 
-    return devices.map((device) => ({
-        id: (nameCounts.get(device.name) ?? 0) > 1 ? `${device.name} #${device.index}` : device.name,
-        name: device.name,
-        portIndex: device.index,
-    }));
+    const ordinals = new Map<string, number>();
+    return devices.map((device) => {
+        const ordinal = ordinals.get(device.name) ?? 0;
+        ordinals.set(device.name, ordinal + 1);
+        return {
+            id: (nameCounts.get(device.name) ?? 0) > 1 ? `${device.name} #${ordinal}` : device.name,
+            name: device.name,
+            portIndex: device.index,
+        };
+    });
 }
 
 /**

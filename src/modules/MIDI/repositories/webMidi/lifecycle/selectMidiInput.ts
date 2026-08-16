@@ -32,7 +32,7 @@ async function openTauriPort({ deviceId, onMidiMessage }: SelectMidiInputInput):
             return;
         }
 
-        await selectMidiInputTauri({ portIndex: port.portIndex, onMidiMessage });
+        await selectMidiInputTauri({ portIndex: port.portIndex, portName: port.name, onMidiMessage });
         setState({ selectedInputId: deviceId });
     } catch (error: unknown) {
         logger.warn('[MIDI] Failed to open MIDI input:', error);

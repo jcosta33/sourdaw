@@ -189,6 +189,43 @@ describe('selectMidiInputTauri', () => {
         expect(onMidiMessageMock.mock.calls[0]![0].timeStamp).toBeUndefined();
     });
 
+    describe('misidentified port', () => {
+        /**
+         * `open_midi_input` re-enumerates on the backend, so a port appearing
+         * below the target between the caller's enumeration and the open
+         * shifts every index: the command succeeds, but on a different
+         * instrument. The backend reports the name it opened; a caller that
+         * stated its expectation gets the mismatch backed out, not persisted.
+         */
+        it('closes the port and throws when the opened name is not the expected one', async () => {
+            const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
+            tauriInvokeMock.mockImplementation(async (command) =>
+                command === 'open_midi_input' ? 'IAC Driver Bus 1' : undefined
+            );
+
+            await expect(
+                selectMidiInputTauri({ portIndex: 1, portName: 'Launchkey', onMidiMessage: onMidiMessageMock })
+            ).rejects.toThrow('expected "Launchkey"');
+
+            expect(tauriInvokeMock).toHaveBeenCalledWith('close_midi_input');
+            // The wrong port must not stay subscribed either.
+            expect(tauriListenMock).not.toHaveBeenCalled();
+            expect(setTauriEventUnlistenMock).not.toHaveBeenCalledWith(newUnlisten);
+        });
+
+        it('proceeds when the opened name matches the expectation', async () => {
+            const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
+            tauriInvokeMock.mockImplementation(async (command) =>
+                command === 'open_midi_input' ? 'Launchkey' : undefined
+            );
+
+            await selectMidiInputTauri({ portIndex: 1, portName: 'Launchkey', onMidiMessage: onMidiMessageMock });
+
+            expect(tauriInvokeMock).not.toHaveBeenCalledWith('close_midi_input');
+            expect(setTauriEventUnlistenMock).toHaveBeenLastCalledWith(newUnlisten);
+        });
+    });
+
     describe('overlapping selections', () => {
         /**
          * The unlisten registry is read at call start and written three awaits
