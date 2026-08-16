@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/resumeAgentRunDecision.spec.ts
+  s_e39468eea7236f::t_331a3c964ac65e 1,5-8,55-58,60,63-65,69-72,75,79-81
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_e39468eea7236f::t_55e7f82882cd47 15,139,142-159,230-253
+src/modules/AiRuntime/useCases/resumeAgentRunDecision.ts
+  s_e39468eea7236f::t_bc1ae7b1c81531 4,6,9,34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "753f32c570de0a30890811620f35fa675e496038",
+  "prompts": {},
+  "sessions": {
+    "s_e39468eea7236f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0096e-3ef9-7843-982d-0dc4144d710f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
