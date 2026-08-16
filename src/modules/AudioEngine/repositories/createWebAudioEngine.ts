@@ -73,11 +73,26 @@ export type SidechainKeyDelayResolver = (route: {
     targetDeviceId: string;
 }) => number;
 
-type ToasterPadRoute = {
+type ToasterPadBinding = Readonly<{
+    toasterParentTrackId: string;
+    padIndex: number;
+}>;
+
+type ToasterPadRoute = ToasterPadBinding & {
+    destinationNode: GainNode | null;
+    controls: ToasterDeviceControls | null;
+};
+
+type ToasterPadRouteSnapshot = Readonly<{
     toasterParentTrackId: string;
     padIndex: number;
     destinationNode: GainNode | null;
     controls: ToasterDeviceControls | null;
+    dryRouted: boolean;
+}>;
+
+type ToasterPadOutputControls = ToasterDeviceControls & {
+    connectPadOutput: NonNullable<ToasterDeviceControls['connectPadOutput']>;
 };
 
 type RuntimeGraphMutation<TValue> = Readonly<{
@@ -117,6 +132,12 @@ function isChromeAudioPlaybackStats(value: unknown): value is ChromeAudioPlaybac
         'toJSON' in value &&
         typeof value.toJSON === 'function'
     );
+}
+
+function hasToasterPadOutputControls(
+    controls: ToasterDeviceControls | undefined | null
+): controls is ToasterPadOutputControls {
+    return typeof controls?.connectPadOutput === 'function';
 }
 
 function getChromePlaybackStats(context: AudioContext): ChromeAudioPlaybackStats {
@@ -1020,6 +1041,166 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
+    private getToasterPadControls(toasterParentTrackId: string): ToasterPadOutputControls | undefined {
+        const controls = this.trackNodes
+            .get(toasterParentTrackId)
+            ?.strip.deviceNodes.find((candidate) => candidate.toasterControls?.connectPadOutput)?.toasterControls;
+        return hasToasterPadOutputControls(controls) ? controls : undefined;
+    }
+
+    private isValidToasterPadBinding(padBinding: ToasterPadBinding | undefined): padBinding is ToasterPadBinding {
+        return (
+            padBinding !== undefined &&
+            Number.isInteger(padBinding.padIndex) &&
+            padBinding.padIndex >= 0 &&
+            padBinding.padIndex < 16
+        );
+    }
+
+    private snapshotToasterPadRoute(trackId: string): ToasterPadRouteSnapshot | undefined {
+        const route = this.toasterPadRoutes.get(trackId);
+        if (!route) {
+            return undefined;
+        }
+        return Object.freeze({
+            toasterParentTrackId: route.toasterParentTrackId,
+            padIndex: route.padIndex,
+            destinationNode: route.destinationNode,
+            controls: route.controls,
+            dryRouted: route.destinationNode !== null && route.controls !== null,
+        });
+    }
+
+    private restoreToasterPadRouteState(trackId: string, snapshot: ToasterPadRouteSnapshot | undefined): void {
+        if (!snapshot) {
+            this.toasterPadRoutes.delete(trackId);
+            return;
+        }
+        this.toasterPadRoutes.set(trackId, {
+            toasterParentTrackId: snapshot.toasterParentTrackId,
+            padIndex: snapshot.padIndex,
+            destinationNode: snapshot.destinationNode,
+            controls: snapshot.controls,
+        });
+    }
+
+    private clearToasterPadOutput(controls: ToasterDeviceControls, padIndex: number, destinationNode: GainNode): void {
+        try {
+            controls.disconnectPadOutput?.(padIndex, destinationNode);
+        } finally {
+            controls.setPadDryRouted(padIndex, false);
+        }
+    }
+
+    private restoreToasterPadBinding(
+        trackId: string,
+        sourceDestinationNode: GainNode,
+        snapshot: ToasterPadRouteSnapshot | undefined,
+        attemptedBinding: ToasterPadBinding | undefined
+    ): void {
+        const targets: Array<
+            Readonly<{ controls: ToasterDeviceControls; padIndex: number; destinationNode: GainNode }>
+        > = [];
+        const addTarget = (controls: ToasterDeviceControls, padIndex: number, destinationNode: GainNode): void => {
+            if (
+                targets.some(
+                    (target) =>
+                        target.controls === controls &&
+                        target.padIndex === padIndex &&
+                        target.destinationNode === destinationNode
+                )
+            ) {
+                return;
+            }
+            targets.push({ controls, padIndex, destinationNode });
+        };
+        const current = this.toasterPadRoutes.get(trackId);
+        if (current?.controls && current.destinationNode) {
+            addTarget(current.controls, current.padIndex, current.destinationNode);
+        }
+        if (this.isValidToasterPadBinding(attemptedBinding)) {
+            const attemptedControls = this.getToasterPadControls(attemptedBinding.toasterParentTrackId);
+            if (attemptedControls) {
+                addTarget(attemptedControls, attemptedBinding.padIndex, sourceDestinationNode);
+            }
+        }
+
+        const clearErrors: unknown[] = [];
+        for (const target of targets) {
+            try {
+                this.clearToasterPadOutput(target.controls, target.padIndex, target.destinationNode);
+            } catch (error) {
+                clearErrors.push(error);
+            }
+        }
+        this.restoreToasterPadRouteState(trackId, snapshot);
+        if (clearErrors.length > 0) {
+            throw clearErrors.length === 1
+                ? clearErrors[0]
+                : new AggregateError(clearErrors, 'Toaster pad route cleanup failed during transaction restoration');
+        }
+        if (!snapshot?.dryRouted || !snapshot.controls || !snapshot.destinationNode) {
+            return;
+        }
+        const controls = snapshot.controls;
+        if (!hasToasterPadOutputControls(controls)) {
+            throw new Error('Toaster pad route snapshot has no connect output control');
+        }
+        controls.connectPadOutput(snapshot.padIndex, snapshot.destinationNode);
+        controls.setPadDryRouted(snapshot.padIndex, true);
+    }
+
+    private restoreTrackOutput(trackNode: TrackNode, previousOutputId: string | undefined): void {
+        trackNode.setOutput(previousOutputId ?? 'hw_out');
+        if (previousOutputId === undefined) {
+            trackNode.strip.outputId = undefined;
+        }
+    }
+
+    private setTrackOutputTransaction(
+        trackNode: TrackNode,
+        outputId: string,
+        padBinding: ToasterPadBinding | undefined
+    ): RuntimeGraphMutation<void> {
+        const previousOutputId = trackNode.strip.outputId;
+        const padSnapshot = this.snapshotToasterPadRoute(trackNode.trackId);
+        const outputChanged = trackNode.setOutput(outputId);
+        try {
+            const padBindingChanged = this.updateToasterPadBinding(trackNode.trackId, padBinding);
+            return { value: undefined, changed: outputChanged || padBindingChanged };
+        } catch (error) {
+            const rollbackErrors: unknown[] = [];
+            try {
+                this.restoreToasterPadBinding(trackNode.trackId, trackNode.strip.gainNode, padSnapshot, padBinding);
+            } catch (rollbackError) {
+                rollbackErrors.push(rollbackError);
+            }
+            if (outputChanged) {
+                try {
+                    this.restoreTrackOutput(trackNode, previousOutputId);
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError);
+                }
+            }
+            if (rollbackErrors.length === 0) {
+                throw new RuntimeGraphMutationRejected(
+                    `Track ${trackNode.trackId} output and Toaster pad binding were restored after a live failure`,
+                    error
+                );
+            }
+            throw new RuntimeGraphMutationFailure(
+                Object.freeze({
+                    application: 'needs-reconcile',
+                    reason: `Track ${trackNode.trackId} output and Toaster pad binding changed before transaction restoration failed`,
+                }),
+                error,
+                rollbackErrors.length === 1
+                    ? rollbackErrors[0]
+                    : new AggregateError(rollbackErrors, 'Toaster output transaction restoration failed')
+            );
+        }
+    }
+
     private detachToasterPadRoute(trackId: string, forgetRoute: boolean): boolean {
         const route = this.toasterPadRoutes.get(trackId);
         if (!route) {
@@ -1041,11 +1222,8 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private reconcileToasterParent(toasterParentTrackId: string): void {
-        const device = this.trackNodes
-            .get(toasterParentTrackId)
-            ?.strip.deviceNodes.find((candidate) => candidate.toasterControls?.connectPadOutput);
-        const controls = device?.toasterControls;
-        if (!controls?.connectPadOutput) {
+        const controls = this.getToasterPadControls(toasterParentTrackId);
+        if (!controls) {
             return;
         }
         for (const [trackId, route] of this.toasterPadRoutes) {
@@ -1082,16 +1260,8 @@ class AudioEngineImpl implements AudioEngine {
         this.reconcileToasterParent(trackId);
     }
 
-    private updateToasterPadBinding(
-        trackId: string,
-        padBinding: { toasterParentTrackId: string; padIndex: number } | undefined
-    ): boolean {
-        if (
-            !padBinding ||
-            !Number.isInteger(padBinding.padIndex) ||
-            padBinding.padIndex < 0 ||
-            padBinding.padIndex >= 16
-        ) {
+    private updateToasterPadBinding(trackId: string, padBinding: ToasterPadBinding | undefined): boolean {
+        if (!this.isValidToasterPadBinding(padBinding)) {
             return this.detachToasterPadRoute(trackId, true);
         }
         const existing = this.toasterPadRoutes.get(trackId);
@@ -1643,11 +1813,7 @@ class AudioEngineImpl implements AudioEngine {
         }));
     }
 
-    public setTrackOutput(
-        trackId: string,
-        outputId: string,
-        padBinding?: { toasterParentTrackId: string; padIndex: number }
-    ): void {
+    public setTrackOutput(trackId: string, outputId: string, padBinding?: ToasterPadBinding): void {
         try {
             this.mutateRuntimeGraph(() => {
                 const trackNode = this.trackNodes.get(trackId);
@@ -1660,9 +1826,7 @@ class AudioEngineImpl implements AudioEngine {
                     );
                     return { value: undefined, changed: false };
                 }
-                const outputChanged = trackNode.setOutput(outputId);
-                const padBindingChanged = this.updateToasterPadBinding(trackId, padBinding);
-                return { value: undefined, changed: outputChanged || padBindingChanged };
+                return this.setTrackOutputTransaction(trackNode, outputId, padBinding);
             });
         } catch (error) {
             if (error instanceof RuntimeGraphMutationFailure) {

@@ -319,6 +319,25 @@ function setPadTrackOutput(
     engine.setTrackOutput(trackId, outputId, { toasterParentTrackId, padIndex });
 }
 
+function loadToasterPadControls(engine: AudioEngine, toasterParentTrackId: string) {
+    const controls = {
+        connectPadOutput: vi.fn(),
+        disconnectPadOutput: vi.fn(),
+        setPadDryRouted: vi.fn(),
+    };
+    getMockTrackNode(engine, toasterParentTrackId).notifyDeviceLoaded({
+        deviceId: `${toasterParentTrackId}-toaster`,
+        type: 'toaster',
+        nodes: [],
+        toasterControls: controls,
+    });
+    return controls;
+}
+
+function getToasterPadRoutes(engine: AudioEngine): Map<string, unknown> {
+    return (engine as unknown as { toasterPadRoutes: Map<string, unknown> }).toasterPadRoutes;
+}
+
 function createRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
     return {
         schemaVersion: 1,
@@ -1036,15 +1055,18 @@ describe('AudioEngine', () => {
         engine.ensureTrackStrip('source');
         engine.ensureTrackStrip('target');
         engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
         const revisionBeforeOutput = engine.getRuntimeGraphRevision();
 
         setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
 
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        expect(controls.connectPadOutput).toHaveBeenCalledTimes(1);
 
         setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
 
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        expect(controls.connectPadOutput).toHaveBeenCalledTimes(1);
 
         const source = getMockTrackNode(engine, 'source');
         source.setOutput.mockImplementationOnce(() => {
@@ -1058,6 +1080,97 @@ describe('AudioEngine', () => {
             'output disconnect failed'
         );
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+    });
+
+    it('restores output and pad state after connectPadOutput fails', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        controls.connectPadOutput.mockImplementationOnce(() => {
+            throw new Error('pad output connect failed');
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4)).toThrow(
+            'pad output connect failed'
+        );
+
+        expect(source.outputId).toBeUndefined();
+        expect(getToasterPadRoutes(engine).has('source')).toBe(false);
+        expect(controls.disconnectPadOutput).toHaveBeenCalledWith(4, source.gainNode);
+        expect(controls.setPadDryRouted).toHaveBeenLastCalledWith(4, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput);
+
+        expect(engine.applyRuntimeGraphDelta(staleDelta)).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+    });
+
+    it('restores output and pad state after setPadDryRouted fails', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        controls.setPadDryRouted.mockImplementationOnce(() => {
+            throw new Error('pad dry route failed');
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4)).toThrow(
+            'pad dry route failed'
+        );
+
+        expect(source.outputId).toBeUndefined();
+        expect(getToasterPadRoutes(engine).has('source')).toBe(false);
+        expect(controls.disconnectPadOutput).toHaveBeenCalledWith(4, source.gainNode);
+        expect(controls.setPadDryRouted).toHaveBeenLastCalledWith(4, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput);
+
+        expect(engine.applyRuntimeGraphDelta(staleDelta)).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+    });
+
+    it('invalidates a stale delta when Toaster pad restoration fails after an output change', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const controls = loadToasterPadControls(engine, 'toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        const connectError = new Error('pad output connect failed');
+        const rollbackError = new Error('pad output rollback failed');
+        controls.connectPadOutput.mockImplementationOnce(() => {
+            throw connectError;
+        });
+        controls.disconnectPadOutput.mockImplementationOnce(() => {
+            throw rollbackError;
+        });
+
+        try {
+            setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
+            throw new Error('expected the Toaster transaction to fail');
+        } catch (error) {
+            expect(error).toBeInstanceOf(RuntimeGraphMutationFailure);
+            expect(error).toMatchObject({ cause: connectError, rollbackError });
+        }
+
+        expect(source.outputId).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        const sourceNode = getMockTrackNode(engine, 'source');
+        vi.mocked(sourceNode.setOutput).mockClear();
+
+        expect(engine.applyRuntimeGraphDelta(staleDelta)).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(sourceNode.setOutput).not.toHaveBeenCalled();
     });
 
     it('does not touch the live graph when compiled device order no longer matches it', () => {
