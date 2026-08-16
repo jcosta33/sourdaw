@@ -44,6 +44,137 @@ impl Default for LoopPointConfig {
     }
 }
 
+/// Ceiling on how many candidate (start, end) pairs the search will consider.
+///
+/// The pairing is O(crossings²) and every pair costs a normalized correlation
+/// over `correlation_window` samples. A bright multi-second sample yields tens
+/// of thousands of zero crossings on each side of the midpoint, so the raw
+/// pairing runs to hundreds of millions of correlations — and the Tauri command
+/// that asks for loop points waits for all of them.
+///
+/// The value is a budget, not a measurement: it is the work the offline search
+/// is allowed to spend, chosen so the worst case stays in the tens of
+/// milliseconds at the default 256-sample correlation window.
+const MAX_CANDIDATE_PAIRS: usize = 100_000;
+
+/// Smallest stride that brings the pairing of two candidate lists inside
+/// [`MAX_CANDIDATE_PAIRS`].
+///
+/// Both lists are strided by the *same* factor rather than truncated, so the
+/// surviving candidates stay spread across the whole buffer. Truncation would
+/// be cheaper and wrong: it would confine every detectable loop to the earliest
+/// region of the sample, which is exactly where a sustained instrument's loop
+/// should not be taken from. The stride depends only on the candidate counts,
+/// so the search stays deterministic — no sampling, no RNG.
+///
+/// A stride of 1 means the budget was never binding and the search below is the
+/// exhaustive one.
+fn candidate_stride(num_starts: usize, num_ends: usize) -> usize {
+    if num_starts == 0 || num_ends == 0 {
+        return 1;
+    }
+
+    let mut stride = 1usize;
+    while num_starts.div_ceil(stride) * num_ends.div_ceil(stride) > MAX_CANDIDATE_PAIRS {
+        stride += 1;
+    }
+    stride
+}
+
+/// Keep every `stride`-th candidate.
+///
+/// This is the whole of the coverage rule: the kept candidates are spread over
+/// the entire list, so the last kept one is always within `stride` positions of
+/// the last admissible one. Truncating to a prefix would satisfy the same
+/// budget while confining every result to the front of the buffer.
+fn strided_candidates(candidates: &[usize], stride: usize) -> Vec<usize> {
+    candidates.iter().copied().step_by(stride).collect()
+}
+
+/// The best (start, end) pairing the correlation search found.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BestPair {
+    start: usize,
+    end: usize,
+    quality: f32,
+}
+
+/// Outcome of [`search_best_pair`], including the work it did.
+///
+/// `evaluations` is reported rather than discarded so the budget is checkable
+/// at the place it is enforced instead of inferred from wall-clock time.
+#[derive(Debug, Clone, Copy)]
+struct PairSearch {
+    /// `None` when no pair was evaluated, or when every evaluated pair scored
+    /// at or below the `-1.0` floor of a normalized correlation.
+    best: Option<BestPair>,
+    /// Number of normalized correlations actually evaluated. Never exceeds the
+    /// strided pair count, which never exceeds [`MAX_CANDIDATE_PAIRS`].
+    evaluations: usize,
+}
+
+/// Score every admissible (start, end) candidate pair and keep the best.
+///
+/// Candidates come from the zero crossings: loop starts from the prefix that
+/// leaves a whole correlation window inside the first half, loop ends from the
+/// crossings past the midpoint that leave one inside the buffer. Ties keep the
+/// earliest pair in ascending (end, start) order.
+fn search_best_pair(
+    samples: &[f32],
+    crossings: &[usize],
+    half: usize,
+    corr_win: usize,
+    min_loop_frames: usize,
+) -> PairSearch {
+    // `crossings` is ascending, so the admissible starts are a prefix.
+    let starts: Vec<usize> = crossings
+        .iter()
+        .copied()
+        .take_while(|&pos| pos + corr_win < half)
+        .collect();
+    let ends: Vec<usize> = crossings
+        .iter()
+        .copied()
+        .filter(|&pos| pos >= half && pos + corr_win < samples.len())
+        .collect();
+
+    let stride = candidate_stride(starts.len(), ends.len());
+    let starts = strided_candidates(&starts, stride);
+    let ends = strided_candidates(&ends, stride);
+
+    let mut best: Option<BestPair> = None;
+    let mut best_quality = -1.0f32;
+    let mut evaluations = 0usize;
+
+    for &end_pos in &ends {
+        for &start_pos in &starts {
+            // Every start is below `half` and every end is at or above it, so
+            // this cannot underflow.
+            if end_pos - start_pos < min_loop_frames {
+                continue;
+            }
+
+            // Normalized cross-correlation between waveform shapes.
+            let quality = normalized_correlation(
+                &samples[start_pos..start_pos + corr_win],
+                &samples[end_pos..end_pos + corr_win],
+            );
+            evaluations += 1;
+
+            if quality > best_quality {
+                best_quality = quality;
+                best = Some(BestPair {
+                    start: start_pos,
+                    end: end_pos,
+                    quality,
+                });
+            }
+        }
+    }
+
+    PairSearch { best, evaluations }
+}
+
 /// Find optimal loop points by locating zero-crossings with similar waveform shape.
 ///
 /// Strategy:
@@ -53,6 +184,9 @@ impl Default for LoopPointConfig {
 ///    normalized cross-correlation of the surrounding waveform.
 /// 3. Select the pair with the highest correlation.
 /// 4. Calculate crossfade length based on the local waveform period.
+///
+/// Step 2 is bounded by [`MAX_CANDIDATE_PAIRS`]; below that bound it is the
+/// exhaustive pairing.
 pub fn detect_loop_points(
     samples: &[f32],
     sample_rate: u32,
@@ -70,54 +204,32 @@ pub fn detect_loop_points(
     }
 
     let half = samples.len() / 2;
-    let corr_win = config.correlation_window;
+    let search = search_best_pair(
+        samples,
+        &crossings,
+        half,
+        config.correlation_window,
+        min_loop_frames,
+    );
+    debug_assert!(
+        search.evaluations <= MAX_CANDIDATE_PAIRS,
+        "the loop-point search ran {} correlations against a budget of {MAX_CANDIDATE_PAIRS}",
+        search.evaluations
+    );
 
-    let mut best_quality = -1.0f32;
-    let mut best_start = 0u32;
-    let mut best_end = 0u32;
-
-    // Candidate loop-end positions: zero crossings in the second half.
-    for &end_pos in &crossings {
-        if end_pos < half || end_pos + corr_win >= samples.len() {
-            continue;
-        }
-
-        // Search for best matching loop-start position.
-        for &start_pos in &crossings {
-            if start_pos + corr_win >= half {
-                break;
-            }
-            if end_pos - start_pos < min_loop_frames {
-                continue;
-            }
-
-            // Normalized cross-correlation between waveform shapes.
-            let quality = normalized_correlation(
-                &samples[start_pos..start_pos + corr_win],
-                &samples[end_pos..end_pos + corr_win],
-            );
-
-            if quality > best_quality {
-                best_quality = quality;
-                best_start = start_pos as u32;
-                best_end = end_pos as u32;
-            }
-        }
-    }
-
-    if best_quality < 0.0 {
-        return None;
-    }
+    // A negative best correlation means the closest match found was still an
+    // inversion; that is reported as "no loop points" rather than as a poor one.
+    let best = search.best.filter(|pair| pair.quality >= 0.0)?;
 
     // Calculate crossfade length based on local zero-crossing period.
-    let local_period = estimate_local_period(samples, best_end as usize, config.search_window);
+    let local_period = estimate_local_period(samples, best.end, config.search_window);
     let crossfade = (local_period as u32).clamp(config.min_crossfade, config.max_crossfade);
 
     Some(LoopPointResult {
-        start_frame: best_start,
-        end_frame: best_end,
+        start_frame: best.start as u32,
+        end_frame: best.end as u32,
         crossfade_length: crossfade,
-        quality: best_quality,
+        quality: best.quality,
     })
 }
 
@@ -187,4 +299,195 @@ fn estimate_local_period(samples: &[f32], position: usize, window: usize) -> usi
     // Return median period.
     periods.sort_unstable();
     periods[periods.len() / 2]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A sine whose amplitude drifts across the buffer, so candidate windows
+    /// genuinely score differently and the search has an ordering it can get
+    /// wrong. One positive-going zero crossing per `period`.
+    fn drifting_sine(len: usize, period: usize) -> Vec<f32> {
+        (0..len)
+            .map(|i| {
+                let phase = 2.0 * std::f32::consts::PI * i as f32 / period as f32;
+                let envelope = 0.4 + 0.6 * (i as f32 / len as f32);
+                phase.sin() * envelope
+            })
+            .collect()
+    }
+
+    /// The exhaustive nested scan the bounded search must reproduce whenever
+    /// the budget is not binding, written out here so the equivalence claim
+    /// does not depend on the code it is checking.
+    fn exhaustive_best(
+        samples: &[f32],
+        crossings: &[usize],
+        half: usize,
+        corr_win: usize,
+        min_loop_frames: usize,
+    ) -> (Option<BestPair>, usize) {
+        let mut best: Option<BestPair> = None;
+        let mut best_quality = -1.0f32;
+        let mut evaluations = 0usize;
+
+        for &end_pos in crossings {
+            if end_pos < half || end_pos + corr_win >= samples.len() {
+                continue;
+            }
+            for &start_pos in crossings {
+                if start_pos + corr_win >= half {
+                    break;
+                }
+                if end_pos - start_pos < min_loop_frames {
+                    continue;
+                }
+                let quality = normalized_correlation(
+                    &samples[start_pos..start_pos + corr_win],
+                    &samples[end_pos..end_pos + corr_win],
+                );
+                evaluations += 1;
+                if quality > best_quality {
+                    best_quality = quality;
+                    best = Some(BestPair {
+                        start: start_pos,
+                        end: end_pos,
+                        quality,
+                    });
+                }
+            }
+        }
+
+        (best, evaluations)
+    }
+
+    /// Count the candidates on each side under the search's own admissibility
+    /// rules, so a fixture's raw pairing size can be stated independently.
+    fn candidate_counts(
+        samples: &[f32],
+        crossings: &[usize],
+        half: usize,
+        corr_win: usize,
+    ) -> (usize, usize) {
+        let starts = crossings
+            .iter()
+            .take_while(|&&pos| pos + corr_win < half)
+            .count();
+        let ends = crossings
+            .iter()
+            .filter(|&&pos| pos >= half && pos + corr_win < samples.len())
+            .count();
+        (starts, ends)
+    }
+
+    #[test]
+    fn below_the_budget_the_search_is_exactly_the_exhaustive_one() {
+        const LEN: usize = 2_000;
+        const CORR_WIN: usize = 64;
+
+        let samples = drifting_sine(LEN, 64);
+        let crossings = find_zero_crossings(&samples);
+        let half = samples.len() / 2;
+
+        let (starts, ends) = candidate_counts(&samples, &crossings, half, CORR_WIN);
+        assert!(
+            starts * ends <= MAX_CANDIDATE_PAIRS,
+            "fixture must fit the budget to test the unstrided path, had {starts}×{ends} pairs"
+        );
+        assert_eq!(
+            candidate_stride(starts, ends),
+            1,
+            "an unbinding budget must not stride"
+        );
+
+        let search = search_best_pair(&samples, &crossings, half, CORR_WIN, 128);
+        let (expected, expected_evaluations) =
+            exhaustive_best(&samples, &crossings, half, CORR_WIN, 128);
+
+        assert!(expected.is_some(), "fixture produced no candidate pair");
+        assert_eq!(
+            search.best, expected,
+            "the bounded search picked a different pair than the exhaustive scan"
+        );
+        assert_eq!(
+            search.evaluations, expected_evaluations,
+            "the bounded search skipped pairs the exhaustive scan evaluated"
+        );
+    }
+
+    #[test]
+    fn a_dense_signal_is_searched_inside_the_pair_budget() {
+        const LEN: usize = 8_000;
+        const CORR_WIN: usize = 16;
+
+        let samples = drifting_sine(LEN, 8);
+        let crossings = find_zero_crossings(&samples);
+        let half = samples.len() / 2;
+
+        let (starts, ends) = candidate_counts(&samples, &crossings, half, CORR_WIN);
+        assert!(
+            starts * ends > MAX_CANDIDATE_PAIRS,
+            "fixture must exceed the budget to test the strided path, had {starts}×{ends} pairs"
+        );
+        assert!(
+            candidate_stride(starts, ends) > 1,
+            "a binding budget must stride the candidate lists"
+        );
+
+        let search = search_best_pair(&samples, &crossings, half, CORR_WIN, 0);
+
+        assert!(
+            search.evaluations <= MAX_CANDIDATE_PAIRS,
+            "the search ran {} correlations against a budget of {MAX_CANDIDATE_PAIRS}",
+            search.evaluations
+        );
+        assert!(
+            search.best.is_some(),
+            "the bounded search must still return a pair"
+        );
+    }
+
+    /// The budget could equally be met by truncating each candidate list to a
+    /// prefix, which would confine every detectable loop to the opening of the
+    /// sample. Striding is the reason it is not: the surviving candidates run
+    /// to the far end of the list.
+    #[test]
+    fn striding_spreads_coverage_instead_of_truncating() {
+        let candidates: Vec<usize> = (0..1_000).map(|index| index * 3).collect();
+        let kept = strided_candidates(&candidates, 7);
+
+        assert_eq!(kept.len(), 1_000usize.div_ceil(7), "wrong number kept");
+        assert_eq!(kept[0], candidates[0], "coverage must start at the first");
+        let last = *kept.last().expect("stride kept nothing");
+        let last_candidate = *candidates.last().expect("empty fixture");
+        assert!(
+            last_candidate - last < 7 * 3,
+            "coverage stopped at {last} of a list reaching {last_candidate}"
+        );
+    }
+
+    /// End to end: the public entry point still reports loop points on a
+    /// signal dense enough to bind the budget.
+    #[test]
+    fn detection_still_reports_loop_points_on_a_dense_signal() {
+        const SAMPLE_RATE: u32 = 8_000;
+
+        let samples = drifting_sine(8_000, 8);
+        let config = LoopPointConfig::default();
+        let result = detect_loop_points(&samples, SAMPLE_RATE, &config);
+
+        let result = result.expect("a dense periodic signal must yield loop points");
+        assert!(
+            result.end_frame > result.start_frame,
+            "loop end {} must follow loop start {}",
+            result.end_frame,
+            result.start_frame
+        );
+        assert!(
+            result.quality >= 0.0,
+            "reported quality {} must be the non-negative correlation it claims",
+            result.quality
+        );
+    }
 }
