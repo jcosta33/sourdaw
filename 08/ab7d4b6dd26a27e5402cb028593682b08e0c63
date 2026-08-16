@@ -1,0 +1,50 @@
+src/modules/Transport/useCases/tempoMap/__tests__/deleteTimelineMapsTimeRange.spec.ts
+  s_ab5443e65c7fba::t_6d5b7873f0dd41 108-121
+src/modules/Transport/useCases/tempoMapping/operations/__tests__/applyTempoMap.spec.ts
+  s_ab5443e65c7fba::t_f769109808227b 65-94
+src/modules/Transport/stores/transportStore.ts
+  s_ab5443e65c7fba::t_c5aba7bfd6876f 10
+  s_ab5443e65c7fba::t_01b9faa9be41c3 164,167-294,296-297,299-301,305-307
+  s_ab5443e65c7fba::t_e58e8d71423240 132-135,138,142
+  s_ab5443e65c7fba::t_3d312f7a910861 330,338
+src/modules/Transport/useCases/tempoMap/shiftTimelineMapsAfterBeat.ts
+  s_ab5443e65c7fba::t_74ab5a359600ee 9-16,18-20
+  s_ab5443e65c7fba::t_7adc60a58db69f 17,27-29,39-41
+src/modules/Transport/stores/index.ts
+  s_ab5443e65c7fba::t_abc6ac508b8026 12
+src/modules/Transport/useCases/tempoMap/deleteTimelineMapsTimeRange.ts
+  s_ab5443e65c7fba::t_176143127f2093 10-17
+src/modules/Transport/useCases/timeSignatureChanges/addTimeSignatureChange.ts
+  s_ab5443e65c7fba::t_af008840e10f1c 4-10,17,22
+src/modules/Transport/useCases/tempoMapping/operations/applyTempoMap.ts
+  s_ab5443e65c7fba::t_b968b70a3d3068 4-7,9-10
+  s_ab5443e65c7fba::t_9f51ff018a2925 8,19
+src/modules/Transport/useCases/timeSignatureChanges/__tests__/addTimeSignatureChange.spec.ts
+  s_ab5443e65c7fba::t_46ff02f0cc60eb 94-105
+src/modules/Transport/useCases/__tests__/setMasterGain.spec.ts
+  s_ab5443e65c7fba::t_069f63088f25ee 40-66
+src/modules/Transport/useCases/tempoMap/__tests__/shiftTimelineMapsAfterBeat.spec.ts
+  s_ab5443e65c7fba::t_2f69987c6fa492 126-145
+src/modules/Transport/stores/__tests__/transportStore.spec.ts
+  s_ab5443e65c7fba::t_e759053d301b57 148-188
+  s_ab5443e65c7fba::t_a3f0a538892247 99-104,110
+  s_ab5443e65c7fba::t_82abd6265a7c4a 189
+src/modules/Transport/useCases/setMasterGain.ts
+  s_ab5443e65c7fba::t_2192587c0ddd69 6-25,31-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "08ab7d4b6dd26a27e5402cb028593682b08e0c63",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
