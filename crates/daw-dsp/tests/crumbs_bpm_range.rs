@@ -41,14 +41,14 @@ const CLICK_FRAMES: usize = 900;
 /// the autocorrelation carries a second, genuinely weaker peak at the off-beat
 /// period: a scan that cannot reach the true lag settles on that instead and
 /// reports twice the tempo, which no amount of sub-lag refinement recovers.
-fn click_track(bpm: f32) -> Vec<f32> {
+fn click_track_at(bpm: f32, sample_rate: u32) -> Vec<f32> {
     const OFFBEAT_LEVEL: f32 = 0.45;
 
-    let period = (SAMPLE_RATE as f32 * 60.0 / bpm).round() as usize;
+    let period = (sample_rate as f32 * 60.0 / bpm).round() as usize;
     let mut samples = vec![0.0_f32; period * CLICKS];
     let place = |start: usize, level: f32, samples: &mut Vec<f32>| {
         for frame in 0..CLICK_FRAMES {
-            let t = frame as f32 / SAMPLE_RATE as f32;
+            let t = frame as f32 / sample_rate as f32;
             let decay = (-t * 220.0).exp();
             let phase = t * 2_000.0 * std::f32::consts::TAU;
             samples[start + frame] = phase.sin() * decay * level;
@@ -60,6 +60,10 @@ fn click_track(bpm: f32) -> Vec<f32> {
         place(start + period / 2, 0.9 * OFFBEAT_LEVEL, &mut samples);
     }
     samples
+}
+
+fn click_track(bpm: f32) -> Vec<f32> {
+    click_track_at(bpm, SAMPLE_RATE)
 }
 
 #[test]
@@ -79,6 +83,35 @@ fn the_slowest_tempo_in_range_is_detectable() {
         (bpm - MIN_BPM).abs() < 2.0,
         "a {MIN_BPM} BPM click track was reported as {bpm:.2} BPM; the true lag sits on the \
          boundary of the peak scan"
+    );
+}
+
+/// The lag bounds are `floor`/`ceil` quantizations of the tempo range, so the
+/// slowest tempo's lag is fractional at most sample rates and the boundary lag
+/// converts to a BPM a rounding error *outside* the range. At 44.1 kHz the ODF
+/// runs at exactly 100 frames/s (hop 441) and the 60 BPM lag is the integer
+/// 100, so the 44.1 kHz test above never exercises that rounding. At 48 kHz
+/// the ODF runs at 108.84 frames/s: the 60 BPM peak lands on the ceiling lag
+/// 109, the peak scan cannot refine a boundary lag, and the raw conversion is
+/// 59.91 BPM. Discarding that as out-of-range — instead of clamping — turned
+/// "slowest tempo in range" into no tempo at all at every rate where the
+/// boundary lag is not an integer.
+#[test]
+fn the_range_floor_survives_lag_quantization_at_48_khz() {
+    const RATE_48K: u32 = 48_000;
+    let result = estimate_bpm(&click_track_at(MIN_BPM, RATE_48K), RATE_48K);
+
+    let bpm = result.bpm.unwrap_or_else(|| {
+        panic!(
+            "a {MIN_BPM} BPM click track at 48 kHz was reported as having no detectable tempo \
+             (confidence {}); the boundary lag's conversion is being discarded as out of range \
+             instead of clamped",
+            result.confidence
+        )
+    });
+    assert!(
+        (bpm - MIN_BPM).abs() < 2.0,
+        "a {MIN_BPM} BPM click track at 48 kHz was reported as {bpm:.2} BPM"
     );
 }
 

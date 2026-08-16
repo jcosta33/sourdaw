@@ -2388,6 +2388,19 @@ mod tests {
             "loop_crossfade must smooth the seam discontinuity: \
              {click_without} -> {click_with}"
         );
+        // A correct fade spreads the wrap's 2.0 discontinuity across its
+        // 96-frame span, so the residual per-sample step is bounded by the
+        // spread step plus the ramp's own slope. A shadow read anchored at
+        // `loop_start + offset` instead hands over to the wrapped playhead
+        // with a step of span × slope (0.4) — an order of magnitude above
+        // this bound — while still passing the ratio check above.
+        let residual_bound = (2.0 / 96.0 + 2.0 / 480.0) * 1.5;
+        assert!(
+            click_with < residual_bound,
+            "the crossfaded seam still stepped by {click_with} against a correct-fade \
+             residual bound of {residual_bound}; the shadow read is not converging on \
+             loop_start"
+        );
     }
 
     /// F14 — `PedalDeferredRelease::release_pedal` computes staggered timing
