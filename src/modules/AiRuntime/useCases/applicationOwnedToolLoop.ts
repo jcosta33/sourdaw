@@ -1,3 +1,4 @@
+import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
@@ -455,7 +456,9 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
         }
         types.push(type);
     }
-    const manifest = getAgentDeviceFactoryManifest(types);
+    const external = getAgentDeviceFactoryManifest(types);
+    const builtins = getAgentBuiltinDeviceFactoryManifest().filter((device) => types.includes(device.type));
+    const manifest = { ...external, devices: [...builtins, ...external.devices] };
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,

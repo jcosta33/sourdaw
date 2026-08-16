@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
+
 import { defaultPluginScanState, pluginScanStore } from '../../stores/pluginScanStore';
 import { getAgentDeviceFactoryManifest } from '../getAgentDeviceFactoryManifest';
 
@@ -9,7 +11,11 @@ describe('agent device factory manifest', () => {
     });
 
     it('marks owner-undeclared topology and latency unavailable while retaining bounded inferred guidance', () => {
-        const manifest = getAgentDeviceFactoryManifest();
+        const manifest = {
+            schema: 'sourdaw.agent-device-factory-manifest',
+            schemaVersion: 1,
+            devices: getAgentBuiltinDeviceFactoryManifest(),
+        };
 
         expect(manifest).toMatchObject({
             schema: 'sourdaw.agent-device-factory-manifest',
@@ -100,7 +106,7 @@ describe('agent device factory manifest', () => {
             expect.objectContaining({
                 configuration: expect.objectContaining({
                     availability: 'unavailable',
-                            reason: expect.stringContaining('Conflicting'),
+                    reason: expect.stringContaining('Conflicting'),
                 }),
             }),
         ]);

@@ -1,5 +1,3 @@
-import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
-
 import { defaultPluginScanState, pluginScanStore } from '../stores/pluginScanStore';
 
 function factoryType(plugin: { format: string; clap_id: string; id: string }): string {
@@ -43,7 +41,6 @@ function sameAdvertisedFactory(
 export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
     const scannedPlugins = (pluginScanStore.value ?? defaultPluginScanState).scannedPlugins;
     const devices = [
-        ...getAgentBuiltinDeviceFactoryManifest(),
         ...[
             ...scannedPlugins.reduce((groups, plugin) => {
                 const type = factoryType(plugin);
@@ -81,16 +78,14 @@ export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
                     opaqueState: true,
                     ...(conflict
                         ? {
-                              candidates: candidates
-                                  .slice(0, 8)
-                                  .map((candidate) => ({
-                                      path: candidate.path,
-                                      version: candidate.version,
-                                      vendor: candidate.vendor,
-                                      name: candidate.name,
-                                      category: candidate.category,
-                                      parameterCount: candidate.num_parameters,
-                                  })),
+                              candidates: candidates.slice(0, 8).map((candidate) => ({
+                                  path: candidate.path,
+                                  version: candidate.version,
+                                  vendor: candidate.vendor,
+                                  name: candidate.name,
+                                  category: candidate.category,
+                                  parameterCount: candidate.num_parameters,
+                              })),
                           }
                         : {}),
                 };
