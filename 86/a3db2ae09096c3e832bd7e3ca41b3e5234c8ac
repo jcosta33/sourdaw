@@ -1,0 +1,25 @@
+tests/e2e/mixerStripDeviceChain.spec.ts
+  h_1228e573df1f42 1-21,24-76
+  s_6292a2d72fba4e::t_336c5da7d08309 22-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "86a3db2ae09096c3e832bd7e3ca41b3e5234c8ac",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_6292a2d72fba4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00afe-c531-7781-aa0c-6bbb48d3dc19",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
