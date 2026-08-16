@@ -45,8 +45,11 @@ function getCacheRouteView(usage: AgentRun['providerUsage'][number] | undefined)
     if (usage === undefined) {
         return { status: 'unavailable' as const, provenance: 'unavailable' as const };
     }
+    if (usage.cachedInputTokens === null || usage.cachedInputTokens === undefined) {
+        return { status: 'unavailable' as const, provenance: usage.provenance };
+    }
     return {
-        status: (usage.cachedInputTokens ?? 0) > 0 ? ('used' as const) : ('not-used' as const),
+        status: usage.cachedInputTokens > 0 ? ('used' as const) : ('not-used' as const),
         provenance: usage.provenance,
     };
 }

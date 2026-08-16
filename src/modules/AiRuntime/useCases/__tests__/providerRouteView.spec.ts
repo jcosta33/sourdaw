@@ -94,6 +94,44 @@ describe('provider route view', () => {
         });
     });
 
+    it('distinguishes unavailable, unused, and used cache evidence from durable provider usage', () => {
+        const cases = [
+            { runId: 'cache-null', cachedInputTokens: null, expected: 'unavailable' },
+            { runId: 'cache-omitted', cachedInputTokens: undefined, expected: 'unavailable' },
+            { runId: 'cache-zero', cachedInputTokens: 0, expected: 'not-used' },
+            { runId: 'cache-used', cachedInputTokens: 3, expected: 'used' },
+        ] as const;
+
+        for (const testCase of cases) {
+            agentRunLifecycle.clear();
+            agentRunLifecycle.create({
+                runId: testCase.runId,
+                request: 'Plan',
+                mode: 'macro',
+                createdRevision: 'revision-a',
+            });
+            agentRunLifecycle.recordProviderUsage({
+                runId: testCase.runId,
+                usage: {
+                    provider: 'openai',
+                    model: 'tool-model',
+                    inputTokens: 1,
+                    outputTokens: 2,
+                    ...(testCase.cachedInputTokens === undefined
+                        ? {}
+                        : { cachedInputTokens: testCase.cachedInputTokens }),
+                    provenance: 'provider-reported',
+                    status: 'complete',
+                    executor: 'cloud',
+                },
+            });
+
+            expect(getProviderRouteView(agentRunLifecycle.get(testCase.runId)!)).toMatchObject({
+                cache: { status: testCase.expected, provenance: 'provider-reported' },
+            });
+        }
+    });
+
     it('retains ordered fallback attempts and marks a terminal failure unavailable', () => {
         agentRunLifecycle.clear();
         agentRunLifecycle.create({
