@@ -1,0 +1,66 @@
+src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_281aa1f46766ee 1
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_a40848e8f8cca9::t_7f83c78ad358e3 2,465-467
+  s_a40848e8f8cca9::t_8b9a28d9768578 1,468
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_a40848e8f8cca9::t_acedeea2926d0a 272-278,330-331
+  s_a40848e8f8cca9::t_14cb82e08e0d7d 151,172-185,279-329
+  s_a40848e8f8cca9::t_4e7e1fd267cb8e 7
+src/modules/AudioEngine/useCases/getRuntimeGraphRevision.ts
+  s_a40848e8f8cca9::t_76e92a45ac6827 1-5
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_a40848e8f8cca9::t_804e8e797cd4d2 1426-1429,1431,1733
+  s_a40848e8f8cca9::t_394983b0951f69 16-20,783,813-816,819-822,828-831
+  s_a40848e8f8cca9::t_2725515d847b6a 424,774-782,784-812,817-818,823-827,832-854
+  s_a40848e8f8cca9::t_da5f58926e4c2c 22,299,394-423
+  s_ab5443e65c7fba::t_ff1e540989ceb9 425
+src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_da920f55c6c84d 1-4,14,26-29,50,75,101-104,125,128,131
+  s_a40848e8f8cca9::t_f33a8f6c2eb7e9 113-114,117,119-121,175-176
+  s_a40848e8f8cca9::t_8b9a28d9768578 5
+  s_a40848e8f8cca9::t_943846ddb05f2d 167-170,179-180
+  s_a40848e8f8cca9::t_f629b3db4455c8 6-13,15-25,30-49,51-74,76-100,105-112,115-116,118,122-124,126-127,129-130,132-166,171-174,177-178,181-183
+src/modules/AudioEngine/useCases/applyRuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_76e92a45ac6827 2-3,5-6
+  s_a40848e8f8cca9::t_8b9a28d9768578 1,4
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_76e92a45ac6827 148-150
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_a40848e8f8cca9::t_0aaaf0cbaa4899 2-8,29-33,35-38,40-47,49-73,77-79,132,145
+  s_a40848e8f8cca9::t_a3f39cc67b1ce5 28,39,48,74-76
+  s_a40848e8f8cca9::t_61cca9fdf4834c 34
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_a40848e8f8cca9::t_552775dbbc74ca 1-4,15-48,60-86
+  s_a40848e8f8cca9::t_31d5a628d54771 5-14,49-58
+  s_a40848e8f8cca9::t_7347de2a042810 59
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_a40848e8f8cca9::t_f4346a97e61abf 207-215,222-224
+  s_a40848e8f8cca9::t_5d099e9babe022 10-12,28-34,47,49,62-72,79,81,93,95,97-99,116,118,125
+src/modules/AudioEngine/models/RuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_43c4892c3d4c87 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "83a8dd9954878f768619d7cd8065d1bfd3162af1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
