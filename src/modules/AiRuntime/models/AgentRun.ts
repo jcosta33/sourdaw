@@ -44,6 +44,15 @@ export type AgentRunBudgets = {
     consumed: Record<string, number>;
 };
 
+export type AgentRunBudgetAttempt = {
+    attemptId: string;
+    category: string;
+    reserved: number;
+    actual: number;
+    provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
+    final: boolean;
+};
+
 export type AgentRunPlan = {
     summary: string;
     commandIds: string[];
@@ -188,6 +197,7 @@ export type AgentRun = {
     scope: AgentRunScope;
     grants: AgentRunGrants;
     budgets: AgentRunBudgets;
+    budgetAttempts: AgentRunBudgetAttempt[];
     plan: AgentRunPlan | null;
     batches: AgentRunBatch[];
     receipts: AgentRunReceipt[];

@@ -532,6 +532,35 @@ function readAgentRun(value: unknown): AgentRun | null {
     const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
     const limits = readNumberRecord(value.budgets.limits);
     const consumed = readNumberRecord(value.budgets.consumed);
+    const budgetAttempts = (() => {
+        if (value.budgetAttempts === undefined) {
+            return [];
+        }
+        return readCollection(value.budgetAttempts, (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const attemptId = readString(candidate.attemptId);
+            const category = readString(candidate.category);
+            const reserved =
+                typeof candidate.reserved === 'number' && Number.isFinite(candidate.reserved)
+                    ? candidate.reserved
+                    : null;
+            const actual =
+                typeof candidate.actual === 'number' && Number.isFinite(candidate.actual) ? candidate.actual : null;
+            const provenance = (['provider-reported', 'versioned-estimate', 'unavailable'] as const).find(
+                (value) => value === candidate.provenance
+            );
+            return attemptId === null ||
+                category === null ||
+                reserved === null ||
+                actual === null ||
+                provenance === undefined ||
+                typeof candidate.final !== 'boolean'
+                ? null
+                : { attemptId, category, reserved, actual, provenance, final: candidate.final };
+        });
+    })();
     const plan = (() => {
         if (value.plan === null) {
             return null;
@@ -608,6 +637,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         allowedOperationPrefixes === null ||
         limits === null ||
         consumed === null ||
+        budgetAttempts === null ||
         plan === undefined ||
         batches === null ||
         receipts === null ||
@@ -668,6 +698,7 @@ function readAgentRun(value: unknown): AgentRun | null {
             autoCommit: autoCommitGrant,
         },
         budgets: { limits, consumed },
+        budgetAttempts,
         plan,
         batches,
         receipts,

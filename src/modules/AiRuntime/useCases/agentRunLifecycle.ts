@@ -4,6 +4,7 @@ import {
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
+    type AgentRunBudgetAttempt,
     type AgentRunBudgets,
     type AgentRunError,
     type AgentRunGrants,
@@ -117,6 +118,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         scope: structuredClone(input.scope ?? DEFAULT_SCOPE),
         grants: structuredClone(input.grants ?? DEFAULT_GRANTS),
         budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
+        budgetAttempts: [],
         plan: null,
         batches: [],
         receipts: [],
@@ -299,6 +301,96 @@ function recordAgentRunProviderUsage(input: {
             modelRoute:
                 usage.routeId !== undefined ? { ...run.modelRoute, selectedRouteId: usage.routeId } : run.modelRoute,
             providerUsage: [...run.providerUsage, usage],
+        };
+    });
+}
+
+function reserveAgentRunBudget(input: {
+    runId: string;
+    attemptId: string;
+    category: string;
+    estimate: number;
+    provenance: AgentRunBudgetAttempt['provenance'];
+    reservedAt?: number;
+}): { status: 'reserved' | 'hard-limit-reached'; reason?: string } {
+    if (!Number.isFinite(input.estimate) || input.estimate < 0) {
+        throw new Error('Budget estimate must be a non-negative finite number');
+    }
+    const run = getAgentRun(input.runId);
+    if (run === null) {
+        throw new Error(`Unknown agent run: ${input.runId}`);
+    }
+    const existing = run.budgetAttempts.find((attempt) => attempt.attemptId === input.attemptId);
+    if (existing !== undefined) {
+        return { status: 'reserved' };
+    }
+    const limit = run.budgets.limits[input.category];
+    const consumed = run.budgets.consumed[input.category] ?? 0;
+    if (limit !== undefined && consumed + input.estimate > limit) {
+        return { status: 'hard-limit-reached', reason: input.category };
+    }
+    updateAgentRun(input.runId, input.reservedAt ?? Date.now(), (current) => ({
+        ...current,
+        budgets: {
+            ...current.budgets,
+            consumed: { ...current.budgets.consumed, [input.category]: consumed + input.estimate },
+        },
+        budgetAttempts: [
+            ...current.budgetAttempts,
+            {
+                attemptId: input.attemptId,
+                category: input.category,
+                reserved: input.estimate,
+                actual: 0,
+                provenance: input.provenance,
+                final: false,
+            },
+        ],
+    }));
+    return { status: 'reserved' };
+}
+
+function reconcileAgentRunBudgetAttempt(input: {
+    runId: string;
+    attemptId: string;
+    consumed: number;
+    mode: 'delta' | 'cumulative' | 'final';
+    provenance: AgentRunBudgetAttempt['provenance'];
+    reconciledAt?: number;
+}): AgentRun {
+    if (!Number.isFinite(input.consumed) || input.consumed < 0) {
+        throw new Error('Budget usage must be a non-negative finite number');
+    }
+    return updateAgentRun(input.runId, input.reconciledAt ?? Date.now(), (run) => {
+        const index = run.budgetAttempts.findIndex((attempt) => attempt.attemptId === input.attemptId);
+        if (index < 0) {
+            throw new Error(`Unknown budget attempt: ${input.attemptId}`);
+        }
+        const previous = run.budgetAttempts[index]!;
+        const actual =
+            input.mode === 'delta' ? previous.actual + input.consumed : Math.max(previous.actual, input.consumed);
+        const additionalCeiling = Math.max(0, actual - previous.reserved);
+        const attempts = [...run.budgetAttempts];
+        attempts[index] = {
+            ...previous,
+            reserved: Math.max(previous.reserved, actual),
+            actual,
+            provenance: input.provenance,
+            final: previous.final || input.mode === 'final',
+        };
+        return {
+            ...run,
+            budgetAttempts: attempts,
+            budgets:
+                additionalCeiling === 0
+                    ? run.budgets
+                    : {
+                          ...run.budgets,
+                          consumed: {
+                              ...run.budgets.consumed,
+                              [previous.category]: (run.budgets.consumed[previous.category] ?? 0) + additionalCeiling,
+                          },
+                      },
         };
     });
 }
@@ -594,6 +686,8 @@ export const agentRunLifecycle = {
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
     recordProviderUsage: recordAgentRunProviderUsage,
+    reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
+    reserveBudget: reserveAgentRunBudget,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
     prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
