@@ -1,0 +1,19 @@
+.agents/decisions/0027-windows-device-layer-iaudioclient3.md
+  s_20c0daad3c84eb::t_a751ed04f497db 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e578444b2dbc48d0c4f301fc67dde19d7cf15f04",
+  "prompts": {},
+  "sessions": {
+    "s_20c0daad3c84eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aad59dca23051b28f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
