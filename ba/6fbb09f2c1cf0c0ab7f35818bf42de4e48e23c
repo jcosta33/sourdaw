@@ -1,0 +1,38 @@
+crates/daw-wasm-decoder/src/lib.rs
+  s_ab5443e65c7fba::t_c787d331868c65 95-98,104-105,110-115,119-124,131,134
+  s_ab5443e65c7fba::t_5372dcc5062f48 140-152
+  s_ab5443e65c7fba::t_9b3aa71bd97ee4 3-6
+  s_ab5443e65c7fba::t_6d31af2f3ac177 187,190,205-228
+  s_ab5443e65c7fba::t_a974333c8a4e9c 116-118
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_40c225d396ceda 54,57-58
+crates/daw-io/src/lib.rs
+  s_ab5443e65c7fba::t_c63f78f0f3f2e6 3-6
+crates/daw-io/src/audio_decode.rs
+  s_ab5443e65c7fba::t_828af299cd47bc 301-302
+  s_ab5443e65c7fba::t_272b52c474706e 161,364,366-368,371,374,380,384,388-392,394,397,402,408,418-489
+  s_ab5443e65c7fba::t_0044704b707151 14-18,34-62
+  s_ab5443e65c7fba::t_0b5e16eec8bd88 63,136,162-166,173,188,191-194,196,199,202-203,205-239,243-248,251-259,298,315
+  s_ab5443e65c7fba::t_205ccd4a86de8c 240-242
+  s_ab5443e65c7fba::t_d100ce9d78f672 523
+  s_ab5443e65c7fba::t_7bd3a8dda3e9d4 86,92-103,110-135
+  s_ab5443e65c7fba::t_bd33452f1c300d 64,160,268,270,273,297,362-363,365,492,498,506,519,521-522,524,540,545
+public/wasm/daw-wasm-decoder/daw_wasm_decoder.js
+  s_ab5443e65c7fba::t_9ac63b7ef70670 78-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ba6fbb09f2c1cf0c0ab7f35818bf42de4e48e23c",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
