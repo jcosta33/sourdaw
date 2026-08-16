@@ -303,27 +303,14 @@ impl NeuralCapture {
         let shaped_input = input * self.input_drive + input.abs() * input * self.asymmetry;
 
         let processed = match self.tier {
-            ModelTier::Standard => {
-                // Full WaveNet: all layers
+            // Every convolutional tier takes its depth from
+            // `active_layer_count`, which folds the tier and the CPU budget
+            // together. Hardcoding the Lite and Nano depths here left
+            // `neuralCpuBudget` with no effect outside the Standard tier.
+            ModelTier::Standard | ModelTier::Lite | ModelTier::Nano => {
                 let mut signal = shaped_input;
                 let active_layers = self.active_layer_count();
                 for layer in self.conv_layers.iter_mut().take(active_layers) {
-                    signal = layer.process(signal);
-                }
-                signal
-            }
-            ModelTier::Lite => {
-                // Reduced: 6 layers
-                let mut signal = shaped_input;
-                for layer in self.conv_layers.iter_mut().take(6) {
-                    signal = layer.process(signal);
-                }
-                signal
-            }
-            ModelTier::Nano => {
-                // Minimal: 3 layers
-                let mut signal = shaped_input;
-                for layer in self.conv_layers.iter_mut().take(3) {
                     signal = layer.process(signal);
                 }
                 signal
@@ -371,6 +358,10 @@ impl NeuralCapture {
         self.mix
     }
 
+    /// Static per-tier CPU *estimate*, not a measurement. It is a lookup on
+    /// the selected tier and CPU budget, so it answers "what does this
+    /// configuration nominally cost" and never observes the host's actual
+    /// load. Nothing here samples a clock.
     pub fn cpu_percent(&self) -> f32 {
         let base: f32 = match self.tier {
             ModelTier::Standard => 48.0,
@@ -497,7 +488,7 @@ impl NeuralCapture {
 
 #[cfg(test)]
 mod tests {
-    use super::NeuralCapture;
+    use super::{ModelTier, NeuralCapture};
 
     fn average_abs_output_for_model(slot: usize) -> f32 {
         let mut neural = NeuralCapture::new(48_000.0);
@@ -519,6 +510,48 @@ mod tests {
         }
 
         sum / (total - settle_start) as f32
+    }
+
+    /// F13-5: `process_capture` hardcoded `take(6)` / `take(3)` for the Lite
+    /// and Nano tiers, so `neuralCpuBudget` did nothing outside Standard.
+    ///
+    /// A convolution layer that ran has advanced its ring-buffer write
+    /// position; one that was skipped has not. Counting them after a single
+    /// sample reads the depth the render path actually used.
+    #[test]
+    fn every_tier_and_budget_renders_the_layer_count_it_advertises() {
+        fn layers_that_ran(tier: f32, budget: f32) -> usize {
+            let mut neural = NeuralCapture::new(48_000.0);
+            neural.set_param("engineMode", 1.0);
+            neural.set_param("neuralModelSlot", 0.0);
+            neural.set_param("neuralTier", tier);
+            neural.set_param("neuralCpuBudget", budget);
+            neural.process_capture(0.2);
+            neural
+                .conv_layers
+                .iter()
+                .filter(|layer| layer.write_pos != 0)
+                .count()
+        }
+
+        for (tier_index, tier) in [
+            (0.0_f32, ModelTier::Standard),
+            (1.0, ModelTier::Lite),
+            (2.0, ModelTier::Nano),
+        ] {
+            for budget in [0.0_f32, 1.0, 2.0] {
+                let mut expected_source = NeuralCapture::new(48_000.0);
+                expected_source.tier = tier;
+                expected_source.cpu_budget = budget as u32;
+                let expected = expected_source.active_layer_count();
+
+                assert_eq!(
+                    layers_that_ran(tier_index, budget),
+                    expected,
+                    "tier {tier_index} at budget {budget} must render active_layer_count layers"
+                );
+            }
+        }
     }
 
     #[test]

@@ -35,10 +35,11 @@ struct Burst {
     amplitude: f32,
     /// Per-sample multiplier.
     decay: f32,
-    /// Bandpass centre frequency.
-    centre_hz: f32,
-    /// Bandpass bandwidth.
-    bandwidth_hz: f32,
+    /// Bandpass coefficients. Centre frequency and bandwidth are fixed at
+    /// `trigger` time, so the coefficients derived from them are too.
+    c0: f32,
+    c1: f32,
+    c2: f32,
     /// Biquad state.
     b1_x1: f32,
     b1_x2: f32,
@@ -55,8 +56,9 @@ impl Burst {
         Self {
             amplitude: 0.0,
             decay: 0.0,
-            centre_hz: 0.0,
-            bandwidth_hz: 0.0,
+            c0: 0.0,
+            c1: 0.0,
+            c2: 0.0,
             b1_x1: 0.0,
             b1_x2: 0.0,
             b1_y1: 0.0,
@@ -93,8 +95,15 @@ impl MechanicalNoise {
         self.next_slot = 0;
     }
 
+    /// Number of bursts still sounding. Lets callers assert that an event
+    /// fired without reaching into the pool.
+    pub fn active_burst_count(&self) -> usize {
+        self.bursts.iter().filter(|burst| !burst.finished).count()
+    }
+
     /// Trigger a noise event at the given velocity (0..1).
     pub fn trigger(&mut self, event: NoiseEvent, velocity: f32) {
+        use core::f32::consts::{PI, TAU};
         let v = velocity.clamp(0.0, 1.0);
         let (duration_s, centre, bandwidth, level_db) = match event {
             NoiseEvent::KeyDown => (0.010, 180.0, 400.0, -35.0),
@@ -112,11 +121,20 @@ impl MechanicalNoise {
         self.next_slot = (self.next_slot + 1) % MAX_BURSTS;
 
         let decay = (-1.0 / (duration_s * self.sample_rate)).exp();
+        // Resonator coefficients depend only on the centre frequency and
+        // bandwidth chosen above, both fixed for the life of the burst. They
+        // are computed here, once, instead of per sample.
+        let theta = TAU * centre / self.sample_rate;
+        let r = (-PI * bandwidth / self.sample_rate).exp();
+        let c0 = (1.0 - r * r) * theta.sin() * 0.5;
+        let c1 = 2.0 * r * theta.cos();
+        let c2 = -(r * r);
         self.bursts[slot] = Burst {
             amplitude: 1.0,
             decay,
-            centre_hz: centre,
-            bandwidth_hz: bandwidth,
+            c0,
+            c1,
+            c2,
             b1_x1: 0.0,
             b1_x2: 0.0,
             b1_y1: 0.0,
@@ -129,20 +147,16 @@ impl MechanicalNoise {
     /// Process one sample and return the summed mono noise burst output.
     #[inline]
     pub fn tick(&mut self) -> f32 {
-        use core::f32::consts::{PI, TAU};
         let mut output = 0.0_f32;
         for burst in self.bursts.iter_mut() {
             if burst.finished {
                 continue;
             }
-            // Recompute biquad coefficients once the burst is live. This is
-            // only 4 trig ops/sample/burst and simplifies state; for 32
-            // bursts that peaks at ~128 trig ops/sample which is fine.
-            let theta = TAU * burst.centre_hz / self.sample_rate;
-            let r = (-PI * burst.bandwidth_hz / self.sample_rate).exp();
-            let c0 = (1.0 - r * r) * theta.sin() * 0.5;
-            let c1 = 2.0 * r * theta.cos();
-            let c2 = -(r * r);
+            // Coefficients were computed once in `trigger`. They used to be
+            // rebuilt here every sample — 4 transcendentals per burst, up to
+            // 128 per sample across a full pool, for values that never change
+            // while the burst lives.
+            let (c0, c1, c2) = (burst.c0, burst.c1, burst.c2);
 
             self.rng_state = self
                 .rng_state

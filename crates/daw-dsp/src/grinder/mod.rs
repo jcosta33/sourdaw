@@ -74,6 +74,14 @@ impl GrinderInstance {
         self.engine.set_param(name, value);
     }
 
+    /// Clear every amp stage's runtime state without disturbing parameters.
+    /// The host calls this on transport stop or seek so filter memories,
+    /// envelopes, cabinet ring buffers and meters do not carry the previous
+    /// playhead position into the new one.
+    pub fn reset(&mut self) {
+        self.engine.reset();
+    }
+
     pub fn process(&mut self, block_size: u32) -> *const f32 {
         let size = block_size as usize;
         if size > MAX_GRINDER_BLOCK_SIZE {
@@ -151,6 +159,9 @@ impl GrinderInstance {
     pub fn get_latency_samples(&self) -> u32 {
         self.engine.latency_samples()
     }
+    /// Static per-tier CPU estimate for the selected neural tier and budget —
+    /// not a measurement of the running host. Present it as an expected cost,
+    /// never as observed load.
     pub fn get_neural_cpu_percent(&self) -> f32 {
         self.engine.neural_cpu_percent()
     }

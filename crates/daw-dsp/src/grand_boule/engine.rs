@@ -9,11 +9,11 @@ use super::mechanical_noise::{MechanicalNoise, NoiseEvent};
 use super::parameters::{
     key_fundamental_hz, midi_to_key, railsback_smooth_cents, temperament_offset_cents, Temperament,
 };
-use super::pedals::PedalState;
+use super::pedals::{PedalState, UNA_CORDA_SYMPATHETIC_COUPLING};
 use super::radiation::RadiationModel;
 use super::soundboard::Soundboard;
 use super::sympathetic::Sympathetic;
-use super::voice::{PianoVoice, PianoVoiceStart};
+use super::voice::{PianoVoice, PianoVoiceStart, VoiceQuality};
 use crate::primitives::ProcessLifecycle;
 
 /// Default voice-pool size for this scaffolding slice.
@@ -111,6 +111,9 @@ pub struct GrandBouleEngine {
     /// 0.0 disables the burst entirely, 1.0 = neutral (matches the
     /// hammer's actual MIDI velocity), > 1.0 over-emphasises the chirp.
     attack_bite: f32,
+    /// Rendering tier every voice is configured with. Held on the engine so a
+    /// voice taken from the pool later inherits the current setting.
+    voice_quality: VoiceQuality,
     /// Consecutive complete output blocks below -150 dBFS.
     quiet_block_count: u8,
 }
@@ -152,7 +155,28 @@ impl GrandBouleEngine {
             tone_color: 0.0,
             stretch_amount: 1.0,
             attack_bite: 1.0,
+            voice_quality: VoiceQuality::Standard,
             quiet_block_count: QUIET_BLOCKS_BEFORE_SLEEP,
+        }
+    }
+
+    /// Rendering tier currently configured for the voice pool.
+    pub fn voice_quality(&self) -> VoiceQuality {
+        self.voice_quality
+    }
+
+    /// Select the hammer/string rendering tier for every voice.
+    ///
+    /// Applied to the steal-tail slots as well as the playable pool: a steal
+    /// swaps a tail slot into the pool, so a slot left on the old tier would
+    /// hand the wrong quality to the next note struck through it.
+    pub fn set_voice_quality(&mut self, quality: VoiceQuality) {
+        self.voice_quality = quality;
+        for voice in self.voices.iter_mut() {
+            voice.set_quality(quality);
+        }
+        for tail in self.steal_tails.iter_mut() {
+            tail.set_quality(quality);
         }
     }
 
@@ -346,13 +370,21 @@ impl GrandBouleEngine {
 
     pub fn note_off(&mut self, midi_note: u8) {
         self.quiet_block_count = 0;
-        self.noise.trigger(NoiseEvent::DamperLift, 0.5);
         if let Some(key) = midi_to_key(midi_note) {
             self.pedals.release_key(key);
             // Apply damping immediately — `apply_damper_state` will pick up
             // the pedal state on the next process iteration.
         }
         let sustain_engaged = self.pedals.sustain_position() > 0.5;
+        // The damper-lift thud is the sound of felt landing back on the
+        // string. A pedal-held or sostenuto-captured note keeps its damper
+        // raised, so no felt lands and no thud belongs in the output.
+        let sostenuto_captured = self.voices.iter().any(|voice| {
+            !voice.is_idle() && voice.midi_note() == midi_note && voice.is_sostenuto_captured()
+        });
+        if !sustain_engaged && !sostenuto_captured {
+            self.noise.trigger(NoiseEvent::DamperLift, 0.5);
+        }
         for voice in self.voices.iter_mut() {
             if voice.is_idle() || voice.midi_note() != midi_note {
                 continue;
@@ -391,7 +423,14 @@ impl GrandBouleEngine {
         // crossing it downwards releases the voices the pedal was sustaining.
         let was_engaged = self.pedals.sustain_position() > 0.5;
         self.pedals.set_sustain(position);
-        if was_engaged && self.pedals.sustain_position() <= 0.5 {
+        let is_engaged = self.pedals.sustain_position() > 0.5;
+        if !was_engaged && is_engaged {
+            // Pedal-down thump: the whole damper rail lifting off the strings.
+            // Fires on the crossing only, not for every CC frame of a held
+            // pedal, and never on the way back up.
+            self.noise.trigger(NoiseEvent::PedalDown, 0.5);
+        }
+        if was_engaged && !is_engaged {
             self.release_pedal_sustained_voices();
         }
     }
@@ -453,6 +492,16 @@ impl GrandBouleEngine {
         }
     }
 
+    /// Sympathetic send after the una-corda coupling ratio. The stored send
+    /// is never mutated, so disengaging the pedal restores it exactly.
+    fn effective_sympathetic_send(&self) -> f32 {
+        if self.pedals.una_corda() {
+            self.sympathetic_send * UNA_CORDA_SYMPATHETIC_COUPLING
+        } else {
+            self.sympathetic_send
+        }
+    }
+
     pub fn set_temperament(&mut self, temperament: Temperament) {
         self.temperament = temperament;
     }
@@ -488,6 +537,17 @@ impl GrandBouleEngine {
             "tone_color" => self.tone_color = value.clamp(-1.0, 1.0),
             "stretch_amount" => self.stretch_amount = value.clamp(0.0, 2.0),
             "attack_bite" => self.attack_bite = value.clamp(0.0, 2.0),
+            // Voice rendering tier: 0 = Standard (power-law hammer),
+            // 1 = High (Stulov hysteresis hammer, §A2). Without this the
+            // Stulov path was unreachable in the shipped instrument.
+            "quality" => {
+                let quality = if value >= 0.5 {
+                    VoiceQuality::High
+                } else {
+                    VoiceQuality::Standard
+                };
+                self.set_voice_quality(quality);
+            }
             // Half-pedal damper-lift point (research §7.3 `threshold_low`),
             // calibrated per controller from the MIDI calibration panel.
             "sustain_threshold" => self.pedals.set_half_pedal_low(value),
@@ -622,8 +682,14 @@ impl GrandBouleEngine {
                 }
             }
 
-            // 2. Sympathetic bank: combine preset send with model level.
-            let sym_amount = self.sympathetic_send * self.sympathetic_level * 2.0;
+            // 2. Sympathetic bank: combine preset send with model level, then
+            //    apply the una-corda coupling ratio. The shifted action strikes
+            //    two strings of each unison instead of three, so the coupling
+            //    into the un-excited strings changes while the pedal is held.
+            //    Applied here, where the send is consumed, rather than by
+            //    rewriting the stored send — releasing the pedal restores the
+            //    user's value exactly.
+            let sym_amount = self.effective_sympathetic_send() * self.sympathetic_level * 2.0;
             let sympathetic = self.sympathetic.tick(bridge) * sym_amount;
 
             // 3. Soundboard receives bridge + sympathetic. Model body_resonance
@@ -716,6 +782,161 @@ impl GrandBouleEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Render long enough for every strike burst to finish, so a later burst
+    /// count reads only what the event under test triggered.
+    fn settle_noise(engine: &mut GrandBouleEngine) {
+        let mut left = vec![0.0_f32; 512];
+        let mut right = vec![0.0_f32; 512];
+        for _ in 0..20 {
+            left.fill(0.0);
+            right.fill(0.0);
+            engine.process_block(&mut left, &mut right);
+        }
+        assert_eq!(
+            engine.noise.active_burst_count(),
+            0,
+            "the strike bursts should have decayed before the event under test"
+        );
+    }
+
+    /// F7: the Stulov hammer tier had no control reaching it. The param must
+    /// configure the whole pool, including the slots a steal rotates in.
+    #[test]
+    fn quality_param_reaches_every_voice_and_the_ones_struck_later() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        assert_eq!(engine.voice_quality(), VoiceQuality::Standard);
+
+        engine.set_param("quality", 1.0);
+
+        assert_eq!(engine.voice_quality(), VoiceQuality::High);
+        assert!(
+            engine
+                .voices
+                .iter()
+                .all(|voice| voice.quality() == VoiceQuality::High),
+            "every playable voice must take the configured tier"
+        );
+        assert!(
+            engine
+                .steal_tails
+                .iter()
+                .all(|tail| tail.quality() == VoiceQuality::High),
+            "a steal rotates a tail slot into the pool; it must carry the tier too"
+        );
+
+        engine.note_on(60, 0.8);
+        let struck = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .expect("note_on must allocate a voice");
+        assert_eq!(
+            struck.quality(),
+            VoiceQuality::High,
+            "a newly struck voice must inherit the engine-level tier"
+        );
+
+        engine.set_param("quality", 0.0);
+        assert!(engine
+            .voices
+            .iter()
+            .all(|voice| voice.quality() == VoiceQuality::Standard));
+    }
+
+    /// F13-1: the pedal-down thump was defined and never triggered.
+    #[test]
+    fn the_sustain_rising_edge_fires_exactly_one_pedal_down_noise() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        assert_eq!(engine.noise.active_burst_count(), 0);
+
+        engine.set_sustain(1.0);
+        assert_eq!(
+            engine.noise.active_burst_count(),
+            1,
+            "crossing into engagement must thump once"
+        );
+
+        engine.set_sustain(0.9);
+        engine.set_sustain(1.0);
+        assert_eq!(
+            engine.noise.active_burst_count(),
+            1,
+            "holding the pedal down must not re-trigger the thump"
+        );
+
+        engine.set_sustain(0.0);
+        assert_eq!(
+            engine.noise.active_burst_count(),
+            1,
+            "lifting the pedal is not a pedal-down event"
+        );
+    }
+
+    /// F13-2: `UNA_CORDA_SYMPATHETIC_COUPLING` had no use anywhere. It scales
+    /// the send at the point of consumption, so the stored value survives.
+    #[test]
+    fn una_corda_scales_the_sympathetic_send_by_the_coupling_ratio() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.set_param("sympathetic_send", 0.8);
+        let open = engine.effective_sympathetic_send();
+        assert_eq!(open, 0.8);
+
+        engine.set_una_corda(true);
+        assert_eq!(
+            engine.effective_sympathetic_send(),
+            0.8 * UNA_CORDA_SYMPATHETIC_COUPLING
+        );
+
+        engine.set_una_corda(false);
+        assert_eq!(
+            engine.effective_sympathetic_send(),
+            open,
+            "releasing the pedal must restore the user's send exactly"
+        );
+    }
+
+    /// F12: the damper-lift thud fired before the sustain/sostenuto decision,
+    /// so a pedal-held note-off got the sound of a damper that never moved.
+    #[test]
+    fn a_pedal_held_note_off_fires_no_damper_lift_thud() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.note_on(60, 0.8);
+        engine.set_sustain(1.0);
+        settle_noise(&mut engine);
+
+        engine.note_off(60);
+        assert_eq!(
+            engine.noise.active_burst_count(),
+            0,
+            "the damper never fell, so nothing should thump"
+        );
+    }
+
+    #[test]
+    fn a_sostenuto_captured_note_off_fires_no_damper_lift_thud() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.note_on(60, 0.8);
+        engine.set_sostenuto(true);
+        settle_noise(&mut engine);
+
+        engine.note_off(60);
+        assert_eq!(engine.noise.active_burst_count(), 0);
+    }
+
+    #[test]
+    fn a_note_off_with_the_pedal_up_fires_the_damper_lift_thud() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.note_on(60, 0.8);
+        settle_noise(&mut engine);
+
+        engine.note_off(60);
+        assert_eq!(
+            engine.noise.active_burst_count(),
+            1,
+            "the damper actually falls here, so it should be heard"
+        );
+    }
 
     #[test]
     fn note_on_allocates_voice() {

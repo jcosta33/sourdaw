@@ -41,6 +41,13 @@ const MAX_STRING_DISPLACEMENT: f32 = 0.003;
 const STEAL_FADE_SECONDS: f32 = 0.001;
 const STEAL_SILENCE_GAIN: f32 = 1.0e-5;
 
+/// Time constant of the rectified-output follower that drives progressive
+/// simplification. Long compared with the period of the lowest piano
+/// fundamental (A0 ≈ 27.5 Hz, 36 ms) so the follower reads the note's decay
+/// rather than its waveform, and short enough that a voice which has actually
+/// quietened is downgraded promptly. One multiply-add per sample.
+const DECAY_FOLLOWER_SECONDS: f32 = 0.050;
+
 /// Coarse voice lifecycle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceStage {
@@ -121,6 +128,18 @@ pub struct PianoVoice {
     amplitude: f32,
     /// Per-sample multiplier applied during the release phase.
     release_coefficient: f32,
+    /// Smoothed rectified output level. Unlike `amplitude`, which is pinned at
+    /// 1.0 for the whole `Active` stage, this follows the note's real acoustic
+    /// decay, so the progressive-simplification thresholds can see a held note
+    /// quieten.
+    decay_envelope: f32,
+    /// Largest value `decay_envelope` reached since the strike. The thresholds
+    /// are relative to it, which keeps them a fraction of the note's own
+    /// loudness exactly as they were a fraction of the initial `amplitude`.
+    decay_peak: f32,
+    /// One-pole coefficient for `decay_envelope`, derived once from the sample
+    /// rate.
+    decay_follower_coefficient: f32,
     sample_rate: f32,
     configured_quality: VoiceQuality,
     quality: VoiceQuality,
@@ -161,6 +180,10 @@ impl PianoVoice {
             attack_length: 0,
             amplitude: 1.0,
             release_coefficient: 1.0,
+            decay_envelope: 0.0,
+            decay_peak: 0.0,
+            decay_follower_coefficient: 1.0
+                - (-1.0 / (DECAY_FOLLOWER_SECONDS * sample_rate.max(1.0))).exp(),
             sample_rate,
             configured_quality: VoiceQuality::Standard,
             quality: VoiceQuality::Standard,
@@ -285,6 +308,8 @@ impl PianoVoice {
         self.age_samples = 0;
         self.amplitude = 1.0;
         self.release_coefficient = 1.0;
+        self.decay_envelope = 0.0;
+        self.decay_peak = 0.0;
         self.quality = self.configured_quality;
         self.last_string_displacement = 0.0;
         self.stage = VoiceStage::Active;
@@ -429,6 +454,8 @@ impl PianoVoice {
         self.expr_bend_ratio = 1.0;
         self.expr_bend_tuned = 1.0;
         self.amplitude = 0.0;
+        self.decay_envelope = 0.0;
+        self.decay_peak = 0.0;
         self.age_samples = 0;
         self.attack_position = 0;
         self.attack_length = 0;
@@ -575,6 +602,16 @@ impl PianoVoice {
         output += transverse + longitudinal + duplex;
         output *= self.amplitude;
 
+        // Follow the voice's own output. `amplitude` is pinned at 1.0 for the
+        // whole `Active` stage, so it says nothing about how loud a held note
+        // still is; this follower does, and it keeps tracking through the
+        // release ramp because `output` already carries `amplitude`.
+        self.decay_envelope +=
+            self.decay_follower_coefficient * (output.abs() - self.decay_envelope);
+        if self.decay_envelope > self.decay_peak {
+            self.decay_peak = self.decay_envelope;
+        }
+
         if self.stage == VoiceStage::Releasing || self.stage == VoiceStage::Stealing {
             self.amplitude *= self.release_coefficient;
             if self.amplitude < STEAL_SILENCE_GAIN {
@@ -584,9 +621,19 @@ impl PianoVoice {
         }
 
         // Progressive simplification (§4.1): as the voice ages and quiets
-        // down, downgrade it through the quality tiers. The thresholds are
-        // loose enough to be inaudible on a normal listening level.
-        if self.quality == VoiceQuality::High && self.amplitude < 0.3 {
+        // down, downgrade it through the quality tiers.
+        //
+        // The first step reads the follower, as a fraction of this note's own
+        // peak, so a long held note that has genuinely quietened gives up the
+        // Stulov hammer. That hammer only shapes the ~2 ms of felt contact at
+        // the strike, so swapping it out on a decayed note is inaudible.
+        //
+        // The second step stays on `amplitude`, the release ramp.
+        // `CoupledStringAssembly::tick_simplified` drops the aftersound
+        // polarization and every unison but the first — an ~80 dB step, not a
+        // transparent simplification. It is only safe once the voice is on its
+        // way out, which is exactly what `amplitude` below 0.05 means.
+        if self.quality == VoiceQuality::High && self.decay_envelope < 0.3 * self.decay_peak {
             self.quality = VoiceQuality::Standard;
         }
         if self.quality == VoiceQuality::Standard && self.amplitude < 0.05 {
@@ -620,5 +667,69 @@ mod tests {
         });
 
         assert_eq!(voice.quality(), VoiceQuality::High);
+    }
+
+    /// F8: the downgrade compared against `amplitude`, which is pinned at 1.0
+    /// for the whole `Active` stage, so a held note never gave up the
+    /// expensive hammer no matter how far it had decayed.
+    #[test]
+    fn a_held_voice_downgrades_from_high_as_it_decays() {
+        let mut voice = PianoVoice::new(48_000.0);
+        voice.set_quality(VoiceQuality::High);
+        voice.note_on(PianoVoiceStart {
+            midi_note: 60,
+            channel: 0,
+            velocity: 0.9,
+            key: 40,
+            pitch_ratio: 1.0,
+            stiffness_scale: 1.0,
+            mass_scale: 1.0,
+            attack_length: 0,
+        });
+        assert_eq!(voice.quality(), VoiceQuality::High);
+
+        // One second of a held note. The key is never released, so the voice
+        // stays `Active` and `amplitude` stays pinned at 1.0 throughout.
+        for _ in 0..48_000 {
+            let _ = voice.tick();
+        }
+
+        assert_eq!(
+            voice.stage(),
+            VoiceStage::Active,
+            "the note is still held: this is not a release-ramp downgrade"
+        );
+        assert_eq!(voice.amplitude(), 1.0, "amplitude is pinned during Active");
+        assert_eq!(
+            voice.quality(),
+            VoiceQuality::Standard,
+            "a decayed held voice must give up the Stulov hammer"
+        );
+    }
+
+    /// The same decay must not reach the Simplified tier while the note is
+    /// still sounding: `tick_simplified` drops the aftersound polarization and
+    /// every unison but the first, which is an audible cliff rather than a
+    /// transparent simplification.
+    #[test]
+    fn a_held_voice_never_reaches_the_simplified_tier() {
+        let mut voice = PianoVoice::new(48_000.0);
+        voice.note_on(PianoVoiceStart {
+            midi_note: 69,
+            channel: 0,
+            velocity: 0.8,
+            key: 49,
+            pitch_ratio: 1.0,
+            stiffness_scale: 1.0,
+            mass_scale: 1.0,
+            attack_length: 0,
+        });
+
+        for _ in 0..(48_000 * 5) {
+            let _ = voice.tick();
+        }
+
+        assert_eq!(voice.stage(), VoiceStage::Active);
+        assert_eq!(voice.quality(), VoiceQuality::Standard);
     }
 }
