@@ -1,0 +1,27 @@
+src/modules/AudioEngine/engine/NativePluginBridgeNode.ts
+  s_ab5443e65c7fba::t_fe6b5f5852f156 207-209
+  s_ab5443e65c7fba::t_d02627c27470f5 64-77,81-83,85-86,101-107,111-118
+  s_ab5443e65c7fba::t_157f9755ae0f55 88
+  s_ab5443e65c7fba::t_a2016c7f9001d4 122
+  s_ab5443e65c7fba::t_ff43186383f357 119-120
+src/modules/AudioEngine/engine/__tests__/nativePluginBridge.spec.ts
+  s_ab5443e65c7fba::t_7f98c38ce1a3d6 226
+  s_ab5443e65c7fba::t_d202371506f4c8 290-383
+  s_ab5443e65c7fba::t_b01aa15c1a2695 106-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "908493212383fd1de5996a39ea92d5954ec03fd0",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
