@@ -32,6 +32,7 @@ import {
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { reconcileAgentCommandWork, reserveAgentCommandWork, type AgentWorkBudgetEstimate } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -591,10 +592,25 @@ export async function confirmPendingChatActions(
         return failApprovalPreflight(confirmation, 'The confirmation has no approved command batch.');
     }
     let trackedWorkLease: AgentRunWorkLease | null = null;
+    let commandBudget: { attemptId: string; estimates: AgentWorkBudgetEstimate[] } | null = null;
     if (agentRunLifecycle.get(confirmation.runId)) {
         const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
         if (parsedCommandBatch.status === 'invalid') {
             return failApprovalPreflight(confirmation, parsedCommandBatch.reason);
+        }
+        const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
+        const budgetReservation = hasPriorVerifiedBatchReceipt
+            ? null
+            : reserveAgentCommandWork({
+                  runId: confirmation.runId,
+                  envelope: parsedCommandBatch.envelope,
+                  attemptId,
+              });
+        if (budgetReservation?.status === 'hard-limit-reached') {
+            return failApprovalPreflight(
+                confirmation,
+                `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`
+            );
         }
         const receiptIdentity = `command:${confirmation.runId}:${parsedCommandBatch.envelope.batchId}`;
         const leaseResult = agentRunWorkLease.claim({
@@ -614,6 +630,9 @@ export async function confirmPendingChatActions(
             );
         }
         trackedWorkLease = leaseResult.lease;
+        if (budgetReservation) {
+            commandBudget = { attemptId, estimates: budgetReservation.estimates };
+        }
     }
 
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'accepted' });
@@ -733,6 +752,10 @@ export async function confirmPendingChatActions(
         releaseCommandCancellation?.();
         setActiveAborter(null);
         setChatGenerating(false);
+    }
+
+    if (commandBudget) {
+        reconcileAgentCommandWork({ runId: confirmation.runId, ...commandBudget });
     }
 
     let trackedLeaseSettlement: TrackedAgentRunWorkLeaseSettlement = { accepted: true, warning: null };

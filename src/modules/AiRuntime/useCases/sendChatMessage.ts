@@ -512,7 +512,7 @@ export async function sendChatMessage(
                     },
                     budgets: {
                         limits: { ...commandBatch.authority.budgets },
-                        consumed: { commands: commandIds.length },
+                        consumed: {},
                     },
                 });
                 agentRunLifecycle.recordBatch({
