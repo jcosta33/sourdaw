@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:976aed457e141ddc294f7510de1cf5d8697df04f4cfb6bf78e0531f4c2311f63
+// @wasm-bindgen-dts crate-source: sha256:2fe2c58ee9070732ec8d79ca7605f31d9303a1e3bbe65344528ae8585405dfd8
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -15,8 +15,8 @@ export const scoringinstance_get_poly_string_cents: (a: number, b: number) => nu
 export const scoringinstance_get_poly_string_confidence: (a: number, b: number) => number;
 export const scoringinstance_get_poly_string_count: (a: number) => number;
 export const scoringinstance_get_right_ptr: (a: number) => number;
-export const scoringinstance_import_scala: (a: number, b: number, c: number) => number;
-export const scoringinstance_import_tun: (a: number, b: number, c: number) => number;
+export const scoringinstance_import_scala: (a: number, b: number, c: number) => void;
+export const scoringinstance_import_tun: (a: number, b: number, c: number) => void;
 export const scoringinstance_is_active: (a: number) => number;
 export const scoringinstance_is_poly_string_active: (a: number, b: number) => number;
 export const scoringinstance_new: (a: number) => number;
