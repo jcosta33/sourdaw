@@ -1,0 +1,65 @@
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_e7133802b30617 580,583-587,653
+  s_a40848e8f8cca9::t_8d508ffc8c2f8c 581-582,651
+  s_a40848e8f8cca9::t_b16c69953876b3 650,654-655
+  s_ab5443e65c7fba::t_5cd679a5215bc5 649
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_8c12a1f8f83fa4 155-156
+  s_a40848e8f8cca9::t_b8ae08d98b5d0c 213,230-232,894,969-971
+  s_a40848e8f8cca9::t_dfa1bae3ca2595 119-124,134,1065-1070,1072
+  s_a40848e8f8cca9::t_d120f3a1603bc7 16-21,101-108,110-118,129,131-133,135-136,138-139,279,283,662,667,674,687-688,705-706,811,813-814,1041,1043-1044,1074,1087-1088,1091
+  s_a40848e8f8cca9::t_df4b58c742fc97 48,82-85,282
+  s_a40848e8f8cca9::t_1f0e1fdee0c3ed 150-153,161,169
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_94dffacbb9e457 7,103-104,107,112-122,149-156,158-159
+  s_a40848e8f8cca9::t_fd71a3375768bf 105-106,108-111,123-148,157
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_8efe176ec4732f 63-69,71-74,76-87,89-100,102-115
+  s_a40848e8f8cca9::t_855305ce9f3e17 70,75,88,101
+src/modules/AiRuntime/useCases/__tests__/agentErrorAndSaga.spec.ts
+  s_a40848e8f8cca9::t_e540ab60d53c96 171-208
+src/modules/AiRuntime/useCases/agentRunRecovery.ts
+  s_a40848e8f8cca9::t_b16c69953876b3 15-17,19-20,25-27,32-33,46,55-58,61
+  s_a40848e8f8cca9::t_77d7d602e4a033 28-31,59-60
+src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts
+  s_a40848e8f8cca9::t_df4b58c742fc97 9
+  s_a40848e8f8cca9::t_034466f6a8c178 1-8,13-20,23,34-56,58-72,74-78,102-110,116-125,127
+  s_a40848e8f8cca9::t_8d508ffc8c2f8c 10-12,22,57,73,79-101,111-115,126
+  s_a40848e8f8cca9::t_12e7daa92b36a5 21
+  s_a40848e8f8cca9::t_e7133802b30617 24-33
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_98efda67074865 885,1120,1152
+  s_a40848e8f8cca9::t_1a21c1ffaa6d82 881-884,889-893,1116-1119,1124-1128,1148-1151,1154-1157,1164-1168
+  s_a40848e8f8cca9::t_df4b58c742fc97 58,886-888,1121-1123
+  s_a40848e8f8cca9::t_df2347b94ea04b 78,146,152,154-155,999,1041
+  s_a40848e8f8cca9::t_d29d4eeb6865f7 1153
+  s_a40848e8f8cca9::t_685a2434966e86 1220-1224,1395-1400,1762-1767
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_7eca4eab68cd97 1141-1147,2187-2191,2198-2199,2240-2242,2371
+  s_a40848e8f8cca9::t_8efe176ec4732f 2192-2197
+  s_a40848e8f8cca9::t_56589671e1804a 980-988,2344-2353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5da9e90605d45dd39f751a0b2e6b7759f164beaf",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
