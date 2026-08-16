@@ -22,7 +22,8 @@ vi.mock('../../engine/TrackNode', () => {
     class RuntimeGraphMutationFailure extends Error {
         constructor(
             public readonly mutation: { application: 'needs-reconcile'; reason: string },
-            public readonly cause: unknown
+            public readonly cause: unknown,
+            public readonly rollbackError?: unknown
         ) {
             super(cause instanceof Error ? cause.message : String(cause));
             this.name = 'RuntimeGraphMutationFailure';
@@ -49,6 +50,9 @@ vi.mock('../../engine/TrackNode', () => {
             onAsyncRuntimeGraphMutation?: (mutation: { application: 'applied' | 'needs-reconcile' }) => void;
         };
         private outputDestination: unknown;
+        private shouldFailNextAddDevicePrecondition = false;
+        private shouldFailNextAddDeviceRebuild = false;
+        private shouldFailAddDeviceRollback = false;
         private shouldFailNextRemoveDevicePrecondition = false;
         private shouldFailNextRemoveDeviceRebuild = false;
         dispose = vi.fn();
@@ -73,6 +77,10 @@ vi.mock('../../engine/TrackNode', () => {
                 ) {
                     return false;
                 }
+                if (this.shouldFailNextAddDevicePrecondition) {
+                    this.shouldFailNextAddDevicePrecondition = false;
+                    throw new Error('mock device addition precondition failed');
+                }
                 const device = { deviceId, type, dispose: vi.fn() };
                 let targetIndex = this.strip.deviceNodes.length;
                 if (precedingDeviceIds !== undefined) {
@@ -85,7 +93,25 @@ vi.mock('../../engine/TrackNode', () => {
                     }
                 }
                 this.strip.deviceNodes.splice(targetIndex, 0, device);
-                this.rebuildChain();
+                try {
+                    this.rebuildChain();
+                } catch (error) {
+                    this.strip.deviceNodes = this.strip.deviceNodes.filter((candidate) => candidate !== device);
+                    (device as { dispose?: () => void }).dispose?.();
+                    try {
+                        this.rebuildChain();
+                    } catch (rollbackError) {
+                        throw new RuntimeGraphMutationFailure(
+                            {
+                                application: 'needs-reconcile',
+                                reason: `Device ${deviceId} was added before its graph rebuild and rollback failed`,
+                            },
+                            error,
+                            rollbackError
+                        );
+                    }
+                    throw error;
+                }
                 return true;
             }
         );
@@ -137,7 +163,22 @@ vi.mock('../../engine/TrackNode', () => {
         failNextRemoveDevicePrecondition = vi.fn(() => {
             this.shouldFailNextRemoveDevicePrecondition = true;
         });
+        failNextAddDevicePrecondition = vi.fn(() => {
+            this.shouldFailNextAddDevicePrecondition = true;
+        });
+        failNextAddDeviceRebuild = vi.fn((rollbackFails = false) => {
+            this.shouldFailNextAddDeviceRebuild = true;
+            this.shouldFailAddDeviceRollback = rollbackFails;
+        });
         rebuildChain = vi.fn(() => {
+            if (this.shouldFailNextAddDeviceRebuild) {
+                this.shouldFailNextAddDeviceRebuild = false;
+                throw new Error('mock device addition graph rebuild failed');
+            }
+            if (this.shouldFailAddDeviceRollback) {
+                this.shouldFailAddDeviceRollback = false;
+                throw new Error('mock device addition graph rollback failed');
+            }
             if (this.shouldFailNextRemoveDeviceRebuild) {
                 this.shouldFailNextRemoveDeviceRebuild = false;
                 throw new Error('mock device removal graph rebuild failed');
@@ -238,6 +279,8 @@ type MockTrackNode = {
     notifyDeviceLoaded(device: unknown): void;
     rebuildChain(): void;
     completeAsyncDevicePromotion(application?: 'applied' | 'needs-reconcile'): void;
+    failNextAddDevicePrecondition(): void;
+    failNextAddDeviceRebuild(rollbackFails?: boolean): void;
     failNextRemoveDevicePrecondition(): void;
     failNextRemoveDeviceRebuild(): void;
     setOutput: Mock;
@@ -551,6 +594,57 @@ describe('AudioEngine', () => {
 
         expect(source.strip.deviceNodes).toHaveLength(0);
         expect(engine.getRuntimeGraphRevision()).toBe(beforePreconditionFailure + 1);
+    });
+
+    it('invalidates a stale delta when add mutates the live graph and its rollback also fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const revisionBeforeAdd = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeAdd);
+        const source = getMockTrackNode(engine, 'source');
+        source.failNextAddDeviceRebuild(true);
+
+        expect(() => engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor')).toThrow(
+            'mock device addition graph rebuild failed'
+        );
+
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd + 1);
+        vi.mocked(source.setOutput).mockClear();
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(source.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('does not advance for fully compensated or pre-effect add failures and advances once for success', () => {
+        engine.ensureTrackStrip('source');
+        const source = getMockTrackNode(engine, 'source');
+        const revisionBeforeAdd = engine.getRuntimeGraphRevision();
+        source.failNextAddDeviceRebuild();
+
+        expect(() => engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor')).toThrow(
+            'mock device addition graph rebuild failed'
+        );
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd);
+
+        source.failNextAddDevicePrecondition();
+        expect(() => engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor')).toThrow(
+            'mock device addition precondition failed'
+        );
+        expect(source.strip.deviceNodes).toHaveLength(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd);
+
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd + 1);
+
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeAdd + 1);
     });
 
     it('rejects a delta after a device is added then removed back to the same topology', () => {

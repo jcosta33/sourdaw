@@ -58,7 +58,9 @@ export type AsyncRuntimeGraphMutation = TrackNodeRuntimeGraphMutation;
 export class RuntimeGraphMutationFailure extends Error {
     constructor(
         public readonly mutation: TrackNodeRuntimeGraphMutation,
-        public readonly cause: unknown
+        public readonly cause: unknown,
+        /** Failed compensation operation, if the original live mutation was not restored. */
+        public readonly rollbackError?: unknown
     ) {
         super(cause instanceof Error ? cause.message : String(cause));
         this.name = 'RuntimeGraphMutationFailure';
@@ -808,6 +810,17 @@ export class TrackNode {
         throw error;
     }
 
+    private throwUncompensatedDeviceAddFailure(deviceId: string, error: unknown, rollbackError: unknown): never {
+        throw new RuntimeGraphMutationFailure(
+            Object.freeze({
+                application: 'needs-reconcile',
+                reason: `Device ${deviceId} was added before its live graph rebuild and rollback failed`,
+            }),
+            error,
+            rollbackError
+        );
+    }
+
     public addDevice(
         deviceId: string,
         deviceType: string,
@@ -1015,9 +1028,14 @@ export class TrackNode {
             try {
                 this.rebuildChain();
             } catch (error) {
-                this.invalidatePendingDeviceLoad({ deviceId, failureStage: 'graph' });
-                this.strip.deviceNodes = this.strip.deviceNodes.filter((device) => device.deviceId !== deviceId);
-                this.destroyRejectedDeviceNode(dn);
+                try {
+                    this.invalidatePendingDeviceLoad({ deviceId, failureStage: 'graph' });
+                    this.strip.deviceNodes = this.strip.deviceNodes.filter((device) => device.deviceId !== deviceId);
+                    this.destroyRejectedDeviceNode(dn);
+                    this.rebuildChain();
+                } catch (rollbackError) {
+                    this.throwUncompensatedDeviceAddFailure(deviceId, error, rollbackError);
+                }
                 throw error;
             }
             return true;
@@ -1028,13 +1046,13 @@ export class TrackNode {
             this.deps.readinessDiagnostics.markGraphReady({ token: readinessToken });
         } catch (error) {
             this._failedDeviceLoads.add(deviceId);
-            this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'graph' });
-            this.strip.deviceNodes.splice(targetIndex, 1);
-            this.destroyRejectedDeviceNode(dn);
             try {
+                this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'graph' });
+                this.strip.deviceNodes.splice(targetIndex, 1);
+                this.destroyRejectedDeviceNode(dn);
                 this.rebuildChain();
             } catch (rollbackError) {
-                logger.warn(`[WebAudioEngine] Synchronous device graph rollback failed: ${String(rollbackError)}`);
+                this.throwUncompensatedDeviceAddFailure(deviceId, error, rollbackError);
             }
             throw error;
         }

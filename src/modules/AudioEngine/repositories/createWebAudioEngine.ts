@@ -1324,13 +1324,25 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.mutateRuntimeGraph(() => {
-            const stripMutation = this.ensureTrackStripInGraph(trackId);
-            const deviceAdded =
-                this.trackNodes.get(trackId)?.addDevice(deviceId, deviceType, externalInstanceId, precedingDeviceIds) ??
-                false;
-            return { value: undefined, changed: stripMutation.changed || deviceAdded };
-        });
+        let stripChanged = false;
+        try {
+            this.mutateRuntimeGraph(() => {
+                const stripMutation = this.ensureTrackStripInGraph(trackId);
+                stripChanged = stripMutation.changed;
+                const deviceAdded =
+                    this.trackNodes
+                        .get(trackId)
+                        ?.addDevice(deviceId, deviceType, externalInstanceId, precedingDeviceIds) ?? false;
+                return { value: undefined, changed: stripChanged || deviceAdded };
+            });
+        } catch (error) {
+            if (error instanceof RuntimeGraphMutationFailure) {
+                this.recordRuntimeGraphMutation(error.mutation);
+            } else if (stripChanged) {
+                this.mutateRuntimeGraph(() => ({ value: undefined, changed: true }));
+            }
+            throw error;
+        }
     }
 
     public removeDeviceFromStrip(trackId: string, deviceId: string): void {

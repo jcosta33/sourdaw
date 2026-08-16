@@ -588,6 +588,40 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.getDeviceLoadState('gain-1')).toBe('ready');
         });
 
+        it('preserves both errors and reports needs-reconcile when synchronous add rollback cannot restore the graph', () => {
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            const rebuildError = new Error('device graph rebuild failed');
+            const rollbackError = new Error('device graph rollback failed');
+            vi.spyOn(track, 'rebuildChain')
+                .mockImplementationOnce(() => {
+                    throw rebuildError;
+                })
+                .mockImplementationOnce(() => {
+                    throw rollbackError;
+                });
+
+            let failure: unknown;
+            try {
+                track.addDevice('gain-1', 'builtin-gain');
+            } catch (error) {
+                failure = error;
+            }
+
+            expect(failure).toBeInstanceOf(RuntimeGraphMutationFailure);
+            if (!(failure instanceof RuntimeGraphMutationFailure)) {
+                throw new Error('Expected a runtime graph mutation failure');
+            }
+            expect(failure.cause).toBe(rebuildError);
+            expect(failure.rollbackError).toBe(rollbackError);
+            expect(failure.mutation).toMatchObject({
+                application: 'needs-reconcile',
+                reason: expect.stringContaining('added'),
+            });
+            expect(track.strip.deviceNodes).toHaveLength(0);
+            expect(track.getDeviceLoadState('gain-1')).toBe('failed');
+        });
+
         it('records async processor and graph readiness before content readiness', async () => {
             const deferred = installDeferredWasmDevice({ requiresContent: true });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
@@ -735,6 +769,39 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             track.dispose();
             expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+        });
+
+        it('reports needs-reconcile when a pending placeholder cannot restore its graph after add failure', () => {
+            const deferred = installDeferredWasmDevice();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            const rebuildError = new Error('placeholder graph rebuild failed');
+            const rollbackError = new Error('placeholder graph rollback failed');
+            vi.spyOn(track, 'rebuildChain')
+                .mockImplementationOnce(() => {
+                    throw rebuildError;
+                })
+                .mockImplementationOnce(() => {
+                    throw rollbackError;
+                });
+
+            let failure: unknown;
+            try {
+                track.addDevice('wasm-1', 'levain');
+            } catch (error) {
+                failure = error;
+            }
+
+            expect(failure).toBeInstanceOf(RuntimeGraphMutationFailure);
+            if (!(failure instanceof RuntimeGraphMutationFailure)) {
+                throw new Error('Expected a runtime graph mutation failure');
+            }
+            expect(failure.cause).toBe(rebuildError);
+            expect(failure.rollbackError).toBe(rollbackError);
+            expect(failure.mutation).toMatchObject({ application: 'needs-reconcile' });
+            expect(deferred.signal?.aborted).toBe(true);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(track.strip.deviceNodes).toHaveLength(0);
         });
 
         it('refuses to add the same device id twice', () => {
