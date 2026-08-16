@@ -9,6 +9,11 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
+import {
+    assertRemoteAgentDataPolicy,
+    formatRemoteTransmissionDisclosure,
+    REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+} from '../models/AgentDataPolicy';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
 import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
@@ -53,6 +58,7 @@ import { createModelProviderStreamWriter } from './createModelProviderStreamWrit
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
+import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -1046,6 +1052,18 @@ export async function sendChatMessage(
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
             budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+            ...(backend === 'cloud'
+                ? {
+                      dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+                      remoteDisclosure: remoteTransmissionDisclosure.issue({
+                          categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                          correlationId: providerReceiptIdentity,
+                          requestId: providerReceiptIdentity,
+                          runId,
+                          provider: getModelProviderName(backend),
+                      }),
+                  }
+                : {}),
         });
         if (compiledProviderRequest.status !== 'ready') {
             throw createAiRuntimeError(compiledProviderRequest.failure.safeMessage);
@@ -1090,6 +1108,14 @@ export async function sendChatMessage(
                 throw createAiRuntimeError(nativeOutcome.finish.finish.failure.safeMessage);
             }
         } else if (backend === 'cloud') {
+            const remoteCategories = REMOTE_TEXT_AGENT_DATA_CATEGORIES;
+            assertRemoteAgentDataPolicy(remoteCategories);
+            appendChatMessage({
+                id: `msg-${crypto.randomUUID()}`,
+                role: 'assistant',
+                content: formatRemoteTransmissionDisclosure(remoteCategories),
+                timestamp: Date.now(),
+            });
             // Cloud: streaming completion via Claude API
             cloudOutcome = await streamCloudChatCompletion(
                 providerRequest.messages,

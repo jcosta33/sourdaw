@@ -87,6 +87,17 @@ export type AgentRunProviderUsage = {
     routeId?: string;
     executor?: RunnableAiBackend;
     fallbackReason?: string | null;
+    disclosure?: {
+        requestId: string;
+        categories: string[];
+        retention: {
+            applicationState: 'unknown';
+            abuseMonitoring: 'unknown';
+            promptCache: 'unknown';
+            safetyLegalException: 'unknown';
+            unknown: 'unknown';
+        };
+    };
 };
 
 export type AgentRunModelRoute = {

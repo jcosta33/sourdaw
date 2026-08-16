@@ -6,6 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -32,6 +33,7 @@ import {
     type ToolPlanningOutcome,
 } from '../../transformers/toolCallParser';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
+import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
@@ -257,9 +259,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             throw createAiRuntimeError('The native model provider text fallback did not complete.');
         }
         const content = fallbackResult.output.text;
-        logger.info(
-            `[AI Engine] (native/text) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
-        );
+        logger.info(`[AI Engine] (native/text) Parsed response (${String(content.length)} chars)`);
         return parseToolPlanningOutcome(content);
     }
 
@@ -352,8 +352,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     provider: providerName,
                     model: getBackendModelId(backend),
                 });
+                const correlationId = `tool-planning-${crypto.randomUUID()}`;
+                const requestId = streamIdentity?.requestId ?? correlationId;
                 const compiledRequest = providerProtocol.compileRequest({
-                    correlationId: `tool-planning-${crypto.randomUUID()}`,
+                    correlationId,
                     ...(streamIdentity ?? {}),
                     operation: 'tools',
                     modality: 'text',
@@ -371,6 +373,18 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
                     budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
+                    ...(backend === 'cloud'
+                        ? {
+                              dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+                              remoteDisclosure: remoteTransmissionDisclosure.issue({
+                                  categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                                  correlationId,
+                                  requestId,
+                                  ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
+                                  provider: providerName,
+                              }),
+                          }
+                        : {}),
                 });
                 if (compiledRequest.status !== 'ready') {
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };

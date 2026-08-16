@@ -1,3 +1,4 @@
+import { AGENT_DATA_CATEGORIES, classifyAgentDataPolicy, type AgentDataCategory } from '../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type CompiledModelProviderRequest,
@@ -17,6 +18,8 @@ import {
     type ModelProviderUsage,
 } from '../models/ModelProviderProtocol';
 
+import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
+
 const MAX_MODEL_PROVIDER_EVENT_BYTES = 64 * 1_024;
 const MAX_MODEL_PROVIDER_REQUEST_BYTES = 1_024 * 1_024;
 const MAX_MODEL_PROVIDER_STREAM_BYTES = 1_024 * 1_024;
@@ -24,6 +27,15 @@ const MAX_MODEL_PROVIDER_EVENTS = 4_096;
 const MAX_IGNORED_PROVIDER_EVENTS = 64;
 const MAX_PROVIDER_TOOL_CALLS = 64;
 const MAX_PROVIDER_ID_LENGTH = 256;
+
+function hasAdmissibleRemoteDataCategories(categories: unknown): categories is AgentDataCategory[] {
+    return (
+        Array.isArray(categories) &&
+        categories.length > 0 &&
+        categories.every((category) => AGENT_DATA_CATEGORIES.some((known) => known === category)) &&
+        new Set(categories).size === categories.length
+    );
+}
 
 const LOCAL_CAPABILITIES = {
     cacheControls: ['provider-default'],
@@ -437,6 +449,25 @@ function compileRequest(
             'data-policy-unavailable',
             `The ${provider} provider cannot satisfy the requested data policy.`
         );
+    }
+    if (input.dataPolicy === 'remote-allowed' && capabilities.dataPolicies.length === 1) {
+        const categories = input.dataCategories;
+        const disclosure = input.remoteDisclosure;
+        if (
+            !hasAdmissibleRemoteDataCategories(categories) ||
+            !remoteTransmissionDisclosure.consume({
+                evidence: disclosure,
+                categories,
+                correlationId: input.correlationId,
+                requestId: input.requestId ?? input.correlationId,
+            }) ||
+            classifyAgentDataPolicy({ destination: 'provider', categories }).transmission !== 'allowed'
+        ) {
+            return unavailable(
+                'remote-data-policy-rejected',
+                'The hosted provider request lacks admitted data disclosure.'
+            );
+        }
     }
     if (
         capabilities.contextWindowTokens !== null &&

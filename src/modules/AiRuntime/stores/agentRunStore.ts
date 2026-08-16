@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
+import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
     AGENT_RUN_PHASES,
@@ -213,6 +214,42 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
     const executor =
         value.executor === undefined ? undefined : executors.find((candidate) => candidate === value.executor);
     const fallbackReason = value.fallbackReason === undefined ? undefined : readNullableString(value.fallbackReason);
+    const disclosure = (() => {
+        if (value.disclosure === undefined) {
+            return undefined;
+        }
+        if (!isRecord(value.disclosure)) {
+            return null;
+        }
+        const requestId = readString(value.disclosure.requestId);
+        const categories = readStringArray(value.disclosure.categories);
+        const retention = value.disclosure.retention;
+        if (
+            requestId === null ||
+            categories === null ||
+            !categories.every((category) => AGENT_DATA_CATEGORIES.some((known) => known === category)) ||
+            !isRecord(retention) ||
+            retention.applicationState !== 'unknown' ||
+            retention.abuseMonitoring !== 'unknown' ||
+            retention.promptCache !== 'unknown' ||
+            retention.safetyLegalException !== 'unknown' ||
+            retention.unknown !== 'unknown' ||
+            Object.keys(retention).length !== 5
+        ) {
+            return null;
+        }
+        return {
+            requestId,
+            categories: categories as AgentDataCategory[],
+            retention: {
+                applicationState: 'unknown' as const,
+                abuseMonitoring: 'unknown' as const,
+                promptCache: 'unknown' as const,
+                safetyLegalException: 'unknown' as const,
+                unknown: 'unknown' as const,
+            },
+        };
+    })();
     if (
         provider === null ||
         (value.attempt !== undefined && (attempt === null || attempt === undefined || attempt < 1)) ||
@@ -226,7 +263,8 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         (value.partialOutputDisposition !== undefined && partialOutputDisposition === undefined) ||
         routeId === null ||
         (value.executor !== undefined && executor === undefined) ||
-        (value.fallbackReason !== undefined && fallbackReason === undefined)
+        (value.fallbackReason !== undefined && fallbackReason === undefined) ||
+        disclosure === null
     ) {
         return null;
     }
@@ -244,6 +282,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         ...(routeId === undefined ? {} : { routeId }),
         ...(executor === undefined ? {} : { executor }),
         ...(fallbackReason === undefined ? {} : { fallbackReason }),
+        ...(disclosure === undefined ? {} : { disclosure }),
     };
 }
 

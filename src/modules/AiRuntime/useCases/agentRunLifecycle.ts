@@ -277,13 +277,22 @@ function recordAgentRunProviderUsage(input: {
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
-        if (
-            input.usage.correlationId !== undefined &&
-            run.providerUsage.some((usage) => usage.correlationId === input.usage.correlationId)
-        ) {
-            return run;
-        }
         const usage = structuredClone(input.usage);
+        const existingIndex =
+            usage.correlationId === undefined
+                ? -1
+                : run.providerUsage.findIndex((candidate) => candidate.correlationId === usage.correlationId);
+        if (existingIndex >= 0) {
+            const existing = run.providerUsage[existingIndex]!;
+            const providerUsage = [...run.providerUsage];
+            providerUsage[existingIndex] = {
+                ...existing,
+                ...usage,
+                attempt: existing.attempt,
+                disclosure: existing.disclosure ?? usage.disclosure,
+            };
+            return { ...run, providerUsage };
+        }
         usage.attempt ??= run.providerUsage.length + 1;
         return {
             ...run,
@@ -457,6 +466,45 @@ function releaseAgentRunTemporaryAsset(input: {
     });
 }
 
+function prepareAgentRunTemporaryAssetCleanup(input: {
+    runId: string;
+    assetId: string;
+    cleanupOwner: string;
+    preparedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.preparedAt ?? Date.now(), (run) => {
+        const asset = run.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
+        if (!asset) {
+            throw new Error(`Unknown temporary asset: ${input.assetId}`);
+        }
+        if (asset.cleanupOwner !== input.cleanupOwner) {
+            throw new Error(`Temporary asset cleanup owner changed: ${input.assetId}`);
+        }
+        if (asset.status === 'released') {
+            return run;
+        }
+        return {
+            ...run,
+            temporaryAssets: run.temporaryAssets.map((candidate) =>
+                candidate.assetId === input.assetId ? { ...candidate, status: 'cleanup-pending' } : candidate
+            ),
+        };
+    });
+}
+
+function forgetAgentRunTemporaryAsset(input: { runId: string; assetId: string; cleanupOwner: string }): AgentRun {
+    return updateAgentRun(input.runId, Date.now(), (run) => {
+        const asset = run.temporaryAssets.find((candidate) => candidate.assetId === input.assetId);
+        if (!asset || asset.cleanupOwner !== input.cleanupOwner) {
+            throw new Error(`Temporary asset cannot be forgotten: ${input.assetId}`);
+        }
+        return {
+            ...run,
+            temporaryAssets: run.temporaryAssets.filter((candidate) => candidate.assetId !== input.assetId),
+        };
+    });
+}
+
 function requireAgentRunManualResume(input: {
     runId: string;
     reason: string;
@@ -538,6 +586,7 @@ export const agentRunLifecycle = {
     clear: clearAgentRuns,
     create: createAgentRun,
     get: getAgentRun,
+    forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,
@@ -546,6 +595,7 @@ export const agentRunLifecycle = {
     recordPlan: recordAgentRunPlan,
     recordProviderUsage: recordAgentRunProviderUsage,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
+    prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
     requireManualResume: requireAgentRunManualResume,
     transitionPhase: transitionAgentRunPhase,
