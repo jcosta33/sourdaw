@@ -6,10 +6,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
     loadRepositorySnapshot,
+    REQUIRED_SNAPSHOT_PATHS,
     type ReleaseInventory,
     type RepositorySnapshot,
     validateReleaseInventory,
 } from '../checkReleaseInventory';
+
+const fixtureDigest = 'a'.repeat(64);
 
 function inventory(): ReleaseInventory {
     return {
@@ -21,7 +24,7 @@ function inventory(): ReleaseInventory {
                 retention: 'keep',
                 owner: 'OS-01',
                 releaseModes: ['source'],
-                paths: ['package.json', 'public/**', 'src/**'],
+                paths: ['public/**', 'src/**', ...REQUIRED_SNAPSHOT_PATHS],
                 sources: ['git:example/repository'],
                 revisions: ['deadbeef'],
                 digests: ['sha256:example'],
@@ -31,7 +34,7 @@ function inventory(): ReleaseInventory {
                 obligations: ['Preserve attribution.'],
             },
         ],
-        snapshots: [],
+        snapshots: REQUIRED_SNAPSHOT_PATHS.map((path) => ({ path, sha256: fixtureDigest })),
         externalReferences: [{ surface: 'runtime', file: 'src/provider.ts', value: 'https://provider.example/v1' }],
         marks: [],
     };
@@ -39,9 +42,9 @@ function inventory(): ReleaseInventory {
 
 function snapshot(): RepositorySnapshot {
     return {
-        releaseFiles: ['package.json', 'public/icon.png'],
+        releaseFiles: [...new Set([...REQUIRED_SNAPSHOT_PATHS, 'public/icon.png', 'src/provider.ts'])],
         externalReferences: [{ file: 'src/provider.ts', value: 'https://provider.example/v1' }],
-        fileDigests: {},
+        fileDigests: Object.fromEntries(REQUIRED_SNAPSHOT_PATHS.map((path) => [path, fixtureDigest])),
         markPaths: {},
     };
 }
@@ -104,12 +107,57 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toContain('runtime: invalid retention class unclassified');
     });
 
+    it('rejects removal of a required snapshot', () => {
+        const value = inventory();
+        value.snapshots = value.snapshots.filter((entry) => entry.path !== 'pnpm-lock.yaml');
+
+        expect(validateReleaseInventory(value, snapshot())).toContain(
+            'required snapshots missing from inventory:\n- pnpm-lock.yaml'
+        );
+    });
+
+    it('rejects snapshots outside the tracked repository', () => {
+        const value = inventory();
+        value.snapshots.push({ path: 'untracked.lock', sha256: fixtureDigest });
+
+        expect(validateReleaseInventory(value, snapshot())).toContain('untracked.lock: snapshot path must be tracked');
+    });
+
+    it('rejects missing required marks and empty mark assignments', () => {
+        const value = inventory();
+        value.marks = [{ value: 'Neve', paths: [] }];
+
+        expect(validateReleaseInventory(value, snapshot(), ['Roland'])).toEqual(
+            expect.arrayContaining([
+                'required marks missing from inventory:\n- Roland',
+                'Neve: paths must be non-empty',
+            ])
+        );
+    });
+
+    it('rejects component paths that fall through to a generic surface', () => {
+        const value = inventory();
+        value.surfaces.push({ ...value.surfaces[0]!, id: 'generic', paths: ['src/**'] });
+        value.surfaces[0]!.paths = value.surfaces[0]!.paths.filter((path) => path !== 'src/**');
+
+        expect(validateReleaseInventory(value, snapshot(), [], { runtime: ['src/provider.ts'] })).toContain(
+            'runtime: required component paths missing:\n- src/provider.ts'
+        );
+    });
+
+    it('rejects surface paths that match no tracked file', () => {
+        const value = inventory();
+        value.surfaces[0]!.paths.push('missing/**');
+
+        expect(validateReleaseInventory(value, snapshot())).toContain('runtime: path is not tracked: missing/**');
+    });
+
     it('discovers shipped assets and non-HTTP production endpoints', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
         mkdirSync(join(root, 'src'), { recursive: true });
         writeFileSync(
             join(root, 'src/peer.ts'),
-            "export const server = 'stun:stun.example.net:19302';\nexport const api = 'https:\\/\\/provider.example.net/v1';\nexport const model = 'Hammond';\n// Never treat substrings as marks.\n"
+            "export const server = 'stun:stun.example.net:19302';\nexport const api = 'https:\\/\\/provider.example.net/v1';\nexport const dynamic = `https://api.example.net/files/${name.split('/')}`;\nexport const model = 'Hammond';\n// Never treat substrings as marks.\n"
         );
         writeFileSync(join(root, 'src/peer.spec.ts'), "export const fixture = 'https://fixture.example.net';\n");
         writeFileSync(join(root, 'sourdaw.png'), 'image');
@@ -129,6 +177,11 @@ describe('release inventory', () => {
             );
             expect(result.releaseFiles).toEqual(['notes.txt', 'sourdaw.png', 'src/peer.spec.ts', 'src/peer.ts']);
             expect(result.externalReferences).toEqual([
+                {
+                    file: 'src/peer.ts',
+                    value: 'https://api.example.net/files/${slot}',
+                    templateSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+                },
                 { file: 'src/peer.ts', value: 'https://provider.example.net/v1' },
                 { file: 'src/peer.ts', value: 'stun:stun.example.net:19302' },
             ]);
@@ -137,5 +190,50 @@ describe('release inventory', () => {
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it('scans server and public endpoints plus case-insensitive public marks', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
+        mkdirSync(join(root, 'public'), { recursive: true });
+        mkdirSync(join(root, 'server'), { recursive: true });
+        writeFileSync(join(root, 'index.html'), '<title>Roland tools</title>');
+        writeFileSync(
+            join(root, 'public/runtime.js'),
+            "export const api = 'https://public.example.net/v1'; // ROLAND\n"
+        );
+        writeFileSync(
+            join(root, 'server/index.js'),
+            "export const api = 'wss://server.example.net/socket';\nnew WebSocket(api);\n"
+        );
+
+        try {
+            const result = loadRepositorySnapshot(root, { snapshots: [], marks: [{ value: 'Roland', paths: [] }] }, [
+                'index.html',
+                'public/runtime.js',
+                'server/index.js',
+            ]);
+            expect(result.externalReferences).toEqual([
+                { file: 'public/runtime.js', value: 'https://public.example.net/v1' },
+                { file: 'server/index.js', value: 'runtime:WebSocket' },
+                { file: 'server/index.js', value: 'wss://server.example.net/socket' },
+            ]);
+            expect(result.markPaths).toEqual({ Roland: ['index.html', 'public/runtime.js'] });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('detects template-expression drift', () => {
+        const value = inventory();
+        value.externalReferences[0]!.templateSha256 = fixtureDigest;
+        const changed = snapshot();
+        changed.externalReferences[0]!.templateSha256 = 'b'.repeat(64);
+
+        expect(validateReleaseInventory(value, changed)).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('external references missing from inventory'),
+                expect.stringContaining('stale external-reference assignments'),
+            ])
+        );
     });
 });
