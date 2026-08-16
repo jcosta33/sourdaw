@@ -1,0 +1,23 @@
+src/modules/AiRuntime/models/AgentRun.ts
+  s_e39468eea7236f::t_9f85b12b372ec7 141-144,153-166,308
+src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts
+  s_e39468eea7236f::t_1a41407f341b17 341-344
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_e39468eea7236f::t_2c51ef3664644d 11,83,178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a9eed7d90b6e42899fba68c2b3ef9dfad4d75234",
+  "prompts": {},
+  "sessions": {
+    "s_e39468eea7236f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0096e-3ef9-7843-982d-0dc4144d710f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
