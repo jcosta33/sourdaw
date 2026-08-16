@@ -1,0 +1,56 @@
+src-tauri/src/commands/plugins.rs
+  s_a40848e8f8cca9::t_e11f50624259e7 244-259
+  s_ab5443e65c7fba::t_7df7941c561b00 260-262,2397-2398
+src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts
+  s_a40848e8f8cca9::t_310c00ae2e53f7 6,89-162,164-218
+  s_a40848e8f8cca9::t_ab62db59048840 163
+  s_a40848e8f8cca9::t_59c22349f2c67e 219,221-280
+  s_a40848e8f8cca9::t_86c315db0d15dd 220
+src-tauri/src/host/plugin_scan_worker.rs
+  s_a40848e8f8cca9::t_6674fe34ca2e73 1-5,14,18,20,50-54,66-81,85,103-117,124,148
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_a40848e8f8cca9::t_b18b7051cf478d 10-21,41-47
+crates/daw-plugin-host/src/scanner.rs
+  s_a40848e8f8cca9::t_eb901a9d6be3e2 44,46,78,80,543-545,671-672,1053-1054,1079-1081,1084-1090
+  s_a40848e8f8cca9::t_9fd64acb9ebe36 738,812-891,963-1052,1055-1060,1074,1091-1092
+  s_a40848e8f8cca9::t_0bfae89bccdcb2 892-962,1075-1078,1082-1083
+  s_a40848e8f8cca9::t_c2bdf9561dd0ad 804-805
+  s_a40848e8f8cca9::t_da1ebe54520c8f 538-542,546-573,582-670,673-737
+  s_a40848e8f8cca9::t_ab62db59048840 4,6,13,22
+  s_a40848e8f8cca9::t_4d03faf5217b45 1,11-12,14,16,20-21,23-24,45,47-63,79,81,263-264,267-270,272-273
+  s_a40848e8f8cca9::t_786c8f514fcaa4 1061-1073
+  s_a40848e8f8cca9::t_891e6e5d8975cf 25
+  s_a40848e8f8cca9::t_b104bd51fbf607 739
+src/modules/PluginHost/useCases/getAgentDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_34d5775e6f6e5c 149-153
+  s_a40848e8f8cca9::t_d5548182b6a50d 2,7-8,12,24-25,36-53
+  s_a40848e8f8cca9::t_eb901a9d6be3e2 117
+  s_a40848e8f8cca9::t_8e46696844ea84 250-261,278-286,289-298,301-304
+  s_a40848e8f8cca9::t_5f94db0870dd56 108-116,118-148,154-204,217
+  s_a40848e8f8cca9::t_c437e9ef2fc4e8 55-56,63-66
+  s_a40848e8f8cca9::t_13198fef584489 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "293c45636d41216bf8fc5994cdd83e379c6847d0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
