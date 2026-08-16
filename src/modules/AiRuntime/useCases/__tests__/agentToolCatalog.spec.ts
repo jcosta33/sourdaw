@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/stores';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -51,6 +53,10 @@ describe('agent tool catalog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockBridgeGroundedLlmToolCalls.mockReset();
+    });
+
+    afterEach(() => {
+        pluginScanStore.set(defaultPluginScanState);
     });
 
     it('keeps provider planning on a compact catalog, discovers command schemas dynamically, and returns only a proposal', async () => {
@@ -172,6 +178,55 @@ describe('agent tool catalog', () => {
                 },
             ],
         });
+        expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('does not let a provider-selected factory read enlarge beyond its exact external type set', async () => {
+        const first = {
+            id: 'first',
+            clap_id: 'org.example.first',
+            name: 'First',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/private/plugins/first.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 1,
+            has_custom_ui: false,
+        };
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [
+                first,
+                { ...first, id: 'second', clap_id: 'org.example.second', path: '/private/plugins/second.clap' },
+            ],
+        });
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'external-device-manifest',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['clap:org.example.first'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'external-device-manifest-loop',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        const manifest = result.receipts[0]?.data as { devices: Array<{ type: string }> };
+        expect(manifest.devices.map((device) => device.type)).toEqual(['clap:org.example.first']);
+        expect(JSON.stringify(manifest)).not.toContain('/private/plugins/first.clap');
+        expect(JSON.stringify(manifest)).not.toContain('/private/plugins/second.clap');
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 
