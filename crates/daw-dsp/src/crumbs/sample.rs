@@ -139,6 +139,7 @@ impl SampleData {
 pub struct SamplePool {
     samples: Vec<Option<std::sync::Arc<SampleData>>>,
     next_id: SampleId,
+    dropped_writes: u32,
 }
 
 impl SamplePool {
@@ -146,6 +147,7 @@ impl SamplePool {
         Self {
             samples: vec![None; MAX_POOL_SAMPLES],
             next_id: 0,
+            dropped_writes: 0,
         }
     }
 
@@ -183,16 +185,25 @@ impl SamplePool {
     /// the audio-thread path neither reuses a slot nor holds the last
     /// reference; the free, when it comes, happens where the sample map is
     /// cleared.
+    ///
+    /// A refusal only counts — no assert, even a debug one, because this is
+    /// reached from inside the audio callback and a data-dependent panic there
+    /// kills the render thread in every `debug_assertions` build.
     fn store(&mut self, id: SampleId, sample: std::sync::Arc<SampleData>) -> bool {
         let Some(slot) = self.samples.get_mut(id as usize) else {
-            debug_assert!(
-                false,
-                "crumbs sample id {id} is past the {MAX_POOL_SAMPLES}-slot pool bound"
-            );
+            self.dropped_writes = self.dropped_writes.saturating_add(1);
             return false;
         };
         *slot = Some(sample);
         true
+    }
+
+    /// Writes refused because their id fell past the fixed pool bound.
+    /// Non-zero means the host's monotonic id counter has outrun
+    /// `MAX_POOL_SAMPLES` and samples are being silently dropped — surface it,
+    /// don't ignore it.
+    pub fn dropped_write_count(&self) -> u32 {
+        self.dropped_writes
     }
 
     /// Get a reference to a sample by ID.

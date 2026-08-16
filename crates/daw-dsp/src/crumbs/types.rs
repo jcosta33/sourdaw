@@ -9,10 +9,13 @@ pub const MAX_VOICES: usize = 128;
 ///
 /// The pool is sized once, at construction, because `CrumbsCommand::AddSample`
 /// is drained inside the audio callback: growing the slot vector there would
-/// allocate on the render thread. A kit is one sample per pad plus the Quick
-/// and Slice sources, so 128 pads leaves this at twice the largest kit the
-/// device can address. Ids at or beyond it are refused rather than stored.
-pub const MAX_POOL_SAMPLES: usize = 256;
+/// allocate on the render thread. Sample ids are allocated monotonically by
+/// the host and never reclaimed — every load and every committed recording
+/// take consumes one — so this bounds a session's churn, not a kit's size: a
+/// slot is one `Option<Arc>`, making headroom nearly free. Ids at or beyond
+/// the bound are refused rather than stored, counted by
+/// `SamplePool::dropped_write_count`.
+pub const MAX_POOL_SAMPLES: usize = 4096;
 
 /// RAM-cached attack per sample (bytes). ~68ms at 44.1kHz mono f32.
 pub const PRELOAD_SIZE: usize = 12 * 1024;

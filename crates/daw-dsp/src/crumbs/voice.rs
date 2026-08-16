@@ -6,7 +6,7 @@
 ///     up (`bandlimited_stereo_sample`)
 ///   - Per-voice AHDSR amplitude envelope
 ///   - Per-voice TPT SVF filter
-///   - Loop handling (Forward, PingPong, Reverse) with equal-power crossfade
+///   - Loop handling (Forward, PingPong, Reverse) with linear seam crossfade
 ///   - One-pole parameter smoothing on gain and pan
 ///   - Linear fade-out on voice steal (1–5ms)
 use super::allocator::StealPriority;
@@ -383,14 +383,24 @@ impl CrumbsVoice {
         (left, right)
     }
 
-    /// Equal-power crossfade across a Forward loop's seam.
+    /// Linear crossfade across a Forward loop's seam.
     ///
-    /// Inside the last `loop_crossfade` frames before `loop_end`, blend the
-    /// tail of the loop against the content the next iteration is about to
-    /// start with — the mirror offset from `loop_start` — so the waveform
-    /// arrives at the jump already matched. `loop_crossfade` was stored on
-    /// every voice and read by nothing (audit F14), so any loop whose start and
-    /// end were not already continuous clicked on every repeat.
+    /// Inside the last `span` frames before `loop_end`, blend the loop's tail
+    /// against the material one loop length behind the playhead — the frames
+    /// leading into `loop_start`. The shadow ends exactly on `loop_start` as
+    /// the playhead reaches the seam, so the blend converges on the sample the
+    /// next iteration starts with and the wrap lands on already-matched
+    /// audio. (Blending against `loop_start + offset` instead — the fade's
+    /// mirror rather than the loop's — ends the fade on an arbitrary interior
+    /// frame and clicks even on loops that were clean.) `loop_crossfade` was
+    /// stored on every voice and read by nothing (audit F14).
+    ///
+    /// The fade consumes pre-roll: it needs `span` frames before `loop_start`,
+    /// the same material a sample editor commits into the loop when it renders
+    /// a crossfaded loop destructively. The span shrinks to the pre-roll
+    /// available inside the region (and to the loop length), and a loop with
+    /// no pre-roll — `loop_start` at the region start — plays unfaded rather
+    /// than blending against unrelated or missing audio.
     ///
     /// The shadow read reuses `interpolate_stereo`, so a pitched-up voice
     /// crossfades bandlimited content against bandlimited content rather than
@@ -407,8 +417,39 @@ impl CrumbsVoice {
         left: f32,
         right: f32,
     ) -> (f32, f32) {
-        if self.loop_mode != LoopMode::Forward || self.loop_crossfade == 0 {
+        let Some((crossfade_start, span, loop_length)) =
+            self.seam_crossfade_window(sample_data.frame_count())
+        else {
             return (left, right);
+        };
+        if frame < crossfade_start as usize || frame >= (crossfade_start + span) as usize {
+            return (left, right);
+        }
+
+        let offset = frame as u32 - crossfade_start;
+        let progress = (offset as f32 / span as f32).clamp(0.0, 1.0);
+        let shadow_frame = frame - loop_length as usize;
+        let (shadow_left, shadow_right) =
+            self.interpolate_stereo(sample_data, shadow_frame, fraction);
+
+        // Linear, not equal-power: the two streams are the same sustained
+        // material a loop length apart, so they are highly correlated, and an
+        // equal-power fade of correlated signals bulges +3 dB mid-window on
+        // every pass. Linear is exact — identical streams sum to the original.
+        let gain_shadow = progress;
+        let gain_tail = 1.0 - progress;
+        (
+            left * gain_tail + shadow_left * gain_shadow,
+            right * gain_tail + shadow_right * gain_shadow,
+        )
+    }
+
+    /// The seam fade's `(start_frame, span, loop_length)`, or `None` when this
+    /// voice cannot fade: not a Forward loop, zero crossfade, degenerate loop
+    /// bounds, or no pre-roll to fade against.
+    fn seam_crossfade_window(&self, sample_frames: usize) -> Option<(u32, u32, u32)> {
+        if self.loop_mode != LoopMode::Forward || self.loop_crossfade == 0 {
+            return None;
         }
 
         // The seam is wherever `advance_position` wraps, which is the end of
@@ -416,34 +457,19 @@ impl CrumbsVoice {
         let loop_end = if self.loop_end > 0 {
             self.loop_end
         } else {
-            sample_data.frame_count() as u32
+            sample_frames as u32
         };
         if loop_end <= self.loop_start {
-            return (left, right);
+            return None;
         }
 
-        // Clamping the start to `loop_start` keeps the fade inside one loop
-        // length, which is what bounds the shadow read to the loop region.
-        let crossfade_start = loop_end
-            .saturating_sub(self.loop_crossfade)
-            .max(self.loop_start);
-        let span = loop_end.saturating_sub(crossfade_start);
-        if span == 0 || frame < crossfade_start as usize || frame >= loop_end as usize {
-            return (left, right);
+        let loop_length = loop_end - self.loop_start;
+        let preroll = self.loop_start.saturating_sub(self.region_start);
+        let span = self.loop_crossfade.min(loop_length).min(preroll);
+        if span == 0 {
+            return None;
         }
-
-        let offset = frame as u32 - crossfade_start;
-        let progress = offset as f32 / span as f32;
-        let shadow_frame = (self.loop_start + offset) as usize;
-        let (shadow_left, shadow_right) =
-            self.interpolate_stereo(sample_data, shadow_frame, fraction);
-
-        let angle = progress.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
-        let (gain_shadow, gain_tail) = angle.sin_cos();
-        (
-            left * gain_tail + shadow_left * gain_shadow,
-            right * gain_tail + shadow_right * gain_shadow,
-        )
+        Some((loop_end - span, span, loop_length))
     }
 
     // ── Position Advancement & Looping ─────────────────────────────────
@@ -643,23 +669,55 @@ impl CrumbsVoice {
     }
 
     pub(crate) fn resampling_work_units(&self) -> usize {
-        if self.speed > 1.0 {
+        let base = if self.speed > 1.0 {
             bandlimited_work_units(self.anti_alias_taps)
         } else {
             UNITY_RESAMPLING_WORK_UNITS
+        };
+        // The seam crossfade runs a second interpolated read inside its
+        // window, doubling the voice's interpolation cost there. Charge the
+        // doubled rate for the whole life of a fading voice rather than
+        // tracking the window — the budget's job is to keep the worst block
+        // schedulable, and the worst block is the one where every fading
+        // voice sits inside its window at once.
+        if self.seam_crossfade_possible() {
+            base * 2
+        } else {
+            base
         }
+    }
+
+    /// Whether this voice's configuration can ever run the seam crossfade.
+    /// Mirrors `seam_crossfade_window` without needing the sample's frame
+    /// count: with no explicit `loop_end` the pre-roll bound alone decides,
+    /// since the span only shrinks further once real bounds resolve.
+    fn seam_crossfade_possible(&self) -> bool {
+        self.loop_mode == LoopMode::Forward
+            && self.loop_crossfade > 0
+            && self.loop_start > self.region_start
+            && (self.loop_end == 0 || self.loop_end > self.loop_start)
     }
 }
 
-pub(crate) fn resampling_work_units_for_pitch(note: u8, root_note: u8, tune_cents: f32) -> usize {
+pub(crate) fn resampling_work_units_for_pitch(
+    note: u8,
+    root_note: u8,
+    tune_cents: f32,
+    seam_crossfade: bool,
+) -> usize {
     let semitone_diff = (note as f32 - root_note as f32) + tune_cents / 100.0;
     let Some(speed) = bounded_playback_speed(semitone_diff) else {
         return UNITY_RESAMPLING_WORK_UNITS;
     };
-    if speed > 1.0 {
+    let base = if speed > 1.0 {
         bandlimited_work_units(bandlimited_tap_count(speed))
     } else {
         UNITY_RESAMPLING_WORK_UNITS
+    };
+    if seam_crossfade {
+        base * 2
+    } else {
+        base
     }
 }
 

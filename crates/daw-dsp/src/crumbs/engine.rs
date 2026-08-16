@@ -43,7 +43,7 @@ use super::sample::SamplePool;
 use super::smooth::ParamSmoother;
 use super::types::{
     CrumbsCommand, CrumbsMode, CrumbsParam, FilterType, LoopMode, PlaybackMode, RecordState,
-    SampleId, MAX_STACK_VOICES, MAX_VOICES,
+    SampleId, LOOP_CROSSFADE_MAX, MAX_STACK_VOICES, MAX_VOICES,
 };
 use super::voice::{resampling_work_units_for_pitch, CrumbsVoice, VoiceTriggerParams};
 
@@ -440,6 +440,10 @@ impl CrumbsEngine {
                 params.note,
                 params.root_note,
                 self.tune_cents + detune_cents,
+                params.loop_mode == LoopMode::Forward
+                    && params.loop_crossfade > 0
+                    && params.loop_start > params.start_frame
+                    && (params.loop_end == 0 || params.loop_end > params.loop_start),
             ));
         }
         if self.resampling_work_units().saturating_add(requested_work) > MAX_RESAMPLING_WORK_UNITS {
@@ -826,7 +830,11 @@ impl CrumbsEngine {
             CrumbsParam::LoopStart => self.quick.loop_start = value as u32,
             CrumbsParam::LoopEnd => self.quick.loop_end = value as u32,
             CrumbsParam::LoopCrossfade => {
-                let crossfade = value as u32;
+                // Bounded: the seam fade doubles a voice's interpolation cost
+                // inside its window, and the admission budget prices that as a
+                // constant factor — an unbounded fade would also let a single
+                // control value put a whole loop permanently inside its fade.
+                let crossfade = (value.max(0.0) as u32).min(LOOP_CROSSFADE_MAX);
                 self.quick.loop_crossfade = crossfade;
                 self.slice.loop_crossfade = crossfade;
             }

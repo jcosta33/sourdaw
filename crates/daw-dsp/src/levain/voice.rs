@@ -428,23 +428,40 @@ impl SamplePlayback {
 
         let mut sample = cubic_hermite(y0, y1, y2, y3, frac);
 
-        // Equal-power loop-seam crossfade (audit F14): as playback approaches
-        // `loop_end` inside the last `loop_crossfade` frames of a forward
-        // loop, blend in the content the *next* iteration would start with —
-        // the mirror offset from `loop_start` — instead of jumping straight
-        // to the raw waveform at the seam. The field was stored on every
-        // voice and never read, so any loop whose start and end weren't
-        // already waveform-continuous clicked on every repeat.
-        if self.loop_mode == LoopMode::Forward && self.loop_crossfade > 0 {
-            let crossfade_start = self.loop_end.saturating_sub(self.loop_crossfade);
-            if pos_floor >= crossfade_start as usize && pos_floor < self.loop_end as usize {
+        // Linear loop-seam crossfade (audit F14): as playback approaches
+        // `loop_end` inside the fade window of a forward loop, blend against
+        // the material one loop length behind the playhead — the frames
+        // leading into `loop_start`. The shadow ends exactly on `loop_start`
+        // as the playhead reaches the seam, so the wrap lands on
+        // already-matched audio. (Blending against `loop_start + offset`
+        // instead ends the fade on an arbitrary interior frame and clicks
+        // even on loops that were clean.) The fade consumes pre-roll — the
+        // frames before `loop_start` — so its span shrinks to the pre-roll
+        // available past the zone's start, and to the loop length; a loop
+        // with no pre-roll plays unfaded rather than blending against
+        // unrelated audio.
+        if self.loop_mode == LoopMode::Forward
+            && self.loop_crossfade > 0
+            && self.loop_end > self.loop_start
+        {
+            let loop_length = self.loop_end - self.loop_start;
+            let preroll = self.loop_start.saturating_sub(self.start);
+            let span = self.loop_crossfade.min(loop_length).min(preroll);
+            let crossfade_start = self.loop_end - span;
+            if span > 0
+                && pos_floor >= crossfade_start as usize
+                && pos_floor < self.loop_end as usize
+            {
                 let progress =
-                    (pos_floor as u32 - crossfade_start) as f32 / self.loop_crossfade as f32;
-                let shadow_frame = self.loop_start + (pos_floor as u32 - crossfade_start);
-                let shadow = get(shadow_frame as usize);
-                let angle = progress.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
-                let (gain_shadow, gain_tail) = angle.sin_cos();
-                sample = sample * gain_tail + shadow * gain_shadow;
+                    ((pos_floor as u32 - crossfade_start) as f32 / span as f32).clamp(0.0, 1.0);
+                let shadow_frame = pos_floor - loop_length as usize;
+                let shadow = get(shadow_frame);
+                // Linear, not equal-power: tail and shadow are the same
+                // sustained material a loop length apart — highly correlated —
+                // and an equal-power fade of correlated signals bulges +3 dB
+                // mid-window on every pass. Linear sums identical streams back
+                // to the original exactly.
+                sample = sample * (1.0 - progress) + shadow * progress;
             }
         }
 
@@ -805,8 +822,12 @@ impl LevainVoice {
     /// (audit F6). Independent of `crossfade_playback`, which legato owns, so
     /// the two features never contend for one stream slot.
     pub fn set_dynamic_layer(&mut self, zone: &Zone, note: u8, pool: &SamplePool) {
-        self.layer_secondary
-            .configure_with_pool(&zone.sample, note, db_to_linear(zone.gain_db), pool);
+        self.layer_secondary.configure_with_pool(
+            &zone.sample,
+            note,
+            db_to_linear(zone.gain_db),
+            pool,
+        );
         self.layer_active = true;
     }
 

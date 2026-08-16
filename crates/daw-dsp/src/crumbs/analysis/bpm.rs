@@ -111,7 +111,13 @@ pub fn estimate_bpm(samples: &[f32], sample_rate: u32) -> BpmResult {
         let gamma = acf[best_lag + 1];
         let denom = 2.0 * (2.0 * beta - alpha - gamma);
         if denom.abs() > 1e-10 {
-            best_lag as f32 + (alpha - gamma) / denom
+            // A true parabolic vertex around a sampled maximum lies within half
+            // a lag of it; anything larger means the three points are nearly
+            // collinear and the offset is noise, and an unbounded offset would
+            // make the clamped conversion below report a confident garbage
+            // tempo.
+            let offset = ((alpha - gamma) / denom).clamp(-0.5, 0.5);
+            best_lag as f32 + offset
         } else {
             best_lag as f32
         }
@@ -119,18 +125,18 @@ pub fn estimate_bpm(samples: &[f32], sample_rate: u32) -> BpmResult {
         best_lag as f32
     };
 
-    let bpm = 60.0 * odf_fps / refined_lag;
+    // The lag bounds are `floor`/`ceil` quantizations of the tempo range, so a
+    // peak at a boundary lag can convert to a tempo a rounding error outside
+    // [MIN_BPM, MAX_BPM] — e.g. at 48 kHz the 60 BPM lag is fractional,
+    // `max_lag` is its ceiling, and the raw conversion lands just under
+    // 60. Every scanned lag is inside the tempo range by construction, so the
+    // conversion clamps instead of discarding: rejecting here turned "slowest
+    // tempo in range" into `None` at every sample rate where the boundary lag
+    // is not an integer.
+    let bpm = (60.0 * odf_fps / refined_lag).clamp(MIN_BPM, MAX_BPM);
 
     // Confidence: normalized autocorrelation peak value.
     let confidence = best_val.clamp(0.0, 1.0);
-
-    // Validate BPM range.
-    if bpm < MIN_BPM || bpm > MAX_BPM {
-        return BpmResult {
-            bpm: None,
-            confidence: 0.0,
-        };
-    }
 
     BpmResult {
         bpm: Some(bpm),
