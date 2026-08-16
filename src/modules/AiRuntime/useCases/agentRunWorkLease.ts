@@ -6,6 +6,8 @@ import {
 } from '../models/AgentRun';
 import { persistAgentRunState, readAgentRunState } from '../stores/agentRunStore';
 
+import { admitAgentRetry } from './admitAgentRetry';
+
 const TERMINAL_RUN_PHASES = new Set(['completed', 'failed', 'cancelled', 'partially-completed']);
 
 function updateRun(runId: string, updatedAt: number, update: (run: AgentRun) => AgentRun): AgentRun | null {
@@ -30,6 +32,7 @@ type ClaimAgentRunWorkLeaseInput = {
     receiptIdentity: string;
     idempotent: boolean;
     retriable: boolean;
+    operation?: 'read' | 'write';
     claimedAt?: number;
 };
 
@@ -51,6 +54,13 @@ function claimAgentRunWorkLease(input: ClaimAgentRunWorkLeaseInput): ClaimAgentR
             result = { status: 'already-claimed' };
             return run;
         }
+        const retry = admitAgentRetry({
+            operation: input.operation ?? 'write',
+            ownerProvesIdempotent: input.idempotent && input.retriable,
+            cancellationRequested: run.cancellation.requestedAt !== null,
+            stale: false,
+        });
+        const admittedRetriable = retry !== 'never';
         const lease: AgentRunWorkLease = {
             leaseId: `${input.runId}:${input.workId}:0`,
             runId: input.runId,
@@ -61,8 +71,8 @@ function claimAgentRunWorkLease(input: ClaimAgentRunWorkLeaseInput): ClaimAgentR
             idempotencyKey: input.idempotencyKey,
             receiptIdentity: input.receiptIdentity,
             cleanupOwner: input.cleanupOwner,
-            idempotent: input.idempotent,
-            retriable: input.retriable,
+            idempotent: input.idempotent || input.operation === 'read',
+            retriable: admittedRetriable,
             claimedAt,
             terminalState: null,
             settledAt: null,
@@ -71,19 +81,18 @@ function claimAgentRunWorkLease(input: ClaimAgentRunWorkLeaseInput): ClaimAgentR
         return {
             ...run,
             workLeases: [...run.workLeases, lease],
-            retriableWork:
-                input.idempotent && input.retriable
-                    ? [
-                          ...run.retriableWork.filter((work) => work.workId !== input.workId),
-                          {
-                              workId: input.workId,
-                              idempotencyKey: input.idempotencyKey,
-                              receiptIdentity: input.receiptIdentity,
-                              idempotent: true,
-                              retriable: true,
-                          },
-                      ]
-                    : run.retriableWork,
+            retriableWork: admittedRetriable
+                ? [
+                      ...run.retriableWork.filter((work) => work.workId !== input.workId),
+                      {
+                          workId: input.workId,
+                          idempotencyKey: input.idempotencyKey,
+                          receiptIdentity: input.receiptIdentity,
+                          idempotent: input.idempotent || input.operation === 'read',
+                          retriable: true,
+                      },
+                  ]
+                : run.retriableWork,
         };
     });
     return updated === null ? { status: 'missing-run' } : result;

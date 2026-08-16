@@ -4,6 +4,8 @@ import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 
+import { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
+import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
 import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
@@ -98,6 +100,63 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             streamIdentity,
             onProviderAttempt
         );
+        const correctableValidationFailure =
+            result.rejectionReason !== undefined && /schema|target|resolv/i.test(result.rejectionReason);
+        const correctionAdmission = input.onProviderAttempt;
+        if (
+            correctableValidationFailure &&
+            correctionAdmission !== undefined &&
+            input.signal?.aborted !== true &&
+            captureProjectRevision() === projectRevision
+        ) {
+            agentRunLifecycle.recordError({
+                runId: streamIdentity.runId,
+                error: normalizeAgentFailure({
+                    category: result.rejectionReason?.includes('schema') ? 'schema' : 'resolution',
+                    source: 'provider-planning',
+                    related: { workIds: [streamIdentity.requestId] },
+                    retry: 'read-only',
+                    knownDomain: true,
+                }),
+                terminal: false,
+            });
+            const admitCorrectionAttempt: typeof correctionAdmission = (attempt) => {
+                const admission = correctionAdmission(attempt);
+                const currentRevision = captureProjectRevision();
+                const correctionAllowed =
+                    admission.status === 'admitted' &&
+                    admitBoundedAgentCorrection({
+                        attempt: 0,
+                        maxAttempts: 1,
+                        reservedBudgetAvailable: true,
+                        cancellationRequested: input.signal?.aborted === true,
+                        stale: currentRevision !== projectRevision,
+                        sameRevision: currentRevision === projectRevision,
+                        // The correction reuses the same frozen context and exact provider schema/grant callback.
+                        sameScope: true,
+                        sameGrants: true,
+                    });
+                if (correctionAllowed) {
+                    return admission;
+                }
+                return admission.status === 'rejected'
+                    ? admission
+                    : {
+                          status: 'rejected',
+                          reason: 'The bounded correction attempt no longer has current application authority.',
+                      };
+            };
+            result = await parsePromptToActions(
+                input.prompt,
+                context,
+                input.signal,
+                projectRevision,
+                undefined,
+                input.onProviderResult,
+                streamIdentity,
+                admitCorrectionAttempt
+            );
+        }
         if (result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
             if (preparedStemImport.status === 'cancelled') {
@@ -131,6 +190,23 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         if (stemImportScope) {
             discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
         }
+        let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
+        if (error instanceof AiProposalInvalidatedError) {
+            category = 'conflict';
+        } else if (input.signal?.aborted) {
+            category = 'cancellation';
+        }
+        agentRunLifecycle.recordError({
+            runId: streamIdentity.runId,
+            error: normalizeAgentFailure({
+                category,
+                source: 'provider-planning',
+                related: { workIds: [streamIdentity.requestId] },
+                retry: category === 'provider' ? 'read-only' : 'never',
+                knownDomain: category !== 'provider',
+            }),
+            terminal: true,
+        });
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);
         throw error;

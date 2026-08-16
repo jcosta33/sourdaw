@@ -11,7 +11,7 @@ pub struct SclParseResult {
 #[tauri::command]
 pub fn parse_scl(content: String, root_note: u8, root_freq: f64) -> Result<SclParseResult, String> {
     let scale = Scale::from_scl(&content)?;
-    let table = TuningTable::from_scale(&scale, root_note, root_freq);
+    let table = TuningTable::from_scale(&scale, root_note, root_freq)?;
 
     Ok(SclParseResult {
         name: scale.name,
