@@ -130,6 +130,70 @@ describe('application-owned tool loop', () => {
         ]);
     });
 
+    it('executes resolve, history, and capability reads as bounded application-owned receipts in one safe-read turn', async () => {
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'object',
+            page: { offset: 0, limit: 20, total: 1 },
+            items: [{ id: 'track-1', kind: 'track', name: 'Lead' }],
+            nextCursor: null,
+            warnings: [],
+        });
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'resolve-1', name: 'project.resolve', arguments: { stableId: 'track-1' } },
+                    { id: 'capabilities-1', name: 'agent.capabilities', arguments: {} },
+                    { id: 'history-1', name: 'command.history', arguments: { page: { limit: 1 } } },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'safe-read-catalog-loop',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).toHaveBeenNthCalledWith(1, { type: 'object', filters: { stableId: 'track-1' } });
+        expect(querySemanticProject).toHaveBeenNthCalledWith(2, { type: 'history', page: { limit: 1 } });
+        expect(result.status).toBe('complete');
+        expect(result.receipts).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    callId: 'resolve-1',
+                    toolName: 'project.resolve',
+                    status: 'success',
+                    revision: 'revision-2',
+                }),
+                expect.objectContaining({
+                    callId: 'capabilities-1',
+                    toolName: 'agent.capabilities',
+                }),
+                expect.objectContaining({
+                    callId: 'history-1',
+                    toolName: 'command.history',
+                    status: 'success',
+                    revision: 'revision-2',
+                }),
+            ])
+        );
+        const capabilitiesReceipt = result.receipts.find((receipt) => receipt.callId === 'capabilities-1');
+        expect(capabilitiesReceipt?.data).toMatchObject({
+            operations: expect.arrayContaining([
+                expect.objectContaining({ name: 'command.batch.commit', callable: false }),
+            ]),
+        });
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('"callId":"resolve-1"');
+    });
+
     it.each([
         {
             label: 'fails',
@@ -192,7 +256,7 @@ describe('application-owned tool loop', () => {
         expect(schemas.map((schema) => schema.function.name)).toEqual(
             expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
         );
-        expect(schemas).toHaveLength(11);
+        expect(schemas).toHaveLength(8);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
         expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
 

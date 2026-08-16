@@ -5,9 +5,14 @@ import { type ToolSchema } from '../models/ToolDefinitions';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import {
+    AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    ANALYSIS_REQUEST_TOOL_NAME,
+    COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
     PROJECT_QUERY_TOOL_NAME,
+    PROJECT_RESOLVE_TOOL_NAME,
+    RENDER_REQUEST_TOOL_NAME,
 } from './agentToolCatalog';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 
@@ -289,24 +294,19 @@ function failureReceipt(input: {
     };
 }
 
-function executeProjectQuery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
-    const parsed = parseProjectQueryArguments(call.arguments);
-    if (parsed.status === 'invalid') {
-        return failureReceipt({
-            callId,
-            turn,
-            code: 'invalid-tool-arguments',
-            safeMessage: parsed.reason,
-            retryable: true,
-        });
-    }
+function executeSemanticProjectQuery(
+    input: QueryInput,
+    toolName: string,
+    callId: string,
+    turn: number
+): ApplicationToolReceipt {
     try {
-        const receipt = querySemanticProject(parsed.input);
+        const receipt = querySemanticProject(input);
         return {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
             callId,
-            toolName: PROJECT_QUERY_TOOL_NAME,
+            toolName,
             turn,
             status: 'success',
             revision: receipt.revisionToken,
@@ -324,6 +324,95 @@ function executeProjectQuery(call: ToolCallResult, callId: string, turn: number)
             retryable: true,
         });
     }
+}
+
+function executeProjectQuery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const parsed = parseProjectQueryArguments(call.arguments);
+    if (parsed.status === 'invalid') {
+        return failureReceipt({
+            callId,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: parsed.reason,
+            retryable: true,
+        });
+    }
+    return executeSemanticProjectQuery(parsed.input, PROJECT_QUERY_TOOL_NAME, callId, turn);
+}
+
+function executeProjectResolve(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    if (
+        Object.keys(call.arguments).length !== 1 ||
+        typeof call.arguments.stableId !== 'string' ||
+        call.arguments.stableId.length === 0 ||
+        call.arguments.stableId.length > MAX_FILTER_STRING_LENGTH
+    ) {
+        return failureReceipt({
+            callId,
+            toolName: PROJECT_RESOLVE_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: 'project.resolve arguments do not match the strict resolve contract',
+            retryable: true,
+        });
+    }
+    return executeSemanticProjectQuery(
+        { type: 'object', filters: { stableId: call.arguments.stableId } },
+        PROJECT_RESOLVE_TOOL_NAME,
+        callId,
+        turn
+    );
+}
+
+function executeCommandHistory(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const parsed = parseProjectQueryArguments({ type: 'history', ...call.arguments });
+    if (parsed.status === 'invalid') {
+        return failureReceipt({
+            callId,
+            toolName: COMMAND_HISTORY_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: 'command.history arguments do not match the strict history contract',
+            retryable: true,
+        });
+    }
+    return executeSemanticProjectQuery(parsed.input, COMMAND_HISTORY_TOOL_NAME, callId, turn);
+}
+
+function executeCapabilities(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    if (Object.keys(call.arguments).length > 0) {
+        return failureReceipt({
+            callId,
+            toolName: AGENT_CAPABILITIES_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: 'agent.capabilities accepts no arguments',
+            retryable: true,
+        });
+    }
+    return {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId,
+        toolName: AGENT_CAPABILITIES_TOOL_NAME,
+        turn,
+        status: 'success',
+        revision: null,
+        data: {
+            schema: 'sourdaw.agent-capabilities',
+            schemaVersion: 1,
+            operations: [
+                { name: 'command.batch.preview', callable: false, owner: 'Command', availability: 'available' },
+                { name: 'command.batch.commit', callable: false, owner: 'Command', availability: 'available' },
+                { name: 'command.approval', callable: false, owner: 'Command', availability: 'available' },
+                { name: RENDER_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
+                { name: ANALYSIS_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
+            ],
+        },
+        summary: '5 application-owned capability contract(s)',
+        warnings: ['Command preview, approval, and commit remain application-managed lifecycle steps.'],
+        error: null,
+    };
 }
 
 const catalogCategories = new Set([
@@ -344,7 +433,7 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
     | {
           status: 'valid';
           category: Parameters<typeof getAgentToolCatalogEntries>[0]['category'];
-          names?: string[];
+          names: string[];
           page?: { cursor?: string; limit?: number };
       }
     | { status: 'invalid'; reason: string } {
@@ -358,19 +447,22 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
     if (typeof category !== 'string' || !catalogCategories.has(category)) {
         return { status: 'invalid', reason: 'agent.catalog.discover category is unavailable' };
     }
-    const names = argumentsValue.names;
-    if (names !== undefined) {
-        if (
-            !Array.isArray(names) ||
-            names.length === 0 ||
-            names.length > 8 ||
-            names.some((name) => typeof name !== 'string' || name.length === 0 || name.length > 128)
-        ) {
+    const namesValue = argumentsValue.names;
+    if (!Array.isArray(namesValue) || namesValue.length === 0 || namesValue.length > 8) {
+        return {
+            status: 'invalid',
+            reason: 'agent.catalog.discover names do not match the strict catalog contract',
+        };
+    }
+    const names: string[] = [];
+    for (const name of namesValue) {
+        if (typeof name !== 'string' || name.length === 0 || name.length > 128 || names.includes(name)) {
             return {
                 status: 'invalid',
                 reason: 'agent.catalog.discover names do not match the strict catalog contract',
             };
         }
+        names.push(name);
     }
     const pageValue = argumentsValue.page;
     let page: { cursor?: string; limit?: number } | undefined;
@@ -402,7 +494,7 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
     return {
         status: 'valid',
         category: category as Parameters<typeof getAgentToolCatalogEntries>[0]['category'],
-        ...(names === undefined ? {} : { names }),
+        names,
         ...(page === undefined ? {} : { page }),
     };
 }
@@ -431,7 +523,9 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
             revision: null,
             data: catalog,
             summary: `${catalog.category}: ${String(catalog.items.length)} schema(s)`,
-            warnings: catalog.truncated ? ['Catalog page is truncated; request exact schema names.'] : [],
+            warnings: catalog.truncated
+                ? ['Catalog page is truncated; continue only this exact requested name set.']
+                : [],
             error: null,
         };
     } catch {
@@ -439,10 +533,34 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
             callId,
             toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
             turn,
-            code: 'tool-execution-failed',
-            safeMessage: 'Catalog discovery failed inside the application authority.',
+            code: 'invalid-tool-arguments',
+            safeMessage: 'Catalog request was rejected by the application contract.',
             retryable: true,
         });
+    }
+}
+
+function executeSafeRead(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    switch (call.name) {
+        case PROJECT_QUERY_TOOL_NAME:
+            return executeProjectQuery(call, callId, turn);
+        case PROJECT_RESOLVE_TOOL_NAME:
+            return executeProjectResolve(call, callId, turn);
+        case AGENT_CAPABILITIES_TOOL_NAME:
+            return executeCapabilities(call, callId, turn);
+        case AGENT_CATALOG_DISCOVERY_TOOL_NAME:
+            return executeCatalogDiscovery(call, callId, turn);
+        case COMMAND_HISTORY_TOOL_NAME:
+            return executeCommandHistory(call, callId, turn);
+        default:
+            return failureReceipt({
+                callId,
+                toolName: call.name,
+                turn,
+                code: 'unavailable-tool',
+                safeMessage: 'Requested application tool is unavailable.',
+                retryable: false,
+            });
     }
 }
 
@@ -550,14 +668,16 @@ export async function runApplicationOwnedToolLoop(
             identifiedCalls.push({ call, callId });
         }
 
-        const safeReadCalls = identifiedCalls.filter(
-            ({ call }) => call.name === PROJECT_QUERY_TOOL_NAME || call.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME
-        );
+        const safeReadToolNames = new Set([
+            PROJECT_QUERY_TOOL_NAME,
+            PROJECT_RESOLVE_TOOL_NAME,
+            AGENT_CAPABILITIES_TOOL_NAME,
+            AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            COMMAND_HISTORY_TOOL_NAME,
+        ]);
+        const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
         const terminalCalls = identifiedCalls.filter(
-            ({ call }) =>
-                call.name !== PROJECT_QUERY_TOOL_NAME &&
-                call.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME &&
-                input.terminalToolNames.has(call.name)
+            ({ call }) => !safeReadToolNames.has(call.name) && input.terminalToolNames.has(call.name)
         );
         if (safeReadCalls.length + terminalCalls.length !== outcome.toolCalls.length) {
             return {
@@ -594,12 +714,7 @@ export async function runApplicationOwnedToolLoop(
 
         const turnReceipts = await Promise.all(
             safeReadCalls.map(async ({ call, callId }) =>
-                boundReceipt(
-                    call.name === PROJECT_QUERY_TOOL_NAME
-                        ? executeProjectQuery(call, callId, turn)
-                        : executeCatalogDiscovery(call, callId, turn),
-                    limits.maxReceiptBytesPerCall
-                )
+                boundReceipt(executeSafeRead(call, callId, turn), limits.maxReceiptBytesPerCall)
             )
         );
         const serializedTurn = serializeReceiptContext(turnReceipts, turn);

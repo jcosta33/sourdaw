@@ -59,13 +59,10 @@ describe('agent tool catalog', () => {
             'project.resolve',
             'agent.capabilities',
             'agent.catalog.discover',
-            'command.batch.preview',
             'command.batch.propose',
-            'command.batch.commit',
             'command.history',
             'render.request',
             'analysis.request',
-            'command.approval',
         ]);
 
         vi.mocked(generateToolPlanningOutcome)
@@ -109,16 +106,26 @@ describe('agent tool catalog', () => {
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
     });
 
-    it('paginates dynamically discovered command schemas as bounded correlated receipts', async () => {
+    it('rejects command discovery that attempts registry enumeration and accepts only named bounded pages', async () => {
         const requestTurn = vi
             .fn()
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
                     {
-                        id: 'catalog-page-1',
+                        id: 'catalog-enumeration',
                         name: 'agent.catalog.discover',
                         arguments: { category: 'command', page: { limit: 1 } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-page-1',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'], page: { limit: 1 } },
                     },
                 ],
             })
@@ -134,16 +141,97 @@ describe('agent tool catalog', () => {
             status: 'complete',
             receipts: [
                 {
+                    callId: 'catalog-enumeration',
+                    status: 'failure',
+                    error: { code: 'invalid-tool-arguments' },
+                },
+                {
                     callId: 'catalog-page-1',
                     toolName: 'agent.catalog.discover',
                     data: {
                         page: { limit: 1, offset: 0 },
-                        nextCursor: '1',
+                        nextCursor: null,
                         items: [expect.objectContaining({ function: expect.any(Object) })],
                     },
                 },
             ],
         });
-        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('catalog-page-1');
+        expect(requestTurn.mock.calls[2]?.[0].receiptContext).toContain('catalog-page-1');
+    });
+
+    it('routes advertised render and analysis requests through proposal validation instead of execution', async () => {
+        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
+            status: 'complete',
+            toolCalls: [
+                {
+                    id: 'render-1',
+                    name: 'render.request',
+                    arguments: { sectionIds: ['chorus-1'] },
+                },
+                {
+                    id: 'analysis-1',
+                    name: 'analysis.request',
+                    arguments: { scope: 'mix' },
+                },
+            ],
+        });
+        mockBridgeGroundedLlmToolCalls.mockImplementation(({ calls }: { calls: unknown }) => ({
+            actions: [
+                { type: 'renderProjectSections', payload: { sectionIds: ['chorus-1'] } },
+                { type: 'analyzeMix', payload: {} },
+            ],
+            rejections: [],
+            ...(expect(calls).toEqual([
+                { name: 'renderProjectSections', arguments: { sectionIds: ['chorus-1'] } },
+                { name: 'analyzeMix', arguments: {} },
+            ]),
+            {}),
+        }));
+
+        const result = await parsePromptToActions('render and analyze the chorus', context, undefined, 'revision-2');
+
+        expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledTimes(1);
+        expect(result.rejectionReason ?? '').not.toContain('unavailable application tool');
+    });
+
+    it.each([
+        { label: 'unknown names', arguments: { category: 'command', names: ['not-a-command'] } },
+        { label: 'duplicate names', arguments: { category: 'command', names: ['setTempo', 'setTempo'] } },
+        { label: 'over-limit names', arguments: { category: 'command', names: Array(9).fill('setTempo') } },
+        {
+            label: 'non-canonical cursor',
+            arguments: { category: 'command', names: ['setTempo'], page: { cursor: '01' } },
+        },
+    ])('rejects $label without exposing registry enumeration', async ({ arguments: catalogArguments }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'invalid-catalog-request',
+                        name: 'agent.catalog.discover',
+                        arguments: catalogArguments,
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'invalid-catalog-loop',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({
+            status: 'complete',
+            receipts: [
+                {
+                    callId: 'invalid-catalog-request',
+                    status: 'failure',
+                    error: { code: 'invalid-tool-arguments' },
+                },
+            ],
+        });
     });
 });
