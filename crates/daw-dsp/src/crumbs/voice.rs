@@ -1220,4 +1220,61 @@ mod tests {
             }
         }
     }
+
+    /// The seam crossfade runs a second interpolated read inside its window,
+    /// so a crossfade-capable voice must cost double at admission and in live
+    /// accounting — otherwise a full pool of fading voices schedules twice the
+    /// budgeted interpolation work.
+    #[test]
+    fn a_crossfade_capable_voice_charges_double_work_units() {
+        let trigger = |loop_crossfade| {
+            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+            voice.trigger(&VoiceTriggerParams {
+                note: 60,
+                root_note: 60,
+                playback_mode: PlaybackMode::Sustain,
+                loop_mode: LoopMode::Forward,
+                start_frame: 0,
+                loop_start: 512,
+                loop_end: 4_096,
+                loop_crossfade,
+                ..VoiceTriggerParams::default()
+            });
+            voice
+        };
+
+        let plain = trigger(0).resampling_work_units();
+        let fading = trigger(256).resampling_work_units();
+        assert_eq!(
+            fading,
+            plain * 2,
+            "a Forward loop with a crossfade and pre-roll must cost double"
+        );
+
+        // No pre-roll: the fade can never run, so it must not be charged.
+        let mut no_preroll_voice = CrumbsVoice::new(SAMPLE_RATE);
+        no_preroll_voice.trigger(&VoiceTriggerParams {
+            note: 60,
+            root_note: 60,
+            playback_mode: PlaybackMode::Sustain,
+            loop_mode: LoopMode::Forward,
+            start_frame: 0,
+            loop_start: 0,
+            loop_end: 4_096,
+            loop_crossfade: 256,
+            ..VoiceTriggerParams::default()
+        });
+        assert_eq!(
+            no_preroll_voice.resampling_work_units(),
+            plain,
+            "a loop without pre-roll never fades and must cost the plain rate"
+        );
+
+        // The admission-time estimate must agree with the live accounting.
+        assert_eq!(
+            resampling_work_units_for_pitch(60, 60, 0.0, true),
+            resampling_work_units_for_pitch(60, 60, 0.0, false) * 2,
+            "admission must charge the same doubling the live accounting does"
+        );
+    }
 }

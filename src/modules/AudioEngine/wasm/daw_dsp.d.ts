@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:42e7fd80f10f7b47ba377cba9d67ef6d3f5ee0cb3ca4dcd0d6342cc4199e5fb6
+// @wasm-bindgen-dts crate-source: sha256:81be137eded66d47661f871da1fa552c8d923d7fc5f35f7c9ca599b4a0d8a04f
 /* tslint:disable */
 /* eslint-disable */
 
