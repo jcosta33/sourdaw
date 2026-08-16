@@ -13,13 +13,11 @@ export { setVoiceTranscribingStatus } from './setVoiceTranscribingStatus';
 export { toggleAiHistoryPanel } from './toggleAiHistoryPanel';
 export { recordAiActionGroup } from './recordAiActionGroup';
 
-export { NATIVE_MODEL_INFO, WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
+export { WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
 export { isComplexPrompt } from './aiRuntimeQueries/isComplexPrompt';
 export { getActiveModelId } from './aiRuntimeQueries/getActiveModelId';
 export { streamCloudChatCompletion } from './aiRuntimeQueries/streamCloudChatCompletion';
 export { generateWebLlmCompletion } from './aiRuntimeQueries/generateWebLlmCompletion';
-export { generateNativeCompletion } from './aiRuntimeQueries/generateNativeCompletion';
-export { isNativeEngineReady } from './aiRuntimeQueries/isNativeEngineReady';
 export { searchPresets } from './aiRuntimeQueries/searchPresets';
 export { getAvailablePresets } from './aiRuntimeQueries/getAvailablePresets';
 export { resolvePresetActions } from './aiRuntimeQueries/resolvePresetActions';
@@ -34,7 +32,6 @@ export { getProjectContext } from './getProjectContext';
 export { getAiRuntimeProtocolContracts } from './getAiRuntimeProtocolContracts';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
-export { isNativeAiRuntimeAvailable } from './llmOrchestration/backendResolution/isNativeAiRuntimeAvailable';
 export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvailable';
 export { setAiBackendPreference } from './llmOrchestration/backendResolution/setAiBackendPreference';
 

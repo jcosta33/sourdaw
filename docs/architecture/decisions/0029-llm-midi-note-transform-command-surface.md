@@ -23,4 +23,4 @@ The first executable LLM slice must admit only deterministic, bounded operations
 
 ## Consequences
 
-The prerequisite gives manual callers and the future LLM bridge one shared, guarded AppAction path. Once the dependent registry packet lands, WebLLM, future native inference, and arbitrary hosted providers can safely propose whole-clip quantize and transpose operations without a server. Their confirmation, CRDT commit, undo/redo, and macro behavior are real and testable; the remaining transforms stay unavailable until they meet the same contract.
+The prerequisite gives manual callers and the future LLM bridge one shared, guarded AppAction path. Once the dependent registry packet lands, WebLLM and arbitrary hosted providers can safely propose whole-clip quantize and transpose operations without a server. Their confirmation, CRDT commit, undo/redo, and macro behavior are real and testable; the remaining transforms stay unavailable until they meet the same contract.

@@ -675,7 +675,7 @@ mod tests {
 
 ### Tauri backend tests
 
-Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in files including `filesystem.rs`, `native_llm.rs`, `plugin_gui.rs`, and `plugins.rs`. Add command tests beside the Rust module they exercise; test command behavior directly rather than routing through Tauri IPC.
+Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in files including `filesystem.rs`, `plugin_gui.rs`, and `plugins.rs`. Add command tests beside the Rust module they exercise; test command behavior directly rather than routing through Tauri IPC.
 
 ---
 

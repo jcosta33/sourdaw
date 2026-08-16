@@ -2,7 +2,7 @@ import { type AgentDataCategory, type AgentDataRetention, type RemoteTransmissio
 
 export const MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION = 2 as const;
 
-export const MODEL_PROVIDER_NAMES = ['native', 'webllm', 'anthropic', 'openai', 'openai-compatible'] as const;
+export const MODEL_PROVIDER_NAMES = ['webllm', 'anthropic', 'openai', 'openai-compatible'] as const;
 export const MODEL_PROVIDER_OPERATIONS = ['text', 'tools', 'structured-output'] as const;
 
 export type ModelProviderName = (typeof MODEL_PROVIDER_NAMES)[number];

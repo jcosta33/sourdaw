@@ -3,8 +3,8 @@ import { type AgentRun, type AgentRunBudgetEstimateMethod } from '../models/Agen
 import { type ModelProviderUsageProvenance } from '../models/ModelProviderProtocol';
 
 export type ProviderRouteViewInput = {
-    requestedRoute: 'browser-local' | 'native-local' | 'remote';
-    actualRoute: 'browser-local' | 'native-local' | 'remote' | null;
+    requestedRoute: 'browser-local' | 'remote';
+    actualRoute: 'browser-local' | 'remote' | null;
     availability: { status: 'available' | 'unavailable'; reason: string | null };
     capability: { role: string; fidelity: string };
     fallback: {
@@ -69,16 +69,12 @@ export function getProviderRouteView(run: AgentRun): ProviderRouteView {
     let actualRoute: ProviderRouteViewInput['actualRoute'] = null;
     if (usage?.executor === 'cloud') {
         actualRoute = 'remote';
-    } else if (usage?.executor === 'native') {
-        actualRoute = 'native-local';
     } else if (usage?.executor === 'webllm') {
         actualRoute = 'browser-local';
     }
     let requestedRoute: ProviderRouteViewInput['requestedRoute'] = 'browser-local';
     if (run.modelRoute.requestedRoute === 'cloud') {
         requestedRoute = 'remote';
-    } else if (run.modelRoute.requestedRoute === 'native') {
-        requestedRoute = 'native-local';
     }
 
     const availability = (() => {

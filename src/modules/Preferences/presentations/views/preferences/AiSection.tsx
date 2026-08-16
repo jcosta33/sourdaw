@@ -10,7 +10,6 @@ import { useStore } from '#/infra/store/useStore';
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     configureCloudProvider,
-    isNativeAiRuntimeAvailable,
     removeCloudApi,
     resolveBackend,
     setAiBackendPreference,
@@ -21,7 +20,7 @@ import { cn } from '#/utils/Styles/cn';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
 type HostedProviderSelection = 'anthropic' | 'openai' | 'openai-compatible';
-type BackendSelection = 'auto' | 'native' | 'webllm' | 'cloud';
+type BackendSelection = 'auto' | 'webllm' | 'cloud';
 
 type HostedModelOption = {
     label: string;
@@ -29,8 +28,7 @@ type HostedModelOption = {
 };
 
 type SelectedBackendInput = {
-    backend: 'native' | 'webllm' | 'cloud' | 'none';
-    nativeAvailable: boolean;
+    backend: 'webllm' | 'cloud' | 'none';
     preference: 'auto' | BackendSelection;
 };
 
@@ -61,17 +59,14 @@ function isHostedProviderSelection(value: string): value is HostedProviderSelect
 }
 
 function isBackendSelection(value: string): value is BackendSelection {
-    return value === 'auto' || value === 'native' || value === 'webllm' || value === 'cloud';
+    return value === 'auto' || value === 'webllm' || value === 'cloud';
 }
 
-function getSelectedBackend({ backend, nativeAvailable, preference }: SelectedBackendInput): BackendSelection {
-    if (nativeAvailable) {
+function getSelectedBackend({ backend, preference }: SelectedBackendInput): BackendSelection {
+    if (preference !== 'auto') {
         return preference;
     }
-    if (preference !== 'auto' && preference !== 'native') {
-        return preference;
-    }
-    if (backend !== 'none' && backend !== 'native') {
+    if (backend !== 'none') {
         return backend;
     }
     return 'webllm';
@@ -110,16 +105,12 @@ export const AiSection = (): ReactElement => {
     const [baseUrl, setBaseUrl] = useState(configuredProvider?.baseUrl ?? '');
     const [configurationError, setConfigurationError] = useState<string | null>(null);
     const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
-    const nativeAvailable = isNativeAiRuntimeAvailable();
-    const selectedBackend = getSelectedBackend({ backend, nativeAvailable, preference: backendPreference });
+    const selectedBackend = getSelectedBackend({ backend, preference: backendPreference });
     const cloudAvailable = configuredProvider !== null;
     const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
     const customFirstPartyModel =
         provider !== 'openai-compatible' && !modelOptions.some((option) => option.value === model);
     const renderIife_16 = () => {
-        if (backend === 'native') {
-            return 'success';
-        }
         if (backend === 'webllm') {
             return 'cyan';
         }
@@ -129,9 +120,6 @@ export const AiSection = (): ReactElement => {
         return 'muted';
     };
     const renderIife_17 = () => {
-        if (backend === 'native') {
-            return 'Native (in-process)';
-        }
         if (backend === 'cloud') {
             if (configuredProvider) {
                 return `Cloud (${getProviderLabel(configuredProvider.provider)})`;
@@ -159,15 +147,13 @@ export const AiSection = (): ReactElement => {
                     className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
                     aria-label="AI execution backend"
                 >
-                    {nativeAvailable ? <option value="auto">Automatic local failover</option> : null}
-                    {nativeAvailable ? <option value="native">Native local</option> : null}
+                    <option value="auto">Automatic</option>
                     <option value="webllm">Browser WebLLM</option>
                     <option value="cloud">Hosted provider</option>
                 </select>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                    {nativeAvailable
-                        ? 'Automatic stays local and fails over between native local and WebLLM. Select Hosted provider explicitly to send prompts remotely.'
-                        : 'Choose where prompts run. WebLLM stays in this browser; hosted AI uses your configured provider.'}
+                    Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts
+                    remotely.
                 </p>
             </FieldGroup>
             <FieldGroup label="Active Backend">
@@ -175,8 +161,6 @@ export const AiSection = (): ReactElement => {
                     <span
                         className={cn(
                             'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium',
-                            backend === 'native' &&
-                                'bg-[var(--color-state-success)]/15 text-[var(--color-state-success)]',
                             backend === 'webllm' && 'bg-[var(--color-accent-cyan)]/15 text-[var(--color-accent-cyan)]',
                             backend === 'cloud' &&
                                 'bg-[var(--color-accent-lavender)]/15 text-[var(--color-accent-lavender)]',

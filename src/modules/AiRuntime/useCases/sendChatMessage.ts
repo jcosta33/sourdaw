@@ -28,7 +28,6 @@ import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import { estimateCompiledProviderRequestTokenCeiling } from '../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderFinish,
-    type ModelProviderFinishEnvelope,
     type ModelProviderName,
     type ModelProviderResult,
     type ModelProviderSession,
@@ -39,8 +38,6 @@ import {
 } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
 import { isCloudAvailable } from '../repositories/cloudLlm/isCloudAvailable';
-import { isNativeEngineReady } from '../repositories/nativeEngine/isNativeEngineReady';
-import { runNativeModelProviderRequest } from '../repositories/nativeModelProviderAdapter';
 import { getActiveModelId } from '../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
 import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
@@ -77,9 +74,6 @@ import { planPromptActions } from './planPromptActions';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
-    if (backend === 'native') {
-        return 'native';
-    }
     if (backend === 'cloud') {
         return getCloudProviderInfo()?.model ?? 'cloud';
     }
@@ -87,16 +81,13 @@ function getBackendModelId(backend: RunnableAiBackend): string {
 }
 
 function getModelProviderName(backend: RunnableAiBackend): ModelProviderName {
-    if (backend === 'native' || backend === 'webllm') {
+    if (backend === 'webllm') {
         return backend;
     }
     return getCloudProviderInfo()?.provider ?? 'openai-compatible';
 }
 
 function getProviderDisplayName(backend: RunnableAiBackend): string {
-    if (backend === 'native') {
-        return 'Native AI';
-    }
     if (backend === 'cloud') {
         return 'Hosted AI';
     }
@@ -200,8 +191,7 @@ function recordModelProviderUsage(
     budgetAttemptId: string,
     options: { terminal: boolean } = { terminal: false }
 ): void {
-    const executor: RunnableAiBackend =
-        result.provider === 'native' || result.provider === 'webllm' ? result.provider : 'cloud';
+    const executor: RunnableAiBackend = result.provider === 'webllm' ? 'webllm' : 'cloud';
     const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
     const existingAttempt = agentRunLifecycle
         .get(runId)
@@ -306,9 +296,6 @@ export async function sendChatMessage(
     // readiness and provider fallback to generateToolCalls.
     if (backend === 'none') {
         throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
-    }
-    if (interactionMode === 'explain' && backend === 'native' && !isNativeEngineReady()) {
-        throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
     }
     if (interactionMode === 'explain' && backend === 'webllm' && !getLlmEngine()) {
         throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
@@ -1289,7 +1276,6 @@ export async function sendChatMessage(
     const thinkParser = createThinkBlockParser();
     let cloudOutcome: CloudChatCompletionOutcome | null = null;
     let webLlmIncompleteReason: string | null = null;
-    let nativeProviderTerminal: ModelProviderFinishEnvelope | null = null;
     let providerSession: ModelProviderSession | null = null;
     let providerStreamWriter: ReturnType<typeof createModelProviderStreamWriter> | null = null;
     let providerResult: ModelProviderResult | null = null;
@@ -1417,41 +1403,7 @@ export async function sendChatMessage(
         const activeProviderStreamWriter = createModelProviderStreamWriter(providerRequest, providerSession);
         providerStreamWriter = activeProviderStreamWriter;
 
-        if (backend === 'native') {
-            const nativeOutcome = await runNativeModelProviderRequest({
-                request: providerRequest,
-                signal: aborter.signal,
-                onEvent: (event) => {
-                    providerSession?.push(event);
-                    if (event.event.type === 'text') {
-                        const parsed = thinkParser.push(event.event.text);
-                        updateChatMessage(assistantMsgId, {
-                            content: parsed.content,
-                            reasoning: parsed.reasoning,
-                        });
-                    }
-                },
-            });
-            if (nativeOutcome.status === 'unavailable') {
-                providerResult = activeProviderStreamWriter.finish({
-                    reason: 'error',
-                    failure: {
-                        code: nativeOutcome.failure.code,
-                        retryable: nativeOutcome.failure.retryable,
-                        safeMessage: nativeOutcome.failure.safeMessage,
-                    },
-                });
-                throw createAiRuntimeError(nativeOutcome.failure.safeMessage);
-            }
-            nativeProviderTerminal = nativeOutcome.finish;
-            if (nativeOutcome.finish.finish.reason === 'cancelled') {
-                throw new DOMException('Native model provider request cancelled', 'AbortError');
-            }
-            if (nativeOutcome.finish.finish.reason === 'error' || nativeOutcome.finish.finish.reason === 'refusal') {
-                providerResult = providerSession.finish(nativeOutcome.finish);
-                throw createAiRuntimeError(nativeOutcome.finish.finish.failure.safeMessage);
-            }
-        } else if (backend === 'cloud') {
+        if (backend === 'cloud') {
             // Cloud: streaming completion via Claude API
             cloudOutcome = await streamCloudChatCompletion(
                 providerRequest.messages,
@@ -1598,7 +1550,7 @@ export async function sendChatMessage(
             throw aborter.signal.reason;
         }
 
-        let providerFinish: ModelProviderFinish = nativeProviderTerminal?.finish ?? { reason: 'stop' };
+        let providerFinish: ModelProviderFinish = { reason: 'stop' };
         if (cloudOutcome?.status === 'incomplete') {
             providerFinish =
                 cloudOutcome.reason === 'length' || cloudOutcome.reason === 'token limit'
@@ -1624,10 +1576,7 @@ export async function sendChatMessage(
                           },
                       };
         }
-        providerResult =
-            nativeProviderTerminal === null
-                ? activeProviderStreamWriter.finish(providerFinish)
-                : providerSession.finish(nativeProviderTerminal);
+        providerResult = activeProviderStreamWriter.finish(providerFinish);
 
         // Strip <think>…</think> reasoning block before storing the final message.
         const { reasoning, content: cleanContent } = thinkParser.snapshot();
@@ -1682,21 +1631,18 @@ export async function sendChatMessage(
             errorMessage === 'AbortedByUser' ||
             errorMessage.includes('AbortError');
         if (providerSession && providerStreamWriter && !providerResult) {
-            providerResult =
-                nativeProviderTerminal === null
-                    ? providerStreamWriter.finish(
-                          wasAborted
-                              ? { reason: 'cancelled' }
-                              : {
-                                    reason: 'error',
-                                    failure: {
-                                        code: 'provider-stream-failed',
-                                        retryable: true,
-                                        safeMessage: 'The model provider request failed.',
-                                    },
-                                }
-                      )
-                    : providerSession.finish(nativeProviderTerminal);
+            providerResult = providerStreamWriter.finish(
+                wasAborted
+                    ? { reason: 'cancelled' }
+                    : {
+                          reason: 'error',
+                          failure: {
+                              code: 'provider-stream-failed',
+                              retryable: true,
+                              safeMessage: 'The model provider request failed.',
+                          },
+                      }
+            );
         }
         if (providerResult && !providerUsageRecorded) {
             recordModelProviderUsage(runId, providerResult, providerReceiptIdentity, { terminal: true });

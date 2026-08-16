@@ -1,19 +1,8 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
-            "init_native_llm",
-            "generate_native_completion",
-            "stream_native_completion",
-            "native_tool_calling",
-            "schema_constrained_generation",
-            "cancel_native_llm_generation",
-            "unload_native_llm",
-            "unload_native_llm_if_owned",
-            "finalize_native_llm_initialization",
             "provider_gateway_request",
             "cancel_provider_gateway_request",
-            "get_native_llm_status",
-            "get_model_dir",
             "denoise_audio",
             "separate_stems",
             "start_audio_gen_sidecar",
