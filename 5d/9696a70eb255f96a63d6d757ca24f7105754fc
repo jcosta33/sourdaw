@@ -1,0 +1,58 @@
+src-tauri/src/commands/plugin_gui.rs
+  s_ab5443e65c7fba::t_d5d29d2d70818a 500-506,530-532,535-536,548-551
+  s_ab5443e65c7fba::t_7336021f4d837d 51-90,97-99
+  s_ab5443e65c7fba::t_4827cf512c7331 147-151,158-179
+  s_ab5443e65c7fba::t_69c8982ae1d191 11
+  s_ab5443e65c7fba::t_443424143711e9 555,641-697
+  s_ab5443e65c7fba::t_2ad9ed16513aff 469-488,490-492,497-499,515
+  s_ab5443e65c7fba::t_9823c7176f9d29 513,528-529,635-636
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_ab5443e65c7fba::t_5a5b13812716ff 226-229
+  s_ab5443e65c7fba::t_bcb4ce41e16d5a 507-526
+  s_ab5443e65c7fba::t_0adc7b40b5f07c 527,1367-1368
+src-tauri/src/commands/plugins.rs
+  s_ab5443e65c7fba::t_997454ae2a253b 1281-1282,1284-1288
+  s_ab5443e65c7fba::t_ce5465b20f9aea 1132-1141,1146,1161-1162,1167-1180
+  s_ab5443e65c7fba::t_a35de1aaeaaec5 1325-1543
+  s_ab5443e65c7fba::t_12166d73028974 9
+  s_ab5443e65c7fba::t_7b77a7beb03c6e 390-391
+  s_ab5443e65c7fba::t_bb164b4d324e86 709-730,732-733,737-741,743
+  s_ab5443e65c7fba::t_8b95770fd72616 422-430
+  s_ab5443e65c7fba::t_cbd37db3a578c2 257-263
+  s_ab5443e65c7fba::t_bb829131a8a535 150-178
+  s_ab5443e65c7fba::t_052aed88ace75f 1181,1946-1977
+  s_ab5443e65c7fba::t_dcc91c12b943d4 1087
+  s_ab5443e65c7fba::t_31383b6edcfbbe 615-624
+  s_ab5443e65c7fba::t_5076eed6173c62 731
+  s_ab5443e65c7fba::t_075b69d40808f6 1011-1020,1028-1029,1031-1039,1042-1044,1054-1074
+  s_ab5443e65c7fba::t_077a785e6a60de 307-320
+  s_ab5443e65c7fba::t_2363884a27aa9e 1257-1262
+  s_ab5443e65c7fba::t_1c1bc49542be66 868-874
+  s_ab5443e65c7fba::t_464cbb4c17d5b9 1182
+src-tauri/src/state.rs
+  s_ab5443e65c7fba::t_e2465f633a242c 63-84,91-98
+  s_ab5443e65c7fba::t_cd3db1e83744b9 170-188
+  s_ab5443e65c7fba::t_b4572f0b831f4a 273-348
+  s_ab5443e65c7fba::t_df0d2b33c35ad9 220-230
+  s_ab5443e65c7fba::t_9ae7d08a5b1ba2 115-118,123-126
+  s_ab5443e65c7fba::t_0ae2f794ce5c7f 2
+src-tauri/src/host/native_bridge.rs
+  s_ab5443e65c7fba::t_f1e1e2dfd2dc6d 435-463
+  s_ab5443e65c7fba::t_897c645eba6f6f 464-466
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5d9696a70eb255f96a63d6d757ca24f7105754fc",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
