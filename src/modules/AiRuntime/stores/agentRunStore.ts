@@ -512,7 +512,8 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
         value.schemaVersion !== AGENT_CONTEXT_SCHEMA_VERSION ||
         !isRecord(value.selection) ||
         !isRecord(value.included) ||
-        !isRecord(value.delta)
+        !isRecord(value.delta) ||
+        !isRecord(value.snapshot)
     ) {
         return null;
     }
@@ -522,13 +523,64 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
     const clipId = readNullableString(value.selection.clipId);
     const clipIds = readStringArray(value.selection.clipIds);
     const deltaBaseRevision = readNullableString(value.delta.baseRevision);
-    const counts = [
-        'receiptCount',
-        'capabilitySchemaCount',
-        'validationFailureCount',
-        'measurementCount',
-        'trackCount',
-    ] as const;
+    const deltaCurrentRevision = readNullableString(value.delta.currentRevision);
+    const snapshot = (() => {
+        const rawSnapshot = value.snapshot;
+        const identity = readString(rawSnapshot.identity);
+        const selectedTrack = (() => {
+            if (rawSnapshot.selectedTrack === null) {
+                return null;
+            }
+            if (!isRecord(rawSnapshot.selectedTrack)) {
+                return undefined;
+            }
+            const id = readString(rawSnapshot.selectedTrack.id);
+            const digest = readString(rawSnapshot.selectedTrack.digest);
+            return id === null || digest === null ? undefined : { id, digest };
+        })();
+        const selectableTargets = readCollection(rawSnapshot.selectableTargets, (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const id = readString(candidate.id);
+            const digest = readString(candidate.digest);
+            return id === null || digest === null ? null : { id, digest };
+        });
+        if (
+            identity === null ||
+            typeof rawSnapshot.tempo !== 'number' ||
+            !Number.isFinite(rawSnapshot.tempo) ||
+            !Array.isArray(rawSnapshot.timeSignature) ||
+            rawSnapshot.timeSignature.length !== 2 ||
+            !rawSnapshot.timeSignature.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
+            selectedTrack === undefined ||
+            selectableTargets === null ||
+            readNonNegativeInteger(rawSnapshot.targetCount) === null ||
+            typeof rawSnapshot.truncated !== 'boolean'
+        ) {
+            return undefined;
+        }
+        return {
+            identity,
+            tempo: rawSnapshot.tempo,
+            timeSignature: [rawSnapshot.timeSignature[0], rawSnapshot.timeSignature[1]] as [number, number],
+            selectedTrack,
+            selectableTargets,
+            targetCount: readNonNegativeInteger(rawSnapshot.targetCount)!,
+            truncated: rawSnapshot.truncated,
+        };
+    })();
+    const validationFailures = (() => {
+        if (!isRecord(included.validationFailures)) {
+            return undefined;
+        }
+        const total = readNonNegativeInteger(included.validationFailures.total);
+        const retained = readNonNegativeInteger(included.validationFailures.retained);
+        const omitted = readNonNegativeInteger(included.validationFailures.omitted);
+        return total === null || retained === null || omitted === null || total !== retained + omitted
+            ? undefined
+            : { total, retained, omitted };
+    })();
     const grants = (() => {
         const rawGrants = value.grants;
         if (rawGrants === null) {
@@ -574,8 +626,14 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
         clipId === undefined ||
         clipIds === null ||
         deltaBaseRevision === undefined ||
+        deltaCurrentRevision === undefined ||
         (value.delta.mode !== 'full' && value.delta.mode !== 'delta') ||
-        !counts.every((key) => readNonNegativeInteger(included[key]) !== null) ||
+        readNonNegativeInteger(included.receiptCount) === null ||
+        readNonNegativeInteger(included.capabilitySchemaCount) === null ||
+        readNonNegativeInteger(included.measurementCount) === null ||
+        readNonNegativeInteger(included.trackCount) === null ||
+        validationFailures === undefined ||
+        snapshot === undefined ||
         grants === undefined ||
         budgets === undefined
     ) {
@@ -590,11 +648,12 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
         included: {
             receiptCount: readNonNegativeInteger(included.receiptCount)!,
             capabilitySchemaCount: readNonNegativeInteger(included.capabilitySchemaCount)!,
-            validationFailureCount: readNonNegativeInteger(included.validationFailureCount)!,
+            validationFailures,
             measurementCount: readNonNegativeInteger(included.measurementCount)!,
             trackCount: readNonNegativeInteger(included.trackCount)!,
         },
-        delta: { mode: value.delta.mode, baseRevision: deltaBaseRevision },
+        snapshot,
+        delta: { mode: value.delta.mode, baseRevision: deltaBaseRevision, currentRevision: deltaCurrentRevision },
     };
 }
 

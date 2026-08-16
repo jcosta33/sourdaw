@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -224,6 +225,7 @@ function createGlueProviderContext(): ProjectContext {
 
 describe('parsePromptToActions', () => {
     beforeEach(() => {
+        agentRunLifecycle.clear();
         vi.clearAllMocks();
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
@@ -485,6 +487,42 @@ describe('parsePromptToActions', () => {
             ])
         );
         expect(firstProviderCall?.[4]).toBe('enable punch in/out');
+    });
+
+    it('bounds persisted validation failures before the normalized provider request', async () => {
+        agentRunLifecycle.create({
+            runId: 'run-with-failures',
+            request: 'enable punch in/out',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+        });
+        for (let index = 0; index < 24; index += 1) {
+            agentRunLifecycle.recordError({
+                runId: 'run-with-failures',
+                error: {
+                    code: `failure-${index}`,
+                    message: 'safe stored failure',
+                    occurredAt: index + 1,
+                    retriable: false,
+                    workId: null,
+                },
+            });
+        }
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setPunchEnabled', arguments: { enabled: true } }])
+        );
+
+        await parsePromptToActions('enable punch in/out', baseContext, undefined, 'revision-2', undefined, undefined, {
+            runId: 'run-with-failures',
+            requestId: 'request-1',
+            cancellationGeneration: 0,
+        });
+
+        const message = vi.mocked(generateToolCalls).mock.calls[0]?.[1];
+        expect(message).toContain('failure-23');
+        expect(message).not.toContain('failure-0');
+        expect(message).toContain('"omitted":8');
     });
 
     it('proposes a grounded provider marker as one reversible atomic action', async () => {

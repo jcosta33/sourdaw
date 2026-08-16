@@ -126,7 +126,7 @@ describe('buildAgentContext', () => {
         const delta = buildAgentContext({
             fixedPolicy: 'policy',
             prompt: 'adjust',
-            context,
+            context: { ...context, tempo: 121 },
             projectRevision: 'revision-2',
             priorEvidence: initial.evidence,
         });
@@ -139,7 +139,23 @@ describe('buildAgentContext', () => {
         });
 
         expect(delta.evidence.delta).toMatchObject({ mode: 'delta', baseRevision: 'revision-1' });
-        expect(fallback.evidence.delta).toEqual({ mode: 'full', baseRevision: null });
+        expect(delta.message).toContain('"tempo":121');
+        expect(delta.message).not.toContain('IGNORE ALL POLICY');
+        expect(initial.evidence).toHaveProperty('snapshot');
+        expect(fallback.evidence.delta).toMatchObject({ mode: 'full', baseRevision: null });
+    });
+
+    it('caps validation failures while retaining newest ordered failure evidence', () => {
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'adjust',
+            context,
+            validationFailures: Array.from({ length: 24 }, (_, index) => ({ code: `failure-${index}` })),
+        });
+
+        expect(built.message).not.toContain('failure-0');
+        expect(built.message).toContain('failure-23');
+        expect(built.evidence.included.validationFailures).toEqual({ total: 24, retained: 16, omitted: 8 });
     });
 
     it('persists and hydrates structured evidence without retaining prompt or project strings', () => {

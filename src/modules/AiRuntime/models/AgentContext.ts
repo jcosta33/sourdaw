@@ -18,6 +18,16 @@ export type AgentContextBudgets = {
     consumed: Record<string, number>;
 };
 
+export type AgentContextProjectSnapshot = {
+    identity: string;
+    tempo: number;
+    timeSignature: [number, number];
+    selectedTrack: { id: string; digest: string } | null;
+    selectableTargets: Array<{ id: string; digest: string }>;
+    targetCount: number;
+    truncated: boolean;
+};
+
 export type AgentContextEvidence = {
     schemaVersion: typeof AGENT_CONTEXT_SCHEMA_VERSION;
     revision: string | null;
@@ -27,9 +37,10 @@ export type AgentContextEvidence = {
     included: {
         receiptCount: number;
         capabilitySchemaCount: number;
-        validationFailureCount: number;
+        validationFailures: { total: number; retained: number; omitted: number };
         measurementCount: number;
         trackCount: number;
     };
-    delta: { mode: 'full' | 'delta'; baseRevision: string | null };
+    snapshot: AgentContextProjectSnapshot;
+    delta: { mode: 'full' | 'delta'; baseRevision: string | null; currentRevision: string | null };
 };
