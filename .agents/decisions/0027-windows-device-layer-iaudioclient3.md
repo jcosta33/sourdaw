@@ -97,3 +97,4 @@ figure that has not been measured on the shipped build.
 - Exclusive-mode streams: https://learn.microsoft.com/en-us/windows/win32/coreaudio/exclusive-mode-streams
 - Steinberg developer resources, ASIO SDK licensing: https://www.steinberg.net/developers/
 - `cpal` WASAPI host: https://github.com/RustAudio/cpal
+- [ADR 0012 — neither target degrades the other](./0012-neither-target-degrades-the-other.md)
