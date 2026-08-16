@@ -1,0 +1,102 @@
+src/modules/Yeast/workers/processors/MutationEngine.ts
+  s_ab5443e65c7fba::t_174e26cb440fbc 144
+  s_ab5443e65c7fba::t_71fbbd08cd4569 9,12,16-18
+  s_ab5443e65c7fba::t_ead64058b6f445 78-107,135
+  s_ab5443e65c7fba::t_b1d315d2eb5e55 42-44
+  s_ab5443e65c7fba::t_590aa403cbbcd6 41,53,58,77,130,143
+src/modules/Yeast/workers/processors/__tests__/MutationEngine.spec.ts
+  s_ab5443e65c7fba::t_943f335503293e 312-313
+  s_ab5443e65c7fba::t_e0423db99742ed 270,275
+  s_ab5443e65c7fba::t_8b049ef63409a0 343
+  s_ab5443e65c7fba::t_77979c1d606625 418-419
+  s_ab5443e65c7fba::t_ef892ef9cb85c5 177-182,184-186,188-189,192-243
+  s_ab5443e65c7fba::t_3ffc3ec33e6196 334-335
+  s_ab5443e65c7fba::t_05e0b2ea014264 143
+  s_ab5443e65c7fba::t_ec649ac8ca34da 299,302-304,314,316-317,319
+  s_ab5443e65c7fba::t_5a616e3ffe8e1a 125,128
+  s_ab5443e65c7fba::t_5a6dce5afb6f09 353,355-356,359-360,363,365-370,374-388
+  s_ab5443e65c7fba::t_1ca182e4a813ff 38-60
+  s_ab5443e65c7fba::t_00091a8cf7e426 86,89
+  s_ab5443e65c7fba::t_2c015a8c35fe65 289-292
+  s_ab5443e65c7fba::t_0b29836b693645 249,251,262
+src/modules/Yeast/workers/MidiRack.ts
+  s_ab5443e65c7fba::t_c51454c225d51a 305-307
+  s_ab5443e65c7fba::t_7c06847ee60bf8 36
+  s_ab5443e65c7fba::t_c8652b028d76eb 320-330
+  s_ab5443e65c7fba::t_0ad68d2307b189 226-232,234,236-238
+  s_ab5443e65c7fba::t_d705fda086001b 308-312
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  s_ab5443e65c7fba::t_8766035f48e606 1129-1170,1180-1181
+  s_ab5443e65c7fba::t_c7addc92cc55ad 1182-1214,1219-1220
+  s_ab5443e65c7fba::t_a8d8537e9e0bca 1215-1218
+  s_ab5443e65c7fba::t_660c04fda5f6e6 1171-1179
+  s_ab5443e65c7fba::t_f3ab60902c12a1 129-145
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_ab5443e65c7fba::t_c786ec23f31235 141-142,144
+  s_ab5443e65c7fba::t_1fbc8e42bec2b8 695
+  s_ab5443e65c7fba::t_6502c16a05a48b 74-75
+  s_ab5443e65c7fba::t_721af6b4b280e4 680-682
+  s_ab5443e65c7fba::t_b9047ef37e53cd 121
+  s_ab5443e65c7fba::t_bcac5995e74bbf 20-25
+src/modules/Yeast/workers/processors/VelocityProcessor.ts
+  s_ab5443e65c7fba::t_ae9e101169d498 85-91,93
+src/modules/Yeast/workers/processors/__tests__/VelocityProcessor.spec.ts
+  s_ab5443e65c7fba::t_50063104546645 194-230
+src/modules/Yeast/workers/processors/CCGenerator.ts
+  s_ab5443e65c7fba::t_ffa86ae813ce0d 92-96
+  s_ab5443e65c7fba::t_567b007e8d2d5a 14
+  s_ab5443e65c7fba::t_2c52d5cb9983f1 98-103,109
+  s_ab5443e65c7fba::t_283654dafd907b 97
+src/modules/Yeast/workers/processors/Transposer.ts
+  s_ab5443e65c7fba::t_564104ac9b4082 43-50
+src/modules/Yeast/workers/__tests__/ScheduledEventQueue.spec.ts
+  s_ab5443e65c7fba::t_dd0a41855c92ae 149
+  s_ab5443e65c7fba::t_2790a76deed841 43,53
+  s_ab5443e65c7fba::t_ef7b763c2e0790 36
+src/modules/Yeast/workers/processors/__tests__/Transposer.spec.ts
+  s_ab5443e65c7fba::t_1f233684154192 38-60
+src/modules/Yeast/workers/processors/__tests__/CCGenerator.spec.ts
+  s_ab5443e65c7fba::t_28c636ef62cdeb 214
+  s_ab5443e65c7fba::t_257aa179d32048 225-226
+  s_ab5443e65c7fba::t_0feeb8531b3945 194-213,215-224,227-230
+src/modules/Yeast/workers/processors/EuclideanGenerator.ts
+  s_ab5443e65c7fba::t_948850ed4a16f9 56-57
+  s_ab5443e65c7fba::t_67ff7c53d64185 121-123,127
+  s_ab5443e65c7fba::t_fe1b4e94a6ce8d 14-19
+  s_ab5443e65c7fba::t_449235523fee55 85-86,92-93,95
+src/modules/Yeast/workers/processors/NoteRepeater.ts
+  s_ab5443e65c7fba::t_09400eea0f6a8f 117-119
+  s_ab5443e65c7fba::t_00a924fd55605e 14-19
+  s_ab5443e65c7fba::t_94e9e1d9ee696b 115-116
+  s_ab5443e65c7fba::t_3b35f0930728f8 34-35
+  s_ab5443e65c7fba::t_b9936fedd77c9f 135
+src/modules/Yeast/workers/processors/MarkovChain.ts
+  s_ab5443e65c7fba::t_78f51969cf2054 216-218,222
+  s_ab5443e65c7fba::t_d63379ba4acb46 15-20
+  s_ab5443e65c7fba::t_3fc4942962f26f 180-181,187-188,190
+  s_ab5443e65c7fba::t_2e5390094be5ea 44-45
+src/modules/Yeast/workers/processors/ChordGenerator.ts
+  s_ab5443e65c7fba::t_106ea2b42ebe55 49-50
+  s_ab5443e65c7fba::t_290e54ab1a3953 9-14
+  s_ab5443e65c7fba::t_b065ecd4ce2912 71-73
+  s_ab5443e65c7fba::t_63a087c27f5381 166-168,172
+src/modules/Yeast/workers/MidiProcessor.ts
+  s_ab5443e65c7fba::t_07f193764a1633 136-138
+  s_ab5443e65c7fba::t_4a1885e30f3f74 15-55,61-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1ee45d13b2621d59764dabbd00627e59121451ba",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
