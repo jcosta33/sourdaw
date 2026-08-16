@@ -1,0 +1,19 @@
+tests/e2e/virtualKeyboardGlide.spec.ts
+  s_ffd6f2bb744adf::t_9130e8913560b3 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "93143864114bfd879a28aeb80efe9924a2497b13",
+  "prompts": {},
+  "sessions": {
+    "s_ffd6f2bb744adf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a069fe1a2a0bcc49c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
