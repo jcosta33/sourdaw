@@ -61,12 +61,47 @@ describe('agent device factory manifest', () => {
             ],
         });
 
-        expect(getAgentDeviceFactoryManifest(['org.example.effect']).devices).toEqual([
+        expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toEqual([
             expect.objectContaining({
-                type: 'org.example.effect',
+                type: 'clap:org.example.effect',
                 configuration: expect.objectContaining({ availability: 'unavailable' }),
                 parameters: [],
                 opaqueState: true,
+            }),
+        ]);
+    });
+
+    it('collapses equivalent rescans by CLAP identity and marks conflicting records ambiguous', () => {
+        const base = {
+            id: 'path-a',
+            clap_id: 'org.example.effect',
+            name: 'Example Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/a/example.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 4,
+            has_custom_ui: true,
+        };
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [base, { ...base, id: 'path-b', path: '/b/example.clap' }],
+        });
+        expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toHaveLength(1);
+
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [base, { ...base, id: 'path-c', vendor: 'Other' }],
+        });
+        expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toEqual([
+            expect.objectContaining({
+                configuration: expect.objectContaining({
+                    availability: 'unavailable',
+                            reason: expect.stringContaining('Conflicting'),
+                }),
             }),
         ]);
     });
