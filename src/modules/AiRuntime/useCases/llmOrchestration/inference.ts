@@ -92,9 +92,18 @@ export type ProviderAttemptAdmission = {
     provider: ModelProviderName;
     correlationId: string;
     request: ModelProviderRequest;
+    estimatedTotalTokens: number;
 };
 
 export type ProviderAttemptAdmissionResult = { status: 'admitted' } | { status: 'rejected'; reason: string };
+
+export function estimateCompiledProviderRequestTokens(request: ModelProviderRequest): number {
+    // JSON source includes every provider-visible message, schema and advertised
+    // tool. Reserving one token per source character is intentionally
+    // conservative across tokenizers; the provider's bounded output is included
+    // before the adapter starts.
+    return JSON.stringify(request).length + request.limits.maxOutputTokens;
+}
 
 function createProviderAttemptAdmissionError(reason: string): Error {
     const error = new Error(reason);
@@ -262,6 +271,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             provider: 'native',
             correlationId: compiledFallback.request.correlationId,
             request: compiledFallback.request,
+            estimatedTotalTokens: estimateCompiledProviderRequestTokens(compiledFallback.request),
         });
         if (fallbackAdmission?.status === 'rejected') {
             throw createProviderAttemptAdmissionError(fallbackAdmission.reason);
@@ -427,6 +437,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     provider: providerName,
                     correlationId: providerRequest.correlationId,
                     request: providerRequest,
+                    estimatedTotalTokens: estimateCompiledProviderRequestTokens(providerRequest),
                 });
                 if (admission?.status === 'rejected') {
                     throw createProviderAttemptAdmissionError(admission.reason);

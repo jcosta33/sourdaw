@@ -90,4 +90,37 @@ describe('tool-planning remote data disclosure', () => {
         expect(result).toEqual({ status: 'rejected', reason: 'remoteTokens' });
         expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
     });
+
+    it('admits against the compiled system, context, schema, and output budget before invoking the adapter', async () => {
+        const generateWithAdmission = generateToolPlanningOutcome as unknown as (
+            systemPrompt: string,
+            userMessage: string,
+            toolSchemas: ReadonlyArray<{
+                function: { name: string; description: string; parameters: Record<string, unknown> };
+            }>,
+            signal: undefined,
+            toolSelectionPrompt: string,
+            onProviderResult: undefined,
+            streamIdentity: undefined,
+            onProviderAttempt: (input: { estimatedTotalTokens: number }) => { status: 'rejected'; reason: string }
+        ) => ReturnType<typeof generateToolPlanningOutcome>;
+        const result = await generateWithAdmission(
+            'system context '.repeat(500),
+            'small prompt',
+            Array.from({ length: 30 }, (_, index) => ({
+                function: { name: `tool-${index}`, description: 'schema '.repeat(100), parameters: { type: 'object' } },
+            })),
+            undefined,
+            'small prompt',
+            undefined,
+            undefined,
+            ({ estimatedTotalTokens }) =>
+                estimatedTotalTokens > 1027
+                    ? { status: 'rejected', reason: 'remoteTokens' }
+                    : { status: 'rejected', reason: 'underestimated' }
+        );
+
+        expect(result).toEqual({ status: 'rejected', reason: 'remoteTokens' });
+        expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
+    });
 });

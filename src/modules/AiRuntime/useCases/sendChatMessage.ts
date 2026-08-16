@@ -373,12 +373,12 @@ export async function sendChatMessage(
                     requestId: providerReceiptIdentity,
                     cancellationGeneration: providerLease.cancellationGeneration,
                 },
-                onProviderAttempt: ({ backend: attemptBackend, correlationId }) => {
+                onProviderAttempt: ({ backend: attemptBackend, correlationId, estimatedTotalTokens }) => {
                     const budgetReservation = agentRunLifecycle.reserveBudget({
                         runId,
                         attemptId: correlationId,
                         category: getProviderBudgetCategory(attemptBackend),
-                        estimate: estimateProviderBudget(userText, attemptBackend),
+                        estimate: estimatedTotalTokens,
                         provenance: 'versioned-estimate',
                     });
                     return budgetReservation.status === 'reserved'
