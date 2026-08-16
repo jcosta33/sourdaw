@@ -1,3 +1,5 @@
+import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
+import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type AgentPlanProposal } from '../models/AgentRun';
@@ -9,6 +11,7 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -422,6 +425,55 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
     };
 }
 
+function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const typeValues = call.arguments.types;
+    if (
+        Object.keys(call.arguments).length !== 1 ||
+        !Array.isArray(typeValues) ||
+        typeValues.length === 0 ||
+        typeValues.length > 8
+    ) {
+        return failureReceipt({
+            callId,
+            toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: 'device.factory-manifest.read requires one bounded type set',
+            retryable: true,
+        });
+    }
+    const types: string[] = [];
+    for (const type of typeValues) {
+        if (typeof type !== 'string' || type.length === 0 || type.length > 256) {
+            return failureReceipt({
+                callId,
+                toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+                turn,
+                code: 'invalid-tool-arguments',
+                safeMessage: 'device.factory-manifest.read requires one bounded type set',
+                retryable: true,
+            });
+        }
+        types.push(type);
+    }
+    const external = getAgentDeviceFactoryManifest(types);
+    const builtins = getAgentBuiltinDeviceFactoryManifest().filter((device) => types.includes(device.type));
+    const manifest = { ...external, devices: [...builtins, ...external.devices] };
+    return {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId,
+        toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+        turn,
+        status: 'success',
+        revision: null,
+        data: manifest,
+        summary: `${String(manifest.devices.length)} device factory manifest(s)`,
+        warnings: ['External plugin metadata can be inferred; opaque plugin state is not exposed or patched.'],
+        error: null,
+    };
+}
+
 const catalogCategories = new Set([
     'query',
     'resolve',
@@ -558,6 +610,8 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
             return executeProjectResolve(call, callId, turn);
         case AGENT_CAPABILITIES_TOOL_NAME:
             return executeCapabilities(call, callId, turn);
+        case AGENT_DEVICE_MANIFEST_TOOL_NAME:
+            return executeDeviceManifest(call, callId, turn);
         case AGENT_CATALOG_DISCOVERY_TOOL_NAME:
             return executeCatalogDiscovery(call, callId, turn);
         case COMMAND_HISTORY_TOOL_NAME:
@@ -784,6 +838,7 @@ export async function runApplicationOwnedToolLoop(
             PROJECT_QUERY_TOOL_NAME,
             PROJECT_RESOLVE_TOOL_NAME,
             AGENT_CAPABILITIES_TOOL_NAME,
+            AGENT_DEVICE_MANIFEST_TOOL_NAME,
             AGENT_CATALOG_DISCOVERY_TOOL_NAME,
             COMMAND_HISTORY_TOOL_NAME,
         ]);

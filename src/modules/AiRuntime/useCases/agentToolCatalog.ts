@@ -6,6 +6,7 @@ export const PROJECT_QUERY_TOOL_NAME = 'project.query';
 export const PROJECT_RESOLVE_TOOL_NAME = 'project.resolve';
 export const AGENT_CAPABILITIES_TOOL_NAME = 'agent.capabilities';
 export const AGENT_CATALOG_DISCOVERY_TOOL_NAME = 'agent.catalog.discover';
+export const AGENT_DEVICE_MANIFEST_TOOL_NAME = 'device.factory-manifest.read';
 export const COMMAND_BATCH_PROPOSAL_TOOL_NAME = 'command.batch.propose';
 export const COMMAND_HISTORY_TOOL_NAME = 'command.history';
 export const RENDER_REQUEST_TOOL_NAME = 'render.request';
@@ -103,6 +104,19 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                 },
             },
             ['category', 'names']
+        ),
+        tool(
+            AGENT_DEVICE_MANIFEST_TOOL_NAME,
+            'Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority.',
+            {
+                types: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 8,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+            },
+            ['types']
         ),
         tool(
             COMMAND_BATCH_PROPOSAL_TOOL_NAME,
