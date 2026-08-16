@@ -1,11 +1,12 @@
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { sendChatMessage } from './sendChatMessage';
 
-export function resumeAgentRunDecision(input: {
+export async function resumeAgentRunDecision(input: {
     runId: string;
     alternativeId: string;
-}): { status: 'resumed'; selectedAlternativeId: string } | { status: 'rejected'; reason: string } {
+}): Promise<{ status: 'resumed'; selectedAlternativeId: string } | { status: 'rejected'; reason: string }> {
     const run = agentRunLifecycle.get(input.runId);
     if (
         run === null ||
@@ -30,6 +31,7 @@ export function resumeAgentRunDecision(input: {
     }
     try {
         agentRunLifecycle.selectDecisionAlternative(input);
+        await sendChatMessage(run.request, { mode: run.mode, budgets: run.budgets });
         return { status: 'resumed', selectedAlternativeId: input.alternativeId };
     } catch (error) {
         return {

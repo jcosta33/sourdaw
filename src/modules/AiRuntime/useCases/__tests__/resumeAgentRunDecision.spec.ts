@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+
+const { resumeSend } = vi.hoisted(() => ({ resumeSend: vi.fn().mockResolvedValue(undefined) }));
+
+vi.mock('../sendChatMessage', () => ({ sendChatMessage: resumeSend }));
 
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunControls } from '../getAgentRunControlProjection';
@@ -48,26 +52,32 @@ function createPendingDecision(): void {
 }
 
 describe('resumeAgentRunDecision', () => {
-    afterEach(() => agentRunLifecycle.clear());
+    afterEach(() => {
+        agentRunLifecycle.clear();
+        resumeSend.mockClear();
+    });
 
-    it('exposes and consumes one hydrated structured decision without parsing prose', () => {
+    it('exposes and consumes one hydrated structured decision without parsing prose', async () => {
         createPendingDecision();
         expect(agentRunControls.get('run-decision-resume')?.allowedActions.resume).toBe(true);
-        expect(agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })).toEqual({
+        await expect(
+            agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })
+        ).resolves.toEqual({
             status: 'resumed',
             selectedAlternativeId: 'mute',
         });
-        expect(agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })).toEqual(
-            expect.objectContaining({ status: 'rejected' })
-        );
+        expect(resumeSend).toHaveBeenCalledWith('Mute Bass.', { mode: 'plan', budgets: { limits: {}, consumed: {} } });
+        await expect(
+            agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })
+        ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
     });
 
-    it('rejects a cancelled pending decision', () => {
+    it('rejects a cancelled pending decision', async () => {
         createPendingDecision();
         agentRunLifecycle.cancel({ runId: 'run-decision-resume', reason: 'Cancelled' });
         expect(agentRunControls.get('run-decision-resume')?.allowedActions.resume).toBe(false);
-        expect(agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })).toEqual(
-            expect.objectContaining({ status: 'rejected' })
-        );
+        await expect(
+            agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' })
+        ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
     });
 });
