@@ -1,0 +1,27 @@
+src/modules/AiRuntime/models/AgentRun.ts
+  s_e39468eea7236f::t_d5eeeb6a2e757e 112-134,137-139
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_e39468eea7236f::t_21bca606e121c8 169-188
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_e39468eea7236f::t_08dcaadfcfe5ef 743-766,837
+src/modules/AiRuntime/useCases/getAgentRunControlProjection.ts
+  s_e39468eea7236f::t_d4875d50ea711e 6,66-73,86,111
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_e39468eea7236f::t_0b8d1392159234 459,508-509,570
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "eb2f36139490bc53b83d3e9d0292e8c84da1967a",
+  "prompts": {},
+  "sessions": {
+    "s_e39468eea7236f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0096e-3ef9-7843-982d-0dc4144d710f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
