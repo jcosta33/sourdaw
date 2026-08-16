@@ -474,6 +474,29 @@ async function retryCommittedSectionRenders(
         return { status: 'failed', reason };
     }
 
+    const trackedRun = agentRunLifecycle.get(confirmation.runId);
+    const renderRetryBudget = (() => {
+        if (!trackedRun) {
+            return null;
+        }
+        const retryPrefix = `render-retry:${confirmation.id}:`;
+        const attemptId = `${retryPrefix}${trackedRun.budgetAttempts.filter((attempt) => attempt.attemptId.startsWith(retryPrefix)).length + 1}`;
+        const reservation = agentRunLifecycle.reserveBudget({
+            runId: confirmation.runId,
+            attemptId,
+            category: 'maxRenderJobs',
+            estimate: followUp.jobs.length,
+            provenance: 'versioned-estimate',
+        });
+        return { attemptId, reservation };
+    })();
+    if (renderRetryBudget?.reservation.status === 'hard-limit-reached') {
+        const reason = `The missing section renders exceed the user budget for ${renderRetryBudget.reservation.reason}.`;
+        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
+        return { status: 'failed', reason };
+    }
+
     updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'running' });
     updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
     setChatGenerating(true);
@@ -499,6 +522,15 @@ async function retryCommittedSectionRenders(
         });
         return { status: 'failed', reason };
     } finally {
+        if (renderRetryBudget?.reservation.status === 'reserved') {
+            agentRunLifecycle.reconcileBudgetAttempt({
+                runId: confirmation.runId,
+                attemptId: renderRetryBudget.attemptId,
+                consumed: followUp.jobs.length,
+                mode: 'final',
+                provenance: 'versioned-estimate',
+            });
+        }
         setChatGenerating(false);
     }
 
