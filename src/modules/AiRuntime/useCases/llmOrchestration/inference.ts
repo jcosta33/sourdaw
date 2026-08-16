@@ -14,6 +14,7 @@ import {
     type ModelProviderRequest,
     type ModelProviderResult,
     type ModelProviderSession,
+    type ModelProviderStreamIdentity,
 } from '../../models/ModelProviderProtocol';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
@@ -30,6 +31,7 @@ import {
     type ToolCallResult,
     type ToolPlanningOutcome,
 } from '../../transformers/toolCallParser';
+import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
@@ -153,40 +155,43 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             request: providerRequest,
             ...(signal === undefined ? {} : { signal }),
             onEvent: (event) => {
-                if (event.type === 'tool-call') {
-                    toolCalls.push(event.call);
+                if (event.event.type === 'tool-call') {
+                    toolCalls.push(event.event.call);
                 }
             },
         });
         if (nativeOutcome.status === 'unavailable') {
             throw createModelProviderFailureError(nativeOutcome.failure);
         }
-        if (nativeOutcome.finish.reason === 'stop') {
+        if (nativeOutcome.finish.finish.reason === 'stop') {
             logger.info(`[AI Engine] (native/structured) ${String(toolCalls.length)} tool call(s)`);
             return { status: 'complete', toolCalls };
         }
-        if (nativeOutcome.finish.reason === 'cancelled') {
+        if (nativeOutcome.finish.finish.reason === 'cancelled') {
             throw createToolPlanningAbortError();
         }
         if (
-            nativeOutcome.finish.reason === 'error' &&
-            nativeOutcome.finish.failure.code === 'native-tool-protocol-invalid'
+            nativeOutcome.finish.finish.reason === 'error' &&
+            nativeOutcome.finish.finish.failure.code === 'native-tool-protocol-invalid'
         ) {
-            throw createAiRuntimeError(nativeOutcome.finish.failure.safeMessage);
+            throw createAiRuntimeError(nativeOutcome.finish.finish.failure.safeMessage);
         }
         if (signal?.aborted) {
             throw createToolPlanningAbortError();
         }
-        if (nativeOutcome.finish.reason === 'error' && nativeOutcome.finish.failure.code === 'tool-planning-rejected') {
-            return { status: 'rejected', reason: nativeOutcome.finish.failure.safeMessage };
+        if (
+            nativeOutcome.finish.finish.reason === 'error' &&
+            nativeOutcome.finish.finish.failure.code === 'tool-planning-rejected'
+        ) {
+            return { status: 'rejected', reason: nativeOutcome.finish.finish.failure.safeMessage };
         }
         if (
-            nativeOutcome.finish.reason !== 'error' ||
-            !['native-tools-unavailable', 'native-provider-failed'].includes(nativeOutcome.finish.failure.code)
+            nativeOutcome.finish.finish.reason !== 'error' ||
+            !['native-tools-unavailable', 'native-provider-failed'].includes(nativeOutcome.finish.finish.failure.code)
         ) {
             const message =
-                nativeOutcome.finish.reason === 'error' || nativeOutcome.finish.reason === 'refusal'
-                    ? nativeOutcome.finish.failure.safeMessage
+                nativeOutcome.finish.finish.reason === 'error' || nativeOutcome.finish.finish.reason === 'refusal'
+                    ? nativeOutcome.finish.finish.failure.safeMessage
                     : 'The native model provider returned incomplete tool output.';
             throw createAiRuntimeError(message);
         }
@@ -239,10 +244,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             throw createModelProviderFailureError(fallbackOutcome.failure);
         }
         if (
-            fallbackOutcome.finish.reason === 'error' &&
-            fallbackOutcome.finish.failure.code === 'tool-planning-rejected'
+            fallbackOutcome.finish.finish.reason === 'error' &&
+            fallbackOutcome.finish.finish.failure.code === 'tool-planning-rejected'
         ) {
-            return { status: 'rejected', reason: fallbackOutcome.finish.failure.safeMessage };
+            return { status: 'rejected', reason: fallbackOutcome.finish.finish.failure.safeMessage };
         }
         const fallbackResult = fallbackSession.finish(fallbackOutcome.finish);
         if (fallbackResult.status !== 'complete') {
@@ -264,7 +269,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         toolSchemas?: readonly ToolSchema[],
         signal?: AbortSignal,
         toolSelectionPrompt: string = userMessage,
-        onProviderResult?: (result: ModelProviderResult) => void
+        onProviderResult?: (result: ModelProviderResult) => void,
+        streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
@@ -295,6 +301,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
 
         for (const backend of chain) {
             let providerSession: ModelProviderSession | null = null;
+            let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
             let providerSessionSettled = false;
             try {
                 if (signal?.aborted) {
@@ -347,6 +354,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 });
                 const compiledRequest = providerProtocol.compileRequest({
                     correlationId: `tool-planning-${crypto.randomUUID()}`,
+                    ...(streamIdentity ?? {}),
                     operation: 'tools',
                     modality: 'text',
                     messages: [
@@ -369,6 +377,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 }
                 const providerRequest = compiledRequest.request;
                 providerSession = providerProtocol.start(providerRequest);
+                providerSource = createModelProviderStreamWriter(providerRequest, providerSession);
                 const providerSystemPrompt = providerRequest.messages.find(
                     (message) => message.role === 'system'
                 )?.content;
@@ -376,7 +385,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     (message) => message.role === 'user'
                 )?.content;
                 if (providerSystemPrompt === undefined || providerUserMessage === undefined) {
-                    providerSession.finish({
+                    providerSource.finish({
                         reason: 'error',
                         failure: {
                             code: 'invalid-provider-request',
@@ -438,7 +447,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (outcome.status === 'complete') {
                     const providerCallIds = outcome.toolCalls.map((call) => call.id);
                     for (const [index, call] of outcome.toolCalls.entries()) {
-                        providerSession.push({
+                        providerSource.push({
                             type: 'tool-call',
                             call: {
                                 id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
@@ -447,7 +456,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     }
-                    const normalizedResult = providerSession.finish({ reason: 'stop' });
+                    const normalizedResult = providerSource.finish({ reason: 'stop' });
                     providerSessionSettled = true;
                     reportProviderResult(normalizedResult);
                     logger.info(
@@ -462,7 +471,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         })),
                     };
                 } else {
-                    const rejectedResult = providerSession.finish({
+                    const rejectedResult = providerSource.finish({
                         reason: 'error',
                         failure: {
                             code: 'tool-planning-rejected',
@@ -482,12 +491,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
                 const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
                 let normalizedAttemptError: Error | null = null;
-                if (providerSession !== null && !providerSessionSettled) {
+                if (providerSession !== null && providerSource !== null && !providerSessionSettled) {
                     let failedResult: ModelProviderResult;
                     if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
-                        failedResult = providerSession.finish({ reason: 'cancelled' });
+                        failedResult = providerSource.finish({ reason: 'cancelled' });
                     } else if (isTerminalModelRejection) {
-                        failedResult = providerSession.finish({
+                        failedResult = providerSource.finish({
                             reason: 'error',
                             failure: {
                                 code: 'tool-planning-rejected',
@@ -496,7 +505,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     } else if (normalizedProviderFailure !== null) {
-                        failedResult = providerSession.finish({
+                        failedResult = providerSource.finish({
                             reason: 'error',
                             failure: {
                                 code: normalizedProviderFailure.code,
@@ -505,7 +514,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     } else {
-                        failedResult = providerSession.finish({
+                        failedResult = providerSource.finish({
                             reason: 'error',
                             failure: {
                                 code: 'provider-attempt-failed',

@@ -114,6 +114,7 @@ vi.mock('../../../transformers/toolCallParser', () => ({
 vi.mock('../../modelProviderProtocol', async (importOriginal) => {
     const original = await importOriginal<typeof import('../../modelProviderProtocol')>();
     return {
+        ...original,
         createModelProviderProtocol: (...args: Parameters<typeof original.createModelProviderProtocol>) => {
             const protocol = original.createModelProviderProtocol(...args);
             return {
@@ -123,7 +124,7 @@ vi.mock('../../modelProviderProtocol', async (importOriginal) => {
                     return {
                         ...session,
                         finish: (finish: Parameters<typeof session.finish>[0]) => {
-                            mocks.providerFinishCalls.push(finish);
+                            mocks.providerFinishCalls.push(finish.finish);
                             return session.finish(finish);
                         },
                     };
@@ -182,7 +183,7 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['native'];
         mocks.nativeEngineReady.value = true;
         mocks.generateNativeToolCalls.mockResolvedValue([
-            { name: 'mute_track', arguments: { track_id: 'track-1', muted: true } },
+            { name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
         ]);
 
         const result = await generateToolCalls('sys', 'mute drums');
@@ -200,8 +201,8 @@ describe('generateToolPlanningOutcome', () => {
             completePlan([
                 {
                     id: expect.stringMatching(/^tool-planning-.*:0$/),
-                    name: 'mute_track',
-                    arguments: { track_id: 'track-1', muted: true },
+                    name: 'muteTrack',
+                    arguments: { trackId: 'track-1', muted: true },
                 },
             ])
         );
@@ -235,7 +236,7 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['native', 'webllm'];
         mocks.nativeEngineReady.value = true;
         mocks.generateNativeToolCalls.mockResolvedValue([
-            { name: 'mute_track', arguments: { track_id: 'track-1', muted: true } },
+            { name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
         ]);
 
         await expect(
@@ -246,8 +247,8 @@ describe('generateToolPlanningOutcome', () => {
             completePlan([
                 {
                     id: expect.stringMatching(/^tool-planning-.*:0$/),
-                    name: 'mute_track',
-                    arguments: { track_id: 'track-1', muted: true },
+                    name: 'muteTrack',
+                    arguments: { trackId: 'track-1', muted: true },
                 },
             ])
         );
@@ -306,8 +307,12 @@ describe('generateToolPlanningOutcome', () => {
             new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
         );
         mocks.generateNativeCompletion.mockResolvedValue('<tool name="mute_track" />');
-        mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
-        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
+        mocks.parseToolPlanningOutcome.mockReturnValue(
+            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }])
+        );
+        mocks.generateWebLlmToolCalls.mockResolvedValue(
+            completePlan([{ name: 'soloTrack', arguments: { trackId: 'track-1', soloed: true } }])
+        );
 
         const providerResults: ModelProviderResult[] = [];
 
@@ -315,7 +320,7 @@ describe('generateToolPlanningOutcome', () => {
             generateToolCalls('sys', 'solo drums', undefined, undefined, undefined, (result) => {
                 providerResults.push(result);
             })
-        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: {} }]));
+        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: { trackId: 'track-1', soloed: true } }]));
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
@@ -337,13 +342,15 @@ describe('generateToolPlanningOutcome', () => {
         mocks.generateNativeToolCalls.mockRejectedValue(
             new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
         );
-        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
+        mocks.generateWebLlmToolCalls.mockResolvedValue(
+            completePlan([{ name: 'soloTrack', arguments: { trackId: 'track-1', soloed: true } }])
+        );
 
         await expect(
             generateToolCalls('sys', 'solo drums', undefined, undefined, undefined, () => {
                 throw new Error('provider usage persistence failed');
             })
-        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: {} }]));
+        ).resolves.toEqual(completePlan([{ name: 'soloTrack', arguments: { trackId: 'track-1', soloed: true } }]));
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
         expect(mockLogger.warn).toHaveBeenCalledWith(
             '[AI Engine] Provider result observer failed: provider usage persistence failed'
@@ -388,10 +395,12 @@ describe('generateToolPlanningOutcome', () => {
         mocks.generateCloudToolCalls.mockRejectedValue(
             new HostedToolCallingProtocolError('Hosted AI returned an invalid response choice count')
         );
-        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
+        mocks.generateWebLlmToolCalls.mockResolvedValue(
+            completePlan([{ name: 'soloTrack', arguments: { trackId: 'track-1', soloed: true } }])
+        );
 
         await expect(generateToolCalls('sys', 'solo drums')).resolves.toEqual(
-            completePlan([{ name: 'soloTrack', arguments: {} }])
+            completePlan([{ name: 'soloTrack', arguments: { trackId: 'track-1', soloed: true } }])
         );
         expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'cloud', modelId: 'cloud' });
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(
@@ -684,11 +693,11 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['webllm'];
         mocks.isWebLlmLoaded.mockReturnValue(true);
         mocks.generateWebLlmToolCalls.mockResolvedValue(
-            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1' } }])
+            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }])
         );
 
         await expect(generateCompatibleToolCalls('sys', 'mute drums')).resolves.toEqual([
-            { name: 'muteTrack', arguments: { trackId: 'track-1' } },
+            { name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
         ]);
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'rejected', reason: 'Refused tool planning' });
 
@@ -739,7 +748,9 @@ describe('generateToolPlanningOutcome', () => {
         mocks.nativeEngineReady.value = true;
         mocks.generateNativeToolCalls.mockResolvedValue(null);
         mocks.generateNativeCompletion.mockResolvedValue('<tool name="mute_track" />');
-        mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
+        mocks.parseToolPlanningOutcome.mockReturnValue(
+            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }])
+        );
 
         const result = await generateToolCalls('sys', 'mute drums');
 
@@ -755,7 +766,7 @@ describe('generateToolPlanningOutcome', () => {
             expect.objectContaining({ requireComplete: true, maxTokens: 2_048, timeoutMs: 120_000 })
         );
         expect(mocks.parseToolPlanningOutcome).toHaveBeenCalledWith('<tool name="mute_track" />');
-        expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
+        expect(result).toEqual(completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]));
     });
 
     it.each([
@@ -807,7 +818,9 @@ describe('generateToolPlanningOutcome', () => {
         mocks.nativeEngineReady.value = true;
         mocks.generateNativeToolCalls.mockRejectedValue(new Error('structured unavailable'));
         mocks.generateNativeCompletion.mockResolvedValue('<tool name="mute_track" />');
-        mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
+        mocks.parseToolPlanningOutcome.mockReturnValue(
+            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }])
+        );
 
         const result = await generateToolCalls('sys', 'mute drums');
 
@@ -819,6 +832,6 @@ describe('generateToolPlanningOutcome', () => {
             'mute drums',
             expect.objectContaining({ requireComplete: true, maxTokens: 2_048, timeoutMs: 120_000 })
         );
-        expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
+        expect(result).toEqual(completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]));
     });
 });

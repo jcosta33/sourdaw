@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { NativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { type ModelProviderFinish, type ModelProviderRequest } from '../../models/ModelProviderProtocol';
 import { createModelProviderProtocol } from '../../useCases/modelProviderProtocol';
 import {
     runNativeModelProviderRequest,
@@ -49,6 +50,18 @@ function createFixture(input: {
         throw new Error('Native fixture request must compile');
     }
     return { request: compiled.request, session: protocol.start(compiled.request) };
+}
+
+function expectedFinish(request: ModelProviderRequest, finish: ModelProviderFinish, sequence = 0) {
+    return {
+        schemaVersion: request.schemaVersion,
+        runId: request.runId,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        cancellationGeneration: request.cancellationGeneration,
+        sequence,
+        finish,
+    };
 }
 
 describe('native model provider adapter', () => {
@@ -106,14 +119,18 @@ describe('native model provider adapter', () => {
             )
         ).resolves.toEqual({
             status: 'available',
-            finish: {
-                reason: 'error',
-                failure: {
-                    code: 'native-stream-incomplete',
-                    retryable: true,
-                    safeMessage: 'The native model provider stream ended without a terminal event.',
+            finish: expectedFinish(
+                request,
+                {
+                    reason: 'error',
+                    failure: {
+                        code: 'native-stream-incomplete',
+                        retryable: true,
+                        safeMessage: 'The native model provider stream ended without a terminal event.',
+                    },
                 },
-            },
+                1
+            ),
         });
     });
 
@@ -155,14 +172,14 @@ describe('native model provider adapter', () => {
                 )
             ).resolves.toEqual({
                 status: 'available',
-                finish: {
+                finish: expectedFinish(request, {
                     reason: 'error',
                     failure: {
                         code: 'native-conversation-history-unsupported',
                         retryable: false,
                         safeMessage: 'The native model provider does not support this conversation history.',
                     },
-                },
+                }),
             });
         }
     });
@@ -196,14 +213,14 @@ describe('native model provider adapter', () => {
                 )
             ).resolves.toEqual({
                 status: 'available',
-                finish: {
+                finish: expectedFinish(request, {
                     reason: 'error',
                     failure: {
                         code: 'native-conversation-history-unsupported',
                         retryable: false,
                         safeMessage: 'The native model provider does not support this conversation history.',
                     },
-                },
+                }),
             });
         }
         expect(streamCompletion).not.toHaveBeenCalled();
@@ -265,14 +282,14 @@ describe('native model provider adapter', () => {
             )
         ).resolves.toEqual({
             status: 'available',
-            finish: {
+            finish: expectedFinish(semanticFixture.request, {
                 reason: 'error',
                 failure: {
                     code: 'tool-planning-rejected',
                     retryable: false,
                     safeMessage: 'Native tool plan was incomplete',
                 },
-            },
+            }),
         });
 
         const protocolFixture = createFixture({
@@ -290,14 +307,14 @@ describe('native model provider adapter', () => {
             )
         ).resolves.toEqual({
             status: 'available',
-            finish: {
+            finish: expectedFinish(protocolFixture.request, {
                 reason: 'error',
                 failure: {
                     code: 'native-tool-protocol-invalid',
                     retryable: true,
                     safeMessage: 'The native model provider returned an invalid tool response.',
                 },
-            },
+            }),
         });
     });
 
@@ -330,7 +347,10 @@ describe('native model provider adapter', () => {
                 },
                 createDependencies()
             )
-        ).resolves.toEqual({ status: 'available', finish: { reason: 'cancelled' } });
+        ).resolves.toEqual({
+            status: 'available',
+            finish: expectedFinish(cancelledFixture.request, { reason: 'cancelled' }),
+        });
 
         const timeoutFixture = createFixture({ operation: 'text' });
         const timeoutOutcome = await runNativeModelProviderRequest(
@@ -343,14 +363,14 @@ describe('native model provider adapter', () => {
         );
         expect(timeoutOutcome).toEqual({
             status: 'available',
-            finish: {
+            finish: expectedFinish(timeoutFixture.request, {
                 reason: 'error',
                 failure: {
                     code: 'native-provider-timeout',
                     retryable: true,
                     safeMessage: 'The native model provider request timed out.',
                 },
-            },
+            }),
         });
     });
 
@@ -365,6 +385,6 @@ describe('native model provider adapter', () => {
                     }),
                 })
             )
-        ).resolves.toEqual({ status: 'available', finish: { reason: 'length' } });
+        ).resolves.toEqual({ status: 'available', finish: expectedFinish(request, { reason: 'length' }) });
     });
 });

@@ -40,6 +40,10 @@ export function getAiRuntimeProtocolContracts() {
                 'fixed-unavailable-media-modalities',
                 'unknown-future-event-tolerance',
                 'stream-cancellation',
+                'run-request-call-sequence-and-cancellation-generation-correlation',
+                'bounded-events-buffers-and-payloads',
+                'schema-validated-complete-tool-arguments',
+                'exactly-one-terminal-and-late-event-rejection',
             ] as const,
             operations: MODEL_PROVIDER_OPERATIONS.map((name) => ({
                 name,
@@ -50,7 +54,7 @@ export function getAiRuntimeProtocolContracts() {
             compatibility: {
                 mode: 'reject-unsupported' as const,
                 behavior:
-                    'Normalize supported provider requests and events, preserve unknown event names for diagnostics, and fail closed on unavailable capabilities.',
+                    'Normalize correlated and bounded provider streams, validate complete structured arguments, preserve bounded unknown event names for diagnostics, and fail closed on unavailable capabilities or invalid terminal behavior.',
                 canonicalProjectRequiresCommandReplay: false as const,
             },
         },

@@ -37,7 +37,7 @@ vi.mock('../streamHostedModelText', () => ({
 
 function createResult(overrides: Partial<ModelProviderResult> = {}): ModelProviderResult {
     return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         provider: 'anthropic',
         model: 'model',
         correlationId: 'mix-health-test',

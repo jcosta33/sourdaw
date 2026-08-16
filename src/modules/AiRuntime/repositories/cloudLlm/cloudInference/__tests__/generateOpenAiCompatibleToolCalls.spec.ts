@@ -361,7 +361,12 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         { label: 'abort', error: new DOMException('Aborted', 'AbortError') },
     ])('preserves a response $label for fallback handling', async ({ error }) => {
         const response = new Response('{}', { status: 200 });
-        vi.spyOn(response, 'json').mockRejectedValue(error);
+        const reader = response.body?.getReader();
+        if (!reader || !response.body) {
+            throw new Error('Expected a readable response body');
+        }
+        vi.spyOn(reader, 'read').mockRejectedValue(error);
+        vi.spyOn(response.body, 'getReader').mockReturnValue(reader);
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(response));
 
         await expect(generateToolCalls()).rejects.toBe(error);

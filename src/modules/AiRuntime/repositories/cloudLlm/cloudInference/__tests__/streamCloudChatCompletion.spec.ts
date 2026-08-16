@@ -4,9 +4,12 @@ import { AiRuntimeConfigurationChangedError } from '../../../../errors/AiRuntime
 import { streamCloudChatCompletion } from '../streamCloudChatCompletion';
 
 type CloudStreamInput = {
+    apiKey: string;
+    model: string;
     system: string;
-    max_tokens: number;
+    maxTokens: number;
     messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+    signal: AbortSignal;
 };
 
 type CloudStreamEvent =
@@ -51,17 +54,12 @@ type CompatibleStreamInput = {
 type CloudCompletionOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
 
 const mocks = vi.hoisted(() => ({
-    getCloudClient: vi.fn(),
     getCloudProviderRuntime: vi.fn(),
-    stream: vi.fn<(input: CloudStreamInput, options: { signal: AbortSignal }) => CloudStreamOutput>(),
+    stream: vi.fn<(input: CloudStreamInput) => CloudStreamOutput>(),
     streamOpenAiCompatibleChatCompletion: vi.fn<(input: CompatibleStreamInput) => Promise<'stop' | 'length'>>(),
     registerCloudStreamController: vi.fn((controller: AbortController) => controller),
     unregisterCloudStreamController: vi.fn(),
     warn: vi.fn(),
-}));
-
-vi.mock('../../getCloudClient', () => ({
-    getCloudClient: mocks.getCloudClient,
 }));
 
 vi.mock('../../getCloudProviderRuntime', () => ({
@@ -78,6 +76,10 @@ vi.mock('../../unregisterCloudStreamController', () => ({
 
 vi.mock('../streamOpenAiCompatibleChatCompletion', () => ({
     streamOpenAiCompatibleChatCompletion: mocks.streamOpenAiCompatibleChatCompletion,
+}));
+
+vi.mock('../requestAnthropicStream', () => ({
+    requestAnthropicStream: mocks.stream,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -100,9 +102,6 @@ describe('streamCloudChatCompletion', () => {
         };
 
         mocks.stream.mockReturnValue(mockAsyncIterator);
-        mocks.getCloudClient.mockReturnValue({
-            messages: { stream: mocks.stream },
-        });
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'anthropic',
             api_key: 'test-key',
@@ -113,7 +112,6 @@ describe('streamCloudChatCompletion', () => {
     });
 
     it('throws if cloud client is not configured', async () => {
-        mocks.getCloudClient.mockReturnValue(null);
         mocks.getCloudProviderRuntime.mockReturnValue(null);
         await expect(streamCloudChatCompletion([], vi.fn())).rejects.toThrow('Cloud AI not configured');
     });
@@ -135,7 +133,9 @@ describe('streamCloudChatCompletion', () => {
         const args = firstCall[0];
 
         expect(args.system).toBe('You are a bot.');
-        expect(args.max_tokens).toBe(1000);
+        expect(args.apiKey).toBe('test-key');
+        expect(args.model).toBe('test-model');
+        expect(args.maxTokens).toBe(1000);
         expect(args.messages).toHaveLength(2);
         expect(args.messages[0]).toEqual({ role: 'user', content: 'Hi there' });
         expect(args.messages[1]).toEqual({ role: 'assistant', content: 'Hello' });
@@ -155,6 +155,25 @@ describe('streamCloudChatCompletion', () => {
         expect(tokens).toHaveLength(2);
         expect(tokens).toEqual(['Hello', ' World']);
         expect(outcome).toEqual({ status: 'complete' });
+    });
+
+    it('rejects an oversized Anthropic event before exposing its token', async () => {
+        mocks.stream.mockReturnValue({
+            async *[Symbol.asyncIterator](): AsyncGenerator<CloudStreamEvent> {
+                yield {
+                    type: 'content_block_delta',
+                    delta: { type: 'text_delta', text: 'x'.repeat(70 * 1_024) },
+                };
+                yield { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null } };
+                yield { type: 'message_stop' };
+            },
+        });
+        const onToken = vi.fn();
+
+        await expect(streamCloudChatCompletion([{ role: 'user', content: 'test' }], onToken)).rejects.toThrow(
+            /event|payload|size|limit/i
+        );
+        expect(onToken).not.toHaveBeenCalled();
     });
 
     it('normalizes Anthropic usage snapshots and final totals', async () => {
@@ -219,8 +238,7 @@ describe('streamCloudChatCompletion', () => {
         if (!streamCall) {
             throw new Error('Expected the cloud stream call to have been recorded');
         }
-        const requestOptions = streamCall[1];
-        expect(requestOptions.signal).toBeInstanceOf(AbortSignal);
+        expect(streamCall[0].signal).toBeInstanceOf(AbortSignal);
     });
 
     it('dispatches OpenAI-compatible providers through the fetch stream adapter', async () => {
@@ -369,6 +387,20 @@ describe('streamCloudChatCompletion', () => {
 
         await expect(streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn())).rejects.toThrow(
             'Hosted AI chat stream ended unexpectedly'
+        );
+    });
+
+    it('rejects an Anthropic event after its terminal outcome', async () => {
+        mocks.stream.mockReturnValue({
+            async *[Symbol.asyncIterator](): AsyncGenerator<CloudStreamEvent> {
+                yield { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null } };
+                yield { type: 'message_stop' };
+                yield { type: 'other_event' };
+            },
+        });
+
+        await expect(streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn())).rejects.toThrow(
+            'event after completion'
         );
     });
 

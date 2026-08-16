@@ -34,6 +34,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function emitSchemaEvent(
+    channel: TestChannel,
+    args: Record<string, unknown>,
+    sequence: number,
+    event: string,
+    data: Record<string, unknown> = {}
+): void {
+    channel.onmessage?.({ event, data: { ...data, requestId: args.requestId, sequence } });
+}
+
 describe('generateSchemaConstrainedNativeCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -57,13 +67,10 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.isTauri.mockReturnValue(true);
         const channel: TestChannel = { onmessage: null };
         mocks.createChannel.mockResolvedValue(channel);
-        mocks.tauriInvoke.mockImplementation(() => {
-            channel.onmessage?.({ event: 'token', data: { text: '{"kind":' } });
-            channel.onmessage?.({ event: 'token', data: { text: '"edit_plan"}' } });
-            channel.onmessage?.({
-                event: 'done',
-                data: { promptTokens: 1, completionTokens: 2, finishReason: 'stop' },
-            });
+        mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
+            emitSchemaEvent(channel, args, 0, 'token', { text: '{"kind":' });
+            emitSchemaEvent(channel, args, 1, 'token', { text: '"edit_plan"}' });
+            emitSchemaEvent(channel, args, 2, 'done');
             return Promise.resolve(undefined);
         });
         const onToken = vi.fn();
@@ -98,8 +105,8 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.isTauri.mockReturnValue(true);
         const channel: TestChannel = { onmessage: null };
         mocks.createChannel.mockResolvedValue(channel);
-        mocks.tauriInvoke.mockImplementation(() => {
-            channel.onmessage?.({ event: 'error', data: { message: 'schema failed' } });
+        mocks.tauriInvoke.mockImplementation((_command: string, args: Record<string, unknown>) => {
+            emitSchemaEvent(channel, args, 0, 'error', { message: 'schema failed' });
             return Promise.resolve(undefined);
         });
 
@@ -116,18 +123,26 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.isTauri.mockReturnValue(true);
         const channel: TestChannel = { onmessage: null };
         mocks.createChannel.mockResolvedValue(channel);
-        mocks.tauriInvoke.mockImplementation(() => {
-            channel.onmessage?.({ event: 'token', data: { text: 12 } });
+        mocks.tauriInvoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+            if (command === 'schema_constrained_generation') {
+                emitSchemaEvent(channel, args, 0, 'token', { text: 12 });
+                emitSchemaEvent(channel, args, 0, 'token', { text: 'must-not-be-exposed' });
+            }
             return Promise.resolve(undefined);
         });
+        const onToken = vi.fn();
 
         await expect(
             generateSchemaConstrainedNativeCompletion({
                 systemPrompt: 'system',
                 userMessage: 'mute drums',
                 jsonSchema: '{"type":"object"}',
+                onToken,
             })
         ).rejects.toThrow(/Invalid schema_constrained_generation event/);
+        expect(onToken).not.toHaveBeenCalled();
+        expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+        expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
     });
 
     it('should reject when the abort signal fires before native schema generation resolves', async () => {
