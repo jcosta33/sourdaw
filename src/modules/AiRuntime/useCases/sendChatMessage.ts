@@ -440,18 +440,36 @@ export async function sendChatMessage(
                     if (!admittedRun) {
                         throw new Error('Agent run disappeared before plan materialization.');
                     }
+                    const plannedAuthority = compileAgentActionExecution({
+                        actions: result.actions,
+                        actionLabels: confirmationDescription.actionLabels,
+                        context,
+                        group: generateGroupId(userText),
+                        intent: userText,
+                        projectRevision,
+                        requiresConfirmation: result.requiresConfirmation,
+                        runId,
+                        mode: 'apply',
+                        protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                        trustCeiling: options?.trustCeiling,
+                    }).commandBatch.authority;
+                    const planScope = {
+                        targetIds: [...plannedAuthority.scope.targetIds],
+                        targetRanges: plannedAuthority.scope.targetRanges.map((range) => ({ ...range })),
+                        protectedTargetIds: [...plannedAuthority.scope.protectedTargetIds],
+                        protectedRanges: plannedAuthority.scope.protectedRanges.map((range) => ({ ...range })),
+                    };
+                    const planGrants = {
+                        ...plannedAuthority.grants,
+                        allowedOperationPrefixes: [...plannedAuthority.grants.allowedOperationPrefixes],
+                    };
                     const plannedRun = planAgentRun({
                         request: userText,
                         revision: projectRevision,
                         actions: result.actions,
                         actionLabels: confirmationDescription.actionLabels,
-                        scope: {
-                            targetIds: confirmationDescription.affectedIds,
-                            targetRanges: [],
-                            protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
-                            protectedRanges: [],
-                        },
-                        grants: admittedRun.grants,
+                        scope: planScope,
+                        grants: planGrants,
                         budgets: admittedRun.budgets,
                         requiresConfirmation: false,
                         applicationToolReceipts: result.applicationToolReceipts,
@@ -469,15 +487,8 @@ export async function sendChatMessage(
                             runId,
                             decision: {
                                 revision: projectRevision,
-                                scope: {
-                                    targetIds: confirmationDescription.affectedIds,
-                                    targetRanges: [],
-                                    protectedTargetIds: confirmationDescription.protectedUnchanged.map(
-                                        (item) => item.id
-                                    ),
-                                    protectedRanges: [],
-                                },
-                                grants: admittedRun.grants,
+                                scope: planScope,
+                                grants: planGrants,
                                 alternatives: plannedRun.decision.alternatives,
                                 reason: plannedRun.decision.reason,
                                 selectedAlternativeId: null,
@@ -499,13 +510,8 @@ export async function sendChatMessage(
                         serializedBatchIdentity: null,
                         applicationToolReceipts: result.applicationToolReceipts ?? [],
                         revision: projectRevision,
-                        scope: {
-                            targetIds: confirmationDescription.affectedIds,
-                            targetRanges: [],
-                            protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
-                            protectedRanges: [],
-                        },
-                        grants: admittedRun.grants,
+                        scope: planScope,
+                        grants: planGrants,
                         budgets: admittedRun.budgets,
                         plan: plannedRun.plan,
                     });

@@ -824,6 +824,17 @@ describe('sendChatMessage injectables', () => {
             rawText: 'mute the vocals',
             requiresConfirmation: false,
             executionMode: 'atomic',
+            providerProposal: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Mute track-1.',
+                constraints: [],
+                scope: { targetIds: ['track-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                capabilityIds: ['muteTrack'],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Verify track identity.'],
+                stoppingConditions: ['Stop if application validation fails.'],
+            },
         });
         mocks.executeAppActionBatch.mockResolvedValue({
             status: 'committed',
