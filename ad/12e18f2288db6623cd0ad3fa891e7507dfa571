@@ -1,0 +1,27 @@
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_446c6dd58a65c6 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_446c6dd58a65c6 1
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_446c6dd58a65c6 12,17-18,21
+crates/daw-dsp/src/crumbs/voice.rs
+  s_ab5443e65c7fba::t_37db3a66854e43 1223-1279
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_446c6dd58a65c6 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ad12e18f2288db6623cd0ad3fa891e7507dfa571",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": null
+    }
+  }
+}
