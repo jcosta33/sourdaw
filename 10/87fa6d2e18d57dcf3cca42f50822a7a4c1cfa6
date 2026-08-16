@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_4a3d7070fb1f68 123,151-154
+  s_a40848e8f8cca9::t_2deaf163fcc1e9 1-72,109-122,124-128,130-150,155-163,204-224,295-302
+  s_a40848e8f8cca9::t_7578b6b21d16eb 73-108,225-228
+  s_a40848e8f8cca9::t_162d01fc657cba 129,164-203,229-294
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_a40848e8f8cca9::t_e092748cb6e0a3 125-142,148,150-156
+  s_a40848e8f8cca9::t_afbeb81dc5f13c 143-147,149
+  s_a40848e8f8cca9::t_b73c7c64a188c9 206
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_49128a8d0f69ca 407
+  s_a40848e8f8cca9::t_e092748cb6e0a3 50,404-406,408-418
+  s_a40848e8f8cca9::t_b73c7c64a188c9 82
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_a40848e8f8cca9::t_4a3d7070fb1f68 1-124,127-130,132-133,143,145-156,161-162,167-168,174-176,178-226,231-258,264-272,275-289,293-316,323-324,329-331,338-352,354-366,374-378,383,413-417,427-438,445,447-458,463-468,470-472
+  s_a40848e8f8cca9::t_afbeb81dc5f13c 384-412
+  s_a40848e8f8cca9::t_364e587c95503d 353,439-440,446
+  s_a40848e8f8cca9::t_8c9f7e24e2dde5 125-126,131,134-142,144,157-160,163-166,169-173,227-230,259-263,273-274,290-292,319-322,325-328,332-337,367-373,379-382,418-426,441-444,459-462,469
+  s_a40848e8f8cca9::t_49128a8d0f69ca 177,317-318
+  s_a40848e8f8cca9::t_94e2b52531fcf4 473-475
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_49128a8d0f69ca 607-608
+  s_a40848e8f8cca9::t_e092748cb6e0a3 606,610-611,624-630,638
+  s_a40848e8f8cca9::t_b73c7c64a188c9 612
+  s_a40848e8f8cca9::t_309aefb31f74c1 616-618
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1087fa6d2e18d57dcf3cca42f50822a7a4c1cfa6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
