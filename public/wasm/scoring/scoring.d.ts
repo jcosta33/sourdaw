@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:1efb231e69ff548844d52d28ac286c053444a40a35e98cdc807c856808d692c4
+// @wasm-bindgen-dts crate-source: sha256:79115c42fe32bb0250d00321a04b59f4ab5c58b12802197ac5573cc07b98d087
 /* tslint:disable */
 /* eslint-disable */
 
@@ -22,13 +22,28 @@ export class ScoringInstance {
     get_poly_string_count(): number;
     get_right_ptr(): number;
     /**
-     * Import a Scala .scl file and apply as tuning offsets.
+     * Import a Scala .scl file and apply it as tuning offsets. Returns whether
+     * the file was applied: a malformed scale, or one that is not 12 degrees,
+     * changes nothing. The offsets table is one entry per 12-TET pitch class,
+     * so a scale of any other size cannot be represented and is refused rather
+     * than truncated into a different tuning.
      */
-    import_scala(scl_text: string): void;
+    import_scala(scl_text: string): boolean;
     /**
-     * Import an AnaMark .tun file and apply as tuning offsets.
+     * Import an AnaMark .tun file and apply it as tuning offsets. Returns
+     * whether the file was applied. A file that declares no `BaseFreq` leaves
+     * the current concert-A reference alone — silence about the reference is
+     * not a request to reset it to 440.
+     *
+     * `BaseFreq` is the frequency of MIDI note 0, not concert A: the default
+     * is 8.1757989156 Hz, which is A440. It is converted, not clamped. Running
+     * it through `set_param` would fold every out-of-range value into
+     * 400..=490 and silently retune a 415 or 432 session while reporting
+     * success, so a converted reference outside that range fails the whole
+     * import and nothing is applied — a declared-but-unusable reference is
+     * corruption, not absence.
      */
-    import_tun(tun_text: string): void;
+    import_tun(tun_text: string): boolean;
     is_active(): boolean;
     is_poly_string_active(idx: number): boolean;
     constructor(sample_rate: number);
@@ -61,8 +76,8 @@ export interface InitOutput {
     readonly scoringinstance_get_poly_string_confidence: (a: number, b: number) => number;
     readonly scoringinstance_get_poly_string_count: (a: number) => number;
     readonly scoringinstance_get_right_ptr: (a: number) => number;
-    readonly scoringinstance_import_scala: (a: number, b: number, c: number) => void;
-    readonly scoringinstance_import_tun: (a: number, b: number, c: number) => void;
+    readonly scoringinstance_import_scala: (a: number, b: number, c: number) => number;
+    readonly scoringinstance_import_tun: (a: number, b: number, c: number) => number;
     readonly scoringinstance_is_active: (a: number) => number;
     readonly scoringinstance_is_poly_string_active: (a: number, b: number) => number;
     readonly scoringinstance_new: (a: number) => number;

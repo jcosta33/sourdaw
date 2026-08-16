@@ -14,6 +14,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
@@ -75,7 +76,12 @@ async function beginActualRecording(startToken: number): Promise<boolean> {
         await stopAudioRecording();
         return false;
     }
-    clips = startRecording();
+    // Record engaged while the transport is already rolling: anchor the clips at
+    // the live playhead. The transport store is written on discrete events only,
+    // so during playback its `playheadPosition` still holds the beat playback
+    // started at — `startRecording`'s default would open the clip back there.
+    const rolling = getTransportState()?.isPlaying === true;
+    clips = startRecording(rolling ? playheadPositionRef.current : undefined);
     updateTransportState({ isRecording: true });
     return true;
 }
