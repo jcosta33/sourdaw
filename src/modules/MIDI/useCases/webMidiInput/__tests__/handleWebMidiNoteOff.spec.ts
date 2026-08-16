@@ -83,6 +83,8 @@ describe('handleWebMidiNoteOff', () => {
         get_track_strip.mockReset();
         mpe_enabled.value = false;
         audio_clock.currentTime = 2;
+        audio_clock.baseLatency = 0;
+        audio_clock.outputLatency = 0;
     });
 
     it('should append recorded notes through the MIDI-owned append use case', async () => {
@@ -500,12 +502,65 @@ describe('handleWebMidiNoteOff', () => {
 
         await fn(0, 60, 0);
 
-        expect(append_recorded_midi_note).toHaveBeenCalledWith(
-            expect.objectContaining({ clipId: 'clip-late' })
-        );
+        expect(append_recorded_midi_note).toHaveBeenCalledWith(expect.objectContaining({ clipId: 'clip-late' }));
         // Clip-relative origin follows the resolved clip: beat 8 minus the
         // late clip's start (0), not minus the early clip's start (8).
         expect(create_midi_note).toHaveBeenCalledWith(60, 0, expect.any(Number), 100);
+    });
+
+    // The clip-relative store cannot hold a negative beat, so with the media
+    // origin sitting exactly on the clip start every note played inside the
+    // round-trip window clamps to 0 and loses its compensation — silently, and
+    // unrecoverably. A clip that carries a media lead-in in `midiOffsetBeats`
+    // puts the origin earlier than its start beat, which is what makes the
+    // compensation representable. Punch recording creates exactly such a clip.
+    it('keeps input-latency compensation for a note played inside a clip media lead-in', async () => {
+        // 0.005 + 0.015 context + 0.010 track = 0.030 s; at 120 bpm, 0.06 beats.
+        audio_clock.baseLatency = 0.005;
+        audio_clock.outputLatency = 0.015;
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }));
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                createMidiNote: create_midi_note,
+                getCompensationDelay: () => 0.01,
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            armed: true,
+                            devices: [],
+                            clips: [
+                                {
+                                    id: 'clip-punch',
+                                    type: 'midi',
+                                    startBeat: 16,
+                                    endBeat: 24,
+                                    midiOffsetBeats: 0.06,
+                                },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                playheadPositionRef: { current: 16.03 },
+            })
+        );
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            // Struck half a compensation window past the clip start.
+            startBeat: 16.03,
+        });
+
+        await fn(0, 60, 0);
+
+        // Media origin 16 - 0.06 = 15.94, so 16.03 - 0.06 - 15.94 = 0.03. Without
+        // the lead-in the same strike resolves to -0.03 and clamps to 0.
+        expect(create_midi_note).toHaveBeenCalledWith(60, expect.closeTo(0.03, 6), expect.any(Number), 100);
     });
 
     it('records MPE expression (pressure, slide, pitchBend) onto the captured note', async () => {

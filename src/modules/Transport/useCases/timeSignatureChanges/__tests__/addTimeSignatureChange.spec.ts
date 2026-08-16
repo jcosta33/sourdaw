@@ -91,4 +91,16 @@ describe('addTimeSignatureChange', () => {
         expect(result.changes[0]).toEqual({ id: 'ts-4', beat: 4, numerator: 7, denominator: 8 });
         expect(result.changes[1]).toEqual({ id: 'ts-8', beat: 8, numerator: 4, denominator: 4 });
     });
+
+    it('updates the existing change within beat-epsilon instead of inserting a float-drift duplicate', () => {
+        // Save/load can perturb a stored beat by a sub-tick amount; matching must
+        // tolerate that drift the same way addTempoChange/removeTimeSignatureChange do.
+        mockStore.value = {
+            changes: [{ id: 'ts-5', beat: 5, numerator: 4, denominator: 4 }],
+        };
+        subject.addTimeSignatureChange(5.000000001, 3, 4);
+        const result = setMock.mock.calls[0]![0]!;
+        expect(result.changes).toHaveLength(1);
+        expect(result.changes[0]).toEqual({ id: 'ts-5', beat: 5, numerator: 3, denominator: 4 });
+    });
 });
