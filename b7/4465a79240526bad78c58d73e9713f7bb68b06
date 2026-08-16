@@ -1,0 +1,39 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_ab5443e65c7fba::t_58f9f46576f519 12
+  s_ab5443e65c7fba::t_8d1089872f1585 109
+  s_ab5443e65c7fba::t_fad41a5a278fe5 141
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_ab5443e65c7fba::t_f4525cd5f6b6ed 141
+  s_ab5443e65c7fba::t_16261c916b6828 129-131
+  s_ab5443e65c7fba::t_6db2c61aa3556a 11
+  s_ab5443e65c7fba::t_0e5defc1b728ee 155
+src/modules/MIDI/useCases/webMidiInput/resolveDeviceNode.ts
+  s_ab5443e65c7fba::t_0bb802f0c7efb1 1-45
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_ab5443e65c7fba::t_0cab7a4e159ee4 126,168
+  s_ab5443e65c7fba::t_cb7ace740a112f 13
+  s_ab5443e65c7fba::t_7b3518f3ca9815 197
+  s_ab5443e65c7fba::t_6c5d8db4e67f3a 134,176
+  s_ab5443e65c7fba::t_41d32d1a8bb4b9 150,186
+  s_ab5443e65c7fba::t_ca7a9c27235caf 229
+  s_ab5443e65c7fba::t_37ef587267c5eb 247
+  s_ab5443e65c7fba::t_556d2ac4d2104e 207
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveDeviceNode.spec.ts
+  s_ab5443e65c7fba::t_aebfbebe89be1d 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b74465a79240526bad78c58d73e9713f7bb68b06",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
