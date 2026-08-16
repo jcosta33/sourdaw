@@ -44,6 +44,7 @@ export { getDefaultBendRangeSemitones } from './noteExpression/getDefaultBendRan
 export { getNoteExpressionDimensions } from './noteExpression/getNoteExpressionDimensions';
 
 export { buildDeviceChain } from './buildDeviceChain';
+export { getAgentBuiltinDeviceRuntimeManifest } from './getAgentBuiltinDeviceRuntimeManifest';
 export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 
 export { decodeAudioFile } from './decodeAudioFile';

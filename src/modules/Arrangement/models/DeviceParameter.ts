@@ -34,6 +34,10 @@ export type {
     PluginFormat,
     PluginPlatform,
     PluginDescriptor,
+    DeviceParameterModulationDeclaration,
+    DeviceGainCompensationDeclaration,
+    DeviceParameterGuidance,
+    PluginDescriptorGuidance,
 } from './DeviceParameterTypes';
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────

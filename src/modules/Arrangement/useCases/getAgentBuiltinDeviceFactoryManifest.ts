@@ -1,4 +1,14 @@
-import { BUILTIN_PLUGINS, type DeviceParameter, type PluginDescriptor } from '../models/DeviceParameter';
+import {
+    BUILTIN_PLUGINS,
+    isDeviceSupportedOnCurrentPlatform,
+    type DeviceParameter,
+    type DeviceParameterGuidance,
+    type PluginDescriptor,
+} from '../models/DeviceParameter';
+import { getFactoryPresetContractsByDeviceType } from '../repositories/presets/getFactoryPresetContractsByDeviceType';
+
+import { getDeviceContractVersionForCommand } from './getDeviceContractVersionForCommand';
+import { getFactoryPresets } from './soundPresetLibrary';
 
 type AgentDeviceParameter = {
     id: string;
@@ -9,28 +19,25 @@ type AgentDeviceParameter = {
     default: number;
     enumValues: readonly string[] | null;
     automatable: boolean;
-    modulatable: { availability: 'unavailable'; source: 'Arrangement descriptor' };
-    semanticRole: { value: string; confidence: 'inferred'; source: 'parameter type' };
-    perceptualRole: { value: 'audible-parameter'; confidence: 'inferred'; source: 'device descriptor' };
-    typicalRange: { minimum: number; maximum: number; confidence: 'declared' };
-    interactions: readonly [string];
-    risks: readonly [string];
-    gainCompensation: { availability: 'unavailable'; source: 'Arrangement descriptor' };
+    guidance: DeviceParameterGuidance;
 };
 
-type AgentBuiltinDevice = {
+type AgentBuiltinDeviceDescriptor = {
     type: string;
-    version: 'builtin-v1';
+    descriptorVersion: string;
+    presetVersion: string;
+    capabilities: NonNullable<PluginDescriptor['capabilities']>;
+    guidance: Omit<NonNullable<PluginDescriptor['guidance']>, 'parameters'>;
     vendor: string;
     name: string;
     category: PluginDescriptor['category'];
-    capabilities: readonly [string];
-    ports: { availability: 'unavailable'; source: 'Arrangement descriptor' };
-    latency: { availability: 'unavailable'; source: 'Arrangement descriptor' };
+    platform: NonNullable<PluginDescriptor['platform']>;
+    availability: 'available' | 'unavailable-on-platform';
     tail: PluginDescriptor['tail'] | null;
-    presets: readonly [];
-    safetyNotes: readonly [string];
-    usageRecipes: readonly [string];
+    presets: {
+        availability: 'available' | 'none';
+        identities: readonly { id: string; name: string }[];
+    };
     parameters: readonly AgentDeviceParameter[];
     metadata: { source: 'Arrangement descriptor'; confidence: 'declared' };
 };
@@ -49,7 +56,7 @@ function parameterType(parameter: DeviceParameter): AgentDeviceParameter['type']
     throw new Error(`Unsupported device parameter type: ${parameter.type}`);
 }
 
-function toManifestParameter(parameter: DeviceParameter): AgentDeviceParameter {
+function toManifestParameter(parameter: DeviceParameter, guidance: DeviceParameterGuidance): AgentDeviceParameter {
     const type = parameterType(parameter);
     return {
         id: parameter.id,
@@ -60,36 +67,64 @@ function toManifestParameter(parameter: DeviceParameter): AgentDeviceParameter {
         default: parameter.defaultValue,
         enumValues: parameter.choices ?? null,
         automatable: parameter.automatable,
-        modulatable: { availability: 'unavailable', source: 'Arrangement descriptor' },
-        semanticRole: { value: `${type}-control`, confidence: 'inferred', source: 'parameter type' },
-        perceptualRole: { value: 'audible-parameter', confidence: 'inferred', source: 'device descriptor' },
-        typicalRange: { minimum: parameter.minValue, maximum: parameter.maxValue, confidence: 'declared' },
-        interactions: ['Writes are bounded by the descriptor minimum and maximum.'],
-        risks: ['Automation changes the audible device output.'],
-        gainCompensation: { availability: 'unavailable', source: 'Arrangement descriptor' },
+        guidance,
     };
 }
 
-/** Application-readable projection of Arrangement-owned built-in factory truth. */
-export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDevice[] {
-    return BUILTIN_PLUGINS.map((descriptor) => ({
-        type: descriptor.id,
-        version: 'builtin-v1',
-        vendor: descriptor.vendor,
-        name: descriptor.name,
-        category: descriptor.category,
-        capabilities: [descriptor.category === 'instrument' ? 'instrument-generation' : 'audio-processing'],
-        ports: { availability: 'unavailable', source: 'Arrangement descriptor' },
-        latency: { availability: 'unavailable', source: 'Arrangement descriptor' },
-        tail: descriptor.tail ?? null,
-        presets: [],
-        safetyNotes: ['Apply only declared parameter bounds through the owning device write path.'],
-        usageRecipes: [
-            descriptor.category === 'instrument'
-                ? 'Use on a MIDI-capable track through an application-approved insertion.'
-                : 'Use through an application-approved device insertion.',
-        ],
-        parameters: descriptor.parameters.map(toManifestParameter),
-        metadata: { source: 'Arrangement descriptor', confidence: 'declared' },
-    }));
+/** Arrangement owns catalog descriptors, never live node topology or latency. */
+export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDeviceDescriptor[] {
+    const presetContracts = new Map(
+        getFactoryPresetContractsByDeviceType(
+            getFactoryPresets(),
+            BUILTIN_PLUGINS.map((descriptor) => descriptor.id)
+        ).map((contract) => [contract.type, contract])
+    );
+
+    return BUILTIN_PLUGINS.map((descriptor) => {
+        const descriptorVersion = getDeviceContractVersionForCommand(descriptor.id);
+        if (!descriptorVersion) {
+            throw new Error(`Built-in descriptor fingerprint unavailable: ${descriptor.id}`);
+        }
+        const presetContract = presetContracts.get(descriptor.id);
+        if (!presetContract) {
+            throw new Error(`Built-in preset contract unavailable: ${descriptor.id}`);
+        }
+        if (!descriptor.guidance) {
+            throw new Error(`Built-in operating guidance unavailable: ${descriptor.id}`);
+        }
+        if (!descriptor.capabilities) {
+            throw new Error(`Built-in capability declaration unavailable: ${descriptor.id}`);
+        }
+        return {
+            type: descriptor.id,
+            descriptorVersion,
+            presetVersion: presetContract.presetVersion,
+            capabilities: descriptor.capabilities,
+            guidance: {
+                usage: descriptor.guidance.usage,
+                safety: descriptor.guidance.safety,
+                interactions: descriptor.guidance.interactions,
+                risks: descriptor.guidance.risks,
+                gainCompensation: descriptor.guidance.gainCompensation,
+            },
+            vendor: descriptor.vendor,
+            name: descriptor.name,
+            category: descriptor.category,
+            platform: descriptor.platform ?? 'both',
+            availability: isDeviceSupportedOnCurrentPlatform(descriptor.id) ? 'available' : 'unavailable-on-platform',
+            tail: descriptor.tail ?? null,
+            presets: {
+                availability: presetContract.availability,
+                identities: presetContract.identities,
+            },
+            parameters: descriptor.parameters.map((parameter) => {
+                const guidance = descriptor.guidance?.parameters[parameter.id];
+                if (!guidance) {
+                    throw new Error(`Built-in parameter guidance unavailable: ${descriptor.id}/${parameter.id}`);
+                }
+                return toManifestParameter(parameter, guidance);
+            }),
+            metadata: { source: 'Arrangement descriptor', confidence: 'declared' },
+        };
+    });
 }

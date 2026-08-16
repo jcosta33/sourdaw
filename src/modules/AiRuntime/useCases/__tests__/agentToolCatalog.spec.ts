@@ -115,13 +115,13 @@ describe('agent tool catalog', () => {
                     {
                         id: 'device-manifest-1',
                         name: 'device.factory-manifest.read',
-                        arguments: { types: ['builtin-compressor'] },
+                        arguments: { types: ['builtin-sidechain-compressor'] },
                     },
                 ],
             })
             .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
 
-        await runApplicationOwnedToolLoop({
+        const result = await runApplicationOwnedToolLoop({
             loopId: 'device-manifest-loop',
             terminalToolNames: new Set(['command.batch.propose']),
             requestTurn,
@@ -129,6 +129,49 @@ describe('agent tool catalog', () => {
 
         expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('device-manifest-1');
         expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('sourdaw.agent-device-factory-manifest');
+        expect(result).toMatchObject({
+            receipts: [
+                {
+                    data: {
+                        devices: [
+                            {
+                                type: 'builtin-sidechain-compressor',
+                                capabilities: {
+                                    domain: {
+                                        instrumentGeneration: { availability: 'unavailable' },
+                                        audioProcessing: { availability: 'available' },
+                                    },
+                                    runtime: {
+                                        liveNode: { availability: 'available' },
+                                        noteAcceptance: { availability: 'unavailable' },
+                                        sidechainRouting: { availability: 'available' },
+                                        offlineRender: { availability: 'conditional' },
+                                    },
+                                },
+                                versions: {
+                                    descriptor: expect.stringMatching(/^descriptor-v1:[0-9a-f]{8}$/),
+                                    preset: expect.stringMatching(/^preset-v1:[0-9a-f]{8}$/),
+                                    runtime: expect.stringMatching(/^runtime-v1:[0-9a-f]{8}$/),
+                                    composite: expect.stringMatching(/^builtin-factory-v2:/),
+                                },
+                                runtime: {
+                                    live: {
+                                        ports: {
+                                            inputs: 2,
+                                            outputs: 1,
+                                            externalInputs: 1,
+                                            sidechainRouting: 'available',
+                                        },
+                                        latency: { kind: 'fixed-samples', samples: 128 },
+                                    },
+                                    offline: { availability: 'conditional' },
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 

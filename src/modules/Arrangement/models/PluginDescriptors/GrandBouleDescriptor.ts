@@ -5,7 +5,10 @@
 
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
-export const GRAND_BOULE_DESCRIPTOR: PluginDescriptor = {
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+
+const GRAND_BOULE_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'grand-boule',
     name: 'Grand Boule',
     vendor: 'Sourdaw',
@@ -80,3 +83,22 @@ export const GRAND_BOULE_DESCRIPTOR: PluginDescriptor = {
         },
     ],
 };
+
+export const GRAND_BOULE_DESCRIPTOR = applySingleDescriptorGuidance(
+    GRAND_BOULE_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'grand-boule',
+        instrumentGuidance(
+            'Shape a physical-model piano from playing response, resonance, and output tone.',
+            ['Keep resonance and output gain conservative when playing dense chords.'],
+            ['Physical-model, hammer, resonance, and tone controls interact with note velocity.'],
+            ['High resonance or output gain can build sustained energy.']
+        ),
+        declaredControl(
+            'Physical-piano control',
+            'Changes piano response, resonance, tone, or output behavior.',
+            ['Balance resonance with damping and output level.'],
+            ['High resonance can build sustained energy.']
+        )
+    )
+);

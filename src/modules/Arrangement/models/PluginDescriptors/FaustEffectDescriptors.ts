@@ -1,5 +1,8 @@
 import { type PluginDescriptor, type DeviceParameter } from '../DeviceParameterTypes';
 
+import { applyDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { analysisGuidance, declaredControl, effectGuidance } from './GuidanceProfiles';
+
 /**
  * Plugin descriptors for Faust DSP effects.
  *
@@ -34,7 +37,7 @@ function fp(
     };
 }
 
-export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
+const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     {
         id: 'faust-zita-rev1-reverb',
         name: 'Zita-Rev1 Reverb',
@@ -196,3 +199,53 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         ],
     },
 ];
+
+const faustEffectGuidance = effectGuidance(
+    'Use the declared Faust effect controls conservatively and level-match against bypass.',
+    ['Set wet level or output staging before increasing nonlinear or feedback behavior.'],
+    ['Time, tone, dynamics, and wet-path controls interact through the selected Faust algorithm.'],
+    ['Extreme settings can build level, mask source detail, or create harsh artifacts.'],
+    { availability: 'unavailable', reason: 'These Faust descriptors declare no automatic output compensation.' }
+);
+
+const faustControl = declaredControl(
+    'Faust effect control',
+    'Changes the selected Faust effect response or its wet-path balance.',
+    ['Evaluate the control with the algorithm’s other time, tone, or dynamics settings.'],
+    ['Extreme settings can build level or obscure source detail.']
+);
+
+const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
+    descriptorGuidance('faust-zita-rev1-reverb', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-1176-compressor', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-multiband-compressor', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-pro-parametric-eq', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-tape-delay', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-brick-wall-limiter', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-spring-reverb', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-noise-gate', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-gain-utility', faustEffectGuidance, faustControl),
+    descriptorGuidance(
+        'faust-lufs-meter',
+        analysisGuidance(
+            'Measure loudness without changing audio.',
+            ['Use meter readings as evidence rather than a gain command.'],
+            ['The selected window and target determine how the reading is interpreted.'],
+            ['Chasing short-term readings can cause unnecessary processing.'],
+            { availability: 'not-applicable', reason: 'This analyzer has no audio level to compensate.' }
+        ),
+        declaredControl(
+            'Loudness-meter configuration',
+            'Changes metering configuration without processing audio.',
+            ['Choose a window appropriate to the delivery decision.'],
+            ['A target does not change measured audio.']
+        )
+    ),
+    descriptorGuidance('faust-stereo-widener', faustEffectGuidance, faustControl),
+    descriptorGuidance('faust-de-esser', faustEffectGuidance, faustControl),
+];
+
+export const FAUST_EFFECT_DESCRIPTORS = applyDescriptorGuidance(
+    FAUST_EFFECT_DESCRIPTOR_DATA,
+    FAUST_EFFECT_DESCRIPTORS_GUIDANCE
+);

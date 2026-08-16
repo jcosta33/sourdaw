@@ -5,7 +5,10 @@
 
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
-export const YEAST_DESCRIPTOR: PluginDescriptor = {
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
+const YEAST_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'yeast',
     name: 'Yeast',
     vendor: 'Sourdaw',
@@ -67,3 +70,23 @@ export const YEAST_DESCRIPTOR: PluginDescriptor = {
         },
     ],
 };
+
+export const YEAST_DESCRIPTOR = applySingleDescriptorGuidance(
+    YEAST_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'yeast',
+        effectGuidance(
+            'Transform incoming MIDI deliberately before it reaches an instrument.',
+            ['Verify the target instrument and note range before enabling transformations.'],
+            ['MIDI routing, scale, timing, and velocity controls jointly change generated note events.'],
+            ['Unbounded transposition or dense generation can make a performance unplayable.'],
+            { availability: 'not-applicable', reason: 'This MIDI effect has no audio output level to compensate.' }
+        ),
+        declaredControl(
+            'MIDI transformation control',
+            'Changes note-event routing, pitch, timing, or velocity behavior.',
+            ['Verify target and note range before enabling a transformation.'],
+            ['Dense or transposed output can make a performance unplayable.']
+        )
+    )
+);
