@@ -424,7 +424,11 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
     };
 }
 
-function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+async function executeDeviceManifest(
+    call: ToolCallResult,
+    callId: string,
+    turn: number
+): Promise<ApplicationToolReceipt> {
     const typeValues = call.arguments.types;
     if (
         Object.keys(call.arguments).length !== 1 ||
@@ -455,7 +459,7 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
         }
         types.push(type);
     }
-    const manifest = getAgentDeviceFactoryManifest(types);
+    const manifest = await getAgentDeviceFactoryManifest(types);
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -599,7 +603,7 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
     }
 }
 
-function executeSafeRead(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+async function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Promise<ApplicationToolReceipt> {
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
             return executeProjectQuery(call, callId, turn);
@@ -888,7 +892,7 @@ export async function runApplicationOwnedToolLoop(
 
         const turnReceipts = await Promise.all(
             safeReadCalls.map(async ({ call, callId }) =>
-                boundReceipt(executeSafeRead(call, callId, turn), limits.maxReceiptBytesPerCall)
+                boundReceipt(await executeSafeRead(call, callId, turn), limits.maxReceiptBytesPerCall)
             )
         );
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
