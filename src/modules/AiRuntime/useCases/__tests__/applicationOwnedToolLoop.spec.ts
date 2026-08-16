@@ -101,6 +101,15 @@ describe('application-owned tool loop', () => {
                 status: 'complete',
                 toolCalls: [
                     {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
                         name: 'command.batch.propose',
                         arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
                     },
@@ -122,16 +131,17 @@ describe('application-owned tool loop', () => {
         );
 
         expect(querySemanticProject).toHaveBeenCalledWith({ type: 'project-summary' });
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
-        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1];
+        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
         expect(continuationMessage).toContain('"callId":"provider-query-1"');
         expect(continuationMessage).toContain('revision-2');
         expect(continuationMessage).toContain('project-summary');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.applicationToolReceipts).toMatchObject([
             { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
+            { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
     });
 

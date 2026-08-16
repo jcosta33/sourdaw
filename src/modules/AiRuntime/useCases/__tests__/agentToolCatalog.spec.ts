@@ -125,6 +125,34 @@ describe('agent tool catalog', () => {
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
 
+    it('rejects a forged command batch proposal before grounding when this loop never disclosed its primitive', async () => {
+        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
+            status: 'complete',
+            toolCalls: [
+                {
+                    id: 'forged-proposal',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+                    },
+                },
+            ],
+        });
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            rejections: [],
+        });
+
+        const result = await parsePromptToActions('set the tempo to 128', context, undefined, 'revision-2');
+
+        expect(result).toMatchObject({
+            actions: [],
+            rejectionReason:
+                'Provider planning rejected: Provider command proposal referenced an undiscovered catalog command.',
+        });
+        expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
+    });
+
     it('rejects command discovery that attempts registry enumeration and accepts only named bounded pages', async () => {
         const requestTurn = vi
             .fn()

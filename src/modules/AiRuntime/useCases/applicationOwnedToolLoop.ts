@@ -8,6 +8,7 @@ import {
     AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
     PROJECT_QUERY_TOOL_NAME,
@@ -569,6 +570,92 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
     }
 }
 
+function recordDisclosedCommandSchemas(
+    calls: readonly { call: ToolCallResult }[],
+    receipts: readonly ApplicationToolReceipt[],
+    disclosedCommandSchemas: Map<string, string>
+): void {
+    for (const [index, receipt] of receipts.entries()) {
+        const call = calls[index]?.call;
+        if (
+            call?.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME ||
+            receipt.status !== 'success' ||
+            !isRecord(receipt.data) ||
+            receipt.data.category !== 'command' ||
+            !Array.isArray(receipt.data.items)
+        ) {
+            continue;
+        }
+        for (const item of receipt.data.items) {
+            if (!isRecord(item) || !isRecord(item.function) || typeof item.function.name !== 'string') {
+                continue;
+            }
+            disclosedCommandSchemas.set(item.function.name, JSON.stringify(item));
+        }
+    }
+}
+
+function validateCommandBatchProposal(
+    call: ToolCallResult,
+    disclosedCommandSchemas: ReadonlyMap<string, string>
+): string | null {
+    if (Object.keys(call.arguments).length !== 1 || !Array.isArray(call.arguments.commands)) {
+        return 'Provider command proposal does not match the strict catalog contract.';
+    }
+    const commands = call.arguments.commands;
+    if (commands.length === 0 || commands.length > 32) {
+        return 'Provider command proposal exceeds the command budget.';
+    }
+    const names = new Set<string>();
+    for (const command of commands) {
+        if (!isRecord(command) || Object.keys(command).some((key) => key !== 'name' && key !== 'arguments')) {
+            return 'Provider command proposal does not match the strict catalog contract.';
+        }
+        if (
+            typeof command.name !== 'string' ||
+            command.name.length === 0 ||
+            command.name.length > 128 ||
+            !isRecord(command.arguments) ||
+            names.has(command.name)
+        ) {
+            return 'Provider command proposal does not match the strict catalog contract.';
+        }
+        const disclosedSchema = disclosedCommandSchemas.get(command.name);
+        if (disclosedSchema === undefined) {
+            return 'Provider command proposal referenced an undiscovered catalog command.';
+        }
+        try {
+            const currentEntry = getAgentToolCatalogEntries({
+                category: 'command',
+                names: [command.name],
+            }).items[0];
+            if (currentEntry === undefined || JSON.stringify(currentEntry) !== disclosedSchema) {
+                return 'Provider command proposal referenced a stale catalog command schema.';
+            }
+        } catch {
+            return 'Provider command proposal referenced an unavailable catalog command.';
+        }
+        names.add(command.name);
+    }
+    return null;
+}
+
+function validateCatalogTerminalCalls(
+    calls: readonly { call: ToolCallResult }[],
+    disclosedCommandSchemas: ReadonlyMap<string, string>
+): string | null {
+    for (const { call } of calls) {
+        if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
+            continue;
+        }
+        const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas);
+        if (rejection !== null) {
+            return rejection;
+        }
+    }
+    return null;
+}
+
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
     const callId = call.id ?? `${loopId}:${String(turn)}:${String(index)}`;
     return callId.length > 0 && callId.length <= MAX_CALL_ID_LENGTH && /^[A-Za-z0-9._:-]+$/.test(callId)
@@ -607,6 +694,7 @@ export async function runApplicationOwnedToolLoop(
     const limits = { ...DEFAULT_LIMITS, ...input.limits };
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
+    const disclosedCommandSchemas = new Map<string, string>();
     let totalCalls = 0;
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
@@ -700,6 +788,15 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
+        const terminalRejection = validateCatalogTerminalCalls(terminalCalls, disclosedCommandSchemas);
+        if (terminalRejection !== null) {
+            return {
+                status: 'rejected',
+                reason: terminalRejection,
+                receipts,
+                turns: turn,
+            };
+        }
         if (terminalCalls.length > 0 || outcome.toolCalls.length === 0) {
             return {
                 status: 'complete',
@@ -722,6 +819,7 @@ export async function runApplicationOwnedToolLoop(
                 boundReceipt(executeSafeRead(call, callId, turn), limits.maxReceiptBytesPerCall)
             )
         );
+        recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         const serializedTurn = serializeReceiptContext(turnReceipts, turn);
         const turnBytes = byteLength(serializedTurn);
         if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {
