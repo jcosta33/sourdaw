@@ -181,7 +181,10 @@ export class CrumbsInstance {
      *
      * Mirrors `LevainInstance::add_sample`: the caller transfers a
      * `Float32Array` across the worklet port because a wasm instance cannot
-     * read a file. Not RT-safe — call it during setup, never from `process`.
+     * read a file. De-interleaving it into per-channel storage allocates, so
+     * call this during setup, never from `process`. Filing the finished
+     * `Arc` in the pool — which is what `CrumbsCommand::AddSample` does on the
+     * audio thread — allocates nothing.
      * @param {Float32Array} data
      * @param {number} channels
      * @param {number} sample_rate
@@ -1340,10 +1343,20 @@ export class LevainInstance {
     }
     /**
      * Add a zone to the zone map. Call build_zone_map() after all zones are added.
+     *
+     * `tune_cents` is the zone's authored fine tuning, in cents against
+     * `root_note`. It crosses the boundary as an `f32` because that is the
+     * widest numeric the worklet port hands over without a lossy narrowing on
+     * the JS side, and is rounded into `SampleRef`'s `i16` here — the engine's
+     * own unit. Hardcoding it to zero here dropped every detuned zone's tuning
+     * on the floor: `LevainVoice::start` is the only reader and it reads the
+     * `SampleRef` field, so a bank that tuned a zone played at the untuned
+     * pitch in the browser while the native path honoured it.
      * @param {number} zone_id
      * @param {number} sample_id
      * @param {number} articulation_id
      * @param {number} root_note
+     * @param {number} tune_cents
      * @param {number} lo_key
      * @param {number} hi_key
      * @param {number} lo_vel
@@ -1362,8 +1375,8 @@ export class LevainInstance {
      * @param {number} sustain
      * @param {number} release
      */
-    add_zone(zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release) {
-        wasm.levaininstance_add_zone(this.__wbg_ptr, zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release);
+    add_zone(zone_id, sample_id, articulation_id, root_note, tune_cents, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release) {
+        wasm.levaininstance_add_zone(this.__wbg_ptr, zone_id, sample_id, articulation_id, root_note, tune_cents, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release);
     }
     /**
      * Silent all-notes-off. Releases every active voice without firing

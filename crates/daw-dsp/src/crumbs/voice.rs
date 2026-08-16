@@ -1,7 +1,9 @@
 /// Crumbs voice — the per-voice playback unit.
 ///
 /// Each voice handles:
-///   - Fractional-position playback with 4-point cubic Hermite interpolation
+///   - Fractional-position playback with 8-point Hann-windowed sinc
+///     interpolation, widening to a 49–161-tap bandlimited kernel when pitched
+///     up (`bandlimited_stereo_sample`)
 ///   - Per-voice AHDSR amplitude envelope
 ///   - Per-voice TPT SVF filter
 ///   - Loop handling (Forward, PingPong, Reverse) with equal-power crossfade
@@ -277,52 +279,8 @@ impl CrumbsVoice {
         let frame = self.position as usize;
         let frac = (self.position - frame as f64) as f32;
 
-        let (left, right) = if self.speed > 1.0 {
-            bandlimited_stereo_sample(
-                sample_data,
-                frame,
-                frac,
-                self.anti_alias_cutoff,
-                self.anti_alias_step_sin,
-                self.anti_alias_step_cos,
-                self.anti_alias_taps,
-                self.anti_alias_window_step_sin,
-                self.anti_alias_window_step_cos,
-                self.region_start,
-                self.loop_start,
-                self.loop_end,
-                self.loop_mode,
-                self.has_looped,
-            )
-        } else {
-            let left_samples = [
-                sample_data.read_left(frame.wrapping_sub(3)),
-                sample_data.read_left(frame.wrapping_sub(2)),
-                sample_data.read_left(frame.wrapping_sub(1)),
-                sample_data.read_left(frame),
-                sample_data.read_left(frame + 1),
-                sample_data.read_left(frame + 2),
-                sample_data.read_left(frame + 3),
-                sample_data.read_left(frame + 4),
-            ];
-            let left = windowed_sinc(frac, &left_samples);
-            let right = if sample_data.is_stereo() {
-                let right_samples = [
-                    sample_data.read_right(frame.wrapping_sub(3)),
-                    sample_data.read_right(frame.wrapping_sub(2)),
-                    sample_data.read_right(frame.wrapping_sub(1)),
-                    sample_data.read_right(frame),
-                    sample_data.read_right(frame + 1),
-                    sample_data.read_right(frame + 2),
-                    sample_data.read_right(frame + 3),
-                    sample_data.read_right(frame + 4),
-                ];
-                windowed_sinc(frac, &right_samples)
-            } else {
-                left
-            };
-            (left, right)
-        };
+        let (left, right) = self.interpolate_stereo(sample_data, frame, frac);
+        let (left, right) = self.apply_loop_crossfade(sample_data, frame, frac, left, right);
 
         // Apply filter — independent state per channel so L/R don't cross-talk
         // through filter memory. Coefficients are identical (kept in sync by
@@ -360,6 +318,132 @@ impl CrumbsVoice {
         self.advance_position(sample_data.frame_count());
 
         self.active
+    }
+
+    // ── Interpolated Reads ─────────────────────────────────────────────
+
+    /// Read one interpolated stereo frame at `frame + fraction`.
+    ///
+    /// Pitching up needs the wider bandlimited kernel so source content above
+    /// the destination Nyquist limit cannot fold into the output; at or below
+    /// unity the 8-point windowed sinc is enough. Both branches live here so a
+    /// second read at a different position — the loop-seam crossfade's shadow
+    /// read — goes through the identical filter as the primary one.
+    fn interpolate_stereo(
+        &self,
+        sample_data: &SampleData,
+        frame: usize,
+        fraction: f32,
+    ) -> (f32, f32) {
+        if self.speed > 1.0 {
+            return bandlimited_stereo_sample(
+                sample_data,
+                frame,
+                fraction,
+                self.anti_alias_cutoff,
+                self.anti_alias_step_sin,
+                self.anti_alias_step_cos,
+                self.anti_alias_taps,
+                self.anti_alias_window_step_sin,
+                self.anti_alias_window_step_cos,
+                self.region_start,
+                self.loop_start,
+                self.loop_end,
+                self.loop_mode,
+                self.has_looped,
+            );
+        }
+
+        let left_samples = [
+            sample_data.read_left(frame.wrapping_sub(3)),
+            sample_data.read_left(frame.wrapping_sub(2)),
+            sample_data.read_left(frame.wrapping_sub(1)),
+            sample_data.read_left(frame),
+            sample_data.read_left(frame + 1),
+            sample_data.read_left(frame + 2),
+            sample_data.read_left(frame + 3),
+            sample_data.read_left(frame + 4),
+        ];
+        let left = windowed_sinc(fraction, &left_samples);
+        let right = if sample_data.is_stereo() {
+            let right_samples = [
+                sample_data.read_right(frame.wrapping_sub(3)),
+                sample_data.read_right(frame.wrapping_sub(2)),
+                sample_data.read_right(frame.wrapping_sub(1)),
+                sample_data.read_right(frame),
+                sample_data.read_right(frame + 1),
+                sample_data.read_right(frame + 2),
+                sample_data.read_right(frame + 3),
+                sample_data.read_right(frame + 4),
+            ];
+            windowed_sinc(fraction, &right_samples)
+        } else {
+            left
+        };
+        (left, right)
+    }
+
+    /// Equal-power crossfade across a Forward loop's seam.
+    ///
+    /// Inside the last `loop_crossfade` frames before `loop_end`, blend the
+    /// tail of the loop against the content the next iteration is about to
+    /// start with — the mirror offset from `loop_start` — so the waveform
+    /// arrives at the jump already matched. `loop_crossfade` was stored on
+    /// every voice and read by nothing (audit F14), so any loop whose start and
+    /// end were not already continuous clicked on every repeat.
+    ///
+    /// The shadow read reuses `interpolate_stereo`, so a pitched-up voice
+    /// crossfades bandlimited content against bandlimited content rather than
+    /// mixing two different resamplers.
+    ///
+    /// Only Forward. PingPong reverses at the seam, so its two sides are the
+    /// same samples in opposite order and already continuous; Reverse wraps at
+    /// `loop_start`, which this fade does not describe.
+    fn apply_loop_crossfade(
+        &self,
+        sample_data: &SampleData,
+        frame: usize,
+        fraction: f32,
+        left: f32,
+        right: f32,
+    ) -> (f32, f32) {
+        if self.loop_mode != LoopMode::Forward || self.loop_crossfade == 0 {
+            return (left, right);
+        }
+
+        // The seam is wherever `advance_position` wraps, which is the end of
+        // the sample when no explicit loop end was authored.
+        let loop_end = if self.loop_end > 0 {
+            self.loop_end
+        } else {
+            sample_data.frame_count() as u32
+        };
+        if loop_end <= self.loop_start {
+            return (left, right);
+        }
+
+        // Clamping the start to `loop_start` keeps the fade inside one loop
+        // length, which is what bounds the shadow read to the loop region.
+        let crossfade_start = loop_end
+            .saturating_sub(self.loop_crossfade)
+            .max(self.loop_start);
+        let span = loop_end.saturating_sub(crossfade_start);
+        if span == 0 || frame < crossfade_start as usize || frame >= loop_end as usize {
+            return (left, right);
+        }
+
+        let offset = frame as u32 - crossfade_start;
+        let progress = offset as f32 / span as f32;
+        let shadow_frame = (self.loop_start + offset) as usize;
+        let (shadow_left, shadow_right) =
+            self.interpolate_stereo(sample_data, shadow_frame, fraction);
+
+        let angle = progress.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
+        let (gain_shadow, gain_tail) = angle.sin_cos();
+        (
+            left * gain_tail + shadow_left * gain_shadow,
+            right * gain_tail + shadow_right * gain_shadow,
+        )
     }
 
     // ── Position Advancement & Looping ─────────────────────────────────
@@ -502,13 +586,30 @@ impl CrumbsVoice {
         if self.amp_envelope.state() == EnvelopeState::Release {
             return StealPriority::Releasing;
         }
-        // For oldest/quietest, the caller must compare across voices.
+        // Everything else is the bottom tier, which no single voice can decide:
+        // `find_steal_target` compares `audible_level` across the voices that
+        // land here and takes the quietest.
         StealPriority::Oldest
     }
 
     /// Get the current energy level (for quietest-voice stealing).
     pub fn energy(&self) -> f32 {
         self.energy
+    }
+
+    /// How loud this voice is *right now*, as a linear amplitude.
+    ///
+    /// The three factors that scale every sample this voice writes:
+    /// note velocity, the amp envelope's current level, and the smoothed voice
+    /// gain. Deliberately not `energy`, which is a one-pole of the *rendered*
+    /// signal: that is content-dependent, starts at zero, and takes ~10 ms to
+    /// mean anything, so a voice triggered two blocks ago reads as the quietest
+    /// in the pool no matter how loud it is about to be.
+    ///
+    /// No square root: this is only ever compared against other voices, and
+    /// ordering is preserved without one.
+    pub fn audible_level(&self) -> f32 {
+        self.velocity * self.amp_envelope.level() * self.gain_smoother.value()
     }
 
     /// Whether this voice is already running its de-click fade, from a choke or

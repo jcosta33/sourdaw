@@ -645,14 +645,60 @@ describe('LevainProcessor message handling', () => {
         send(proc, { ...baseZone, zoneId: 4 }); // no loopMode
 
         const zones = calls.filter((c) => c.method === 'add_zone');
-        // add_zone(zoneId, sampleId, articulationId, rootNote, loKey, hiKey, loVel,
-        //          hiVel, rrPos, rrLen, micId, isRelease[11], loopMode[12], ...)
-        expect(zones[0]!.args[11]).toBe(true); // isRelease
-        expect(zones[0]!.args[12]).toBe(1); // forward
-        expect(zones[1]!.args[12]).toBe(2); // pingpong
-        expect(zones[2]!.args[12]).toBe(0); // unknown → 0
-        expect(zones[3]!.args[12]).toBe(0); // absent → 0
-        expect(zones[3]!.args[11]).toBe(false); // isRelease default false
+        // add_zone(zoneId, sampleId, articulationId, rootNote, tuneCents[4], loKey,
+        //          hiKey, loVel, hiVel, rrPos, rrLen, micId, isRelease[12],
+        //          loopMode[13], ...)
+        expect(zones[0]!.args[12]).toBe(true); // isRelease
+        expect(zones[0]!.args[13]).toBe(1); // forward
+        expect(zones[1]!.args[13]).toBe(2); // pingpong
+        expect(zones[2]!.args[13]).toBe(0); // unknown → 0
+        expect(zones[3]!.args[13]).toBe(0); // absent → 0
+        expect(zones[3]!.args[12]).toBe(false); // isRelease default false
+    });
+
+    it('forwards a zone tuning to the DSP and defaults it to zero', async () => {
+        // `SampleRef::tune_cents` is the only thing that detunes a zone against
+        // its root, and it used to be hardcoded to 0 inside the wasm binding:
+        // an authored tuning could not reach the engine at all. The message
+        // field is optional because no manifest authors one yet, so both the
+        // supplied and the omitted case are pinned here — dropping the
+        // argument again would shift every parameter after it, which the
+        // positional assertions above would also catch.
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'beginSampleBank', bankKey: 'zone-tune-bank', instrumentId: 'violin', loadToken: 1 });
+        calls.length = 0;
+
+        const baseZone = {
+            type: 'addZone',
+            loadToken: 1,
+            zoneId: 1,
+            sampleId: 2,
+            articulationId: 0,
+            rootNote: 60,
+            loKey: 0,
+            hiKey: 127,
+            loVel: 0,
+            hiVel: 127,
+            rrPos: 0,
+            rrLen: 1,
+            micId: 0,
+            loopStart: 0,
+            loopEnd: 0,
+            loopCrossfade: 0,
+            gainDb: 0,
+            attack: 0,
+            decay: 0,
+            sustain: 1,
+            release: 0.1,
+        };
+
+        send(proc, { ...baseZone, tuneCents: -37 });
+        send(proc, { ...baseZone, zoneId: 2 });
+
+        const zones = calls.filter((c) => c.method === 'add_zone');
+        expect(zones[0]!.args[4]).toBe(-37);
+        expect(zones[1]!.args[4]).toBe(0);
     });
 
     it('registers legato transitions with the DSP enum ordering and drops ones from a stale load', async () => {

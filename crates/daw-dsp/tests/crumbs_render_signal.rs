@@ -523,9 +523,13 @@ fn the_knobs_ends_land_on_the_q_range_the_filter_documents() {
     );
 
     // A lowpass' magnitude at its own cutoff is its Q, so these lifts read back
-    // the Q each end resolved: Q 0.5 halves the tone (measured 0.50×), Q 20
-    // lifts it about tenfold (measured 9.99× — short of 20 because Q > 10
-    // engages the SVF's 2× oversampling path, which halves its input).
+    // the Q each end resolved: Q 0.5 halves the tone (measured 0.50×) and Q 20
+    // lifts it twentyfold (measured 19.9×).
+    //
+    // The top used to read 9.99×, half of its Q, because the SVF's 2×
+    // oversampling path — engaged above Q 10 — halved its input (audit F14).
+    // These are re-measurements against the corrected filter, not a widened
+    // band: the numbers moved because the level did.
     let floor_lift = peak_at_resonance_knob(RESO_KNOB_MIN) / out_of_circuit;
     assert!(
         (0.4..0.65).contains(&floor_lift),
@@ -534,28 +538,29 @@ fn the_knobs_ends_land_on_the_q_range_the_filter_documents() {
          {RESO_KNOB_MIN}"
     );
 
+    // Two-sided, and this is the assertion that pins the span: a Q range shrunk
+    // to 0.5–10 saturates the top of the knob at a ~10× lift, which this band
+    // excludes.
     let top_lift = peak_at_resonance_knob(RESO_KNOB_MAX) / out_of_circuit;
     assert!(
-        top_lift > 8.0,
+        (17.0..23.0).contains(&top_lift),
         "Reso {RESO_KNOB_MAX} lifted the tone {top_lift}× over its unfiltered \
-         peak — the top of the knob is not the filter's documented Q \
-         {RESO_KNOB_MAX}"
+         peak, not the ~19.9× that Q {RESO_KNOB_MAX} resolves — the top of the \
+         knob is not the filter's documented Q {RESO_KNOB_MAX}"
     );
 
-    // The top of the knob cannot carry the span on its own. Q > 10 engages the
-    // SVF's 2× oversampling, which halves the input, so Q 20 renders a 9.99×
-    // lift and a Q span shrunk to 0.5–10 renders 9.999× — the two are 0.1%
-    // apart and no honest band separates them. The knob's *midpoint* does
-    // separate them: Q 10.25 is interior to the true span and renders 5.12×
-    // (its own Q, halved by the same oversampling), while a shrunk span
-    // saturates it to the ceiling and renders 9.999×.
+    // The knob's midpoint sits just above the Q = 10 oversampling threshold, so
+    // it is also where a gain change hiding in that switch shows up: the 2×
+    // path used to halve its input, which rendered this position at 5.12× — its
+    // own Q, halved — while everything below the threshold read back its Q
+    // honestly. A resonance control whose level jumps as it passes an internal
+    // implementation boundary is not a resonance control.
     let midpoint_lift = peak_at_resonance_knob(RESO_KNOB_MIDPOINT) / out_of_circuit;
     assert!(
-        (4.6..5.6).contains(&midpoint_lift),
-        "Reso {RESO_KNOB_MIDPOINT} — the middle of the knob's travel — lifted \
-         the tone {midpoint_lift}× over its unfiltered peak, not the ~5.12× \
-         that Q {RESO_KNOB_MIDPOINT} resolves; the knob's travel is not \
-         landing on the Q span the filter documents"
+        (9.2..11.3).contains(&midpoint_lift),
+        "Reso {RESO_KNOB_MIDPOINT} — the middle of the knob's travel, just above \
+         the oversampling threshold — lifted the tone {midpoint_lift}× over its \
+         unfiltered peak, not the ~10.24× that Q {RESO_KNOB_MIDPOINT} resolves"
     );
 }
 

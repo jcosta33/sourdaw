@@ -85,7 +85,12 @@ pub fn estimate_bpm(samples: &[f32], sample_rate: u32) -> BpmResult {
     let mut best_lag = min_lag;
     let mut best_val = acf[min_lag];
 
-    for lag in (min_lag + 1)..max_lag {
+    // Inclusive of `max_lag`: the ACF is filled over `min_lag..=max_lag`, and an
+    // exclusive scan here made the slowest detectable tempo — `MIN_BPM` exactly,
+    // which is what `max_lag` was derived from — unreachable. A loop at that
+    // tempo reported the strongest lag inside the scanned range instead, i.e.
+    // some faster harmonic of itself.
+    for lag in (min_lag + 1)..=max_lag {
         if acf[lag] > best_val {
             best_val = acf[lag];
             best_lag = lag;

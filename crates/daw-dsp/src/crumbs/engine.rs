@@ -241,12 +241,22 @@ impl CrumbsEngine {
 
     // ── Sample Management ──────────────────────────────────────────────
 
-    /// Add a sample to the pool (call from management thread, not RT thread).
+    /// Add a sample to the pool, allocating its id.
+    ///
+    /// Decoding the PCM and wrapping it in an `Arc` is the management thread's
+    /// work; this only files the pointer. Storing is an in-place write into a
+    /// pre-sized slot, so the audio thread reaching this through
+    /// `commit_recording` allocates nothing here.
     pub fn add_sample(&mut self, sample: std::sync::Arc<super::sample::SampleData>) -> SampleId {
         self.sample_pool.add(sample)
     }
 
     /// Set a sample at a specific ID (useful for synced pools across threads).
+    ///
+    /// This is the audio-thread path: `CrumbsCommand::AddSample` is drained
+    /// inside the process callback, so it must not allocate. Pinned by
+    /// `crumbs_add_sample_command_does_not_allocate` in
+    /// `tests/device_process_rt.rs`.
     pub fn set_sample(&mut self, id: SampleId, sample: std::sync::Arc<super::sample::SampleData>) {
         self.sample_pool.set(id, sample);
     }
@@ -671,20 +681,19 @@ impl CrumbsEngine {
     ) -> Option<usize> {
         let mut best_idx: Option<usize> = None;
         let mut best_priority = StealPriority::None;
-        let mut oldest_age = 0u32;
-        let mut oldest_idx: Option<usize> = None;
-        let mut quietest_energy = f32::MAX;
         let mut quietest_idx: Option<usize> = None;
+        let mut quietest_level = f32::INFINITY;
+        let mut quietest_age = 0u32;
 
         for (idx, voice) in self.voices.iter().enumerate() {
             if !voice.active {
                 continue;
             }
             // Skip voices already fading out. This has to be here rather than in
-            // `steal_priority`, because the oldest and quietest fallbacks below
-            // run outside the priority comparison — a fading voice with
-            // `StealPriority::None` would still win them, which is exactly how a
-            // just-choked voice was getting its slot handed straight back.
+            // `steal_priority`: a fading voice still reports whatever tier its
+            // note and envelope put it in, and taking its slot back is exactly
+            // how a just-choked voice was getting handed straight to the note
+            // that choked it.
             //
             // Its slot returns from `process_block` within the 3 ms fade, so
             // passing over it costs at most one block. If every voice is fading,
@@ -702,24 +711,36 @@ impl CrumbsEngine {
 
             let priority = voice.steal_priority(target_note, target_choke);
 
-            // Track the highest-priority (lowest enum value) candidate.
+            // The bottom tier is decided across voices, not per voice: every
+            // ordinary sustaining note comes back `Oldest`, so the choice among
+            // them is made here. Take the quietest, which is what a sampler is
+            // expected to do once no retrigger, choke group or releasing note is
+            // available — the least audible cut in the pool. Age breaks a tie so
+            // a pool of identically-loud voices still gives up its longest-held
+            // one rather than the lowest slot index.
+            if priority == StealPriority::Oldest {
+                let level = voice.audible_level();
+                let age = voice.age();
+                let quieter = quietest_idx.is_none()
+                    || level < quietest_level
+                    || (level == quietest_level && age > quietest_age);
+                if quieter {
+                    quietest_level = level;
+                    quietest_age = age;
+                    quietest_idx = Some(idx);
+                }
+                continue;
+            }
+
+            // Track the highest-priority (lowest enum value) candidate among the
+            // tiers that identify a single voice on their own.
             if priority < best_priority {
                 best_priority = priority;
                 best_idx = Some(idx);
             }
-
-            // Track oldest and quietest for fallback tiebreaking.
-            if voice.age() > oldest_age {
-                oldest_age = voice.age();
-                oldest_idx = Some(idx);
-            }
-            if voice.energy() < quietest_energy {
-                quietest_energy = voice.energy();
-                quietest_idx = Some(idx);
-            }
         }
 
-        best_idx.or(oldest_idx).or(quietest_idx)
+        best_idx.or(quietest_idx)
     }
 
     // ── Parameter Setting ──────────────────────────────────────────────
@@ -1437,5 +1458,125 @@ mod commit_handoff_tests {
         );
         arm(&mut engine);
         assert_eq!(engine.record_state(), RecordState::Armed);
+    }
+}
+
+/// Voice stealing's bottom tier (audit F10).
+#[cfg(test)]
+mod steal_tier_tests {
+    use super::*;
+
+    const LOUD: u8 = 100;
+    const QUIET: u8 = 4;
+    /// The quiet voice sits well away from slot 0, which is what the previous
+    /// index-ordered age scan returned.
+    const QUIET_SLOT: usize = 100;
+    /// Every pooled note is at or below the sample's root, so each voice costs
+    /// the unity resampling budget and all 128 fit. Pitching up would spend the
+    /// per-block work budget and `note_on` would start refusing notes, leaving
+    /// the pool short of saturation and the steal path unreached.
+    const ROOT_NOTE: u8 = 60;
+
+    fn pooled_note(slot: usize) -> u8 {
+        ROOT_NOTE - (slot % 24) as u8
+    }
+
+    /// A saturated pool of sustaining voices at mixed velocities.
+    ///
+    /// No note matches the incoming one, no choke group is set, and the block
+    /// rendered at the end carries every envelope past its 1 ms attack into
+    /// sustain — so `steal_priority` returns plain `Oldest` for all 128 and the
+    /// choice is entirely the bottom tier's to make.
+    fn saturated_mixed_velocity_engine() -> CrumbsEngine {
+        let mut engine = CrumbsEngine::new(48_000.0);
+        let pcm: Vec<f32> = (0..4_800)
+            .map(|frame| (frame as f32 / 48_000.0 * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+            .collect();
+        let sample_id = engine.add_sample(std::sync::Arc::new(
+            super::super::sample::SampleData::from_mono(pcm, 48_000),
+        ));
+        engine.set_active_sample(sample_id);
+        // Forward looping, so no voice runs off the end of a 100 ms sample and
+        // frees its slot before the steal is asked for.
+        engine.handle_command(CrumbsCommand::SetParam {
+            param: CrumbsParam::LoopMode,
+            value: 1.0,
+        });
+
+        for slot in 0..MAX_VOICES {
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: pooled_note(slot),
+                velocity: if slot == QUIET_SLOT { QUIET } else { LOUD },
+            });
+        }
+        assert_eq!(
+            engine.playable_voice_count(),
+            MAX_VOICES,
+            "the pool is not saturated, so a further note would fill rather than steal"
+        );
+
+        let mut left = [0.0_f32; 256];
+        let mut right = [0.0_f32; 256];
+        engine.process_block(&mut left, &mut right);
+
+        engine
+    }
+
+    /// With no same-note, choke or releasing candidate available, every voice
+    /// reports `StealPriority::Oldest` and this scan decides between them. It
+    /// used to return the first voice whose age exceeded the running maximum —
+    /// under the equal ages of a pool struck together, slot 0 — so a sampler
+    /// holding a sustained chord always cut the voice in the lowest slot,
+    /// however loud it still was, while a near-inaudible one sat untouched.
+    #[test]
+    fn a_saturated_pool_of_sustaining_voices_gives_up_its_quietest() {
+        let engine = saturated_mixed_velocity_engine();
+        let incoming = ROOT_NOTE + 1;
+        assert!(
+            (0..MAX_VOICES).all(|slot| pooled_note(slot) != incoming),
+            "the incoming note is already sounding, so this would be a same-note steal"
+        );
+
+        let target = engine
+            .find_steal_target(incoming, 0, &[])
+            .expect("a saturated pool of non-fading voices must offer a steal target");
+
+        let stolen_velocity = (engine.voices[target].velocity * 127.0).round() as u8;
+        assert_eq!(
+            stolen_velocity, QUIET,
+            "steal picked slot {target} at velocity {stolen_velocity}, not the pool's quietest \
+             voice; the bottom tier is scanning by index or age instead of by level"
+        );
+        assert!(
+            engine.voices[target].audible_level() < engine.voices[0].audible_level(),
+            "the chosen voice is not quieter than slot 0, so this test cannot tell the level \
+             scan and the index scan apart"
+        );
+    }
+
+    /// The tiers above the bottom one are untouched: a retrigger of a pitch
+    /// already sounding takes that voice, loud as it is against the quietest in
+    /// the pool.
+    #[test]
+    fn a_same_note_retrigger_still_outranks_the_quietest_voice() {
+        let engine = saturated_mixed_velocity_engine();
+        let retriggered = pooled_note(7);
+        assert_ne!(
+            retriggered,
+            pooled_note(QUIET_SLOT),
+            "the retriggered pitch is the quiet voice's own, so the two tiers agree and this \
+             test proves nothing"
+        );
+
+        let target = engine
+            .find_steal_target(retriggered, 0, &[])
+            .expect("a saturated pool must offer a steal target");
+
+        assert_eq!(
+            engine.voices[target].note, retriggered,
+            "a same-note retrigger stole slot {target} (note {}) instead of a voice already \
+             sounding that pitch",
+            engine.voices[target].note
+        );
     }
 }

@@ -2,7 +2,7 @@
 ///
 /// Holds decoded PCM audio in memory. Stereo samples are stored as
 /// separate left/right channel vectors for cache-friendly per-channel access.
-use super::types::{SampleCategory, SampleId, SampleMeta};
+use super::types::{SampleCategory, SampleId, SampleMeta, MAX_POOL_SAMPLES};
 
 // ── Sample Data ────────────────────────────────────────────────────────
 
@@ -126,8 +126,15 @@ impl SampleData {
 /// Arena-based sample storage indexed by SampleId.
 ///
 /// Samples are never removed during playback — only added.
-/// The pool is owned by the management thread and shared read-only
-/// with the audio thread via Arc (for the in-memory path).
+/// PCM ownership stays with the management thread; the pool holds `Arc`s the
+/// audio thread reads through.
+///
+/// The slot vector is sized once, to `MAX_POOL_SAMPLES`, and never grows.
+/// `set` is reachable from the audio thread — `CrumbsCommand::AddSample` is
+/// drained inside the process callback — and the push loop it used to grow by
+/// allocated there (audit F4). Storing is now an in-place write into a slot
+/// that already exists, so the RT-reachable path allocates nothing; the `Arc`
+/// itself was built off-thread by whoever sent the command.
 #[derive(Debug, Clone)]
 pub struct SamplePool {
     samples: Vec<Option<std::sync::Arc<SampleData>>>,
@@ -137,42 +144,55 @@ pub struct SamplePool {
 impl SamplePool {
     pub fn new() -> Self {
         Self {
-            samples: Vec::new(),
+            samples: vec![None; MAX_POOL_SAMPLES],
             next_id: 0,
         }
     }
 
     /// Add a sample to the pool and return its ID.
+    ///
+    /// A full pool refuses the sample and returns the id it would have used
+    /// without advancing the cursor, so `get` on that id reports `None` — the
+    /// same "no sample" every caller already handles by falling silent. It
+    /// never panics in release: dropping a note is a bounded loss, killing the
+    /// render thread is not.
     pub fn add(&mut self, sample: std::sync::Arc<SampleData>) -> SampleId {
         let id = self.next_id;
-        self.next_id += 1;
-
-        if (id as usize) < self.samples.len() {
-            self.samples[id as usize] = Some(sample);
-        } else {
-            // Extend to fit
-            while self.samples.len() < id as usize {
-                self.samples.push(None);
-            }
-            self.samples.push(Some(sample));
+        if !self.store(id, sample) {
+            return id;
         }
-
+        self.next_id += 1;
         id
     }
 
     /// Set a sample at a specific ID (useful for synced pools).
     pub fn set(&mut self, id: SampleId, sample: std::sync::Arc<SampleData>) {
-        if (id as usize) < self.samples.len() {
-            self.samples[id as usize] = Some(sample);
-        } else {
-            while self.samples.len() < id as usize {
-                self.samples.push(None);
-            }
-            self.samples.push(Some(sample));
+        if !self.store(id, sample) {
+            return;
         }
         if id >= self.next_id {
             self.next_id = id + 1;
         }
+    }
+
+    /// Write one slot in place. Returns false for an id past the fixed bound.
+    ///
+    /// Replacing an occupied slot drops the `Arc` that was there. The command
+    /// side keeps its own clone of every sample it mirrors in (`instance
+    /// .samples` in `src-tauri`), and its ids come from a monotonic counter, so
+    /// the audio-thread path neither reuses a slot nor holds the last
+    /// reference; the free, when it comes, happens where the sample map is
+    /// cleared.
+    fn store(&mut self, id: SampleId, sample: std::sync::Arc<SampleData>) -> bool {
+        let Some(slot) = self.samples.get_mut(id as usize) else {
+            debug_assert!(
+                false,
+                "crumbs sample id {id} is past the {MAX_POOL_SAMPLES}-slot pool bound"
+            );
+            return false;
+        };
+        *slot = Some(sample);
+        true
     }
 
     /// Get a reference to a sample by ID.

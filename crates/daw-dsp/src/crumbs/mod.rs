@@ -3,7 +3,7 @@
 /// Provides a four-mode crumbs (Quick, Drum, Slice, Warp) with:
 ///   - Lock-free voice allocation (128 voices, AtomicU64 bitfield)
 ///   - 6-state AHDSR envelope with configurable curve shape
-///   - Cubic Hermite interpolation playback
+///   - Windowed-sinc interpolation playback
 ///   - Cytomic TPT SVF filter with simultaneous multi-output
 ///   - One-pole parameter smoothing with denormal prevention
 ///   - In-memory sample pool
@@ -113,7 +113,10 @@ impl CrumbsInstance {
     ///
     /// Mirrors `LevainInstance::add_sample`: the caller transfers a
     /// `Float32Array` across the worklet port because a wasm instance cannot
-    /// read a file. Not RT-safe — call it during setup, never from `process`.
+    /// read a file. De-interleaving it into per-channel storage allocates, so
+    /// call this during setup, never from `process`. Filing the finished
+    /// `Arc` in the pool — which is what `CrumbsCommand::AddSample` does on the
+    /// audio thread — allocates nothing.
     pub fn add_sample(&mut self, data: Vec<f32>, channels: u32, sample_rate: u32) -> u32 {
         let sample = SampleData::from_interleaved(&data, sample_rate, channels.max(1));
         self.engine.add_sample(Arc::new(sample))

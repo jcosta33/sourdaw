@@ -375,7 +375,10 @@ fn grinder_fat_switch_increases_low_register_body_across_models_and_levels() {
 
 #[test]
 fn grinder_fat_switch_reaches_capture_and_full_hybrid_rig_outputs() {
-    for (name, engine_mode) in [("Capture Rig", 1.0), ("Hybrid Rig at full capture mix", 2.0)] {
+    for (name, engine_mode) in [
+        ("Capture Rig", 1.0),
+        ("Hybrid Rig at full capture mix", 2.0),
+    ] {
         let neutral = grinder_rig_capture_level(engine_mode, false);
         let fat = grinder_rig_capture_level(engine_mode, true);
         let ratio = fat.rms / neutral.rms.max(f32::EPSILON);
@@ -544,6 +547,7 @@ fn levain_level() -> Level {
         sample_id,
         0,
         69,
+        0.0,
         0,
         127,
         0,

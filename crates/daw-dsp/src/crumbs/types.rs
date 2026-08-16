@@ -5,6 +5,15 @@
 /// Pre-allocated voice pool size.
 pub const MAX_VOICES: usize = 128;
 
+/// Pre-allocated sample pool slot count.
+///
+/// The pool is sized once, at construction, because `CrumbsCommand::AddSample`
+/// is drained inside the audio callback: growing the slot vector there would
+/// allocate on the render thread. A kit is one sample per pad plus the Quick
+/// and Slice sources, so 128 pads leaves this at twice the largest kit the
+/// device can address. Ids at or beyond it are refused rather than stored.
+pub const MAX_POOL_SAMPLES: usize = 256;
+
 /// RAM-cached attack per sample (bytes). ~68ms at 44.1kHz mono f32.
 pub const PRELOAD_SIZE: usize = 12 * 1024;
 

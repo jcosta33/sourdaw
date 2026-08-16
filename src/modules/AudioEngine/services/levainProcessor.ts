@@ -75,6 +75,12 @@ type LevainAddZoneMsg = {
     sampleId: number;
     articulationId: number;
     rootNote: number;
+    /**
+     * Fine tuning against `rootNote`, in cents. Optional because no bank
+     * format authors it yet; the DSP zone carries the field either way, so a
+     * bank that starts authoring one only has to send it.
+     */
+    tuneCents?: number;
     loKey: number;
     hiKey: number;
     loVel: number;
@@ -540,6 +546,7 @@ class LevainProcessor extends AudioWorkletProcessor {
                     msg.sampleId,
                     msg.articulationId,
                     msg.rootNote,
+                    msg.tuneCents ?? 0,
                     msg.loKey,
                     msg.hiKey,
                     msg.loVel,
