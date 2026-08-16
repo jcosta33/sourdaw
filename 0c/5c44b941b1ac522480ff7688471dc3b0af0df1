@@ -1,0 +1,34 @@
+src/modules/AudioEngine/useCases/configureRuntimeGraphProjectRevisionValidator.ts
+  s_a40848e8f8cca9::t_76c77b22e7ec94 1-10
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_a40848e8f8cca9::t_c578b550e36a80 330,332-334,336-353
+  s_a40848e8f8cca9::t_76c77b22e7ec94 186-196,200,223,225-227,319-329,335
+  s_a40848e8f8cca9::t_3ef9e923bf524b 331
+  s_a40848e8f8cca9::t_fa8989ecc622d1 354-355
+src/modules/AudioEngine/models/RuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_76c77b22e7ec94 39-44
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_a40848e8f8cca9::t_76c77b22e7ec94 20,301,780-783,807-830
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_76c77b22e7ec94 149
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_76c77b22e7ec94 48,181-183
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_a40848e8f8cca9::t_76c77b22e7ec94 1,467-468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0c5c44b941b1ac522480ff7688471dc3b0af0df1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
