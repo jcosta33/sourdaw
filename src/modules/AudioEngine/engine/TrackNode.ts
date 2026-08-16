@@ -67,6 +67,24 @@ export class RuntimeGraphMutationFailure extends Error {
     }
 }
 
+export type TrackNodeRuntimeGraphRejection = Readonly<{
+    reason: string;
+}>;
+
+/** A prepared graph mutation failed before an untrusted live effect remained. */
+export class RuntimeGraphMutationRejected extends Error {
+    public readonly rejection: TrackNodeRuntimeGraphRejection;
+
+    constructor(
+        reason: string,
+        public readonly cause: unknown
+    ) {
+        super(cause instanceof Error ? cause.message : String(cause));
+        this.name = 'RuntimeGraphMutationRejected';
+        this.rejection = Object.freeze({ reason });
+    }
+}
+
 type PendingDeviceLoad = {
     abortController: AbortController;
     bypassed?: boolean;
@@ -349,14 +367,71 @@ export class TrackNode {
     }
 
     public setOutput(outputId: string): boolean {
-        const changed = this.strip.outputId !== outputId;
+        if (this.strip.outputId === outputId) {
+            return false;
+        }
+
+        let nextDestination: AudioNode;
+        try {
+            const adjustmentBus = this.deps.getAdjustmentBusForTrack?.(this.trackId) ?? null;
+            nextDestination = adjustmentBus ?? this.getOutputDestination(outputId);
+        } catch (error) {
+            throw new RuntimeGraphMutationRejected(
+                `Track ${this.trackId} output ${outputId} could not resolve a live destination`,
+                error
+            );
+        }
+        const previousDestination = this._outputDestination;
+        if (previousDestination === nextDestination) {
+            this.strip.outputId = outputId;
+            return true;
+        }
+
+        let previousDestinationDisconnected = false;
+        try {
+            if (previousDestination) {
+                this.strip.analyserNode.disconnect(previousDestination);
+                previousDestinationDisconnected = true;
+            }
+            this.strip.analyserNode.connect(nextDestination);
+        } catch (error) {
+            if (!previousDestinationDisconnected) {
+                throw new RuntimeGraphMutationRejected(
+                    `Track ${this.trackId} output ${outputId} failed before changing its live route`,
+                    error
+                );
+            }
+            try {
+                this.strip.analyserNode.disconnect(nextDestination);
+                if (previousDestination) {
+                    this.strip.analyserNode.connect(previousDestination);
+                }
+            } catch (rollbackError) {
+                throw new RuntimeGraphMutationFailure(
+                    Object.freeze({
+                        application: 'needs-reconcile',
+                        reason: `Track ${this.trackId} output ${outputId} changed before route restoration failed`,
+                    }),
+                    error,
+                    rollbackError
+                );
+            }
+            throw new RuntimeGraphMutationRejected(
+                `Track ${this.trackId} output ${outputId} was restored after a live route failure`,
+                error
+            );
+        }
+
         this.strip.outputId = outputId;
-        this.routeOutput();
-        return changed;
+        this._outputDestination = nextDestination;
+        return true;
     }
 
     public getDefaultDestination(): AudioNode {
-        const { outputId } = this.strip;
+        return this.getOutputDestination(this.strip.outputId);
+    }
+
+    private getOutputDestination(outputId: string | undefined): AudioNode {
         const { masterGainNode, getBusGainNode, getTrackGainNode } = this.deps;
         if (outputId === 'hw_out' || !outputId) {
             return masterGainNode;

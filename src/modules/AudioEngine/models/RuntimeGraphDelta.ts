@@ -71,8 +71,11 @@ export type RuntimeGraphDeltaResult =
     | Readonly<{
           acceptance: 'accepted';
           application: 'needs-reconcile';
-          /** No compensating mutation was attempted; a throwing host may be partially changed. */
-          compensation: 'not-attempted';
+          /**
+           * Whether the runtime attempted and failed to restore a live edge.
+           * A failed compensation never claims the project graph was restored.
+           */
+          compensation: 'not-attempted' | 'failed';
           correlation: RuntimeGraphDelta['correlation'];
           reason: string;
           runtimeRevision: number;

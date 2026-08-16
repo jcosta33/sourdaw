@@ -494,6 +494,26 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(analyser.connect).not.toHaveBeenCalledWith(deps.masterGainNode);
         });
 
+        it('keeps an active adjustment bus as the live edge when its declared output changes', () => {
+            const adjustmentBus = createMockAudioNode('gain');
+            const targetBus = createMockAudioNode('gain');
+            const deps = makeDeps(ctx, {
+                getAdjustmentBusForTrack: vi.fn(() => adjustmentBus as unknown as AudioNode),
+                getBusGainNode: vi.fn(() => targetBus as unknown as GainNode),
+            });
+            const track = new TrackNode('t1', deps);
+            const analyser = track.strip.analyserNode as unknown as ReturnType<typeof createMockAudioNode<'analyser'>>;
+            vi.mocked(analyser.connect).mockClear();
+            vi.mocked(analyser.disconnect).mockClear();
+
+            track.setOutput('target-bus');
+
+            expect(track.strip.outputId).toBe('target-bus');
+            expect(track.getDefaultDestination()).toBe(targetBus);
+            expect(analyser.disconnect).not.toHaveBeenCalled();
+            expect(analyser.connect).not.toHaveBeenCalled();
+        });
+
         it('falls back from bus to track target to master when resolving the default destination', () => {
             const trackTarget = createMockAudioNode('gain');
             const deps = makeDeps(ctx, {

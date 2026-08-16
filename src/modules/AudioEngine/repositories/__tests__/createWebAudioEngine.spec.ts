@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
@@ -27,6 +28,19 @@ vi.mock('../../engine/TrackNode', () => {
         ) {
             super(cause instanceof Error ? cause.message : String(cause));
             this.name = 'RuntimeGraphMutationFailure';
+        }
+    }
+
+    class RuntimeGraphMutationRejected extends Error {
+        public readonly rejection: { reason: string };
+
+        constructor(
+            reason: string,
+            public readonly cause: unknown
+        ) {
+            super(cause instanceof Error ? cause.message : String(cause));
+            this.name = 'RuntimeGraphMutationRejected';
+            this.rejection = Object.freeze({ reason });
         }
     }
 
@@ -217,7 +231,7 @@ vi.mock('../../engine/TrackNode', () => {
         }
     }
 
-    return { TrackNode, RuntimeGraphMutationFailure };
+    return { TrackNode, RuntimeGraphMutationFailure, RuntimeGraphMutationRejected };
 });
 
 vi.mock('../../engine/BusNode', () => ({
@@ -942,7 +956,14 @@ describe('AudioEngine', () => {
         engine.ensureTrackStrip('target');
         const sourceNode = getMockTrackNode(engine, 'source');
         sourceNode.setOutput.mockImplementationOnce(() => {
-            throw new Error('destination disconnected during host apply');
+            throw new RuntimeGraphMutationFailure(
+                {
+                    application: 'needs-reconcile',
+                    reason: 'destination disconnected during host apply and restoration failed',
+                },
+                new Error('destination disconnected during host apply'),
+                new Error('destination restore failed')
+            );
         });
 
         const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
@@ -950,9 +971,93 @@ describe('AudioEngine', () => {
         expect(result).toMatchObject({
             acceptance: 'accepted',
             application: 'needs-reconcile',
-            compensation: 'not-attempted',
+            compensation: 'failed',
             runtimeRevision: 3,
         });
+    });
+
+    it('rejects a restored output delta failure without advancing the runtime graph revision', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const sourceNode = getMockTrackNode(engine, 'source');
+        sourceNode.setOutput.mockImplementationOnce(() => {
+            throw new RuntimeGraphMutationRejected(
+                'Track source output target was restored after a live route failure',
+                new Error('output connect failed')
+            );
+        });
+
+        const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(revisionBeforeOutput));
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('restored'),
+        });
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput);
+    });
+
+    it('invalidates a stale delta when a Toaster pad route changes before output restoration fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+        const staleDelta = createRuntimeOutputDelta(revisionBeforeOutput);
+        const source = getMockTrackNode(engine, 'source');
+        source.setOutput.mockImplementationOnce(() => {
+            throw new RuntimeGraphMutationFailure(
+                {
+                    application: 'needs-reconcile',
+                    reason: 'Toaster pad route changed before output restoration failed',
+                },
+                new Error('output connect failed'),
+                new Error('output restore failed')
+            );
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4)).toThrow(
+            'output connect failed'
+        );
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+        vi.mocked(source.setOutput).mockClear();
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(source.setOutput).not.toHaveBeenCalled();
+    });
+
+    it('advances once for a Toaster output route and not for its no-op or pre-effect rejection', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.ensureTrackStrip('toaster-parent');
+        const revisionBeforeOutput = engine.getRuntimeGraphRevision();
+
+        setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+
+        setPadTrackOutput(engine, 'source', 'target', 'toaster-parent', 4);
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
+
+        const source = getMockTrackNode(engine, 'source');
+        source.setOutput.mockImplementationOnce(() => {
+            throw new RuntimeGraphMutationRejected(
+                'Track source output hw_out failed before changing its live route',
+                new Error('output disconnect failed')
+            );
+        });
+
+        expect(() => setPadTrackOutput(engine, 'source', 'hw_out', 'toaster-parent', 4)).toThrow(
+            'output disconnect failed'
+        );
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBeforeOutput + 1);
     });
 
     it('does not touch the live graph when compiled device order no longer matches it', () => {

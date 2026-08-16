@@ -12,7 +12,12 @@ import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../en
 import { BusNode } from '../engine/BusNode';
 import { createDeviceReadinessDiagnostics } from '../engine/deviceReadinessDiagnostics';
 import { dropoutCounters } from '../engine/dropoutCounter';
-import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeRuntimeGraphMutation } from '../engine/TrackNode';
+import {
+    RuntimeGraphMutationFailure,
+    RuntimeGraphMutationRejected,
+    TrackNode,
+    type TrackNodeRuntimeGraphMutation,
+} from '../engine/TrackNode';
 import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeltaNode,
@@ -450,12 +455,13 @@ class AudioEngineImpl implements AudioEngine {
     private needsRuntimeGraphReconciliation(
         delta: RuntimeGraphDelta,
         reason: string,
-        runtimeRevision = this.runtimeGraphRevision
+        runtimeRevision = this.runtimeGraphRevision,
+        compensation: 'not-attempted' | 'failed' = 'not-attempted'
     ): RuntimeGraphDeltaResult {
         return Object.freeze({
             acceptance: 'accepted' as const,
             application: 'needs-reconcile' as const,
-            compensation: 'not-attempted' as const,
+            compensation,
             correlation: delta.correlation,
             reason,
             runtimeRevision,
@@ -930,22 +936,44 @@ class AudioEngineImpl implements AudioEngine {
         }
 
         const outputMutation = this.mutateRuntimeGraph<
-            { status: 'applied' } | { status: 'needs-reconcile'; error: unknown }
+            | { status: 'applied' }
+            | { status: 'rejected'; error: RuntimeGraphMutationRejected }
+            | { status: 'needs-reconcile'; error: unknown; reason: string; compensation: 'not-attempted' | 'failed' }
         >(() => {
             try {
                 return { value: { status: 'applied' as const }, changed: source.setOutput(edge.targetId) };
             } catch (error) {
+                if (error instanceof RuntimeGraphMutationRejected) {
+                    return { value: { status: 'rejected' as const, error }, changed: false };
+                }
                 // A host-side node operation may have partially taken effect. Do
                 // not claim a CRDT rollback restored it: invalidate the current
                 // generation and force an owner-led reconcile instead.
-                return { value: { status: 'needs-reconcile' as const, error }, changed: true };
+                const typedFailure = error instanceof RuntimeGraphMutationFailure ? error : undefined;
+                return {
+                    value: {
+                        status: 'needs-reconcile' as const,
+                        error,
+                        reason: typedFailure?.mutation.reason ?? `Live output application threw: ${String(error)}`,
+                        compensation: typedFailure?.rollbackError ? 'failed' : 'not-attempted',
+                    },
+                    changed: true,
+                };
             }
         });
+        if (outputMutation.value.status === 'rejected') {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: outputMutation.value.error.rejection.reason,
+            });
+        }
         if (outputMutation.value.status === 'needs-reconcile') {
             return this.needsRuntimeGraphReconciliation(
                 delta,
-                `Live output application threw: ${String(outputMutation.value.error)}`,
-                outputMutation.runtimeRevision
+                outputMutation.value.reason,
+                outputMutation.runtimeRevision,
+                outputMutation.value.compensation
             );
         }
         return Object.freeze({
@@ -1620,21 +1648,28 @@ class AudioEngineImpl implements AudioEngine {
         outputId: string,
         padBinding?: { toasterParentTrackId: string; padIndex: number }
     ): void {
-        this.mutateRuntimeGraph(() => {
-            const trackNode = this.trackNodes.get(trackId);
-            if (!trackNode) {
-                return { value: undefined, changed: false };
+        try {
+            this.mutateRuntimeGraph(() => {
+                const trackNode = this.trackNodes.get(trackId);
+                if (!trackNode) {
+                    return { value: undefined, changed: false };
+                }
+                if (!this.hasRuntimeOutputDestination(outputId)) {
+                    logger.warn(
+                        `[AudioEngine] Rejected output route to absent live destination: ${trackId} -> ${outputId}`
+                    );
+                    return { value: undefined, changed: false };
+                }
+                const outputChanged = trackNode.setOutput(outputId);
+                const padBindingChanged = this.updateToasterPadBinding(trackId, padBinding);
+                return { value: undefined, changed: outputChanged || padBindingChanged };
+            });
+        } catch (error) {
+            if (error instanceof RuntimeGraphMutationFailure) {
+                this.recordRuntimeGraphMutation(error.mutation);
             }
-            if (!this.hasRuntimeOutputDestination(outputId)) {
-                logger.warn(
-                    `[AudioEngine] Rejected output route to absent live destination: ${trackId} -> ${outputId}`
-                );
-                return { value: undefined, changed: false };
-            }
-            const outputChanged = trackNode.setOutput(outputId);
-            const padBindingChanged = this.updateToasterPadBinding(trackId, padBinding);
-            return { value: undefined, changed: outputChanged || padBindingChanged };
-        });
+            throw error;
+        }
     }
 
     public async waitForDevices(timeoutMs = 10000): Promise<void> {
