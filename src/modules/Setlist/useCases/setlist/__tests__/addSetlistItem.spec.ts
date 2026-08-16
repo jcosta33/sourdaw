@@ -105,6 +105,24 @@ describe('addSetlistItem', () => {
         );
     });
 
+    it('derives totalDuration from the items rather than incrementing the stored total (F7)', () => {
+        // A stored total that disagrees with the songs is exactly what an
+        // estimatedDuration edit used to produce; adding a song must resolve to
+        // the songs, not carry the disagreement forward.
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('a'), item('b')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 999,
+        };
+
+        addSetlistItem('Third', 8);
+
+        expect(mockSetlistStore.set).toHaveBeenCalledWith(expect.objectContaining({ totalDuration: 10 }));
+    });
+
     it('cycles item color through the palette by item count, wrapping after 6', () => {
         const sixItems: SetlistItem[] = Array.from({ length: 6 }, (_, index) => item(`item-${index}`));
         mockSetlistStore.value = {

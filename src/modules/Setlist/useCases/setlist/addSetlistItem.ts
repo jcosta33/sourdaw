@@ -3,6 +3,8 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '../../repositories/setlistItemIdCounter';
 import { setlistStore, type SetlistItem, type SetlistState } from '../../stores/setlistStore';
 
+import { computeTotalDuration } from './computeTotalDuration';
+
 export function addSetlistItem(name: string, estimatedDuration: number = 180): void {
     const state = setlistStore.value;
     if (!state) {
@@ -25,10 +27,11 @@ export function addSetlistItem(name: string, estimatedDuration: number = 180): v
     };
 
     const previous: SetlistState = state;
+    const items = [...state.items, item];
     const next: SetlistState = {
         ...state,
-        items: [...state.items, item],
-        totalDuration: state.totalDuration + estimatedDuration,
+        items,
+        totalDuration: computeTotalDuration(items),
     };
     setlistStore.set(next);
 

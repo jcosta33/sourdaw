@@ -62,4 +62,90 @@ describe('stopSlot', () => {
 
         expect(loopStationStore.set).not.toHaveBeenCalled();
     });
+
+    it('discards an unfinished first recording, returning the slot to empty (F5)', () => {
+        // Stopping mid-first-recording has captured nothing: toggleRecord only
+        // commits a layer when the recording pass ends. Marking the slot
+        // 'stopped' left an amber, LED-lit cell holding `layers: []` — a cell
+        // claiming content it does not have. Hardware loopers discard it.
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [
+                {
+                    id: 's1',
+                    trackId: 't',
+                    row: 0,
+                    column: 0,
+                    state: 'recording',
+                    lengthBeats: 0,
+                    layers: [],
+                    loopCount: 0,
+                    volume: 1,
+                    quantize: true,
+                    fadeBeats: 0.125,
+                },
+            ],
+        };
+
+        stopSlot('s1');
+
+        const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('empty');
+        expect(next.slots[0]!.layers).toEqual([]);
+        expect(next.slots[0]!.lengthBeats).toBe(0);
+    });
+
+    it('keeps committed layers and stops normally when an overdub is interrupted', () => {
+        const layer = { id: 'L1', layerIndex: 0, recordedAt: '', muted: false, volume: 1 };
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [
+                {
+                    id: 's1',
+                    trackId: 't',
+                    row: 0,
+                    column: 0,
+                    state: 'overdubbing',
+                    lengthBeats: 4,
+                    layers: [layer],
+                    loopCount: 0,
+                    volume: 1,
+                    quantize: true,
+                    fadeBeats: 0.125,
+                },
+            ],
+        };
+
+        stopSlot('s1');
+
+        const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('stopped');
+        expect(next.slots[0]!.layers).toEqual([layer]);
+        expect(next.slots[0]!.lengthBeats).toBe(4);
+    });
+
+    it('leaves other slots untouched', () => {
+        const other = {
+            id: 's2',
+            trackId: 't',
+            row: 1,
+            column: 0,
+            state: 'playing' as const,
+            lengthBeats: 4,
+            layers: [{ id: 'L1', layerIndex: 0, recordedAt: '', muted: false, volume: 1 }],
+            loopCount: 0,
+            volume: 1,
+            quantize: true,
+            fadeBeats: 0.125,
+        };
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [{ ...other, id: 's1', state: 'recording' as const, layers: [], lengthBeats: 0 }, other],
+        };
+
+        stopSlot('s1');
+
+        const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots[1]).toEqual(other);
+    });
 });

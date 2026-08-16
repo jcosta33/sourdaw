@@ -147,6 +147,22 @@ describe('removeSetlistItem', () => {
         expect(next.items[next.currentIndex]?.id).toBe('b');
     });
 
+    it('derives totalDuration from the surviving items rather than subtracting from the stored total (F7)', () => {
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('a', 10), item('b', 20)],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 999,
+        };
+
+        removeSetlistItem('a');
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.totalDuration).toBe(20);
+    });
+
     it('resets the cursor to zero when the last remaining song is removed', () => {
         mockSetlistStore.value = {
             name: 'S',

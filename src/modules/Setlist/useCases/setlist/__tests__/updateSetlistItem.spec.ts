@@ -49,4 +49,40 @@ describe('updateSetlistItem', () => {
         const next = mockSetlistStore.set.mock.calls[0]![0];
         expect(next.items[0]!.name).toBe('New');
     });
+
+    it('recomputes totalDuration when an item estimatedDuration is edited (F7)', () => {
+        // The set total is derived from the songs. Editing a song's length has
+        // no term to add or subtract, so an incrementally maintained total kept
+        // reporting the length the set had before the edit.
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('x'), item('y')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 2,
+        };
+
+        updateSetlistItem('x', { estimatedDuration: 241 });
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.items[0]!.estimatedDuration).toBe(241);
+        expect(next.totalDuration).toBe(242);
+    });
+
+    it('leaves totalDuration equal to the item sum when a non-duration field is edited', () => {
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('x'), item('y')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 2,
+        };
+
+        updateSetlistItem('x', { autoStop: false });
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.totalDuration).toBe(2);
+    });
 });

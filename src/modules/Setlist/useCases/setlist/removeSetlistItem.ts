@@ -2,6 +2,8 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { setlistStore, type SetlistState } from '../../stores/setlistStore';
 
+import { computeTotalDuration } from './computeTotalDuration';
+
 export function removeSetlistItem(id: string): void {
     const state = setlistStore.value;
     if (!state) {
@@ -34,7 +36,7 @@ export function removeSetlistItem(id: string): void {
         ...state,
         items,
         currentIndex,
-        totalDuration: state.totalDuration - removed.estimatedDuration,
+        totalDuration: computeTotalDuration(items),
     };
     setlistStore.set(next);
 
