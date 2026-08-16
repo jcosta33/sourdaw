@@ -48,10 +48,10 @@ export function toggleRecord(slotId: string): void {
                     // A 'stopped' slot holding zero layers is behaviourally
                     // 'empty' — nothing was ever committed — so Record starts a
                     // recording, same as the 'empty' case. `stopSlot` no longer
-                    // produces that shape (it discards an unfinished first
-                    // recording back to 'empty'), but persisted or restored
-                    // state can still carry it, and promoting it to 'playing'
-                    // would light a Play cell with nothing to play. Returning it
+                    // produces that shape (a zero-layer slot always returns to
+                    // 'empty' there), but persisted or restored state can still
+                    // carry it, and promoting it to 'playing' would light a
+                    // Play cell with nothing to play. Returning it
                     // unchanged would strand the slot instead: Record has no
                     // disabled guard (unlike Play/Undo, which both gate on
                     // layers.length === 0), so every future press would be a

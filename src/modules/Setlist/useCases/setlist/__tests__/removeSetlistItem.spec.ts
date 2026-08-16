@@ -41,12 +41,11 @@ describe('removeSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 30,
         };
         mockSetlistStore.value = state;
 
         removeSetlistItem('x');
-        expect(mockSetlistStore.set).toHaveBeenCalledWith(expect.objectContaining({ items: [], totalDuration: 0 }));
+        expect(mockSetlistStore.set).toHaveBeenCalledWith(expect.objectContaining({ items: [] }));
     });
 
     it('does nothing when the store has no value', () => {
@@ -64,7 +63,6 @@ describe('removeSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 30,
         };
         mockSetlistStore.value = state;
 
@@ -80,7 +78,6 @@ describe('removeSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 35,
         };
         mockSetlistStore.value = state;
 
@@ -89,7 +86,6 @@ describe('removeSetlistItem', () => {
         expect(mockSetlistStore.set).toHaveBeenCalledWith(
             expect.objectContaining({
                 items: [item('a', 10), item('c', 5)],
-                totalDuration: 15,
             })
         );
     });
@@ -103,7 +99,6 @@ describe('removeSetlistItem', () => {
             currentIndex: 2,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 40,
         };
 
         removeSetlistItem('a');
@@ -120,7 +115,6 @@ describe('removeSetlistItem', () => {
             currentIndex: 1,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 35,
         };
 
         removeSetlistItem('c');
@@ -137,7 +131,6 @@ describe('removeSetlistItem', () => {
             currentIndex: 2,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 35,
         };
 
         removeSetlistItem('c');
@@ -147,22 +140,6 @@ describe('removeSetlistItem', () => {
         expect(next.items[next.currentIndex]?.id).toBe('b');
     });
 
-    it('derives totalDuration from the surviving items rather than subtracting from the stored total (F7)', () => {
-        mockSetlistStore.value = {
-            name: 'S',
-            items: [item('a', 10), item('b', 20)],
-            currentIndex: 0,
-            autoAdvance: false,
-            countInBars: 1,
-            totalDuration: 999,
-        };
-
-        removeSetlistItem('a');
-
-        const next = mockSetlistStore.set.mock.calls[0]![0];
-        expect(next.totalDuration).toBe(20);
-    });
-
     it('resets the cursor to zero when the last remaining song is removed', () => {
         mockSetlistStore.value = {
             name: 'S',
@@ -170,7 +147,6 @@ describe('removeSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 10,
         };
 
         removeSetlistItem('a');

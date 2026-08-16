@@ -43,14 +43,13 @@ describe('addSetlistItem', () => {
         vi.clearAllMocks();
     });
 
-    it('appends item and updates totalDuration', () => {
+    it('appends the item to the set', () => {
         const state: SetlistState = {
             name: 'S',
             items: [],
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         };
         mockSetlistStore.value = state;
 
@@ -73,7 +72,6 @@ describe('addSetlistItem', () => {
         const expectedState: SetlistState = {
             ...state,
             items: [expectedItem],
-            totalDuration: 60,
         };
         expect(mockSetlistStore.set).toHaveBeenCalledWith(expectedState);
     });
@@ -93,34 +91,15 @@ describe('addSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         };
 
         addSetlistItem('Encore');
 
         expect(mockSetlistStore.set).toHaveBeenCalledWith(
             expect.objectContaining({
-                totalDuration: 180,
+                items: [expect.objectContaining({ estimatedDuration: 180 })],
             })
         );
-    });
-
-    it('derives totalDuration from the items rather than incrementing the stored total (F7)', () => {
-        // A stored total that disagrees with the songs is exactly what an
-        // estimatedDuration edit used to produce; adding a song must resolve to
-        // the songs, not carry the disagreement forward.
-        mockSetlistStore.value = {
-            name: 'S',
-            items: [item('a'), item('b')],
-            currentIndex: 0,
-            autoAdvance: false,
-            countInBars: 1,
-            totalDuration: 999,
-        };
-
-        addSetlistItem('Third', 8);
-
-        expect(mockSetlistStore.set).toHaveBeenCalledWith(expect.objectContaining({ totalDuration: 10 }));
     });
 
     it('cycles item color through the palette by item count, wrapping after 6', () => {
@@ -131,7 +110,6 @@ describe('addSetlistItem', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 6,
         };
 
         addSetlistItem('Wraps around', 1);

@@ -2,8 +2,6 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { setlistStore, type SetlistItem, type SetlistState } from '../../stores/setlistStore';
 
-import { computeTotalDuration } from './computeTotalDuration';
-
 export function updateSetlistItem(id: string, updates: Partial<Omit<SetlistItem, 'id'>>): void {
     const state = setlistStore.value;
     if (!state) {
@@ -19,7 +17,6 @@ export function updateSetlistItem(id: string, updates: Partial<Omit<SetlistItem,
     const next: SetlistState = {
         ...state,
         items,
-        totalDuration: computeTotalDuration(items),
     };
     setlistStore.set(next);
 

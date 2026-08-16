@@ -41,7 +41,6 @@ describe('reorderSetlistItems', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 2,
         };
         mockSetlistStore.value = state;
 
@@ -57,7 +56,6 @@ describe('reorderSetlistItems', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 3,
         };
         mockSetlistStore.value = state;
 
@@ -82,7 +80,6 @@ describe('reorderSetlistItems', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 2,
         };
 
         reorderSetlistItems(1, 1);
@@ -97,7 +94,6 @@ describe('reorderSetlistItems', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 2,
         };
 
         reorderSetlistItems(5, 0);
@@ -112,7 +108,6 @@ describe('reorderSetlistItems', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 3,
         };
 
         reorderSetlistItems(0, 2);
@@ -129,7 +124,6 @@ describe('reorderSetlistItems', () => {
             currentIndex: 1,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 3,
         };
 
         reorderSetlistItems(2, 0);
@@ -147,7 +141,6 @@ describe('reorderSetlistItems', () => {
             currentIndex: 1,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 4,
         };
 
         reorderSetlistItems(3, 2);
