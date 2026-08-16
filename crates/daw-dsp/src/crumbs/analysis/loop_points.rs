@@ -57,28 +57,62 @@ impl Default for LoopPointConfig {
 /// milliseconds at the default 256-sample correlation window.
 const MAX_CANDIDATE_PAIRS: usize = 100_000;
 
-/// Smallest stride that brings the pairing of two candidate lists inside
-/// [`MAX_CANDIDATE_PAIRS`].
+/// Strides that bring the pairing of two candidate lists inside
+/// [`MAX_CANDIDATE_PAIRS`], as `(start_stride, end_stride)`.
 ///
-/// Both lists are strided by the *same* factor rather than truncated, so the
-/// surviving candidates stay spread across the whole buffer. Truncation would
-/// be cheaper and wrong: it would confine every detectable loop to the earliest
-/// region of the sample, which is exactly where a sustained instrument's loop
-/// should not be taken from. The stride depends only on the candidate counts,
-/// so the search stays deterministic — no sampling, no RNG.
+/// Candidates are strided rather than truncated, so the survivors stay spread
+/// across the whole buffer. Truncation would be cheaper and wrong: it would
+/// confine every detectable loop to the earliest region of the sample, which is
+/// exactly where a sustained instrument's loop should not be taken from. The
+/// strides depend only on the candidate counts, so the search stays
+/// deterministic — no sampling, no RNG.
 ///
-/// A stride of 1 means the budget was never binding and the search below is the
-/// exhaustive one.
-fn candidate_stride(num_starts: usize, num_ends: usize) -> usize {
-    if num_starts == 0 || num_ends == 0 {
-        return 1;
+/// At most one list is strided. Zero crossings on periodic material fall into
+/// phase classes — one crossing per cycle of each waveform feature — and a
+/// perfect loop joins two crossings of the *same* class. Striding both lists by
+/// one factor `s` makes the reachable crossing-index differences a single
+/// residue progression, so whether any same-class pair survives is decided by
+/// number theory (`gcd(s, classes) | offset`) rather than by the audio: on a
+/// two-class signal, shifting the material by one sample flips the search
+/// between finding a perfect loop and finding none. With one list left
+/// exhaustive, every kept candidate on the strided side still meets all of its
+/// in-phase partners on the other side, so a perfect loop stays reachable
+/// whatever the stride. The longer list is the one strided, which keeps the
+/// most survivors for the same budget.
+///
+/// Only when one list is by itself longer than the whole budget — several
+/// hundred thousand admissible crossings on one side — does the other list get
+/// strided too, trading the reachability guarantee for termination. `(1, 1)`
+/// means the budget was never binding and the search below is exhaustive.
+fn stride_plan(num_starts: usize, num_ends: usize) -> (usize, usize) {
+    if num_starts == 0 || num_ends == 0 || num_starts * num_ends <= MAX_CANDIDATE_PAIRS {
+        return (1, 1);
     }
 
-    let mut stride = 1usize;
-    while num_starts.div_ceil(stride) * num_ends.div_ceil(stride) > MAX_CANDIDATE_PAIRS {
-        stride += 1;
+    let (long, short) = if num_starts >= num_ends {
+        (num_starts, num_ends)
+    } else {
+        (num_ends, num_starts)
+    };
+
+    // Smallest stride on the longer list that fits the budget with the shorter
+    // list exhaustive; `max(1)` guards the short > budget case below.
+    let long_kept = (MAX_CANDIDATE_PAIRS / short).max(1);
+    let long_stride = long.div_ceil(long_kept);
+
+    // The shorter list alone can exceed the budget; stride it down to fit
+    // against the single survivor of the longer list.
+    let short_stride = if short > MAX_CANDIDATE_PAIRS {
+        short.div_ceil(MAX_CANDIDATE_PAIRS)
+    } else {
+        1
+    };
+
+    if num_starts >= num_ends {
+        (long_stride, short_stride)
+    } else {
+        (short_stride, long_stride)
     }
-    stride
 }
 
 /// Keep every `stride`-th candidate.
@@ -138,9 +172,9 @@ fn search_best_pair(
         .filter(|&pos| pos >= half && pos + corr_win < samples.len())
         .collect();
 
-    let stride = candidate_stride(starts.len(), ends.len());
-    let starts = strided_candidates(&starts, stride);
-    let ends = strided_candidates(&ends, stride);
+    let (start_stride, end_stride) = stride_plan(starts.len(), ends.len());
+    let starts = strided_candidates(&starts, start_stride);
+    let ends = strided_candidates(&ends, end_stride);
 
     let mut best: Option<BestPair> = None;
     let mut best_quality = -1.0f32;
@@ -396,8 +430,8 @@ mod tests {
             "fixture must fit the budget to test the unstrided path, had {starts}×{ends} pairs"
         );
         assert_eq!(
-            candidate_stride(starts, ends),
-            1,
+            stride_plan(starts, ends),
+            (1, 1),
             "an unbinding budget must not stride"
         );
 
@@ -431,8 +465,8 @@ mod tests {
             "fixture must exceed the budget to test the strided path, had {starts}×{ends} pairs"
         );
         assert!(
-            candidate_stride(starts, ends) > 1,
-            "a binding budget must stride the candidate lists"
+            stride_plan(starts, ends) != (1, 1),
+            "a binding budget must stride a candidate list"
         );
 
         let search = search_best_pair(&samples, &crossings, half, CORR_WIN, 0);
@@ -465,6 +499,56 @@ mod tests {
             last_candidate - last < 7 * 3,
             "coverage stopped at {last} of a list reaching {last_candidate}"
         );
+    }
+
+    /// Zero crossings on periodic material fall into phase classes, and a
+    /// perfect loop joins two crossings of the same class. Striding *both*
+    /// candidate lists by one factor `s` restricts the reachable crossing-index
+    /// differences to a single residue progression, so on a two-class signal
+    /// the outcome flips with the parity of the crossing counts — shift the
+    /// material by one sample and a perfect loop becomes unreachable. The
+    /// fixture is a fundamental plus a strong second harmonic (two
+    /// positive-going crossings per cycle); both one-sample shifts must find a
+    /// near-perfect loop.
+    #[test]
+    fn a_two_class_signal_finds_its_loop_at_either_parity() {
+        const LEN: usize = 40_000;
+        const PERIOD: f32 = 25.0;
+        const CORR_WIN: usize = 128;
+
+        for shift in 0..2usize {
+            let samples: Vec<f32> = (0..LEN)
+                .map(|i| {
+                    let t = (i + shift) as f32 * 2.0 * std::f32::consts::PI / PERIOD;
+                    let envelope = 0.4 + 0.6 * (i as f32 / LEN as f32);
+                    (t.sin() + 0.85 * (2.0 * t + 0.6).sin()) * envelope
+                })
+                .collect();
+            let crossings = find_zero_crossings(&samples);
+            let half = samples.len() / 2;
+
+            let (starts, ends) = candidate_counts(&samples, &crossings, half, CORR_WIN);
+            assert!(
+                starts * ends > MAX_CANDIDATE_PAIRS,
+                "fixture must bind the budget to exercise striding, had {starts}×{ends} pairs"
+            );
+
+            let search = search_best_pair(&samples, &crossings, half, CORR_WIN, 0);
+            assert!(
+                search.evaluations <= MAX_CANDIDATE_PAIRS,
+                "shift {shift}: ran {} correlations against the budget",
+                search.evaluations
+            );
+            let best = search
+                .best
+                .unwrap_or_else(|| panic!("shift {shift}: search found no pair at all"));
+            assert!(
+                best.quality > 0.9,
+                "shift {shift}: best quality was {}; a perfect in-phase pair exists but the \
+                 stride cannot reach it",
+                best.quality
+            );
+        }
     }
 
     /// End to end: the public entry point still reports loop points on a
