@@ -8,6 +8,8 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 
+import { type ProofAnalyserStatus } from '../hooks/useProofAnalyser';
+
 const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
 const MIN_DB = -50;
@@ -57,6 +59,12 @@ const GENRE_ADJUSTMENTS: Record<string, Array<{ freq: number; db: number }>> = {
 };
 
 type Props = {
+    /**
+     * Whether the spectrum tap is connected at all. Required, because a null
+     * `fftData` alone cannot tell "the master is silent" from "there is no
+     * analyser", and the display would report both as a flat, empty spectrum.
+     */
+    status: ProofAnalyserStatus;
     /** Float32Array of FFT magnitude data from analyser node. */
     fftData: Float32Array<ArrayBuffer> | null;
     /**
@@ -74,6 +82,7 @@ type Props = {
 };
 
 export const TonalBalance = ({
+    status,
     fftData,
     fftVersion,
     sampleRate,
@@ -259,11 +268,21 @@ export const TonalBalance = ({
     }, [fftData, fftVersion, sampleRate, fftSize, genre, width, height]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            style={{ width, height }}
-            className="rounded border border-border/20"
-            aria-label="Tonal balance display with Harman target curve"
-        />
+        <div className="relative" style={{ width, height }}>
+            <canvas
+                ref={canvasRef}
+                style={{ width, height }}
+                className="rounded border border-border/20"
+                aria-label="Tonal balance display with Harman target curve"
+            />
+            {status === 'unavailable' ? (
+                <span
+                    role="status"
+                    className="absolute inset-0 flex items-center justify-center rounded bg-surface-base/70 text-center text-[8px] text-[var(--color-accent-peach)]"
+                >
+                    Spectrum analyser unavailable — showing the target curve only
+                </span>
+            ) : null}
+        </div>
     );
 };

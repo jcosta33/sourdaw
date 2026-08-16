@@ -89,6 +89,30 @@ export type ProofPatch = {
     targetLufs: number;
 };
 
+/**
+ * Copy a patch down to every band object, so no two patches ever share a
+ * mutable array or band identity.
+ *
+ * `DEFAULT_PATCH` and the factory presets are module singletons. A shallow
+ * spread carries `eqBands`/`dynBands`/`excBands`/`chainOrder`/
+ * `dynCrossoverFreqs`/`imgBandWidth` by reference, so the module default, every
+ * preset and every live device end up pointing at one array. The first in-place
+ * `band.gain = x` anywhere then rewrites the factory defaults and every open
+ * device at once, with no way back short of an app restart. Every constructor
+ * of a live patch clones instead.
+ */
+export function cloneProofPatch(patch: ProofPatch): ProofPatch {
+    return {
+        ...patch,
+        chainOrder: [...patch.chainOrder],
+        eqBands: patch.eqBands.map((band) => ({ ...band })),
+        dynCrossoverFreqs: [...patch.dynCrossoverFreqs],
+        dynBands: patch.dynBands.map((band) => ({ ...band })),
+        imgBandWidth: [...patch.imgBandWidth],
+        excBands: patch.excBands.map((band) => ({ ...band })),
+    };
+}
+
 // Canonicalize patch values so gesture ownership survives new object/array instances.
 export function getProofPatchSnapshot(patch: ProofPatch): string {
     return JSON.stringify([
@@ -275,6 +299,16 @@ export const DEFAULT_PATCH: ProofPatch = {
 
     target: 'streaming',
     targetLufs: -14,
+};
+
+/** Display name of each delivery target. One source for chips, readouts and alert copy. */
+export const TARGET_LABELS: Record<ProofTarget, string> = {
+    streaming: 'Streaming',
+    cd: 'CD',
+    club: 'Club / DJ',
+    broadcast: 'Broadcast',
+    podcast: 'Podcast',
+    custom: 'custom',
 };
 
 export const TARGET_LUFS: Record<ProofTarget, number> = {

@@ -20,4 +20,4 @@ Loop and metronome configuration are durable Automerge-backed project state, but
 
 ## Consequences
 
-WebLLM, hosted providers, and a future native planner can configure loop and metronome project state through the same validation, grounding, Automerge transaction, receipt, and undo path. Repeated commands are idempotent, loop bounds never hide an enabled-state side effect, region undo preserves prior loop state, and runtime transport side effects remain outside the provider allowlist.
+WebLLM and hosted providers can configure loop and metronome project state through the same validation, grounding, Automerge transaction, receipt, and undo path. Repeated commands are idempotent, loop bounds never hide an enabled-state side effect, region undo preserves prior loop state, and runtime transport side effects remain outside the provider allowlist.

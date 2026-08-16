@@ -219,19 +219,35 @@ export const RotaryKnob = ({
             }
 
             const ownsCurrentGesture = ownsGesture();
+            const gestureValue = currentValue.current;
             clearDragState();
-            if (ownsCurrentGesture && !Object.is(currentValue.current, startValue.current)) {
-                onChangeRef.current(currentValue.current, false);
+            // Re-seed from the prop before committing. An owner that clamps the
+            // requested value — linked macros hitting a group rail — stops moving
+            // the prop while the gesture keeps climbing past it, and committing
+            // the same clamped number produces no re-render, so the sync below
+            // never runs. Left alone, the live value stays stranded above the
+            // rail and every later arrow keystroke is spent walking back down to
+            // it. A render that does follow the commit overwrites this again
+            // with the value the owner actually accepted.
+            currentValue.current = value;
+            if (ownsCurrentGesture && !Object.is(gestureValue, startValue.current)) {
+                onChangeRef.current(gestureValue, false);
             }
             return true;
         };
     });
 
+    // Every render, not only the ones where `value` changed: the divergence to
+    // repair is a controlled owner refusing the requested value, which leaves the
+    // prop identical while the live value has moved. Guarded on the drag flag
+    // because a mid-gesture resync would fight the pointer — the owner clamps
+    // each transient, and adopting the clamp would drag the gesture back to the
+    // rail on every move.
     useLayoutEffect(() => {
         if (!draggingRef.current) {
             currentValue.current = value;
         }
-    }, [value]);
+    });
 
     useEffect(() => {
         return () => {

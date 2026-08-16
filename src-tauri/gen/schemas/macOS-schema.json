@@ -399,12 +399,6 @@
           "markdownDescription": "Enables the arm_recording command without any pre-configured scope."
         },
         {
-          "description": "Enables the cancel_native_llm_generation command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-cancel-native-llm-generation",
-          "markdownDescription": "Enables the cancel_native_llm_generation command without any pre-configured scope."
-        },
-        {
           "description": "Enables the cancel_provider_gateway_request command without any pre-configured scope.",
           "type": "string",
           "const": "allow-cancel-provider-gateway-request",
@@ -573,28 +567,22 @@
           "markdownDescription": "Enables the enable_link command without any pre-configured scope."
         },
         {
+          "description": "Enables the engine_rt_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-engine-rt-diagnostics",
+          "markdownDescription": "Enables the engine_rt_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Enables the ensure_whisper_ready command without any pre-configured scope.",
           "type": "string",
           "const": "allow-ensure-whisper-ready",
           "markdownDescription": "Enables the ensure_whisper_ready command without any pre-configured scope."
         },
         {
-          "description": "Enables the finalize_native_llm_initialization command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-finalize-native-llm-initialization",
-          "markdownDescription": "Enables the finalize_native_llm_initialization command without any pre-configured scope."
-        },
-        {
           "description": "Enables the generate_audio_clip command without any pre-configured scope.",
           "type": "string",
           "const": "allow-generate-audio-clip",
           "markdownDescription": "Enables the generate_audio_clip command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the generate_native_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-generate-native-completion",
-          "markdownDescription": "Enables the generate_native_completion command without any pre-configured scope."
         },
         {
           "description": "Enables the get_asr_status command without any pre-configured scope.",
@@ -621,18 +609,6 @@
           "markdownDescription": "Enables the get_link_status command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_model_dir command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-get-model-dir",
-          "markdownDescription": "Enables the get_model_dir command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the get_native_llm_status command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-get-native-llm-status",
-          "markdownDescription": "Enables the get_native_llm_status command without any pre-configured scope."
-        },
-        {
           "description": "Enables the get_plugin_parameters command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-plugin-parameters",
@@ -655,12 +631,6 @@
           "type": "string",
           "const": "allow-hide-all-plugin-guis",
           "markdownDescription": "Enables the hide_all_plugin_guis command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the init_native_llm command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-init-native-llm",
-          "markdownDescription": "Enables the init_native_llm command without any pre-configured scope."
         },
         {
           "description": "Enables the is_plugin_gui_supported command without any pre-configured scope.",
@@ -709,12 +679,6 @@
           "type": "string",
           "const": "allow-load-whisper-model",
           "markdownDescription": "Enables the load_whisper_model command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_tool_calling command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-tool-calling",
-          "markdownDescription": "Enables the native_tool_calling command without any pre-configured scope."
         },
         {
           "description": "Enables the open_midi_input command without any pre-configured scope.",
@@ -777,12 +741,6 @@
           "markdownDescription": "Enables the scan_plugins command without any pre-configured scope."
         },
         {
-          "description": "Enables the schema_constrained_generation command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-schema-constrained-generation",
-          "markdownDescription": "Enables the schema_constrained_generation command without any pre-configured scope."
-        },
-        {
           "description": "Enables the send_plugin_midi command without any pre-configured scope.",
           "type": "string",
           "const": "allow-send-plugin-midi",
@@ -817,6 +775,12 @@
           "type": "string",
           "const": "allow-set-link-tempo",
           "markdownDescription": "Enables the set_link_tempo command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_plugin_bypass command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-plugin-bypass",
+          "markdownDescription": "Enables the set_plugin_bypass command without any pre-configured scope."
         },
         {
           "description": "Enables the set_plugin_parameter command without any pre-configured scope.",
@@ -879,24 +843,6 @@
           "markdownDescription": "Enables the stop_recording command without any pre-configured scope."
         },
         {
-          "description": "Enables the stream_native_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-stream-native-completion",
-          "markdownDescription": "Enables the stream_native_completion command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the unload_native_llm command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-unload-native-llm",
-          "markdownDescription": "Enables the unload_native_llm command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the unload_native_llm_if_owned command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-unload-native-llm-if-owned",
-          "markdownDescription": "Enables the unload_native_llm_if_owned command without any pre-configured scope."
-        },
-        {
           "description": "Enables the unload_plugin command without any pre-configured scope.",
           "type": "string",
           "const": "allow-unload-plugin",
@@ -937,12 +883,6 @@
           "type": "string",
           "const": "deny-arm-recording",
           "markdownDescription": "Denies the arm_recording command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the cancel_native_llm_generation command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-cancel-native-llm-generation",
-          "markdownDescription": "Denies the cancel_native_llm_generation command without any pre-configured scope."
         },
         {
           "description": "Denies the cancel_provider_gateway_request command without any pre-configured scope.",
@@ -1113,28 +1053,22 @@
           "markdownDescription": "Denies the enable_link command without any pre-configured scope."
         },
         {
+          "description": "Denies the engine_rt_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-engine-rt-diagnostics",
+          "markdownDescription": "Denies the engine_rt_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Denies the ensure_whisper_ready command without any pre-configured scope.",
           "type": "string",
           "const": "deny-ensure-whisper-ready",
           "markdownDescription": "Denies the ensure_whisper_ready command without any pre-configured scope."
         },
         {
-          "description": "Denies the finalize_native_llm_initialization command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-finalize-native-llm-initialization",
-          "markdownDescription": "Denies the finalize_native_llm_initialization command without any pre-configured scope."
-        },
-        {
           "description": "Denies the generate_audio_clip command without any pre-configured scope.",
           "type": "string",
           "const": "deny-generate-audio-clip",
           "markdownDescription": "Denies the generate_audio_clip command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the generate_native_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-generate-native-completion",
-          "markdownDescription": "Denies the generate_native_completion command without any pre-configured scope."
         },
         {
           "description": "Denies the get_asr_status command without any pre-configured scope.",
@@ -1161,18 +1095,6 @@
           "markdownDescription": "Denies the get_link_status command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_model_dir command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-get-model-dir",
-          "markdownDescription": "Denies the get_model_dir command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the get_native_llm_status command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-get-native-llm-status",
-          "markdownDescription": "Denies the get_native_llm_status command without any pre-configured scope."
-        },
-        {
           "description": "Denies the get_plugin_parameters command without any pre-configured scope.",
           "type": "string",
           "const": "deny-get-plugin-parameters",
@@ -1195,12 +1117,6 @@
           "type": "string",
           "const": "deny-hide-all-plugin-guis",
           "markdownDescription": "Denies the hide_all_plugin_guis command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the init_native_llm command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-init-native-llm",
-          "markdownDescription": "Denies the init_native_llm command without any pre-configured scope."
         },
         {
           "description": "Denies the is_plugin_gui_supported command without any pre-configured scope.",
@@ -1249,12 +1165,6 @@
           "type": "string",
           "const": "deny-load-whisper-model",
           "markdownDescription": "Denies the load_whisper_model command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_tool_calling command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-tool-calling",
-          "markdownDescription": "Denies the native_tool_calling command without any pre-configured scope."
         },
         {
           "description": "Denies the open_midi_input command without any pre-configured scope.",
@@ -1317,12 +1227,6 @@
           "markdownDescription": "Denies the scan_plugins command without any pre-configured scope."
         },
         {
-          "description": "Denies the schema_constrained_generation command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-schema-constrained-generation",
-          "markdownDescription": "Denies the schema_constrained_generation command without any pre-configured scope."
-        },
-        {
           "description": "Denies the send_plugin_midi command without any pre-configured scope.",
           "type": "string",
           "const": "deny-send-plugin-midi",
@@ -1357,6 +1261,12 @@
           "type": "string",
           "const": "deny-set-link-tempo",
           "markdownDescription": "Denies the set_link_tempo command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_plugin_bypass command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-plugin-bypass",
+          "markdownDescription": "Denies the set_plugin_bypass command without any pre-configured scope."
         },
         {
           "description": "Denies the set_plugin_parameter command without any pre-configured scope.",
@@ -1411,24 +1321,6 @@
           "type": "string",
           "const": "deny-stop-recording",
           "markdownDescription": "Denies the stop_recording command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the stream_native_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-stream-native-completion",
-          "markdownDescription": "Denies the stream_native_completion command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the unload_native_llm command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-unload-native-llm",
-          "markdownDescription": "Denies the unload_native_llm command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the unload_native_llm_if_owned command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-unload-native-llm-if-owned",
-          "markdownDescription": "Denies the unload_native_llm_if_owned command without any pre-configured scope."
         },
         {
           "description": "Denies the unload_plugin command without any pre-configured scope.",

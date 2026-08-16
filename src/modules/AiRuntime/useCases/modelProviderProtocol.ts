@@ -56,14 +56,6 @@ const REMOTE_CAPABILITIES = {
 } as const;
 
 const CAPABILITIES: Record<ModelProviderName, ModelProviderCapabilities> = {
-    native: {
-        ...LOCAL_CAPABILITIES,
-        contextWindowTokens: null,
-        maxOutputTokens: null,
-        parallelToolCalls: false,
-        structuredOutput: true,
-        tools: true,
-    },
     webllm: {
         ...LOCAL_CAPABILITIES,
         contextWindowTokens: null,

@@ -14,7 +14,6 @@ pub fn run() {
         .manage(commands::link::LinkState::default())
         .manage(commands::midi::MidiState::default())
         .manage(commands::midi::PushState::default())
-        .manage(commands::native_llm::NativeLlmState::default())
         .manage(commands::speech::DictationState::default())
         .manage(commands::audio_gen::AudioGenState::default())
         .manage(commands::crumbs::CrumbsState::default())
@@ -22,18 +21,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
-            // Native in-process LLM (mistral.rs)
-            commands::native_llm::init_native_llm,
-            commands::native_llm::generate_native_completion,
-            commands::native_llm::stream_native_completion,
-            commands::native_llm::native_tool_calling,
-            commands::native_llm::schema_constrained_generation,
-            commands::native_llm::cancel_native_llm_generation,
-            commands::native_llm::unload_native_llm,
-            commands::native_llm::unload_native_llm_if_owned,
-            commands::native_llm::finalize_native_llm_initialization,
-            commands::native_llm::get_native_llm_status,
-            commands::native_llm::get_model_dir,
             // Privileged model-provider gateway
             commands::provider_gateway::provider_gateway_request,
             commands::provider_gateway::cancel_provider_gateway_request,
@@ -65,10 +52,10 @@ pub fn run() {
             commands::plugins::set_plugin_state_bytes,
             commands::plugins::start_native_engine,
             commands::plugins::send_plugin_midi,
+            commands::plugins::set_plugin_bypass,
             commands::plugins::update_plugin_transport,
             commands::plugins::process_plugin_audio,
             commands::engine_diagnostics::engine_rt_diagnostics,
-            // audio bridge
             // Plugin GUI
             commands::plugin_gui::is_plugin_gui_supported,
             commands::plugin_gui::open_plugin_gui,

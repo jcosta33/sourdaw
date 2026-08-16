@@ -7,6 +7,7 @@ import { loadPlugin } from '../loadPlugin';
 import { onPluginLatencyChanged } from '../onPluginLatencyChanged';
 import { processAudioIPC } from '../processAudioIPC';
 import { scanPlugins } from '../scanPlugins';
+import { setPluginBypass } from '../setPluginBypass';
 import { setPluginParameter } from '../setPluginParameter';
 import { unloadPlugin } from '../unloadPlugin';
 
@@ -77,6 +78,23 @@ describe('pluginBridge repository', () => {
                 paramId: 0,
                 value: 0.5,
             });
+        });
+    });
+
+    describe('setPluginBypass', () => {
+        it('addresses the native graph by instance id, the key both sides share', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            await setPluginBypass({ instanceId: 'i1', bypassed: true });
+            expect(tauriInvoke).toHaveBeenCalledWith('set_plugin_bypass', {
+                instanceId: 'i1',
+                bypassed: true,
+            });
+        });
+
+        it('stays off the wire in the browser, where there is no native graph', async () => {
+            vi.mocked(isTauri).mockReturnValue(false);
+            await setPluginBypass({ instanceId: 'i1', bypassed: true });
+            expect(tauriInvoke).not.toHaveBeenCalled();
         });
     });
 

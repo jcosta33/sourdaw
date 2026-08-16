@@ -9,7 +9,6 @@ pub mod filesystem;
 pub mod link;
 pub mod midi;
 pub mod model_download;
-pub mod native_llm;
 pub mod pitch_edit;
 pub mod plugin_gui;
 pub mod plugins;

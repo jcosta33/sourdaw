@@ -12,13 +12,13 @@ describe('setAiBackendPreference', () => {
         llmStatusStore.set({ state: 'idle' });
     });
 
-    it('invalidates readiness when selecting a different backend', () => {
+    it('migrates a retired saved preference to automatic mode without breaking compatible readiness', () => {
         llmStatusStore.set({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
 
-        setAiBackendPreference('native');
+        setAiBackendPreference('retired-local-provider');
 
-        expect(aiBackendPreferenceStore.value).toBe('native');
-        expect(llmStatusStore.value).toEqual({ state: 'idle' });
+        expect(aiBackendPreferenceStore.value).toBe('auto');
+        expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
     });
 
     it('preserves readiness when selecting the active backend', () => {
@@ -50,7 +50,7 @@ describe('setAiBackendPreference', () => {
         setActiveAborter(controller);
         llmStatusStore.set({ state: 'generating' });
 
-        setAiBackendPreference('native');
+        setAiBackendPreference('retired-local-provider');
 
         expect(controller.signal.aborted).toBe(true);
         expect(llmStatusStore.value).toEqual({ state: 'idle' });

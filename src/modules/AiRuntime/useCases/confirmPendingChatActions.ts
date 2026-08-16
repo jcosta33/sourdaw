@@ -688,25 +688,27 @@ export async function confirmPendingChatActions(
                 'budget'
             );
         }
-        const receiptIdentity = `command:${confirmation.runId}:${parsedCommandBatch.envelope.batchId}`;
-        const leaseResult = agentRunWorkLease.claim({
-            runId: confirmation.runId,
-            workId: parsedCommandBatch.envelope.batchId,
-            ownerKind: 'command',
-            cleanupOwner: 'command-executor',
-            idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
-            receiptIdentity,
-            idempotent: true,
-            retriable: false,
-        });
-        if (leaseResult.status !== 'claimed') {
-            return failApprovalPreflight(
-                confirmation,
-                `The confirmed command work could not be claimed: ${leaseResult.status}`,
-                'conflict'
-            );
+        if (!hasPriorVerifiedBatchReceipt) {
+            const receiptIdentity = `command:${confirmation.runId}:${parsedCommandBatch.envelope.batchId}`;
+            const leaseResult = agentRunWorkLease.claim({
+                runId: confirmation.runId,
+                workId: parsedCommandBatch.envelope.batchId,
+                ownerKind: 'command',
+                cleanupOwner: 'command-executor',
+                idempotencyKey: parsedCommandBatch.envelope.idempotencyKey,
+                receiptIdentity,
+                idempotent: true,
+                retriable: false,
+            });
+            if (leaseResult.status !== 'claimed') {
+                return failApprovalPreflight(
+                    confirmation,
+                    `The confirmed command work could not be claimed: ${leaseResult.status}`,
+                    'conflict'
+                );
+            }
+            trackedWorkLease = leaseResult.lease;
         }
-        trackedWorkLease = leaseResult.lease;
         if (budgetReservation) {
             commandBudget = { attemptId, estimates: budgetReservation.estimates };
         }

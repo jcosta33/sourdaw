@@ -93,8 +93,6 @@ fn provider_gateway_webview_boundary() {
         "collab_stop_browsing".to_owned(),
         "detect_sample_pitch".to_owned(),
         "get_asr_status".to_owned(),
-        "get_model_dir".to_owned(),
-        "get_native_llm_status".to_owned(),
         "hide_all_plugin_guis".to_owned(),
         "load_whisper_model".to_owned(),
         "post_process_audio".to_owned(),

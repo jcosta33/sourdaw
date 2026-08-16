@@ -9,4 +9,3 @@ crate-type = ["rlib"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-triple_buffer = "9.0.0"

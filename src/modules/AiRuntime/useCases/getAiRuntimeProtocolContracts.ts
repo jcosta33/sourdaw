@@ -3,12 +3,8 @@ import { AI_BACKENDS } from '../models/LlmOrchestrationTypes';
 import { MODEL_PROVIDER_OPERATIONS, MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION } from '../models/ModelProviderProtocol';
 
 import { getConfiguredCloudProvider } from './cloudApiManagement/getConfiguredCloudProvider';
-import { isNativeAiRuntimeAvailable } from './llmOrchestration/backendResolution/isNativeAiRuntimeAvailable';
 
 function getAdapterAvailability(name: string, configuredHostedProvider: string | undefined) {
-    if (name === 'native') {
-        return isNativeAiRuntimeAvailable() ? ('available' as const) : ('unavailable-on-platform' as const);
-    }
     if (name === 'webllm') {
         return 'runtime-dependent' as const;
     }
@@ -16,7 +12,7 @@ function getAdapterAvailability(name: string, configuredHostedProvider: string |
 }
 
 export function getAiRuntimeProtocolContracts() {
-    const localAdapters = AI_BACKENDS.filter((backend) => backend === 'native' || backend === 'webllm');
+    const localAdapters = AI_BACKENDS.filter((backend) => backend === 'webllm');
     const adapters = [...localAdapters, ...HOSTED_LLM_PROVIDERS];
     const configuredHostedProvider = getConfiguredCloudProvider()?.provider;
     const adapterOperations = adapters.map((name) => ({

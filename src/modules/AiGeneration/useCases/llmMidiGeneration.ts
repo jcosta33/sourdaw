@@ -1,11 +1,4 @@
-import {
-    generateNativeCompletion,
-    generateWebLlmCompletion,
-    initEngine,
-    isNativeEngineReady,
-    resolveBackend,
-    streamCloudChatCompletion,
-} from '#/modules/AiRuntime/useCases';
+import { generateWebLlmCompletion, resolveBackend, streamCloudChatCompletion } from '#/modules/AiRuntime/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createAiGenerationError } from '../errors/AiGenerationError';
@@ -55,7 +48,7 @@ export async function generateMidiViaLlm(
     const requestedNoteLimit = normalizeRequestedNoteLimit(numNotes);
     const userMessage = buildUserMessage(prompt, requestedNoteLimit, creativity);
 
-    let backend = resolveBackend();
+    const backend = resolveBackend();
     let rawResponse: string;
 
     if (backend === 'none') {
@@ -66,18 +59,7 @@ export async function generateMidiViaLlm(
         return fallbackToPatternMatch(prompt).slice(0, requestedNoteLimit);
     }
 
-    if (backend === 'native') {
-        if (!isNativeEngineReady()) {
-            backend = await initEngine();
-        }
-        if (backend === 'native' && !isNativeEngineReady()) {
-            throw createAiGenerationError('The selected native AI backend could not be initialized.');
-        }
-    }
-
-    if (backend === 'native') {
-        rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
-    } else if (backend === 'cloud') {
+    if (backend === 'cloud') {
         let accumulated = '';
         const outcome = await streamCloudChatCompletion(
             [

@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { createAiRuntimeError } from '../../../errors/AiRuntimeError';
 import { type AiBackend } from '../../../models/LlmOrchestrationTypes';
-import { initNativeEngine } from '../../../repositories/nativeEngine/initNativeEngine';
 import { getActiveModelId } from '../../../repositories/webLlm/getActiveModelId';
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { engineInitializationState } from '../../../stores/engineInitializationState';
@@ -34,15 +33,6 @@ export async function initEngine(modelId?: string, options: InitEngineOptions = 
         for (const backend of backends) {
             llmStatusStore.set({ state: 'loading', progress: 0, text: `Starting ${backend} engine...` });
             try {
-                if (backend === 'native') {
-                    await initNativeEngine({ signal: controller.signal });
-                    if (controller.signal.aborted) {
-                        return 'none';
-                    }
-                    llmStatusStore.set({ state: 'ready', backend: 'native', modelId: 'native' });
-                    return 'native';
-                }
-
                 if (backend === 'webllm') {
                     await initWebLlmEngine(modelId, {
                         downloadConsent: options.webLlmDownloadConsent,

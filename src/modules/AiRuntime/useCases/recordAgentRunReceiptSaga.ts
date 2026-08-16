@@ -77,12 +77,14 @@ export function recordAgentRunReceiptSaga(input: {
             }),
         });
     }
-    if (input.receipt.outcome === 'partially-committed') {
-        const linkedRenderJobIds = new Set(input.receipt.links.render.map((link) => link.jobId));
-        const uncompensatedRenderJobIds = input.actions
-            .flatMap((action) => (action.type === 'renderProjectSections' ? (action.payload.jobs ?? []) : []))
-            .map((job) => job.jobId)
-            .filter((jobId) => !linkedRenderJobIds.has(jobId));
+    const uncompensatedRenderJobIds =
+        input.receipt.outcome === 'partially-committed'
+            ? input.actions
+                  .flatMap((action) => (action.type === 'renderProjectSections' ? (action.payload.jobs ?? []) : []))
+                  .map((job) => job.jobId)
+                  .filter((jobId) => !input.receipt.links.render.some((link) => link.jobId === jobId))
+            : [];
+    if (uncompensatedRenderJobIds.length > 0) {
         for (const [index, jobId] of uncompensatedRenderJobIds.entries()) {
             agentRunLifecycle.recordSagaStep({
                 runId: input.runId,
@@ -111,7 +113,7 @@ export function recordAgentRunReceiptSaga(input: {
                 order:
                     input.receipt.links.render.length +
                     input.receipt.links.analysis.length +
-                    (input.receipt.outcome === 'partially-committed' ? 1 : 0) +
+                    uncompensatedRenderJobIds.length +
                     1,
                 owner: 'import',
                 workId: input.receipt.batchId,

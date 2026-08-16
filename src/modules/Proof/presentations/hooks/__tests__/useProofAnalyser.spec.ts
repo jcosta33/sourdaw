@@ -6,12 +6,14 @@ import { useProofAnalyser } from '../useProofAnalyser';
 const mocks = vi.hoisted(() => ({
     getMasterAnalyser: vi.fn(),
     getAudioSampleRate: vi.fn(() => 48000),
+    isEngineAudioAvailable: vi.fn(() => true),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getMasterAnalyser: mocks.getMasterAnalyser,
     getAudioSampleRate: mocks.getAudioSampleRate,
+    isEngineAudioAvailable: mocks.isEngineAudioAvailable,
 }));
 
 /** Records raw-frequency reads and lets a test spy on the created analyser. */
@@ -23,13 +25,17 @@ type FakeAnalyser = {
     disconnect: ReturnType<typeof vi.fn>;
 };
 
+type FakeContext = {
+    createAnalyser: () => FakeAnalyser;
+};
+
 type FakeMaster = {
-    context: { createAnalyser: () => FakeAnalyser };
+    context: FakeContext;
     connect: ReturnType<typeof vi.fn>;
     disconnect: ReturnType<typeof vi.fn>;
 };
 
-function makeFakeMaster(options?: { connectThrows?: boolean }): {
+function makeFakeMaster(): {
     master: FakeMaster;
     getCreatedAnalyser: () => FakeAnalyser | null;
 } {
@@ -50,11 +56,7 @@ function makeFakeMaster(options?: { connectThrows?: boolean }): {
                 return created;
             },
         },
-        connect: vi.fn(() => {
-            if (options?.connectThrows) {
-                throw new Error('context not running');
-            }
-        }),
+        connect: vi.fn(),
         disconnect: vi.fn(),
     };
     return { master, getCreatedAnalyser: () => created };
@@ -86,6 +88,7 @@ function runFrames(callbacks: FrameRequestCallback[], count: number): void {
 describe('useProofAnalyser', () => {
     beforeEach(() => {
         mocks.getAudioSampleRate.mockReturnValue(48000);
+        mocks.isEngineAudioAvailable.mockReturnValue(true);
     });
 
     afterEach(() => {
@@ -154,15 +157,46 @@ describe('useProofAnalyser', () => {
         expect(result.current.fftVersion).toBe(firstVersion + 1);
     });
 
-    it('never schedules a frame or publishes when connecting the tap throws', () => {
-        const { master } = makeFakeMaster({ connectThrows: true });
+    it('reports an unavailable tap with no master analyser at all', () => {
+        mocks.getMasterAnalyser.mockReturnValue(null);
+
+        const { result } = renderHook(() => useProofAnalyser());
+
+        expect(result.current.status).toBe('unavailable');
+    });
+
+    it('reports an unavailable tap and never connects when the engine runs its fallback shim', () => {
+        // The shim hands out a structurally real analyser on a context that never
+        // renders, so connecting to it succeeds and reads back silence forever.
+        // Only the engine's own verdict separates that from a live master.
+        const { master } = makeFakeMaster();
         mocks.getMasterAnalyser.mockReturnValue(master);
+        mocks.isEngineAudioAvailable.mockReturnValue(false);
         const { rafSpy } = captureAnimationFrames();
 
         const { result } = renderHook(() => useProofAnalyser());
 
+        expect(result.current.status).toBe('unavailable');
+        expect(master.connect).not.toHaveBeenCalled();
         expect(rafSpy).not.toHaveBeenCalled();
         expect(result.current.fftData).toBeNull();
+    });
+
+    it('reports an active tap on its very first render, before any frame is delivered', () => {
+        const { master } = makeFakeMaster();
+        mocks.getMasterAnalyser.mockReturnValue(master);
+        const { callbacks } = captureAnimationFrames();
+
+        const { result } = renderHook(() => useProofAnalyser());
+
+        // No transient `unavailable`: the panel would paint the dead-tap notice
+        // over a working analyser for one frame on every entry to the Lab desk.
+        expect(result.current.status).toBe('active');
+
+        runFrames(callbacks, 4);
+
+        expect(result.current.status).toBe('active');
+        expect(result.current.fftData).not.toBeNull();
     });
 
     it('cancels the frame loop and detaches the tap on unmount', () => {
