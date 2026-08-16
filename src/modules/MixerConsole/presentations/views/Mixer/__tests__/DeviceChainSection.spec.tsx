@@ -11,9 +11,7 @@ type PluginStub = { id: string; name: string };
 
 const mocks = vi.hoisted(() => ({
     selectTrack: vi.fn(),
-    bypassDevice: vi.fn(),
-    addDevice: vi.fn(),
-    removeDevice: vi.fn(),
+    executeAppAction: vi.fn(),
     reorderDevices: vi.fn(),
     getPlatformPlugins: vi.fn<() => PluginStub[]>(() => []),
     openInspector: vi.fn(),
@@ -21,11 +19,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     selectTrack: mocks.selectTrack,
-    bypassDevice: mocks.bypassDevice,
-    addDevice: mocks.addDevice,
-    removeDevice: mocks.removeDevice,
     reorderDevices: mocks.reorderDevices,
     getPlatformPlugins: mocks.getPlatformPlugins,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
@@ -92,25 +91,34 @@ describe('DeviceChainSection', () => {
         expect(mocks.openInspector).toHaveBeenCalledTimes(1);
     });
 
-    it('toggles bypass on double-click', () => {
+    it('toggles bypass on double-click through the action boundary', () => {
         const track: Track = { ...baseTrack, devices: [makeDevice({ id: 'dev-9', bypassed: false })] };
         render(<DeviceChainSection track={track} />);
 
         fireEvent.doubleClick(screen.getByText('Delay').closest('button')!);
 
-        expect(mocks.bypassDevice).toHaveBeenCalledWith('dev-9', true);
+        // The bypassDevice action is undoable; the raw use-case write this
+        // replaced never entered history.
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'bypassDevice',
+            payload: { deviceId: 'dev-9', bypassed: true },
+        });
     });
 
-    it('removes a device via its remove button', () => {
+    it('removes a device via its remove button through the action boundary', () => {
         const track: Track = { ...baseTrack, devices: [makeDevice({ id: 'dev-9', name: 'Chorus' })] };
         render(<DeviceChainSection track={track} />);
 
         fireEvent.click(screen.getByLabelText('Remove Chorus'));
 
-        expect(mocks.removeDevice).toHaveBeenCalledWith('dev-9');
+        // removeDevice is undoable via its restoreDevice inverse.
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'removeDevice',
+            payload: { deviceId: 'dev-9' },
+        });
     });
 
-    it('lists built-in plugins and MIDI FX after "+ add", dispatches addDevice on choice, and closes on cancel without dispatching', () => {
+    it('lists built-in plugins and MIDI FX after "+ add", dispatches the addDevice action on choice, and closes on cancel without dispatching', () => {
         mocks.getPlatformPlugins.mockReturnValue([{ id: 'plug-1', name: 'Delay Line' }]);
         const track: Track = { ...baseTrack, id: 'track-7' };
         render(<DeviceChainSection track={track} />);
@@ -123,14 +131,26 @@ describe('DeviceChainSection', () => {
 
         fireEvent.click(screen.getByText('cancel'));
         expect(screen.queryByText('+ Delay Line')).not.toBeInTheDocument();
-        expect(mocks.addDevice).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByText('+ add'));
         fireEvent.click(screen.getByText('+ Delay Line'));
 
         // By id, not by the label on the button: `addDevice` matches on name
         // *or* id, and three catalog names are carried by two plugins each.
-        expect(mocks.addDevice).toHaveBeenCalledWith('track-7', 'plug-1');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'addDevice',
+            payload: { trackId: 'track-7', deviceType: 'plug-1' },
+        });
         expect(screen.queryByText('+ Delay Line')).not.toBeInTheDocument();
+
+        // The MIDI FX menu passes the factory NAME (its id is not a catalog
+        // device type), exactly as the raw call did.
+        fireEvent.click(screen.getByText('+ add'));
+        fireEvent.click(screen.getByText('♪ Chord Generator'));
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'addDevice',
+            payload: { trackId: 'track-7', deviceType: 'Chord Generator' },
+        });
     });
 });

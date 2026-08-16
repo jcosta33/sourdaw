@@ -11,8 +11,6 @@ import { useStore } from '#/infra/store/useStore';
 import {
     getPlatformPlugins,
     getPluginById,
-    bypassDevice,
-    removeDevice,
     addExternalDevice,
     reorderDevices,
     projectTrackToLiveStrip,
@@ -150,7 +148,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             // mutation issued by an AI
                                             // prompt already goes through
                                             // this action.
-                                            executeAppAction({
+                                            void executeAppAction({
                                                 type: 'addDevice',
                                                 payload: { trackId: track.id, deviceType: plugin.id },
                                             });
@@ -169,7 +167,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
                                         role="menuitem"
                                         onClick={() => {
-                                            executeAppAction({
+                                            void executeAppAction({
                                                 type: 'addDevice',
                                                 payload: { trackId: track.id, deviceType: plugin.id },
                                             });
@@ -190,7 +188,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 className={cn(menuBtnClass, 'text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
-                                                    executeAppAction({
+                                                    void executeAppAction({
                                                         type: 'addDevice',
                                                         payload: { trackId: track.id, deviceType: plugin.id },
                                                     });
@@ -321,7 +319,14 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     data-testid={`device-bypass-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        bypassDevice(device.id, !device.bypassed);
+                                        // Action boundary: the bypassDevice
+                                        // action is undoable; the raw use case
+                                        // write never entered history (#1938
+                                        // precedent for the add path).
+                                        void executeAppAction({
+                                            type: 'bypassDevice',
+                                            payload: { deviceId: device.id, bypassed: !device.bypassed },
+                                        });
                                     }}
                                 >
                                     <Power
@@ -379,7 +384,13 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     data-testid={`device-remove-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        removeDevice(device.id);
+                                        // Action boundary: removeDevice is
+                                        // undoable via its restoreDevice
+                                        // inverse.
+                                        void executeAppAction({
+                                            type: 'removeDevice',
+                                            payload: { deviceId: device.id },
+                                        });
                                     }}
                                 >
                                     <Trash2 className="size-3 text-muted-foreground" />

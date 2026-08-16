@@ -298,8 +298,17 @@ describe('confirmPendingChatActions transaction admission', () => {
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        agentRunLifecycle.create({
+            runId: 'confirmation-batch',
+            request: 'set tempo to 132',
+            mode: 'macro',
+            createdRevision: projectRevision,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-batch', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirmation-batch', phase: 'waiting-for-approval' });
         proposePendingActionConfirmation({
             id: 'confirmation-batch',
+            runId: 'confirmation-batch',
             prompt: 'set tempo to 132',
             assistantMessageId: 'assistant-1',
             actions: [action],
@@ -319,9 +328,23 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
         expect(observedSignal).toBeInstanceOf(AbortSignal);
         expect(observedSignal?.aborted).toBe(false);
+        expect(agentRunLifecycle.get('confirmation-batch')).toMatchObject({
+            phase: 'completed',
+            saga: {
+                steps: [
+                    expect.objectContaining({
+                        stepId: 'command:group-batch',
+                        owner: 'command',
+                        state: 'committed',
+                        receiptIdentity: expect.stringContaining('confirmation-batch:group-batch'),
+                    }),
+                ],
+            },
+        });
 
         proposePendingActionConfirmation({
             id: 'confirmation-batch-retry',
+            runId: 'confirmation-batch',
             prompt: 'set tempo to 132',
             assistantMessageId: 'assistant-1',
             actions: [action],
