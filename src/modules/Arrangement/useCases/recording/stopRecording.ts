@@ -17,8 +17,13 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
  * by calling this function. That keeps Transport from mirroring the same
  * state; the only writers to `activeRecordingRef` are `startRecording` and
  * this use case.
+ *
+ * `atBeat` closes the clips at an explicit beat. Callers that stop a moving
+ * transport must pass it: the store's `playheadPosition` is written on discrete
+ * events only, so mid-playback it still holds the beat playback started at.
+ * Omitting it keeps the stationary behaviour — close at the store playhead.
  */
-export function stopRecording(): void {
+export function stopRecording(atBeat?: number): void {
     const clipIds = activeRecordingRef.current;
     activeRecordingRef.current = [];
 
@@ -32,7 +37,7 @@ export function stopRecording(): void {
         return;
     }
 
-    const endBeat = transportState.playheadPosition;
+    const endBeat = atBeat ?? transportState.playheadPosition;
     const clipIdSet = new Set(clipIds);
 
     setTrackState({
