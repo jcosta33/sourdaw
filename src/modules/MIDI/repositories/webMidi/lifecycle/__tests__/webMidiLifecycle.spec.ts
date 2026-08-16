@@ -408,6 +408,69 @@ describe('initWebMidi', () => {
         expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
     });
 
+    it('re-opens the saved native device after the enumeration order changes', async () => {
+        // Replugs, hub power cycles and reboots reorder midir's port list. A
+        // preference keyed on the position resolves to whichever instrument
+        // now holds it; keyed on the port name it follows the device.
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue([
+            { index: 0, name: 'Built-in' },
+            { index: 1, name: 'Launchkey' },
+        ]);
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'Launchkey' });
+        readPersistedInputIdMock.mockReturnValue('Launchkey');
+
+        await initWebMidi({ onMidiMessage });
+
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 1, onMidiMessage });
+        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }, { persistSelection: true });
+    });
+
+    it('treats a persisted enumeration index as absent instead of grabbing that port', async () => {
+        // Ids persisted before identity moved off the index are bare numbers.
+        // Resolving one against the current list would hand the user a device
+        // they never chose; it has to degrade to no saved selection.
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue([
+            { index: 0, name: 'Built-in' },
+            { index: 1, name: 'Launchkey' },
+        ]);
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '1' });
+        readPersistedInputIdMock.mockReturnValue('1');
+
+        await initWebMidi({ onMidiMessage });
+
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
+        const persistedSelectionWrites = setStateMock.mock.calls.filter(
+            ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
+        );
+        expect(persistedSelectionWrites).toEqual([]);
+    });
+
+    it('publishes native inputs under their stable ids', async () => {
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue([
+            { index: 0, name: 'MPK Mini' },
+            { index: 1, name: 'MPK Mini' },
+        ]);
+
+        await initWebMidi({ onMidiMessage });
+
+        expect(setStateMock).toHaveBeenCalledWith({
+            inputs: [
+                { id: 'MPK Mini #0', name: 'MPK Mini', manufacturer: 'System' },
+                { id: 'MPK Mini #1', name: 'MPK Mini', manufacturer: 'System' },
+            ],
+            isSupported: true,
+        });
+    });
+
     it('should report unsupported and return false when the Tauri MIDI init throws', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));

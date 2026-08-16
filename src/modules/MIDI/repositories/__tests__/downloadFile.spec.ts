@@ -70,4 +70,21 @@ describe('downloadFile repository', () => {
         expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:url');
         expect(anchor.parentNode).toBeNull();
     });
+
+    it('keeps the object URL alive past the next task, not just past the click', () => {
+        const anchor = stubbedAnchor();
+        vi.spyOn(anchor, 'click').mockImplementation(() => {});
+
+        downloadBlob('some data', 'test.mid', 'audio/midi');
+        // Draining the microtask queue and the next macrotask only proves the
+        // click handler returned. A large export can still be unread at that
+        // point, and revoking then saves an empty file.
+        vi.advanceTimersByTime(0);
+
+        expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(1000);
+
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:url');
+    });
 });

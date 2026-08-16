@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo, type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
@@ -13,31 +13,10 @@ import '../store';
 
 import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
+import { listTauriMidiInputs } from './listTauriMidiInputs';
 import { selectMidiInputTauri } from './selectMidiInputTauri';
 
-type TauriMidiDevice = { index: number; name: string };
 type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
-
-function isTauriMidiDevice(value: unknown): value is TauriMidiDevice {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-    if (!('index' in value) || !('name' in value)) {
-        return false;
-    }
-
-    return Number.isInteger(value.index) && typeof value.name === 'string';
-}
-
-/**
- * The device list arrives over IPC, so it is `unknown` until proven otherwise.
- * A bare cast let a malformed payload through as `id: "undefined"`, which then
- * reached `open_midi_input` as `NaN`. Same guard shape as the message-event
- * validation one file over.
- */
-function isTauriMidiDeviceList(value: unknown): value is TauriMidiDevice[] {
-    return Array.isArray(value) && value.every(isTauriMidiDevice);
-}
 
 function enumerateInputs(): MidiInputInfo[] {
     const access = getMidiAccess();
@@ -150,27 +129,28 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
     if (isTauri()) {
         try {
             setTauriMode(true);
-            const devices = await tauriInvoke('list_midi_inputs');
-            if (!isTauriMidiDeviceList(devices)) {
-                throw new TypeError('list_midi_inputs returned an invalid device list');
-            }
-            const inputs: MidiInputInfo[] = devices.map((data) => ({
-                id: String(data.index),
-                name: data.name,
+            const ports = await listTauriMidiInputs();
+            const inputs: MidiInputInfo[] = ports.map((port) => ({
+                id: port.id,
+                name: port.name,
                 manufacturer: 'System',
             }));
             setState({ inputs, isSupported: true });
 
-            if (inputs.length > 0) {
+            if (ports.length > 0) {
                 // Always (re-)open: covers first load AND re-init after app
                 // restart where selectedInputId is persisted in localStorage but
                 // the Tauri IPC port has NOT been opened yet for this session.
-                const targetId = state.selectedInputId ?? inputs[0]!.id;
-                const targetInput = inputs.find((index) => index.id === targetId) ?? inputs[0]!;
-                await selectMidiInputTauri({ portIndex: Number(targetInput.id), onMidiMessage });
+                const targetId = state.selectedInputId ?? ports[0]!.id;
+                // A saved id matching no present port is absent, whether the
+                // device is unplugged or the id predates stable identity and is
+                // still a bare enumeration index. Either way it resolves to
+                // nothing rather than to whoever holds that slot now.
+                const targetPort = ports.find((port) => port.id === targetId) ?? ports[0]!;
+                await selectMidiInputTauri({ portIndex: targetPort.portIndex, onMidiMessage });
                 // Same rule as the Web MIDI path: a stand-in for an absent
                 // device is this session's choice, never the saved one.
-                setState({ selectedInputId: targetInput.id }, { persistSelection: targetInput.id === targetId });
+                setState({ selectedInputId: targetPort.id }, { persistSelection: targetPort.id === targetId });
             }
 
             return true;
