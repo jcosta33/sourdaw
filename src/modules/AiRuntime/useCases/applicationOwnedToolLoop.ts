@@ -1,7 +1,9 @@
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
+import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ToolSchema } from '../models/ToolDefinitions';
+import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import {
@@ -35,7 +37,8 @@ const CATALOG_CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
 type QueryInput = Parameters<typeof querySemanticProject>[0];
 type QueryFilters = NonNullable<QueryInput['filters']>;
 type ApplicationToolPlanningOutcome =
-    { status: 'complete'; toolCalls: ToolCallResult[] } | { status: 'rejected'; reason: string };
+    | { status: 'complete'; toolCalls: ToolCallResult[]; proposal?: AgentPlanProposal | null }
+    | { status: 'rejected'; reason: string };
 
 export type { ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 
@@ -43,6 +46,7 @@ export type ApplicationOwnedToolLoopOutcome =
     | {
           status: 'complete';
           toolCalls: ToolCallResult[];
+          proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           turns: number;
       }
@@ -599,7 +603,11 @@ function validateCommandBatchProposal(
     call: ToolCallResult,
     disclosedCommandSchemas: ReadonlyMap<string, string>
 ): string | null {
-    if (Object.keys(call.arguments).length !== 1 || !Array.isArray(call.arguments.commands)) {
+    if (
+        Object.keys(call.arguments).some((key) => key !== 'commands' && key !== 'plan') ||
+        !Array.isArray(call.arguments.commands) ||
+        normalizeAgentPlanProposal(call.arguments.plan) === null
+    ) {
         return 'Provider command proposal does not match the strict catalog contract.';
     }
     const commands = call.arguments.commands;
@@ -801,6 +809,7 @@ export async function runApplicationOwnedToolLoop(
             return {
                 status: 'complete',
                 toolCalls: terminalCalls.map(({ call }) => call),
+                proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
                 receipts,
                 turns: turn,
             };

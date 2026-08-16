@@ -3,6 +3,7 @@ import { type AgentRunError, type AgentRunPhase } from '../models/AgentRun';
 import { readAgentRunState } from '../stores/agentRunStore';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { resumeAgentRunDecision } from './resumeAgentRunDecision';
 
 type AgentRunControlProjection = {
     runId: string;
@@ -62,6 +63,14 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
                 )
         )
         .map((work) => work.workId);
+    const canResumeDecision =
+        run.phase === 'paused' &&
+        run.cancellation.requestedAt === null &&
+        run.decision !== null &&
+        run.decision.selectedAlternativeId === null &&
+        run.decision.alternatives.length > 0 &&
+        JSON.stringify(run.decision.scope) === JSON.stringify(run.scope) &&
+        JSON.stringify(run.decision.grants) === JSON.stringify(run.grants);
     return {
         runId: run.runId,
         schemaVersion: run.schemaVersion,
@@ -74,7 +83,7 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
         },
         allowedActions: {
             cancel: !TERMINAL_PHASES.has(run.phase),
-            resume: false,
+            resume: canResumeDecision,
             retryWorkIds,
         },
         manualResumeReason: run.manualResume.reason,
@@ -99,4 +108,5 @@ function getAgentRunControlProjections(): AgentRunControlProjection[] {
 export const agentRunControls = {
     get: getAgentRunControlProjection,
     list: getAgentRunControlProjections,
+    resumeDecision: resumeAgentRunDecision,
 } as const;

@@ -740,6 +740,30 @@ function requireAgentRunManualResume(input: {
     });
 }
 
+function selectAgentRunDecisionAlternative(input: {
+    runId: string;
+    alternativeId: string;
+    selectedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.selectedAt ?? Date.now(), (run) => {
+        if (run.phase !== 'paused' || run.cancellation.requestedAt !== null || run.decision === null) {
+            throw new Error('Agent run has no resumable decision.');
+        }
+        if (run.decision.selectedAlternativeId !== null) {
+            throw new Error('Agent run decision was already consumed.');
+        }
+        if (!run.decision.alternatives.some((alternative) => alternative.id === input.alternativeId)) {
+            throw new Error('Agent run decision alternative is unavailable.');
+        }
+        return {
+            ...run,
+            phase: 'planning',
+            decision: { ...run.decision, selectedAlternativeId: input.alternativeId },
+            manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
+        };
+    });
+}
+
 function cancelAgentRun(input: { runId: string; reason: string; requestedAt?: number }): AgentRun {
     const requestedAt = input.requestedAt ?? Date.now();
     return updateAgentRun(input.runId, requestedAt, (run) => {
@@ -810,6 +834,7 @@ export const agentRunLifecycle = {
     reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
     reserveBudget: reserveAgentRunBudget,
     reserveBudgetBatch: reserveAgentRunBudgetBatch,
+    selectDecisionAlternative: selectAgentRunDecisionAlternative,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
     prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,

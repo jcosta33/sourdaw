@@ -122,8 +122,56 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                         additionalProperties: false,
                     },
                 },
+                plan: {
+                    type: 'object',
+                    properties: {
+                        semantic: {
+                            type: 'object',
+                            properties: {
+                                classification: { type: 'string', enum: ['simple', 'complex'] },
+                                uncertainty: { type: 'array', maxItems: 32, items: { type: 'string' } },
+                            },
+                            required: ['classification', 'uncertainty'],
+                            additionalProperties: false,
+                        },
+                        objective: { type: 'string', minLength: 1, maxLength: 512 },
+                        constraints: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 512 } },
+                        scope: {
+                            type: 'object',
+                            properties: {
+                                targetIds: { type: 'array', maxItems: 128, items: { type: 'string', maxLength: 512 } },
+                                targetRanges: { type: 'array', maxItems: 128, items: { type: 'object' } },
+                                protectedTargetIds: {
+                                    type: 'array',
+                                    maxItems: 128,
+                                    items: { type: 'string', maxLength: 512 },
+                                },
+                                protectedRanges: { type: 'array', maxItems: 128, items: { type: 'object' } },
+                            },
+                            required: ['targetIds', 'targetRanges', 'protectedTargetIds', 'protectedRanges'],
+                            additionalProperties: false,
+                        },
+                        capabilityIds: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 512 } },
+                        assetIds: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 512 } },
+                        alternatives: { type: 'array', maxItems: 32, items: { type: 'object' } },
+                        validationStrategy: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 512 } },
+                        stoppingConditions: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 512 } },
+                    },
+                    required: [
+                        'semantic',
+                        'objective',
+                        'constraints',
+                        'scope',
+                        'capabilityIds',
+                        'assetIds',
+                        'alternatives',
+                        'validationStrategy',
+                        'stoppingConditions',
+                    ],
+                    additionalProperties: false,
+                },
             },
-            ['commands']
+            ['commands', 'plan']
         ),
         tool(COMMAND_HISTORY_TOOL_NAME, 'Read bounded, revision-bearing command history.', {
             page: {

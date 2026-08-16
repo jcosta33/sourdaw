@@ -109,12 +109,33 @@ export type AgentRunPlanAlternative = {
     changesAuthority: boolean;
 };
 
-export type AgentRunProviderProposal = {
-    scope?: AgentRunScope;
-    capabilityIds?: string[];
-    alternatives?: AgentRunPlanAlternative[];
-    uncertainty?: Array<'ambiguous-target' | 'exploratory-outcome' | 'conflicted-constraints' | 'capability-mismatch'>;
+export const AGENT_PLAN_UNCERTAINTY = [
+    'ambiguous-target',
+    'exploratory-outcome',
+    'conflicted-constraints',
+    'capability-mismatch',
+] as const;
+
+export type AgentPlanUncertainty = (typeof AGENT_PLAN_UNCERTAINTY)[number];
+
+/**
+ * Provider-authored intent evidence. It is inert until application-owned scope,
+ * grants, budgets, and assets admit the corresponding command batch.
+ */
+export type AgentPlanProposal = {
+    semantic: { classification: 'simple' | 'complex'; uncertainty: AgentPlanUncertainty[] };
+    objective: string;
+    constraints: string[];
+    scope: AgentRunScope;
+    capabilityIds: string[];
+    assetIds: string[];
+    alternatives: AgentRunPlanAlternative[];
+    validationStrategy: string[];
+    stoppingConditions: string[];
 };
+
+/** @deprecated Keep the persisted name stable while the proposal contract is shared by all providers. */
+export type AgentRunProviderProposal = AgentPlanProposal;
 
 export type AgentRunDecision = {
     revision: string;

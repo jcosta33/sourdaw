@@ -1,8 +1,24 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { type AgentPlanProposal } from '../../models/AgentRun';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { planAgentRun } from '../planAgentRun';
+
+function providerProposal(overrides: Partial<AgentPlanProposal>): AgentPlanProposal {
+    return {
+        semantic: { classification: 'simple', uncertainty: [] },
+        objective: 'Apply the selected action.',
+        constraints: [],
+        scope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        capabilityIds: ['muteTrack'],
+        assetIds: [],
+        alternatives: [],
+        validationStrategy: [],
+        stoppingConditions: [],
+        ...overrides,
+    };
+}
 
 describe('planAgentRun', () => {
     afterEach(() => {
@@ -80,12 +96,14 @@ describe('planAgentRun', () => {
             },
             budgets: { limits: {}, consumed: {} },
             requiresConfirmation: false,
-            providerProposal: {
+            providerProposal: providerProposal({
+                scope: { targetIds: ['vocal-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                capabilityIds: ['setTrackGain'],
                 alternatives: [
                     { id: 'local-gain', label: 'Adjust the existing vocal gain', changesAuthority: false },
                     { id: 'upload-reference', label: 'Upload an audio reference', changesAuthority: true },
                 ],
-            },
+            }),
         });
 
         expect(result).toEqual({
@@ -200,15 +218,15 @@ describe('planAgentRun', () => {
         expect(
             planAgentRun({
                 ...input,
-                providerProposal: {
+                providerProposal: providerProposal({
                     scope: { ...input.scope, targetIds: ['bass-1', 'drum-bus'] },
-                },
+                }),
             })
         ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('scope') }));
         expect(
             planAgentRun({
                 ...input,
-                providerProposal: { capabilityIds: ['generate-and-upload-audio'] },
+                providerProposal: providerProposal({ capabilityIds: ['generate-and-upload-audio'] }),
             })
         ).toEqual(expect.objectContaining({ status: 'rejected', reason: expect.stringContaining('capability') }));
     });
@@ -282,6 +300,32 @@ describe('planAgentRun', () => {
                 },
             ],
         });
+    });
+
+    it('rejects a plan when no exact operation grant admits its action, even without confirmation', () => {
+        const result = planAgentRun({
+            request: 'Mute Bass.',
+            revision: 'heads-1',
+            actions: [{ type: 'muteTrack' }],
+            actionLabels: ['Mute Bass'],
+            scope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            grants: {
+                allowedOperationPrefixes: [],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: false,
+        });
+
+        expect(result).toEqual(expect.objectContaining({ status: 'rejected' }));
     });
 
     it('persists an authority-bound unresolved decision before pausing a run', () => {

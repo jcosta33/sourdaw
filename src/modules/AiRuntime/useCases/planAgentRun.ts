@@ -1,4 +1,5 @@
 import {
+    type AgentPlanUncertainty,
     type AgentRunBudgets,
     type AgentRunGrants,
     type AgentRunPlan,
@@ -9,9 +10,7 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { RUNTIME_ACTION_TYPES } from '../models/RuntimeAction';
 
-type AgentRunSemanticEvidence = {
-    uncertainty: Array<'ambiguous-target' | 'exploratory-outcome' | 'conflicted-constraints' | 'capability-mismatch'>;
-};
+type AgentRunSemanticEvidence = { uncertainty: AgentPlanUncertainty[] };
 
 type PlanAgentRunInput = {
     request: string;
@@ -24,6 +23,9 @@ type PlanAgentRunInput = {
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
     providerProposal?: AgentRunProviderProposal;
+    /** Provider-originated actions cannot reach plan persistence without semantic evidence. */
+    requireProviderProposal?: boolean;
+    readyAssetIds?: readonly string[];
     semanticEvidence?: AgentRunSemanticEvidence;
 };
 
@@ -52,12 +54,9 @@ function isComplex(input: PlanAgentRunInput): boolean {
 
 function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilities'] {
     const capabilities: AgentRunPlan['capabilities'] = input.actions.map((action) => {
-        const allowed =
-            !input.requiresConfirmation ||
-            input.grants.allowedOperationPrefixes.length === 0 ||
-            input.grants.allowedOperationPrefixes.some(
-                (prefix) => action.type.startsWith(prefix) || prefix.startsWith(action.type)
-            );
+        const allowed = input.grants.allowedOperationPrefixes.some(
+            (prefix) => action.type.startsWith(prefix) || prefix.startsWith(action.type)
+        );
         return {
             id: action.type,
             source: 'action-catalog',
@@ -83,26 +82,38 @@ function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilitie
             status: limit === 0 || (input.budgets.consumed[category] ?? 0) < limit ? 'required' : 'unavailable',
         });
     }
+    const requiredAssetIds = new Set(input.providerProposal?.assetIds ?? []);
     if (input.actions.some((action) => action.type === 'importStemSet')) {
+        requiredAssetIds.add('selected-stem-assets');
+    }
+    const readyAssetIds = new Set(input.readyAssetIds ?? []);
+    for (const assetId of requiredAssetIds) {
         capabilities.push({
-            id: 'selected-stem-assets',
+            id: assetId,
             source: 'asset',
-            prerequisite: 'The user-selected stem assets remain prepared for this run.',
-            status: 'required',
+            prerequisite: `Application asset readiness for ${assetId} is required before this run.`,
+            status: readyAssetIds.has(assetId) ? 'available' : 'unavailable',
         });
     }
+    const requiresRemoteGeneration = input.providerProposal?.capabilityIds?.includes('remote-generation') ?? false;
     capabilities.push({
         id: 'remote-generation-policy',
         source: 'data-policy',
         prerequisite: input.grants.remoteGeneration
             ? 'Remote generation is explicitly granted for this run.'
             : 'Remote generation is not granted and cannot be added by the provider.',
-        status: 'available',
+        status: requiresRemoteGeneration && !input.grants.remoteGeneration ? 'unavailable' : 'available',
     });
     return capabilities;
 }
 
 export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
+    if (input.requireProviderProposal && input.providerProposal === undefined) {
+        return {
+            status: 'rejected',
+            reason: 'Provider semantic proposal is required before application planning can prove its interpretation.',
+        };
+    }
     if (input.actions.length !== input.actionLabels.length) {
         return { status: 'rejected', reason: 'Provider actions must have one canonical application label each.' };
     }
@@ -125,13 +136,15 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
     }
     if (
         input.providerProposal?.capabilityIds?.some(
-            (capabilityId) => !capabilities.some((capability) => capability.id === capabilityId)
+            (capabilityId) =>
+                capabilityId !== 'remote-generation' &&
+                !capabilities.some((capability) => capability.id === capabilityId)
         )
     ) {
         return { status: 'rejected', reason: 'Provider proposed a capability outside the application catalog.' };
     }
     const alternatives = input.providerProposal?.alternatives ?? [];
-    const uncertainty = input.providerProposal?.uncertainty ?? input.semanticEvidence?.uncertainty ?? [];
+    const uncertainty = input.providerProposal?.semantic?.uncertainty ?? input.semanticEvidence?.uncertainty ?? [];
     if (alternatives.some((alternative) => alternative.changesAuthority)) {
         return {
             status: 'needs-user-decision',
@@ -141,7 +154,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             },
         };
     }
-    const complex = isComplex(input);
+    const complex = input.providerProposal?.semantic?.classification === 'complex' || isComplex(input);
     const actionDescriptions = input.actionLabels.map((label, index) => ({
         order: index + 1,
         actionType: input.actions[index]!.type,
@@ -157,9 +170,10 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             revision: input.revision,
             classification: complex ? 'complex' : 'simple',
             showPlanPanel: complex,
-            objective: input.request,
+            objective: input.providerProposal?.objective ?? input.request,
             interpretedConstraints: [
                 `Plan is bound to project revision ${input.revision}.`,
+                ...(input.providerProposal?.constraints ?? []),
                 ...uncertainty.map((entry) => `Structured uncertainty: ${entry}.`),
                 ...input.scope.protectedTargetIds.map((targetId) => `Protect ${targetId}.`),
             ],
@@ -185,11 +199,13 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             validationStrategy: [
                 `Revalidate project revision ${input.revision} before confirmation or execution.`,
                 'Validate each action against the registered application action catalog and compiled command authority.',
+                ...(input.providerProposal?.validationStrategy ?? []),
             ],
             stoppingConditions: [
                 'Stop before mutation if the project revision changes.',
                 'Stop before mutation if capability, asset, budget, or command authority validation fails.',
                 'Stop when the approved command batch reaches a terminal receipt.',
+                ...(input.providerProposal?.stoppingConditions ?? []),
             ],
             alternatives,
             needsUserDecision: false,

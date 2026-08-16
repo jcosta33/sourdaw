@@ -166,7 +166,26 @@ function completePlan<TToolCall extends { name: string; arguments: Record<string
     };
     const proposalPlan: CompletePlanOutcome = {
         status: 'complete',
-        toolCalls: [...workflowCalls, { name: 'command.batch.propose', arguments: { commands: commandCalls } }],
+        toolCalls: [
+            ...workflowCalls,
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    commands: commandCalls,
+                    plan: {
+                        semantic: { classification: 'simple', uncertainty: [] },
+                        objective: 'Execute the grounded command batch.',
+                        constraints: [],
+                        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                        capabilityIds: commandNames,
+                        assetIds: [],
+                        alternatives: [],
+                        validationStrategy: ['Validate the grounded command batch.'],
+                        stoppingConditions: ['Stop if application validation fails.'],
+                    },
+                },
+            },
+        ],
     };
     // Each planning run has a bounded discovery turn followed by its proposal turn.
     return {

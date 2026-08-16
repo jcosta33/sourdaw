@@ -456,6 +456,7 @@ export async function sendChatMessage(
                         requiresConfirmation: false,
                         applicationToolReceipts: result.applicationToolReceipts,
                         providerProposal: result.providerProposal,
+                        requireProviderProposal: result.executionMode === 'atomic',
                     });
                     if (plannedRun.status === 'needs-user-decision') {
                         createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -504,19 +505,8 @@ export async function sendChatMessage(
                             protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                             protectedRanges: [],
                         },
-                        grants: {
-                            allowedOperationPrefixes: [],
-                            create: false,
-                            delete: false,
-                            routing: false,
-                            tempo: false,
-                            master: false,
-                            file: false,
-                            audioUpload: false,
-                            remoteGeneration: false,
-                            autoCommit: false,
-                        },
-                        budgets: { limits: {}, consumed: {} },
+                        grants: admittedRun.grants,
+                        budgets: admittedRun.budgets,
                         plan: plannedRun.plan,
                     });
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
@@ -577,6 +567,7 @@ export async function sendChatMessage(
                     requiresConfirmation: compiledActionExecution.requiresConfirmation,
                     applicationToolReceipts: result.applicationToolReceipts,
                     providerProposal: result.providerProposal,
+                    requireProviderProposal: result.executionMode === 'atomic',
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     createStemImportConfirmationResourceLease(result.actions)?.release();

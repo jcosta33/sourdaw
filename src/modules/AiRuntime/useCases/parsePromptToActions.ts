@@ -17,6 +17,7 @@ import {
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
 import { buildLlmActionSystemPrompt } from '../transformers/llmActionBridge';
+import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
     tryPresetMatch,
@@ -79,7 +80,11 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
     const proposal = proposals[0];
     const expandedByCall = new Map<ToolCallResult, ToolCallResult[]>();
     if (proposal) {
-        if (Object.keys(proposal.arguments).length !== 1 || !Array.isArray(proposal.arguments.commands)) {
+        if (
+            Object.keys(proposal.arguments).some((key) => key !== 'commands' && key !== 'plan') ||
+            !Array.isArray(proposal.arguments.commands) ||
+            normalizeAgentPlanProposal(proposal.arguments.plan) === null
+        ) {
             return {
                 status: 'invalid' as const,
                 reason: 'Provider command batch proposal does not match the strict catalog contract.',
@@ -391,6 +396,8 @@ export const parsePromptToActions = inject({ logger })(
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
                     };
                 }
+                const providerProposal =
+                    planningOutcome.proposal ?? extractAgentPlanProposal(planningOutcome.toolCalls);
                 const expandedProposal = expandCatalogProposals(planningOutcome.toolCalls);
                 if (expandedProposal.status === 'invalid') {
                     return {
@@ -602,11 +609,7 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
-                        providerProposal: {
-                            capabilityIds: guarded.actions.map((action) => action.type),
-                            alternatives: [],
-                            uncertainty: [],
-                        },
+                        ...(providerProposal === null ? {} : { providerProposal }),
                     };
                 }
 
