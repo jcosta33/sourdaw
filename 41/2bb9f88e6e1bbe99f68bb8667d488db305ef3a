@@ -1,0 +1,48 @@
+src/modules/AiRuntime/transformers/normalizeAgentPlanProposal.ts
+  s_a40848e8f8cca9::t_fecd4566abd77f 131-138,158-159,161-183
+  s_a40848e8f8cca9::t_8955565d245cb9 139-156
+  s_a40848e8f8cca9::t_b66fa0e2eaea1e 157,160
+  s_a40848e8f8cca9::t_cf8f9ae5e944af 184-185
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_bece7b9442cf7f 568,648,707
+  s_a40848e8f8cca9::t_3f523b007b2a1c 56
+  s_a40848e8f8cca9::t_fecd4566abd77f 118,126-128,350-367,437-439,512-517,556,612-617,695
+  s_a40848e8f8cca9::t_fff5e9bd6dc2db 121-125
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_72e0951f24e2d5 24,405,425-427,442-447,455,464-467,470-483,485,492-497,499-501,512
+  s_a40848e8f8cca9::t_6e58b8f2e583e0 502-503
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_b1af3ca253d186 846-847,889,922,1057
+src/modules/AiRuntime/models/AgentRun.ts
+  s_a40848e8f8cca9::t_5837a95859232f 151
+src/modules/AiRuntime/useCases/__tests__/agentRunControlProjection.spec.ts
+  s_a40848e8f8cca9::t_46fb9acfc88fc8 3-4,17,83,173-223
+src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts
+  s_a40848e8f8cca9::t_e8694c81653f25 365
+src/modules/AiRuntime/useCases/__tests__/resumeAgentRunDecision.spec.ts
+  s_a40848e8f8cca9::t_39a25cbf42fbee 6-9,60,136-147
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_9c5ad2ef992fce 746-771,775,785-791,797,858,875
+src/modules/AiRuntime/useCases/getAgentRunControlProjection.ts
+  s_a40848e8f8cca9::t_9db229640fc65b 6,25,68,81,85
+src/modules/AiRuntime/useCases/getAgentRunDecisionResumeAdmission.ts
+  s_a40848e8f8cca9::t_751ba162ce1aa0 1-58
+src/modules/AiRuntime/useCases/resumeAgentRunDecision.ts
+  s_a40848e8f8cca9::t_c43b55870b3d1b 2,13-14,17-20,23,29-38,40,60-62,66,68,71,86-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "412bb9f88e6e1bbe99f68bb8667d488db305ef3a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
