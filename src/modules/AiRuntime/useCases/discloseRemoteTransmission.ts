@@ -4,6 +4,7 @@ import {
     type RemoteTransmissionDisclosure,
 } from '../models/AgentDataPolicy';
 
+import { agentRunLifecycle } from './agentRunLifecycle';
 import { notifyAiChange } from './notifyAiChange';
 
 type Admission = { categories: readonly AgentDataCategory[]; correlationId: string; requestId: string };
@@ -13,10 +14,37 @@ function discloseRemoteTransmission(input: {
     categories: readonly AgentDataCategory[];
     correlationId: string;
     requestId: string;
+    runId?: string;
+    provider?: string;
 }): RemoteTransmissionDisclosure {
     notifyAiChange('Hosted AI privacy disclosure', [formatRemoteTransmissionDisclosure(input.categories)]);
     const evidence = {} as RemoteTransmissionDisclosure;
     admissions.set(evidence, { ...input, categories: [...input.categories] });
+    if (input.runId !== undefined) {
+        agentRunLifecycle.recordProviderUsage({
+            runId: input.runId,
+            usage: {
+                provider: input.provider ?? 'cloud',
+                model: null,
+                inputTokens: null,
+                outputTokens: null,
+                provenance: 'unavailable',
+                correlationId: input.correlationId,
+                status: 'unavailable',
+                disclosure: {
+                    requestId: input.requestId,
+                    categories: [...input.categories],
+                    retention: {
+                        applicationState: 'unknown',
+                        abuseMonitoring: 'unknown',
+                        promptCache: 'unknown',
+                        safetyLegalException: 'unknown',
+                        unknown: 'unknown',
+                    },
+                },
+            },
+        });
+    }
     return evidence;
 }
 

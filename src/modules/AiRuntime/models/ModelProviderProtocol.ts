@@ -1,4 +1,4 @@
-import { type AgentDataCategory, type RemoteTransmissionDisclosure } from './AgentDataPolicy';
+import { type AgentDataCategory, type AgentDataRetention, type RemoteTransmissionDisclosure } from './AgentDataPolicy';
 
 export const MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION = 2 as const;
 
@@ -150,6 +150,11 @@ export type ModelProviderResult = {
     partialOutputDisposition: ModelProviderPartialOutputDisposition;
     failure: ModelProviderFailure | null;
     ignoredProviderEvents: string[];
+    remoteDisclosure?: {
+        requestId: string;
+        categories: AgentDataCategory[];
+        retention: AgentDataRetention;
+    };
 };
 
 export type CompiledModelProviderRequest =

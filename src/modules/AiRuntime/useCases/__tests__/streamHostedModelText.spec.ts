@@ -41,6 +41,26 @@ describe('streamHostedModelText', () => {
         expect(result.output.text).toBe('Analysis');
         expect(result.usage).toMatchObject({ inputTokens: 5, outputTokens: 2, provenance: 'provider-reported' });
         expect(result.ignoredProviderEvents).toEqual(['anthropic:future_event']);
+        expect(result.remoteDisclosure).toEqual({
+            requestId: 'mix-health-1',
+            categories: [
+                'system-instructions',
+                'prompt-text',
+                'project-context',
+                'metadata',
+                'midi',
+                'lyrics',
+                'filename',
+                'preset',
+            ],
+            retention: {
+                applicationState: 'unknown',
+                abuseMonitoring: 'unknown',
+                promptCache: 'unknown',
+                safetyLegalException: 'unknown',
+                unknown: 'unknown',
+            },
+        });
     });
 
     it('preserves Anthropic cached-input detail when sparse final usage arrives', async () => {

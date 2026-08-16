@@ -380,6 +380,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                   categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
                                   correlationId,
                                   requestId,
+                                  ...(streamIdentity?.runId === undefined ? {} : { runId: streamIdentity.runId }),
+                                  provider: providerName,
                               }),
                           }
                         : {}),

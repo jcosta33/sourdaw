@@ -277,13 +277,22 @@ function recordAgentRunProviderUsage(input: {
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
-        if (
-            input.usage.correlationId !== undefined &&
-            run.providerUsage.some((usage) => usage.correlationId === input.usage.correlationId)
-        ) {
-            return run;
-        }
         const usage = structuredClone(input.usage);
+        const existingIndex =
+            usage.correlationId === undefined
+                ? -1
+                : run.providerUsage.findIndex((candidate) => candidate.correlationId === usage.correlationId);
+        if (existingIndex >= 0) {
+            const existing = run.providerUsage[existingIndex]!;
+            const providerUsage = [...run.providerUsage];
+            providerUsage[existingIndex] = {
+                ...existing,
+                ...usage,
+                attempt: existing.attempt,
+                disclosure: existing.disclosure ?? usage.disclosure,
+            };
+            return { ...run, providerUsage };
+        }
         usage.attempt ??= run.providerUsage.length + 1;
         return {
             ...run,

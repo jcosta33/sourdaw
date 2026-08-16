@@ -50,6 +50,17 @@ describe('deleteAgentRunArtifacts', () => {
                 routeId: 'cloud:openai-compatible:fixture',
                 executor: 'cloud',
                 fallbackReason: null,
+                disclosure: {
+                    requestId: 'request-artifacts',
+                    categories: ['prompt-text', 'project-context'],
+                    retention: {
+                        applicationState: 'unknown',
+                        abuseMonitoring: 'unknown',
+                        promptCache: 'unknown',
+                        safetyLegalException: 'unknown',
+                        unknown: 'unknown',
+                    },
+                },
             },
         });
         agentRunLifecycle.recordCommittedWork({

@@ -1,5 +1,9 @@
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
-import { type RemoteTransmissionDisclosure, REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
+import {
+    type AgentDataRetention,
+    type RemoteTransmissionDisclosure,
+    REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+} from '../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type ModelProviderMessage,
@@ -23,6 +27,14 @@ type StreamHostedModelTextInput = {
     onToken: (text: string) => void;
     signal?: AbortSignal;
     remoteDisclosure?: RemoteTransmissionDisclosure;
+};
+
+const UNKNOWN_RETENTION: AgentDataRetention = {
+    applicationState: 'unknown',
+    abuseMonitoring: 'unknown',
+    promptCache: 'unknown',
+    safetyLegalException: 'unknown',
+    unknown: 'unknown',
 };
 
 function unavailableResult(input: StreamHostedModelTextInput): ModelProviderResult {
@@ -64,6 +76,15 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
         model: providerInfo.model,
     });
     const requestId = input.requestId ?? input.correlationId;
+    const remoteDisclosure = {
+        requestId,
+        categories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+        retention: UNKNOWN_RETENTION,
+    };
+    const finishWithDisclosure = (result: ModelProviderResult): ModelProviderResult => ({
+        ...result,
+        remoteDisclosure,
+    });
     const compiled = protocol.compileRequest({
         correlationId: input.correlationId,
         ...(input.runId === undefined ? {} : { runId: input.runId }),
@@ -86,15 +107,17 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
             categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
             correlationId: input.correlationId,
             requestId,
+            ...(input.runId === undefined ? {} : { runId: input.runId }),
+            provider: providerInfo.provider,
         }),
     });
     if (compiled.status === 'unavailable') {
-        return {
+        return finishWithDisclosure({
             ...unavailableResult(input),
             provider: providerInfo.provider,
             model: providerInfo.model,
             failure: compiled.failure,
-        };
+        });
     }
 
     const session = protocol.start(compiled.request);
@@ -115,34 +138,38 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
             }
         );
         if (outcome.status === 'complete') {
-            return writer.finish({ reason: 'stop' });
+            return finishWithDisclosure(writer.finish({ reason: 'stop' }));
         }
         if (outcome.reason === 'token limit' || outcome.reason === 'max_tokens' || outcome.reason === 'length') {
-            return writer.finish({ reason: 'length' });
+            return finishWithDisclosure(writer.finish({ reason: 'length' }));
         }
-        return writer.finish({
-            reason: 'error',
-            failure: {
-                code: 'hosted-provider-incomplete',
-                retryable: true,
-                safeMessage: 'The hosted model provider returned an incomplete response.',
-            },
-        });
+        return finishWithDisclosure(
+            writer.finish({
+                reason: 'error',
+                failure: {
+                    code: 'hosted-provider-incomplete',
+                    retryable: true,
+                    safeMessage: 'The hosted model provider returned an incomplete response.',
+                },
+            })
+        );
     } catch (error) {
         if (
             input.signal?.aborted ||
             isAiRuntimeConfigurationChangedError(error) ||
             (error instanceof Error && error.name === 'AbortError')
         ) {
-            return writer.finish({ reason: 'cancelled' });
+            return finishWithDisclosure(writer.finish({ reason: 'cancelled' }));
         }
-        return writer.finish({
-            reason: 'error',
-            failure: {
-                code: 'hosted-provider-failed',
-                retryable: true,
-                safeMessage: 'The hosted model provider request failed.',
-            },
-        });
+        return finishWithDisclosure(
+            writer.finish({
+                reason: 'error',
+                failure: {
+                    code: 'hosted-provider-failed',
+                    retryable: true,
+                    safeMessage: 'The hosted model provider request failed.',
+                },
+            })
+        );
     }
 }

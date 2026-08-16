@@ -1059,6 +1059,8 @@ export async function sendChatMessage(
                           categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
                           correlationId: providerReceiptIdentity,
                           requestId: providerReceiptIdentity,
+                          runId,
+                          provider: getModelProviderName(backend),
                       }),
                   }
                 : {}),
