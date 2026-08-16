@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +22,6 @@ type ReleaseSurface = {
     owner: string;
     releaseModes: string[];
     paths: string[];
-    sourceFiles: string[];
     sources: string[];
     revisions: string[];
     digests: string[];
@@ -33,33 +33,21 @@ type ReleaseSurface = {
 
 export type ReleaseInventory = {
     schemaVersion: number;
-    baseline: string;
     surfaces: ReleaseSurface[];
+    snapshots: Array<{ path: string; sha256: string }>;
+    externalReferences: Array<{ surface: string; file: string; value: string }>;
+    marks: Array<{ value: string; paths: string[] }>;
 };
 
 export type RepositorySnapshot = {
     releaseFiles: string[];
-    externalSourceFiles: string[];
+    externalReferences: Array<{ file: string; value: string }>;
+    fileDigests: Record<string, string>;
+    markPaths: Record<string, string[]>;
 };
 
-const releaseManifestPattern = /(^|\/)(Cargo\.toml|package\.json)$/;
 const scannedExtensions = new Set(['.js', '.json', '.mjs', '.plist', '.py', '.rs', '.sh', '.ts', '.tsx', '.xml']);
-const shippedAssetExtensions = new Set([
-    '.bin',
-    '.data',
-    '.flac',
-    '.ico',
-    '.jpeg',
-    '.jpg',
-    '.mp3',
-    '.ogg',
-    '.onnx',
-    '.png',
-    '.svg',
-    '.wasm',
-    '.wav',
-    '.webp',
-]);
+const markExtensions = new Set([...scannedExtensions, '.css', '.html', '.md', '.toml', '.txt', '.yaml', '.yml']);
 const ignoredUrlHosts = new Set([
     '127.0.0.1',
     'localhost',
@@ -72,17 +60,6 @@ const ignoredUrlHosts = new Set([
 
 function sortedUnique(values: string[]): string[] {
     return [...new Set(values)].sort();
-}
-
-function isReleaseFile(path: string): boolean {
-    return (
-        path === 'Cargo.lock' ||
-        path === 'pnpm-lock.yaml' ||
-        path.startsWith('public/') ||
-        path.startsWith('src-tauri/sidecar/') ||
-        shippedAssetExtensions.has(extname(path).toLowerCase()) ||
-        releaseManifestPattern.test(path)
-    );
 }
 
 function isScannedSource(path: string): boolean {
@@ -98,29 +75,51 @@ function isScannedSource(path: string): boolean {
     return scannedExtensions.has(extname(path));
 }
 
+function isMarkSource(path: string): boolean {
+    if (path !== 'README.md' && !['docs/', 'scripts/', 'src/', 'src-tauri/'].some((root) => path.startsWith(root))) {
+        return false;
+    }
+    if (path.includes('/__tests__/') || path.includes('/tests/') || /\.(spec|test)\./.test(path)) {
+        return false;
+    }
+    return markExtensions.has(extname(path));
+}
+
+function containsMark(contents: string, value: string): boolean {
+    const escaped = value.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?=$|[^A-Za-z0-9])`).test(contents);
+}
+
 function externalUrls(contents: string): string[] {
-    const matches = contents.match(/(?:https?|wss?):\/\/[^\s'"`<>\\)]+|(?:stun|turn):[^\s'"`<>\\)]+/g) ?? [];
-    return matches.filter((value) => {
-        if (value.startsWith('stun:') || value.startsWith('turn:')) {
-            return true;
-        }
-        try {
-            const url = new URL(value);
-            return (
-                !ignoredUrlHosts.has(url.hostname) &&
-                !url.hostname.endsWith('.example') &&
-                !url.hostname.endsWith('.example.com') &&
-                !url.hostname.endsWith('.invalid') &&
-                !url.hostname.endsWith('.localhost')
-            );
-        } catch {
-            return false;
-        }
-    });
+    const normalized = contents.replaceAll('\\/', '/');
+    const matches = normalized.match(/(?:https?|wss?):\/\/[^\s'"`<>\\)]+|(?:stun|turn):[^\s'"`<>\\)]+/g) ?? [];
+    return matches
+        .map((value) => value.replace(/[;,]+$/, ''))
+        .filter((value) => {
+            if (value.startsWith('stun:') || value.startsWith('turn:')) {
+                return true;
+            }
+            try {
+                const url = new URL(value);
+                return (
+                    !ignoredUrlHosts.has(url.hostname) &&
+                    !url.hostname.endsWith('.example') &&
+                    !url.hostname.endsWith('.example.com') &&
+                    !url.hostname.endsWith('.invalid') &&
+                    !url.hostname.endsWith('.localhost')
+                );
+            } catch {
+                return false;
+            }
+        });
 }
 
 function pathMatches(rule: string, path: string): boolean {
-    return rule.endsWith('/**') ? path.startsWith(rule.slice(0, -2)) : rule === path;
+    if (!rule.endsWith('/**')) {
+        return rule === path;
+    }
+    const directory = rule.slice(0, -3);
+    return path === directory || path.startsWith(`${directory}/`);
 }
 
 function surfaceCoversPath(surface: ReleaseSurface, path: string): boolean {
@@ -136,8 +135,8 @@ export function validateReleaseInventory(inventory: ReleaseInventory, snapshot: 
     if (inventory.schemaVersion !== 1) {
         errors.push('schemaVersion must be 1');
     }
-    if (!/^[0-9a-f]{40}$/.test(inventory.baseline)) {
-        errors.push('baseline must be a full Git commit SHA');
+    if (!Array.isArray(inventory.surfaces)) {
+        return [...errors.filter((error): error is string => error !== undefined), 'surfaces must be an array'];
     }
 
     const ids = inventory.surfaces.map((surface) => surface.id);
@@ -175,46 +174,155 @@ export function validateReleaseInventory(inventory: ReleaseInventory, snapshot: 
     );
     errors.push(formatMissing('unclassified release files', uncoveredReleaseFiles));
 
-    const assignedSourceFiles = sortedUnique(inventory.surfaces.flatMap((surface) => surface.sourceFiles));
+    if (!Array.isArray(inventory.snapshots)) {
+        errors.push('snapshots must be an array');
+    } else {
+        const paths = inventory.snapshots.map((entry) => entry.path);
+        errors.push(
+            formatMissing(
+                'duplicate snapshot paths',
+                paths.filter((path, index) => paths.indexOf(path) !== index)
+            )
+        );
+        for (const entry of inventory.snapshots) {
+            if (!/^[0-9a-f]{64}$/.test(entry.sha256)) {
+                errors.push(`${entry.path}: snapshot must be a SHA-256 digest`);
+            } else if (snapshot.fileDigests[entry.path] !== entry.sha256) {
+                errors.push(`${entry.path}: snapshot drifted`);
+            }
+        }
+    }
+
+    const surfaceIds = new Set(ids);
+    const surfacesById = new Map(inventory.surfaces.map((surface) => [surface.id, surface]));
+    const assignedReferences = Array.isArray(inventory.externalReferences) ? inventory.externalReferences : [];
+    if (!Array.isArray(inventory.externalReferences)) {
+        errors.push('externalReferences must be an array');
+    }
+    for (const reference of assignedReferences) {
+        if (!surfaceIds.has(reference.surface)) {
+            errors.push(`${reference.file}: unknown surface ${reference.surface}`);
+        } else if (!surfaceCoversPath(surfacesById.get(reference.surface)!, reference.file)) {
+            errors.push(`${reference.file}: ${reference.surface} does not cover the referenced file`);
+        }
+    }
+    const referenceKey = (reference: { file: string; value: string }): string =>
+        `${reference.file}\u0000${reference.value}`;
+    const expectedReferenceKeys = sortedUnique(assignedReferences.map(referenceKey));
+    const actualReferenceKeys = sortedUnique(snapshot.externalReferences.map(referenceKey));
     errors.push(
         formatMissing(
-            'external-source files missing from inventory',
-            snapshot.externalSourceFiles.filter((path) => !assignedSourceFiles.includes(path))
+            'external references missing from inventory',
+            actualReferenceKeys
+                .filter((key) => !expectedReferenceKeys.includes(key))
+                .map((key) => key.replace('\u0000', ' -> '))
         )
     );
     errors.push(
         formatMissing(
-            'stale external-source assignments',
-            assignedSourceFiles.filter((path) => !snapshot.externalSourceFiles.includes(path))
+            'stale external-reference assignments',
+            expectedReferenceKeys
+                .filter((key) => !actualReferenceKeys.includes(key))
+                .map((key) => key.replace('\u0000', ' -> '))
         )
     );
+
+    if (!Array.isArray(inventory.marks)) {
+        errors.push('marks must be an array');
+    } else {
+        const values = inventory.marks.map((mark) => mark.value);
+        errors.push(
+            formatMissing(
+                'duplicate mark values',
+                values.filter((value, index) => values.indexOf(value) !== index)
+            )
+        );
+        for (const mark of inventory.marks) {
+            const expected = sortedUnique(mark.paths);
+            const actual = snapshot.markPaths[mark.value] ?? [];
+            errors.push(
+                formatMissing(
+                    `${mark.value}: unclassified mark paths`,
+                    actual.filter((path) => !expected.includes(path))
+                )
+            );
+            errors.push(
+                formatMissing(
+                    `${mark.value}: stale mark paths`,
+                    expected.filter((path) => !actual.includes(path))
+                )
+            );
+        }
+    }
 
     return errors.filter((error): error is string => error !== undefined);
 }
 
-export function loadRepositorySnapshot(root: string, trackedFiles?: string[]): RepositorySnapshot {
+export function loadRepositorySnapshot(
+    root: string,
+    inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'>,
+    trackedFiles?: string[]
+): RepositorySnapshot {
     const files =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-    const externalSourceFiles = files.filter(isScannedSource).filter((path) => {
-        const contents = readFileSync(resolve(root, path), 'utf8');
-        return externalUrls(contents).length > 0;
-    });
+    const contents = new Map<string, string>();
+    const readText = (path: string): string => {
+        const cached = contents.get(path);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const value = readFileSync(resolve(root, path), 'utf8');
+        contents.set(path, value);
+        return value;
+    };
+    const scannedFiles = files.filter(isScannedSource);
+    const markFiles = files.filter(isMarkSource);
+    const externalReferences = scannedFiles.flatMap((path) =>
+        externalUrls(readText(path)).map((value) => ({ file: path, value }))
+    );
+    const fileDigests = Object.fromEntries(
+        (inventory.snapshots ?? []).map((entry) => {
+            try {
+                return [
+                    entry.path,
+                    createHash('sha256')
+                        .update(readFileSync(resolve(root, entry.path)))
+                        .digest('hex'),
+                ];
+            } catch {
+                return [entry.path, 'missing'];
+            }
+        })
+    );
+    const markPaths = Object.fromEntries(
+        (inventory.marks ?? []).map((mark) => [
+            mark.value,
+            markFiles.filter((path) => containsMark(readText(path), mark.value)).sort(),
+        ])
+    );
     return {
-        releaseFiles: files.filter(isReleaseFile).sort(),
-        externalSourceFiles: externalSourceFiles.sort(),
+        releaseFiles: files.sort(),
+        externalReferences: sortedUnique(externalReferences.map((entry) => `${entry.file}\u0000${entry.value}`)).map(
+            (entry) => {
+                const [file, value] = entry.split('\u0000');
+                return { file: file ?? '', value: value ?? '' };
+            }
+        ),
+        fileDigests,
+        markPaths,
     };
 }
 
 export function checkReleaseInventory(root: string): void {
     const inventoryPath = resolve(root, 'release/open-source-inventory.json');
     const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8')) as ReleaseInventory;
-    const snapshot = loadRepositorySnapshot(root);
+    const snapshot = loadRepositorySnapshot(root, inventory);
     const errors = validateReleaseInventory(inventory, snapshot);
     if (errors.length > 0) {
         throw new Error(errors.join('\n\n'));
     }
     process.stdout.write(
-        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} release files, ${String(snapshot.externalSourceFiles.length)} external-source files\n`
+        `release inventory valid: ${String(inventory.surfaces.length)} surfaces, ${String(snapshot.releaseFiles.length)} files, ${String(snapshot.externalReferences.length)} external references\n`
     );
 }
 
