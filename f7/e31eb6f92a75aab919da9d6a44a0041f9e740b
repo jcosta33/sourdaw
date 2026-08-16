@@ -1,0 +1,62 @@
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_a40848e8f8cca9::t_da48c58c5aa2cc 52-96,98,104
+  s_a40848e8f8cca9::t_b1196e491bae4d 97
+  s_a40848e8f8cca9::t_721e9e07658335 99-103
+  s_a40848e8f8cca9::t_699994c0dfc8a0 105
+  s_45ab86edba7517::t_bb2aadcbb8fa70 293-298
+src/modules/Arrangement/models/PluginDescriptors/DescriptorGuidance.ts
+  s_a40848e8f8cca9::t_f30020b25a2e34 5,11,16-20,68-75,91,93,109-110,116
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_a40848e8f8cca9::t_941f4e338f869e 4,230
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_910baf7521550f 474-480
+src/modules/AudioEngine/models/BuiltinDeviceRuntime.ts
+  s_a40848e8f8cca9::t_910baf7521550f 32-43,82,85-100
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_a40848e8f8cca9::t_66e8340e186733 38-62
+src/modules/Arrangement/models/PluginDescriptors/GuidanceProfiles.ts
+  s_a40848e8f8cca9::t_f30020b25a2e34 5,11-27,60,78-133
+src/modules/AudioEngine/useCases/__tests__/agentBuiltinDeviceRuntimeManifest.spec.ts
+  s_a40848e8f8cca9::t_3ea60b2efe21c7 4,28-33,47-50,58-62,74-75,95-111
+  s_a40848e8f8cca9::t_37e9b5f209e9e5 112
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_a40848e8f8cca9::t_f30020b25a2e34 141-154,183-184
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_a40848e8f8cca9::t_941f4e338f869e 4
+  s_a40848e8f8cca9::t_da253b3609cb19 1705
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_3ea60b2efe21c7 139-150
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_a40848e8f8cca9::t_da253b3609cb19 515
+  s_a40848e8f8cca9::t_941f4e338f869e 4
+src/modules/AudioEngine/useCases/getAgentBuiltinDeviceRuntimeManifest.ts
+  s_a40848e8f8cca9::t_910baf7521550f 4,29
+  s_a40848e8f8cca9::t_d8ba90ec535846 30-32
+  s_45ab86edba7517::t_63598add92d3ac 33-34
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_f30020b25a2e34 29,95-97,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f7e31eb6f92a75aab919da9d6a44a0041f9e740b",
+  "prompts": {},
+  "sessions": {
+    "s_45ab86edba7517": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00b50-ae91-7591-88c8-d837d511dd80",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
