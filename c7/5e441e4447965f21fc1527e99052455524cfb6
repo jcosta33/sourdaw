@@ -1,0 +1,55 @@
+crates/daw-dsp/src/bacteria/engine.rs
+  s_ab5443e65c7fba::t_95986b63689298 217
+crates/daw-dsp/src/bacteria/chorus.rs
+  s_ab5443e65c7fba::t_7322e7bcffa86c 11-19
+crates/daw-dsp/src/bacteria/lofi.rs
+  s_ab5443e65c7fba::t_b45f06cb9baa1d 240,249-257,260-265,267-275,277-297,299-301,303-310,312-313
+  s_ab5443e65c7fba::t_a83c72d4710d03 174
+  s_ab5443e65c7fba::t_c1a5ead03507fa 168-171,173,180-183,185-189,192-194,197,199-200,204,212-214,216,224,226,234-236
+  s_ab5443e65c7fba::t_6cfcebd96030c7 242-248,258-259,266,276,298,302,311,314
+  s_ab5443e65c7fba::t_58fa78079db156 56-99,112,129,241
+crates/daw-dsp/src/bacteria/hilbert.rs
+  s_ab5443e65c7fba::t_edaa20b39d92cc 1,3-8,13-24,27-32,37-43,46,52,57-60,66,72-78,89-94,96,106,110,114,134-142,145-147,151-158,161-162,188,191,194,198-337
+  s_ab5443e65c7fba::t_b95b31a4c702c2 150
+  s_ab5443e65c7fba::t_a1d05558f4d4a8 48-51
+  s_ab5443e65c7fba::t_320fa39bd74a04 338
+crates/daw-dsp/src/bacteria/distortion.rs
+  s_ab5443e65c7fba::t_5721e02045c0ca 58-66,72-75
+  s_ab5443e65c7fba::t_eb3e2352a827ab 90-91
+  s_ab5443e65c7fba::t_4d248d0fb9c9d0 240
+  s_ab5443e65c7fba::t_c081aa19a90be4 265,291
+  s_ab5443e65c7fba::t_04916b1c015eea 157
+  s_ab5443e65c7fba::t_233767bffd1b70 137-139,141,150
+  s_ab5443e65c7fba::t_c9f1d168f2f19c 209-210,212-215,217
+  s_ab5443e65c7fba::t_e4b9dc76ed4e13 236-239,241-264,266-290,292-308
+  s_ab5443e65c7fba::t_9a331b9c6d307f 57,309
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_ab5443e65c7fba::t_fcb0c15675e0ad 3,6-9,11,23-26,33,42,48-61,64-65
+  s_ab5443e65c7fba::t_c1f9a2eb968c56 199-249
+  s_ab5443e65c7fba::t_91b4d82308f20f 135
+  s_ab5443e65c7fba::t_dafb9ade7e4d2f 76
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_ac58ff8332f532 1,836-849,929-970,1006-1024
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_843e5bdf9f755f 1,5-18,98-139,175-193
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_a351c4de7ea0c0 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_a6b3364c5c00b0 1,836-849,929-970,1006-1024
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c75e441e4447965f21fc1527e99052455524cfb6",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
