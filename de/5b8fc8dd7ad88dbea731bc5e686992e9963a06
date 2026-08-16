@@ -1,0 +1,36 @@
+src/modules/SessionLauncher/useCases/loopStation/stopSlot.ts
+  s_ab5443e65c7fba::t_bca0610446f10b 4-11,24
+src/modules/SessionLauncher/useCases/loopStation/toggleRecord.ts
+  s_ab5443e65c7fba::t_d1ebc08dd55ba1 51-54
+src/modules/Setlist/useCases/setlist/__tests__/updateSetlistItem.spec.ts
+  s_ab5443e65c7fba::t_bd8f3282515112 52-55,68
+src/modules/Setlist/useCases/setlist/__tests__/removeSetlistItem.spec.ts
+  s_ab5443e65c7fba::t_0479fb935120c1 48
+src/modules/Setlist/useCases/setlist/__tests__/setlistUndo.spec.ts
+  s_ab5443e65c7fba::t_832d015075dc01 83,155
+src/modules/SessionLauncher/useCases/loopStation/__tests__/stopSlot.spec.ts
+  s_ab5443e65c7fba::t_3d3abf5fe261e6 100-101,111
+  s_ab5443e65c7fba::t_dca5b1a04fa771 43,58-84
+  s_ab5443e65c7fba::t_1cca9a14f07350 85-86
+src/modules/Setlist/presentations/views/SetlistPanel.tsx
+  s_ab5443e65c7fba::t_8b21a48d531c88 254-260
+src/modules/Setlist/useCases/setlist/__tests__/addSetlistItem.spec.ts
+  s_ab5443e65c7fba::t_a19df9b86e7f64 46
+  s_ab5443e65c7fba::t_40f33ceca134fc 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "de5b8fc8dd7ad88dbea731bc5e686992e9963a06",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
