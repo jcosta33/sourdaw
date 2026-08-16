@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
+import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
@@ -502,6 +503,160 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     };
 }
 
+function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
+    if (value === null) {
+        return null;
+    }
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== AGENT_CONTEXT_SCHEMA_VERSION ||
+        !isRecord(value.selection) ||
+        !isRecord(value.included) ||
+        !isRecord(value.delta) ||
+        !isRecord(value.snapshot)
+    ) {
+        return null;
+    }
+    const included = value.included;
+    const revision = readNullableString(value.revision);
+    const trackId = readNullableString(value.selection.trackId);
+    const clipId = readNullableString(value.selection.clipId);
+    const clipIds = readStringArray(value.selection.clipIds);
+    const deltaBaseRevision = readNullableString(value.delta.baseRevision);
+    const deltaCurrentRevision = readNullableString(value.delta.currentRevision);
+    const snapshot = (() => {
+        const rawSnapshot = value.snapshot;
+        const identity = readString(rawSnapshot.identity);
+        const selectedTrack = (() => {
+            if (rawSnapshot.selectedTrack === null) {
+                return null;
+            }
+            if (!isRecord(rawSnapshot.selectedTrack)) {
+                return undefined;
+            }
+            const id = readString(rawSnapshot.selectedTrack.id);
+            const digest = readString(rawSnapshot.selectedTrack.digest);
+            return id === null || digest === null ? undefined : { id, digest };
+        })();
+        const selectableTargets = readCollection(rawSnapshot.selectableTargets, (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const id = readString(candidate.id);
+            const digest = readString(candidate.digest);
+            return id === null || digest === null ? null : { id, digest };
+        });
+        if (
+            identity === null ||
+            typeof rawSnapshot.tempo !== 'number' ||
+            !Number.isFinite(rawSnapshot.tempo) ||
+            !Array.isArray(rawSnapshot.timeSignature) ||
+            rawSnapshot.timeSignature.length !== 2 ||
+            !rawSnapshot.timeSignature.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
+            selectedTrack === undefined ||
+            selectableTargets === null ||
+            readNonNegativeInteger(rawSnapshot.targetCount) === null ||
+            typeof rawSnapshot.truncated !== 'boolean'
+        ) {
+            return undefined;
+        }
+        return {
+            identity,
+            tempo: rawSnapshot.tempo,
+            timeSignature: [rawSnapshot.timeSignature[0], rawSnapshot.timeSignature[1]] as [number, number],
+            selectedTrack,
+            selectableTargets,
+            targetCount: readNonNegativeInteger(rawSnapshot.targetCount)!,
+            truncated: rawSnapshot.truncated,
+        };
+    })();
+    const validationFailures = (() => {
+        if (!isRecord(included.validationFailures)) {
+            return undefined;
+        }
+        const total = readNonNegativeInteger(included.validationFailures.total);
+        const retained = readNonNegativeInteger(included.validationFailures.retained);
+        const omitted = readNonNegativeInteger(included.validationFailures.omitted);
+        return total === null || retained === null || omitted === null || total !== retained + omitted
+            ? undefined
+            : { total, retained, omitted };
+    })();
+    const grants = (() => {
+        const rawGrants = value.grants;
+        if (rawGrants === null) {
+            return null;
+        }
+        if (!isRecord(rawGrants)) {
+            return undefined;
+        }
+        const allowedOperationPrefixes = readStringArray(rawGrants.allowedOperationPrefixes);
+        const flags = [
+            'create',
+            'delete',
+            'routing',
+            'tempo',
+            'master',
+            'file',
+            'audioUpload',
+            'remoteGeneration',
+            'autoCommit',
+        ] as const;
+        if (allowedOperationPrefixes === null || !flags.every((flag) => typeof rawGrants[flag] === 'boolean')) {
+            return undefined;
+        }
+        return {
+            allowedOperationPrefixes,
+            ...Object.fromEntries(flags.map((flag) => [flag, rawGrants[flag]])),
+        } as AgentContextEvidence['grants'];
+    })();
+    const budgets = (() => {
+        if (value.budgets === null) {
+            return null;
+        }
+        if (!isRecord(value.budgets)) {
+            return undefined;
+        }
+        const limits = readNumberRecord(value.budgets.limits);
+        const consumed = readNumberRecord(value.budgets.consumed);
+        return limits === null || consumed === null ? undefined : { limits, consumed };
+    })();
+    if (
+        revision === undefined ||
+        trackId === undefined ||
+        clipId === undefined ||
+        clipIds === null ||
+        deltaBaseRevision === undefined ||
+        deltaCurrentRevision === undefined ||
+        (value.delta.mode !== 'full' && value.delta.mode !== 'delta') ||
+        readNonNegativeInteger(included.receiptCount) === null ||
+        readNonNegativeInteger(included.capabilitySchemaCount) === null ||
+        readNonNegativeInteger(included.measurementCount) === null ||
+        readNonNegativeInteger(included.trackCount) === null ||
+        validationFailures === undefined ||
+        snapshot === undefined ||
+        grants === undefined ||
+        budgets === undefined
+    ) {
+        return null;
+    }
+    return {
+        schemaVersion: AGENT_CONTEXT_SCHEMA_VERSION,
+        revision,
+        selection: { trackId, clipId, clipIds },
+        grants,
+        budgets,
+        included: {
+            receiptCount: readNonNegativeInteger(included.receiptCount)!,
+            capabilitySchemaCount: readNonNegativeInteger(included.capabilitySchemaCount)!,
+            validationFailures,
+            measurementCount: readNonNegativeInteger(included.measurementCount)!,
+            trackCount: readNonNegativeInteger(included.trackCount)!,
+        },
+        snapshot,
+        delta: { mode: value.delta.mode, baseRevision: deltaBaseRevision, currentRevision: deltaCurrentRevision },
+    };
+}
+
 function readAgentRun(value: unknown): AgentRun | null {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION) {
         return null;
@@ -630,6 +785,8 @@ function readAgentRun(value: unknown): AgentRun | null {
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
     const workLeases = readCollection(value.workLeases, readWorkLease);
+    const contextEvidence =
+        value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
     const cancellationGeneration = readNonNegativeInteger(value.cancellation.generation);
     const requestedAt = readNullableTimestamp(value.cancellation.requestedAt);
     const cancellationReason = readNullableString(value.cancellation.reason);
@@ -673,6 +830,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         retriableWork === null ||
         temporaryAssets === null ||
         workLeases === null ||
+        (contextEvidence === null && value.contextEvidence !== undefined && value.contextEvidence !== null) ||
         cancellationGeneration === null ||
         requestedAt === undefined ||
         cancellationReason === undefined ||
@@ -748,6 +906,7 @@ function readAgentRun(value: unknown): AgentRun | null {
             requiredAt: manualResumeRequiredAt,
         },
         workLeases,
+        contextEvidence,
         createdAt,
         updatedAt,
     };

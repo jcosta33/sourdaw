@@ -16,7 +16,7 @@ import {
     WORKFLOW_CAPABILITY_IDS,
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
-import { buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../transformers/llmActionBridge';
+import { buildLlmActionSystemPrompt } from '../transformers/llmActionBridge';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
     tryPresetMatch,
@@ -40,6 +40,7 @@ import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRou
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
+import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -50,6 +51,7 @@ import {
     ApplicationOwnedToolLoopRequestError,
     runApplicationOwnedToolLoop,
 } from './applicationOwnedToolLoop';
+import { buildAgentContext } from './buildAgentContext';
 import { type ProjectContext } from './getProjectContext';
 import {
     generateToolPlanningOutcome,
@@ -293,38 +295,78 @@ export const parsePromptToActions = inject({ logger })(
                     ANALYSIS_REQUEST_TOOL_NAME,
                 ]);
                 const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.`;
-                const userMessage = buildLlmActionUserMessage({
-                    prompt,
-                    context,
-                    projectRevision,
-                    articulationTransferCapability,
-                    backingVocalPlateCapability,
-                    bassProcessingCopyCapability,
-                    drumRoutingCapability,
-                    drumRenderComparisonCapability,
-                    drumPreviewBranchesCapability,
-                    midiOverlapTransformCapability,
-                    sidechainRoutingCapability,
-                    sharedVocalFxBusesCapability,
-                    stemImportCapability: stemImportScope?.capability,
-                    syncopatedArpeggioCapability,
-                    wholeProjectVibeMixCapability,
-                });
+                const buildPlanningContext = (receiptContext: string | null) => {
+                    const agentRun = streamIdentity ? agentRunLifecycle.get(streamIdentity.runId) : null;
+                    const builtContext = buildAgentContext({
+                        fixedPolicy: systemPrompt,
+                        prompt,
+                        context,
+                        projectRevision,
+                        run: agentRun ? { grants: agentRun.grants, budgets: agentRun.budgets } : undefined,
+                        receipts:
+                            receiptContext === null
+                                ? []
+                                : [{ id: 'application-tool-loop', summary: receiptContext.slice(0, 8_192) }],
+                        capabilitySchemas: providerToolSchemas.map((schema) => ({
+                            name: schema.function.name,
+                            schemaVersion: 1,
+                        })),
+                        capabilityData: {
+                            articulationTransferCapability,
+                            backingVocalPlateCapability,
+                            bassProcessingCopyCapability,
+                            drumRoutingCapability,
+                            drumRenderComparisonCapability,
+                            drumPreviewBranchesCapability,
+                            midiOverlapTransformCapability,
+                            sidechainRoutingCapability,
+                            sharedVocalFxBusesCapability,
+                            stemImportCapability: stemImportScope?.capability,
+                            syncopatedArpeggioCapability,
+                            wholeProjectVibeMixCapability,
+                        },
+                        validationFailures: agentRun?.errors.map((error) => ({ code: error.code })),
+                        priorEvidence: agentRun?.contextEvidence,
+                    });
+                    if (agentRun) {
+                        agentRunLifecycle.recordContextEvidence({
+                            runId: agentRun.runId,
+                            evidence: builtContext.evidence,
+                        });
+                    }
+                    return builtContext;
+                };
+                const initialPlanningContext = buildPlanningContext(null);
+                if (!initialPlanningContext.authorityComplete) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason:
+                            'Provider planning rejected: relevant production authority exceeds the bounded context limit.',
+                    };
+                }
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     loopId: `planning-${crypto.randomUUID()}`,
                     terminalToolNames,
                     signal,
-                    requestTurn: async ({ receiptContext }) =>
-                        generateToolPlanningOutcome(
+                    requestTurn: async ({ receiptContext }) => {
+                        const planningContext =
+                            receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
+                        if (!planningContext.authorityComplete) {
+                            throw new Error('Provider planning cannot continue with incomplete relevant authority.');
+                        }
+                        return generateToolPlanningOutcome(
                             systemPrompt,
-                            receiptContext === null ? userMessage : `${userMessage}\n\n${receiptContext}`,
+                            planningContext.message,
                             providerToolSchemas,
                             signal,
                             prompt,
                             onProviderResult,
                             streamIdentity,
                             onProviderAttempt
-                        ),
+                        );
+                    },
                 });
                 applicationToolReceiptFields =
                     planningOutcome.receipts.length === 0

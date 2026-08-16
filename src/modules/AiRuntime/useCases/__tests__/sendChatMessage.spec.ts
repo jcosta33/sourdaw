@@ -1054,6 +1054,76 @@ describe('sendChatMessage injectables', () => {
         expect(completionUpdate?.[1].content).toContain('Response incomplete');
     });
 
+    it('sends the canonical bounded authority context to native, hosted, and WebLLM regular-chat adapters', async () => {
+        const projectContext = mocks.getProjectContext();
+        mocks.getProjectContext.mockReturnValue({
+            ...projectContext,
+            internalProjectDump: 'UNRELATED_RAW_PROJECT_DATA_MUST_NOT_REACH_A_PROVIDER',
+        } as ProjectContext);
+
+        const adapterContexts: string[] = [];
+
+        mocks.backend.value = 'native';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        await sendChatMessage('Explain the current mix.');
+        const nativeRequest = mocks.runNativeModelProviderRequest.mock.calls.at(-1)?.[0].request;
+        adapterContexts.push(nativeRequest?.messages[0]?.content ?? '');
+        clearAgentRuns();
+
+        mocks.backend.value = 'cloud';
+        mocks.cloudAvailable.value = true;
+        llmStatusStore.set({ state: 'ready', backend: 'cloud', modelId: 'hosted-model' });
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        await sendChatMessage('Explain the current mix.');
+        adapterContexts.push(mocks.streamCloudChatCompletion.mock.calls.at(-1)?.[0][0]?.content ?? '');
+        clearAgentRuns();
+
+        mocks.backend.value = 'webllm';
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'chat',
+        };
+        mocks.webLlmCreate.mockResolvedValue({
+            async *[Symbol.asyncIterator]() {
+                yield { choices: [{ delta: { content: 'Complete answer' }, finish_reason: 'stop' }] };
+            },
+        });
+        mocks.webLlmEngine.value = {
+            interruptGenerate: mocks.webLlmInterrupt,
+            chat: { completions: { create: mocks.webLlmCreate } },
+        };
+        await sendChatMessage('Explain the current mix.');
+        const webLlmMessages = mocks.webLlmCreate.mock.calls.at(-1)?.[0].messages as
+            Array<{ content: string }> | undefined;
+        adapterContexts.push(webLlmMessages?.[0]?.content ?? '');
+
+        for (const adapterContext of adapterContexts) {
+            expect(adapterContext).toMatch(
+                /fixed_policy[\s\S]*run_authority[\s\S]*user_request[\s\S]*production_brief_and_locks[\s\S]*revision_and_selection/
+            );
+            expect(adapterContext).toContain('untrusted_user_string');
+            expect(adapterContext).toContain('revision-1');
+            expect(adapterContext).not.toContain('UNRELATED_RAW_PROJECT_DATA_MUST_NOT_REACH_A_PROVIDER');
+        }
+        const [projection] = getAgentRunControlProjections();
+        expect(getAgentRun(projection!.runId)?.contextEvidence).toMatchObject({
+            revision: 'revision-1',
+            delta: { mode: 'full', baseRevision: null },
+        });
+    });
+
     it('marks a zero-output native length result visibly incomplete', async () => {
         mocks.backend.value = 'native';
         mocks.chatStoreValue.value = {

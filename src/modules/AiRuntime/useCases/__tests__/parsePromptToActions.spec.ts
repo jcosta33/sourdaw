@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -11,7 +12,6 @@ const {
     mockLogger,
     mockBridgeGroundedLlmToolCalls,
     mockBuildLlmActionSystemPrompt,
-    mockBuildLlmActionUserMessage,
     mockDoesProductionBriefAllowActionBatch,
     markerStoreValue,
 } = vi.hoisted(() => ({
@@ -23,7 +23,6 @@ const {
     },
     mockBridgeGroundedLlmToolCalls: vi.fn(),
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
-    mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
     mockDoesProductionBriefAllowActionBatch: vi.fn(() => true),
     markerStoreValue: {
         value: {
@@ -80,7 +79,6 @@ vi.mock('../../transformers/llmActionBridge', async () => {
     return {
         ...actual,
         buildLlmActionSystemPrompt: mockBuildLlmActionSystemPrompt,
-        buildLlmActionUserMessage: mockBuildLlmActionUserMessage,
     };
 });
 
@@ -227,6 +225,7 @@ function createGlueProviderContext(): ProjectContext {
 
 describe('parsePromptToActions', () => {
     beforeEach(() => {
+        agentRunLifecycle.clear();
         vi.clearAllMocks();
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
@@ -235,7 +234,6 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockReset();
         mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
-        mockBuildLlmActionUserMessage.mockClear();
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(true);
         markerStoreValue.value = { markers: [], sections: [] };
     });
@@ -342,7 +340,7 @@ describe('parsePromptToActions', () => {
 
         const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
         expect(firstProviderCall?.[0]).toContain('command system prompt');
-        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[1]).toContain('fixed_policy:');
         expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -354,10 +352,6 @@ describe('parsePromptToActions', () => {
             ])
         );
         expect(firstProviderCall?.[4]).toBe('make the project faster');
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
-            prompt: 'make the project faster',
-            context: baseContext,
-        });
         expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith({
             calls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
             context: baseContext,
@@ -481,7 +475,7 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
         const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
         expect(firstProviderCall?.[0]).toContain('command system prompt');
-        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[1]).toContain('untrusted_project_data:');
         expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -493,6 +487,42 @@ describe('parsePromptToActions', () => {
             ])
         );
         expect(firstProviderCall?.[4]).toBe('enable punch in/out');
+    });
+
+    it('bounds persisted validation failures before the normalized provider request', async () => {
+        agentRunLifecycle.create({
+            runId: 'run-with-failures',
+            request: 'enable punch in/out',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+        });
+        for (let index = 0; index < 24; index += 1) {
+            agentRunLifecycle.recordError({
+                runId: 'run-with-failures',
+                error: {
+                    code: `failure-${index}`,
+                    message: 'safe stored failure',
+                    occurredAt: index + 1,
+                    retriable: false,
+                    workId: null,
+                },
+            });
+        }
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setPunchEnabled', arguments: { enabled: true } }])
+        );
+
+        await parsePromptToActions('enable punch in/out', baseContext, undefined, 'revision-2', undefined, undefined, {
+            runId: 'run-with-failures',
+            requestId: 'request-1',
+            cancellationGeneration: 0,
+        });
+
+        const message = vi.mocked(generateToolCalls).mock.calls[0]?.[1];
+        expect(message).toContain('failure-23');
+        expect(message).not.toContain('failure-0');
+        expect(message).toContain('"omitted":8');
     });
 
     it('proposes a grounded provider marker as one reversible atomic action', async () => {
@@ -525,7 +555,7 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBe(
             'Provider action rejected: addMarker: Requested marker already exists at that beat'
         );
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider marker removal from local state without serializing marker identity', async () => {
@@ -542,10 +572,7 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
-            prompt: 'delete marker Chorus at beat 16',
-            context: baseContext,
-        });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider marker color from local state without serializing marker identity', async () => {
@@ -568,7 +595,7 @@ describe('parsePromptToActions', () => {
             },
         ]);
         expect(result.requiresConfirmation).toBe(false);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('marker-internal');
     });
 
     it('resolves a provider section removal from local state without serializing section identity', async () => {
@@ -586,7 +613,7 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-internal' } }]);
         expect(result.requiresConfirmation).toBe(true);
-        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
+        expect(vi.mocked(generateToolCalls).mock.calls[0]?.[1]).not.toContain('section-internal');
     });
 
     it('proposes grounded non-destructive clip normalization as one atomic action', async () => {
@@ -1167,6 +1194,44 @@ describe('parsePromptToActions', () => {
         expect(result.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-vocals' } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
+    });
+
+    it('rejects provider planning before adapter start when relevant locks exceed the authority cap', async () => {
+        const lockedContext: ProjectContext = {
+            ...baseContext,
+            selectedTrackId: 'track-1',
+            productionBrief: {
+                schemaVersion: 1,
+                id: 'brief-1',
+                revision: 1,
+                vision: 'Preserve the selected production authority.',
+                references: [],
+                hardConstraints: [],
+                preferences: [],
+                sectionGoals: [],
+                trackRoles: [],
+                locks: Array.from({ length: 65 }, (_, index) => ({
+                    id: `lock-${index}`,
+                    scope: { kind: 'track' as const, trackId: 'track-1' },
+                    statement: `Keep selected track invariant ${index}.`,
+                    createdAt: index,
+                })),
+                decisions: [],
+                unresolvedQuestions: [],
+                sourceRunLinks: [],
+                supersedesBriefId: null,
+                supersededByBriefId: null,
+                createdAt: 1,
+                updatedAt: 1,
+            },
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
+
+        const result = await parsePromptToActions('make the selected track warmer', lockedContext);
+
+        expect(generateToolCalls).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ actions: [], requiresConfirmation: false });
+        expect(result.rejectionReason).toContain('authority');
     });
 
     it('rejects a provider time signature that does not match the prompt', async () => {

@@ -1,3 +1,4 @@
+import { type AgentContextEvidence } from './AgentContext';
 import { type AgentExecutionMode } from './AgentExecutionMode';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
@@ -217,6 +218,7 @@ export type AgentRun = {
     temporaryAssets: AgentRunTemporaryAsset[];
     manualResume: AgentRunManualResume;
     workLeases: AgentRunWorkLease[];
+    contextEvidence: AgentContextEvidence | null;
     createdAt: number;
     updatedAt: number;
 };

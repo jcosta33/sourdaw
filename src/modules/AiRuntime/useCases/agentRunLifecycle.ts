@@ -1,3 +1,4 @@
+import { type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import {
     AGENT_RUN_SCHEMA_VERSION,
@@ -155,11 +156,23 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         temporaryAssets: [],
         manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         workLeases: [],
+        contextEvidence: null,
         createdAt,
         updatedAt: createdAt,
     };
     persistAgentRunState({ ...state, runs: [...state.runs, run] });
     return structuredClone(run);
+}
+
+function recordAgentRunContextEvidence(input: {
+    runId: string;
+    evidence: AgentContextEvidence;
+    recordedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
+        ...run,
+        contextEvidence: structuredClone(input.evidence),
+    }));
 }
 
 function transitionAgentRunPhase(input: {
@@ -733,6 +746,7 @@ export const agentRunLifecycle = {
     recordArtifact: recordAgentRunArtifact,
     recordBatch: recordAgentRunBatch,
     recordCommittedWork: recordAgentRunCommittedWork,
+    recordContextEvidence: recordAgentRunContextEvidence,
     recordError: recordAgentRunError,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,

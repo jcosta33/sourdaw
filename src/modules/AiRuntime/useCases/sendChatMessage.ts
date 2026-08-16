@@ -53,6 +53,7 @@ import { createStemImportConfirmationResourceLease } from './agentReference/crea
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
+import { buildAgentContext } from './buildAgentContext';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createModelProviderStreamWriter } from './createModelProviderStreamWriter';
@@ -1079,8 +1080,28 @@ export async function sendChatMessage(
 
     try {
         const workspaceContext = getProjectContext();
-
-        const systemPrompt = `${CHAT_SYSTEM_PROMPT}\n\nCURRENT DAW CONTEXT:\n${JSON.stringify(workspaceContext)}`;
+        const agentRun = agentRunLifecycle.get(runId);
+        if (agentRun === null) {
+            throw createAiRuntimeError('The agent run could not be recovered before provider planning.');
+        }
+        const agentContext = buildAgentContext({
+            fixedPolicy: CHAT_SYSTEM_PROMPT,
+            prompt: userText,
+            context: workspaceContext,
+            projectRevision: captureProjectRevision(),
+            run: { grants: agentRun.grants, budgets: agentRun.budgets },
+            receipts: (agentRun.plan?.applicationToolReceipts ?? []).map((receipt) => ({
+                id: receipt.callId,
+                summary: receipt.summary,
+            })),
+            validationFailures: agentRun.errors.map((error) => ({ code: error.code })),
+            priorEvidence: agentRun.contextEvidence,
+        });
+        agentRunLifecycle.recordContextEvidence({ runId, evidence: agentContext.evidence });
+        if (!agentContext.authorityComplete) {
+            throw createAiRuntimeError('Relevant production authority exceeds the bounded context limit.');
+        }
+        const systemPrompt = agentContext.message;
 
         // Keep only the last 24 messages (12 user+assistant pairs) to avoid
         // blowing the context window on long conversations.
