@@ -1,4 +1,8 @@
-use daw_plugin_host::scanner::{extract_clap_metadata, ClapDescriptorMetadata};
+use daw_plugin_host::scanner::{
+    extract_clap_metadata, extract_clap_parameter_metadata, ClapDescriptorMetadata,
+    ClapParameterDescriptor,
+};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
@@ -7,12 +11,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
+pub const PARAMETER_WORKER_ARGUMENT: &str = "--sourdaw-plugin-parameter-scan-worker";
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 #[derive(Serialize, Deserialize)]
-struct WorkerResponse {
+struct WorkerResponse<T> {
     worker_pid: u32,
-    result: Result<ClapDescriptorMetadata, String>,
+    result: Result<T, String>,
 }
 struct ResponseDirectory(PathBuf);
 impl ResponseDirectory {
@@ -42,7 +47,11 @@ pub fn run_from_process_args() -> Option<i32> {
 fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let mut args = args.into_iter();
     let _executable = args.next();
-    if args.next().as_deref() != Some(std::ffi::OsStr::new(WORKER_ARGUMENT)) {
+    let Some(worker_argument) = args.next() else {
+        return None;
+    };
+    let scans_parameters = worker_argument == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT);
+    if !scans_parameters && worker_argument != std::ffi::OsStr::new(WORKER_ARGUMENT) {
         return None;
     }
     let Some(plugin_path) = args.next() else {
@@ -54,14 +63,26 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     if args.next().is_some() {
         return Some(2);
     }
-    let response = WorkerResponse {
-        worker_pid: std::process::id(),
-        result: extract_clap_metadata(Path::new(&plugin_path)),
+    let result = if scans_parameters {
+        write_response(
+            Path::new(&response_path),
+            &WorkerResponse {
+                worker_pid: std::process::id(),
+                result: extract_clap_parameter_metadata(Path::new(&plugin_path)),
+            },
+        )
+    } else {
+        write_response(
+            Path::new(&response_path),
+            &WorkerResponse {
+                worker_pid: std::process::id(),
+                result: extract_clap_metadata(Path::new(&plugin_path)),
+            },
+        )
     };
-    let result = write_response(Path::new(&response_path), &response);
     Some(if result.is_ok() { 0 } else { 2 })
 }
-fn write_response(path: &Path, response: &WorkerResponse) -> Result<(), String> {
+fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Result<(), String> {
     let bytes = serde_json::to_vec(response)
         .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
@@ -79,13 +100,28 @@ pub fn scan_clap_metadata(
     path: &Path,
     timeout: Duration,
 ) -> Result<ClapDescriptorMetadata, String> {
+    scan_clap_worker(path, timeout, WORKER_ARGUMENT)
+}
+
+pub fn scan_clap_parameter_metadata(
+    path: &Path,
+    timeout: Duration,
+) -> Result<Vec<ClapParameterDescriptor>, String> {
+    scan_clap_worker(path, timeout, PARAMETER_WORKER_ARGUMENT)
+}
+
+fn scan_clap_worker<T: DeserializeOwned>(
+    path: &Path,
+    timeout: Duration,
+    worker_argument: &str,
+) -> Result<T, String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("Cannot resolve plugin scan helper executable: {error}"))?;
     let response_directory = ResponseDirectory::create()?;
     let response_path = response_directory.0.join("metadata.json");
     let mut command = Command::new(executable);
     command
-        .arg(WORKER_ARGUMENT)
+        .arg(worker_argument)
         .arg(path)
         .arg(&response_path)
         .stdin(Stdio::null())
@@ -109,7 +145,7 @@ pub fn scan_clap_metadata(
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
         return Err("Plugin scan helper response exceeded its byte limit".to_string());
     }
-    let response: WorkerResponse = serde_json::from_slice(&bytes)
+    let response: WorkerResponse<T> = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Plugin scan helper returned invalid metadata: {error}"))?;
     if response.worker_pid == std::process::id() {
         return Err("Plugin metadata extraction did not cross a process boundary".to_string());
