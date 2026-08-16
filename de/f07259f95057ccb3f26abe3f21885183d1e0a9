@@ -1,0 +1,58 @@
+crates/scoring/src/lib.rs
+  s_ab5443e65c7fba::t_17705f9be0892e 890-900
+  s_ab5443e65c7fba::t_d06e6034396851 258
+  s_ab5443e65c7fba::t_2effb04d0d8b0b 534-542,546-547,550-560,564
+  s_ab5443e65c7fba::t_42543cdcaeab48 403-408,411-412
+  s_ab5443e65c7fba::t_eb979f3f26e8a0 802-889,901-999,1002-1038
+  s_ab5443e65c7fba::t_eb0818bc0f2020 561-562
+  s_ab5443e65c7fba::t_2a1f086ffc8fe0 1000-1001
+  s_ab5443e65c7fba::t_57cc2fc57c7adb 409
+  s_ab5443e65c7fba::t_0ad2778c20d85f 198-206
+  s_ab5443e65c7fba::t_6c42fb9aab8fd5 130-135
+  s_ab5443e65c7fba::t_937d342719aab8 410
+  s_ab5443e65c7fba::t_711d999e5b0e7d 543-544
+  s_ab5443e65c7fba::t_0c68c8db885ad9 1039-1042
+crates/scoring/src/tuning.rs
+  s_ab5443e65c7fba::t_83a668304abce0 75-107,109-187
+  s_ab5443e65c7fba::t_2fb0089afada9b 45-49
+  s_ab5443e65c7fba::t_95154c013113d1 51
+  s_ab5443e65c7fba::t_f3c77009c29c69 108
+crates/scoring/src/scala.rs
+  s_ab5443e65c7fba::t_a36329514469ef 237-242,245,248-249,251-252,254-255,257-269
+  s_ab5443e65c7fba::t_a0d16c5ef134d7 25-29,32-47,50-56,58,60-61,64-66,69,78
+  s_ab5443e65c7fba::t_35e4ee45bb8504 173-175
+  s_ab5443e65c7fba::t_912473f003b0aa 83-85
+  s_ab5443e65c7fba::t_9cf6b3c80a121f 76,192-236,243-244,246-247,250,253,256,270-395
+  s_ab5443e65c7fba::t_5368e6e217209a 105-108,114,116-117,120,125-129,133-134,141,150-153,158-160,162-166,168-169
+  s_ab5443e65c7fba::t_611a6fd7602929 57,59,62-63,72-75
+  s_ab5443e65c7fba::t_2c79633c2571ca 68
+  s_ab5443e65c7fba::t_5c2df9d41e9d13 77,176,396-403
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_dec71bc2d4caa9 40,43-46,48-49
+public/wasm/scoring/scoring.d.ts
+  s_ab5443e65c7fba::t_476e0001da4527 1,25-29,31,33-38,40,73-74
+public/wasm/scoring/scoring.js
+  s_ab5443e65c7fba::t_c9ae9672640db8 97-101,103,108-109,112-117,119,124-125
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_16198dcef26210 1,18-19
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_ab5443e65c7fba::t_189c653134fcec 1,25-29,31,33-38,40,73-74
+src/modules/AudioEngine/wasm/scoring.js
+  s_ab5443e65c7fba::t_65ccdb15ae092b 274-278,280,285-286,289-294,296,301-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "def07259f95057ccb3f26abe3f21885183d1e0a9",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
