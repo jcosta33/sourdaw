@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inferenceDataPolicy.spec.ts
+  s_a40848e8f8cca9::t_001f69f200e190 98-100,110-112,118-120
+  s_a40848e8f8cca9::t_86623a65546483 93-97,101-109,113-117,121-125
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_0ab48f2f83896f 376,381
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_8c8fcde26df31b 274
+  s_a40848e8f8cca9::t_0ab48f2f83896f 95,100-107,440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bb30c843f956030f515682771b30545c27351ef1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
