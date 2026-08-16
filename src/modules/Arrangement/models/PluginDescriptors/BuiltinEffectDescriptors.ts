@@ -1,7 +1,7 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 import { applyDescriptorGuidance, descriptorGuidance, parameterGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { analysisGuidance, declaredControl, effectGuidance } from './GuidanceProfiles';
 
 /** Built-in effect plugin descriptors (EQ, Compressor, Reverb, Delay, etc.) */
 const BUILTIN_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
@@ -1702,7 +1702,7 @@ const BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE = [
     ),
     descriptorGuidance(
         'builtin-lufs-meter',
-        effectGuidance(
+        analysisGuidance(
             'Measure loudness against a delivery target without changing audio.',
             ['Treat readings as metering evidence, not a gain command.'],
             ['Target and window choose the comparison context for the measured loudness.'],

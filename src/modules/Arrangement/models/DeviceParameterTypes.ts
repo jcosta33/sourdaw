@@ -138,6 +138,20 @@ export type DeviceParameterGuidance = {
     modulation: DeviceParameterModulationDeclaration;
 };
 
+export type DeviceCapabilityAvailability =
+    { availability: 'available'; detail: string } | { availability: 'unavailable'; reason: string };
+
+/**
+ * Arrangement-owned meaning of a device. Runtime node and render capability
+ * remains owned by AudioEngine and is composed separately for agent receipts.
+ */
+export type PluginDescriptorCapabilities = {
+    instrumentGeneration: DeviceCapabilityAvailability;
+    audioProcessing: DeviceCapabilityAvailability;
+    audioAnalysis: DeviceCapabilityAvailability;
+    referenceSignalGeneration: DeviceCapabilityAvailability;
+};
+
 export type PluginDescriptorGuidance = {
     usage: string;
     safety: readonly string[];
@@ -166,6 +180,8 @@ export type PluginDescriptor = {
      * stops when its input does.
      */
     tail?: DeviceTailDeclaration;
+    /** Owner-authored device meaning. Agent projections must not infer it from category. */
+    capabilities?: PluginDescriptorCapabilities;
     /** Owner-authored operating guidance. Agent projections must not infer it. */
     guidance?: PluginDescriptorGuidance;
 };

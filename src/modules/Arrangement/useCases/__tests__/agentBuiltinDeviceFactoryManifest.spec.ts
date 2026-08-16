@@ -49,6 +49,60 @@ describe('built-in descriptor manifest law', () => {
         });
     });
 
+    it('publishes complete, owner-declared domain capabilities instead of inferring category labels', () => {
+        const manifest = getAgentBuiltinDeviceFactoryManifest();
+        const synth = manifest.find((device) => device.type === 'builtin-synth');
+        const compressor = manifest.find((device) => device.type === 'builtin-compressor');
+        const analyzer = manifest.find((device) => device.type === 'builtin-lufs-meter');
+
+        expect(synth?.capabilities).toEqual({
+            instrumentGeneration: {
+                availability: 'available',
+                detail: 'Generates an instrument signal from accepted note events.',
+            },
+            audioProcessing: {
+                availability: 'unavailable',
+                reason: 'This instrument has no incoming-audio processing path.',
+            },
+            audioAnalysis: { availability: 'unavailable', reason: 'This instrument does not publish analysis output.' },
+            referenceSignalGeneration: {
+                availability: 'unavailable',
+                reason: 'This instrument does not publish a calibration reference signal.',
+            },
+        });
+        expect(compressor?.capabilities).toEqual({
+            instrumentGeneration: {
+                availability: 'unavailable',
+                reason: 'This processor does not generate note-driven audio.',
+            },
+            audioProcessing: {
+                availability: 'available',
+                detail: 'Processes incoming audio with the declared effect algorithm.',
+            },
+            audioAnalysis: { availability: 'unavailable', reason: 'This processor does not publish analysis output.' },
+            referenceSignalGeneration: {
+                availability: 'unavailable',
+                reason: 'This processor does not publish a calibration reference signal.',
+            },
+        });
+        expect(analyzer?.capabilities).toEqual({
+            instrumentGeneration: {
+                availability: 'unavailable',
+                reason: 'This analyzer does not generate note-driven audio.',
+            },
+            audioProcessing: { availability: 'unavailable', reason: 'This analyzer does not alter the audio signal.' },
+            audioAnalysis: { availability: 'available', detail: 'Measures audio without changing its signal path.' },
+            referenceSignalGeneration: {
+                availability: 'unavailable',
+                reason: 'This analyzer does not publish a calibration reference signal.',
+            },
+        });
+        for (const device of manifest) {
+            expect(device.capabilities).toBeDefined();
+            expect(Object.values(device.capabilities ?? {})).toHaveLength(4);
+        }
+    });
+
     it('changes the stable preset version when the published preset contract differs', () => {
         const manifest = getAgentBuiltinDeviceFactoryManifest();
         const eq = manifest.find((device) => device.type === 'builtin-eq');
@@ -235,6 +289,12 @@ describe('built-in descriptor manifest law', () => {
                 availability: 'provided' as const,
                 parameterId: 'missing',
                 detail: 'Intentional mutant.',
+            },
+            capabilities: {
+                instrumentGeneration: { availability: 'unavailable' as const, reason: 'Fixture processor.' },
+                audioProcessing: { availability: 'available' as const, detail: 'Fixture processing.' },
+                audioAnalysis: { availability: 'unavailable' as const, reason: 'Fixture processor.' },
+                referenceSignalGeneration: { availability: 'unavailable' as const, reason: 'Fixture processor.' },
             },
         };
 

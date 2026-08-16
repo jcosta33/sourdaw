@@ -35,4 +35,29 @@ describe('getDeviceContractVersionForCommand', () => {
             `descriptor-v1:${getStableContractFingerprint(mutatedGuidance)}`
         );
     });
+
+    it('includes Arrangement-owned domain capability identity in the descriptor fingerprint', () => {
+        const descriptor = getPluginById('builtin-compressor');
+        if (!descriptor?.capabilities) {
+            throw new Error('Expected compressor domain capabilities in the authoritative descriptor');
+        }
+
+        const mutatedCapabilities = {
+            ...descriptor,
+            capabilities: {
+                ...descriptor.capabilities,
+                audioProcessing: {
+                    availability: 'unavailable' as const,
+                    reason: 'Mutant capability that must change the descriptor contract.',
+                },
+            },
+        };
+
+        expect(getDeviceContractVersionForCommand('builtin-compressor')).toBe(
+            `descriptor-v1:${getStableContractFingerprint(descriptor)}`
+        );
+        expect(getDeviceContractVersionForCommand('builtin-compressor')).not.toBe(
+            `descriptor-v1:${getStableContractFingerprint(mutatedCapabilities)}`
+        );
+    });
 });

@@ -1,7 +1,7 @@
 import { type PluginDescriptor, type DeviceParameter } from '../DeviceParameterTypes';
 
 import { applyDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { analysisGuidance, declaredControl, effectGuidance } from './GuidanceProfiles';
 
 /**
  * Plugin descriptors for Faust DSP effects.
@@ -227,7 +227,7 @@ const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
     descriptorGuidance('faust-gain-utility', faustEffectGuidance, faustControl),
     descriptorGuidance(
         'faust-lufs-meter',
-        effectGuidance(
+        analysisGuidance(
             'Measure loudness without changing audio.',
             ['Use meter readings as evidence rather than a gain command.'],
             ['The selected window and target determine how the reading is interpreted.'],

@@ -29,6 +29,18 @@ export type DeviceRuntimeOfflineFacts = {
     condition?: string;
 };
 
+/**
+ * Agent-readable runtime capability projection. These values are derived from
+ * the exact factory facts below rather than maintained in an adjacent map.
+ */
+export type DeviceRuntimeCapabilities = {
+    liveNode: { availability: 'available' };
+    noteAcceptance: DeviceRuntimeLiveFacts['notes'];
+    sidechainRouting:
+        { availability: 'available' | 'unavailable' | 'not-applicable' } | { availability: 'runtime-dependent' };
+    offlineRender: DeviceRuntimeOfflineFacts;
+};
+
 export type BuiltinDeviceRuntimeStrategy = {
     live: DeviceRuntimeLiveFacts;
     offline: DeviceRuntimeOfflineFacts;
@@ -67,7 +79,24 @@ export type AgentBuiltinDeviceRuntime = {
     runtimeVersion: string;
     live: DeviceRuntimeLiveFacts;
     offline: DeviceRuntimeOfflineFacts;
+    capabilities: DeviceRuntimeCapabilities;
 };
+
+export function projectDeviceRuntimeCapabilities(
+    live: DeviceRuntimeLiveFacts,
+    offline: DeviceRuntimeOfflineFacts
+): DeviceRuntimeCapabilities {
+    const sidechainRouting =
+        'availability' in live.ports
+            ? { availability: 'runtime-dependent' as const }
+            : { availability: live.ports.sidechainRouting };
+    return {
+        liveNode: { availability: 'available' },
+        noteAcceptance: live.notes,
+        sidechainRouting,
+        offlineRender: offline,
+    };
+}
 
 function canonicalize(value: unknown): unknown {
     if (Array.isArray(value)) {

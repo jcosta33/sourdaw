@@ -1,6 +1,7 @@
 import { findWasmDescriptor } from '../engine/wasmDeviceRegistry';
 import {
     getBuiltinDeviceRuntimeVersion,
+    projectDeviceRuntimeCapabilities,
     type AgentBuiltinDeviceRuntime,
     type DeviceRuntimeLiveFacts,
     type DeviceRuntimeOfflineFacts,
@@ -25,7 +26,12 @@ function runtimeComponent(deviceType: string): AgentBuiltinDeviceRuntime | null 
         return null;
     }
 
-    const component = { type: deviceType, live, offline };
+    const component = {
+        type: deviceType,
+        live,
+        offline,
+        capabilities: projectDeviceRuntimeCapabilities(live, offline),
+    };
     return {
         ...component,
         runtimeVersion: getBuiltinDeviceRuntimeVersion(component),

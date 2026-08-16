@@ -26,6 +26,7 @@ type AgentBuiltinDeviceDescriptor = {
     type: string;
     descriptorVersion: string;
     presetVersion: string;
+    capabilities: NonNullable<PluginDescriptor['capabilities']>;
     guidance: Omit<NonNullable<PluginDescriptor['guidance']>, 'parameters'>;
     vendor: string;
     name: string;
@@ -91,10 +92,14 @@ export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDev
         if (!descriptor.guidance) {
             throw new Error(`Built-in operating guidance unavailable: ${descriptor.id}`);
         }
+        if (!descriptor.capabilities) {
+            throw new Error(`Built-in capability declaration unavailable: ${descriptor.id}`);
+        }
         return {
             type: descriptor.id,
             descriptorVersion,
             presetVersion: presetContract.presetVersion,
+            capabilities: descriptor.capabilities,
             guidance: {
                 usage: descriptor.guidance.usage,
                 safety: descriptor.guidance.safety,

@@ -471,6 +471,13 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
         const compositeVersion = `builtin-factory-v2:${descriptor.descriptorVersion}:${descriptor.presetVersion}:${runtimeVersion}`;
         return {
             ...descriptor,
+            capabilities: {
+                domain: descriptor.capabilities,
+                runtime: runtime?.capabilities ?? {
+                    availability: 'unavailable' as const,
+                    reason: 'No exact AudioEngine factory claims this descriptor type in the current runtime.',
+                },
+            },
             version: compositeVersion,
             versions: {
                 descriptor: descriptor.descriptorVersion,

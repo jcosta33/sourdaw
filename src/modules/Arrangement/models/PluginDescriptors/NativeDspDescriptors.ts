@@ -1,7 +1,7 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 import { applyDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { declaredControl, effectGuidance, referenceSignalGuidance } from './GuidanceProfiles';
 
 /**
  * Band names for the Dutch Oven's Decay Rate EQ, in band order.
@@ -512,7 +512,7 @@ const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
     ),
     descriptorGuidance(
         'native-scoring',
-        effectGuidance(
+        referenceSignalGuidance(
             'Generate a reference pitch for tuning and calibration rather than musical processing.',
             ['Mute the reference output before delivery or recording.'],
             ['Reference frequency and tone enable together determine the emitted calibration signal.'],

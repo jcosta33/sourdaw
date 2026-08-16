@@ -2,17 +2,22 @@ import {
     type DeviceParameter,
     type DeviceParameterGuidance,
     type PluginDescriptor,
+    type PluginDescriptorCapabilities,
     type PluginDescriptorGuidance,
 } from '../DeviceParameterTypes';
 
 type DescriptorGuidanceDeclaration = {
     deviceId: string;
-    guidance: Omit<PluginDescriptorGuidance, 'parameters'>;
+    guidance: Omit<PluginDescriptorGuidance, 'parameters'> & { capabilities: PluginDescriptorCapabilities };
     parameterFallback: (parameter: DeviceParameter) => DeviceParameterGuidance;
     parameterOverrides?: Readonly<Record<string, DeviceParameterGuidance>>;
 };
 
-function assertGuidanceCoverage(descriptor: PluginDescriptor, guidance: PluginDescriptorGuidance): void {
+function assertGuidanceCoverage(
+    descriptor: PluginDescriptor,
+    guidance: PluginDescriptorGuidance,
+    capabilities: PluginDescriptorCapabilities
+): void {
     if (
         guidance.usage.length === 0 ||
         guidance.safety.length === 0 ||
@@ -60,6 +65,14 @@ function assertGuidanceCoverage(descriptor: PluginDescriptor, guidance: PluginDe
             `Gain compensation references an unknown parameter for ${descriptor.id}: ${gainCompensation.parameterId}`
         );
     }
+    for (const capability of Object.values(capabilities)) {
+        if (
+            (capability.availability === 'available' && capability.detail.length === 0) ||
+            (capability.availability === 'unavailable' && capability.reason.length === 0)
+        ) {
+            throw new Error(`Incomplete capability declaration for ${descriptor.id}`);
+        }
+    }
 }
 
 export function applyDescriptorGuidance(
@@ -75,8 +88,9 @@ export function applyDescriptorGuidance(
         if (!declaration) {
             throw new Error(`Missing guidance for ${descriptor.id}`);
         }
+        const { capabilities, ...deviceGuidance } = declaration.guidance;
         const guidance = {
-            ...declaration.guidance,
+            ...deviceGuidance,
             parameters: Object.fromEntries(
                 descriptor.parameters.map((parameter) => [
                     parameter.id,
@@ -92,14 +106,14 @@ export function applyDescriptorGuidance(
                 `Guidance declares unknown parameters for ${descriptor.id}: ${unknownOverrides.join(', ')}`
             );
         }
-        assertGuidanceCoverage(descriptor, guidance);
-        return { ...descriptor, guidance };
+        assertGuidanceCoverage(descriptor, guidance, capabilities);
+        return { ...descriptor, capabilities, guidance };
     });
 }
 
 export function descriptorGuidance(
     deviceId: string,
-    guidance: Omit<PluginDescriptorGuidance, 'parameters'>,
+    guidance: DescriptorGuidanceDeclaration['guidance'],
     parameterFallback: DescriptorGuidanceDeclaration['parameterFallback'],
     parameterOverrides?: DescriptorGuidanceDeclaration['parameterOverrides']
 ): DescriptorGuidanceDeclaration {

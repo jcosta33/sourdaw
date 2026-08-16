@@ -136,6 +136,18 @@ describe('agent tool catalog', () => {
                         devices: [
                             {
                                 type: 'builtin-sidechain-compressor',
+                                capabilities: {
+                                    domain: {
+                                        instrumentGeneration: { availability: 'unavailable' },
+                                        audioProcessing: { availability: 'available' },
+                                    },
+                                    runtime: {
+                                        liveNode: { availability: 'available' },
+                                        noteAcceptance: { availability: 'unavailable' },
+                                        sidechainRouting: { availability: 'available' },
+                                        offlineRender: { availability: 'conditional' },
+                                    },
+                                },
                                 versions: {
                                     descriptor: expect.stringMatching(/^descriptor-v1:[0-9a-f]{8}$/),
                                     preset: expect.stringMatching(/^preset-v1:[0-9a-f]{8}$/),
