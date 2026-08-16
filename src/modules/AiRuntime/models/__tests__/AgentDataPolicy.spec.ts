@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyAgentDataPolicy } from '../../models/AgentDataPolicy';
+import { classifyAgentDataPolicy } from '../AgentDataPolicy';
 
 describe('agent data policy', () => {
     it('keeps raw audio and generated media out of provider transmissions while disclosing admitted text', () => {

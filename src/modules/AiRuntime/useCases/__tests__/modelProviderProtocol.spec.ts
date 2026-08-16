@@ -67,6 +67,37 @@ function compileTextRequest(provider: 'webllm' | 'openai-compatible' = 'webllm')
 }
 
 describe('modelProviderProtocol', () => {
+    it('rejects unknown remote categories before disclosure consumption or provider invocation', () => {
+        const hosted = createModelProviderProtocol({ provider: 'openai-compatible', model: 'fixture-model' });
+        const invokeProvider = vi.fn();
+        const categories = ['prompt-text', 'unknown-category'] as never;
+        const compiled = hosted.compileRequest({
+            correlationId: 'unknown-category-request',
+            operation: 'tools',
+            modality: 'text',
+            messages: [{ role: 'user', content: 'Describe the mix.' }],
+            tools: [],
+            stream: false,
+            limits: { maxOutputTokens: 64 },
+            controls: { cache: 'provider-default', reasoning: 'provider-default' },
+            budget: { maxInputTokens: 100, maxOutputTokens: 64, maxTotalTokens: 164 },
+            dataPolicy: 'remote-allowed',
+            dataCategories: categories,
+            remoteDisclosure: remoteTransmissionDisclosure.issue({
+                categories,
+                correlationId: 'unknown-category-request',
+                requestId: 'unknown-category-request',
+            }),
+        });
+
+        if (compiled.status === 'ready') {
+            invokeProvider(compiled.request);
+        }
+
+        expect(compiled).toMatchObject({ status: 'unavailable', failure: { code: 'remote-data-policy-rejected' } });
+        expect(invokeProvider).not.toHaveBeenCalled();
+    });
+
     it('rejects raw audio before a hosted provider can be invoked', () => {
         const hosted = createModelProviderProtocol({ provider: 'openai-compatible', model: 'fixture-model' });
         const invokeProvider = vi.fn();

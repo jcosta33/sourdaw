@@ -8,34 +8,34 @@ const mocks = vi.hoisted(() => ({
     notifyAiChange: vi.fn(),
 }));
 
-vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
+vi.mock('../backendResolution/getBackendChain', () => ({
     getBackendChain: () => mocks.backendChain.value,
 }));
 
-vi.mock('../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
+vi.mock('../../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
     generateCloudToolCalls: async (...args: Parameters<typeof mocks.generateCloudToolCalls>) => {
         mocks.calls.push('cloud-invoke');
         return mocks.generateCloudToolCalls(...args);
     },
 }));
 
-vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
-vi.mock('../../repositories/webLlm/toolCalling', () => ({
+vi.mock('../../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
+vi.mock('../../../repositories/webLlm/toolCalling', () => ({
     generateWebLlmToolCalls: async (...args: Parameters<typeof mocks.generateWebLlmToolCalls>) => {
         mocks.calls.push('webllm-invoke');
         return mocks.generateWebLlmToolCalls(...args);
     },
 }));
-vi.mock('../../repositories/webLlm/initWebLlmEngine', () => ({ initWebLlmEngine: vi.fn() }));
-vi.mock('../../repositories/nativeModelProviderAdapter', () => ({ runNativeModelProviderRequest: vi.fn() }));
-vi.mock('../notifyAiChange', () => ({
+vi.mock('../../../repositories/webLlm/initWebLlmEngine', () => ({ initWebLlmEngine: vi.fn() }));
+vi.mock('../../../repositories/nativeModelProviderAdapter', () => ({ runNativeModelProviderRequest: vi.fn() }));
+vi.mock('../../notifyAiChange', () => ({
     notifyAiChange: (...args: Parameters<typeof mocks.notifyAiChange>) => {
         mocks.calls.push('disclosure');
         mocks.notifyAiChange(...args);
     },
 }));
 
-import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { generateToolPlanningOutcome } from '../inference';
 
 describe('tool-planning remote data disclosure', () => {
     afterEach(() => {
