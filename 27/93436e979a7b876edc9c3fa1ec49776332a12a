@@ -1,0 +1,59 @@
+crates/daw-dsp/tests/crumbs_loop_crossfade.rs
+  s_ab5443e65c7fba::t_89bf52f06d00f7 148-152,154
+  s_ab5443e65c7fba::t_3dd1a2e202c2b2 10,12-15,17-31,40,43-47,55-58,66-86,91-92,95,98-99,134-140,144-145,155-156,162-163,173-211,213-233,241,244,246-248
+  s_ab5443e65c7fba::t_d3f69f581998ac 93
+crates/daw-dsp/src/levain/voice.rs
+  s_ab5443e65c7fba::t_d3f69f581998ac 825-830
+  s_ab5443e65c7fba::t_f3c838a539e4a0 431
+  s_ab5443e65c7fba::t_58594728919860 432-454,457-458
+  s_ab5443e65c7fba::t_2d16c83401d6db 456,459-464
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_93a97a9d23ffb2 1,836-851,902-920
+crates/daw-dsp/src/crumbs/voice.rs
+  s_ab5443e65c7fba::t_2e3bfeef1a6a46 9
+  s_ab5443e65c7fba::t_7098bcc443f517 672,676-686,689-699,702-707,712,716-720
+  s_ab5443e65c7fba::t_ef3d978f168e74 386
+  s_ab5443e65c7fba::t_d4d79ca543bfc0 388-403,420-422,425,431,447-472
+  s_ab5443e65c7fba::t_a4bf40f85f1b66 430,435-440
+  s_ab5443e65c7fba::t_8d1fa0046f53b2 473-474
+crates/daw-dsp/src/crumbs/types.rs
+  s_ab5443e65c7fba::t_d05c1d74350d67 12-18
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_93a97a9d23ffb2 1,5-20,71-89
+crates/daw-dsp/src/crumbs/engine.rs
+  s_ab5443e65c7fba::t_85b5eeffca8ef1 833-837
+  s_ab5443e65c7fba::t_b263057afeb738 443-446
+  s_ab5443e65c7fba::t_a09c8829a9f78b 46
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_93a97a9d23ffb2 1,836-851,902-920
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_93a97a9d23ffb2 12,16-18,21
+crates/daw-dsp/src/crumbs/analysis/bpm.rs
+  s_ab5443e65c7fba::t_91cea2d4bad9f9 114-120
+  s_ab5443e65c7fba::t_68b65fe708da73 128-136
+crates/daw-dsp/src/levain/engine.rs
+  s_ab5443e65c7fba::t_422071f003ca75 2323
+  s_ab5443e65c7fba::t_299d15ea52e14f 2329-2330,2334-2338,2341,2357,2359-2360
+  s_ab5443e65c7fba::t_d3f69f581998ac 383-388,498-503,549-554,1023-1029,1099,1839,1870,1876,1950,1966,2034,2371,2530-2534
+crates/daw-dsp/src/crumbs/sample.rs
+  s_ab5443e65c7fba::t_9fc389debfc28c 188-191,194,201-206
+  s_ab5443e65c7fba::t_0cf5fb2bb03223 142
+  s_ab5443e65c7fba::t_3c21598a03f557 150
+  s_ab5443e65c7fba::t_4f145334a07313 207-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2793436e979a7b876edc9c3fa1ec49776332a12a",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
