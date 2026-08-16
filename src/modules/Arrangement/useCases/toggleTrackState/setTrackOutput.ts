@@ -1,5 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
-import { resolveToasterPadBinding, setTrackOutput as engineSetTrackOutput } from '#/modules/AudioEngine/useCases';
+import {
+    applyRuntimeGraphDelta,
+    getRuntimeGraphRevision,
+    resolveToasterPadBinding,
+    setTrackOutput as engineSetTrackOutput,
+} from '#/modules/AudioEngine/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
@@ -18,6 +24,58 @@ type DeferredTrackOutputRuntimeEffect = {
 };
 
 const TERMINAL_OUTPUT_IDS: ReadonlySet<string> = new Set(['master', 'hw_out']);
+
+function toRuntimeGraphNode(track: NonNullable<ReturnType<typeof getTrackById>>) {
+    return {
+        id: track.id,
+        kind: track.kind,
+        devices: track.devices.map((device) => ({
+            id: device.id,
+            parameterIds: Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right)),
+        })),
+    };
+}
+
+function createTrackOutputRuntimeGraphDelta(trackId: string, outputId: string) {
+    const source = getTrackById(trackId);
+    if (!source) {
+        return null;
+    }
+    const target = getTrackById(outputId);
+    if (!target && !TERMINAL_OUTPUT_IDS.has(outputId)) {
+        return null;
+    }
+    const nodes = target ? [toRuntimeGraphNode(source), toRuntimeGraphNode(target)] : [toRuntimeGraphNode(source)];
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: {
+            appRevision: getRuntimeGraphRevision(),
+            projectRevision: captureProjectRevision(),
+        },
+        nodes,
+        edges: [{ kind: 'output', sourceId: trackId, targetId: outputId }],
+        parameters: [],
+    };
+}
+
+function applyTrackOutputRuntimeGraphDelta(trackId: string, outputId: string): void {
+    const delta = createTrackOutputRuntimeGraphDelta(trackId, outputId);
+    if (!delta) {
+        logger.warn(`[setTrackOutput] Cannot compile runtime output delta for ${trackId} -> ${outputId}`);
+        return;
+    }
+    const result = applyRuntimeGraphDelta(delta);
+    if (result.acceptance === 'rejected') {
+        logger.warn(`[setTrackOutput] Rejected runtime output delta for ${trackId} -> ${outputId}: ${result.reason}`);
+        return;
+    }
+    if (result.application === 'needs-reconcile') {
+        logger.warn(
+            `[setTrackOutput] Runtime output delta needs reconciliation for ${trackId} -> ${outputId}: ${result.reason}`
+        );
+    }
+}
 
 export function setTrackOutput(trackId: string, outputId: string): boolean;
 export function setTrackOutput(
@@ -71,7 +129,7 @@ export function setTrackOutput(
         if (padBinding) {
             engineSetTrackOutput(trackId, outputId, padBinding);
         } else {
-            engineSetTrackOutput(trackId, outputId);
+            applyTrackOutputRuntimeGraphDelta(trackId, outputId);
         }
         runtimeEffectFinalized = true;
     }
@@ -84,7 +142,7 @@ export function setTrackOutput(
         if (padBinding) {
             engineSetTrackOutput(trackId, committedTrack.outputId, padBinding);
         } else {
-            engineSetTrackOutput(trackId, committedTrack.outputId);
+            applyTrackOutputRuntimeGraphDelta(trackId, committedTrack.outputId);
         }
     }
     if (options.deferRuntimeEffect) {

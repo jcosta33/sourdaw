@@ -13,7 +13,13 @@ import { BusNode } from '../engine/BusNode';
 import { createDeviceReadinessDiagnostics } from '../engine/deviceReadinessDiagnostics';
 import { dropoutCounters } from '../engine/dropoutCounter';
 import { TrackNode } from '../engine/TrackNode';
+import {
+    type RuntimeGraphDelta,
+    type RuntimeGraphDeltaNode,
+    type RuntimeGraphDeltaResult,
+} from '../models/RuntimeGraphDelta';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
+import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
@@ -290,6 +296,7 @@ class AudioEngineImpl implements AudioEngine {
     private transportSAB: SharedArrayBuffer | null;
     private transportView: Float64Array | null;
     private transportSeqView: Int32Array | null;
+    private runtimeGraphRevision = 0;
     private initPromise: Promise<void> | null = null;
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
@@ -382,6 +389,38 @@ class AudioEngineImpl implements AudioEngine {
         if (this.disposed) {
             throw new Error('Audio engine has been disposed.');
         }
+    }
+
+    private advanceRuntimeGraphRevision(): number {
+        this.runtimeGraphRevision++;
+        return this.runtimeGraphRevision;
+    }
+
+    private hasRuntimeOutputDestination(outputId: string): boolean {
+        return outputId === 'master' || outputId === 'hw_out' || this.trackNodes.has(outputId);
+    }
+
+    private matchesRuntimeGraphNode(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
+        const actualDeviceIds = node.strip.deviceNodes.map((device) => device.deviceId);
+        return (
+            actualDeviceIds.length === expected.devices.length &&
+            actualDeviceIds.every((deviceId, index) => deviceId === expected.devices[index]?.id)
+        );
+    }
+
+    private needsRuntimeGraphReconciliation(
+        delta: RuntimeGraphDelta,
+        reason: string,
+        runtimeRevision = this.runtimeGraphRevision
+    ): RuntimeGraphDeltaResult {
+        return Object.freeze({
+            acceptance: 'accepted' as const,
+            application: 'needs-reconcile' as const,
+            compensation: 'not-attempted' as const,
+            correlation: delta.correlation,
+            reason,
+            runtimeRevision,
+        });
     }
 
     public initialize(): Promise<void> {
@@ -730,6 +769,87 @@ class AudioEngineImpl implements AudioEngine {
             baseLatency: this.context.baseLatency ?? 0,
             outputLatency: this.context.outputLatency ?? 0,
         };
+    }
+
+    public getRuntimeGraphRevision(): number {
+        return this.runtimeGraphRevision;
+    }
+
+    /**
+     * The sole consumer for compiled output-topology deltas. It runs only on the
+     * main/control thread, after the compiler has bounded and frozen its input;
+     * no worklet callback receives, parses, or allocates for this command.
+     */
+    public applyRuntimeGraphDelta(input: unknown): RuntimeGraphDeltaResult {
+        const compilation = compileRuntimeGraphDelta(input);
+        if (compilation.status === 'invalid') {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: compilation.reason,
+            });
+        }
+
+        const { delta } = compilation;
+        if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta is stale for the live engine revision',
+            });
+        }
+
+        const edge = delta.edges[0];
+        const sourcePlan = delta.nodes[0];
+        if (!edge || !sourcePlan) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Compiled runtime graph delta has no output source',
+            });
+        }
+        const source = this.trackNodes.get(edge.sourceId);
+        if (!source || !this.matchesRuntimeGraphNode(source, sourcePlan)) {
+            return this.needsRuntimeGraphReconciliation(
+                delta,
+                'Live source strip does not match the compiled graph delta'
+            );
+        }
+        if (!this.hasRuntimeOutputDestination(edge.targetId)) {
+            return this.needsRuntimeGraphReconciliation(
+                delta,
+                'Live destination strip does not match the compiled graph delta'
+            );
+        }
+        const targetPlan = delta.nodes[1];
+        if (targetPlan) {
+            const target = this.trackNodes.get(targetPlan.id);
+            if (!target || !this.matchesRuntimeGraphNode(target, targetPlan)) {
+                return this.needsRuntimeGraphReconciliation(
+                    delta,
+                    'Live destination strip does not match the compiled graph delta'
+                );
+            }
+        }
+
+        try {
+            source.setOutput(edge.targetId);
+        } catch (error) {
+            // A host-side node operation may have partially taken effect. Do not
+            // claim a CRDT rollback restored it: advance the generation and force
+            // an owner-led reconcile instead.
+            return this.needsRuntimeGraphReconciliation(
+                delta,
+                `Live output application threw: ${String(error)}`,
+                this.advanceRuntimeGraphRevision()
+            );
+        }
+        return Object.freeze({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: delta.correlation,
+            runtimeRevision: this.advanceRuntimeGraphRevision(),
+        });
     }
 
     private reconnectRoutingForTrack(trackId: string): void {
@@ -1303,7 +1423,12 @@ class AudioEngineImpl implements AudioEngine {
         if (!trackNode) {
             return;
         }
+        if (!this.hasRuntimeOutputDestination(outputId)) {
+            logger.warn(`[AudioEngine] Rejected output route to absent live destination: ${trackId} -> ${outputId}`);
+            return;
+        }
         trackNode.setOutput(outputId);
+        this.advanceRuntimeGraphRevision();
         if (
             !padBinding ||
             !Number.isInteger(padBinding.padIndex) ||
@@ -1605,6 +1730,7 @@ class AudioEngineImpl implements AudioEngine {
         this.toasterPadRoutes.clear();
         this.pendingDevicePromises.clear();
         this.deviceReadinessDiagnostics.reset();
+        this.advanceRuntimeGraphRevision();
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {

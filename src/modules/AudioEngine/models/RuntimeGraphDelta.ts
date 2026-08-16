@@ -1,0 +1,65 @@
+/**
+ * Transfer-safe, revision-correlated model for one live graph mutation.
+ *
+ * The compiler owns the runtime form: callers may supply a structured-cloneable
+ * value, but AudioEngine applies only its frozen compiled representation at the
+ * main-thread graph boundary. This command deliberately covers one output edge;
+ * device construction and worklet controls keep their existing owners until they
+ * have equivalent contracts.
+ */
+export type RuntimeGraphDelta = Readonly<{
+    schemaVersion: 1;
+    command: 'set-track-output';
+    correlation: Readonly<{
+        /** Expected live-engine revision immediately before this command applies. */
+        appRevision: number;
+        /** CRDT project revision that produced this graph view. */
+        projectRevision: string;
+    }>;
+    /** Source first, then the non-terminal destination when there is one. */
+    nodes: readonly RuntimeGraphDeltaNode[];
+    edges: readonly [RuntimeGraphOutputEdge];
+    /** This topology command has no continuous-control payload. */
+    parameters: readonly [];
+}>;
+
+export type RuntimeGraphDeltaNode = Readonly<{
+    id: string;
+    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+    /** Ordered exactly as the owning project's device chain. */
+    devices: readonly RuntimeGraphDeltaDevice[];
+}>;
+
+export type RuntimeGraphDeltaDevice = Readonly<{
+    id: string;
+    /** Sorted, stable parameter IDs; values are intentionally not transported by this topology command. */
+    parameterIds: readonly string[];
+}>;
+
+export type RuntimeGraphOutputEdge = Readonly<{
+    kind: 'output';
+    sourceId: string;
+    targetId: string;
+}>;
+
+export type RuntimeGraphDeltaResult =
+    | Readonly<{
+          acceptance: 'rejected';
+          application: 'not-applied';
+          reason: string;
+      }>
+    | Readonly<{
+          acceptance: 'accepted';
+          application: 'applied';
+          correlation: RuntimeGraphDelta['correlation'];
+          runtimeRevision: number;
+      }>
+    | Readonly<{
+          acceptance: 'accepted';
+          application: 'needs-reconcile';
+          /** No compensating mutation was attempted; a throwing host may be partially changed. */
+          compensation: 'not-attempted';
+          correlation: RuntimeGraphDelta['correlation'];
+          reason: string;
+          runtimeRevision: number;
+      }>;

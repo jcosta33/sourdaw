@@ -4,6 +4,7 @@ import { createMockAudioContext, type MockAudioContext } from '../../../../helpe
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
+import type { RuntimeGraphDelta } from '../../models/RuntimeGraphDelta';
 
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
 // nodes that AudioEngineImpl reads directly (preFaderTap / analyserNode for
@@ -147,6 +148,7 @@ function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
 type MockTrackNode = {
     notifyDeviceLoaded(device: unknown): void;
     rebuildChain(): void;
+    setOutput: Mock;
 };
 
 function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
@@ -165,6 +167,20 @@ function setPadTrackOutput(
     padIndex: number
 ): void {
     engine.setTrackOutput(trackId, outputId, { toasterParentTrackId, padIndex });
+}
+
+function createRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [
+            { id: 'source', kind: 'audio', devices: [] },
+            { id: 'target', kind: 'bus', devices: [] },
+        ],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'target' }],
+        parameters: [] as const,
+    };
 }
 
 describe('AudioEngine', () => {
@@ -251,6 +267,66 @@ describe('AudioEngine', () => {
         expect(source.analyserNode.connect).toHaveBeenCalledWith(deviceSendGain);
         expect(deviceSendGain.connect).toHaveBeenCalledWith(deviceBus.gainNode);
         expect(ordinarySendGain.connect).toHaveBeenCalledWith(ordinaryBus.gainNode);
+    });
+
+    it('does not route an unvalidated output edge to the master bus', () => {
+        const source = engine.ensureTrackStrip('source');
+
+        engine.setTrackOutput('source', 'missing-runtime-destination');
+
+        expect(source.outputId).not.toBe('missing-runtime-destination');
+        expect(source.analyserNode.connect).not.toHaveBeenCalledWith(engine.masterGainNode);
+    });
+
+    it('applies a revision-correlated immutable output delta once and rejects its stale replay', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const delta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+
+        const applied = engine.applyRuntimeGraphDelta(delta);
+        const staleReplay = engine.applyRuntimeGraphDelta(delta);
+
+        expect(applied).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+            runtimeRevision: 1,
+        });
+        expect(source.outputId).toBe('target');
+        expect(staleReplay).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+    });
+
+    it('requires reconciliation without claiming compensation when an accepted output delta partially fails', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const sourceNode = getMockTrackNode(engine, 'source');
+        sourceNode.setOutput.mockImplementationOnce(() => {
+            throw new Error('destination disconnected during host apply');
+        });
+
+        const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'needs-reconcile',
+            compensation: 'not-attempted',
+            runtimeRevision: 1,
+        });
+    });
+
+    it('does not touch the live graph when compiled device order no longer matches it', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        source.deviceNodes.push({ deviceId: 'runtime-device' } as never);
+
+        const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+        expect(result).toMatchObject({ acceptance: 'accepted', application: 'needs-reconcile' });
+        expect(source.outputId).toBeUndefined();
     });
 
     it('routes a Toaster pad through the child chain across reroute, rebuild, replacement, and reset', () => {
