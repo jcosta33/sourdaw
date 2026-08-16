@@ -1,5 +1,6 @@
 //! Native OS Audio Thread using CPAL
 
+use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind};
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
@@ -7,7 +8,7 @@ use crate::scheduler::{
     AudioScheduler, GraphCommand, RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rtrb::{Consumer, RingBuffer};
+use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -15,6 +16,11 @@ use std::time::Duration;
 use triple_buffer::Input;
 
 pub(crate) const MAX_CALLBACK_FRAMES: usize = 4096;
+/// The period the engine asks a device for when the device lets it choose.
+/// 512 frames is the common professional default (Live, Logic, Reaper all ship
+/// a buffer of this order): low enough for playable monitoring latency, high
+/// enough that a bridged plugin chain is not woken more often than it can serve.
+const PREFERRED_BUFFER_FRAMES: cpal::FrameCount = 512;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -133,20 +139,39 @@ fn reclaim_retired<T>(retired: T) {
     }
 }
 
+/// Spawn the audio thread against a command ring the caller already owns.
+///
+/// A single attempt, unlike `EngineHandle::new`, and deliberately so: a failed
+/// stream build consumes the command consumer along with the callbacks it was
+/// moved into, so a second attempt needs a *fresh* consumer, and only a caller
+/// holding both ends of the ring can make one. Retrying here against a ring the
+/// caller does not hold would hand back a running engine that ignores every
+/// command pushed into the caller's producer — a worse outcome than the honest
+/// failure. Callers that want the fallback build should use `EngineHandle::new`,
+/// which owns both ends and retries with the device default period.
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
     let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
-    spawn_audio_thread_with_diagnostics(command_rx, diagnostics_tx)
+    let (engine_event_tx, _engine_event_rx) = engine_event_channel();
+    spawn_audio_thread_with_diagnostics(command_rx, diagnostics_tx, engine_event_tx, false)
 }
 
 pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    engine_event_tx: Producer<EngineEvent>,
+    force_default_buffer: bool,
 ) -> Result<AudioThreadHandle, String> {
     let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
     let reclaimer_shutdown_tx = spawn_retirement_reclaimer(retired_rx)?;
 
     spawn_owned_audio_stream(move || {
-        match build_audio_stream(command_rx, retired_tx, midi_rt_diagnostics_tx) {
+        match build_audio_stream(
+            command_rx,
+            retired_tx,
+            midi_rt_diagnostics_tx,
+            engine_event_tx,
+            force_default_buffer,
+        ) {
             Ok(stream) => Ok(StreamWithReclaimerShutdown(
                 Some(stream),
                 reclaimer_shutdown_tx,
@@ -198,10 +223,64 @@ fn write_interleaved(
     }
 }
 
+/// Pick the period the engine asks the device for, intervening as rarely as it
+/// can get away with.
+///
+/// Asking for a period is not free and not local. On CoreAudio a `Fixed`
+/// request writes `kAudioDevicePropertyBufferFrameSize`, which is device-global:
+/// it changes the period for every client of that device, it is the same value
+/// the user set in Audio MIDI Setup or another DAW, and nothing here restores it
+/// afterwards. A DAW that silently rewrites a user-facing device preference has
+/// to be paying for it.
+///
+/// What it buys is bounded. A period above `MAX_CALLBACK_FRAMES` does not
+/// overrun anything: the callback chunks its fixed scratch, and the bridge
+/// clamps the frame count and counts the shortfall as
+/// `callback_frames_over_bridge_reach`. The failure is a counted throughput
+/// deficit for bridged plugins, not corruption — real, but not worth mutating a
+/// shared device setting to avoid where it cannot occur.
+///
+/// So the engine intervenes on exactly one shape of device: one whose advertised
+/// range reaches above the callback's limit *and* can be asked for something at
+/// or below it. A device that cannot exceed the limit keeps its preference
+/// untouched; a device whose whole range sits above the limit cannot be helped
+/// and keeps it too.
+fn negotiated_buffer_size(supported: &cpal::SupportedBufferSize) -> cpal::BufferSize {
+    let cpal::SupportedBufferSize::Range { min, max } = *supported else {
+        return cpal::BufferSize::Default;
+    };
+
+    let limit = MAX_CALLBACK_FRAMES as cpal::FrameCount;
+    if max <= limit || min > limit {
+        return cpal::BufferSize::Default;
+    }
+
+    cpal::BufferSize::Fixed(PREFERRED_BUFFER_FRAMES.clamp(min.max(1), limit))
+}
+
+/// The period actually requested for a given stream build.
+///
+/// `force_default` is the retry path's lever: a `Fixed` request reaches backend
+/// code a `Default` request never runs, so a build can fail for the negotiated
+/// period alone. `EngineHandle::new` then rebuilds with this set, trading the
+/// negotiation for an engine that starts.
+fn effective_buffer_size(
+    supported: &cpal::SupportedBufferSize,
+    force_default: bool,
+) -> cpal::BufferSize {
+    if force_default {
+        return cpal::BufferSize::Default;
+    }
+
+    negotiated_buffer_size(supported)
+}
+
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
     retired_tx: rtrb::Producer<RetiredGraphObjects>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    mut engine_event_tx: Producer<EngineEvent>,
+    force_default_buffer: bool,
 ) -> Result<cpal::Stream, String> {
     let host = cpal::default_host();
     let device = host
@@ -225,8 +304,26 @@ fn build_audio_stream(
         midi_rt_diagnostics_tx,
     );
 
-    // We strictly use f32 streams
-    let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+    // Ask the device for a period the callback and the plugin bridge can carry,
+    // but only where the device could otherwise exceed it (see
+    // `negotiated_buffer_size`), or not at all on the fallback build.
+    let mut stream_config: cpal::StreamConfig = config.into();
+    stream_config.buffer_size = effective_buffer_size(config.buffer_size(), force_default_buffer);
+
+    // We strictly use f32 streams.
+    //
+    // The backend runs this on the real-time thread — ALSA reports from its xrun
+    // path and WASAPI from inside the output run loop — so the callback does the
+    // one wait-free thing open to it and nothing else: push a fixed-size `Copy`
+    // event into a preallocated ring. No formatting, no stderr lock, no
+    // allocation, no wait; a full ring drops the report rather than stalling the
+    // audio side. Reporting the error is the drain side's job
+    // (`drain_engine_events`).
+    let err_fn = move |err: cpal::Error| {
+        let _ = engine_event_tx.push(EngineEvent::StreamError {
+            kind: StreamErrorKind::from(&err),
+        });
+    };
 
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => {
@@ -235,7 +332,7 @@ fn build_audio_stream(
 
             device
                 .build_output_stream(
-                    config.into(),
+                    stream_config,
                     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                         // 1. Process pending commands lock-free
                         scheduler.update_graph();
@@ -296,6 +393,7 @@ mod tests {
         spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
         spawn_retirement_reclaimer, AudioThreadHandle, StreamWithReclaimerShutdown,
     };
+    use cpal::{BufferSize, SupportedBufferSize};
     use rtrb::RingBuffer;
     use std::rc::Rc;
     use std::sync::mpsc;
@@ -340,6 +438,103 @@ mod tests {
             let _ = self.entered_tx.send(thread_name);
             let _ = self.release_rx.recv();
         }
+    }
+
+    #[test]
+    fn a_device_that_cannot_exceed_the_callback_limit_keeps_its_buffer_preference_untouched() {
+        // Asking rewrites a device-global, user-facing setting on CoreAudio, so
+        // a device whose whole range the callback can already carry must not be
+        // asked for anything at all.
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range { min: 64, max: 2048 }),
+            BufferSize::Default
+        );
+    }
+
+    #[test]
+    fn a_device_topping_out_exactly_at_the_callback_limit_keeps_its_buffer_preference_untouched() {
+        // The boundary is the whole gate: a 4096-frame ceiling is still within
+        // the callback's reach, so there is nothing to prevent.
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 1024,
+                max: super::MAX_CALLBACK_FRAMES as u32
+            }),
+            BufferSize::Default
+        );
+    }
+
+    #[test]
+    fn a_device_reaching_past_the_callback_limit_is_asked_for_the_preferred_period() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range { min: 64, max: 8192 }),
+            BufferSize::Fixed(super::PREFERRED_BUFFER_FRAMES)
+        );
+    }
+
+    #[test]
+    fn a_device_reaching_past_the_limit_with_a_coarse_minimum_is_asked_for_that_minimum() {
+        // The preferred period is unavailable here, so the request is clamped up
+        // to the smallest period the device advertises — still within reach.
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 4096,
+                max: 8192
+            }),
+            BufferSize::Fixed(super::MAX_CALLBACK_FRAMES as u32)
+        );
+    }
+
+    #[test]
+    fn a_device_whose_minimum_period_exceeds_the_callback_limit_keeps_the_device_default() {
+        // Nothing this device can be asked for stays within reach, so mutating
+        // its preference would buy nothing.
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 6144,
+                max: 8192
+            }),
+            BufferSize::Default
+        );
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range {
+                min: 8192,
+                max: 16384
+            }),
+            BufferSize::Default
+        );
+    }
+
+    #[test]
+    fn a_degenerate_empty_range_keeps_the_device_default_rather_than_asking_for_zero_frames() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Range { min: 0, max: 0 }),
+            BufferSize::Default
+        );
+    }
+
+    #[test]
+    fn a_device_advertising_no_buffer_range_keeps_the_device_default() {
+        assert_eq!(
+            super::negotiated_buffer_size(&SupportedBufferSize::Unknown),
+            BufferSize::Default
+        );
+    }
+
+    #[test]
+    fn the_fallback_build_asks_for_nothing_even_where_negotiation_would_intervene() {
+        // The retry exists because a `Fixed` request can be the sole reason a
+        // build fails, so it must not carry one on any device.
+        let negotiable = SupportedBufferSize::Range { min: 64, max: 8192 };
+
+        assert_eq!(
+            super::effective_buffer_size(&negotiable, false),
+            BufferSize::Fixed(super::PREFERRED_BUFFER_FRAMES)
+        );
+        assert_eq!(
+            super::effective_buffer_size(&negotiable, true),
+            BufferSize::Default
+        );
     }
 
     #[test]

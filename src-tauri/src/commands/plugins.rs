@@ -14,6 +14,7 @@ use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -934,8 +935,19 @@ pub async fn process_plugin_audio(
         right[i] = audio_data[i * 2 + 1];
     }
 
-    // Push input to the audio thread
-    bridge.push_input(&left, &right);
+    // Push input to the audio thread. A refusal means the input ring was full,
+    // so this block never reaches the plugin — and on the native sampler's
+    // record feed that is a hole in the recording, not a dropped frame of
+    // monitoring. It cannot fail the command: the caller is the worklet relay,
+    // an error there costs the output block that IS ready below, and the very
+    // condition being reported is the engine already running behind. So it is
+    // counted where `engine_rt_diagnostics` can see it, alongside the engine's
+    // own output-side and backlog counters.
+    if !bridge.push_input(&left, &right) {
+        state
+            .bridge_input_blocks_refused
+            .fetch_add(1, AtomicOrdering::Relaxed);
+    }
 
     // Try to pop processed output
     // This may be from the previous block with one block of latency.
@@ -1021,6 +1033,81 @@ mod tests {
             "sourdaw-{test_name}-{}-{unique_suffix}",
             std::process::id()
         ))
+    }
+
+    /// Regression (F14): `push_input` reports a refusal and the result used to
+    /// be discarded, so a block the plugin never saw looked exactly like one it
+    /// processed. Refusals must reach the diagnostics surface.
+    #[test]
+    fn a_refused_input_block_is_counted_while_an_accepted_one_is_not() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-input-refusal", Vec::new());
+        // Hold the RT side alive so the ring refuses only because it is full,
+        // not because its consumer went away.
+        let (_bridge, bridge_handle) = create_audio_bridge(17);
+        state
+            .audio_bridges
+            .lock()
+            .expect("audio bridges lock should be available")
+            .insert(17, bridge_handle);
+
+        let block_bytes = vec![0u8; 128 * 2 * 4];
+
+        tauri::async_runtime::block_on(process_plugin_audio(
+            "instance-input-refusal".to_string(),
+            block_bytes.clone(),
+            app.state::<AppState>(),
+        ))
+        .expect("a block with room in the ring should be accepted");
+        assert_eq!(
+            state
+                .bridge_input_blocks_refused
+                .load(AtomicOrdering::Relaxed),
+            0,
+            "an accepted block must not be counted as refused"
+        );
+
+        {
+            let mut bridges = state
+                .audio_bridges
+                .lock()
+                .expect("audio bridges lock should be available");
+            let bridge = bridges.get_mut(&17).expect("bridge should be registered");
+            let left = [0.0_f32; 128];
+            while bridge.push_input(&left, &left) {}
+        }
+
+        tauri::async_runtime::block_on(process_plugin_audio(
+            "instance-input-refusal".to_string(),
+            block_bytes.clone(),
+            app.state::<AppState>(),
+        ))
+        .expect("a refused input block must not fail the round trip");
+        assert_eq!(
+            state
+                .bridge_input_blocks_refused
+                .load(AtomicOrdering::Relaxed),
+            1,
+            "a block the plugin never received must be counted"
+        );
+
+        // The ring is still full, so this one is refused too. The counter is
+        // cumulative since engine start: a store rather than an add would read
+        // 1 here and make a stream refusing every period look like one hiccup.
+        tauri::async_runtime::block_on(process_plugin_audio(
+            "instance-input-refusal".to_string(),
+            block_bytes,
+            app.state::<AppState>(),
+        ))
+        .expect("a refused input block must not fail the round trip");
+        assert_eq!(
+            state
+                .bridge_input_blocks_refused
+                .load(AtomicOrdering::Relaxed),
+            2,
+            "every refused block must add to the count, not overwrite it"
+        );
     }
 
     #[test]

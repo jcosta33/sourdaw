@@ -67,6 +67,7 @@ pub fn run() {
             commands::plugins::send_plugin_midi,
             commands::plugins::update_plugin_transport,
             commands::plugins::process_plugin_audio,
+            commands::engine_diagnostics::engine_rt_diagnostics,
             // audio bridge
             // Plugin GUI
             commands::plugin_gui::is_plugin_gui_supported,

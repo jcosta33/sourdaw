@@ -6,6 +6,7 @@ use daw_plugin_host::ClapWrapper;
 use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -88,6 +89,12 @@ pub struct AppState {
     /// queued so the CPAL callback never final-drops a hosted plugin. Declared
     /// after `engine` so app teardown drops the stream before these runtimes.
     pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedClapPlugin>>>>,
+    /// Input blocks `process_plugin_audio` could not hand to a bridge because
+    /// its input ring was full. Each one is audio the plugin never saw, and on
+    /// the native sampler's record feed it is a hole in the recording — so the
+    /// refusal is counted and reported through `engine_rt_diagnostics` rather
+    /// than discarded with the block.
+    pub bridge_input_blocks_refused: Arc<AtomicU64>,
 }
 
 #[derive(Clone, Debug)]
@@ -108,6 +115,7 @@ impl Default for AppState {
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
             audio_bridges: Arc::new(Mutex::new(HashMap::new())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
+            bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
         }
     }
 }
