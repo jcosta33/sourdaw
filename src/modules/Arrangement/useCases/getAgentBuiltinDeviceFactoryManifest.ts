@@ -25,10 +25,16 @@ type AgentBuiltinDevice = {
     name: string;
     category: PluginDescriptor['category'];
     capabilities: readonly [string];
-    ports: { availability: 'unavailable'; source: 'Arrangement descriptor' };
-    latency: { availability: 'unavailable'; source: 'Arrangement descriptor' };
+    ports: {
+        inputs: readonly { id: string; channels: number }[];
+        outputs: readonly { id: string; channels: number }[];
+        sidechain: readonly { id: string; channels: number }[];
+        source: 'Arrangement descriptor strategy';
+        confidence: 'inferred';
+    };
+    latency: { samples: number | null; source: 'Arrangement descriptor strategy'; confidence: 'inferred' };
     tail: PluginDescriptor['tail'] | null;
-    presets: readonly [];
+    presets: { availability: 'none'; source: 'Arrangement descriptor strategy' };
     safetyNotes: readonly [string];
     usageRecipes: readonly [string];
     parameters: readonly AgentDeviceParameter[];
@@ -79,10 +85,16 @@ export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDev
         name: descriptor.name,
         category: descriptor.category,
         capabilities: [descriptor.category === 'instrument' ? 'instrument-generation' : 'audio-processing'],
-        ports: { availability: 'unavailable', source: 'Arrangement descriptor' },
-        latency: { availability: 'unavailable', source: 'Arrangement descriptor' },
+        ports: {
+            inputs: descriptor.category === 'instrument' ? [] : [{ id: 'main-in', channels: 2 }],
+            outputs: [{ id: 'main-out', channels: 2 }],
+            sidechain: descriptor.id === 'builtin-compressor' ? [{ id: 'sidechain-in', channels: 2 }] : [],
+            source: 'Arrangement descriptor strategy',
+            confidence: 'inferred',
+        },
+        latency: { samples: 0, source: 'Arrangement descriptor strategy', confidence: 'inferred' },
         tail: descriptor.tail ?? null,
-        presets: [],
+        presets: { availability: 'none', source: 'Arrangement descriptor strategy' },
         safetyNotes: ['Apply only declared parameter bounds through the owning device write path.'],
         usageRecipes: [
             descriptor.category === 'instrument'
