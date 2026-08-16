@@ -30,6 +30,21 @@ pub struct AudioThreadHandle {
     shutdown_complete_rx: Receiver<()>,
 }
 
+/// A handle that owns no audio stream, for tests that drive an [`crate::EngineHandle`]
+/// command ring without a device.
+///
+/// Both ends of the shutdown exchange are dropped here, so `Drop` finds the
+/// channel disconnected on its first send and returns without waiting.
+#[cfg(test)]
+pub(crate) fn detached_audio_thread_handle() -> AudioThreadHandle {
+    let (shutdown_tx, _) = mpsc::channel();
+    let (_, shutdown_complete_rx) = mpsc::channel();
+    AudioThreadHandle {
+        shutdown_tx,
+        shutdown_complete_rx,
+    }
+}
+
 struct StreamWithReclaimerShutdown<Stream>(Option<Stream>, Sender<()>);
 
 impl<Stream> Drop for StreamWithReclaimerShutdown<Stream> {

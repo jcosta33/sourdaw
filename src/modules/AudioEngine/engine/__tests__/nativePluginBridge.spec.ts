@@ -18,12 +18,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { processAudioIPC } from '#/modules/PluginHost/useCases';
+import { processAudioIPC, setPluginBypass } from '#/modules/PluginHost/useCases';
 
 import { createNativePluginBridgeNode } from '../NativePluginBridgeNode';
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
     processAudioIPC: vi.fn(),
+    setPluginBypass: vi.fn(),
     setPluginParameter: vi.fn(),
 }));
 
@@ -152,6 +153,34 @@ describe('native plugin bridge transport', () => {
         const init = node.port.postMessage.mock.calls[0]?.[0] as Record<string, unknown>;
         expect(init.type).toBe('init');
         expect(Object.keys(init).sort()).toEqual(['dropoutSab', 'type']);
+    });
+
+    it('carries a bypass toggle to the native graph instead of dropping it', async () => {
+        // The bypass used to stop at this controller with nothing behind it, so
+        // the Rust-side plugin kept processing whatever still reached it while
+        // the rack showed it bypassed.
+        vi.mocked(setPluginBypass).mockResolvedValue();
+        const bridge = await createNativePluginBridgeNode(new AudioContext(), 'instance-1');
+
+        bridge.setBypass(true);
+        bridge.setBypass(false);
+
+        expect(vi.mocked(setPluginBypass).mock.calls.map(([input]) => input)).toEqual([
+            { instanceId: 'instance-1', bypassed: true },
+            { instanceId: 'instance-1', bypassed: false },
+        ]);
+    });
+
+    it('survives a native graph that refuses the bypass', async () => {
+        // A refusal here is a control-path failure, not an audio one: the
+        // WebAudio chain rebuild still takes the device out of the path, so the
+        // user's bypass holds. Rejecting into an unhandled promise would take
+        // the surrounding UI call with it.
+        vi.mocked(setPluginBypass).mockRejectedValue(new Error('Native engine not running'));
+        const bridge = await createNativePluginBridgeNode(new AudioContext(), 'instance-1');
+
+        expect(() => bridge.setBypass(true)).not.toThrow();
+        await Promise.resolve();
     });
 
     it('keeps one block in flight and resumes relaying after the host answers', async () => {

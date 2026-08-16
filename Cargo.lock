@@ -1694,7 +1694,6 @@ name = "daw-engine"
 version = "0.1.0"
 dependencies = [
  "cpal",
- "daw-core",
  "daw-dsp",
  "rtrb",
  "triple_buffer",

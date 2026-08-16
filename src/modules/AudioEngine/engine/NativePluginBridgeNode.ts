@@ -16,14 +16,14 @@
  * the last processed block, so a drop is a stale block rather than a hole.
  */
 
-import { processAudioIPC, setPluginParameter } from '#/modules/PluginHost/useCases';
+import { processAudioIPC, setPluginBypass, setPluginParameter } from '#/modules/PluginHost/useCases';
 
 import { DROPOUT_IDX, dropoutCounters } from './dropoutCounter';
 
 export type NativePluginBridgeResult = {
     workletNode: AudioWorkletNode;
     setParam: (paramId: number, value: number) => void;
-    setBypass: (_bypassed: boolean) => void;
+    setBypass: (bypassed: boolean) => void;
     destroy: () => void;
 };
 
@@ -117,8 +117,14 @@ export async function createNativePluginBridgeNode(
                 value,
             }).catch(() => {});
         },
-        setBypass(_bypassed: boolean) {
-            // TODO: Send bypass command to native engine
+        setBypass(bypassed: boolean) {
+            // The chain rebuild that follows unroutes this worklet, but not
+            // until the next rebuild tick, and blocks already in flight would
+            // still come back processed. Telling the native graph directly
+            // makes the bypass take effect on the audio thread immediately,
+            // and stops MIDI queued while bypassed from banking up into a
+            // burst of stale note-ons when it is released.
+            void setPluginBypass({ instanceId, bypassed }).catch(() => {});
         },
         destroy() {
             try {

@@ -850,6 +850,50 @@ pub async fn send_plugin_midi(
     )
 }
 
+/// Resolve the engine plugin id an instance was registered under.
+///
+/// Split out because two commands need the same lookup and the same refusal:
+/// an instance with no engine-owned runtime has nothing on the audio thread to
+/// address, and guessing an id would address whichever plugin happens to hold
+/// it.
+fn engine_plugin_id_for_instance(instance_id: &str, state: &AppState) -> Result<usize, String> {
+    let engine_plugins = state
+        .engine_plugins
+        .lock()
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    engine_plugins
+        .get(instance_id)
+        .map(|data| data.engine_plugin_id)
+        .ok_or_else(|| format!("No engine plugin for instance {}", instance_id))
+}
+
+/// Bypass or un-bypass a natively hosted plugin on the audio thread.
+///
+/// Keyed by `instance_id` for the same reason as `process_plugin_audio`: the
+/// engine plugin id is reserved inside the audio engine and the frontend has no
+/// reliable way to learn it.
+///
+/// Bypass is not unloading. The instance, its parameters and its editor stay
+/// exactly as they were — the professional convention — and only its processing
+/// stops, so re-enabling it is instant rather than a reload.
+#[tauri::command]
+
+pub async fn set_plugin_bypass(
+    instance_id: String,
+    bypassed: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let engine_plugin_id = engine_plugin_id_for_instance(&instance_id, state.inner())?;
+
+    let mut engine_guard = state
+        .engine
+        .lock()
+        .map_err(|e| format!("Failed to lock engine: {}", e))?;
+    let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
+
+    engine.set_bypass(engine_plugin_id, bypassed)
+}
+
 /// Update the global transport state for all native plugins (lock-free).
 #[tauri::command]
 
@@ -898,16 +942,7 @@ pub async fn process_plugin_audio(
     audio_bytes: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
-    let engine_plugin_id = {
-        let engine_plugins = state
-            .engine_plugins
-            .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-        engine_plugins
-            .get(&instance_id)
-            .map(|data| data.engine_plugin_id)
-            .ok_or_else(|| format!("No engine plugin for instance {}", instance_id))?
-    };
+    let engine_plugin_id = engine_plugin_id_for_instance(&instance_id, state.inner())?;
 
     let mut bridges = state
         .audio_bridges
@@ -1021,6 +1056,59 @@ mod tests {
                 parameters,
                 has_gui: true,
             },
+        );
+    }
+
+    /// A bypass toggle addressed to an instance the engine never took must say
+    /// so. Resolving it to a default id would silence, or un-silence, whichever
+    /// plugin happens to hold that id.
+    #[test]
+    fn bypassing_an_instance_with_no_engine_runtime_names_the_instance() {
+        let app = command_test_app();
+
+        let refusal = tauri::async_runtime::block_on(set_plugin_bypass(
+            "never-loaded".to_string(),
+            true,
+            app.state::<AppState>(),
+        ));
+
+        assert_eq!(
+            refusal,
+            Err("No engine plugin for instance never-loaded".to_string())
+        );
+    }
+
+    /// The instance resolves, so the refusal has to come from the next step —
+    /// there is no audio thread to carry the command. A single generic error
+    /// for both cases would leave a user unable to tell a missing plugin from a
+    /// stopped engine.
+    #[test]
+    fn bypassing_a_resolved_instance_without_a_running_engine_reports_the_engine() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-bypass", Vec::new());
+
+        let refusal = tauri::async_runtime::block_on(set_plugin_bypass(
+            "instance-bypass".to_string(),
+            true,
+            app.state::<AppState>(),
+        ));
+
+        assert_eq!(refusal, Err("Native engine not running".to_string()));
+    }
+
+    /// `process_plugin_audio` and `set_plugin_bypass` must address the same
+    /// plugin for the same instance id: a bypass that resolved differently from
+    /// the audio path would mute a plugin the app is still feeding.
+    #[test]
+    fn every_command_resolves_one_instance_to_the_same_engine_plugin_id() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-shared-lookup", Vec::new());
+
+        assert_eq!(
+            engine_plugin_id_for_instance("instance-shared-lookup", state.inner()),
+            Ok(17)
         );
     }
 

@@ -116,6 +116,19 @@ impl EngineHandle {
             .map_err(|_| "Audio command queue full".to_string())
     }
 
+    /// Bypass or un-bypass an effect or plugin on the native graph.
+    ///
+    /// A bypassed entry keeps its instance and its state — the professional
+    /// convention, so re-enabling it does not reload the plugin — but stops
+    /// processing: bridged audio is returned untouched, and MIDI queued while
+    /// bypassed is discarded rather than banked into a burst of stale note-ons
+    /// at the moment it is re-enabled.
+    pub fn set_bypass(&mut self, id: usize, bypassed: bool) -> Result<(), String> {
+        self.command_tx
+            .push(GraphCommand::SetBypass(id, bypassed))
+            .map_err(|_| "Audio command queue full".to_string())
+    }
+
     /// Add a native plugin (CLAP/VST3) to the audio thread's processing chain.
     /// Returns the assigned plugin ID for future reference.
     pub fn add_plugin(&mut self, plugin: Box<dyn NativePlugin>) -> Result<usize, String> {
@@ -178,25 +191,106 @@ impl EngineHandle {
             .push(GraphCommand::SetTransport(state))
             .map_err(|_| "Audio command queue full".to_string())
     }
+}
 
-    /// Create and register a ring-buffer audio bridge for a plugin.
-    /// Returns the handle that the main thread uses to push/pop audio blocks.
-    pub fn create_audio_bridge(
-        &mut self,
-        plugin_id: usize,
-    ) -> Result<audio_bridge::PluginAudioBridgeHandle, String> {
-        let (bridge, handle) = audio_bridge::create_audio_bridge(plugin_id);
-        self.command_tx
-            .push(GraphCommand::RegisterAudioBridge(bridge))
-            .map_err(|_| "Audio command queue full".to_string())?;
-        Ok(handle)
-    }
+/// Build a handle whose commands land in the returned consumer.
+///
+/// The audio thread is the only thing an `EngineHandle` cannot have in a test —
+/// it needs a real output device — and it is also the only part a command test
+/// does not exercise: a command's whole journey is the ring between this handle
+/// and [`scheduler::AudioScheduler`], which a test can drive directly.
+#[cfg(test)]
+fn engine_handle_for_command_capture(capacity: usize) -> (EngineHandle, Consumer<GraphCommand>) {
+    let (command_tx, command_rx) = RingBuffer::new(capacity);
+    let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+    let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+
+    (
+        EngineHandle {
+            command_tx,
+            _audio_thread: audio_thread::detached_audio_thread_handle(),
+            next_plugin_id: 1000,
+            midi_rt_diagnostics: diagnostics_reader,
+            engine_events: engine_event_rx,
+        },
+        command_rx,
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::spawn_with_fallback;
+    use super::{engine_handle_for_command_capture, spawn_with_fallback};
+    use crate::audio_bridge::create_audio_bridge;
+    use crate::plugin_slot::NativePlugin;
+    use crate::scheduler::AudioScheduler;
+    use rtrb::RingBuffer;
+    use std::any::Any;
     use std::cell::RefCell;
+
+    /// Overwrites whatever it is handed, so a block it never touched is
+    /// distinguishable from one it processed.
+    struct OverwritingPlugin;
+
+    impl NativePlugin for OverwritingPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                left[index] = 0.25;
+                right[index] = 0.25;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "overwriting-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The bypass a user toggles on a natively hosted plugin has to reach the
+    /// audio thread to mean anything: the whole point is that the plugin keeps
+    /// its instance and its state while its audio passes it by.
+    #[test]
+    fn set_bypass_reaches_the_scheduler_and_returns_bridged_audio_untouched() {
+        let (mut engine, command_rx) = engine_handle_for_command_capture(16);
+        let (retired_tx, _retired_rx) = RingBuffer::new(16);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        let (bridge, mut bridge_handle) = create_audio_bridge(42);
+
+        engine
+            .add_plugin_with_bridge(42, Box::new(OverwritingPlugin), bridge)
+            .expect("the plugin should reach the graph");
+        engine
+            .set_bypass(42, true)
+            .expect("the bypass should reach the graph");
+        scheduler.update_graph();
+
+        assert!(bridge_handle.push_input(&[0.5; 4], &[0.5; 4]));
+        scheduler.process_audio_bridges(512);
+        let bypassed = bridge_handle.pop_output().expect("the bypassed block");
+        assert_eq!(
+            &bypassed.left[..4],
+            &[0.5; 4],
+            "a bypassed plugin must not process the block"
+        );
+
+        // And the toggle is a toggle: releasing bypass puts the same instance
+        // back on the signal path without reloading it.
+        engine
+            .set_bypass(42, false)
+            .expect("the bypass release should reach the graph");
+        scheduler.update_graph();
+
+        assert!(bridge_handle.push_input(&[0.5; 4], &[0.5; 4]));
+        scheduler.process_audio_bridges(512);
+        let processed = bridge_handle.pop_output().expect("the processed block");
+        assert_eq!(&processed.left[..4], &[0.25; 4]);
+    }
 
     #[test]
     fn a_start_that_negotiates_its_period_is_the_only_attempt_made() {
