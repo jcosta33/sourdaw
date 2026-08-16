@@ -61,16 +61,31 @@ export async function createNativePluginBridgeNode(
     // Nothing else re-asserts native bypass state, so the last requested
     // value is held here until the native side confirms it, and re-sent on
     // each completed round trip until it does.
+    //
+    // Two properties keep that loop honest. Sends are totally ordered — one
+    // outstanding at a time, later ones queued behind it — because
+    // `set_plugin_bypass` waits on the engine mutex and two concurrent sends
+    // can reach the graph in either order, leaving the native side holding the
+    // older value. And only the newest send may record confirmation: an
+    // identical value sent earlier resolving proves nothing about the request
+    // standing now, so counting it would confirm a value the native graph does
+    // not hold and retire the re-assertion for good.
+    //
+    // The single-flight rule is also what keeps the loop cheap. A plugin load
+    // holds the engine mutex for hundreds of milliseconds while audio round
+    // trips keep completing on a different lock, so a re-send per round trip
+    // would bank up one mutex-blocked task per audio block.
     let requestedBypass: boolean | null = null;
     let bypassConfirmed = false;
     let bypassRefusalLogged = false;
+    let bypassSeq = 0;
+    let bypassInFlight = false;
+    let lastBypassSend: Promise<void> = Promise.resolve();
 
-    function sendBypass(bypassed: boolean): void {
-        void setPluginBypass({ instanceId, bypassed })
+    function dispatchBypass(bypassed: boolean, seq: number): Promise<void> {
+        return setPluginBypass({ instanceId, bypassed })
             .then(() => {
-                // A later request supersedes this one; only the value still
-                // wanted may be marked as agreed with the native graph.
-                if (requestedBypass === bypassed) {
+                if (seq === bypassSeq) {
                     bypassConfirmed = true;
                 }
             })
@@ -83,11 +98,28 @@ export async function createNativePluginBridgeNode(
                         `[WebAudioEngine] Native plugin bypass (${String(bypassed)}) refused, re-asserting: ${String(error)}`
                     );
                 }
+            })
+            .then(() => {
+                // Only the last link of the chain reopens the gate; a settled
+                // send with a successor behind it hands the flight straight on.
+                if (seq === bypassSeq) {
+                    bypassInFlight = false;
+                }
             });
     }
 
+    function sendBypass(bypassed: boolean): void {
+        const seq = ++bypassSeq;
+        if (bypassInFlight) {
+            lastBypassSend = lastBypassSend.then(() => dispatchBypass(bypassed, seq));
+            return;
+        }
+        bypassInFlight = true;
+        lastBypassSend = dispatchBypass(bypassed, seq);
+    }
+
     function reassertBypassIfUnconfirmed(): void {
-        if (requestedBypass === null || bypassConfirmed) {
+        if (requestedBypass === null || bypassConfirmed || bypassInFlight) {
             return;
         }
         sendBypass(requestedBypass);
@@ -172,7 +204,9 @@ export async function createNativePluginBridgeNode(
             // still come back processed. Telling the native graph directly
             // makes the bypass take effect on the audio thread immediately,
             // and stops MIDI queued while bypassed from banking up into a
-            // burst of stale note-ons when it is released.
+            // burst of stale note-ons when it is released. A toggle thrown
+            // while a send is still out is never dropped: it goes out the
+            // moment that one settles, and its value is the one that stands.
             requestedBypass = bypassed;
             bypassConfirmed = false;
             bypassRefusalLogged = false;
