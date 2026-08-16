@@ -1,0 +1,25 @@
+src/modules/PluginHost/useCases/getAgentDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_6a52e18e1109c1 32-34
+  s_a40848e8f8cca9::t_063546e6cc131d 35-36
+src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts
+  s_a40848e8f8cca9::t_d1600f0a822797 1,7-11,21-24,31-35,42-72
+  s_a40848e8f8cca9::t_bd9c0f369757f5 3
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_a40848e8f8cca9::t_6a52e18e1109c1 12-14,16-18,27-29,32-33,53,57,63-65,67-69,81-83,86-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f5a7e33b164899095fdeaeccbc91f868849e68c7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
