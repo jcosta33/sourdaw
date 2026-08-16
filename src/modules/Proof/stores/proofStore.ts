@@ -5,7 +5,7 @@
 
 import { createStore } from '#/infra/store/createStore';
 
-import { type ProofPatch, DEFAULT_PATCH } from '../models/ProofPatch';
+import { type ProofPatch, DEFAULT_PATCH, cloneProofPatch } from '../models/ProofPatch';
 
 /**
  * Real-time metering data shape pushed from the WASM audio engine.
@@ -48,7 +48,7 @@ export type ProofState = {
 };
 
 export const DEFAULT_PROOF_STATE: ProofState = {
-    patch: { ...DEFAULT_PATCH },
+    patch: cloneProofPatch(DEFAULT_PATCH),
     projectPatchHydrated: false,
     uiLevel: 1,
     inputLufs: -100,
@@ -73,12 +73,14 @@ export const proofStore = createStore<ProofInstances>({ initialData: {} });
  * Build a fresh default state with its own mutable arrays. A shallow spread of
  * `DEFAULT_PROOF_STATE` would alias the singleton's `tapPeaks`/`dynGr` arrays
  * across every fallback caller, so a later in-place write to one instance would
- * leak into the shared default and every other fallback.
+ * leak into the shared default and every other fallback. The patch carries the
+ * same hazard one level deeper — its band arrays and band objects — so it is
+ * cloned rather than spread.
  */
 function createDefaultProofState(): ProofState {
     return {
         ...DEFAULT_PROOF_STATE,
-        patch: { ...DEFAULT_PATCH },
+        patch: cloneProofPatch(DEFAULT_PATCH),
         dynGr: [...DEFAULT_PROOF_STATE.dynGr],
         tapPeaks: DEFAULT_PROOF_STATE.tapPeaks.map((peak) => ({ ...peak })),
     };
@@ -165,7 +167,50 @@ type LoadProofPatchInput = {
 export function loadProofPatch({ deviceId, patch }: LoadProofPatchInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
-    proofStore.set({ ...instances, [deviceId]: { ...state, patch, projectPatchHydrated: true } });
+    // Cloned because the common caller hands over a factory preset's own patch
+    // object: storing it directly would make the live device and the immutable
+    // factory preset the same bands.
+    proofStore.set({
+        ...instances,
+        [deviceId]: { ...state, patch: cloneProofPatch(patch), projectPatchHydrated: true },
+    });
+}
+
+function areMetersUnchanged(state: ProofState, meters: ProofMeterData): boolean {
+    if (
+        state.inputLufs !== meters.inputLufs ||
+        state.outputLufs !== meters.outputLufs ||
+        state.outputStLufs !== meters.outputStLufs ||
+        state.integratedLufs !== meters.integratedLufs ||
+        state.truePeakDb !== meters.truePeakDb ||
+        state.lra !== meters.lra ||
+        state.correlation !== meters.correlation ||
+        state.limiterGrDb !== meters.limiterGrDb ||
+        state.latency !== meters.latency
+    ) {
+        return false;
+    }
+
+    for (let band = 0; band < state.dynGr.length; band++) {
+        if (state.dynGr[band] !== meters.dynGr[band]) {
+            return false;
+        }
+    }
+
+    if (state.tapPeaks.length !== meters.tapPeaks.length) {
+        return false;
+    }
+
+    for (let tap = 0; tap < state.tapPeaks.length; tap++) {
+        if (
+            state.tapPeaks[tap]?.peakL !== meters.tapPeaks[tap]?.peakL ||
+            state.tapPeaks[tap]?.peakR !== meters.tapPeaks[tap]?.peakR
+        ) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -178,7 +223,17 @@ export function loadProofPatch({ deviceId, patch }: LoadProofPatchInput): void {
  */
 export function updateProofMeters(deviceId: string, meters: ProofMeterData): void {
     const instances = proofStore.value ?? {};
-    const state = instances[deviceId] ?? createDefaultProofState();
+    const existing = instances[deviceId];
+    // A frame carrying the same numbers as the last one — silence, or a stopped
+    // transport — must not publish new instance and array identities, or every
+    // subscriber wakes ~62 times a second to render values it already shows.
+    // The comparison reads scalars and allocates nothing, so it stays fit for
+    // the RT-fed path. Skipped only when the instance exists: the first frame
+    // has to create it.
+    if (existing && areMetersUnchanged(existing, meters)) {
+        return;
+    }
+    const state = existing ?? createDefaultProofState();
     proofStore.set({
         ...instances,
         [deviceId]: {

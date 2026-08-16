@@ -6,11 +6,11 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 
-import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
-
 type LoudnessHistoryProps = {
-    /** Current momentary LUFS value. */
-    momentaryLufs: number;
+    /** Retained momentary-LUFS samples, oldest first. */
+    samples: readonly number[];
+    /** Slots the time axis spans, so a partial history draws at its true width. */
+    capacity: number;
     /** Target LUFS for the platform. */
     targetLufs: number;
     /** Integrated LUFS (shown as reference line). */
@@ -19,20 +19,18 @@ type LoudnessHistoryProps = {
     height: number;
 };
 
-const HISTORY_LENGTH = 300; // ~30 seconds at 10fps
 const MIN_DB = -60;
 const MAX_DB = 0;
 
 export const LoudnessHistory = ({
-    momentaryLufs,
+    samples,
+    capacity,
     targetLufs,
     integratedLufs,
     width,
     height,
 }: LoudnessHistoryProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const historyRef = useRef<Float32Array>(createCompactFloatBuffer({ length: HISTORY_LENGTH }));
-    const posRef = useRef(0);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -51,13 +49,8 @@ export const LoudnessHistory = ({
     }, [width, height]);
 
     useEffect(() => {
-        const history = historyRef.current;
-        history[posRef.current % HISTORY_LENGTH] = momentaryLufs;
-        posRef.current++;
-
-        const historyLength = Math.min(posRef.current, HISTORY_LENGTH);
-        const pos = posRef.current;
-        const readHistory = (i: number): number => history[(pos - historyLength + i) % HISTORY_LENGTH]!;
+        const historyLength = samples.length;
+        const readHistory = (i: number): number => samples[i] ?? 0;
 
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -128,7 +121,7 @@ export const LoudnessHistory = ({
 
         // Draw momentary LUFS history as filled area
         if (historyLength > 1) {
-            const stepX = w / HISTORY_LENGTH;
+            const stepX = w / capacity;
             const startX = w - historyLength * stepX;
 
             // Fill
@@ -179,7 +172,7 @@ export const LoudnessHistory = ({
             const y = ((db - MAX_DB) / (MIN_DB - MAX_DB)) * h;
             ctx.fillText(`${db}`, w - 3, y - 2);
         }
-    }, [momentaryLufs, targetLufs, integratedLufs, width, height]);
+    }, [samples, capacity, targetLufs, integratedLufs, width, height]);
 
     return <canvas ref={canvasRef} style={{ width, height }} className="rounded" aria-label="Loudness history graph" />;
 };

@@ -49,6 +49,18 @@ describe('setProofParam', () => {
         expect(persistDeviceParam).toHaveBeenCalledWith('unregistered', 'input_gain', 3);
     });
 
+    it('reaches the engine with ab_bypass but never the project', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParam({ deviceId: 'dev-1', name: 'ab_bypass', value: 1 });
+
+        // A/B compare is a listening aid. Persisted, it reloads as a project
+        // whose entire Proof chain is silently bypassed.
+        expect(bridge.setParam).toHaveBeenCalledWith('ab_bypass', 1);
+        expect(persistDeviceParam).not.toHaveBeenCalled();
+    });
+
     it.each(['missing', 'ineligible'] as const)('rejects a %s owner before bridge or persistence effects', (status) => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);

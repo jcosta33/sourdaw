@@ -865,6 +865,14 @@ describe('AudioEngine', () => {
             expect(actual.playback).toBeNull();
         });
 
+        it('reports audio as unavailable on the shim and available on a live context', () => {
+            // The shim's nodes are structurally real, so a consumer that inspects
+            // one — connecting a tap, reading the context state — cannot tell the
+            // two apart. This read is the only thing that can.
+            expect(fbEngine.isAudioAvailable()).toBe(false);
+            expect(createAudioEngine(asAudioContext(createMockAudioContext())).isAudioAvailable()).toBe(true);
+        });
+
         it('does not report fallback shim strips as a live graph', () => {
             fbEngine.ensureTrackStrip('track-1');
             fbEngine.ensureBusStrip('bus-1');

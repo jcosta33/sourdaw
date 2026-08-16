@@ -449,6 +449,13 @@ export type AudioEngine = {
     getHealth(): AudioEngineHealth;
     getDiagnostics(): AudioEngineDiagnostics;
     getDeviceReadinessDiagnostics(): AudioEngineDeviceReadinessDiagnostics;
+    /**
+     * False when the engine runs on its silent fallback shim. Every node it hands
+     * out is structurally real there, so a caller that inspects a node instead —
+     * connecting to it, reading its context state — cannot tell a dead graph from
+     * a live one and reports silence as a measurement.
+     */
+    isAudioAvailable(): boolean;
     /** Start a new Chrome latency min/average/max measurement window. */
     resetPlaybackLatencyStats(): void;
     dispose(): Promise<void>;

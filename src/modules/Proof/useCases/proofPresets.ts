@@ -1,7 +1,7 @@
 /**
  * Proof mastering suite factory presets.
  */
-import { type ProofPatch, DEFAULT_PATCH } from '../models/ProofPatch';
+import { type ProofPatch, DEFAULT_PATCH, cloneProofPatch } from '../models/ProofPatch';
 
 export type ProofPreset = {
     id: string;
@@ -10,8 +10,11 @@ export type ProofPreset = {
     patch: ProofPatch;
 };
 
+// Cloned so no preset shares a band array with `DEFAULT_PATCH` or with another
+// preset: an override names some arrays, and the ones it leaves out would
+// otherwise be the module default's own.
 function preset(id: string, name: string, category: string, overrides: Partial<ProofPatch>): ProofPreset {
-    return { id, name, category, patch: { ...DEFAULT_PATCH, ...overrides, name, presetId: id } };
+    return { id, name, category, patch: cloneProofPatch({ ...DEFAULT_PATCH, ...overrides, name, presetId: id }) };
 }
 
 export const PROOF_PRESETS: readonly ProofPreset[] = [
