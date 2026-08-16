@@ -1,0 +1,53 @@
+src/modules/Proof/presentations/hooks/useProofLoudnessHistory.ts
+  s_ab5443e65c7fba::t_e603767b7ae57d 24
+  s_ab5443e65c7fba::t_a89f14538e83b0 21-23,25-26,28-35
+  s_ab5443e65c7fba::t_bd7d35c7304b82 27
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_ab5443e65c7fba::t_e2d03f766aee59 37
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ab5443e65c7fba::t_69a4472d28c0cc 452-458
+src/modules/Proof/presentations/hooks/useProofAnalyser.ts
+  s_ab5443e65c7fba::t_d7f258358fdc21 10,17-25
+  s_ab5443e65c7fba::t_afa03d8bc8daa7 117
+  s_ab5443e65c7fba::t_fb99bad9a5ba35 52-54,56,59-61,74
+  s_ab5443e65c7fba::t_689615f29d8005 55
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ab5443e65c7fba::t_cad522ea5d16e6 868-875
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ab5443e65c7fba::t_5bc5e567e9856a 515-518
+src/modules/AudioEngine/useCases/index.ts
+  s_ab5443e65c7fba::t_778bd1ab8ec0c6 70
+src/modules/Proof/presentations/hooks/__tests__/useProofAnalyser.spec.ts
+  s_ab5443e65c7fba::t_ff3465156c625a 168-171,174-175,180-182,185,192-194
+  s_ab5443e65c7fba::t_6bb30a55e165c4 9,16
+  s_ab5443e65c7fba::t_78b177df1d17ae 91
+  s_ab5443e65c7fba::t_21b0fc7d8043cd 59
+  s_ab5443e65c7fba::t_a3cb7d11a2f9a0 38
+src/modules/AudioEngine/useCases/engineAccess/isEngineAudioAvailable.ts
+  s_ab5443e65c7fba::t_527cad41f1c3e8 1-6
+src/modules/Proof/presentations/components/__tests__/TonalBalance.spec.tsx
+  s_ab5443e65c7fba::t_718955d2c11259 273-295
+  s_ab5443e65c7fba::t_68f75d73725502 4
+  s_ab5443e65c7fba::t_b8dfc01aa267d2 2
+  s_ab5443e65c7fba::t_78ae357e0988ef 1,6,9-51
+  s_ab5443e65c7fba::t_bbdb788e6fff22 65-72
+  s_ab5443e65c7fba::t_5e8a027cf36441 52
+src/modules/Proof/presentations/hooks/__tests__/useProofLoudnessHistory.spec.ts
+  s_ab5443e65c7fba::t_76146d37448f12 103-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9c631483f60feaf6dcb83b6abe78e5705c290e46",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
