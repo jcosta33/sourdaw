@@ -7,6 +7,18 @@
  * in `startPluginScan` cannot drift from the DTO it persists. Field names are
  * snake_case because this mirrors the serialized Rust payload verbatim.
  */
+export type ScannedPluginParameter = {
+    id: number;
+    name: string;
+    min_value: number;
+    max_value: number;
+    default_value: number;
+    is_automatable: boolean;
+    is_modulatable: boolean;
+    is_stepped: boolean;
+    is_enum: boolean;
+};
+
 export type ScannedPlugin = {
     id: string;
     name: string;
@@ -26,4 +38,11 @@ export type ScannedPlugin = {
     num_outputs: number;
     num_parameters: number;
     has_custom_ui: boolean;
+    /**
+     * Present only when the bounded scanner process created, initialized,
+     * inspected, and destroyed a CLAP metadata instance without activation.
+     */
+    parameters?: ScannedPluginParameter[];
+    /** A safe scanner disposition; never a plugin-originated diagnostic payload. */
+    parameter_metadata_reason?: string;
 };

@@ -241,7 +241,25 @@ pub async fn scan_plugins(
                 }
                 scanned_paths.push(candidate.clone());
                 match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
-                    Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
+                    Ok(mut metadata) => {
+                        let parameter_remaining =
+                            deadline.saturating_duration_since(Instant::now());
+                        if parameter_remaining.is_zero() {
+                            metadata.parameter_metadata_reason =
+                                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string());
+                        } else if let Ok(parameters) =
+                            plugin_scan_worker::scan_clap_parameter_metadata(
+                                &candidate,
+                                parameter_remaining,
+                            )
+                        {
+                            metadata.parameters = Some(parameters);
+                        } else {
+                            metadata.parameter_metadata_reason =
+                                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string());
+                        }
+                        plugins.push(scanner::scanned_plugin(&candidate, metadata));
+                    }
                     Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
                 }
             }
@@ -2376,6 +2394,8 @@ mod tests {
             num_outputs: 2,
             num_parameters: 0,
             has_custom_ui: true,
+            parameters: Some(vec![]),
+            parameter_metadata_reason: None,
         }
     }
 

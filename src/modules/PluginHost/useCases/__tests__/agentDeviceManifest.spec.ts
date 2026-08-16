@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
 
 import { defaultPluginScanState, pluginScanStore } from '../../stores/pluginScanStore';
+import { type ScannedPlugin } from '../../models/ScannedPlugin';
 import { getAgentDeviceFactoryManifest } from '../getAgentDeviceFactoryManifest';
 
 describe('agent device factory manifest', () => {
@@ -83,6 +84,198 @@ describe('agent device factory manifest', () => {
             }),
         ]);
         expect(JSON.stringify(manifest)).not.toContain('/plugins/example.clap');
+    });
+
+    it('projects only scanner-declared CLAP parameter facts without inferring units, steps, or choices', () => {
+        const scannedPlugin: ScannedPlugin & {
+            parameters: Array<{
+                id: number;
+                name: string;
+                min_value: number;
+                max_value: number;
+                default_value: number;
+                is_automatable: boolean;
+                is_modulatable: boolean;
+                is_stepped: boolean;
+                is_enum: boolean;
+            }>;
+        } = {
+            id: 'scan-id',
+            clap_id: 'org.example.effect',
+            name: 'Example Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/example.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 1,
+            has_custom_ui: true,
+            parameters: [
+                {
+                    id: 7,
+                    name: 'Gain',
+                    min_value: -12,
+                    max_value: 12,
+                    default_value: 0,
+                    is_automatable: true,
+                    is_modulatable: true,
+                    is_stepped: true,
+                    is_enum: false,
+                },
+            ],
+        };
+        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [scannedPlugin] });
+
+        expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toEqual([
+            expect.objectContaining({
+                configuration: { availability: 'available', source: 'plugin-scan' },
+                parameterDescriptors: {
+                    availability: 'available',
+                    source: 'plugin-scan.parameter-descriptors-v1',
+                },
+                parameters: [
+                    {
+                        id: 'clap-param:7',
+                        name: 'Gain',
+                        type: {
+                            availability: 'unavailable',
+                            reason: 'CLAP parameter metadata does not declare a value type.',
+                        },
+                        unit: {
+                            availability: 'unavailable',
+                            reason: 'CLAP parameter metadata does not declare a unit.',
+                        },
+                        bounds: { minimum: -12, maximum: 12 },
+                        default: 0,
+                        step: {
+                            availability: 'unavailable',
+                            reason: 'CLAP parameter metadata does not declare a step size.',
+                        },
+                        choices: {
+                            availability: 'unavailable',
+                            reason: 'CLAP parameter metadata does not declare discrete choices.',
+                        },
+                        automatable: true,
+                        modulatable: true,
+                        flags: { stepped: true, enum: false },
+                        metadata: { source: 'plugin-scan', confidence: 'declared' },
+                    },
+                ],
+            }),
+        ]);
+    });
+
+    it('fails closed for malformed scanner parameter metadata', () => {
+        const scannedPlugin: ScannedPlugin & {
+            parameters: Array<{
+                id: number;
+                name: string;
+                min_value: number;
+                max_value: number;
+                default_value: number;
+                is_automatable: boolean;
+                is_modulatable: boolean;
+                is_stepped: boolean;
+                is_enum: boolean;
+            }>;
+        } = {
+            id: 'scan-id',
+            clap_id: 'org.example.effect',
+            name: 'Example Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/example.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 1,
+            has_custom_ui: true,
+            parameters: [
+                {
+                    id: 7,
+                    name: 'x'.repeat(129),
+                    min_value: -12,
+                    max_value: 12,
+                    default_value: 0,
+                    is_automatable: true,
+                    is_modulatable: true,
+                    is_stepped: false,
+                    is_enum: false,
+                },
+            ],
+        };
+        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [scannedPlugin] });
+
+        expect(getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices).toEqual([
+            expect.objectContaining({
+                parameters: [],
+                parameterDescriptors: expect.objectContaining({ availability: 'unavailable' }),
+                configuration: expect.objectContaining({ availability: 'unavailable' }),
+            }),
+        ]);
+    });
+
+    it('deduplicates equivalent parameter contracts and conflicts when one contract changes', () => {
+        const base: ScannedPlugin = {
+            id: 'scan-a',
+            clap_id: 'org.example.effect',
+            name: 'Example Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/a.clap',
+            version: '1.0.0',
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 1,
+            has_custom_ui: true,
+            parameters: [
+                {
+                    id: 7,
+                    name: 'Gain',
+                    min_value: -12,
+                    max_value: 12,
+                    default_value: 0,
+                    is_automatable: true,
+                    is_modulatable: true,
+                    is_stepped: false,
+                    is_enum: false,
+                },
+            ],
+        };
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [base, { ...base, id: 'scan-b', path: '/plugins/b.clap' }],
+        });
+        const equivalent = getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices;
+        expect(equivalent).toHaveLength(1);
+        const equivalentVersion = equivalent[0]?.version;
+
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [
+                base,
+                {
+                    ...base,
+                    id: 'scan-c',
+                    path: '/plugins/c.clap',
+                    parameters: [{ ...base.parameters![0]!, default_value: 3 }],
+                },
+            ],
+        });
+        const conflicting = getAgentDeviceFactoryManifest(['clap:org.example.effect']).devices;
+        expect(conflicting).toEqual([
+            expect.objectContaining({
+                configuration: expect.objectContaining({
+                    availability: 'unavailable',
+                    reason: expect.stringContaining('Conflicting'),
+                }),
+            }),
+        ]);
+        expect(conflicting[0]?.version).not.toBe(equivalentVersion);
     });
 
     it('bounds scan metadata and never forwards raw filesystem paths', () => {
