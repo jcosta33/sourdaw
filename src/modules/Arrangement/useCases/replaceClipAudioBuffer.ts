@@ -63,7 +63,7 @@ export function replaceClipAudioBuffer(clipId: string, newBufferId: string): boo
     });
 
     // New source audio invalidates any analyzed pitch contour: clear it so the
-    // PitchEditor gate re-opens instead of locking the waveform behind stale data.
+    // Knead editor re-analyses instead of editing the previous audio's pitch.
     for (const replacedClipId of replacedClipIds) {
         clearClipPitchContour(replacedClipId);
     }

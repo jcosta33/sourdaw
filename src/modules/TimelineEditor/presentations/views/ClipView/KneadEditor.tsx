@@ -8,6 +8,7 @@ import { Slider } from '#/components/ui/slider';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { addDevice } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { kneadStore } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { projectStore } from '#/modules/Project/stores';
@@ -65,6 +66,36 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             })),
         }));
         notifyUser('Pitch corrected to scale.', 'success');
+    };
+
+    // Knead is a non-destructive edit until it is baked. `commitPitchEdit` renders
+    // the blob pitch offsets into a new audio file and repoints the clip at it,
+    // which is the only path in the product that makes a pitch edit permanent —
+    // so the control for it belongs to the pitch mode that owns the edit, the way
+    // Flex Pitch, VariAudio and Live all keep pitch editing an exclusive mode.
+    //
+    // Gated on the contour rather than on the blobs: the commit clears the stored
+    // contour, and only a fresh analysis restores it — and that analysis rebuilds
+    // every blob with `originalPitchCenterCents` rebased onto the rendered audio.
+    // So the gate is what stops a second commit from baking the same shift twice.
+    const canCommitPitchEdit = (contour?.points.length ?? 0) > 0 && (kneadState?.blobs.length ?? 0) > 0;
+
+    const handleCommitPitchEdit = () => {
+        if (!contour || !kneadState || !canCommitPitchEdit) {
+            return;
+        }
+        // Each blob carries the pitch the analysis found and the pitch the user
+        // dragged it to; their difference is the shift to render over that span.
+        const segments = kneadState.blobs.map((blob) => ({
+            start_time_ms: blob.startTime * 1000,
+            end_time_ms: blob.endTime * 1000,
+            shift_semitones: (blob.pitchCenterCents - blob.originalPitchCenterCents) / 100,
+        }));
+        // Dispatch through the action layer so the commit gets a real undo entry
+        // (`handleCommitPitchEdit` describes `restoreClipFileId` as its inverse).
+        // The handler notifies the user on render failure and rethrows, so swallow
+        // the rejection here rather than leaving it unhandled.
+        void executeAppAction({ type: 'commitPitchEdit', payload: { clipId, segments, contour } }).catch(() => {});
     };
 
     const handleKeyChange = (root: number) => {
@@ -714,6 +745,16 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     </>
                 ) : null}
                 <div className="flex items-center gap-2 ml-auto">
+                    {canCommitPitchEdit ? (
+                        <Button
+                            variant="secondary"
+                            size="xs"
+                            className="h-7 px-2 text-[11px] font-semibold"
+                            onClick={handleCommitPitchEdit}
+                        >
+                            Bounce & Commit
+                        </Button>
+                    ) : null}
                     <span className="text-[10px] uppercase font-bold text-muted-foreground">Zoom</span>
                     <Slider
                         className="w-24"

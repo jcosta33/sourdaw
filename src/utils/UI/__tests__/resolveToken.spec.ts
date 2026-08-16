@@ -169,11 +169,12 @@ describe('resolveToken', () => {
     });
 
     it('gives each call site its own fallback for a token the cascade cannot resolve', () => {
-        // The hazard this guards: `--color-accent-peach` is read with fallback
-        // '#f0944c' in DistortionCurve and '#ffb86c' in PitchEditor. That token
-        // is declared today, so the collision is latent rather than live — but
-        // caching a fallback would hand whichever call site ran second a colour
-        // it never asked for, for any token that ever goes undeclared.
+        // The hazard this guards: one token, two call sites, two different
+        // fallbacks — `--color-accent-peach` has been read with both '#f0944c'
+        // and '#ffb86c' in this codebase. Declared tokens make the collision
+        // latent rather than live, but caching a fallback would hand whichever
+        // call site ran second a colour it never asked for, for any token that
+        // ever goes undeclared.
         expect(resolveToken('--repro-unset-shared', '#f0944c')).toBe('#f0944c');
         expect(resolveToken('--repro-unset-shared', '#ffb86c')).toBe('#ffb86c');
     });

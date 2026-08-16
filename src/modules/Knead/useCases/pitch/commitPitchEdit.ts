@@ -58,8 +58,10 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
         });
 
         // The rendered `_pitch.wav` replaces the clip's audio, so the pre-commit
-        // contour is stale. Drop it to re-open the PitchEditor gate (waveform
-        // interactions reachable, Analyze Pitch offered again). Only on success —
+        // contour is stale. Drop it: the Knead editor's commit control is gated on
+        // the contour, so this is what stops a second commit from baking the same
+        // shift twice — only a fresh analysis, which rebases every blob's original
+        // pitch onto the rendered audio, brings the control back. Only on success —
         // the catch path rethrows before this point and keeps the contour editable.
         scope(() => {
             clearClipPitchContour(clipId);

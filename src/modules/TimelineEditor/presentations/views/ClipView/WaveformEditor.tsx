@@ -30,15 +30,17 @@ import {
     addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
-import { decodeAudioFile, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
+import {
+    decodeAudioFile,
+    getCachedAudioBuffer,
+    getCachedAudioBufferWaveformPeaks,
+} from '#/modules/AudioEngine/useCases';
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 import { isTauri } from '#/utils/tauriRuntime';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
 import { resolveToken } from '#/utils/UI/resolveToken';
-
-import { PitchEditor } from './PitchEditor';
 
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
 // Structurally compatible with the value returned by `getWarpState`.
@@ -100,9 +102,16 @@ const drawWaveform = ({ canvas, container, bufferId, zoom, warpState, beatWidth 
 
     const peaks = getCachedAudioBufferWaveformPeaks({ bufferId, numBins: Math.floor(width) });
 
-    const hasRealData = peaks.some((value) => value > 0);
+    // Peak amplitude cannot tell "no audio loaded" from "audio loaded, and silent":
+    // the cache answers a miss with a zero-filled array of exactly the requested
+    // length, which is also what a digitally silent buffer measures. Deciding on
+    // the peaks alone therefore painted the fake sine placeholder and the "drop an
+    // audio file" hint over a clip that really does hold audio — a silent take, a
+    // muted stem, a lead-in — telling the user their recording never loaded.
+    // Ask the cache who is there; let the peaks decide only what to draw.
+    const hasBuffer = getCachedAudioBuffer({ bufferId }) !== null;
 
-    if (hasRealData) {
+    if (hasBuffer && peaks.length > 0) {
         canvasContext.fillStyle = 'rgba(90, 150, 115, 0.5)';
         canvasContext.beginPath();
         canvasContext.moveTo(0, middleY);
@@ -506,8 +515,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         <span className="text-sm font-medium text-primary">Drop audio file here</span>
                     </div>
                 ) : null}
-
-                <PitchEditor clipId={clipId} />
             </div>
             {waveCtxMenu ? (
                 <div
