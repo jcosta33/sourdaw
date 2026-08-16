@@ -5,8 +5,15 @@
 //! Includes a stereo separation control for widening mono IRs.
 //!
 //! Cost is O(N) multiply-accumulates per sample per channel, with N the IR
-//! length — 1024 for the built-in bodies, capped at 4096 for any loaded one.
-//! There is no partitioning and no FFT here; a longer IR would need one.
+//! length — 23.2 ms of it for the built-in bodies, capped at 4096 samples for
+//! any loaded one. There is no partitioning and no FFT here; a longer IR would
+//! need one.
+
+/// Duration of the built-in body IRs, in seconds.
+///
+/// 1024 samples at 44.1 kHz — the length these envelopes were shaped against,
+/// kept as a duration so the shape survives a change of rate.
+const BUILTIN_IR_SECONDS: f32 = 1024.0 / 44_100.0;
 
 /// Direct-form convolution against a stereo IR pair.
 pub struct ConvolutionProcessor {
@@ -72,9 +79,16 @@ impl ConvolutionProcessor {
 
     /// Load a built-in body IR by type.
     pub fn load_builtin(&mut self, ir_type: &str) {
-        // Generate synthetic IRs for different body types
+        // Generate synthetic IRs for different body types.
+        //
+        // Length comes from the rate, not from a sample count. Every envelope
+        // below is written in seconds, so a fixed count would truncate the body
+        // at a different point on its decay at every rate: 1024 samples is
+        // 23.2 ms at 44.1 kHz but 10.7 ms at 96 kHz, where the wood envelope is
+        // still at 0.65 rather than 0.40 — the body would keep its pitch and
+        // change its length and effective Q with the session rate.
         let sample_rate = self.sample_rate;
-        let length = 1024;
+        let length = ((sample_rate * BUILTIN_IR_SECONDS).round() as usize).clamp(1, 4096);
         let mut ir = vec![0.0_f32; length];
 
         match ir_type {
@@ -244,6 +258,41 @@ mod tests {
                 "wood body resonates at {peak} Hz when the context runs at \
                  {sample_rate} Hz; it is named for 800 Hz"
             );
+        }
+    }
+
+    /// Frequency is only half of what a body is. Its envelope is written in
+    /// seconds too, so the IR has to span the same milliseconds and reach the
+    /// same point on its decay at every rate — a fixed 1024-sample length cuts
+    /// the wood body at 0.40 of its peak at 44.1 kHz and 0.65 at 96 kHz, which
+    /// is a different body.
+    #[test]
+    fn a_builtin_body_decays_over_the_same_milliseconds_at_every_context_rate() {
+        let mut reference_tail = None;
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut convolution = ConvolutionProcessor::new(sample_rate);
+            convolution.load_builtin("wood");
+            let ir = &convolution.ir_left;
+
+            let duration_ms = ir.len() as f32 / sample_rate * 1_000.0;
+            assert!(
+                (duration_ms - 23.22).abs() < 0.1,
+                "the wood body lasts {duration_ms} ms at {sample_rate} Hz"
+            );
+
+            // Envelope at the truncation point, against the normalized peak.
+            let window = ir.len() / 10;
+            let peak = |slice: &[f32]| slice.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+            let tail = peak(&ir[ir.len() - window..]) / peak(&ir[..window]);
+            match reference_tail {
+                None => reference_tail = Some(tail),
+                Some(expected) => assert!(
+                    (tail - expected).abs() < 0.02,
+                    "the wood body is at {tail} of its peak when it ends at \
+                     {sample_rate} Hz, against {expected} at 44.1 kHz — the decay \
+                     still tracks the session rate"
+                ),
+            }
         }
     }
 }

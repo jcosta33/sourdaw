@@ -56,6 +56,13 @@ fn fht(data: &mut [f32]) {
 /// Channels one `LofiProcessor` serves.
 const CHANNELS: usize = 2;
 
+/// Ceiling on `sampleRateReduce`, matching the range the panel declares.
+///
+/// Unbounded, the divider is also the length of the sample-and-hold window that
+/// survives a bypass, and an automation spike could park a channel on one held
+/// sample for an arbitrary stretch.
+const MAX_SR_DIVIDER: u32 = 64;
+
 /// One channel's codec-artifact state.
 ///
 /// Per channel and not shared, because the transform is a framed one. A single
@@ -117,7 +124,11 @@ pub struct LofiProcessor {
 
 impl LofiProcessor {
     pub fn new() -> Self {
-        let fht_size = 256; // Small for low latency
+        // Each channel owns a frame, so this is also the codec's group delay in
+        // samples: a sample written at position p of frame k leaves at position
+        // p of frame k+1. 5.33 ms at 48 kHz, reported to the host through
+        // `BandChain::latency_samples`.
+        let fht_size = 256;
         Self {
             bit_depth: 16,
             sr_divider: 1,
@@ -136,8 +147,30 @@ impl LofiProcessor {
             "lofiAmount" => self.amount = value.clamp(0.0, 100.0),
             "codecArtifact" => self.codec_amount = value.clamp(0.0, 1.0),
             "bitDepth" => self.bit_depth = (value as u32).clamp(1, 24),
-            "sampleRateReduce" => self.sr_divider = (value as u32).max(1),
+            "sampleRateReduce" => self.sr_divider = (value as u32).clamp(1, MAX_SR_DIVIDER),
             _ => {}
+        }
+    }
+
+    /// Whether the codec stage is in the signal path, and therefore whether it
+    /// is delaying anything.
+    ///
+    /// The same threshold `process_stereo` gates the stage on, so the reported
+    /// delay and the delivered one cannot disagree.
+    pub fn codec_engaged(&self) -> bool {
+        self.codec_amount > 0.01
+    }
+
+    /// Group delay the codec stage imposes, in samples at the rate it is fed.
+    ///
+    /// Zero unless the stage is engaged: unlike the distortion modes this is a
+    /// continuous parameter, so there is no configured-but-idle state to report
+    /// a stable worst case for.
+    pub fn latency_samples(&self) -> f32 {
+        if self.codec_engaged() {
+            self.fht_size as f32
+        } else {
+            0.0
         }
     }
 
@@ -312,5 +345,50 @@ mod tests {
             peak(&right_together) > 0.05 && peak(&left_together) > 0.05,
             "neither channel produced audio, so the comparison proves nothing"
         );
+    }
+
+    /// The delay the codec reports is the delay it delivers.
+    ///
+    /// Giving each channel its own frame doubled the per-channel delay from 128
+    /// interleaved positions to a full 256-sample frame, and a band that delays
+    /// without saying so arrives late against its siblings and the dry tap.
+    /// Measured with the threshold low enough to pass an impulse intact, so the
+    /// arrival sample is unambiguous.
+    #[test]
+    fn the_codec_delivers_the_delay_it_reports() {
+        let mut lofi = LofiProcessor::new();
+        assert_eq!(
+            lofi.latency_samples(),
+            0.0,
+            "an unengaged codec must report no delay"
+        );
+
+        lofi.set_param("codecArtifact", 0.02);
+        let reported = lofi.latency_samples();
+        assert_eq!(reported, 256.0);
+
+        let mut arrival = None;
+        for n in 0..4 * 256 {
+            let input = if n == 0 { 1.0 } else { 0.0 };
+            let (l, _) = lofi.process_stereo(input, 0.0);
+            if l.abs() > 0.5 && arrival.is_none() {
+                arrival = Some(n);
+            }
+        }
+        assert_eq!(
+            arrival,
+            Some(reported as usize),
+            "the impulse did not arrive at the reported delay"
+        );
+    }
+
+    /// An unbounded divider is an unbounded sample-and-hold window.
+    #[test]
+    fn the_sample_rate_divider_is_clamped_to_the_declared_range() {
+        let mut lofi = LofiProcessor::new();
+        lofi.set_param("sampleRateReduce", 4_000.0);
+        assert_eq!(lofi.sr_divider, MAX_SR_DIVIDER);
+        lofi.set_param("sampleRateReduce", -3.0);
+        assert_eq!(lofi.sr_divider, 1);
     }
 }

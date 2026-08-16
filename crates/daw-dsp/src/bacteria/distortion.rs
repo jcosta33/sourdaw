@@ -14,6 +14,13 @@ use super::stft::SmudgeProcessor;
 /// Channels the band chain runs through one `DistortionProcessor`.
 const CHANNELS: usize = 2;
 
+/// Ceiling on `sampleRateReduce`, matching the range the panel declares.
+///
+/// The divider is the length of the sample-and-hold window, so leaving it
+/// unbounded lets an automation spike park a channel on one held sample for an
+/// arbitrary stretch — and that same window is what survives a mode change.
+const MAX_SR_DIVIDER: u32 = 64;
+
 /// Distortion mode selector.
 #[derive(Clone, Copy, PartialEq)]
 pub enum DistortionMode {
@@ -119,13 +126,23 @@ impl DistortionProcessor {
                         channel.reset();
                     }
                 }
+                // Bitcrush's sample-and-hold is stranded state on the same
+                // argument, just shorter: up to `sr_reduce - 1` samples of
+                // whatever the band was playing before, flushed the moment the
+                // mode comes back. Cleared on every mode change rather than
+                // only on the way out of Bitcrush, because arriving at Bitcrush
+                // with a stale hold is the audible half.
+                if next != self.mode {
+                    self.sr_counter = [0; CHANNELS];
+                    self.sr_hold = [0.0; CHANNELS];
+                }
                 self.mode = next;
             }
             "drive" => self.drive = value,
             "asymmetry" => self.asymmetry = value,
             "foldbackThreshold" => self.fold_threshold = value.max(0.01),
             "bitDepth" => self.bit_depth = (value as u32).clamp(1, 24),
-            "sampleRateReduce" => self.sr_reduce = (value as u32).max(1),
+            "sampleRateReduce" => self.sr_reduce = (value as u32).clamp(1, MAX_SR_DIVIDER),
             "tubeBias" => self.tube_bias = value,
             "breakdownDepth" => self.breakdown_depth = value,
             _ => {}
@@ -305,5 +322,50 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Leaving and re-entering Bitcrush must not replay the sample it was
+    /// holding when it left.
+    ///
+    /// The same argument the Smudge exit-clear is written for, one stage over
+    /// and shorter: a held sample is up to `sampleRateReduce - 1` samples of
+    /// whatever the band was playing, flushed over whatever it is playing when
+    /// the mode comes back.
+    #[test]
+    fn changing_mode_drops_the_bitcrush_hold() {
+        let mut distortion = bitcrush_processor();
+        for n in 0..64 {
+            let left = (2.0 * PI * 440.0 * n as f32 / SAMPLE_RATE).sin() * 0.9;
+            distortion.process_sample(left, 0);
+            distortion.process_sample(left, 1);
+        }
+        assert!(
+            distortion.sr_hold.iter().any(|h| h.abs() > 0.1),
+            "the hold never filled, so the clear below proves nothing"
+        );
+
+        distortion.set_param("distortionMode", 0.0);
+        distortion.set_param("distortionMode", BITCRUSH);
+
+        let mut peak = 0.0_f32;
+        for _ in 0..64 {
+            peak = peak.max(distortion.process_sample(0.0, 0).abs());
+            peak = peak.max(distortion.process_sample(0.0, 1).abs());
+        }
+        assert!(
+            peak < 1e-6,
+            "re-entering Bitcrush over silence replayed {peak} of the previous \
+             engagement's held sample"
+        );
+    }
+
+    /// An unbounded divider is an unbounded sample-and-hold window.
+    #[test]
+    fn the_sample_rate_divider_is_clamped_to_the_declared_range() {
+        let mut distortion = DistortionProcessor::new();
+        distortion.set_param("sampleRateReduce", 4_000.0);
+        assert_eq!(distortion.sr_reduce, MAX_SR_DIVIDER);
+        distortion.set_param("sampleRateReduce", -3.0);
+        assert_eq!(distortion.sr_reduce, 1);
     }
 }
