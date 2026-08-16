@@ -1,6 +1,7 @@
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import {
     type ArbitraryCommandListEvidence,
     type ArbitraryCommandListSelectorEvidence,
@@ -187,7 +188,14 @@ export function validateArbitraryCommandListEvidence(input: {
             if (
                 item.targetArgument === undefined ||
                 item.targetCapability === undefined ||
-                item.commandCount !== item.canonicalStableIds.length
+                item.commandCount !== item.canonicalStableIds.length ||
+                !item.stableIds.every((stableId) =>
+                    isAgentReferenceCapabilityCandidate({
+                        capability: item.targetCapability!,
+                        context: input.context,
+                        id: stableId,
+                    })
+                )
             ) {
                 return {
                     status: 'rejected',

@@ -1,23 +1,9 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 
-type AgentReferenceCapability =
-    | 'track'
-    | 'armable-track'
-    | 'duplicable-track'
-    | 'removable-track'
-    | 'routable-source'
-    | 'bus'
-    | 'output'
-    | 'device-host-track'
-    | 'device'
-    | 'device-parameter'
-    | 'vca-group'
-    | 'vca-member-track'
-    | 'automation-lane'
-    | 'clip'
-    | 'editable-clip'
-    | 'editable-audio-clip'
-    | 'editable-midi-clip';
+import {
+    isAgentReferenceCapabilityCandidate,
+    type AgentReferenceCapability,
+} from './isAgentReferenceCapabilityCandidate';
 
 type ResolveAgentReferenceInput = {
     prompt: string;
@@ -43,9 +29,6 @@ type ResolveAgentReferenceResult =
           candidateIds?: string[];
       };
 
-const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
-const routableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus']);
-const vcaMemberTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 const reservedClipReferenceWords: ReadonlySet<string> = new Set([
     'track',
@@ -190,32 +173,22 @@ function getTrackCandidates(
     capability: AgentReferenceCapability,
     context: ProjectContext
 ): ReferenceCandidate[] | null {
-    if (capability === 'track') {
-        return context.tracks;
-    }
-    if (capability === 'armable-track') {
-        return context.tracks.filter((track) => track.kind !== 'vca');
-    }
-    if (capability === 'duplicable-track') {
-        return context.tracks.filter((track) => duplicableTrackKinds.has(track.kind));
-    }
-    if (capability === 'removable-track') {
-        return context.tracks;
-    }
-    if (capability === 'routable-source') {
-        return context.tracks.filter((track) => routableTrackKinds.has(track.kind));
-    }
-    if (capability === 'bus') {
-        return context.tracks.filter((track) => track.kind === 'bus');
-    }
-    if (capability === 'output') {
-        return context.tracks.filter((track) => track.kind === 'bus' || track.kind === 'master');
-    }
-    if (capability === 'device-host-track') {
-        return context.tracks.filter((track) => track.kind !== 'vca');
-    }
-    if (capability === 'vca-member-track') {
-        return context.tracks.filter((track) => vcaMemberTrackKinds.has(track.kind));
+    if (
+        [
+            'track',
+            'armable-track',
+            'duplicable-track',
+            'removable-track',
+            'routable-source',
+            'bus',
+            'output',
+            'device-host-track',
+            'vca-member-track',
+        ].includes(capability)
+    ) {
+        return context.tracks.filter((track) =>
+            isAgentReferenceCapabilityCandidate({ capability, context, id: track.id })
+        );
     }
     return null;
 }

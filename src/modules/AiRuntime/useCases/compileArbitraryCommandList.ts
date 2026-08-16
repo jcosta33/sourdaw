@@ -5,6 +5,8 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
+
 const MAX_ITEMS = 16;
 const MAX_COMMANDS = 32;
 const MAX_REPEAT = 8;
@@ -116,30 +118,6 @@ function collectCandidates(context: ProjectContext): Candidate[] {
         enabled: lane.enabled,
     }));
     return [...tracks, ...clips, ...devices, ...lanes];
-}
-
-function selectorSupportsCapability(entity: Entity, capability: string): boolean {
-    if (entity === 'track') {
-        return [
-            'track',
-            'armable-track',
-            'duplicable-track',
-            'removable-track',
-            'routable-source',
-            'bus',
-            'output',
-            'device-host-track',
-            'vca-group',
-            'vca-member-track',
-        ].includes(capability);
-    }
-    if (entity === 'clip') {
-        return capability.includes('clip');
-    }
-    if (entity === 'device') {
-        return capability === 'device' || capability === 'device-parameter';
-    }
-    return capability === 'automation-lane';
 }
 
 function containsForbiddenProviderAuthority(value: unknown): boolean {
@@ -470,11 +448,7 @@ export function compileArbitraryCommandList(input: {
             return selector;
         }
         const targetRule = rules.targetRules.find((rule) => rule.argument === selector.targetArgument);
-        if (
-            targetRule === undefined ||
-            targetRule.cardinality === 'many' ||
-            !selectorSupportsCapability(selector.entity, targetRule.capability)
-        ) {
+        if (targetRule === undefined || targetRule.cardinality === 'many') {
             return {
                 status: 'rejected',
                 reason: 'Bulk selector is incompatible with the discovered command target contract.',
@@ -486,6 +460,20 @@ export function compileArbitraryCommandList(input: {
         const resolved = resolveSelector({ candidates, selector, protectedTargetIds, itemId: item.id });
         if ('status' in resolved) {
             return resolved;
+        }
+        if (
+            !resolved.stableIds.every((stableId) =>
+                isAgentReferenceCapabilityCandidate({
+                    capability: targetRule.capability,
+                    context: input.context,
+                    id: stableId,
+                })
+            )
+        ) {
+            return {
+                status: 'rejected',
+                reason: 'Bulk selector resolved a target outside the command capability contract.',
+            };
         }
         evidence.push(resolved.evidence);
         for (const stableId of resolved.stableIds) {

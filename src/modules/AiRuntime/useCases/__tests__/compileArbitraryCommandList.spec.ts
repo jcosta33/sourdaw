@@ -467,4 +467,68 @@ describe('compileArbitraryCommandList', () => {
 
         expect(result.status).toBe('rejected');
     });
+
+    it.each([
+        {
+            name: 'armTrack',
+            targetArgument: 'trackId',
+            arguments_: { armed: true },
+            ineligibleKind: 'vca',
+            eligibleKind: 'audio',
+        },
+        {
+            name: 'addDevice',
+            targetArgument: 'trackId',
+            arguments_: { deviceType: 'builtin-eq' },
+            ineligibleKind: 'vca',
+            eligibleKind: 'audio',
+        },
+        {
+            name: 'setTrackOutput',
+            targetArgument: 'outputId',
+            arguments_: {},
+            ineligibleKind: 'audio',
+            eligibleKind: 'bus',
+        },
+        { name: 'addSend', targetArgument: 'busId', arguments_: {}, ineligibleKind: 'audio', eligibleKind: 'bus' },
+    ] as const)('rejects an ineligible $name selector while accepting its canonical capability kind', (entry) => {
+        const compile = (kind: string) =>
+            compileArbitraryCommandList({
+                context: {
+                    ...context,
+                    tracks: [{ ...context.tracks[0]!, id: 'target', name: 'Target', kind }],
+                },
+                revision: 'revision-1',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: plan(['target']),
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'capability-target',
+                                        name: entry.name,
+                                        arguments: entry.arguments_,
+                                        selector: {
+                                            targetArgument: entry.targetArgument,
+                                            entity: 'track',
+                                            where: { name: 'Target' },
+                                            quantity: { unit: 'targets', exactly: 1 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        expect(compile(entry.ineligibleKind)).toMatchObject({
+            status: 'rejected',
+            reason: 'Bulk selector resolved a target outside the command capability contract.',
+        });
+        expect(compile(entry.eligibleKind)).toMatchObject({ status: 'accepted' });
+    });
 });
