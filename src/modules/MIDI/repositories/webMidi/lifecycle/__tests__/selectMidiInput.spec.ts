@@ -5,12 +5,16 @@ const getMidiAccessMock = vi.hoisted(() => vi.fn<() => { inputs: Map<string, unk
 const setStateMock = vi.hoisted(() => vi.fn<(next: Record<string, unknown>) => void>());
 const attachInputMock = vi.hoisted(() => vi.fn());
 const selectMidiInputTauriMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
+const listTauriMidiInputsMock = vi.hoisted(() =>
+    vi.fn<() => Promise<{ id: string; name: string; portIndex: number }[]>>()
+);
 const loggerWarnMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../getTauriMode', () => ({ getTauriMode: getTauriModeMock }));
 vi.mock('../../getMidiAccess', () => ({ getMidiAccess: getMidiAccessMock }));
 vi.mock('../../setState', () => ({ setState: setStateMock }));
 vi.mock('../helpers', () => ({ attachInput: attachInputMock }));
+vi.mock('../listTauriMidiInputs', () => ({ listTauriMidiInputs: listTauriMidiInputsMock }));
 vi.mock('../selectMidiInputTauri', () => ({ selectMidiInputTauri: selectMidiInputTauriMock }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: loggerWarnMock, error: vi.fn(), info: vi.fn() } }));
 
@@ -24,16 +28,44 @@ describe('selectMidiInput', () => {
         vi.clearAllMocks();
         getTauriModeMock.mockReturnValue(true);
         selectMidiInputTauriMock.mockResolvedValue(undefined);
+        listTauriMidiInputsMock.mockResolvedValue([{ id: 'Launchkey', name: 'Launchkey', portIndex: 2 }]);
     });
 
-    it('opens the native port by index and commits the selection once it is open', async () => {
-        selectMidiInput({ deviceId: '2', onMidiMessage });
+    it('opens the native port the id currently resolves to and commits the selection once it is open', async () => {
+        selectMidiInput({ deviceId: 'Launchkey', onMidiMessage });
 
-        expect(selectMidiInputTauriMock).toHaveBeenCalledWith({ portIndex: 2, onMidiMessage });
-        // Not yet — the port is still opening.
+        // Not yet — the enumeration and the port are still in flight.
         expect(setStateMock).not.toHaveBeenCalled();
 
-        await vi.waitFor(() => expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: '2' }));
+        await vi.waitFor(() => expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }));
+        expect(selectMidiInputTauriMock).toHaveBeenCalledWith({ portIndex: 2, portName: 'Launchkey', onMidiMessage });
+    });
+
+    it('re-resolves the port index at select time rather than trusting the drawn list', async () => {
+        // The picker was rendered before a replug moved the device; opening the
+        // index it was drawn with would start a different instrument.
+        listTauriMidiInputsMock.mockResolvedValue([
+            { id: 'Launchkey', name: 'Launchkey', portIndex: 0 },
+            { id: 'Built-in', name: 'Built-in', portIndex: 1 },
+        ]);
+
+        selectMidiInput({ deviceId: 'Built-in', onMidiMessage });
+
+        await vi.waitFor(() =>
+            expect(selectMidiInputTauriMock).toHaveBeenCalledWith({ portIndex: 1, portName: 'Built-in', onMidiMessage })
+        );
+    });
+
+    it('commits nothing when the requested native port is no longer enumerated', async () => {
+        listTauriMidiInputsMock.mockResolvedValue([{ id: 'Built-in', name: 'Built-in', portIndex: 0 }]);
+
+        selectMidiInput({ deviceId: 'Launchkey', onMidiMessage });
+        await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+
+        // Opening whatever port happens to be there instead is the misgrab the
+        // stable id exists to prevent.
+        expect(selectMidiInputTauriMock).not.toHaveBeenCalled();
+        expect(setStateMock).not.toHaveBeenCalled();
     });
 
     it('does not persist the selection when opening the native port fails', async () => {
@@ -42,7 +74,7 @@ describe('selectMidiInput', () => {
         // device that delivers no MIDI, with nothing reported.
         selectMidiInputTauriMock.mockRejectedValue(new Error('device not found'));
 
-        selectMidiInput({ deviceId: '3', onMidiMessage });
+        selectMidiInput({ deviceId: 'Launchkey', onMidiMessage });
         await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
 
         expect(setStateMock).not.toHaveBeenCalled();

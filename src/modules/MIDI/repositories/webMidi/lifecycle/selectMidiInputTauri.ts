@@ -64,6 +64,15 @@ function readNativeTimestampMicros(event: TauriMidiMessageEvent): number | undef
 
 type SelectMidiInputTauriInput = {
     portIndex: number;
+    /**
+     * The name the caller resolved `portIndex` from. The index is only valid
+     * for the enumeration it came from, and `open_midi_input` re-enumerates:
+     * a port appearing below the target in that window shifts every index and
+     * silently opens a different instrument. The backend reports the name it
+     * actually opened, so when the caller says what it expected, a mismatch is
+     * detected and backed out instead of persisted.
+     */
+    portName?: string;
     onMidiMessage: (event: WebMidiInputMessage) => void;
 };
 
@@ -75,7 +84,11 @@ type SelectMidiInputTauriInput = {
  */
 let selectionGeneration = 0;
 
-export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectMidiInputTauriInput): Promise<void> {
+export async function selectMidiInputTauri({
+    portIndex,
+    portName,
+    onMidiMessage,
+}: SelectMidiInputTauriInput): Promise<void> {
     selectionGeneration += 1;
     const generation = selectionGeneration;
 
@@ -85,12 +98,18 @@ export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectM
         setTauriEventUnlisten(null);
     }
 
-    await tauriInvoke('open_midi_input', { portIndex });
+    const openedName = await tauriInvoke('open_midi_input', { portIndex });
 
     if (generation !== selectionGeneration) {
         // A newer selection started while the port was opening; it owns the
-        // registry from here.
+        // registry from here — including the port itself, which its own
+        // `open_midi_input` has already replaced.
         return;
+    }
+
+    if (portName !== undefined && typeof openedName === 'string' && openedName !== portName) {
+        await tauriInvoke('close_midi_input');
+        throw new Error(`MIDI port ${portIndex} is now "${openedName}", expected "${portName}"`);
     }
 
     resetNativeMidiTimeAnchor();
