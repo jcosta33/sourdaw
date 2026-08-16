@@ -1,6 +1,8 @@
 # ADR 0036: Provider stream envelope
 
-- Status: Accepted
+- Status: Partially superseded by ADR 0037
+
+> Historical scope: references to the retired native language-model stream are superseded by ADR 0037. The provider-neutral stream contract remains accepted.
 - Date: 2026-08-15
 
 ## Context

@@ -1,11 +1,4 @@
-import {
-    resolveBackend,
-    streamCloudChatCompletion,
-    generateNativeCompletion,
-    generateWebLlmCompletion,
-    initEngine,
-    isNativeEngineReady,
-} from '#/modules/AiRuntime/useCases';
+import { resolveBackend, streamCloudChatCompletion, generateWebLlmCompletion } from '#/modules/AiRuntime/useCases';
 import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
@@ -191,21 +184,9 @@ ONLY output raw JSON, no markdown blocks.`;
     const userMessage = `${projectContext}\n\n${prompt}`;
     let responseStr = '';
 
-    let backend = resolveBackend();
+    const backend = resolveBackend();
 
-    if (backend === 'native') {
-        if (!isNativeEngineReady()) {
-            backend = await initEngine();
-        }
-        if (backend === 'native' && !isNativeEngineReady()) {
-            throw createAiGenerationError('The selected native AI backend could not be initialized.');
-        }
-    }
-
-    if (backend === 'native') {
-        responseStr = await generateNativeCompletion(VARIATIONS_SYSTEM_PROMPT, userMessage, { maxTokens: 4000 });
-        onToken?.(responseStr);
-    } else if (backend === 'webllm') {
+    if (backend === 'webllm') {
         responseStr = await generateWebLlmCompletion(VARIATIONS_SYSTEM_PROMPT, userMessage, { maxTokens: 4000 });
         onToken?.(responseStr);
     } else if (backend === 'cloud') {

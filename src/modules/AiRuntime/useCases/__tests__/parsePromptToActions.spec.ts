@@ -1493,7 +1493,7 @@ describe('parsePromptToActions', () => {
     it('returns a rejected provider planning outcome without bridging it', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue({
             status: 'rejected',
-            reason: 'Native text tool planning did not complete (finish_reason: length)',
+            reason: 'Provider text tool planning did not complete (finish_reason: length)',
         });
 
         const result = await parsePromptToActions('mute the vocals', baseContext);
@@ -1503,7 +1503,7 @@ describe('parsePromptToActions', () => {
             rawText: 'mute the vocals',
             requiresConfirmation: false,
             rejectionReason:
-                'Provider planning rejected: Native text tool planning did not complete (finish_reason: length)',
+                'Provider planning rejected: Provider text tool planning did not complete (finish_reason: length)',
         });
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });

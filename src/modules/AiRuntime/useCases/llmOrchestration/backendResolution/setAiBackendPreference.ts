@@ -4,20 +4,25 @@ import { stopGenerating } from '../../../stores/chatStore';
 import { engineInitializationState } from '../../../stores/engineInitializationState';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
 
-export function setAiBackendPreference(preference: AiBackendPreference): void {
+export function normalizeAiBackendPreference(preference: unknown): AiBackendPreference {
+    return preference === 'webllm' || preference === 'cloud' ? preference : 'auto';
+}
+
+export function setAiBackendPreference(preference: unknown): void {
+    const normalizedPreference = normalizeAiBackendPreference(preference);
     const status = llmStatusStore.value;
-    const preferenceChanged = aiBackendPreferenceStore.value !== preference;
+    const preferenceChanged = aiBackendPreferenceStore.value !== normalizedPreference;
     if (status?.state === 'generating') {
         stopGenerating();
     }
     if (preferenceChanged && status?.state === 'loading') {
         engineInitializationState.cancel();
     }
-    aiBackendPreferenceStore.set(preference);
+    aiBackendPreferenceStore.set(normalizedPreference);
     if (
         status?.state === 'generating' ||
         (preferenceChanged && status?.state === 'loading') ||
-        (status?.state === 'ready' && preference !== 'auto' && status.backend !== preference)
+        (status?.state === 'ready' && normalizedPreference !== 'auto' && status.backend !== normalizedPreference)
     ) {
         llmStatusStore.set({ state: 'idle' });
     }

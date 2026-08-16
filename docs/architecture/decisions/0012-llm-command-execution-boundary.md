@@ -5,7 +5,7 @@
 
 ## Context
 
-Sourdaw already has WebLLM, native-local, and hosted-model inference adapters, typed DAW tool schemas, prompt-action confirmation, and the `executeAppAction` Automerge write boundary. The provider-neutral tool-calling use case is not connected to prompt execution, so model-produced tool calls do not currently reach that boundary.
+Sourdaw has WebLLM and hosted-model inference adapters, typed DAW tool schemas, prompt-action confirmation, and the `executeAppAction` Automerge write boundary. The provider-neutral tool-calling use case is not connected to prompt execution, so model-produced tool calls do not currently reach that boundary.
 
 Provider output is untrusted. Passing a tool name and arbitrary arguments directly into the complete application action union would expose actions whose payloads or targets are not yet safe for model execution.
 
@@ -23,7 +23,7 @@ Planning and execution remain separate:
 4. Accepted actions execute only through `executeAppAction`.
 5. Existing Automerge history and AI action history record the outcome.
 
-Inference placement may vary between WebLLM, supported native-local inference, and admitted hosted-provider adapters. No provider receives a separate mutation path, and no Sourdaw AI/provider server is introduced by this decision.
+Inference placement may vary between WebLLM and admitted hosted-provider adapters. No provider receives a separate mutation path, and no Sourdaw AI/provider server is introduced by this decision.
 
 ## Consequences
 

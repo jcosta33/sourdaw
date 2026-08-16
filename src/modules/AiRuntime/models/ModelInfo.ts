@@ -11,10 +11,6 @@ export type ModelInfo = {
     parameterCount: string;
 };
 
-export type NativeModelInfo = ModelInfo & {
-    huggingFaceId: string;
-};
-
 // -- WebLLM model options (browser) --
 
 export const WEBLLM_MODELS: ModelInfo[] = [
@@ -48,13 +44,3 @@ export const DEFAULT_WEBLLM_MODEL_ID = 'Qwen3-4B-q4f16_1-MLC';
 
 /** Legacy export for code that still references this. */
 export { DEFAULT_WEBLLM_MODEL_ID as WEBLLM_MODEL_ID };
-
-export const NATIVE_MODEL_INFO: NativeModelInfo = {
-    id: 'qwen3-8b-native',
-    displayName: 'Qwen3 8B',
-    parameterCount: '8B',
-    description: 'In-process inference via Metal/CUDA GPU with schema-constrained command planning.',
-    downloadSize: '~5.0 GB (first run only)',
-    ramUsage: '~6.0 GB',
-    huggingFaceId: 'Qwen/Qwen3-8B',
-};

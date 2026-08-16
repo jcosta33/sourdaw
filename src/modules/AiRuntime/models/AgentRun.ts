@@ -200,7 +200,8 @@ export type AgentRunProviderUsage = {
     retryable?: boolean | null;
     partialOutputDisposition?: 'none' | 'preserve' | 'discard';
     routeId?: string;
-    executor?: RunnableAiBackend;
+    /** Historical execution evidence only; it is never an inference route. */
+    executor?: RunnableAiBackend | 'legacy-unknown';
     fallbackReason?: string | null;
     disclosure?: {
         requestId: string;

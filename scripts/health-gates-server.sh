@@ -32,7 +32,7 @@ fi
 # Scope: `--workspace --exclude sourdaw` — the nine library crates under
 # `crates/`. `sourdaw` (src-tauri) is excluded because it cannot build on the
 # Linux runner this job uses: its manifest enables `whisper-rs`'s `metal`
-# feature and `mistralrs`'s `metal` + `accelerate` features unconditionally,
+# feature unconditionally,
 # and Tauri itself needs the webkit2gtk stack. Gating it needs a macOS runner;
 # that is left out deliberately rather than silently half-done.
 #
@@ -66,8 +66,8 @@ fi
 # would not have been a reviewable diff. It covers the whole workspace,
 # `src-tauri` included, even though the two build legs exclude it: formatting
 # needs no toolchain features, and `src-tauri` cannot build on ubuntu-latest
-# because its manifest unconditionally enables whisper-rs's `metal` and
-# mistralrs's `metal` + `accelerate`, and Tauri needs webkit2gtk.
+# because its manifest unconditionally enables whisper-rs's `metal`, and
+# Tauri needs webkit2gtk.
 cargo fmt --all --check
 cargo clippy --workspace --exclude sourdaw --all-targets --all-features
 cargo test --workspace --exclude sourdaw --all-features

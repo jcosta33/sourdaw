@@ -19,4 +19,4 @@ The provider-neutral executable command surface can control tracks, devices, sen
 
 ## Consequences
 
-Hosted providers, WebLLM, and a future native planner gain useful arrangement editing through the same strict grounding, revision-bound confirmation, atomic AppAction batch, Automerge receipt, and undo path. Ambiguous clips, locked edit targets, implicit numeric values, malformed ranges, and unsupported clip operations remain non-executable.
+Hosted providers and WebLLM gain useful arrangement editing through the same strict grounding, revision-bound confirmation, atomic AppAction batch, Automerge receipt, and undo path. Ambiguous clips, locked edit targets, implicit numeric values, malformed ranges, and unsupported clip operations remain non-executable.
