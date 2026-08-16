@@ -20,7 +20,7 @@ function createDelta(overrides: Partial<DeltaInput> = {}): DeltaInput {
             {
                 id: 'source',
                 kind: 'audio',
-                devices: [{ id: 'compressor', parameterIds: ['attack', 'ratio'] }],
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
             },
             { id: 'return', kind: 'bus', devices: [] },
         ],
@@ -39,6 +39,7 @@ describe('agent runtime graph boundary', () => {
             return;
         }
         expect(result.delta.nodes[0]?.devices.map((device) => device.id)).toEqual(['compressor']);
+        expect(result.delta.nodes[0]?.devices.map((device) => device.type)).toEqual(['builtin-compressor']);
         expect(result.delta.nodes[0]?.devices[0]?.parameterIds).toEqual(['attack', 'ratio']);
         expect(Object.isFrozen(result.delta)).toBe(true);
         expect(Object.isFrozen(result.delta.nodes)).toBe(true);
@@ -74,7 +75,7 @@ describe('agent runtime graph boundary', () => {
                     {
                         id: 'source',
                         kind: 'audio',
-                        devices: [{ id: 'compressor', parameterIds: ['ratio', 'attack'] }],
+                        devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['ratio', 'attack'] }],
                     },
                     { id: 'return', kind: 'bus', devices: [] },
                 ],

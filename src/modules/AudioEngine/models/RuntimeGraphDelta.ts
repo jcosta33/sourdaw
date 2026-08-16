@@ -32,6 +32,8 @@ export type RuntimeGraphDeltaNode = Readonly<{
 
 export type RuntimeGraphDeltaDevice = Readonly<{
     id: string;
+    /** Device-factory type required by the live graph node. */
+    type: string;
     /** Sorted, stable parameter IDs; values are intentionally not transported by this topology command. */
     parameterIds: readonly string[];
 }>;
@@ -41,6 +43,12 @@ export type RuntimeGraphDeltaDevice = Readonly<{
  * the project snapshot that is current immediately before a live graph write.
  */
 export type RuntimeGraphProjectRevisionValidator = (expectedProjectRevision: string) => boolean;
+
+/**
+ * Composition-owned authority for comparing a compiled topology with the
+ * current project-owned track/device topology before the live graph changes.
+ */
+export type RuntimeGraphTopologyValidator = (nodes: readonly RuntimeGraphDeltaNode[]) => boolean;
 
 export type RuntimeGraphOutputEdge = Readonly<{
     kind: 'output';

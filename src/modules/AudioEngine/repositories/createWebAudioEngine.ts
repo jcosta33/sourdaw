@@ -18,6 +18,7 @@ import {
     type RuntimeGraphDeltaNode,
     type RuntimeGraphDeltaResult,
     type RuntimeGraphProjectRevisionValidator,
+    type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
@@ -299,6 +300,7 @@ class AudioEngineImpl implements AudioEngine {
     private transportSeqView: Int32Array | null;
     private runtimeGraphRevision = 0;
     private runtimeGraphProjectRevisionValidator: RuntimeGraphProjectRevisionValidator | null = null;
+    private runtimeGraphTopologyValidator: RuntimeGraphTopologyValidator | null = null;
     private initPromise: Promise<void> | null = null;
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
@@ -403,10 +405,12 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private matchesRuntimeGraphNode(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
-        const actualDeviceIds = node.strip.deviceNodes.map((device) => device.deviceId);
         return (
-            actualDeviceIds.length === expected.devices.length &&
-            actualDeviceIds.every((deviceId, index) => deviceId === expected.devices[index]?.id)
+            node.strip.deviceNodes.length === expected.devices.length &&
+            node.strip.deviceNodes.every(
+                (device, index) =>
+                    device.deviceId === expected.devices[index]?.id && device.type === expected.devices[index]?.type
+            )
         );
     }
 
@@ -781,6 +785,10 @@ class AudioEngineImpl implements AudioEngine {
         this.runtimeGraphProjectRevisionValidator = validator;
     }
 
+    public setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator): void {
+        this.runtimeGraphTopologyValidator = validator;
+    }
+
     /**
      * The sole consumer for compiled output-topology deltas. It runs only on the
      * main/control thread, after the compiler has bounded and frozen its input;
@@ -828,6 +836,30 @@ class AudioEngineImpl implements AudioEngine {
                 reason: 'Runtime graph delta is stale for the current project revision',
             });
         }
+        if (!this.runtimeGraphTopologyValidator) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta cannot validate its project topology',
+            });
+        }
+        let isCurrentProjectTopology: boolean;
+        try {
+            isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
+        } catch (error) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: `Runtime graph delta topology validation failed: ${String(error)}`,
+            });
+        }
+        if (!isCurrentProjectTopology) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta does not match the current project topology',
+            });
+        }
 
         const edge = delta.edges[0];
         const sourcePlan = delta.nodes[0];
@@ -840,10 +872,11 @@ class AudioEngineImpl implements AudioEngine {
         }
         const source = this.trackNodes.get(edge.sourceId);
         if (!source || !this.matchesRuntimeGraphNode(source, sourcePlan)) {
-            return this.needsRuntimeGraphReconciliation(
-                delta,
-                'Live source strip does not match the compiled graph delta'
-            );
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Live source strip does not match the compiled graph delta',
+            });
         }
         if (!this.hasRuntimeOutputDestination(edge.targetId)) {
             return this.needsRuntimeGraphReconciliation(
@@ -855,10 +888,11 @@ class AudioEngineImpl implements AudioEngine {
         if (targetPlan) {
             const target = this.trackNodes.get(targetPlan.id);
             if (!target || !this.matchesRuntimeGraphNode(target, targetPlan)) {
-                return this.needsRuntimeGraphReconciliation(
-                    delta,
-                    'Live destination strip does not match the compiled graph delta'
-                );
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Live destination strip does not match the compiled graph delta',
+                });
             }
         }
 

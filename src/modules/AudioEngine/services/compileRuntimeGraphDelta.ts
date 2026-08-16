@@ -41,11 +41,11 @@ function isStrictlySortedUniqueIds(values: readonly string[]): boolean {
 }
 
 function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
-    if (!isRecord(value) || !hasOnlyKeys(value, ['id', 'parameterIds'])) {
+    if (!isRecord(value) || !hasOnlyKeys(value, ['id', 'type', 'parameterIds'])) {
         return 'Runtime graph device has an unsupported shape';
     }
-    if (!isBoundedId(value.id)) {
-        return 'Runtime graph device id is invalid';
+    if (!isBoundedId(value.id) || !isBoundedId(value.type)) {
+        return 'Runtime graph device id or type is invalid';
     }
     if (!isUnknownArray(value.parameterIds) || value.parameterIds.length > MAX_PARAMETER_ID_COUNT) {
         return 'Runtime graph device parameter ids exceed the bounded contract';
@@ -53,7 +53,7 @@ function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
     if (!value.parameterIds.every(isBoundedId) || !isStrictlySortedUniqueIds(value.parameterIds)) {
         return 'Runtime graph device parameter ids must be sorted, unique identifiers';
     }
-    return Object.freeze({ id: value.id, parameterIds: Object.freeze([...value.parameterIds]) });
+    return Object.freeze({ id: value.id, type: value.type, parameterIds: Object.freeze([...value.parameterIds]) });
 }
 
 function compileNode(value: unknown): RuntimeGraphDeltaNode | string {

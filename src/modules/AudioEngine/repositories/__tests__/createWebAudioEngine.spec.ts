@@ -194,6 +194,24 @@ function createMasterRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta 
     };
 }
 
+function createDeviceRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [
+            {
+                id: 'source',
+                kind: 'audio',
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
+            },
+            { id: 'target', kind: 'bus', devices: [] },
+        ],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'target' }],
+        parameters: [] as const,
+    };
+}
+
 describe('AudioEngine', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
@@ -225,6 +243,7 @@ describe('AudioEngine', () => {
         engine.setRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => expectedProjectRevision === currentProjectRevision
         );
+        engine.setRuntimeGraphTopologyValidator(() => true);
     });
 
     it('should initialize with master nodes', () => {
@@ -353,6 +372,123 @@ describe('AudioEngine', () => {
         expect(engine.getRuntimeGraphRevision()).toBe(0);
     });
 
+    it('rejects a same-id device with a different supported factory type before the live output mutation', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const wrongType: RuntimeGraphDelta = {
+            ...delta,
+            nodes: [
+                {
+                    ...delta.nodes[0]!,
+                    devices: [{ id: 'compressor', type: 'builtin-limiter', parameterIds: ['attack', 'ratio'] }],
+                },
+                delta.nodes[1]!,
+            ],
+        };
+
+        const result = engine.applyRuntimeGraphDelta(wrongType);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(engine.getRuntimeGraphRevision()).toBe(0);
+    });
+
+    it.each([
+        [
+            'different supported node kind',
+            (delta: RuntimeGraphDelta) => ({ ...delta.nodes[0]!, kind: 'midi' as const }),
+        ],
+        [
+            'stale parameter ids',
+            (delta: RuntimeGraphDelta) => ({
+                ...delta.nodes[0]!,
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'release'] }],
+            }),
+        ],
+        [
+            'missing parameter ids',
+            (delta: RuntimeGraphDelta) => ({
+                ...delta.nodes[0]!,
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack'] }],
+            }),
+        ],
+        [
+            'extra parameter ids',
+            (delta: RuntimeGraphDelta) => ({
+                ...delta.nodes[0]!,
+                devices: [
+                    { id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio', 'threshold'] },
+                ],
+            }),
+        ],
+    ])('rejects %s before the live output mutation', (_label, mutateSource) => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        engine.setRuntimeGraphTopologyValidator((nodes) => JSON.stringify(nodes) === JSON.stringify(delta.nodes));
+        const mismatch: RuntimeGraphDelta = {
+            ...delta,
+            nodes: [mutateSource(delta), delta.nodes[1]!],
+        };
+
+        const result = engine.applyRuntimeGraphDelta(mismatch);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(engine.getRuntimeGraphRevision()).toBe(0);
+    });
+
+    it('rejects duplicate parameter ids before the live output mutation', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+        const duplicateParameterIds: RuntimeGraphDelta = {
+            ...delta,
+            nodes: [
+                {
+                    ...delta.nodes[0]!,
+                    devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'attack'] }],
+                },
+                delta.nodes[1]!,
+            ],
+        };
+
+        const result = engine.applyRuntimeGraphDelta(duplicateParameterIds);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(source.outputId).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(0);
+    });
+
+    it('applies unchanged exact topology to a terminal output', () => {
+        const source = engine.ensureTrackStrip('source');
+        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        const delta: RuntimeGraphDelta = {
+            schemaVersion: 1,
+            command: 'set-track-output',
+            correlation: { appRevision: engine.getRuntimeGraphRevision(), projectRevision: 'project-revision-1' },
+            nodes: [
+                {
+                    id: 'source',
+                    kind: 'audio',
+                    devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
+                },
+            ],
+            edges: [{ kind: 'output', sourceId: 'source', targetId: 'master' }],
+            parameters: [],
+        };
+        engine.setRuntimeGraphTopologyValidator((nodes) => JSON.stringify(nodes) === JSON.stringify(delta.nodes));
+
+        const result = engine.applyRuntimeGraphDelta(delta);
+
+        expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1 });
+        expect(source.outputId).toBe('master');
+    });
+
     it('requires reconciliation without claiming compensation when an accepted output delta partially fails', () => {
         engine.ensureTrackStrip('source');
         engine.ensureTrackStrip('target');
@@ -378,7 +514,7 @@ describe('AudioEngine', () => {
 
         const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
 
-        expect(result).toMatchObject({ acceptance: 'accepted', application: 'needs-reconcile' });
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
         expect(source.outputId).toBeUndefined();
     });
 

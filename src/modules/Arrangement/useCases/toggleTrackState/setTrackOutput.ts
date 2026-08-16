@@ -13,6 +13,7 @@ import { getAllTracks } from '../../repositories/track/getAllTracks';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
+import { runtimeGraphTopology } from '../runtimeGraphTopology';
 
 type SetTrackOutputOptions = {
     deferRuntimeEffect?: boolean;
@@ -25,17 +26,6 @@ type DeferredTrackOutputRuntimeEffect = {
 
 const TERMINAL_OUTPUT_IDS: ReadonlySet<string> = new Set(['master', 'hw_out']);
 
-function toRuntimeGraphNode(track: NonNullable<ReturnType<typeof getTrackById>>) {
-    return {
-        id: track.id,
-        kind: track.kind,
-        devices: track.devices.map((device) => ({
-            id: device.id,
-            parameterIds: Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right)),
-        })),
-    };
-}
-
 function createTrackOutputRuntimeGraphDelta(trackId: string, outputId: string) {
     const source = getTrackById(trackId);
     if (!source) {
@@ -45,7 +35,9 @@ function createTrackOutputRuntimeGraphDelta(trackId: string, outputId: string) {
     if (!target && !TERMINAL_OUTPUT_IDS.has(outputId)) {
         return null;
     }
-    const nodes = target ? [toRuntimeGraphNode(source), toRuntimeGraphNode(target)] : [toRuntimeGraphNode(source)];
+    const nodes = target
+        ? [runtimeGraphTopology.createNode(source), runtimeGraphTopology.createNode(target)]
+        : [runtimeGraphTopology.createNode(source)];
     return {
         schemaVersion: 1,
         command: 'set-track-output',

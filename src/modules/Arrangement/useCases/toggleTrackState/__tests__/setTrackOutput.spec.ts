@@ -44,7 +44,17 @@ describe('setTrackOutput', () => {
     it('should update the track output id in the store and notify the audio engine', () => {
         mocks.getTrackById.mockImplementation((trackId: string) => {
             if (trackId === 't1') {
-                return { id: 't1', kind: 'audio', devices: [] };
+                return {
+                    id: 't1',
+                    kind: 'audio',
+                    devices: [
+                        {
+                            id: 'compressor',
+                            type: 'builtin-compressor',
+                            parameterValues: { ratio: 4, attack: 20 },
+                        },
+                    ],
+                };
             }
             return { id: 'bus-main', kind: 'bus', devices: [] };
         });
@@ -64,7 +74,11 @@ describe('setTrackOutput', () => {
             command: 'set-track-output',
             correlation: { appRevision: 4, projectRevision: 'project-revision-4' },
             nodes: [
-                { id: 't1', kind: 'audio', devices: [] },
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
+                },
                 { id: 'bus-main', kind: 'bus', devices: [] },
             ],
             edges: [{ kind: 'output', sourceId: 't1', targetId: 'bus-main' }],
