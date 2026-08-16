@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_07cbdb8492c56f 369-372,377-378
+src/modules/AiRuntime/useCases/__tests__/agentCostBudget.spec.ts
+  s_a40848e8f8cca9::t_c7a9dc72d49fd0 104-163
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_a40848e8f8cca9::t_e72c8f3fdaa4d5 1-81
+  s_a40848e8f8cca9::t_bec4242455775c 82-83
+src/modules/AiRuntime/useCases/agentWorkBudget.ts
+  s_a40848e8f8cca9::t_a8ee989823913b 34-36,41-43
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_a40848e8f8cca9::t_a8ee989823913b 320,326-329,336,344
+  s_a40848e8f8cca9::t_027736c9207c97 330-335,338,343,345-361,363-368,370-371,398-399,403
+  s_a40848e8f8cca9::t_0f0d0800a7f6dc 373-394
+  s_a40848e8f8cca9::t_182f8d5b8626b2 372
+  s_a40848e8f8cca9::t_8fd9f876c240e8 400-402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6a979ff5db5e10c2966f8aa5732ee682b1add43a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
