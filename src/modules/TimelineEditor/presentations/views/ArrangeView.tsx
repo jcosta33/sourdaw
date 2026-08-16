@@ -250,7 +250,9 @@ export const ArrangeView = (): ReactElement => {
                     </div>
                 ) : null}
                 <BeatRulerBar />
-                {hasChords ? <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
+                {hasChords ? (
+                    <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} viewportWidth={viewportWidth} />
+                ) : null}
                 <TimelineSurface />
                 <TimelineHScrollbar
                     scrollX={scrollX}
@@ -277,7 +279,13 @@ const TimelineHScrollbar = ({
     tracks: HScrollbarTrack[];
     viewportWidth: number;
 }): ReactElement | null => {
-    const maxEndBeat = Math.max(256, ...tracks.flatMap((track) => track.clips.map((clip) => clip.endBeat)));
+    // Reduce rather than `Math.max(256, ...allEndBeats)`: a project with enough
+    // clips blows the engine's call-argument limit and throws
+    // `RangeError: Maximum call stack size exceeded` instead of computing a width.
+    const maxEndBeat = tracks.reduce(
+        (outerMax, track) => track.clips.reduce((innerMax, clip) => Math.max(innerMax, clip.endBeat), outerMax),
+        256
+    );
     const totalContentWidth = maxEndBeat * pixelsPerBeat;
 
     // Only show when content actually overflows the viewport
@@ -410,7 +418,11 @@ const EmptyArrangeOverlay = (): ReactElement => {
             }
 
             if (result.kind === 'midi') {
-                await importMidiFile(result.file);
+                try {
+                    await importMidiFile(result.file);
+                } catch {
+                    notifyUser(`Failed to import "${result.file.name}" — unsupported format or corrupt file`, 'error');
+                }
                 continue;
             }
 

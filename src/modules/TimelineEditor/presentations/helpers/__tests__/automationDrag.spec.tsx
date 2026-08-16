@@ -329,6 +329,46 @@ describe('automationDrag', () => {
             expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.5, 6);
         });
 
+        it('matches the dragged point by exact final beat, not a nearby point within the old tolerance', () => {
+            const lane = makeLane([makePoint(2, 0.5)]);
+            // Array order matters: `.find` returns the first match. This
+            // unrelated, stationary point merely happens to land within the old
+            // `< 0.05` tolerance of where the drag ends, and it sorts before the
+            // point that actually moved.
+            mocks.automationState = {
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        points: [
+                            { beat: 4.98, value: 0.9, curve: 'linear', tension: 0 }, // unrelated, stationary
+                            { beat: 5, value: 0.7, curve: 'linear', tension: 0 }, // the point actually dragged here
+                        ],
+                    },
+                ],
+            };
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords),
+            });
+
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
+            fireEvent.mouseMove(window, { clientX: 50, clientY: 30 }); // → beat 5, value 0.7
+            fireEvent.mouseUp(window, { clientX: 50, clientY: 30 });
+
+            expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
+                'Move automation point',
+                expect.any(Function),
+                expect.any(Function)
+            );
+
+            // The undo must restore from the point that actually moved (beat 5,
+            // value 0.7) — a tolerance match would instead read the unrelated
+            // stationary point's (beat 4.98, value 0.9).
+            const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
+            undoFn();
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 5, 0.5, 2);
+        });
+
         it('releasing without movement records no undo entry', () => {
             const lane = makeLane([makePoint(2, 0.5)]);
             mocks.automationState = {

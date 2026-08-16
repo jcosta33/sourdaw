@@ -6,6 +6,7 @@ import {
     addAutomationPoint,
     removeAutomationPoint,
     toggleAutomationVisibility,
+    removeAutomationLane,
     insertAutomationShape,
     deleteSelectedPoints,
     getSelectionBounds,
@@ -94,6 +95,12 @@ export const AutomationLaneRow = ({
     const svgRef = useRef<SVGSVGElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
     const currentValueRef = useRef<HTMLSpanElement>(null);
+    // Cancel handle for whatever `automationDrag` gesture is currently live (at
+    // most one at a time — the mouse can only drag one thing). Only mouseup or
+    // Escape normally tear a gesture's listeners down; this lets the unmount
+    // effect below do the same when the row disappears mid-drag (e.g. the lane
+    // is removed while one of its points is being dragged).
+    const activeDragCancelRef = useRef<(() => void) | null>(null);
     const [dragPointBeat, setDragPointBeat] = useState<number | null>(null);
     const [hoveredBeat, setHoveredBeat] = useState<number | null>(null);
     const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
@@ -243,9 +250,9 @@ export const AutomationLaneRow = ({
             return;
         }
         if (isDrawMode) {
-            onDrawMouseDown(event, lane, snapValue, coords);
+            activeDragCancelRef.current = onDrawMouseDown(event, lane, snapValue, coords);
         } else {
-            onRubberBandStart(event, lane, setRubberBand, setSelectedPoints, coords);
+            activeDragCancelRef.current = onRubberBandStart(event, lane, setRubberBand, setSelectedPoints, coords);
         }
     };
 
@@ -321,6 +328,15 @@ export const AutomationLaneRow = ({
         }
     };
 
+    // Tears down a still-live drag's global listeners if this row unmounts
+    // before mouseup or Escape does — otherwise they leak on `window` bound
+    // to a closure over props/state from an instance that no longer exists.
+    useEffect(() => {
+        return () => {
+            activeDragCancelRef.current?.();
+        };
+    }, []);
+
     // ── Y-axis zoom ───────────────────────────────────────────────────────────
     // Attached imperatively and non-passively: React registers `wheel` at its
     // root container with `{ passive: true }`, so a `preventDefault()` inside a
@@ -384,12 +400,11 @@ export const AutomationLaneRow = ({
                 viewMax={vMax}
             />
             <AutomationLaneControls
-                laneId={lane.id}
                 isVisible={lane.visible}
                 selectedCount={selectedPoints.length}
                 onZoomToUsedRange={() => zoomToUsedRange(lane.id)}
                 onToggleVisibility={() => toggleAutomationVisibility(lane.id)}
-                onClose={() => toggleAutomationVisibility(lane.id)}
+                onClose={() => removeAutomationLane(lane.id)}
             />
             <svg
                 ref={svgRef}
@@ -517,7 +532,14 @@ export const AutomationLaneRow = ({
                                 r={12}
                                 fill="transparent"
                                 className="cursor-ns-resize"
-                                onMouseDown={(event) => onTensionMouseDown(th.beat, event, lane, setTensionDrag)}
+                                onMouseDown={(event) => {
+                                    activeDragCancelRef.current = onTensionMouseDown(
+                                        th.beat,
+                                        event,
+                                        lane,
+                                        setTensionDrag
+                                    );
+                                }}
                             />
                             <circle
                                 cx={th.cx}
@@ -574,16 +596,16 @@ export const AutomationLaneRow = ({
                                 r={10}
                                 fill="transparent"
                                 className="cursor-grab"
-                                onMouseDown={(event) =>
-                                    onPointMouseDown(
+                                onMouseDown={(event) => {
+                                    activeDragCancelRef.current = onPointMouseDown(
                                         point.beat,
                                         event,
                                         lane,
                                         setDragPointBeat,
                                         setSelectedPoints,
                                         coords
-                                    )
-                                }
+                                    );
+                                }}
                                 onDoubleClick={(event) => handlePointDoubleClick(point.beat, event)}
                                 onContextMenu={(event) => handlePointContextMenu(point.beat, event)}
                                 onMouseEnter={() => setHoveredBeat(point.beat)}

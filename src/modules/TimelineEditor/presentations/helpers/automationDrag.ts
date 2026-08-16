@@ -30,6 +30,12 @@ type CoordFns = {
     yToValue: (y: number) => number;
 };
 
+/** No drag started (bad rect, click landed on a child control, …) — nothing for a caller to cancel. */
+const noopCancel = (): void => undefined;
+
+/** Cancel handle for an in-flight drag, so an owning component can tear it down on unmount. */
+export type DragCancel = () => void;
+
 // ── Draw mode ────────────────────────────────────────────────────────────────
 
 export const onDrawMouseDown = (
@@ -37,16 +43,16 @@ export const onDrawMouseDown = (
     lane: AutomationLane,
     snapValue: number,
     coords: CoordFns
-): void => {
+): DragCancel => {
     const rect = coords.getRect();
     if (!rect) {
-        return;
+        return noopCancel;
     }
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     beginDrawSession(lane.id, snapValue, event.shiftKey);
     paintDrawPoint(Math.max(0, coords.xToBeat(x)), coords.yToValue(y));
-    startMouseDrag(
+    return startMouseDrag(
         (me) => {
             paintDrawPoint(Math.max(0, coords.xToBeat(me.clientX - rect.left)), coords.yToValue(me.clientY - rect.top));
         },
@@ -64,15 +70,15 @@ export const onRubberBandStart = (
     setRubberBand: SetStateFn<{ x1: number; y1: number; x2: number; y2: number } | null>,
     setSelectedPoints: SetStateFn<number[]>,
     coords: CoordFns
-): void => {
+): DragCancel => {
     const isOnPoint = (event.target as Element).closest('[data-auto-point]');
     const isOnTension = (event.target as Element).closest('[data-tension-handle]');
     if (isOnPoint || isOnTension) {
-        return;
+        return noopCancel;
     }
     const rect = coords.getRect();
     if (!rect) {
-        return;
+        return noopCancel;
     }
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -83,7 +89,7 @@ export const onRubberBandStart = (
     }
     setRubberBand({ x1: x, y1: y, x2: x, y2: y });
 
-    startMouseDrag(
+    return startMouseDrag(
         (me) => {
             setRubberBand((prev) => {
                 if (!prev) {
@@ -146,16 +152,16 @@ export const onTensionMouseDown = (
     event: ReactMouseEvent,
     lane: AutomationLane,
     setTensionDrag: SetStateFn<{ beat: number; initialTension: number } | null>
-): void => {
+): DragCancel => {
     event.stopPropagation();
     const point = lane.points.find((param) => param.beat === pointBeat);
     if (!point) {
-        return;
+        return noopCancel;
     }
     const initialTension = point.tension ?? 0;
     setTensionDrag({ beat: pointBeat, initialTension });
     const startY = event.clientY;
-    startMouseDrag(
+    return startMouseDrag(
         (me) => {
             const newTension = Math.max(-1, Math.min(1, initialTension + (me.clientY - startY) / 100));
             setAutomationPointCurve(lane.id, pointBeat, point.curve, newTension);
@@ -175,30 +181,30 @@ export const onPointMouseDown = (
     setDragPointBeat: SetStateFn<number | null>,
     setSelectedPoints: SetStateFn<number[]>,
     coords: CoordFns
-): void => {
+): DragCancel => {
     event.stopPropagation();
     const rect = coords.getRect();
     if (!rect) {
-        return;
+        return noopCancel;
     }
 
     if (event.shiftKey) {
         setSelectedPoints((prev) =>
             prev.includes(pointBeat) ? prev.filter((b) => b !== pointBeat) : [...prev, pointBeat]
         );
-        return;
+        return noopCancel;
     }
 
     const origPoint = lane.points.find((param) => param.beat === pointBeat);
     if (!origPoint) {
-        return;
+        return noopCancel;
     }
     const origBeat = origPoint.beat;
     const origValue = origPoint.value;
     let currentBeat = pointBeat;
     setDragPointBeat(pointBeat);
 
-    startMouseDrag(
+    return startMouseDrag(
         (me) => {
             let newBeat = Math.max(0, coords.xToBeat(me.clientX - rect.left));
             let newValue = coords.yToValue(me.clientY - rect.top);
@@ -218,7 +224,12 @@ export const onPointMouseDown = (
         () => {
             setDragPointBeat(null);
             const finalLane = automationStore.value?.lanes.find((length) => length.id === lane.id);
-            const finalPoint = finalLane?.points.find((param) => Math.abs(param.beat - currentBeat) < 0.05);
+            // Exact match: `currentBeat` is the precise value the last move wrote
+            // to the point (see `updateAutomationPoint(..., currentBeat, ...)`
+            // above), not a pointer-derived approximation. A `< 0.05` tolerance
+            // here can pick a *different* point that happens to have landed
+            // nearby, corrupting that point's undo/redo instead of this one's.
+            const finalPoint = finalLane?.points.find((param) => param.beat === currentBeat);
             const hasMoved =
                 finalPoint !== undefined && (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
             if (hasMoved) {
