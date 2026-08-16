@@ -24,5 +24,5 @@ This decision supersedes ADR 0019's clause that a complete empty provider plan m
 
 - Every executable LLM project mutation has one admission and execution architecture.
 - Legacy DSO undo, macro, or AI history records are ignored on hydration; no project-file migration is required because DSO editor state was ephemeral.
-- WebLLM, hosted providers, and a future native runtime retain the same provider-neutral tool-planning boundary.
+- WebLLM and hosted providers retain the same provider-neutral tool-planning boundary.
 - Unsupported intent returns a no-match or rejection receipt until its typed AppAction mapping is implemented.

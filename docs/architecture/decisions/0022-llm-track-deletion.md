@@ -17,4 +17,4 @@ ADR 0016 kept `removeTrack` outside provider tool plans until destructive author
 
 ## Consequences
 
-Track deletion has one provider-neutral admission and execution path across WebLLM, hosted providers, and future native planning. A model cannot delete a track without an explicit, fresh confirmation, cannot target the master track, and cannot bypass Automerge receipts or exact restoration. Manual internal teardown operations that intentionally remove the master remain outside the provider boundary.
+Track deletion has one provider-neutral admission and execution path across WebLLM and hosted providers. A model cannot delete a track without an explicit, fresh confirmation, cannot target the master track, and cannot bypass Automerge receipts or exact restoration. Manual internal teardown operations that intentionally remove the master remain outside the provider boundary.

@@ -24,4 +24,4 @@ A provider-facing command must stay simple while application-owned execution pre
 
 ## Consequences
 
-WebLLM, future native inference, and arbitrary hosted providers can propose sidechain routing through the same typed, grounded, confirmed command path without a server. Durable project state remains authoritative; live engine effects occur only after commit or reconciliation, and undo/redo preserves exact route identity and configuration.
+WebLLM and arbitrary hosted providers can propose sidechain routing through the same typed, grounded, confirmed command path without a server. Durable project state remains authoritative; live engine effects occur only after commit or reconciliation, and undo/redo preserves exact route identity and configuration.

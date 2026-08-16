@@ -218,7 +218,7 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
             ? undefined
             : partialOutputDispositions.find((candidate) => candidate === value.partialOutputDisposition);
     const routeId = value.routeId === undefined ? undefined : readString(value.routeId);
-    const executors: NonNullable<AgentRunProviderUsage['executor']>[] = ['native', 'webllm', 'cloud'];
+    const executors: NonNullable<AgentRunProviderUsage['executor']>[] = ['webllm', 'cloud'];
     const executor =
         value.executor === undefined ? undefined : executors.find((candidate) => candidate === value.executor);
     const fallbackReason = value.fallbackReason === undefined ? undefined : readNullableString(value.fallbackReason);
@@ -1088,7 +1088,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         if (!isRecord(rawModelRoute)) {
             return null;
         }
-        const requestedRoutes = ['auto', 'native', 'webllm', 'cloud', 'legacy-unknown'] as const;
+        const requestedRoutes = ['auto', 'webllm', 'cloud', 'legacy-unknown'] as const;
         const requestedRoute = requestedRoutes.find((candidate) => candidate === rawModelRoute.requestedRoute);
         const selectedRouteId = readNullableString(rawModelRoute.selectedRouteId);
         return requestedRoute === undefined || selectedRouteId === undefined

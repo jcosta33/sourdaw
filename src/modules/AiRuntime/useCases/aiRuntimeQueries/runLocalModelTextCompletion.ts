@@ -11,7 +11,7 @@ import {
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 type RunLocalModelTextCompletionBase = {
-    provider: Extract<ModelProviderName, 'native' | 'webllm'>;
+    provider: Extract<ModelProviderName, 'webllm'>;
     model: string;
     systemPrompt: string;
     userMessage: string;

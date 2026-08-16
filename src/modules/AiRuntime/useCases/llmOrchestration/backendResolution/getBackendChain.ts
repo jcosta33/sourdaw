@@ -11,13 +11,10 @@ import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { createModelProviderProtocol } from '../../modelProviderProtocol';
 import { resolveModelRoute } from '../../resolveModelRoute';
 
-import { isNativeAiRuntimeAvailable } from './isNativeAiRuntimeAvailable';
-
 const BACKEND_ORDERS: Record<AiBackendPreference, readonly RunnableAiBackend[]> = {
-    auto: ['native', 'webllm', 'cloud'],
-    native: ['native', 'webllm', 'cloud'],
-    webllm: ['webllm', 'native', 'cloud'],
-    cloud: ['cloud', 'native', 'webllm'],
+    auto: ['webllm', 'cloud'],
+    webllm: ['webllm', 'cloud'],
+    cloud: ['cloud', 'webllm'],
 };
 
 type BackendChainRequirements = {
@@ -31,9 +28,6 @@ type BackendChainRequirements = {
 };
 
 function isBackendAvailable(backend: RunnableAiBackend): boolean {
-    if (backend === 'native') {
-        return isNativeAiRuntimeAvailable();
-    }
     if (backend === 'webllm') {
         return typeof navigator !== 'undefined' && 'gpu' in navigator;
     }
@@ -44,9 +38,6 @@ function getPlatformEvidence(backend: RunnableAiBackend, available: boolean): st
     if (!available) {
         return null;
     }
-    if (backend === 'native') {
-        return 'native-runtime';
-    }
     if (backend === 'webllm') {
         return 'webgpu';
     }
@@ -54,7 +45,7 @@ function getPlatformEvidence(backend: RunnableAiBackend, available: boolean): st
 }
 
 function getProviderIdentity(backend: RunnableAiBackend): { provider: ModelProviderName; modelId: string } {
-    if (backend === 'native' || backend === 'webllm') {
+    if (backend === 'webllm') {
         return { provider: backend, modelId: backend };
     }
     const providerInfo = getCloudProviderInfo();
@@ -65,8 +56,8 @@ function getProviderIdentity(backend: RunnableAiBackend): { provider: ModelProvi
 }
 
 function getProtocolFamily(provider: ModelProviderName): string {
-    if (provider === 'native') {
-        return 'native-local';
+    if (provider === 'webllm') {
+        return 'webllm-browser';
     }
     if (provider === 'anthropic') {
         return 'anthropic-messages';

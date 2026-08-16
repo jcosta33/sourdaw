@@ -5,7 +5,6 @@ import { getBackendChain } from './getBackendChain';
 /**
  * Resolve the active inference backend for chat and provider-neutral tool planning.
  *
- * - native: Tauri desktop runtime
  * - webllm: browser-local WebGPU runtime
  * - cloud: configured hosted-provider adapter
  * - none: no backend is currently available

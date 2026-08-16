@@ -1,27 +1,23 @@
 # AI Stack Architecture
 
-Sourdaw is AI-native in three distinct senses: it runs language models (three runtimes), it runs generative and analytical audio ML (cloud and in-browser), and — the part that makes it a DAW feature rather than a chatbot — model output can *act on the project* through the same write path humans use. This document maps that stack.
+Sourdaw is AI-native in three distinct senses: it runs language models (browser and hosted runtimes), it runs generative and analytical audio ML (cloud and in-browser), and — the part that makes it a DAW feature rather than a chatbot — model output can *act on the project* through the same write path humans use. This document maps that stack.
 
 It complements:
 
 - `CRDT & Collaboration Architecture` — the write path AI actions enter
 - The `llm-action-bridge` agent skill — rules for model-driven actions
-- `src-tauri/AGENTS.md` — the native AI commands
+- `src-tauri/AGENTS.md` — desktop-shell boundaries
 
 ---
 
 ## 1. Language model runtimes
 
-Three runtimes behind one panel (AiRuntime):
+Browser and hosted runtimes behind one panel (AiRuntime):
 
 | Runtime | Where | Use |
 |---|---|---|
 | Anthropic cloud | `@anthropic-ai/sdk` | Default chat completion, streaming (`streamCloudChatCompletion.ts`) |
 | WebLLM | `@mlc-ai/web-llm` | In-browser inference, no API key (`generateWebLlmCompletion.ts`) |
-| Native mistral.rs | Tauri `native_llm_*` commands | On-device inference with tool calling and schema-constrained generation |
-
-The native runtime is the deepest integration: 8 commands covering init, completion (one-shot and streamed), tool calling, schema-constrained output, unload, and status — with model download progress emitted as `llm-progress` events (completion token streaming uses a Tauri channel). In browser dev mode the native engine falls back to a manually started `llama-server` on localhost.
-
 Voice input runs through whisper-rs dictation (`speech.rs`: load model, start/stop dictation, ASR status).
 
 ## 2. Audio ML
@@ -69,5 +65,5 @@ External dependency ownership is deliberate: `@anthropic-ai/sdk` and `@mlc-ai/we
 ## References
 
 - `.agents/skills/llm-action-bridge/SKILL.md` — rules for model-driven actions
-- `src-tauri/AGENTS.md` — native LLM/AI command inventory
+- `src-tauri/AGENTS.md` — desktop-shell command inventory
 - `docs/architecture/06-crdt-collaboration.md` — the write path actions enter

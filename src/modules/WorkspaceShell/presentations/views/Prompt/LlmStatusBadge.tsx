@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
-import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap, Check } from 'lucide-react';
+import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Check } from 'lucide-react';
 
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
@@ -16,7 +16,6 @@ import {
     isLlmAvailable,
     resolveBackend,
     unloadEngine,
-    NATIVE_MODEL_INFO,
     WEBLLM_MODELS,
     getActiveModelId,
 } from '#/modules/AiRuntime/useCases';
@@ -36,7 +35,6 @@ type BadgeModelInfo = {
 };
 
 const TIER_COLORS = {
-    native: 'border-primary/30 bg-primary/20 text-primary',
     cloud: 'border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
     webllm: 'border-primary/30 bg-primary/20 text-primary',
 } as const;
@@ -82,26 +80,20 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     const hostedProviderStatus = useStore(hostedLlmProviderStatusStore, null);
     const backend = status.state === 'ready' ? status.backend : resolveBackend();
     let backendLabel: string;
-    if (backend === 'native') {
-        backendLabel = 'Native';
-    } else if (backend === 'cloud') {
+    if (backend === 'cloud') {
         backendLabel = hostedProviderStatus ? getHostedProviderLabel(hostedProviderStatus.provider) : 'Cloud';
     } else {
         backendLabel = 'Browser';
     }
-    let tierKey: 'native' | 'cloud' | 'webllm';
-    if (backend === 'native') {
-        tierKey = 'native';
-    } else if (backend === 'cloud') {
+    let tierKey: 'cloud' | 'webllm';
+    if (backend === 'cloud') {
         tierKey = 'cloud';
     } else {
         tierKey = 'webllm';
     }
 
     let modelInfo: BadgeModelInfo;
-    if (backend === 'native') {
-        modelInfo = NATIVE_MODEL_INFO;
-    } else if (backend === 'cloud') {
+    if (backend === 'cloud') {
         const providerLabel = hostedProviderStatus
             ? getHostedProviderLabel(hostedProviderStatus.provider)
             : 'Hosted AI';
@@ -126,9 +118,6 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
         if (backendPreference === 'cloud') {
             unavailableLabel = 'Configure hosted AI';
             unavailableTitle = 'Configure a hosted AI provider in Preferences';
-        } else if (backendPreference === 'native') {
-            unavailableLabel = 'Native unavailable';
-            unavailableTitle = 'Native AI requires the desktop application';
         } else if (backendPreference === 'webllm') {
             unavailableLabel = 'WebGPU unavailable';
             unavailableTitle = 'Browser WebLLM requires WebGPU support';
@@ -142,12 +131,8 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     // ── Idle: model selector + load button ─────────────────────────────────
     if (status.state === 'idle') {
-        const renderIife_3 = () => {
-            if (backend === 'native') {
-                return 'Start Native Engine';
-            }
-            return `Download & Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
-        };
+        const renderIife_3 = () =>
+            `Download & Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
 
         return (
             <div className="relative">
@@ -167,11 +152,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                         <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
                             <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
-                                    {backend === 'native' ? (
-                                        <Zap className="size-3 text-primary" aria-hidden="true" />
-                                    ) : (
-                                        <Sparkles className="size-3 text-primary" aria-hidden="true" />
-                                    )}
+                                    <Sparkles className="size-3 text-primary" aria-hidden="true" />
                                     <span className="text-xs font-semibold text-foreground">AI Model</span>
                                 </div>
                                 <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
@@ -265,11 +246,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     className="h-6 gap-1 px-2 text-[10px] font-medium text-primary transition-all"
                     title="AI model loaded — click to manage"
                 >
-                    {backend === 'native' ? (
-                        <Zap className="size-2.5" aria-hidden="true" />
-                    ) : (
-                        <Sparkles className="size-2.5" aria-hidden="true" />
-                    )}
+                    <Sparkles className="size-2.5" aria-hidden="true" />
                     AI Ready
                 </Button>
 
