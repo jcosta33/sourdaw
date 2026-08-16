@@ -1,0 +1,112 @@
+src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts
+  s_a40848e8f8cca9::t_eac06c54a92d91 14
+docs/architecture/decisions/0019-provider-tool-planning-outcomes.md
+  s_a40848e8f8cca9::t_7b655d9e28b7f6 6-7,11
+  s_a40848e8f8cca9::t_117da28a1822bb 4
+docs/architecture/09-ai-stack.md
+  s_a40848e8f8cca9::t_c9ae35a7d36bb3 3,9,15,68
+src/modules/AiRuntime/useCases/providerRouteView.ts
+  s_a40848e8f8cca9::t_7a45728a8e7d71 6-7
+src/modules/AiRuntime/useCases/getAiRuntimeProtocolContracts.ts
+  s_a40848e8f8cca9::t_7a45728a8e7d71 15
+docs/architecture/decisions/0036-provider-stream-envelope.md
+  s_a40848e8f8cca9::t_706ec3f814605a 3-5
+docs/architecture/decisions/0013-client-side-hosted-llm-adapters.md
+  s_a40848e8f8cca9::t_380debcddbea05 12,38,50
+  s_a40848e8f8cca9::t_706ec3f814605a 3-5
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_3db8e54799ebef 156-157,168
+  s_a40848e8f8cca9::t_f84e4416bf2730 381
+  s_a40848e8f8cca9::t_9a0751faf740c3 34
+scripts/health-gates-server.sh
+  s_a40848e8f8cca9::t_a26a1a7d8e3534 35,69-70
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts
+  s_a40848e8f8cca9::t_4c6330f4ab1425 15,21
+  s_a40848e8f8cca9::t_3bb17b1a88e5f7 18,20,53
+src/modules/AiRuntime/models/LlmOrchestrationTypes.ts
+  s_a40848e8f8cca9::t_feecd7ccd14f67 1
+src/modules/AiRuntime/useCases/aiRuntimeQueries/modelInfo.ts
+  s_a40848e8f8cca9::t_eac06c54a92d91 1
+src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/unloadEngine.ts
+  s_a40848e8f8cca9::t_758a4735b670c8 4
+  s_a40848e8f8cca9::t_74d5760f7934bd 5
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_a40848e8f8cca9::t_8bd4583ad7bd9c 371
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_117da28a1822bb 1496,1506
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_eac06c54a92d91 16
+src-tauri/Cargo.toml
+  s_a40848e8f8cca9::t_0400598d401dfe 27
+src/modules/AiGeneration/useCases/generateMidiVariations.ts
+  s_a40848e8f8cca9::t_27c2f33d5e6f0d 189
+  s_a40848e8f8cca9::t_5649b2cd98aba2 1,187
+docs/06-testing.md
+  s_a40848e8f8cca9::t_706ec3f814605a 678
+docs/architecture/decisions/0023-llm-clip-editing.md
+  s_a40848e8f8cca9::t_45bce8392ba50c 22
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/setAiBackendPreference.ts
+  s_a40848e8f8cca9::t_3bcefa25eb8e8a 7-12,14,21,25
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_b80bef0eb701cc 84,1406,1553,1579,1634-1645
+  s_a40848e8f8cca9::t_54f59ac30f4751 194
+docs/architecture/decisions/0028-llm-sidechain-routing-command-surface.md
+  s_a40848e8f8cca9::t_8bd4583ad7bd9c 27
+docs/architecture/decisions/0029-llm-midi-note-transform-command-surface.md
+  s_a40848e8f8cca9::t_45bce8392ba50c 26
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_a40848e8f8cca9::t_f6ccfa60a61a63 3,83,88-89,96,134-135,155,249
+src/modules/AiGeneration/useCases/llmMidiGeneration.ts
+  s_a40848e8f8cca9::t_27c2f33d5e6f0d 62
+  s_a40848e8f8cca9::t_5649b2cd98aba2 1,51
+docs/architecture/decisions/0037-retire-native-mistral-inference.md
+  s_a40848e8f8cca9::t_706ec3f814605a 1-20
+docs/architecture/decisions/0022-llm-track-deletion.md
+  s_a40848e8f8cca9::t_45bce8392ba50c 20
+docs/architecture/decisions/0020-terminal-provider-planning-rejections.md
+  s_a40848e8f8cca9::t_a26a1a7d8e3534 3-5
+  s_a40848e8f8cca9::t_380debcddbea05 11,16,20,25
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts
+  s_a40848e8f8cca9::t_0e64d7c377a2f3 15-17,48,59-60
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_a40848e8f8cca9::t_9a0751faf740c3 221,1091
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_a40848e8f8cca9::t_9c36afa8402d1d 23,31,62,65-66,69,108,150,155
+  s_ab5443e65c7fba::t_e9addf76666c67 156
+src/modules/AiRuntime/models/ModelProviderProtocol.ts
+  s_a40848e8f8cca9::t_feecd7ccd14f67 5
+docs/architecture/decisions/0012-llm-command-execution-boundary.md
+  s_a40848e8f8cca9::t_7b655d9e28b7f6 8,26
+docs/architecture/decisions/0024-llm-transport-controls.md
+  s_a40848e8f8cca9::t_8bd4583ad7bd9c 23
+docs/architecture/decisions/0031-retire-legacy-dso-command-execution.md
+  s_a40848e8f8cca9::t_45bce8392ba50c 27
+Cargo.lock
+  s_a40848e8f8cca9::t_a6f9a9d50d071b 185,259,270,414-415,417,419,423-424,426,476,487,496,689,884,898,933-934,946,956,977,1015,1104-1105,1197,1642-1643,1645,1647-1648,1652-1653,1655,1657-1659,1663-1664,1666,1668-1672,1676-1677,1679,1681-1686,1690-1691,1693,1695-1700,1704-1705,1707,1709-1719,1723-1724,1726,1728-1732,1736-1737,1739,1741-1752,1754-1755,1759-1760,1762,2052,2140,2168,2207,2232,2289-2290,2723,2727-2739,2741,2749-2750,2752,2755-2756,2758,2760-2761,2765-2766,2768,2770-2776,2780-2781,2783-2789,2791,2795-2796,2798,2800-2812,2816-2829,2831,2833-2834,2838-2839,2841,2843-2846,3260-3264,3268-3269,3271,3350,3352,3363,3420,3839,3860,4090-4113,4116-4127,4167,4366,4370,4465,4482,4484,4627,4899,4901,4912,4927-4929,5016-5017,5021-5023,5025,5027-5029,5040-5041,5052,5064,5074,5085,5095,5106,5116-5117,5132,5143,5154-5155,5167,5178-5179,5190-5191,5203-5204,5382,5447,5630,5793,5802,5804,5808,6066,6068,6072-6073,6075,7236,7306,7316
+src-tauri/gen/schemas/acl-manifests.json
+  s_a40848e8f8cca9::t_019e0cbcb3e4e0 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f62d36ad351cee3823fae19ecae9ff2e0776253f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
