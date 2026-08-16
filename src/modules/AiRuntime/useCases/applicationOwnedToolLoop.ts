@@ -27,7 +27,9 @@ const DEFAULT_LIMITS = {
 const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 256;
+const MAX_CATALOG_CURSOR_LENGTH = 2048;
 const MAX_REVISION_LENGTH = 65_536;
+const CATALOG_CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
 type QueryFilters = NonNullable<QueryInput['filters']>;
@@ -471,7 +473,10 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
             !isRecord(pageValue) ||
             Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'limit') ||
             (pageValue.cursor !== undefined &&
-                (typeof pageValue.cursor !== 'string' || !/^(0|[1-9][0-9]{0,15})$/.test(pageValue.cursor))) ||
+                (typeof pageValue.cursor !== 'string' ||
+                    pageValue.cursor.length === 0 ||
+                    pageValue.cursor.length > MAX_CATALOG_CURSOR_LENGTH ||
+                    !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
             (pageValue.limit !== undefined &&
                 (typeof pageValue.limit !== 'number' ||
                     !Number.isInteger(pageValue.limit) ||

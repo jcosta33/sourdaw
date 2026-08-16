@@ -97,7 +97,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     type: 'object',
                     properties: {
                         limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
-                        cursor: { type: 'string', maxLength: 16 },
+                        cursor: { type: 'string', maxLength: 2048 },
                     },
                     additionalProperties: false,
                 },

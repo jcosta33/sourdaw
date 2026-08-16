@@ -178,6 +178,98 @@ describe('agent tool catalog', () => {
         expect(requestTurn.mock.calls[2]?.[0].receiptContext).toContain('catalog-page-1');
     });
 
+    it('binds a catalog cursor to its category and ordered requested names', async () => {
+        const firstPage = await runApplicationOwnedToolLoop({
+            loopId: 'catalog-cursor-first',
+            terminalToolNames: new Set(['command.batch.propose']),
+            limits: { maxTurns: 3 },
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'catalog-cursor-first-page',
+                            name: 'agent.catalog.discover',
+                            arguments: {
+                                category: 'command',
+                                names: ['setTempo', 'setTimeSignature'],
+                                page: { limit: 1 },
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+        const firstData = firstPage.receipts[0]?.data as { nextCursor: string | null };
+
+        expect(firstData.nextCursor).toBeTruthy();
+
+        const nextPage = await runApplicationOwnedToolLoop({
+            loopId: 'catalog-cursor-next',
+            terminalToolNames: new Set(['command.batch.propose']),
+            limits: { maxTurns: 3 },
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'catalog-cursor-next-page',
+                            name: 'agent.catalog.discover',
+                            arguments: {
+                                category: 'command',
+                                names: ['setTempo', 'setTimeSignature'],
+                                page: { cursor: firstData.nextCursor },
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+        expect(nextPage).toMatchObject({
+            receipts: [
+                {
+                    status: 'success',
+                    data: {
+                        items: [
+                            expect.objectContaining({
+                                function: expect.objectContaining({ name: 'setTimeSignature' }),
+                            }),
+                        ],
+                    },
+                },
+            ],
+        });
+
+        for (const argumentsValue of [
+            { category: 'command', names: ['setTimeSignature', 'setTempo'], page: { cursor: firstData.nextCursor } },
+            { category: 'query', names: ['project.query'], page: { cursor: firstData.nextCursor } },
+        ]) {
+            const replay = await runApplicationOwnedToolLoop({
+                loopId: 'catalog-cursor-replay',
+                terminalToolNames: new Set(['command.batch.propose']),
+                limits: { maxTurns: 3 },
+                requestTurn: vi
+                    .fn()
+                    .mockResolvedValueOnce({
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'catalog-cursor-replay-page',
+                                name: 'agent.catalog.discover',
+                                arguments: argumentsValue,
+                            },
+                        ],
+                    })
+                    .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+            });
+            expect(replay).toMatchObject({
+                receipts: [{ status: 'failure', error: { code: 'invalid-tool-arguments' } }],
+            });
+        }
+    });
+
     it('routes advertised render and analysis requests through proposal validation instead of execution', async () => {
         vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
             status: 'complete',
