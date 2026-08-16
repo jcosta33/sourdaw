@@ -287,6 +287,7 @@ function createPlan(input: {
     automation?: unknown;
     midi?: unknown;
     timelineMap?: unknown;
+    clipSatellites?: unknown;
 }) {
     let expectedMarkerState: unknown = null;
     let replacementMarkerState: unknown = null;
@@ -311,6 +312,7 @@ function createPlan(input: {
         automation: input.automation ?? null,
         midi: input.midi ?? null,
         timelineMap: input.timelineMap ?? null,
+        clipSatellites: input.clipSatellites ?? null,
     };
 }
 

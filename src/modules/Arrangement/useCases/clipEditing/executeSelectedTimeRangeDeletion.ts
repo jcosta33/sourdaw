@@ -1052,6 +1052,7 @@ function createCombinedInversePlan(input: {
         automation: null,
         midi,
         timelineMap: null,
+        clipSatellites: null,
     };
 }
 

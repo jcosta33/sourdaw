@@ -34,6 +34,7 @@ function reverseRestorePlan(value: unknown): unknown {
         automation: reverseTransition(value.automation),
         midi: reverseTransition(value.midi),
         timelineMap: reverseTransition(value.timelineMap),
+        clipSatellites: reverseTransition(value.clipSatellites),
     };
 }
 

@@ -4,6 +4,7 @@ import { getTrackState, type TrackState } from '../../repositories/track/getTrac
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 
+import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 
@@ -33,6 +34,7 @@ type CombinedStateRestorePlan = {
     automation: Record<string, unknown> | null;
     midi: Record<string, unknown> | null;
     timelineMap: Record<string, unknown> | null;
+    clipSatellites: Record<string, unknown> | null;
 };
 
 type PreparedLocalState = {
@@ -57,7 +59,15 @@ type PreparedCombinedState = {
 
 type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
 
-const COMBINED_PLAN_KEYS = ['version', 'scope', 'local', 'automation', 'midi', 'timelineMap'] as const;
+const COMBINED_PLAN_KEYS = [
+    'version',
+    'scope',
+    'local',
+    'automation',
+    'midi',
+    'timelineMap',
+    'clipSatellites',
+] as const;
 const LOCAL_PLAN_KEYS = ['version', 'expected', 'replacement'] as const;
 const LOCAL_STATE_PAIR_KEYS = ['trackState', 'markerState'] as const;
 const OWNER_PLAN_KEYS = ['version', 'expected', 'replacement'] as const;
@@ -193,11 +203,15 @@ function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan
         if (properties.automation !== null || properties.timelineMap !== null) {
             return null;
         }
+        if (properties.clipSatellites !== null) {
+            return null;
+        }
     }
 
     const automation = validateOwnerPlan(properties.automation);
     const midi = validateOwnerPlan(properties.midi);
     const timelineMap = validateOwnerPlan(properties.timelineMap);
+    const clipSatellites = validateOwnerPlan(properties.clipSatellites);
     if (properties.automation !== null && automation === null) {
         return null;
     }
@@ -205,6 +219,9 @@ function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan
         return null;
     }
     if (properties.timelineMap !== null && timelineMap === null) {
+        return null;
+    }
+    if (properties.clipSatellites !== null && clipSatellites === null) {
         return null;
     }
 
@@ -215,6 +232,7 @@ function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan
         automation,
         midi,
         timelineMap,
+        clipSatellites,
     };
 }
 
@@ -648,6 +666,10 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
     if (timelineMap === false) {
         return null;
     }
+    const clipSatellites = prepareOwner('Clip satellites', plan.clipSatellites, prepareClipSatelliteStateRestore);
+    if (clipSatellites === false) {
+        return null;
+    }
 
     const handles: PreparedHandle[] = [];
     if (plan.scope === 'selected-range') {
@@ -669,6 +691,9 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
         }
         if (midi) {
             handles.push(midi);
+        }
+        if (clipSatellites) {
+            handles.push(clipSatellites);
         }
     }
 
@@ -809,13 +834,20 @@ function reversePlan(plan: CombinedStateRestorePlan): Record<string, unknown> | 
     const reversedAutomation = reverseOwnerPlan(plan.automation);
     const reversedMidi = reverseOwnerPlan(plan.midi);
     const reversedTimelineMap = reverseOwnerPlan(plan.timelineMap);
-    if (reversedAutomation === false || reversedMidi === false || reversedTimelineMap === false) {
+    const reversedClipSatellites = reverseOwnerPlan(plan.clipSatellites);
+    if (
+        reversedAutomation === false ||
+        reversedMidi === false ||
+        reversedTimelineMap === false ||
+        reversedClipSatellites === false
+    ) {
         return null;
     }
     const automation = serializeOwnerPlan(reversedAutomation);
     const midi = serializeOwnerPlan(reversedMidi);
     const timelineMap = serializeOwnerPlan(reversedTimelineMap);
-    if (automation === false || midi === false || timelineMap === false) {
+    const clipSatellites = serializeOwnerPlan(reversedClipSatellites);
+    if (automation === false || midi === false || timelineMap === false || clipSatellites === false) {
         return null;
     }
 
@@ -830,6 +862,7 @@ function reversePlan(plan: CombinedStateRestorePlan): Record<string, unknown> | 
         automation,
         midi,
         timelineMap,
+        clipSatellites,
     };
 }
 

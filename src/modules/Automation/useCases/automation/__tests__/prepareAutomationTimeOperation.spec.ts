@@ -157,6 +157,45 @@ describe('prepareAutomationTimeOperation', () => {
         expect(mocks.set).toHaveBeenCalledTimes(1);
     });
 
+    it('drops the clip-scoped lanes of retired clip ids and keeps their inverse snapshot', () => {
+        const retiredLane = lane({ id: 'lane-retired', clipId: 'clip-retired', points: [point(3, 0.2)] });
+        const survivingLane = lane({ id: 'lane-surviving', clipId: 'clip-1', points: [point(3, 0.2)] });
+        const trackLane = lane({ id: 'lane-track', clipId: undefined, points: [point(3, 0.2)] });
+        const preparedState: AutomationStoreState = { lanes: [retiredLane, survivingLane, trackLane] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareAutomationTimeOperation({
+            operation: { type: 'delete', startBeat: 0, endBeat: 2 },
+            owners: [owner('track-1', true, ['clip-1', 'clip-retired'])],
+            removedClipIds: ['clip-retired'],
+        });
+
+        expect(transaction).toHaveProperty('status', 'ready');
+        expect(transaction.hasChanges).toBe(true);
+        expect(transaction.apply()).toBe(true);
+        expect(mocks.state.value?.lanes.map((entry) => entry.id)).toEqual(['lane-surviving', 'lane-track']);
+
+        // Undo has to bring the retired lane back, so the inverse snapshot keeps it.
+        expect(transaction.inversePlan?.replacement).toEqual(preparedState);
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.state.value).toBe(preparedState);
+    });
+
+    it('rejects a malformed retired clip id list before touching state', () => {
+        const preparedState: AutomationStoreState = { lanes: [lane({ points: [point(3, 0.2)] })] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareRuntimeInput({
+            operation: { type: 'delete', startBeat: 0, endBeat: 2 },
+            owners: [owner('track-1', true, ['clip-1'])],
+            removedClipIds: ['clip-1', 7],
+        });
+
+        expect(transaction.status).toBe('rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
     it('preserves every Automation state field in independent inverse-plan snapshots', () => {
         const richPoint: AutomationPoint = {
             beat: 4,

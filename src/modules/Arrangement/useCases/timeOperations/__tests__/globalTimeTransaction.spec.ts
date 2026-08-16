@@ -294,6 +294,7 @@ describe('executeGlobalTimeOperation', () => {
                     clipIds: ['dormant'],
                 },
             ],
+            removedClipIds: [],
         });
         expect(dependencies.prepareMidiGlobalTimeTransaction).toHaveBeenCalledWith({
             operation: { type: 'insert', atBeat: 4, durationBeats: 2 },

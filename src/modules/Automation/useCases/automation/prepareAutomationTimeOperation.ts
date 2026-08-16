@@ -25,6 +25,13 @@ type AutomationOwnerSnapshot = {
 type PrepareAutomationTimeOperationInput = {
     operation: AutomationTimeOperation;
     owners: readonly AutomationOwnerSnapshot[];
+    /**
+     * Clip ids the caller's own transaction retires — either deleted outright or
+     * re-identified. Their clip-scoped lanes are dropped in the same transaction
+     * so the shifted store never keeps a lane pointing at a clip id that no
+     * longer exists; such a lane makes every later preparation reject.
+     */
+    removedClipIds?: readonly string[];
 };
 
 type IndexedAutomationOwner = {
@@ -155,9 +162,28 @@ function createOwnerIndex(owners: unknown): ReadonlyMap<string, IndexedAutomatio
     return ownersByTrackId;
 }
 
+function createRemovedClipIdSet(value: unknown): ReadonlySet<string> | null {
+    if (value === undefined) {
+        return new Set<string>();
+    }
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const removedClipIds = new Set<string>();
+    for (const clipId of value) {
+        if (typeof clipId !== 'string' || clipId.trim().length === 0) {
+            return null;
+        }
+        removedClipIds.add(clipId);
+    }
+    return removedClipIds;
+}
+
 function validateInput(input: unknown): {
     operation: AutomationTimeOperation;
     ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>;
+    removedClipIds: ReadonlySet<string>;
 } | null {
     if (!isPlainObject(input)) {
         return null;
@@ -173,9 +199,15 @@ function validateInput(input: unknown): {
         return null;
     }
 
+    const removedClipIds = createRemovedClipIdSet(input.removedClipIds);
+    if (!removedClipIds) {
+        return null;
+    }
+
     return {
         operation,
         ownersByTrackId,
+        removedClipIds,
     };
 }
 
@@ -260,7 +292,8 @@ function prepareLanePoints(lane: AutomationLane, operation: AutomationTimeOperat
 function prepareNextState(
     preparedState: AutomationStoreState | null,
     operation: AutomationTimeOperation,
-    ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>
+    ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>,
+    removedClipIds: ReadonlySet<string>
 ): PreparedAutomationState {
     if (!preparedState) {
         return {
@@ -280,6 +313,13 @@ function prepareNextState(
                 hasChanges: false,
                 nextState: preparedState,
             };
+        }
+        if (lane.clipId !== undefined && removedClipIds.has(lane.clipId)) {
+            // The caller's transaction retires this clip id in the same commit.
+            // Shifting the lane's points would leave it orphaned and reject
+            // every later time operation, so the lane goes with the clip.
+            hasChanges = true;
+            continue;
         }
         if (lane.clipId !== undefined && !owner.clipIds.has(lane.clipId)) {
             return {
@@ -353,7 +393,12 @@ export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOpera
             nextState: preparedState,
         };
     } else {
-        preparedOperation = prepareNextState(preparedState, validatedInput.operation, validatedInput.ownersByTrackId);
+        preparedOperation = prepareNextState(
+            preparedState,
+            validatedInput.operation,
+            validatedInput.ownersByTrackId,
+            validatedInput.removedClipIds
+        );
     }
     let inversePlan: AutomationTimeStateRestorePlan | null = null;
     if (

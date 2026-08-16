@@ -3,9 +3,12 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
+import { createClipSatelliteRemovalPlan } from '../../stores/clipSatelliteState';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
+import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 
+import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 
@@ -606,6 +609,84 @@ function createClipIdentityRequests(
         }
     }
     return requests;
+}
+
+/**
+ * Clip ids this operation takes out of the arrangement — deleted outright, or
+ * re-identified because the surviving fragment starts inside the deleted range
+ * and is re-keyed. Mirrors `prepareDeletedTracks` branch for branch; the caller
+ * cross-checks the result against the prepared track state before publishing.
+ *
+ * Insert never touches identity. Duplicate only mints new ids, so neither
+ * retires one.
+ */
+function collectRetiredClipIds(owners: readonly NormalizedOwner[], operation: GlobalTimeOperation): readonly string[] {
+    if (operation.type !== 'delete') {
+        return [];
+    }
+
+    const retiredClipIds: string[] = [];
+    for (const owner of owners) {
+        if (!owner.acceptsClipUpdate) {
+            continue;
+        }
+        for (const normalizedClip of owner.clips) {
+            const clip = normalizedClip.source;
+            if (clip.endBeat <= operation.startBeat || clip.startBeat >= operation.endBeat) {
+                continue;
+            }
+            if (clip.startBeat >= operation.startBeat && clip.endBeat <= operation.endBeat) {
+                // Fully inside the deleted range: the clip goes away.
+                retiredClipIds.push(clip.id);
+                continue;
+            }
+            if (clip.startBeat < operation.startBeat) {
+                // The left fragment keeps the original id.
+                continue;
+            }
+            // Starts inside the range and outlives it: survives under a new id.
+            retiredClipIds.push(clip.id);
+        }
+    }
+    return retiredClipIds;
+}
+
+function collectTrackStateClipIds(state: TrackState): ReadonlySet<string> {
+    const clipIds = new Set<string>();
+    for (const track of state.tracks) {
+        for (const clip of track.clips) {
+            clipIds.add(clip.id);
+        }
+    }
+    return clipIds;
+}
+
+/**
+ * The retired set has to be exactly the ids the prepared track state drops.
+ * A miss in either direction would either strand satellite data or delete a
+ * live clip's automation, so the operation refuses rather than guessing.
+ */
+function retiredClipIdsMatchPreparedState(
+    retiredClipIds: readonly string[],
+    existingClipIds: ReadonlySet<string>,
+    nextTrackState: TrackState
+): boolean {
+    const survivingClipIds = collectTrackStateClipIds(nextTrackState);
+    const retired = new Set(retiredClipIds);
+    if (retired.size !== retiredClipIds.length) {
+        return false;
+    }
+    for (const clipId of existingClipIds) {
+        if (survivingClipIds.has(clipId) === retired.has(clipId)) {
+            return false;
+        }
+    }
+    for (const clipId of retired) {
+        if (!existingClipIds.has(clipId)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function clipReplayMatchesRequest(value: unknown, request: ClipIdentityRequest): value is ClipReplayIdentity {
@@ -1281,6 +1362,7 @@ function createCombinedInversePlan(input: {
     automationPreparation: ReturnType<TimeOperationDependencies['prepareAutomationTimeOperation']>;
     midiPreparation: ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
     timelineMapPreparation: ReturnType<TimeOperationDependencies['prepareTimelineMapTimeOperation']>;
+    clipSatellitePreparation: { hasChanges: boolean; inversePlan: Record<string, unknown> | null };
 }): Record<string, unknown> | null {
     const expectedTrackState = timeOperationStateCodec.encodeTrackState(input.expectedTrackState);
     const replacementTrackState = timeOperationStateCodec.encodeTrackState(input.replacementTrackState);
@@ -1293,7 +1375,8 @@ function createCombinedInversePlan(input: {
     const automation = cloneOwnerInversePlan(input.automationPreparation);
     const midi = cloneOwnerInversePlan(input.midiPreparation);
     const timelineMap = cloneOwnerInversePlan(input.timelineMapPreparation);
-    if (automation === false || midi === false || timelineMap === false) {
+    const clipSatellites = cloneOwnerInversePlan(input.clipSatellitePreparation);
+    if (automation === false || midi === false || timelineMap === false || clipSatellites === false) {
         return null;
     }
 
@@ -1314,6 +1397,7 @@ function createCombinedInversePlan(input: {
         automation,
         midi,
         timelineMap,
+        clipSatellites,
     };
 }
 
@@ -1351,9 +1435,11 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     }
 
     const ownerOperation = toOwnerTimeOperation(validatedInput.operation);
+    const retiredClipIds = collectRetiredClipIds(owners, validatedInput.operation);
     const automationPreparation = deps.prepareAutomationTimeOperation({
         operation: ownerOperation,
         owners: createAutomationOwners(owners),
+        removedClipIds: retiredClipIds,
     });
     if (automationPreparation.status !== 'ready') {
         return rejectResult();
@@ -1391,6 +1477,14 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     }
 
     const local = prepareLocalState(trackState, markerState, owners, validatedInput.operation, clipIdentities);
+    if (!retiredClipIdsMatchPreparedState(retiredClipIds, existingClipIds, local.trackState)) {
+        return rejectResult();
+    }
+    const clipSatelliteRemovalPlan = createClipSatelliteRemovalPlan(retiredClipIds);
+    const clipSatellitePreparation = prepareClipSatelliteStateRestore(clipSatelliteRemovalPlan);
+    if (clipSatellitePreparation.status !== 'ready') {
+        return rejectResult();
+    }
     const midiOwners = createMidiOwners(owners);
     let midiPreparationInput: Parameters<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>[0] = {
         operation: local.midiOperation,
@@ -1440,6 +1534,7 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         asPreparedHandle('Automation', automationPreparation),
         asPreparedHandle('Transport', transportPreparation),
         asPreparedHandle('MIDI', midiPreparation),
+        asPreparedHandle('Clip satellites', clipSatellitePreparation),
     ];
     const changedHandles = handles.filter((handle) => handle.hasChanges);
     if (changedHandles.length === 0) {
@@ -1459,6 +1554,16 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         automationPreparation,
         midiPreparation,
         timelineMapPreparation: transportPreparation,
+        clipSatellitePreparation: {
+            hasChanges: clipSatellitePreparation.hasChanges,
+            inversePlan: clipSatellitePreparation.hasChanges
+                ? {
+                      version: 1,
+                      expected: clipSatelliteRemovalPlan.replacement,
+                      replacement: clipSatelliteRemovalPlan.expected,
+                  }
+                : null,
+        },
     });
     if (!inversePlan) {
         return rejectResult();
@@ -1488,6 +1593,13 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
             }
             applied.push(handle);
         }
+
+        // Undoable satellites (clip-scoped automation lanes, gain envelopes,
+        // warp states) were retired by the handles above; this sweep clears the
+        // rest of the per-clip records — clipboard entries and the ephemeral
+        // drag-preview and active-recording refs, none of which participate in
+        // undo. Every removal is a no-op for an id already dropped.
+        removeClipSatelliteData(retiredClipIds);
         return true;
     });
 
