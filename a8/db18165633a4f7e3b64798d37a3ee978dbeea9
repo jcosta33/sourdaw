@@ -1,0 +1,29 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_17231c7ec71d82 1,499-503,515-521,839-874,954,957-969,989-1029
+public/wasm/daw-dsp/daw_dsp.js
+  s_ab5443e65c7fba::t_346d509c6021cf 1059-1061,1142-1150
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_7460fdd57dd021 1,19-54,134,137-149,169-209
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_5b96aae271e78a 12,15-18,20-21,26,40
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_3d112adeac3e7c 1,499-503,515-521,839-874,954,957-969,989-1029
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ab5443e65c7fba::t_a31c026edb2cae 1236-1238,1319-1327
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a8db18165633a4f7e3b64798d37a3ee978dbeea9",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
