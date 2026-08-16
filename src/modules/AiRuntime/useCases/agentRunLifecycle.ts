@@ -9,6 +9,7 @@ import {
     type AgentRunBudgets,
     type AgentRunError,
     type AgentRunGrants,
+    type AgentRunPlan,
     type AgentRunPhase,
     type AgentRunProviderUsage,
     type AgentRunScope,
@@ -97,6 +98,43 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
     runs[index] = next;
     persistAgentRunState({ ...state, runs });
     return structuredClone(next);
+}
+
+function createLegacyAgentRunPlan(input: {
+    summary: string;
+    commandIds: string[];
+    serializedBatchIdentity: string | null;
+    applicationToolReceipts: ApplicationToolReceipt[];
+    revision: string;
+    scope: AgentRunScope;
+}): AgentRunPlan {
+    return {
+        summary: input.summary,
+        commandIds: [...input.commandIds],
+        serializedBatchIdentity: input.serializedBatchIdentity,
+        applicationToolReceipts: structuredClone(input.applicationToolReceipts),
+        revision: input.revision,
+        classification: 'simple',
+        showPlanPanel: false,
+        objective: input.summary,
+        interpretedConstraints: [`Plan is bound to project revision ${input.revision}.`],
+        scope: structuredClone(input.scope),
+        steps: [],
+        expectedImpact: {
+            project: [],
+            audible: {
+                status: 'not-claimed',
+                reason: 'No audible result is claimed by a persisted legacy plan.',
+            },
+        },
+        capabilities: [],
+        risks: [],
+        approvalPoints: [],
+        validationStrategy: ['Revalidate the persisted project revision before resuming.'],
+        stoppingConditions: ['Stop if the persisted project revision is no longer current.'],
+        alternatives: [],
+        needsUserDecision: false,
+    };
 }
 
 function clearAgentRuns(): void {
@@ -212,6 +250,7 @@ function recordAgentRunPlan(input: {
     scope: AgentRunScope;
     grants: AgentRunGrants;
     budgets: AgentRunBudgets;
+    plan?: AgentRunPlan;
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
@@ -221,12 +260,17 @@ function recordAgentRunPlan(input: {
         scope: structuredClone(input.scope),
         grants: structuredClone(input.grants),
         budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
-        plan: {
-            summary: input.summary,
-            commandIds: [...input.commandIds],
-            serializedBatchIdentity: input.serializedBatchIdentity,
-            applicationToolReceipts: structuredClone(input.applicationToolReceipts ?? []),
-        },
+        plan: structuredClone(
+            input.plan ??
+                createLegacyAgentRunPlan({
+                    summary: input.summary,
+                    commandIds: input.commandIds,
+                    serializedBatchIdentity: input.serializedBatchIdentity,
+                    applicationToolReceipts: input.applicationToolReceipts ?? [],
+                    revision: input.revision,
+                    scope: input.scope,
+                })
+        ),
     }));
 }
 
@@ -243,12 +287,14 @@ function recordAgentRunApplicationToolEvidence(input: {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
         const plan =
             run.plan === null
-                ? {
+                ? createLegacyAgentRunPlan({
                       summary: input.summary,
                       commandIds: [],
                       serializedBatchIdentity: null,
-                      applicationToolReceipts: structuredClone(input.applicationToolReceipts),
-                  }
+                      applicationToolReceipts: input.applicationToolReceipts,
+                      revision: input.revision,
+                      scope: input.scope,
+                  })
                 : {
                       ...run.plan,
                       applicationToolReceipts: structuredClone(input.applicationToolReceipts),

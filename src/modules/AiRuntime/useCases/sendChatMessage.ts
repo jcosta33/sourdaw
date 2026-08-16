@@ -65,6 +65,7 @@ import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { createModelProviderProtocol } from './modelProviderProtocol';
+import { planAgentRun } from './planAgentRun';
 import { planPromptActions } from './planPromptActions';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
@@ -435,6 +436,49 @@ export async function sendChatMessage(
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
                 if (interactionMode === 'plan') {
+                    const plannedRun = planAgentRun({
+                        request: userText,
+                        revision: projectRevision,
+                        actions: result.actions,
+                        actionLabels: confirmationDescription.actionLabels,
+                        scope: {
+                            targetIds: confirmationDescription.affectedIds,
+                            targetRanges: [],
+                            protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                            protectedRanges: [],
+                        },
+                        grants: {
+                            allowedOperationPrefixes: [],
+                            create: false,
+                            delete: false,
+                            routing: false,
+                            tempo: false,
+                            master: false,
+                            file: false,
+                            audioUpload: false,
+                            remoteGeneration: false,
+                            autoCommit: false,
+                        },
+                        budgets: { limits: {}, consumed: {} },
+                        requiresConfirmation: false,
+                        applicationToolReceipts: result.applicationToolReceipts,
+                    });
+                    if (plannedRun.status === 'needs-user-decision') {
+                        createStemImportConfirmationResourceLease(result.actions)?.release();
+                        agentRunLifecycle.requireManualResume({
+                            runId,
+                            reason: plannedRun.decision.reason,
+                            workIds: [],
+                        });
+                        updateChatMessage(assistantMsgId, {
+                            isStreaming: false,
+                            content: `Choose one before I continue:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
+                        });
+                        return undefined;
+                    }
+                    if (plannedRun.status === 'rejected') {
+                        throw new Error(plannedRun.reason);
+                    }
                     agentRunLifecycle.recordPlan({
                         runId,
                         summary: confirmationDescription.actionLabels.join('\n'),
@@ -461,6 +505,7 @@ export async function sendChatMessage(
                             autoCommit: false,
                         },
                         budgets: { limits: {}, consumed: {} },
+                        plan: plannedRun.plan,
                     });
                     agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
                     createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -493,6 +538,49 @@ export async function sendChatMessage(
                     throw new Error(parsedCommandBatch.reason);
                 }
                 const commandIds = parsedCommandBatch.envelope.commands.map((command) => command.commandId);
+                const plannedRun = planAgentRun({
+                    request: userText,
+                    revision: projectRevision,
+                    actions: result.actions,
+                    actionLabels: confirmationDescription.actionLabels,
+                    scope: {
+                        targetIds: [...commandBatch.authority.scope.targetIds],
+                        targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
+                        protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
+                        protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({ ...range })),
+                    },
+                    grants: {
+                        allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
+                        create: commandBatch.authority.grants.create,
+                        delete: commandBatch.authority.grants.delete,
+                        routing: commandBatch.authority.grants.routing,
+                        tempo: commandBatch.authority.grants.tempo,
+                        master: commandBatch.authority.grants.master,
+                        file: commandBatch.authority.grants.file,
+                        audioUpload: commandBatch.authority.grants.audioUpload,
+                        remoteGeneration: commandBatch.authority.grants.remoteGeneration,
+                        autoCommit: commandBatch.authority.grants.autoCommit,
+                    },
+                    budgets: { limits: { ...commandBatch.authority.budgets }, consumed: {} },
+                    requiresConfirmation: compiledActionExecution.requiresConfirmation,
+                    applicationToolReceipts: result.applicationToolReceipts,
+                });
+                if (plannedRun.status === 'needs-user-decision') {
+                    createStemImportConfirmationResourceLease(result.actions)?.release();
+                    agentRunLifecycle.requireManualResume({
+                        runId,
+                        reason: plannedRun.decision.reason,
+                        workIds: [],
+                    });
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        content: `Choose one before I can prepare this run:\n\n${plannedRun.decision.alternatives.map((alternative) => `- ${alternative.label}`).join('\n')}`,
+                    });
+                    return undefined;
+                }
+                if (plannedRun.status === 'rejected') {
+                    throw new Error(plannedRun.reason);
+                }
                 agentRunLifecycle.recordPlan({
                     runId,
                     summary: confirmationDescription.actionLabels.join('\n'),
@@ -521,6 +609,11 @@ export async function sendChatMessage(
                     budgets: {
                         limits: { ...commandBatch.authority.budgets },
                         consumed: {},
+                    },
+                    plan: {
+                        ...plannedRun.plan,
+                        commandIds,
+                        serializedBatchIdentity: parsedCommandBatch.envelope.idempotencyKey,
                     },
                 });
                 agentRunLifecycle.recordBatch({

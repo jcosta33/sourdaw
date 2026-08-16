@@ -63,6 +63,50 @@ export type AgentRunPlan = {
     commandIds: string[];
     serializedBatchIdentity: string | null;
     applicationToolReceipts?: ApplicationToolReceipt[];
+    revision: string | null;
+    classification: 'simple' | 'complex';
+    showPlanPanel: boolean;
+    objective: string;
+    interpretedConstraints: string[];
+    scope: AgentRunScope;
+    steps: AgentRunPlanStep[];
+    expectedImpact: AgentRunPlanExpectedImpact;
+    capabilities: AgentRunPlanCapability[];
+    risks: string[];
+    approvalPoints: AgentRunPlanApprovalPoint[];
+    validationStrategy: string[];
+    stoppingConditions: string[];
+    alternatives: AgentRunPlanAlternative[];
+    needsUserDecision: boolean;
+};
+
+export type AgentRunPlanStep = {
+    order: number;
+    actionType: string;
+    description: string;
+};
+
+export type AgentRunPlanExpectedImpact = {
+    project: string[];
+    audible: { status: 'not-claimed'; reason: string };
+};
+
+export type AgentRunPlanCapability = {
+    id: string;
+    source: 'action-catalog' | 'application-tool-catalog' | 'budget' | 'asset' | 'data-policy';
+    prerequisite: string;
+    status: 'available' | 'required' | 'unavailable';
+};
+
+export type AgentRunPlanApprovalPoint = {
+    kind: 'command-confirmation' | 'user-decision';
+    reason: string;
+};
+
+export type AgentRunPlanAlternative = {
+    id: string;
+    label: string;
+    changesAuthority: boolean;
 };
 
 export type AgentRunBatch = {
