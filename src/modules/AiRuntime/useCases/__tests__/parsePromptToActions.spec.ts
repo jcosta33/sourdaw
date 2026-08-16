@@ -297,6 +297,97 @@ describe('parsePromptToActions', () => {
         expect(result.requiresConfirmation).toBe(true);
     });
 
+    it.each([
+        {
+            name: 'executes one generic semantic bulk selector without per-target prompt grounding',
+            prompt: 'mute all audio tracks',
+            arguments_: { muted: true },
+            expectedActions: [
+                { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+                { type: 'muteTrack', payload: { trackId: 'track-guitar', muted: true, expectedMuted: false } },
+            ],
+        },
+        {
+            name: 'rejects a negated operation despite compiler-resolved target IDs',
+            prompt: 'do not mute any audio tracks',
+            arguments_: { muted: true },
+            expectedActions: [],
+        },
+        {
+            name: 'rejects a non-requested parameter despite compiler-resolved target IDs',
+            prompt: 'mute all audio tracks',
+            arguments_: { muted: false },
+            expectedActions: [],
+        },
+    ])('$name', async ({ prompt, arguments_, expectedActions }) => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-mute-track',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['muteTrack'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'semantic-mute-tracks',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Mute all audio tracks.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: ['track-vocals', 'track-guitar'],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate selector preconditions.'],
+                                stoppingConditions: ['Stop if the project revision changes.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'mute-audio-tracks',
+                                        name: 'muteTrack',
+                                        arguments: arguments_,
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { kind: 'audio' },
+                                            quantity: { unit: 'targets', exactly: 2 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(prompt, createMixerContext(), undefined, 'revision-1');
+
+        expect(generateToolCalls).toHaveBeenCalledTimes(2);
+        expect(result.actions).toEqual(expectedActions);
+        if (expectedActions.length === 0) {
+            expect(result.rejectionReason).toBeDefined();
+            return;
+        }
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.requiresConfirmation).toBe(true);
+    });
+
     it('rejects a fast-path plan before confirmation when it conflicts with locked production intent', async () => {
         vi.mocked(tryParameterizedPath).mockReturnValue([{ type: 'setTempo', payload: { bpm: 128 } }]);
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(false);

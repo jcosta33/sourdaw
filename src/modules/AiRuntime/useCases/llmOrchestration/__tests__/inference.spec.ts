@@ -157,6 +157,39 @@ const SERIALIZED_AGENT_PLAN_CALL = {
     },
 };
 
+const SERIALIZED_STRUCTURED_LIST_CALL = {
+    name: 'command.batch.propose',
+    arguments: {
+        plan: {
+            semantic: { classification: 'simple', uncertainty: [] },
+            objective: 'Mute all audio tracks.',
+            constraints: [],
+            scope: { targetIds: ['track-1', 'track-2'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            capabilityIds: [],
+            assetIds: [],
+            alternatives: [],
+            validationStrategy: ['Validate selector preconditions.'],
+            stoppingConditions: ['Stop if the project revision changes.'],
+        },
+        list: {
+            schemaVersion: 1,
+            items: [
+                {
+                    id: 'mute-audio-tracks',
+                    name: 'muteTrack',
+                    arguments: { muted: true },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { kind: 'audio' },
+                        quantity: { unit: 'targets', exactly: 2 },
+                    },
+                },
+            ],
+        },
+    },
+};
+
 describe('generateToolPlanningOutcome', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -247,6 +280,31 @@ describe('generateToolPlanningOutcome', () => {
             ).resolves.toMatchObject({
                 status: 'complete',
                 proposal: SERIALIZED_AGENT_PLAN_CALL.arguments.plan,
+            });
+        }
+    );
+
+    it.each(['native', 'cloud', 'webllm'] as const)(
+        'preserves one structured semantic list from the %s adapter without per-object provider calls',
+        async (backend) => {
+            mocks.backendChain.value = [backend];
+            if (backend === 'native') {
+                mocks.nativeEngineReady.value = true;
+                mocks.generateNativeToolCalls.mockResolvedValue([SERIALIZED_STRUCTURED_LIST_CALL]);
+            } else if (backend === 'cloud') {
+                mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
+                mocks.generateCloudToolCalls.mockResolvedValue([SERIALIZED_STRUCTURED_LIST_CALL]);
+            } else {
+                mocks.isWebLlmLoaded.mockReturnValue(true);
+                mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([SERIALIZED_STRUCTURED_LIST_CALL]));
+            }
+
+            await expect(
+                generateToolCalls('sys', 'mute all audio tracks', getAgentToolCatalogSchemas())
+            ).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [expect.objectContaining(SERIALIZED_STRUCTURED_LIST_CALL)],
+                proposal: SERIALIZED_STRUCTURED_LIST_CALL.arguments.plan,
             });
         }
     );

@@ -603,20 +603,31 @@ function validateCommandBatchProposal(
     call: ToolCallResult,
     disclosedCommandSchemas: ReadonlyMap<string, string>
 ): string | null {
+    const hasPrimitiveCommands = Array.isArray(call.arguments.commands);
+    const list = isRecord(call.arguments.list) ? call.arguments.list : null;
+    const hasStructuredList = list !== null && Array.isArray(list.items);
     if (
-        Object.keys(call.arguments).some((key) => key !== 'commands' && key !== 'plan') ||
-        !Array.isArray(call.arguments.commands) ||
-        normalizeAgentPlanProposal(call.arguments.plan) === null
+        Object.keys(call.arguments).some((key) => key !== 'commands' && key !== 'list' && key !== 'plan') ||
+        hasPrimitiveCommands === hasStructuredList ||
+        (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
     ) {
         return 'Provider command proposal does not match the strict catalog contract.';
     }
-    const commands = call.arguments.commands;
+    const commands: unknown[] = hasPrimitiveCommands
+        ? (call.arguments.commands as unknown[])
+        : (list!.items as unknown[]);
     if (commands.length === 0 || commands.length > 32) {
         return 'Provider command proposal exceeds the command budget.';
     }
     const names = new Set<string>();
     for (const command of commands) {
-        if (!isRecord(command) || Object.keys(command).some((key) => key !== 'name' && key !== 'arguments')) {
+        if (!isRecord(command)) {
+            return 'Provider command proposal does not match the strict catalog contract.';
+        }
+        const allowedKeys = hasPrimitiveCommands
+            ? ['name', 'arguments']
+            : ['id', 'name', 'arguments', 'selector', 'repeat', 'dependsOn'];
+        if (Object.keys(command).some((key) => !allowedKeys.includes(key))) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
         if (
@@ -624,7 +635,7 @@ function validateCommandBatchProposal(
             command.name.length === 0 ||
             command.name.length > 128 ||
             !isRecord(command.arguments) ||
-            names.has(command.name)
+            (hasPrimitiveCommands && names.has(command.name))
         ) {
             return 'Provider command proposal does not match the strict catalog contract.';
         }
