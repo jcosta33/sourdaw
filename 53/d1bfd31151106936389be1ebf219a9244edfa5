@@ -1,0 +1,54 @@
+src/modules/Transport/useCases/setMasterGain.ts
+  s_ab5443e65c7fba::t_9a2999393ea6af 5,10-15
+src/modules/Transport/useCases/tempoMap/shiftTimelineMapsAfterBeat.ts
+  s_ab5443e65c7fba::t_bb761a5ce20d3a 17-21,23-27
+src/modules/Transport/useCases/tempoMap/__tests__/shiftTimelineMapsAfterBeat.spec.ts
+  s_ab5443e65c7fba::t_f65f78de031918 149-170,172-190
+  s_ab5443e65c7fba::t_4d5f8be6dda2a9 171
+  s_ab5443e65c7fba::t_0fb7d1b72a1ac4 57-58
+  s_ab5443e65c7fba::t_a3ef32cbab1796 54
+src/modules/Transport/useCases/tempoMap/deleteTimelineMapsTimeRange.ts
+  s_ab5443e65c7fba::t_bcbce23b87c535 10-22
+src/modules/Transport/useCases/tempoMap/__tests__/timelineMapTimeStateCodec.spec.ts
+  s_ab5443e65c7fba::t_6648fe09d1e7e5 74
+  s_ab5443e65c7fba::t_49ec06fd55220e 81
+src/modules/Transport/useCases/__tests__/restoreTransportSnapshot.spec.ts
+  s_ab5443e65c7fba::t_2c7489c9d46348 78,84-104,106
+  s_ab5443e65c7fba::t_5414ea6032ba92 105
+src/modules/Transport/useCases/tempoMap/timelineMapTimeStateCodec.ts
+  s_ab5443e65c7fba::t_86c6c391a13d30 1-7
+  s_ab5443e65c7fba::t_66863cc943c935 346
+  s_ab5443e65c7fba::t_0cca1463df14cb 184-185
+src/modules/Transport/stores/__tests__/transportStore.spec.ts
+  s_ab5443e65c7fba::t_5123e9b4eac3c9 110,118,121,125,136
+  s_ab5443e65c7fba::t_69589f5ccf5fc7 188-189,191-222
+  s_ab5443e65c7fba::t_92650daf4fc73f 185-187,190
+src/modules/Transport/useCases/tempoMap/__tests__/deleteTimelineMapsTimeRange.spec.ts
+  s_ab5443e65c7fba::t_13dd17cc88dc87 122-153
+src/modules/Transport/stores/transportStore.ts
+  s_ab5443e65c7fba::t_bd155fb083bd3a 145-153,156,160,164
+  s_ab5443e65c7fba::t_d60d1d3e135788 15-20
+  s_ab5443e65c7fba::t_fbeb4f43a70201 130-133
+  s_ab5443e65c7fba::t_0fc8dea09122ad 218,226
+  s_ab5443e65c7fba::t_b6b60503826dd3 309,317-324,330
+  s_ab5443e65c7fba::t_38c1a4b20c401f 258,266
+src/modules/Transport/useCases/setTempo.ts
+  s_ab5443e65c7fba::t_bacc11e459ed9a 5
+  s_ab5443e65c7fba::t_41683865afd18e 81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "53d1bfd31151106936389be1ebf219a9244edfa5",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
