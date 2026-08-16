@@ -442,6 +442,33 @@ describe('agent device factory manifest', () => {
         expect(JSON.stringify(conflicting)).not.toContain('/b/example.clap');
     });
 
+    it('keeps accepted same-prefix CLAP ids distinct for grouping and selection', () => {
+        const prefix = `org.example.${'x'.repeat(116)}`;
+        const first = `${prefix}.first`;
+        const second = `${prefix}.second`;
+        const base = {
+            id: 'scan-a',
+            clap_id: first,
+            name: 'Example Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/a.clap',
+            version: '1.0.0',
+            num_inputs: 0,
+            num_outputs: 0,
+            num_parameters: 0,
+            has_custom_ui: false,
+        };
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [base, { ...base, id: 'scan-b', path: '/plugins/b.clap' }, { ...base, id: 'scan-c', clap_id: second, path: '/plugins/c.clap' }],
+        });
+        const manifest = getAgentDeviceFactoryManifest([`clap:${first}`, `clap:${second}`]);
+        expect(manifest.devices.map((device) => device.type)).toEqual([`clap:${first}`, `clap:${second}`]);
+        expect(getAgentDeviceFactoryManifest([`clap:${first}`]).devices).toHaveLength(1);
+    });
+
     it('does not expand an explicitly selected external factory set', () => {
         const first = {
             id: 'first',

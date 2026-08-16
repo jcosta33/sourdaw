@@ -2,6 +2,7 @@ import { type ScannedPluginParameter } from '../models/ScannedPlugin';
 import { defaultPluginScanState, pluginScanStore } from '../stores/pluginScanStore';
 
 const EXTERNAL_FACTORY_VERSION_PREFIX = 'external-factory-v1';
+const EXTERNAL_FACTORY_IDENTITY_SCHEME = 'clap-id-v2';
 const MAX_PUBLIC_SCAN_TEXT_LENGTH = 128;
 const MAX_SCANNED_PARAMETER_COUNT = 4096;
 const MAX_SCANNED_PARAMETER_DESCRIPTORS = 256;
@@ -85,11 +86,11 @@ function stableFingerprint(parts: readonly string[]): string {
 }
 
 function factoryType(plugin: Pick<ScannedFactory, 'clap_id' | 'id'>): string {
-    const clapId = boundedText(plugin.clap_id, '');
-    if (clapId.length > 0 && plugin.clap_id.length <= 240) {
+    const clapId = normalizedScanText(plugin.clap_id);
+    if (clapId.length > 0 && Array.from(clapId).length <= 240 && clapId === plugin.clap_id) {
         return `clap:${clapId}`;
     }
-    return `clap-scan:${stableFingerprint([plugin.clap_id, plugin.id])}`;
+    return `clap-scan:${EXTERNAL_FACTORY_IDENTITY_SCHEME}:${stableFingerprint([plugin.clap_id, plugin.id])}`;
 }
 
 function boundedParameterCount(value: number): number | null {
