@@ -9,6 +9,7 @@ import { ingestChannelControlChange } from '../../repositories/webMidi/ingestCha
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
 
@@ -105,9 +106,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             const grandBouleDevice = track?.devices.find((device) => device.type === 'grand-boule');
             if (grandBouleDevice) {
                 const strip = audioEngine.getTrackStrip(targetTrackId);
-                const deviceNode = strip?.deviceNodes.find(
-                    (candidate) => candidate.deviceId === grandBouleDevice.id || candidate.type === 'grand-boule'
-                );
+                const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
                 if (deviceNode?.grandBouleControls?.ready) {
                     // Pedals are 64/66/67 — above the 14-bit range, so the
                     // resolved controller and value are the raw ones.
@@ -139,9 +138,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             const levainDevice = track?.devices.find((device) => device.type === 'levain');
             if (levainDevice) {
                 const strip = audioEngine.getTrackStrip(targetTrackId);
-                const deviceNode = strip?.deviceNodes.find(
-                    (candidate) => candidate.deviceId === levainDevice.id || candidate.type === 'levain'
-                );
+                const deviceNode = resolveDeviceNode(strip, { deviceId: levainDevice.id, type: 'levain' });
                 if (deviceNode?.levainControls?.ready) {
                     // The raw wire bytes, deliberately: `handleCc` is the
                     // message boundary into the Levain worklet and its Rust
