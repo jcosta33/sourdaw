@@ -31,6 +31,16 @@ trait ServiceRegistrar {
     fn unregister(&self, fullname: &str) -> Result<(), String>;
 }
 
+/// Every daemon-side operation the teardown sequence drives.
+///
+/// The retirement order — retire the advertisement, stop browsing, then bring
+/// the daemon down — is the part that peers observe, and it is only reachable
+/// through this trait, so a test can pin it without binding real sockets.
+trait DiscoveryDaemon: ServiceRegistrar {
+    fn stop_browsing(&self) -> Result<(), String>;
+    fn shutdown(&self) -> Result<(), String>;
+}
+
 impl ServiceRegistrar for ServiceDaemon {
     fn register(&self, service: ServiceInfo) -> Result<(), String> {
         ServiceDaemon::register(self, service)
@@ -43,6 +53,42 @@ impl ServiceRegistrar for ServiceDaemon {
             .map(|_| ())
             .map_err(|e| format!("Failed to unregister mDNS service: {}", e))
     }
+}
+
+impl DiscoveryDaemon for ServiceDaemon {
+    fn stop_browsing(&self) -> Result<(), String> {
+        ServiceDaemon::stop_browse(self, SERVICE_TYPE)
+            .map(|_| ())
+            .map_err(|e| format!("Failed to stop mDNS browsing: {}", e))
+    }
+
+    fn shutdown(&self) -> Result<(), String> {
+        ServiceDaemon::shutdown(self)
+            .map(|_| ())
+            .map_err(|e| format!("Failed to shutdown mDNS: {}", e))
+    }
+}
+
+/// Retire everything the daemon holds, in the order peers observe.
+///
+/// Every step runs unconditionally and the first failure is the one reported:
+/// `mdns-sd`'s daemon has no `Drop` and only exits on its `Exit` command, so a
+/// failed unregister that skipped `shutdown` would strand the daemon thread and
+/// its sockets for the rest of the process lifetime.
+fn retire(
+    daemon: &impl DiscoveryDaemon,
+    advertisement: &mut Advertisement,
+    browsing: bool,
+) -> Result<(), String> {
+    let advertising = advertisement.stop(daemon);
+    let browsing = if browsing {
+        daemon.stop_browsing()
+    } else {
+        Ok(())
+    };
+    let daemon = daemon.shutdown();
+
+    advertising.and(browsing).and(daemon)
 }
 
 /// The single live mDNS registration.
@@ -73,12 +119,31 @@ impl Advertisement {
         Ok(())
     }
 
+    /// Retire the live registration, keeping the handle when the daemon refuses.
+    ///
+    /// Dropping the fullname before the unregister returned left a service
+    /// registered on the network with nothing left that could name it: the
+    /// struct believed it was advertising nothing, so neither a later stop nor
+    /// a re-advertise could ever retire it.
     fn stop(&mut self, registrar: &impl ServiceRegistrar) -> Result<(), String> {
-        if let Some(fullname) = self.fullname.take() {
-            registrar.unregister(&fullname)?;
+        let Some(fullname) = self.fullname.take() else {
+            return Ok(());
+        };
+
+        if let Err(error) = registrar.unregister(&fullname) {
+            self.fullname = Some(fullname);
+            return Err(error);
         }
 
         Ok(())
+    }
+
+    /// Abandon the handle without contacting the daemon.
+    ///
+    /// Only for the path where the daemon is already down and no further
+    /// unregister can reach the network.
+    fn forget(&mut self) {
+        self.fullname = None;
     }
 }
 
@@ -208,9 +273,7 @@ impl LanDiscovery {
             return Ok(());
         }
 
-        self.daemon
-            .stop_browse(SERVICE_TYPE)
-            .map_err(|e| format!("Failed to stop mDNS browsing: {}", e))?;
+        DiscoveryDaemon::stop_browsing(&self.daemon)?;
 
         self.browsing = false;
         if let Ok(mut map) = self.discovered.lock() {
@@ -232,14 +295,20 @@ impl LanDiscovery {
     ///
     /// Retires the advertisement before the daemon goes away: dropping the
     /// daemon without unregistering leaves peers seeing a joinable session that
-    /// nothing is listening for until the record's TTL expires.
+    /// nothing is listening for until the record's TTL expires. A step that
+    /// fails does not cancel the ones after it — see [`retire`].
     pub fn shutdown(mut self) -> Result<(), String> {
-        self.stop_advertising()?;
-        self.stop_browsing()?;
-        self.daemon
-            .shutdown()
-            .map_err(|e| format!("Failed to shutdown mDNS: {}", e))?;
-        Ok(())
+        let outcome = retire(&self.daemon, &mut self.advertisement, self.browsing);
+
+        // The daemon is gone either way, so the `Drop` backstop must not chase
+        // it with an unregister or a browse stop it can no longer deliver.
+        self.advertisement.forget();
+        self.browsing = false;
+        if let Ok(mut map) = self.discovered.lock() {
+            map.clear();
+        }
+
+        outcome
     }
 }
 
@@ -258,16 +327,46 @@ impl Drop for LanDiscovery {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
-    use super::{Advertisement, ServiceInfo, ServiceRegistrar, SERVICE_TYPE};
+    use super::{
+        retire, Advertisement, DiscoveryDaemon, ServiceInfo, ServiceRegistrar, SERVICE_TYPE,
+    };
+
+    const UNREGISTER_REFUSED: &str = "Failed to unregister mDNS service: daemon refused";
+    const STOP_BROWSING_REFUSED: &str = "Failed to stop mDNS browsing: daemon refused";
 
     /// Records what the daemon would have been asked to do. No sockets, no
     /// daemon thread — the leak was in the bookkeeping, and this is the
     /// bookkeeping.
+    ///
+    /// The failure budgets make the daemon refuse the first N calls of an
+    /// operation, which is the shape that stranded state in production: a
+    /// transient refusal, not a permanent one.
     #[derive(Default)]
     struct RecordingRegistrar {
         calls: RefCell<Vec<String>>,
+        unregister_refusals: Cell<usize>,
+        stop_browsing_refusals: Cell<usize>,
+    }
+
+    impl RecordingRegistrar {
+        fn refusing(unregister_refusals: usize, stop_browsing_refusals: usize) -> Self {
+            Self {
+                calls: RefCell::new(Vec::new()),
+                unregister_refusals: Cell::new(unregister_refusals),
+                stop_browsing_refusals: Cell::new(stop_browsing_refusals),
+            }
+        }
+
+        fn refuse(budget: &Cell<usize>) -> bool {
+            let remaining = budget.get();
+            if remaining == 0 {
+                return false;
+            }
+            budget.set(remaining - 1);
+            true
+        }
     }
 
     impl ServiceRegistrar for RecordingRegistrar {
@@ -282,6 +381,24 @@ mod tests {
             self.calls
                 .borrow_mut()
                 .push(format!("unregister {}", fullname));
+            if Self::refuse(&self.unregister_refusals) {
+                return Err(UNREGISTER_REFUSED.to_string());
+            }
+            Ok(())
+        }
+    }
+
+    impl DiscoveryDaemon for RecordingRegistrar {
+        fn stop_browsing(&self) -> Result<(), String> {
+            self.calls.borrow_mut().push("stop browsing".to_string());
+            if Self::refuse(&self.stop_browsing_refusals) {
+                return Err(STOP_BROWSING_REFUSED.to_string());
+            }
+            Ok(())
+        }
+
+        fn shutdown(&self) -> Result<(), String> {
+            self.calls.borrow_mut().push("shutdown daemon".to_string());
             Ok(())
         }
     }
@@ -372,5 +489,141 @@ mod tests {
             .expect("stopping an idle advertisement succeeds");
 
         assert!(registrar.calls.into_inner().is_empty());
+    }
+
+    /// Dropping the handle before the unregister returned meant a refusal left
+    /// the service registered on the network with nothing able to name it
+    /// again: the struct believed it was advertising nothing.
+    #[test]
+    fn a_refused_unregister_leaves_the_registration_retirable() {
+        let registrar = RecordingRegistrar::refusing(1, 0);
+        let mut advertisement = Advertisement::default();
+
+        let only = service("Host — Only Project");
+        let fullname = only.get_fullname().to_string();
+
+        advertisement
+            .register(&registrar, only)
+            .expect("the advertisement registers");
+        assert_eq!(
+            advertisement
+                .stop(&registrar)
+                .expect_err("the daemon refuses the first unregister"),
+            UNREGISTER_REFUSED
+        );
+        advertisement
+            .stop(&registrar)
+            .expect("a later stop retires the still-live registration");
+
+        assert_eq!(
+            registrar.calls.into_inner(),
+            vec![
+                format!("register {fullname}"),
+                format!("unregister {fullname}"),
+                format!("unregister {fullname}"),
+            ],
+            "a refused unregister must not consume the only handle that can retire the service"
+        );
+    }
+
+    #[test]
+    fn re_advertising_after_a_refused_unregister_still_retires_the_old_registration() {
+        let registrar = RecordingRegistrar::refusing(1, 0);
+        let mut advertisement = Advertisement::default();
+
+        let first = service("Host — First Project");
+        let second = service("Host — Second Project");
+        let first_fullname = first.get_fullname().to_string();
+        let second_fullname = second.get_fullname().to_string();
+
+        advertisement
+            .register(&registrar, first)
+            .expect("the first advertisement registers");
+        advertisement
+            .stop(&registrar)
+            .expect_err("the daemon refuses the first unregister");
+        advertisement
+            .register(&registrar, second)
+            .expect("re-advertising retires the stale registration first");
+
+        assert_eq!(
+            registrar.calls.into_inner(),
+            vec![
+                format!("register {first_fullname}"),
+                format!("unregister {first_fullname}"),
+                format!("unregister {first_fullname}"),
+                format!("register {second_fullname}"),
+            ]
+        );
+    }
+
+    /// Peers keep seeing a joinable session until the advertisement is retired,
+    /// so retirement has to reach the network before the daemon that carries it
+    /// goes away.
+    #[test]
+    fn retirement_unregisters_before_the_daemon_goes_down() {
+        let daemon = RecordingRegistrar::default();
+        let mut advertisement = Advertisement::default();
+
+        let only = service("Host — Only Project");
+        let fullname = only.get_fullname().to_string();
+        advertisement
+            .register(&daemon, only)
+            .expect("the advertisement registers");
+
+        retire(&daemon, &mut advertisement, true).expect("an orderly retirement succeeds");
+
+        assert_eq!(
+            daemon.calls.into_inner(),
+            vec![
+                format!("register {fullname}"),
+                format!("unregister {fullname}"),
+                "stop browsing".to_string(),
+                "shutdown daemon".to_string(),
+            ]
+        );
+    }
+
+    /// `mdns-sd`'s daemon has no `Drop` and only exits on its `Exit` command, so
+    /// a refusal that short-circuited the sequence stranded the daemon thread
+    /// and its sockets for the rest of the process lifetime.
+    #[test]
+    fn a_refused_step_neither_cancels_the_rest_nor_hides_the_first_failure() {
+        let daemon = RecordingRegistrar::refusing(1, 1);
+        let mut advertisement = Advertisement::default();
+
+        let only = service("Host — Only Project");
+        let fullname = only.get_fullname().to_string();
+        advertisement
+            .register(&daemon, only)
+            .expect("the advertisement registers");
+
+        let error = retire(&daemon, &mut advertisement, true)
+            .expect_err("a refused step must still be reported");
+
+        assert_eq!(error, UNREGISTER_REFUSED);
+        assert_eq!(
+            daemon.calls.into_inner(),
+            vec![
+                format!("register {fullname}"),
+                format!("unregister {fullname}"),
+                "stop browsing".to_string(),
+                "shutdown daemon".to_string(),
+            ],
+            "every teardown step runs even after an earlier one is refused"
+        );
+    }
+
+    #[test]
+    fn retirement_leaves_a_daemon_that_was_never_browsing_alone() {
+        let daemon = RecordingRegistrar::default();
+        let mut advertisement = Advertisement::default();
+
+        retire(&daemon, &mut advertisement, false).expect("an idle retirement succeeds");
+
+        assert_eq!(
+            daemon.calls.into_inner(),
+            vec!["shutdown daemon".to_string()]
+        );
     }
 }

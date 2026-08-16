@@ -196,10 +196,17 @@ pub fn collab_get_nearby_sessions(
 /// any live advertisement outlive the quit: peers keep seeing the session as
 /// joinable until the record's TTL expires, and joining it fails. Called from
 /// the `RunEvent::Exit` arm in `lib.rs`.
+///
+/// A poisoned mutex is recovered rather than treated as a reason to skip the
+/// shutdown. Poisoning means a command panicked mid-advertise, which is exactly
+/// when a registration is most likely to be live and pending retirement; the
+/// `LanDiscovery` behind the lock is unaffected by the panic and still able to
+/// retire it.
 pub fn shutdown_discovery(state: &CollabState) {
-    let Ok(mut guard) = state.discovery.lock() else {
-        return;
-    };
+    let mut guard = state
+        .discovery
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let Some(discovery) = guard.take() else {
         return;
     };

@@ -30,6 +30,47 @@ fn wrote<T>(result: Result<T, automerge::AutomergeError>, key: &str) -> Result<T
     result.map_err(|error| format!("Failed to write project key '{}': {}", key, error))
 }
 
+/// Reject a bundle carrying a document that shadows the project root.
+///
+/// `DOC_PREFIX_ROOT` is the root document's whole id, not a namespace prefix
+/// like `track_`, so any other id starting with it is a second document
+/// claiming to be the project. Every entry point that takes a bundle applies
+/// this: a check on the read path alone would let the app write a `.sdaw` it
+/// can never reopen.
+///
+/// The message names only what the bundle actually holds — a bundle with a
+/// shadowing id and no `root` carries zero roots, not two.
+fn reject_root_shadowing<'ids>(ids: impl IntoIterator<Item = &'ids str>) -> Result<(), String> {
+    let mut has_root = false;
+    let mut shadowing: Vec<&str> = Vec::new();
+
+    for id in ids {
+        if id == DOC_PREFIX_ROOT {
+            has_root = true;
+        } else if id.starts_with(DOC_PREFIX_ROOT) {
+            shadowing.push(id);
+        }
+    }
+
+    if shadowing.is_empty() {
+        return Ok(());
+    }
+
+    shadowing.sort_unstable();
+    let shadowing = shadowing.join(", ");
+    if has_root {
+        return Err(format!(
+            "Bundle carries more than one root document: {}, {}",
+            DOC_PREFIX_ROOT, shadowing
+        ));
+    }
+
+    Err(format!(
+        "Bundle carries no root document, only ids shadowing it: {}",
+        shadowing
+    ))
+}
+
 impl DocumentStore {
     /// Create a new project with a root document.
     pub fn create_project(name: &str, sample_rate: u32) -> Result<Self, String> {
@@ -167,26 +208,14 @@ impl DocumentStore {
     /// to run. A bundle carrying a root-shadowing id is rejected rather than
     /// resolved by guesswork.
     pub fn load_all(bundle: HashMap<DocId, Vec<u8>>) -> Result<Self, String> {
+        reject_root_shadowing(bundle.keys().map(String::as_str))?;
+
         let mut docs = HashMap::new();
 
         for (id, bytes) in bundle {
             let doc = AutoCommit::load(&bytes)
                 .map_err(|e| format!("Failed to load document {}: {}", id, e))?;
             docs.insert(id, doc);
-        }
-
-        let mut shadowing: Vec<&str> = docs
-            .keys()
-            .map(|id| id.as_str())
-            .filter(|id| id.starts_with(DOC_PREFIX_ROOT) && *id != DOC_PREFIX_ROOT)
-            .collect();
-        if !shadowing.is_empty() {
-            shadowing.sort_unstable();
-            return Err(format!(
-                "Bundle carries more than one root document: {}, {}",
-                DOC_PREFIX_ROOT,
-                shadowing.join(", ")
-            ));
         }
 
         let root_id = DOC_PREFIX_ROOT.to_string();
@@ -199,7 +228,13 @@ impl DocumentStore {
 
     /// Merge an external bundle into the current store.
     /// Documents with matching IDs are merged; new documents are inserted.
+    ///
+    /// Root-shadowing ids are rejected here too, before anything is inserted or
+    /// merged: accepting one on this path and refusing it in `load_all` let the
+    /// app save a `.sdaw` it could never reopen.
     pub fn merge_bundle(&mut self, bundle: HashMap<DocId, Vec<u8>>) -> Result<MergeResult, String> {
+        reject_root_shadowing(bundle.keys().map(String::as_str))?;
+
         let mut result = MergeResult::default();
 
         for (id, bytes) in bundle {
@@ -377,6 +412,9 @@ mod tests {
 
     /// Without the real root present, a lone `root_backup` used to be adopted
     /// silently as the project.
+    ///
+    /// The bundle carries zero roots, so the rejection must not claim it
+    /// carries two — the id it names has to be an id the bundle actually holds.
     #[test]
     fn load_all_does_not_adopt_a_root_shadowing_document_as_the_project() {
         let mut store = project("Shadowed");
@@ -391,8 +429,57 @@ mod tests {
 
         assert_eq!(
             error,
+            "Bundle carries no root document, only ids shadowing it: root_backup"
+        );
+    }
+
+    /// `merge_bundle` used to accept exactly the bundle `load_all` refuses, so
+    /// the app could write a `.sdaw` and then never reopen it.
+    #[test]
+    fn merge_bundle_rejects_a_root_shadowing_document() {
+        let mut store = project("Host");
+        let mut incoming = project("Incoming");
+        let mut bundle = incoming.save_all();
+        let root_bytes = bundle
+            .get("root")
+            .expect("the saved bundle carries a root")
+            .clone();
+        bundle.insert("root_backup".to_string(), root_bytes);
+
+        let error = store
+            .merge_bundle(bundle)
+            .expect_err("a bundle the loader refuses must not be merged either");
+
+        assert_eq!(
+            error,
             "Bundle carries more than one root document: root, root_backup"
         );
+        assert!(
+            store.get_doc("root_backup").is_none(),
+            "a rejected bundle must leave nothing behind"
+        );
+        assert_eq!(
+            store.doc_ids().len(),
+            1,
+            "a rejected bundle must not insert or merge anything"
+        );
+    }
+
+    /// The read and write paths must agree on what a bundle may contain, or a
+    /// saved project stops being loadable.
+    #[test]
+    fn merge_bundle_and_load_all_reject_the_same_bundles() {
+        let mut store = project("Shadowed");
+        let mut bundle = store.save_all();
+        let root_bytes = bundle.remove("root").expect("the saved bundle has a root");
+        bundle.insert("root_backup".to_string(), root_bytes);
+
+        let merge_error = project("Host")
+            .merge_bundle(bundle.clone())
+            .expect_err("the merge path refuses a root-shadowing bundle");
+        let load_error = load_error(bundle, "the load path refuses a root-shadowing bundle");
+
+        assert_eq!(merge_error, load_error);
     }
 
     #[test]
