@@ -24,7 +24,7 @@ describe('resolveDeviceNode', () => {
         expect(resolveDeviceNode(nodes, { type: 'levain' })).toBeUndefined();
     });
 
-    it('prefers the exact instance but still accepts the kind when the id is asked for too', () => {
+    it('accepts either the exact instance or the kind when both are asked for', () => {
         const byKind = { deviceId: 'gb-old', type: 'grand-boule' };
         expect(resolveDeviceNode(strip(byKind), { deviceId: 'gb-new', type: 'grand-boule' })).toBe(byKind);
 

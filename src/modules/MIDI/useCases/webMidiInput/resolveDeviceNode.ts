@@ -8,9 +8,10 @@
  *
  * - `{ type }` — the rack-routed branches, which have already established
  *   which device *kind* owns the voice and address the strip by kind.
- * - `{ deviceId, type }` — the direct note-on branches, which prefer the exact
- *   device instance but still accept the kind, because a strip built before the
- *   device carried an id would otherwise never be found.
+ * - `{ deviceId, type }` — the direct note-on branches, which accept the exact
+ *   device instance or the kind, whichever comes first in strip order — the
+ *   predicate these sites always had. The kind arm exists because a strip built
+ *   before the device carried an id would otherwise never be found.
  * - `{ deviceId }` — note-off, which must reach the *same instance* the
  *   matching note-on latched onto. Falling back to the kind here would release
  *   a different device's voice whenever a track hosts two of one kind, so the
