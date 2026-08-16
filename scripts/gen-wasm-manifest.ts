@@ -52,8 +52,14 @@ writeFileSync(wasmArtifacts.manifestPath, `${JSON.stringify(manifest, null, 2)}\
 console.log(`✓ Wrote ${wasmArtifacts.manifestPath} (${Object.keys(manifest.packages).length} packages)`);
 console.log(`  crate-source provenance refreshed: ${refreshed.length > 0 ? refreshed.join(', ') : 'none'}`);
 if (preserved.length > 0) {
+    const rebuildHints = preserved
+        .map((id) => {
+            const spec = wasmArtifacts.packages.find((candidate) => candidate.id === id);
+            return spec === undefined ? id : `pnpm ${spec.buildScript}`;
+        })
+        .join(', ');
     console.log(
         `  crate-source provenance preserved (not rebuilt by this run): ${preserved.join(', ')} — ` +
-            `run \`pnpm wasm:<package> && pnpm wasm:manifest\` if \`pnpm wasm:verify\` reports one of them stale`
+            `if \`pnpm wasm:verify\` reports one of them stale, rebuild it (${rebuildHints}) and re-run \`pnpm wasm:manifest\``
     );
 }
