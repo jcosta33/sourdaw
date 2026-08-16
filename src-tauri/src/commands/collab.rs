@@ -48,7 +48,7 @@ pub fn collab_create_project(
     name: String,
     sample_rate: u32,
 ) -> Result<bool, String> {
-    let store = DocumentStore::create_project(&name, sample_rate);
+    let store = DocumentStore::create_project(&name, sample_rate)?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     *guard = Some(store);
     Ok(true)
@@ -186,5 +186,31 @@ pub fn collab_get_nearby_sessions(
     match guard.as_ref() {
         Some(discovery) => Ok(discovery.get_nearby_sessions()),
         None => Ok(vec![]),
+    }
+}
+
+/// Retire LAN discovery as the application exits.
+///
+/// `LanDiscovery` is held in managed state for the whole process lifetime, so
+/// without an explicit exit hook the mDNS daemon thread, the browse thread, and
+/// any live advertisement outlive the quit: peers keep seeing the session as
+/// joinable until the record's TTL expires, and joining it fails. Called from
+/// the `RunEvent::Exit` arm in `lib.rs`.
+///
+/// A poisoned mutex is recovered rather than treated as a reason to skip the
+/// shutdown. Poisoning means a command panicked mid-advertise, which is exactly
+/// when a registration is most likely to be live and pending retirement; the
+/// `LanDiscovery` behind the lock is unaffected by the panic and still able to
+/// retire it.
+pub fn shutdown_discovery(state: &CollabState) {
+    let mut guard = state
+        .discovery
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(discovery) = guard.take() else {
+        return;
+    };
+    if let Err(error) = discovery.shutdown() {
+        eprintln!("[Collab] Failed to shut down LAN discovery: {error}");
     }
 }

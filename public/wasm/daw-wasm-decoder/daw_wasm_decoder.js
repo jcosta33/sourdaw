@@ -75,7 +75,10 @@ export class DecodedAudioWasm {
 if (Symbol.dispose) DecodedAudioWasm.prototype[Symbol.dispose] = DecodedAudioWasm.prototype.free;
 
 /**
- * Decode an audio file from raw bytes. Returns `null` (JS undefined) on failure.
+ * Decode an audio file from raw bytes.
+ *
+ * Throws a `JsError` on failure — the JS caller must wrap the call in
+ * `try`/`catch`; it never resolves to `null`.
  *
  * Supports WAV, FLAC, MP3, OGG/Vorbis, AAC, ALAC, and any other format
  * handled by symphonia with the `all` feature set.

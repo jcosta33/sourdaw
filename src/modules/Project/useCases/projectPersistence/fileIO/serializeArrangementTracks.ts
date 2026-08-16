@@ -5,6 +5,17 @@ import { type ProjectClip, type ProjectTrack, type ProjectTrackAlternative } fro
 
 import { serializeProjectMidiNote } from './serializeProjectMidiNote';
 
+/**
+ * This file is the authority for track, clip, and automation field names on the
+ * wire. `hydrateArrangementTracks.ts` is its inverse and must move with it.
+ *
+ * The Rust side deliberately does not mirror these names: `crates/daw-collab`'s
+ * `schema.rs` owns the root document's keys only. A second definition of the
+ * same shape in another language is not checked against this one, so a rename
+ * there would keep compiling and only surface when a user opens a shared
+ * project and finds fields missing.
+ */
+
 /** Per-clip note map as exported alongside the arrangement. */
 type NotesByClipId = MidiStoreState['notesByClipId'];
 
