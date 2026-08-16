@@ -1,7 +1,9 @@
 //! daw-wasm-decoder — browser-side audio file decoder.
 //!
-//! Wraps `daw-io::decode_audio_file_bytes` (symphonia) for use from JavaScript
-//! via wasm-bindgen. Accepts raw file bytes, returns interleaved f32 PCM.
+//! Wraps `daw-io::decode_audio_file_bytes_interleaved` (symphonia) for use from
+//! JavaScript via wasm-bindgen. Accepts raw file bytes, returns interleaved f32
+//! PCM. The interleaved entry point is deliberate: it hands the decoded buffer
+//! straight through, so the module never holds the file in two PCM layouts.
 //!
 //! Used in the browser path of `decodeAudioFile` to support codecs that the
 //! Web Audio API's `decodeAudioData` cannot handle (ALAC, many m4a variants,
@@ -90,50 +92,64 @@ impl DecodedAudioWasm {
     }
 }
 
-/// Decode an audio file from raw bytes. Returns `null` (JS undefined) on failure.
+/// Decode an audio file from raw bytes.
+///
+/// Throws a `JsError` on failure — the JS caller must wrap the call in
+/// `try`/`catch`; it never resolves to `null`.
 ///
 /// Supports WAV, FLAC, MP3, OGG/Vorbis, AAC, ALAC, and any other format
 /// handled by symphonia with the `all` feature set.
 #[wasm_bindgen]
 pub fn decode_audio_bytes(bytes: &[u8]) -> Result<DecodedAudioWasm, JsError> {
-    let decoded = daw_io::decode_audio_file_bytes(bytes.to_vec()).map_err(|e| JsError::new(&e))?;
+    let decoded = daw_io::decode_audio_file_bytes_interleaved(bytes.to_vec())
+        .map_err(|e| JsError::new(&e))?;
 
     Ok(decoded_audio_to_wasm(decoded))
 }
 
-fn decoded_audio_to_wasm(decoded: daw_io::DecodedAudio) -> DecodedAudioWasm {
-    // daw-io returns per-channel Vec<Vec<f32>>; interleave for Web Audio consumption.
-    let channels = decoded.channels as usize;
-    let total_frames = decoded.samples.first().map(|c| c.len()).unwrap_or(0);
+/// Clamp a frame count into the `u32` the JS getter exposes.
+///
+/// A plain `as u32` silently wraps past 2^32 frames (~24.8 h at 48 kHz) and
+/// would report a decode of that length as near-empty, so the count saturates
+/// instead — the same treatment `decode_warning_count` gets.
+fn saturating_frame_count(frames: usize) -> u32 {
+    u32::try_from(frames).unwrap_or(u32::MAX)
+}
+
+fn decoded_audio_to_wasm(decoded: daw_io::InterleavedAudio) -> DecodedAudioWasm {
+    // daw-io accumulates interleaved, so the buffer moves through untouched:
+    // no per-channel intermediate, no re-interleave pass, and no padding —
+    // the buffer length is an exact multiple of the channel count by
+    // construction, so there is no ragged tail to fabricate silence for.
+    let total_frames = saturating_frame_count(decoded.frame_count());
     let decode_warning_count = u32::try_from(decoded.decode_warning_count).unwrap_or(u32::MAX);
     let decode_warning_summary = decoded.decode_warnings.join("; ");
-
-    let mut interleaved = Vec::with_capacity(total_frames * channels);
-    for frame in 0..total_frames {
-        for ch in 0..channels {
-            let sample = decoded
-                .samples
-                .get(ch)
-                .and_then(|c| c.get(frame))
-                .copied()
-                .unwrap_or(0.0);
-            interleaved.push(sample);
-        }
-    }
 
     DecodedAudioWasm {
         sample_rate: decoded.sample_rate,
         channels: decoded.channels,
-        total_frames: total_frames as u32,
+        total_frames,
         decode_warning_count,
         decode_warning_summary,
-        interleaved,
+        interleaved: decoded.interleaved,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{decoded_audio_to_wasm, DecodedAudioWasm};
+    use super::{decoded_audio_to_wasm, saturating_frame_count, DecodedAudioWasm};
+
+    fn interleaved(channels: u32, samples: Vec<f32>) -> daw_io::InterleavedAudio {
+        daw_io::InterleavedAudio {
+            sample_rate: 48_000,
+            channels,
+            duration_seconds: samples.len() as f64 / channels.max(1) as f64 / 48_000.0,
+            interleaved: samples,
+            codec: "test".to_string(),
+            decode_warning_count: 0,
+            decode_warnings: Vec::new(),
+        }
+    }
 
     /// DSP-8 red→green at the decoder boundary: a malformed decode can leave
     /// non-finite PCM in the interleaved buffer, and `take_samples` — the wasm
@@ -168,10 +184,10 @@ mod tests {
 
     #[test]
     fn exposes_partial_decode_diagnostics_to_javascript() {
-        let decoded = daw_io::DecodedAudio {
+        let decoded = daw_io::InterleavedAudio {
             sample_rate: 48_000,
             channels: 1,
-            samples: vec![vec![0.25]],
+            interleaved: vec![0.25],
             duration_seconds: 1.0 / 48_000.0,
             codec: "test".to_string(),
             decode_warning_count: 2,
@@ -185,5 +201,29 @@ mod tests {
             wasm.decode_warning_summary,
             "corrupt frame; truncated frame"
         );
+    }
+
+    /// The frame count crosses into JS as a `u32`. A `usize as u32` cast wraps
+    /// silently past 2^32 frames and would report a 24.8-hour decode as
+    /// near-empty, so the conversion saturates.
+    #[test]
+    fn frame_counts_beyond_u32_saturate_instead_of_wrapping() {
+        let beyond_u32 = usize::try_from(u64::from(u32::MAX) + 1).expect("the test host is 64-bit");
+
+        assert_eq!(saturating_frame_count(0), 0);
+        assert_eq!(saturating_frame_count(u32::MAX as usize), u32::MAX);
+        assert_eq!(saturating_frame_count(beyond_u32), u32::MAX);
+    }
+
+    /// daw-io hands over a buffer whose length is an exact multiple of the
+    /// channel count, so the bridge reports the frames it actually has and
+    /// never appends fabricated silence to square off a ragged tail.
+    #[test]
+    fn frames_are_reported_from_the_buffer_without_padding() {
+        let wasm = decoded_audio_to_wasm(interleaved(2, vec![0.1, 1.1, 0.2, 1.2]));
+
+        assert_eq!(wasm.channels, 2);
+        assert_eq!(wasm.total_frames, 2);
+        assert_eq!(wasm.interleaved, vec![0.1, 1.1, 0.2, 1.2]);
     }
 }
