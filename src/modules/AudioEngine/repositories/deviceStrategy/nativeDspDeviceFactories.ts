@@ -13,6 +13,7 @@ import { isProofChamberDevice, createProofChamberNode } from '../../engine/Proof
 import { isProofDevice, createProofNode } from '../../engine/ProofNode';
 import { isScoringDevice, createScoringNode } from '../../engine/ScoringNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
+import { type DeviceRuntimeOfflineFacts } from '../../models/BuiltinDeviceRuntime';
 
 import {
     type DeviceNoteOffRequest,
@@ -202,6 +203,12 @@ type NativeDspDeviceFactory = {
     readonly type: NativeDspDeviceType;
     readonly matches: (deviceType: string) => boolean;
     readonly create: (ctx: BaseAudioContext) => Promise<NativeDspNode>;
+    readonly runtime: DeviceRuntimeOfflineFacts;
+};
+
+const NATIVE_DSP_OFFLINE_RUNTIME: DeviceRuntimeOfflineFacts = {
+    source: 'AudioEngine.nativeDspDeviceFactories',
+    availability: 'available',
 };
 
 /**
@@ -229,9 +236,20 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
         type: 'fermenter',
         matches: isFermenterDevice,
         create: createFermenterOfflineNode,
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
-    { type: 'toaster', matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
-    { type: 'levain', matches: isLevainDevice, create: createLevainOfflineNode },
+    {
+        type: 'toaster',
+        matches: isToasterDevice,
+        create: async (ctx) => bindPadNotes(await createToasterNode(ctx)),
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
+    {
+        type: 'levain',
+        matches: isLevainDevice,
+        create: createLevainOfflineNode,
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
     // Crumbs' catalog id carries the `builtin-` prefix, so `createDeviceRegistry`
     // has to let this table claim it ahead of the `builtin-` WebAudio arm — see
     // the exclusion there. Every other native id is unprefixed. Melodic, not pad:
@@ -240,20 +258,37 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
         type: 'builtin-crumbs',
         matches: isCrumbsDevice,
         create: createCrumbsOfflineNode,
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
     {
         type: 'grand-boule',
         matches: isGrandBouleDevice,
         create: createGrandBouleOfflineNode,
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
-    { type: 'gluten', matches: isGlutenDevice, create: createGlutenNode },
-    { type: 'crust', matches: isCrustDevice, create: createCrustNode },
-    { type: 'bacteria', matches: isBacteriaDevice, create: createBacteriaNode },
-    { type: 'grinder', matches: isGrinderDevice, create: createGrinderNode },
-    { type: 'proof', matches: isProofDevice, create: createProofNode },
-    { type: 'dutch-oven', matches: isProofChamberDevice, create: createProofChamberNode },
-    { type: 'native-scoring', matches: isScoringDevice, create: createScoringNode },
-    { type: 'knead', matches: isKneadDevice, create: createKneadNode },
+    { type: 'gluten', matches: isGlutenDevice, create: createGlutenNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
+    { type: 'crust', matches: isCrustDevice, create: createCrustNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
+    {
+        type: 'bacteria',
+        matches: isBacteriaDevice,
+        create: createBacteriaNode,
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
+    { type: 'grinder', matches: isGrinderDevice, create: createGrinderNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
+    { type: 'proof', matches: isProofDevice, create: createProofNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
+    {
+        type: 'dutch-oven',
+        matches: isProofChamberDevice,
+        create: createProofChamberNode,
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
+    {
+        type: 'native-scoring',
+        matches: isScoringDevice,
+        create: createScoringNode,
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
+    { type: 'knead', matches: isKneadDevice, create: createKneadNode, runtime: NATIVE_DSP_OFFLINE_RUNTIME },
 ];
 
 export function isNativeDspDevice(deviceType: string): boolean {

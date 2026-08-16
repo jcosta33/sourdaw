@@ -1,4 +1,11 @@
-import { BUILTIN_PLUGINS, type DeviceParameter, type PluginDescriptor } from '../models/DeviceParameter';
+import {
+    BUILTIN_PLUGINS,
+    isDeviceSupportedOnCurrentPlatform,
+    type DeviceParameter,
+    type PluginDescriptor,
+} from '../models/DeviceParameter';
+
+import { getDeviceContractVersionForCommand } from './getDeviceContractVersionForCommand';
 
 type AgentDeviceParameter = {
     id: string;
@@ -9,34 +16,17 @@ type AgentDeviceParameter = {
     default: number;
     enumValues: readonly string[] | null;
     automatable: boolean;
-    modulatable: { availability: 'unavailable'; source: 'Arrangement descriptor' };
-    semanticRole: { value: string; confidence: 'inferred'; source: 'parameter type' };
-    perceptualRole: { value: 'audible-parameter'; confidence: 'inferred'; source: 'device descriptor' };
-    typicalRange: { minimum: number; maximum: number; confidence: 'declared' };
-    interactions: readonly [string];
-    risks: readonly [string];
-    gainCompensation: { availability: 'unavailable'; source: 'Arrangement descriptor' };
 };
 
-type AgentBuiltinDevice = {
+type AgentBuiltinDeviceDescriptor = {
     type: string;
-    version: 'builtin-v1';
+    descriptorVersion: string;
     vendor: string;
     name: string;
     category: PluginDescriptor['category'];
-    capabilities: readonly [string];
-    ports: {
-        inputs: readonly { id: string; channels: number }[];
-        outputs: readonly { id: string; channels: number }[];
-        sidechain: readonly { id: string; channels: number }[];
-        source: 'Arrangement descriptor strategy';
-        confidence: 'inferred';
-    };
-    latency: { samples: number | null; source: 'Arrangement descriptor strategy'; confidence: 'inferred' };
+    platform: NonNullable<PluginDescriptor['platform']>;
+    availability: 'available' | 'unavailable-on-platform';
     tail: PluginDescriptor['tail'] | null;
-    presets: { availability: 'none'; source: 'Arrangement descriptor strategy' };
-    safetyNotes: readonly [string];
-    usageRecipes: readonly [string];
     parameters: readonly AgentDeviceParameter[];
     metadata: { source: 'Arrangement descriptor'; confidence: 'declared' };
 };
@@ -66,42 +56,27 @@ function toManifestParameter(parameter: DeviceParameter): AgentDeviceParameter {
         default: parameter.defaultValue,
         enumValues: parameter.choices ?? null,
         automatable: parameter.automatable,
-        modulatable: { availability: 'unavailable', source: 'Arrangement descriptor' },
-        semanticRole: { value: `${type}-control`, confidence: 'inferred', source: 'parameter type' },
-        perceptualRole: { value: 'audible-parameter', confidence: 'inferred', source: 'device descriptor' },
-        typicalRange: { minimum: parameter.minValue, maximum: parameter.maxValue, confidence: 'declared' },
-        interactions: ['Writes are bounded by the descriptor minimum and maximum.'],
-        risks: ['Automation changes the audible device output.'],
-        gainCompensation: { availability: 'unavailable', source: 'Arrangement descriptor' },
     };
 }
 
-/** Application-readable projection of Arrangement-owned built-in factory truth. */
-export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDevice[] {
-    return BUILTIN_PLUGINS.map((descriptor) => ({
-        type: descriptor.id,
-        version: 'builtin-v1',
-        vendor: descriptor.vendor,
-        name: descriptor.name,
-        category: descriptor.category,
-        capabilities: [descriptor.category === 'instrument' ? 'instrument-generation' : 'audio-processing'],
-        ports: {
-            inputs: descriptor.category === 'instrument' ? [] : [{ id: 'main-in', channels: 2 }],
-            outputs: [{ id: 'main-out', channels: 2 }],
-            sidechain: descriptor.id === 'builtin-compressor' ? [{ id: 'sidechain-in', channels: 2 }] : [],
-            source: 'Arrangement descriptor strategy',
-            confidence: 'inferred',
-        },
-        latency: { samples: 0, source: 'Arrangement descriptor strategy', confidence: 'inferred' },
-        tail: descriptor.tail ?? null,
-        presets: { availability: 'none', source: 'Arrangement descriptor strategy' },
-        safetyNotes: ['Apply only declared parameter bounds through the owning device write path.'],
-        usageRecipes: [
-            descriptor.category === 'instrument'
-                ? 'Use on a MIDI-capable track through an application-approved insertion.'
-                : 'Use through an application-approved device insertion.',
-        ],
-        parameters: descriptor.parameters.map(toManifestParameter),
-        metadata: { source: 'Arrangement descriptor', confidence: 'declared' },
-    }));
+/** Arrangement owns catalog descriptors, never live node topology or latency. */
+export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDeviceDescriptor[] {
+    return BUILTIN_PLUGINS.map((descriptor) => {
+        const descriptorVersion = getDeviceContractVersionForCommand(descriptor.id);
+        if (!descriptorVersion) {
+            throw new Error(`Built-in descriptor fingerprint unavailable: ${descriptor.id}`);
+        }
+        return {
+            type: descriptor.id,
+            descriptorVersion,
+            vendor: descriptor.vendor,
+            name: descriptor.name,
+            category: descriptor.category,
+            platform: descriptor.platform ?? 'both',
+            availability: isDeviceSupportedOnCurrentPlatform(descriptor.id) ? 'available' : 'unavailable-on-platform',
+            tail: descriptor.tail ?? null,
+            parameters: descriptor.parameters.map(toManifestParameter),
+            metadata: { source: 'Arrangement descriptor', confidence: 'declared' },
+        };
+    });
 }

@@ -2,25 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_PLUGINS } from '../../models/DeviceParameter';
 import { getAgentBuiltinDeviceFactoryManifest } from '../getAgentBuiltinDeviceFactoryManifest';
+import { getDeviceContractVersionForCommand } from '../getDeviceContractVersionForCommand';
 
-describe('built-in factory manifest law', () => {
-    it('publishes owner-declared topology, latency, and complete parameter evidence for every descriptor', () => {
+describe('built-in descriptor manifest law', () => {
+    it('publishes Arrangement-owned descriptors without inventing runtime topology or latency', () => {
         const manifest = getAgentBuiltinDeviceFactoryManifest();
         expect(manifest).toHaveLength(BUILTIN_PLUGINS.length);
-        for (const device of manifest) {
-            expect(device.ports).toEqual(
-                expect.objectContaining({
-                    inputs: expect.any(Array),
-                    outputs: expect.any(Array),
-                    sidechain: expect.any(Array),
-                })
-            );
-            expect(device.latency).toEqual(expect.objectContaining({ source: expect.any(String) }));
-            expect(device.presets).not.toEqual([]);
-            for (const parameter of device.parameters) {
-                expect(parameter.semanticRole).toEqual(expect.objectContaining({ source: expect.any(String) }));
-                expect(parameter.gainCompensation).toEqual(expect.objectContaining({ source: expect.any(String) }));
-            }
-        }
+        const sidechain = manifest.find((device) => device.type === 'builtin-sidechain-compressor');
+        expect(sidechain).toMatchObject({
+            type: 'builtin-sidechain-compressor',
+            descriptorVersion: getDeviceContractVersionForCommand('builtin-sidechain-compressor'),
+            platform: 'both',
+            tail: null,
+        });
+        expect(sidechain).not.toHaveProperty('ports');
+        expect(sidechain).not.toHaveProperty('latency');
     });
 });

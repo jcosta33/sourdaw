@@ -1,3 +1,4 @@
+import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../../../models/BuiltinDeviceRuntime';
 import { type OfflineDeviceNode } from '../types';
 
 import { createCompressor } from './createCompressor';
@@ -10,11 +11,11 @@ export function createSidechainCompressorFallback(ctx: BaseAudioContext, device?
     if (device && prepared?.targets.has(device)) {
         if (typeof AudioWorkletNode !== 'undefined') {
             try {
-                const workletNode = new AudioWorkletNode(ctx, 'sidechain-compressor-processor', {
-                    numberOfInputs: 2,
-                    numberOfOutputs: 1,
-                    outputChannelCount: [2],
-                });
+                const workletNode = new AudioWorkletNode(
+                    ctx,
+                    'sidechain-compressor-processor',
+                    SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS
+                );
                 return {
                     inputNode: workletNode,
                     outputNode: workletNode,

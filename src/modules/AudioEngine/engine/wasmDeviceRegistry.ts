@@ -11,6 +11,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
+import { type DeviceRuntimeLiveFacts } from '../models/BuiltinDeviceRuntime';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
 import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
 import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
@@ -53,11 +54,42 @@ export type WasmDeviceCreateDeps = {
 export type WasmDeviceDescriptor = {
     requiresContent: boolean;
     matches(deviceType: string): boolean;
+    runtime: DeviceRuntimeLiveFacts;
     create(deps: WasmDeviceCreateDeps): {
         placeholder: BuiltinDeviceNode;
         loadPromise: Promise<void>;
     };
 };
+
+function effectRuntime(latency: DeviceRuntimeLiveFacts['latency']): DeviceRuntimeLiveFacts {
+    return {
+        source: 'AudioEngine.wasmDeviceRegistry',
+        ports: {
+            inputs: 1,
+            outputs: 1,
+            channelsPerPort: 2,
+            externalInputs: 0,
+            sidechainRouting: 'not-applicable',
+        },
+        notes: { availability: 'unavailable' },
+        latency,
+    };
+}
+
+function noteSourceRuntime(outputs: number = 1): DeviceRuntimeLiveFacts {
+    return {
+        source: 'AudioEngine.wasmDeviceRegistry',
+        ports: {
+            inputs: 0,
+            outputs,
+            channelsPerPort: 2,
+            externalInputs: 0,
+            sidechainRouting: 'not-applicable',
+        },
+        notes: { availability: 'supported' },
+        latency: { kind: 'pdc-default-zero' },
+    };
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -121,6 +153,7 @@ async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Recor
 const fermenterDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isFermenterDevice,
+    runtime: noteSourceRuntime(),
     create({
         context,
         deviceId,
@@ -260,6 +293,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
 const toasterDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isToasterDevice,
+    runtime: noteSourceRuntime(17),
     create({
         context,
         deviceId,
@@ -418,6 +452,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
 const levainDescriptor: WasmDeviceDescriptor = {
     requiresContent: true,
     matches: isLevainDevice,
+    runtime: noteSourceRuntime(),
     create({
         context,
         deviceId,
@@ -563,6 +598,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
 const crumbsDescriptor: WasmDeviceDescriptor = {
     requiresContent: true,
     matches: isCrumbsDevice,
+    runtime: noteSourceRuntime(),
     create({
         context,
         deviceId,
@@ -702,6 +738,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
 const proofChamberDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isProofChamberDevice,
+    runtime: effectRuntime({ kind: 'reported-when-ready' }),
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -754,6 +791,18 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
 const glutenDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isGlutenDevice,
+    runtime: {
+        source: 'AudioEngine.wasmDeviceRegistry',
+        ports: {
+            inputs: 2,
+            outputs: 1,
+            channelsPerPort: 2,
+            externalInputs: 1,
+            sidechainRouting: 'unavailable',
+        },
+        notes: { availability: 'unavailable' },
+        latency: { kind: 'reported-dynamically' },
+    },
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -813,6 +862,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
 const crustDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isCrustDevice,
+    runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -879,6 +929,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
 const bacteriaDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isBacteriaDevice,
+    runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -940,6 +991,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
 const grinderDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isGrinderDevice,
+    runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
@@ -1034,6 +1086,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
 const proofDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isProofDevice,
+    runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -1133,6 +1186,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
 const scoringDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isScoringDevice,
+    runtime: effectRuntime({ kind: 'pdc-default-zero' }),
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
@@ -1175,6 +1229,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
 const grandBouleDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isGrandBouleDevice,
+    runtime: noteSourceRuntime(),
     create({ context, deviceId, deviceType, signal, onLoaded, onRuntimeFailure: replaceRuntimeFailure }) {
         const pendingParams: Array<[string, number]> = [];
         let runtimeFailureMessage: string | null = null;
@@ -1309,6 +1364,12 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
 const faustDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isFaustModule,
+    runtime: {
+        source: 'AudioEngine.wasmDeviceRegistry',
+        ports: { availability: 'runtime-dependent' },
+        notes: { availability: 'runtime-dependent' },
+        latency: { kind: 'runtime-dependent' },
+    },
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
         type PendingKey = {
@@ -1391,6 +1452,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
 const kneadDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isKneadDevice,
+    runtime: effectRuntime({ kind: 'pdc-default-zero' }),
     create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
         // `AudioEngine.syncKneadState` fans out to every device node on the

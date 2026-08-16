@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { type DeviceRuntimeOfflineFacts } from '../../models/BuiltinDeviceRuntime';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
@@ -48,6 +49,12 @@ type FaustDeviceCreator = (input: {
     ctx: BaseAudioContext;
     faustModuleId: string;
 }) => Promise<OfflineDeviceNode | null>;
+
+export const FAUST_OFFLINE_RUNTIME: DeviceRuntimeOfflineFacts = {
+    source: 'AudioEngine.faustDeviceStrategy',
+    availability: 'conditional',
+    condition: 'Requires the exact registered Faust module and an offline compiler factory that resolves it.',
+};
 
 /** Where a note goes when the request names no MPE member channel. */
 const FAUST_BASE_CHANNEL = 0;

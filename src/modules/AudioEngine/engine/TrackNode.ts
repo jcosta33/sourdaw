@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { clampFaderGain } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
+import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
@@ -777,11 +778,11 @@ export class TrackNode {
         if (deviceType === 'builtin-sidechain-compressor') {
             let workletNode: AudioWorkletNode;
             try {
-                workletNode = new AudioWorkletNode(context, 'sidechain-compressor-processor', {
-                    numberOfInputs: 2,
-                    numberOfOutputs: 1,
-                    outputChannelCount: [2],
-                });
+                workletNode = new AudioWorkletNode(
+                    context,
+                    'sidechain-compressor-processor',
+                    SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS
+                );
             } catch (error) {
                 this.failDeviceConstruction(readinessToken, error);
             }
