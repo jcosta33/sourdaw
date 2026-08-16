@@ -576,7 +576,15 @@ fn levain_level() -> Level {
 fn device_engines_hold_their_output_level_at_the_engine_boundary() {
     let families: [(&str, Level, f32, f32); 9] = [
         ("bacteria", bacteria_level(), 0.58812, 0.25139),
-        ("gluten", gluten_level(), 0.35206, 0.16268),
+        // Re-measured 2026-08-17. Two deliberate, independently spec-guarded
+        // changes moved this row since the 2026-07-30 pin: the declared RMS
+        // detection mode now actually reaches the VCA (+0.82 dB), guarded by
+        // `a_gluten_that_is_sent_no_detector_settings_uses_the_ones_it_declares`;
+        // and the sidechain HPF default flipped to enabled at 80 Hz
+        // (+0.39 dB marginal), guarded by
+        // `a_bare_sidechain_chain_uses_the_declared_hpf_default`. The gain is
+        // correct; only the pin was stale.
+        ("gluten", gluten_level(), 0.40482, 0.18860),
         ("crust", crust_level(), 0.88986, 0.43822),
         ("proof", proof_level(), 0.81706, 0.35082),
         ("knead", knead_level(), 0.52538, 0.24745),
