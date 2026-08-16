@@ -573,6 +573,12 @@
           "markdownDescription": "Enables the enable_link command without any pre-configured scope."
         },
         {
+          "description": "Enables the engine_rt_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-engine-rt-diagnostics",
+          "markdownDescription": "Enables the engine_rt_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Enables the ensure_whisper_ready command without any pre-configured scope.",
           "type": "string",
           "const": "allow-ensure-whisper-ready",
@@ -817,6 +823,12 @@
           "type": "string",
           "const": "allow-set-link-tempo",
           "markdownDescription": "Enables the set_link_tempo command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_plugin_bypass command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-plugin-bypass",
+          "markdownDescription": "Enables the set_plugin_bypass command without any pre-configured scope."
         },
         {
           "description": "Enables the set_plugin_parameter command without any pre-configured scope.",
@@ -1113,6 +1125,12 @@
           "markdownDescription": "Denies the enable_link command without any pre-configured scope."
         },
         {
+          "description": "Denies the engine_rt_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-engine-rt-diagnostics",
+          "markdownDescription": "Denies the engine_rt_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Denies the ensure_whisper_ready command without any pre-configured scope.",
           "type": "string",
           "const": "deny-ensure-whisper-ready",
@@ -1357,6 +1375,12 @@
           "type": "string",
           "const": "deny-set-link-tempo",
           "markdownDescription": "Denies the set_link_tempo command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_plugin_bypass command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-plugin-bypass",
+          "markdownDescription": "Denies the set_plugin_bypass command without any pre-configured scope."
         },
         {
           "description": "Denies the set_plugin_parameter command without any pre-configured scope.",

@@ -16,6 +16,7 @@ export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
+export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';
 export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';

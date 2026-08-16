@@ -10,10 +10,9 @@ use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
 use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
-use daw_core::tuning::TuningTable;
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
-use triple_buffer::{Input, Output};
+use triple_buffer::Input;
 
 pub enum MidiFxKind {
     Arpeggiator,
@@ -24,13 +23,20 @@ pub enum MidiFxKind {
 pub enum GraphCommand {
     // Built-in effects
     AddEffect(usize, String),
-    RemoveEffect(usize),
     SetParam(usize, String, f32),
     SetBypass(usize, bool),
 
     // External plugins (CLAP/VST3/AU)
     AddPlugin(usize, Box<dyn NativePlugin>),
     AddPluginWithBridge(usize, Box<dyn NativePlugin>, PluginAudioBridge),
+    /// Remove a plugin without retiring its audio bridge.
+    ///
+    /// Production removes a plugin only through `RemovePluginWithBridge`, so
+    /// this variant would strand the bridge if anything reached for it. The
+    /// saturation test still needs the shape: it fills the command queue with
+    /// removals to prove that every retirement, live or at shutdown, is handed
+    /// off the callback thread rather than dropped on it.
+    #[cfg(test)]
     RemovePlugin(usize),
     RemovePluginWithBridge(usize),
 
@@ -45,12 +51,16 @@ pub enum GraphCommand {
     // Transport state (global, affects all plugins)
     SetTransport(TransportState),
 
-    // Tuning system
-    RegisterTuning(usize, Output<TuningTable>),
-
-    // Ring buffer audio bridge
+    /// Register an audio bridge that no plugin answers for.
+    ///
+    /// Production registers and retires a bridge only alongside its plugin
+    /// (`AddPluginWithBridge` / `RemovePluginWithBridge`), so this state is
+    /// unreachable there. The real-time drain still has to survive it — a
+    /// bridge nobody processes must return its blocks and keep its ring
+    /// moving, or the app is left on permanent dry fallback — and this is how
+    /// a test puts the scheduler in that state.
+    #[cfg(test)]
     RegisterAudioBridge(PluginAudioBridge),
-    UnregisterAudioBridge(usize),
 }
 
 enum PluginCore {
@@ -133,10 +143,6 @@ impl RetiredGraphObjects {
         }
 
         Some(Self::removed(effect, audio_bridge, None))
-    }
-
-    fn audio_bridge(audio_bridge: PluginAudioBridge) -> Self {
-        Self::removed(None, Some(audio_bridge), None)
     }
 
     fn midi_fx(midi_fx: Box<dyn MidiFx>) -> Self {
@@ -305,7 +311,8 @@ impl AudioScheduler {
                         None
                     }
                 }
-                GraphCommand::RemoveEffect(id) | GraphCommand::RemovePlugin(id) => {
+                #[cfg(test)]
+                GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
                 }
                 GraphCommand::RemovePluginWithBridge(id) => {
@@ -404,17 +411,11 @@ impl AudioScheduler {
                     self.transport = state;
                     None
                 }
-                GraphCommand::RegisterTuning(_id, _output) => {
-                    // The current KneadEngine contract does not expose a tuning input.
-                    None
-                }
+                #[cfg(test)]
                 GraphCommand::RegisterAudioBridge(bridge) => {
                     self.audio_bridges.push(bridge);
                     None
                 }
-                GraphCommand::UnregisterAudioBridge(plugin_id) => self
-                    .remove_audio_bridge(plugin_id)
-                    .map(RetiredGraphObjects::audio_bridge),
             };
 
             if let Some(retired) = retired {

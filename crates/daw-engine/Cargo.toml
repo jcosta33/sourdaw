@@ -8,7 +8,6 @@ description = "Real-time thread, lock-free communication, and graph processing."
 crate-type = ["rlib"]
 
 [dependencies]
-daw-core = { path = "../daw-core" }
 rtrb = "0.3"
 cpal = { version = "0.18", features = [] }
 daw-dsp = { version = "0.1.0", path = "../daw-dsp" }

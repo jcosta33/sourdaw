@@ -65,10 +65,10 @@ pub fn run() {
             commands::plugins::set_plugin_state_bytes,
             commands::plugins::start_native_engine,
             commands::plugins::send_plugin_midi,
+            commands::plugins::set_plugin_bypass,
             commands::plugins::update_plugin_transport,
             commands::plugins::process_plugin_audio,
             commands::engine_diagnostics::engine_rt_diagnostics,
-            // audio bridge
             // Plugin GUI
             commands::plugin_gui::is_plugin_gui_supported,
             commands::plugin_gui::open_plugin_gui,
