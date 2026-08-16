@@ -9,6 +9,7 @@ import {
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
+    type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
     type AgentRunError,
     type AgentRunProviderUsage,
@@ -557,14 +558,30 @@ function readAgentRun(value: unknown): AgentRun | null {
             const provenance = (['provider-reported', 'versioned-estimate', 'unavailable'] as const).find(
                 (value) => value === candidate.provenance
             );
+            let estimateMethod: AgentRunBudgetAttempt['estimateMethod'] | null = undefined;
+            if (candidate.estimateMethod !== undefined) {
+                estimateMethod =
+                    candidate.estimateMethod === 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                        ? 'compiled-provider-request-utf8-byte-token-ceiling-v1'
+                        : null;
+            }
             return attemptId === null ||
                 category === null ||
                 reserved === null ||
                 actual === null ||
                 provenance === undefined ||
+                estimateMethod === null ||
                 typeof candidate.final !== 'boolean'
                 ? null
-                : { attemptId, category, reserved, actual, provenance, final: candidate.final };
+                : {
+                      attemptId,
+                      category,
+                      reserved,
+                      actual,
+                      provenance,
+                      ...(estimateMethod === undefined ? {} : { estimateMethod }),
+                      final: candidate.final,
+                  };
         });
     })();
     const plan = (() => {

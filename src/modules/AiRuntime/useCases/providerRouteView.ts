@@ -1,5 +1,5 @@
 import { type AgentDataRetention } from '../models/AgentDataPolicy';
-import { type AgentRun } from '../models/AgentRun';
+import { type AgentRun, type AgentRunBudgetEstimateMethod } from '../models/AgentRun';
 import { type ModelProviderUsageProvenance } from '../models/ModelProviderProtocol';
 
 export type ProviderRouteViewInput = {
@@ -20,7 +20,11 @@ export type ProviderRouteViewInput = {
     };
     dataPolicy: { categories: string[]; retention: AgentDataRetention };
     cache: { status: 'used' | 'not-used' | 'unavailable'; provenance: ModelProviderUsageProvenance };
-    usage: { provenance: ModelProviderUsageProvenance; priceProvenance: ModelProviderUsageProvenance };
+    usage: {
+        provenance: ModelProviderUsageProvenance;
+        priceProvenance: ModelProviderUsageProvenance;
+        estimateMethod: AgentRunBudgetEstimateMethod | null;
+    };
 };
 
 export type ProviderRouteView = Readonly<ProviderRouteViewInput>;
@@ -45,6 +49,16 @@ function getCacheRouteView(usage: AgentRun['providerUsage'][number] | undefined)
         status: (usage.cachedInputTokens ?? 0) > 0 ? ('used' as const) : ('not-used' as const),
         provenance: usage.provenance,
     };
+}
+
+function getEstimateMethodRouteView(
+    run: AgentRun,
+    usage: AgentRun['providerUsage'][number] | undefined
+): AgentRunBudgetEstimateMethod | null {
+    if (usage?.correlationId === undefined) {
+        return null;
+    }
+    return run.budgetAttempts.find((attempt) => attempt.attemptId === usage.correlationId)?.estimateMethod ?? null;
 }
 
 export function getProviderRouteView(run: AgentRun): ProviderRouteView {
@@ -102,6 +116,10 @@ export function getProviderRouteView(run: AgentRun): ProviderRouteView {
             retention: usage?.disclosure?.retention ?? UNKNOWN_RETENTION,
         },
         cache: getCacheRouteView(usage),
-        usage: { provenance: usage?.provenance ?? 'unavailable', priceProvenance: 'unavailable' },
+        usage: {
+            provenance: usage?.provenance ?? 'unavailable',
+            priceProvenance: 'unavailable',
+            estimateMethod: getEstimateMethodRouteView(run, usage),
+        },
     });
 }

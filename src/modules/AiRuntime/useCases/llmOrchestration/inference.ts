@@ -93,16 +93,32 @@ export type ProviderAttemptAdmission = {
     correlationId: string;
     request: ModelProviderRequest;
     estimatedTotalTokens: number;
+    estimate: ProviderAttemptCostEstimate;
 };
 
 export type ProviderAttemptAdmissionResult = { status: 'admitted' } | { status: 'rejected'; reason: string };
 
-export function estimateCompiledProviderRequestTokens(request: ModelProviderRequest): number {
-    // JSON source includes every provider-visible message, schema and advertised
-    // tool. Reserving one token per source character is intentionally
-    // conservative across tokenizers; the provider's bounded output is included
-    // before the adapter starts.
-    return JSON.stringify(request).length + request.limits.maxOutputTokens;
+const COMPILED_PROVIDER_REQUEST_TOKEN_CEILING_METHOD = 'compiled-provider-request-utf8-byte-token-ceiling-v1' as const;
+
+export type ProviderAttemptCostEstimate = {
+    method: typeof COMPILED_PROVIDER_REQUEST_TOKEN_CEILING_METHOD;
+    inputTokenCeiling: number;
+    outputTokenCeiling: number;
+    totalTokenCeiling: number;
+};
+
+function estimateCompiledProviderRequestTokenCeiling(request: ModelProviderRequest): ProviderAttemptCostEstimate {
+    // This bounds prompt tokens without assuming a provider tokenizer: each
+    // non-empty token consumes at least one UTF-8 byte. The serialized request
+    // contains every provider-visible message, schema, and advertised tool.
+    const inputTokenCeiling = new TextEncoder().encode(JSON.stringify(request)).byteLength;
+    const outputTokenCeiling = request.limits.maxOutputTokens;
+    return {
+        method: COMPILED_PROVIDER_REQUEST_TOKEN_CEILING_METHOD,
+        inputTokenCeiling,
+        outputTokenCeiling,
+        totalTokenCeiling: inputTokenCeiling + outputTokenCeiling,
+    };
 }
 
 function createProviderAttemptAdmissionError(reason: string): Error {
@@ -266,12 +282,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         if (compiledFallback.status === 'unavailable') {
             throw createModelProviderFailureError(compiledFallback.failure);
         }
+        const fallbackEstimate = estimateCompiledProviderRequestTokenCeiling(compiledFallback.request);
         const fallbackAdmission = onProviderAttempt?.({
             backend: 'native',
             provider: 'native',
             correlationId: compiledFallback.request.correlationId,
             request: compiledFallback.request,
-            estimatedTotalTokens: estimateCompiledProviderRequestTokens(compiledFallback.request),
+            estimatedTotalTokens: fallbackEstimate.totalTokenCeiling,
+            estimate: fallbackEstimate,
         });
         if (fallbackAdmission?.status === 'rejected') {
             throw createProviderAttemptAdmissionError(fallbackAdmission.reason);
@@ -432,12 +450,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
                 }
                 const providerRequest = compiledRequest.request;
+                const estimate = estimateCompiledProviderRequestTokenCeiling(providerRequest);
                 const admission = onProviderAttempt?.({
                     backend,
                     provider: providerName,
                     correlationId: providerRequest.correlationId,
                     request: providerRequest,
-                    estimatedTotalTokens: estimateCompiledProviderRequestTokens(providerRequest),
+                    estimatedTotalTokens: estimate.totalTokenCeiling,
+                    estimate,
                 });
                 if (admission?.status === 'rejected') {
                     throw createProviderAttemptAdmissionError(admission.reason);

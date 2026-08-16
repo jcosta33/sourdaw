@@ -44,12 +44,15 @@ export type AgentRunBudgets = {
     consumed: Record<string, number>;
 };
 
+export type AgentRunBudgetEstimateMethod = 'compiled-provider-request-utf8-byte-token-ceiling-v1';
+
 export type AgentRunBudgetAttempt = {
     attemptId: string;
     category: string;
     reserved: number;
     actual: number;
     provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
+    estimateMethod?: AgentRunBudgetEstimateMethod;
     final: boolean;
 };
 

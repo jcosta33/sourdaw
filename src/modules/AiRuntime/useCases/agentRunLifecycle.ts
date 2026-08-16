@@ -323,6 +323,7 @@ function reserveAgentRunBudget(input: {
     category: string;
     estimate: number;
     provenance: AgentRunBudgetAttempt['provenance'];
+    estimateMethod?: AgentRunBudgetAttempt['estimateMethod'];
     reservedAt?: number;
 }): { status: 'reserved' | 'hard-limit-reached'; reason?: string } {
     if (!Number.isFinite(input.estimate) || input.estimate < 0) {
@@ -355,6 +356,7 @@ function reserveAgentRunBudget(input: {
                 reserved: input.estimate,
                 actual: 0,
                 provenance: input.provenance,
+                ...(input.estimateMethod === undefined ? {} : { estimateMethod: input.estimateMethod }),
                 final: false,
             },
         ],

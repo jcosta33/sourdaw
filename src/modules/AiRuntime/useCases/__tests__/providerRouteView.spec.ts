@@ -67,7 +67,11 @@ describe('provider route view', () => {
                 },
             },
             cache: { status: 'used', provenance: 'provider-reported' },
-            usage: { provenance: 'provider-reported', priceProvenance: 'unavailable' },
+            usage: {
+                provenance: 'provider-reported',
+                priceProvenance: 'unavailable',
+                estimateMethod: null,
+            },
         });
     });
 
@@ -86,7 +90,7 @@ describe('provider route view', () => {
             actualRoute: null,
             availability: { status: 'unavailable', reason: 'no-provider-attempt' },
             cache: { status: 'unavailable', provenance: 'unavailable' },
-            usage: { provenance: 'unavailable', priceProvenance: 'unavailable' },
+            usage: { provenance: 'unavailable', priceProvenance: 'unavailable', estimateMethod: null },
         });
     });
 
@@ -133,6 +137,44 @@ describe('provider route view', () => {
                 attempted: true,
                 reason: 'cancelled',
                 attempts: [{ correlationId: 'native-1' }, { correlationId: 'webllm-2' }],
+            },
+        });
+    });
+
+    it('discloses the versioned compiled-request estimate used for the provider attempt', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'estimated-route-run',
+            request: 'Plan',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+        });
+        agentRunLifecycle.reserveBudget({
+            runId: 'estimated-route-run',
+            attemptId: 'provider-attempt',
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+            estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'estimated-route-run',
+            usage: {
+                provider: 'openai',
+                model: 'tool-model',
+                inputTokens: 1,
+                outputTokens: 2,
+                provenance: 'provider-reported',
+                correlationId: 'provider-attempt',
+                status: 'complete',
+                executor: 'cloud',
+            },
+        });
+
+        expect(getProviderRouteView(agentRunLifecycle.get('estimated-route-run')!)).toMatchObject({
+            usage: {
+                provenance: 'provider-reported',
+                estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
             },
         });
     });

@@ -102,7 +102,10 @@ describe('tool-planning remote data disclosure', () => {
             toolSelectionPrompt: string,
             onProviderResult: undefined,
             streamIdentity: undefined,
-            onProviderAttempt: (input: { estimatedTotalTokens: number }) => { status: 'rejected'; reason: string }
+            onProviderAttempt: (input: {
+                estimatedTotalTokens: number;
+                estimate: { method: 'compiled-provider-request-utf8-byte-token-ceiling-v1' };
+            }) => { status: 'rejected'; reason: string }
         ) => ReturnType<typeof generateToolPlanningOutcome>;
         const result = await generateWithAdmission(
             'system context '.repeat(500),
@@ -114,10 +117,12 @@ describe('tool-planning remote data disclosure', () => {
             'small prompt',
             undefined,
             undefined,
-            ({ estimatedTotalTokens }) =>
-                estimatedTotalTokens > 1027
+            ({ estimatedTotalTokens, estimate }) => {
+                expect(estimate.method).toBe('compiled-provider-request-utf8-byte-token-ceiling-v1');
+                return estimatedTotalTokens > 1027
                     ? { status: 'rejected', reason: 'remoteTokens' }
-                    : { status: 'rejected', reason: 'underestimated' }
+                    : { status: 'rejected', reason: 'underestimated' };
+            }
         );
 
         expect(result).toEqual({ status: 'rejected', reason: 'remoteTokens' });
