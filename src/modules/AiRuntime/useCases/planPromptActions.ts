@@ -9,6 +9,7 @@ import { discardPreparedStemImportResources } from './agentReference/discardPrep
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { prepareStemImport } from './agentReference/prepareStemImport';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
+import { agentRunLifecycle } from './agentRunLifecycle';
 import { getProjectContext } from './getProjectContext';
 import { type ProviderAttemptAdmission, type ProviderAttemptAdmissionResult } from './llmOrchestration/inference';
 import { parsePromptToActions } from './parsePromptToActions';
@@ -25,6 +26,22 @@ type PlanPromptActionsInput = {
 export async function planPromptActions(input: PlanPromptActionsInput) {
     const projectRevision = captureProjectRevision();
     const context = getProjectContext();
+    const streamIdentity = (() => {
+        if (input.streamIdentity !== undefined) {
+            if (agentRunLifecycle.get(input.streamIdentity.runId) === null) {
+                throw new Error('Executable provider planning requires an admitted agent run.');
+            }
+            return input.streamIdentity;
+        }
+        const runId = `agent-run-${crypto.randomUUID()}`;
+        agentRunLifecycle.create({
+            runId,
+            request: input.prompt,
+            mode: 'plan',
+            createdRevision: projectRevision,
+        });
+        return { runId, requestId: `planning:${runId}`, cancellationGeneration: 0 };
+    })();
     let stemImportScope: StemImportPromptScope | undefined;
     let result;
     try {
@@ -35,7 +52,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             projectRevision,
             undefined,
             input.onProviderResult,
-            input.streamIdentity,
+            streamIdentity,
             input.onProviderAttempt
         );
         if (result.preparationRequest === 'stem-import') {
@@ -48,9 +65,9 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 };
             }
             stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
-            if (input.streamIdentity !== undefined) {
+            if (streamIdentity !== undefined) {
                 preparedStemImportResources.register({
-                    runId: input.streamIdentity.runId,
+                    runId: streamIdentity.runId,
                     stems: stemImportScope.actionSeed.stems,
                 });
             }
@@ -61,7 +78,7 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 projectRevision,
                 stemImportScope,
                 input.onProviderResult,
-                input.streamIdentity,
+                streamIdentity,
                 input.onProviderAttempt
             );
         }
