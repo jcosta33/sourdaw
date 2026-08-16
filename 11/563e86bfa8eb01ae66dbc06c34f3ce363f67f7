@@ -1,0 +1,140 @@
+src/modules/Proof/models/ProofPatch.ts
+  s_ab5443e65c7fba::t_3aa6ede36226ba 304-313
+  s_ab5443e65c7fba::t_70cebc3b9de7aa 92-115
+src/modules/Proof/useCases/proofParamBridge/unregisterProofDevice.ts
+  s_ab5443e65c7fba::t_a5b5a40ff1d1c0 1-2,7-9
+src/modules/Proof/stores/proofLoudnessHistory.ts
+  s_ab5443e65c7fba::t_c618fe4b538a14 1-67
+src/modules/Proof/presentations/components/__tests__/LoudnessHistory.spec.tsx
+  s_ab5443e65c7fba::t_8b59d01b10924d 35-37
+  s_ab5443e65c7fba::t_6cfa8c5f0ab3de 67,70-74,83-99,105-153,157-159,162-164,188-190,193-195,203-205,208-210,230-232,235-239,242-247,249,252-253,256-261,263,265,268-274,322,324-325,330-334
+  s_ab5443e65c7fba::t_10adea7321e31a 11,68-69,100-104,160-161,191-192,206-207,233-234,240-241,248,250-251,254-255,262,264,266-267,275-321,323,326-329,335-342
+  s_ab5443e65c7fba::t_627bf43a56ce2d 12
+src/modules/Proof/presentations/components/__tests__/TonalBalance.spec.tsx
+  s_ab5443e65c7fba::t_80c55a619a1ffe 1
+  s_ab5443e65c7fba::t_700dd9c80a2e8a 151
+  s_ab5443e65c7fba::t_d926610ca2d722 24-32,44-52,75-83,102-110,124-132,181-189,195-217
+src/modules/Proof/presentations/components/LoudnessHistory.tsx
+  s_ab5443e65c7fba::t_07545c22b1a250 52-53
+  s_ab5443e65c7fba::t_220ed45c694dbc 124
+  s_ab5443e65c7fba::t_7d8bc169039147 10-13,26-27
+  s_ab5443e65c7fba::t_54b868ac4c821c 175
+src/modules/Proof/presentations/views/ProofPanel.tsx
+  s_ab5443e65c7fba::t_ff8e008e5e57ee 793
+  s_ab5443e65c7fba::t_a57b0c38c3aa4c 65-70
+  s_ab5443e65c7fba::t_94e48d33657cf5 723-769
+  s_ab5443e65c7fba::t_38d630ce9ed1e8 52
+  s_ab5443e65c7fba::t_6db96311c43998 835-847
+  s_ab5443e65c7fba::t_115894b714d92b 1001,1003,1009,1011
+  s_ab5443e65c7fba::t_a10b3ef8bee5f7 1119,1124-1125
+  s_ab5443e65c7fba::t_13ae19be54faa0 1326
+  s_ab5443e65c7fba::t_5ccc2266b39cea 659-660,666-667
+  s_ab5443e65c7fba::t_8cd50a5d4f4338 13,18-19,21-26,28-35,37
+  s_ab5443e65c7fba::t_5166c4305b2b4c 773-774,779-780
+  s_ab5443e65c7fba::t_3ced7ef5963262 1347,1350
+  s_ab5443e65c7fba::t_0deccfec9534e9 51
+  s_ab5443e65c7fba::t_4371a303d91354 20
+  s_ab5443e65c7fba::t_ccee3ccce415b7 1335
+  s_ab5443e65c7fba::t_699f0aa1cc47b2 1024,1026,1034-1118,1120-1123,1126-1156
+  s_ab5443e65c7fba::t_f918eae8eb481f 16-17
+  s_ab5443e65c7fba::t_521394584c0231 1313,1315
+  s_ab5443e65c7fba::t_d5d96e4ebe4f62 612
+  s_ab5443e65c7fba::t_2c7ecdc41807b5 459-468
+  s_ab5443e65c7fba::t_07386c3bbda13d 819
+  s_ab5443e65c7fba::t_7b8f557096ef08 873-882,884-885
+  s_ab5443e65c7fba::t_c733c036a6bbd1 909-929
+  s_ab5443e65c7fba::t_92368ec9387fa6 154-155,161,165-166,172,174,177-178,187,190-191,199,202-203,211,214,219,224,227,229,233,237,241,244,247-357
+  s_ab5443e65c7fba::t_8a919f7e49d4c9 1249
+  s_ab5443e65c7fba::t_0bb3131abae31e 699
+  s_ab5443e65c7fba::t_1dda0d9ce385e3 362-375
+  s_ab5443e65c7fba::t_96cd9901be163a 1298-1310
+  s_ab5443e65c7fba::t_778b392a962c22 1166,1171,1173,1178,1189
+  s_ab5443e65c7fba::t_19cc786ec1b027 555,560-561,567
+  s_ab5443e65c7fba::t_a9dbe8315282a8 1362-1369,1371-1373,1376-1405,1407-1408,1410-1460
+  s_ab5443e65c7fba::t_16655854459f67 978-979,984-985
+  s_ab5443e65c7fba::t_f4f2246da761bf 588
+  s_ab5443e65c7fba::t_8a67b64dea7ed5 577
+  s_ab5443e65c7fba::t_8878e53dadd975 27
+  s_ab5443e65c7fba::t_9a95fec8a8f4a1 1370,1374-1375
+  s_ab5443e65c7fba::t_2641c21902cb59 358
+  s_ab5443e65c7fba::t_acbe8f04c8811b 1406
+  s_ab5443e65c7fba::t_ca04f47bb87177 1409
+src/modules/Proof/presentations/hooks/__tests__/useProofAnalyser.spec.ts
+  s_ab5443e65c7fba::t_8607ae5f9b3eeb 188-232,235,239-240
+  s_ab5443e65c7fba::t_55320edbd78bc1 26-33,35,45,48-60
+  s_ab5443e65c7fba::t_bf83835e8f8914 233-234
+  s_ab5443e65c7fba::t_5951b5c99c4fec 236-238
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_ab5443e65c7fba::t_2138e8efff8962 4-13
+  s_ab5443e65c7fba::t_b55ad50a5231ca 39-46
+  s_ab5443e65c7fba::t_1ee114cdc2da8a 143,151,157,161,166,200,1262-1294,1296-1331,1333-1339,1342-1359,1361-1425
+  s_ab5443e65c7fba::t_b2d7198cee1698 128-142,144-150,152-156,158-160,162-165,167-199,201-208,1426-1428
+src/modules/Proof/presentations/hooks/useProofAnalyser.ts
+  s_ab5443e65c7fba::t_20682d40e5438d 67-73
+  s_ab5443e65c7fba::t_d27afe8639d147 12-20
+  s_ab5443e65c7fba::t_ee06c80d9df222 45-48
+  s_ab5443e65c7fba::t_ef4ae908bf547f 21
+  s_ab5443e65c7fba::t_ea33a1d3fd9bb4 49
+  s_ab5443e65c7fba::t_56bc1d07040792 74
+  s_3c655e300a13fc::t_b5622d4adccd3e 23,85,88-95,127,130
+src/modules/Proof/presentations/hooks/useProofMeter.ts
+  s_ab5443e65c7fba::t_51cbcc5c18ee49 1-34
+src/modules/Proof/models/__tests__/cloneProofPatch.spec.ts
+  s_ab5443e65c7fba::t_7c5f2fd752d14b 1-65
+src/modules/Proof/useCases/proofPresets.ts
+  s_ab5443e65c7fba::t_9e32ae1204fabd 4
+  s_ab5443e65c7fba::t_cb343858eaa273 13-15,17
+src/modules/Proof/presentations/hooks/__tests__/useProofLoudnessHistory.spec.ts
+  s_ab5443e65c7fba::t_9861e5f56d8a09 1-150
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParam.spec.ts
+  s_ab5443e65c7fba::t_7eb670c842af8f 52-63
+src/modules/Proof/presentations/hooks/useProofLoudnessHistory.ts
+  s_ab5443e65c7fba::t_e99048d84070da 35-39
+  s_ab5443e65c7fba::t_1b2f994271f993 1-34,40-42
+src/modules/Proof/presentations/components/TonalBalance.tsx
+  s_ab5443e65c7fba::t_6a76bb51be4344 62-67
+  s_ab5443e65c7fba::t_866d5b91e10989 271-286
+  s_ab5443e65c7fba::t_26e36af33b8341 11-12
+  s_ab5443e65c7fba::t_7ba3095f8a2089 85
+src/modules/Proof/stores/proofStore.ts
+  s_ab5443e65c7fba::t_de8e2ca327fae9 226-233,236
+  s_ab5443e65c7fba::t_c847681eeeeaa3 179-213,234-235
+  s_ab5443e65c7fba::t_b995e9186c58b1 51
+  s_ab5443e65c7fba::t_b9c25113c6dc8d 170-176
+  s_ab5443e65c7fba::t_6e268e29c90abd 76-78,83
+  s_ab5443e65c7fba::t_2c0741b3268cd7 8
+  s_ab5443e65c7fba::t_2392b51bdac9b6 177-178
+src/modules/Proof/useCases/proofParamBridge/setProofParam.ts
+  s_ab5443e65c7fba::t_a60092c0584fa6 11-22
+  s_ab5443e65c7fba::t_006a94183bc30d 30-33
+src/modules/Proof/models/LinkedBandValues.ts
+  s_ab5443e65c7fba::t_121045180d5c4e 1-46
+src/modules/Proof/models/ProofLoudnessAlert.ts
+  s_ab5443e65c7fba::t_e501839fea9b9b 1-104
+src/modules/Proof/stores/__tests__/proofStore.spec.ts
+  s_3c655e300a13fc::t_f01e847177adcd 137-172,174-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "11563e86bfa8eb01ae66dbc06c34f3ce363f67f7",
+  "prompts": {},
+  "sessions": {
+    "s_3c655e300a13fc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4e7cf830286ed91e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
