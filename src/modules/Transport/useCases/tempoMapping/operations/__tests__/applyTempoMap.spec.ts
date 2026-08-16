@@ -62,4 +62,34 @@ describe('applyTempoMap', () => {
 
         expect(updateTransportState).not.toHaveBeenCalled();
     });
+
+    it('should clamp a detected tempo above the transport range down to 300', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        applyTempoMap({
+            points: [],
+            averageBpm: 400,
+            minBpm: 390,
+            maxBpm: 410,
+            confidence: 0.9,
+            totalBeats: 16,
+        });
+
+        expect(updateTransportState).toHaveBeenCalledWith({ tempo: 300 });
+    });
+
+    it('should round and pass through a detected tempo already inside the transport range', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        applyTempoMap({
+            points: [],
+            averageBpm: 90.4,
+            minBpm: 85,
+            maxBpm: 95,
+            confidence: 0.9,
+            totalBeats: 16,
+        });
+
+        expect(updateTransportState).toHaveBeenCalledWith({ tempo: 90 });
+    });
 });
