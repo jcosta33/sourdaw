@@ -785,10 +785,15 @@ mod tests {
 
     /// Render long enough for every strike burst to finish, so a later burst
     /// count reads only what the event under test triggered.
+    ///
+    /// 48 blocks of 512 is ~512 ms at 48 kHz. The pedal-down burst is the
+    /// longest of these: its 20 ms envelope needs roughly 230 ms to fall
+    /// under the resonator's silence floor, so a 20-block window is not
+    /// enough to clear it.
     fn settle_noise(engine: &mut GrandBouleEngine) {
         let mut left = vec![0.0_f32; 512];
         let mut right = vec![0.0_f32; 512];
-        for _ in 0..20 {
+        for _ in 0..48 {
             left.fill(0.0);
             right.fill(0.0);
             engine.process_block(&mut left, &mut right);
