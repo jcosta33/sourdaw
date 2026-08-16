@@ -1,0 +1,80 @@
+src/modules/Knead/handlers/pitch/handleCommitPitchEdit.ts
+  s_ab5443e65c7fba::t_8aeb9bdf3a53b3 2,4,11,19-32,37-45
+src/modules/Arrangement/useCases/replaceClipAudioBuffer.ts
+  s_ab5443e65c7fba::t_db077e5f73cfa4 65-69
+  s_ab5443e65c7fba::t_29aff8eaed0de8 1,71
+src/modules/Knead/handlers/pitch/__tests__/pitchHandlers.spec.ts
+  s_ab5443e65c7fba::t_d46be857d18e58 94-98
+src/modules/Knead/useCases/pitch/pitchEditDependencies.ts
+  s_ab5443e65c7fba::t_a5507b9194c714 12,18-22,24
+src/modules/Knead/useCases/__tests__/clearClipPitchAnalysis.spec.ts
+  s_ab5443e65c7fba::t_049ce21ffff472 1-128
+  s_ab5443e65c7fba::t_b54148eb1c625b 131
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_ab5443e65c7fba::t_882f299c397287 384-388,395,405-406
+  s_ab5443e65c7fba::t_24a28a0b00919a 444-447,461-549
+  s_ab5443e65c7fba::t_6b6b2b990cd310 407-408
+src/modules/AudioEngine/useCases/audioAnalysis/commitPitchEdit.ts
+  s_ab5443e65c7fba::t_e2955b406dd67b 17,23-28,33,46,58-59
+src/utils/handlerContract.ts
+  s_ab5443e65c7fba::t_b488e7eae9c3c1 311-333
+  s_ab5443e65c7fba::t_221176b3c08bbf 1464-1471,1473-1479
+src/modules/Knead/useCases/restoreClipPitchAnalysis.ts
+  s_ab5443e65c7fba::t_edfec98c25aa23 18,24
+  s_ab5443e65c7fba::t_99176f0b8282a1 1-17,19-23,25-76
+src/modules/Knead/handlers/pitch/handleRestoreClipFileId.ts
+  s_ab5443e65c7fba::t_411fca849e0074 4-5,7-14,18-24
+src/modules/Knead/useCases/clearClipPitchAnalysis.ts
+  s_ab5443e65c7fba::t_e886ef6baa1df7 1-54
+src/modules/AudioEngine/useCases/audioAnalysis/__tests__/commitPitchEdit.spec.ts
+  s_ab5443e65c7fba::t_48c4cc382d056f 79,82,89-99
+  s_ab5443e65c7fba::t_cb9729518b9e51 45,48,54-56
+  s_ab5443e65c7fba::t_b8f26b3fbbf792 67
+  s_ab5443e65c7fba::t_f251098aa50a85 110
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_ab5443e65c7fba::t_92bf904f4ea666 675-688
+  s_ab5443e65c7fba::t_990df87ce31968 77-86,94-120
+  s_ab5443e65c7fba::t_d8b08e56c6c04a 153-159
+src/modules/AudioEngine/useCases/audioAnalysis/processPitchEditWasm.ts
+  s_ab5443e65c7fba::t_5f00b7b51917e4 39-42
+  s_ab5443e65c7fba::t_db2b2ae9e48a1d 16
+src/modules/Knead/useCases/pitch/__tests__/commitPitchEdit.spec.ts
+  s_ab5443e65c7fba::t_2c0ad28eb7f9d2 241-266,276-285,288-302,304-308,310
+  s_ab5443e65c7fba::t_1ea7f87aef6f61 182,392
+  s_ab5443e65c7fba::t_e825d89b8d7a84 286-287
+  s_ab5443e65c7fba::t_0a38d4a47f0600 166,369
+  s_ab5443e65c7fba::t_49a234cf33a27f 119-152
+  s_ab5443e65c7fba::t_6a3fcfb6a5af76 213
+  s_ab5443e65c7fba::t_cb8d325363f7c9 303
+  s_ab5443e65c7fba::t_42049483963471 16-22
+  s_ab5443e65c7fba::t_a1d79cac962446 191,194-203
+  s_ab5443e65c7fba::t_fa7a7a09c298d6 309,311
+src/modules/Knead/useCases/pitch/commitPitchEdit.ts
+  s_ab5443e65c7fba::t_997e4a5aa776f4 53,56,63-72,75-80
+  s_ab5443e65c7fba::t_2fa4b51ae6b4b9 38-42
+  s_ab5443e65c7fba::t_028b610da5b1a6 7,82
+src/modules/Knead/useCases/pitch/__tests__/getPitchEditDependencies.spec.ts
+  s_ab5443e65c7fba::t_580cbaec681c73 12-13
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_ab5443e65c7fba::t_69ca206a0dc3a1 10,28,142,152,175,200
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_ab5443e65c7fba::t_e8043cffc06400 2,53
+src/modules/Knead/useCases/index.ts
+  s_ab5443e65c7fba::t_f7d4aba3f44214 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4264c199039f9d119d1133958f684fbbdd68ea4e",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
