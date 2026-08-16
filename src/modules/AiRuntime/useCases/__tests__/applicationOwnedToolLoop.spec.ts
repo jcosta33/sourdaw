@@ -99,7 +99,21 @@ describe('application-owned tool loop', () => {
             })
             .mockResolvedValueOnce({
                 status: 'complete',
-                toolCalls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
+                    },
+                ],
             });
         mockBridgeGroundedLlmToolCalls.mockImplementation(({ calls }: { calls: Array<{ name: string }> }) => {
             expect(calls).toEqual([{ name: 'setTempo', arguments: { bpm: 128 } }]);
@@ -117,17 +131,82 @@ describe('application-owned tool loop', () => {
         );
 
         expect(querySemanticProject).toHaveBeenCalledWith({ type: 'project-summary' });
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
-        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1];
+        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
         expect(continuationMessage).toContain('"callId":"provider-query-1"');
         expect(continuationMessage).toContain('revision-2');
         expect(continuationMessage).toContain('project-summary');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.applicationToolReceipts).toMatchObject([
             { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
+            { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
+    });
+
+    it('executes resolve, history, and capability reads as bounded application-owned receipts in one safe-read turn', async () => {
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'object',
+            page: { offset: 0, limit: 20, total: 1 },
+            items: [{ id: 'track-1', kind: 'track', name: 'Lead' }],
+            nextCursor: null,
+            warnings: [],
+        });
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'resolve-1', name: 'project.resolve', arguments: { stableId: 'track-1' } },
+                    { id: 'capabilities-1', name: 'agent.capabilities', arguments: {} },
+                    { id: 'history-1', name: 'command.history', arguments: { page: { limit: 1 } } },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'safe-read-catalog-loop',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).toHaveBeenNthCalledWith(1, { type: 'object', filters: { stableId: 'track-1' } });
+        expect(querySemanticProject).toHaveBeenNthCalledWith(2, { type: 'history', page: { limit: 1 } });
+        expect(result.status).toBe('complete');
+        expect(result.receipts).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    callId: 'resolve-1',
+                    toolName: 'project.resolve',
+                    status: 'success',
+                    revision: 'revision-2',
+                }),
+                expect.objectContaining({
+                    callId: 'capabilities-1',
+                    toolName: 'agent.capabilities',
+                }),
+                expect.objectContaining({
+                    callId: 'history-1',
+                    toolName: 'command.history',
+                    status: 'success',
+                    revision: 'revision-2',
+                }),
+            ])
+        );
+        const capabilitiesReceipt = result.receipts.find((receipt) => receipt.callId === 'capabilities-1');
+        expect(capabilitiesReceipt?.data).toMatchObject({
+            operations: expect.arrayContaining([
+                expect.objectContaining({ name: 'command.batch.commit', callable: false }),
+            ]),
+        });
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('"callId":"resolve-1"');
     });
 
     it.each([
@@ -187,14 +266,14 @@ describe('application-owned tool loop', () => {
         }
     );
 
-    it('publishes data-only schemas and rejects unavailable tools before local execution', async () => {
+    it('publishes the compact catalog and rejects unavailable tools before local execution', async () => {
         const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
-        expect(schemas).toHaveLength(1);
-        expect(schemas[0]?.function).toMatchObject({
-            name: 'project.query',
-            parameters: { additionalProperties: false },
-        });
-        expect(JSON.stringify(schemas)).not.toContain('execute');
+        expect(schemas.map((schema) => schema.function.name)).toEqual(
+            expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
+        );
+        expect(schemas).toHaveLength(8);
+        expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
+        expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
 
         const result = await runApplicationOwnedToolLoop({
             loopId: 'loop-1',

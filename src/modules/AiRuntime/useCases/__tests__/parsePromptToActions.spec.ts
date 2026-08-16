@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
-
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
@@ -144,8 +142,41 @@ function createMixerContext(): ProjectContext {
     };
 }
 
-function completePlan<TToolCall>(toolCalls: TToolCall[]) {
-    return { status: 'complete' as const, toolCalls };
+type CompletePlanOutcome = {
+    status: 'complete';
+    toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
+};
+
+function completePlan<TToolCall extends { name: string; arguments: Record<string, unknown> }>(
+    toolCalls: TToolCall[]
+): CompletePlanOutcome {
+    const workflowCalls = toolCalls.filter((call) => call.name === 'selectWorkflowCapability');
+    const commandCalls = toolCalls.filter((call) => call.name !== 'selectWorkflowCapability');
+    if (commandCalls.length === 0) {
+        return { status: 'complete', toolCalls: workflowCalls };
+    }
+    const commandNames = [...new Set(commandCalls.map((call) => call.name))];
+    let providerTurn = 0;
+    const catalogPlan: CompletePlanOutcome = {
+        status: 'complete',
+        toolCalls: [
+            {
+                name: 'agent.catalog.discover',
+                arguments: { category: 'command', names: commandNames },
+            },
+        ],
+    };
+    const proposalPlan: CompletePlanOutcome = {
+        status: 'complete',
+        toolCalls: [...workflowCalls, { name: 'command.batch.propose', arguments: { commands: commandCalls } }],
+    };
+    // Each planning run has a bounded discovery turn followed by its proposal turn.
+    return {
+        then(resolve: (outcome: CompletePlanOutcome) => unknown) {
+            providerTurn = providerTurn === 0 ? 1 : 0;
+            return Promise.resolve(resolve(providerTurn === 1 ? catalogPlan : proposalPlan));
+        },
+    } as unknown as CompletePlanOutcome;
 }
 
 function createGlueProviderContext(): ProjectContext {
@@ -309,19 +340,20 @@ describe('parsePromptToActions', () => {
 
         const result = await parsePromptToActions('make the project faster', baseContext);
 
-        expect(generateToolCalls).toHaveBeenCalledWith(
-            expect.stringContaining('command system prompt'),
-            'command user message',
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('command system prompt');
+        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
                 }),
-                ...getExecutableAppActionToolSchemas(),
-            ]),
-            undefined,
-            'make the project faster',
-            undefined
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+            ])
         );
+        expect(firstProviderCall?.[4]).toBe('make the project faster');
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
             prompt: 'make the project faster',
             context: baseContext,
@@ -350,12 +382,15 @@ describe('parsePromptToActions', () => {
         expect(mockDoesProductionBriefAllowActionBatch).toHaveBeenCalledWith([
             { type: 'setTempo', payload: { bpm: 128 } },
         ]);
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             actions: [],
             rawText: 'make the project faster',
             requiresConfirmation: false,
             rejectionReason: 'Provider action conflicts with locked production intent.',
         });
+        expect(result.applicationToolReceipts).toMatchObject([
+            { toolName: 'agent.catalog.discover', status: 'success' },
+        ]);
     });
 
     it('proposes an explicit provider time-signature command as one confirmable atomic action', async () => {
@@ -444,19 +479,20 @@ describe('parsePromptToActions', () => {
         expect(result.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
-        expect(generateToolCalls).toHaveBeenCalledWith(
-            expect.stringContaining('command system prompt'),
-            'command user message',
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('command system prompt');
+        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
                 }),
-                ...getExecutableAppActionToolSchemas(),
-            ]),
-            undefined,
-            'enable punch in/out',
-            undefined
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+            ])
         );
+        expect(firstProviderCall?.[4]).toBe('enable punch in/out');
     });
 
     it('proposes a grounded provider marker as one reversible atomic action', async () => {
@@ -607,15 +643,17 @@ describe('parsePromptToActions', () => {
 
     it('proposes grounded non-destructive clip stretch controls as atomic actions', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
-            completePlan([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }])
-        );
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
-            completePlan([{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }])
-        );
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
-            completePlan([{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 4 } }])
-        );
+        const plans = [
+            completePlan([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }]),
+            completePlan([{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }]),
+            completePlan([{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 4 } }]),
+        ];
+        let planIndex = 0;
+        vi.mocked(generateToolCalls).mockImplementation(async () => {
+            const plan = plans[Math.floor(planIndex / 2)];
+            planIndex += 1;
+            return plan;
+        });
         const providerContext: ProjectContext = {
             ...baseContext,
             tracks: [
@@ -680,7 +718,7 @@ describe('parsePromptToActions', () => {
 
     it('proposes a grounded cross-track clip move as one atomic action', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
-        vi.mocked(generateToolCalls).mockResolvedValueOnce(
+        vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 {
                     name: 'moveClip',
@@ -1184,7 +1222,10 @@ describe('parsePromptToActions', () => {
     });
 
     it('rejects a provider tool that was not advertised before bridge grounding', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
+        vi.mocked(generateToolCalls).mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'saveProject', arguments: {} }],
+        });
         const result = await parsePromptToActions('save the project', baseContext);
 
         expect(result).toEqual({
@@ -1205,12 +1246,15 @@ describe('parsePromptToActions', () => {
 
         const result = await parsePromptToActions('set tempo to 128', baseContext);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             actions: [],
             rawText: 'set tempo to 128',
             requiresConfirmation: false,
             rejectionReason: 'Provider action failed runtime validation: saveProject',
         });
+        expect(result.applicationToolReceipts).toMatchObject([
+            { toolName: 'agent.catalog.discover', status: 'success' },
+        ]);
     });
 
     it('returns a rejected provider planning outcome without bridging it', async () => {
