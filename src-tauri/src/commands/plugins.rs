@@ -1708,6 +1708,79 @@ mod tests {
         );
     }
 
+    /// The state-restore path had the same defect on a longer timescale: it held
+    /// the `engine_plugins` map across a 2 s control timeout plus the plugin's
+    /// own `set_state`, so a slow plugin parked the audio relay for seconds. And
+    /// once the map is free, an unload+reload can land in that window: the
+    /// parameters the dead runtime reported are not the replacement's.
+    #[test]
+    fn write_plugin_state_chunk_frees_the_map_during_the_restore_and_refuses_a_swapped_record() {
+        let app = command_test_app();
+        // `tauri::App` is not `Sync`, so the scoped threads below reach managed
+        // state through an owned `AppHandle` rather than borrowing the app.
+        let app_handle = app.handle().clone();
+        let state = app_handle.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-swapped-restore", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "instance-swapped-restore");
+        runtime
+            .with_control(Duration::from_secs(2), |plugin| {
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
+                Ok(())
+            })
+            .expect("fixture control access should succeed");
+
+        std::thread::scope(|scope| {
+            let control_holder = scope.spawn(|| {
+                runtime.with_control(Duration::from_secs(5), |_| {
+                    std::thread::sleep(Duration::from_millis(800));
+                    Ok(())
+                })
+            });
+            std::thread::sleep(Duration::from_millis(100));
+
+            let writer = scope.spawn(|| {
+                write_plugin_state_chunk(
+                    "instance-swapped-restore",
+                    &[9, 8, 7],
+                    &app_handle.state::<AppState>(),
+                )
+            });
+            std::thread::sleep(Duration::from_millis(100));
+
+            let deadline = Instant::now() + Duration::from_millis(300);
+            loop {
+                if state.engine_plugins.try_lock().is_ok() {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "write_plugin_state_chunk must not hold engine_plugins across the restore"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+
+            reload_engine_owned_fixture(&state, "instance-swapped-restore", 0.25);
+
+            assert_eq!(writer.join().expect("writer thread"), Ok(()));
+            control_holder
+                .join()
+                .expect("control holder thread")
+                .expect("fixture control access should succeed");
+        });
+
+        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+        assert_eq!(
+            parameter_values(
+                &engine_plugins
+                    .get("instance-swapped-restore")
+                    .expect("the reloaded record should exist")
+                    .parameters
+            ),
+            vec![0.25],
+            "a restore addressed to the unloaded runtime must not refresh its replacement's cache"
+        );
+    }
+
     /// Same window on the read side: an unload+reload between the poll and the
     /// cache write-back makes `get_mut` resolve a NEW record, and the dead
     /// plugin's parameters used to be stored onto it and returned as its own.
