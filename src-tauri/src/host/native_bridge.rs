@@ -448,6 +448,14 @@ impl SharedClapPlugin {
     /// the plugin would answer with the value they are about to replace and a
     /// poll would report a knob snapping back. The cache already holds them, and
     /// it is authoritative until the queue drains.
+    ///
+    /// Known limitation, deliberately accepted here: the queue only drains on
+    /// the process path, and the scheduler short-circuits a **bypassed** effect
+    /// before `with_process` ever runs. A bypassed instance whose queue is
+    /// non-empty therefore refuses every poll, and its host-side cache stays
+    /// authoritative until it is un-bypassed. Nothing is lost — the cache holds
+    /// every value this host wrote — but a change made inside the plugin's own
+    /// editor while bypassed is not visible until then.
     pub fn poll_parameters(
         &self,
         timeout: Duration,
@@ -462,6 +470,16 @@ impl SharedClapPlugin {
 
             Ok(Some(plugin.get_parameters()))
         })
+    }
+
+    /// Whether any host-side parameter write is still queued for the audio
+    /// thread.
+    ///
+    /// Narrow accessor for the command layer's parameter-cache write-back: a
+    /// snapshot polled before such a write was accepted is older than the cache,
+    /// and storing it would revert the write.
+    pub fn has_pending_parameter_writes(&self) -> bool {
+        self.pending_parameters.has_pending()
     }
 
     pub fn with_control<ResultValue>(

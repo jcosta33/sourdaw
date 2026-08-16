@@ -54,36 +54,38 @@ const MAIN_WINDOW_LABEL: &str = "main";
 /// Label prefix every plugin editor window is created under.
 const PLUGIN_WINDOW_LABEL_PREFIX: &str = "plugin-";
 
-/// The DAW window a plugin editor is owned by.
+/// The DAW window a plugin editor is owned by: the configured main window, or
+/// nothing.
 ///
-/// The configured main window normally; failing that, the lowest-labelled window
-/// that is not itself a plugin editor, so a renamed or additional main window
-/// still parents editors instead of silently dropping them to "above
-/// everything". Deterministic by label because `windows()` is a map.
+/// Only `main`. Ownership is a destruction cascade as well as a z-order
+/// relationship — destroying the owner destroys every window owned by it — so
+/// picking an owner by guesswork is not a safe degradation. Any other window
+/// this app grows (an about box, a dialog) would be the wrong thing to hang
+/// every plugin editor off, and a label sorting below "main" would have been
+/// chosen over it. No parent is a defined state: `plugin_editor_needs_always_on_top`
+/// keeps an unparented editor reachable.
 fn daw_parent_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<tauri::Window<R>> {
-    if let Some(main_window) = app.get_window(MAIN_WINDOW_LABEL) {
-        return Some(main_window);
-    }
-
-    let mut candidates: Vec<(String, tauri::Window<R>)> = app
-        .windows()
-        .into_iter()
-        .filter(|(label, _)| !label.starts_with(PLUGIN_WINDOW_LABEL_PREFIX))
-        .collect();
-    candidates.sort_by(|(left, _), (right, _)| left.cmp(right));
-    candidates.into_iter().next().map(|(_, window)| window)
+    app.get_window(MAIN_WINDOW_LABEL)
 }
 
 /// Whether a plugin editor window still needs `always_on_top`.
 ///
 /// Only when the platform refused, or had no, parent window. A parented editor
 /// already sits above the DAW and only the DAW: Windows owner windows are always
-/// above their owner, macOS `addChildWindow` orders the child above its parent
-/// and moves it with the parent, and X11/Wayland `transient_for` tells the WM the
-/// same thing. Keeping `always_on_top` on top of that is what put plugin editors
-/// above unrelated applications — a floating editor covering a browser while the
-/// DAW is in the background is not the professional convention. Without a parent
-/// the flag is the only thing keeping the editor reachable, so it stays.
+/// above their owner, macOS `addChildWindow` orders the child above its parent,
+/// and X11/Wayland `transient_for` tells the WM the same thing. Keeping
+/// `always_on_top` on top of that is what put plugin editors above unrelated
+/// applications — a floating editor covering a browser while the DAW is in the
+/// background is not the professional convention. Without a parent the flag is
+/// the only thing keeping the editor reachable, so it stays.
+///
+/// Parenting is not a free equivalence, and the difference is deliberate. On
+/// macOS `addChildWindow` also makes the child *follow the parent's moves*: drag
+/// the main window and every open editor travels with it, which a separately
+/// placed floating editor would not do. Established hosts accept exactly this
+/// tradeoff — correct z-order and correct focus behaviour are worth more to a
+/// working musician than independently parked editor windows — and so does
+/// Sourdaw.
 fn plugin_editor_needs_always_on_top(parented: bool) -> bool {
     !parented
 }
@@ -229,12 +231,23 @@ pub async fn open_plugin_gui(
     // Schedule the plugin GUI state reset when that happens so a later open
     // recreates the GUI instead of failing on stale state and leaking the
     // plugin's internal GUI (audit #508 row 10).
+    //
+    // `Destroyed` as well as `CloseRequested`, because an editor can die without
+    // ever being asked to close: this window is *owned* by the DAW window, and
+    // the platform destroys owned windows when their owner is destroyed. That
+    // arrives only as `Destroyed`, so matching `CloseRequested` alone left the
+    // plugin's internal GUI never destroyed, a stale `plugin_windows` entry, and
+    // an editor permanently unopenable ("GUI is already open") for any process
+    // that outlived the main window. The reset is idempotent — `close_gui` is a
+    // no-op once the GUI is closed and the label removal is compare-and-remove —
+    // so it tolerates both events firing for the same window, which our own
+    // `win.destroy()` close paths now do.
     {
         let close_app = app.clone();
         let close_instance_id = instance_id.clone();
         let close_window_label = window_label.clone();
         plugin_window.on_window_event(move |event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if window_event_ends_the_plugin_editor(event) {
                 schedule_plugin_gui_reset_after_os_close(
                     close_instance_id.clone(),
                     close_window_label.clone(),
@@ -321,6 +334,23 @@ fn publish_plugin_gui_window_in_label_order(
     insert_label()?;
     show_window();
     Ok(())
+}
+
+/// Whether a window event means this plugin editor is going away, and the
+/// "GUI open" bookkeeping must be reset.
+///
+/// Two events, not one. `CloseRequested` is the title-bar button. `Destroyed`
+/// is the owner-destroy cascade: the editor is *owned* by the DAW window, and
+/// the platform destroys owned windows with their owner without asking them
+/// first, so that path arrives only as `Destroyed`. Matching `CloseRequested`
+/// alone left the plugin's internal GUI never destroyed and its
+/// `plugin_windows` entry stale, which makes the editor permanently unopenable
+/// ("GUI is already open") for any process that outlives the main window.
+fn window_event_ends_the_plugin_editor(event: &tauri::WindowEvent) -> bool {
+    matches!(
+        event,
+        tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+    )
 }
 
 /// Hand the OS-close reset to the async runtime and return its join handle.
@@ -486,10 +516,16 @@ fn record_plugin_gui_close_outcome(
     }
 }
 
-/// Close ALL plugin GUI windows (called on app exit or minimize).
+/// Close every open plugin editor window.
 ///
-/// Returns the instances whose editors closed and, per failing instance, the
-/// reason. Native windows are destroyed either way.
+/// Registered as a command for the webview, and called on the app-exit path
+/// (`RunEvent::Exit` in `lib.rs`) so a session's editors get their CLAP
+/// `gui.destroy` before the process goes away.
+///
+/// The report speaks only about editors: an instance with no recorded editor
+/// window has nothing to close and appears in neither list. Returns the
+/// instances whose editors closed and, per failing instance, the reason. Native
+/// windows are destroyed either way.
 #[tauri::command]
 pub async fn close_all_plugin_guis(
     app: tauri::AppHandle,
@@ -498,11 +534,23 @@ pub async fn close_all_plugin_guis(
     close_every_plugin_gui(Some(&app), state.inner())
 }
 
-fn close_every_plugin_gui<R: tauri::Runtime>(
+pub(crate) fn close_every_plugin_gui<R: tauri::Runtime>(
     app: Option<&tauri::AppHandle<R>>,
     state: &AppState,
 ) -> Result<PluginUnloadResult, String> {
     let mut report = PluginUnloadResult::default();
+
+    // Membership in `plugin_windows` is what "has an editor" means. Reporting an
+    // instance with no editor as closed, or as failing to close, describes work
+    // that was never owed — and on the exit path that noise is the only signal a
+    // real failure has.
+    let instances_with_editors: std::collections::HashSet<String> = {
+        let windows = state
+            .plugin_windows
+            .lock()
+            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+        windows.keys().cloned().collect()
+    };
 
     // Close all CLAP GUIs
     {
@@ -511,6 +559,9 @@ fn close_every_plugin_gui<R: tauri::Runtime>(
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         for (instance_id, instance) in plugins.iter_mut() {
+            if !instances_with_editors.contains(instance_id) {
+                continue;
+            }
             instance.close_gui();
             report.0.push(instance_id.clone());
         }
@@ -521,7 +572,11 @@ fn close_every_plugin_gui<R: tauri::Runtime>(
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-        engine_plugins.keys().cloned().collect()
+        engine_plugins
+            .keys()
+            .filter(|instance_id| instances_with_editors.contains(*instance_id))
+            .cloned()
+            .collect()
     };
 
     for instance_id in engine_instance_ids {
@@ -680,12 +735,162 @@ mod tests {
         );
     }
 
+    /// The report is about editors. An instance with no editor window has
+    /// nothing to close, so claiming it closed — or that it failed to — is a
+    /// false statement about work that was never owed, and on the exit path
+    /// that noise is the only signal a real failure has.
+    #[test]
+    fn an_instance_with_no_editor_window_appears_in_neither_close_list() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-with-editor", true);
+        insert_engine_owned_fixture(&state, "engine-without-editor", true);
+        state.plugins.lock().expect("plugins lock").insert(
+            "command-without-editor".into(),
+            crate::state::PluginInstanceData {
+                plugin: Box::new(ClapWrapper::new_engine_owned_command_fixture(
+                    "Command Fixture",
+                    vec![],
+                    true,
+                )),
+            },
+        );
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .insert(
+                "engine-with-editor".into(),
+                "plugin-engine-with-editor".into(),
+            );
+
+        let report = close_every_plugin_gui(Some(app.handle()), state.inner())
+            .expect("closing every editor should succeed");
+
+        assert_eq!(
+            report.0,
+            ["engine-with-editor"],
+            "only instances that actually had an editor may be reported as closed"
+        );
+        assert!(
+            report.1.is_empty(),
+            "an instance with no editor is not a failure, got: {:?}",
+            report.1
+        );
+    }
+
     /// The editor window is owned by the DAW window on every platform Tauri
     /// parents on, and that ownership is what keeps it above the DAW. Stacking
     /// `always_on_top` on it is what put plugin editors above unrelated apps.
     #[test]
     fn a_parented_editor_window_does_not_also_float_above_every_application() {
         assert!(!plugin_editor_needs_always_on_top(true));
+    }
+
+    fn build_test_window(
+        app: &tauri::AppHandle<tauri::test::MockRuntime>,
+        label: &str,
+    ) -> tauri::Window<tauri::test::MockRuntime> {
+        tauri::window::WindowBuilder::new(app, label)
+            .visible(false)
+            .build()
+            .expect("the mock runtime should build a window")
+    }
+
+    /// The configured main window is the DAW window, and owning editors by it is
+    /// what gives them their z-order.
+    #[test]
+    fn the_configured_main_window_owns_plugin_editors() {
+        let app = command_test_app();
+        let main_window = build_test_window(app.handle(), MAIN_WINDOW_LABEL);
+
+        let parent = daw_parent_window(app.handle()).expect("main must be the owner");
+
+        assert_eq!(parent.label(), main_window.label());
+    }
+
+    /// Ownership is a destruction cascade, not just a z-order relationship:
+    /// destroying the owner destroys every editor it owns. Guessing an owner by
+    /// label order would hand that power to whatever window sorts lowest — an
+    /// "about" box sorts below "main" — so no main window means no owner, and
+    /// the editor falls back to unparented + always-on-top.
+    #[test]
+    fn no_main_window_means_no_owner_rather_than_the_lowest_labelled_one() {
+        let app = command_test_app();
+        let _about_window = build_test_window(app.handle(), "about");
+        let _dialog_window = build_test_window(app.handle(), "dialog");
+        assert!(app.get_window(MAIN_WINDOW_LABEL).is_none());
+
+        assert!(
+            daw_parent_window(app.handle()).is_none(),
+            "an unrelated window must never become the owner of every plugin editor"
+        );
+    }
+
+    /// An editor owned by the DAW window is destroyed *with* it, and that path
+    /// never asks: it arrives as `Destroyed`, not `CloseRequested`.
+    #[test]
+    fn the_owner_destroy_cascade_resets_plugin_gui_state() {
+        assert!(window_event_ends_the_plugin_editor(
+            &tauri::WindowEvent::Destroyed
+        ));
+    }
+
+    /// The reset is not for every event the window emits.
+    #[test]
+    fn an_ordinary_window_event_does_not_reset_plugin_gui_state() {
+        assert!(!window_event_ends_the_plugin_editor(
+            &tauri::WindowEvent::Focused(true)
+        ));
+    }
+
+    /// Our own close paths call `win.destroy()`, so `Destroyed` now fires after
+    /// a reset has already run for the same window. The reset must tolerate
+    /// that: repeating it may not leave the instance unopenable.
+    #[test]
+    fn repeating_the_reset_for_the_same_window_is_idempotent() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", true);
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+        runtime
+            .with_control(std::time::Duration::from_secs(2), |plugin| {
+                plugin.open_gui(std::ptr::null_mut())
+            })
+            .expect("the fixture GUI should open");
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .insert(
+                "engine-owned-fixture".to_string(),
+                "plugin-engine-owned-fixture".to_string(),
+            );
+
+        reset_plugin_gui_state_after_os_close(
+            "engine-owned-fixture",
+            "plugin-engine-owned-fixture",
+            &state,
+        );
+        reset_plugin_gui_state_after_os_close(
+            "engine-owned-fixture",
+            "plugin-engine-owned-fixture",
+            &state,
+        );
+
+        assert!(state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .is_empty());
+        assert!(
+            runtime
+                .with_control(std::time::Duration::from_secs(2), |plugin| {
+                    plugin.open_gui(std::ptr::null_mut())
+                })
+                .is_ok(),
+            "a repeated reset must still leave the editor openable"
+        );
     }
 
     /// With no parent the flag is the only thing keeping the editor reachable

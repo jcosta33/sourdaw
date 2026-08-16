@@ -290,10 +290,15 @@ pub async fn load_plugin(
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
     let entry = {
+        // Recovered, not refused, for the same reason the publisher recovers:
+        // the registry is a lookup table rebuilt wholesale by every scan, so a
+        // panic elsewhere leaves no state a reader must distrust. Refusing here
+        // meant a poisoned lock let the scan publish while every later load
+        // failed forever with a lock error the user could do nothing about.
         let registry = state
             .plugin_registry
             .lock()
-            .map_err(|e| format!("Failed to lock registry: {}", e))?;
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         registry.get(&plugin_id.0).cloned().ok_or_else(|| {
             format!(
                 "Plugin {} not found in registry. Run a scan first.",
@@ -671,23 +676,42 @@ pub async fn set_plugin_parameter(
         }
     }
 
+    // Resolve the runtime under the map lock and release it before the write.
+    // `enqueue_parameter` blocks unbounded on the instance's non-RT control
+    // lock, and the worklet relay (`process_plugin_audio`) takes this same map
+    // lock once per render quantum — holding it across the write parks the
+    // relay, and the audio it carries, for as long as control is held.
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        match engine_plugins.get(&instance_id.0) {
+            Some(instance) => Arc::clone(&instance.runtime),
+            None => return Err(format!("No plugin instance: {}", instance_id.0)),
+        }
+    };
+
+    let enqueue_result = runtime.enqueue_parameter(param_id, value);
+
     let mut engine_plugins = state
         .engine_plugins
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
-        let enqueue_result = instance.runtime.enqueue_parameter(param_id, value);
-        update_parameter_cache_after_enqueue(
-            &mut instance.parameters,
-            param_id,
-            value,
-            enqueue_result,
-        )?;
-        return Ok(());
+    match engine_plugins.get_mut(&instance_id.0) {
+        // An unload+reload during the write leaves a different runtime under
+        // the same id. The value was written to the old one, so it is not this
+        // instance's value and must not enter its cache.
+        Some(instance) if Arc::ptr_eq(&instance.runtime, &runtime) => {
+            update_parameter_cache_after_enqueue(
+                &mut instance.parameters,
+                param_id,
+                value,
+                enqueue_result,
+            )
+        }
+        _ => enqueue_result,
     }
-    drop(engine_plugins);
-
-    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 #[tauri::command]
@@ -737,8 +761,19 @@ pub async fn get_plugin_parameters(
     let instance = engine_plugins
         .get_mut(&instance_id.0)
         .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
+
+    // An unload+reload during the poll leaves a different runtime under the same
+    // id. The snapshot describes the runtime that is gone, so it neither
+    // overwrites this record's cache nor is answered as this record's values.
+    let is_same_runtime = Arc::ptr_eq(&instance.runtime, &runtime);
+
     if let Some(parameters) = polled_parameters {
-        instance.parameters = parameters;
+        // A write accepted between the poll and here is newer than the snapshot
+        // and is already in the cache; storing the snapshot would revert it —
+        // the exact knob snap-back this path exists to prevent.
+        if is_same_runtime && !runtime.has_pending_parameter_writes() {
+            instance.parameters = parameters;
+        }
     }
     Ok(instance.parameters.clone())
 }
@@ -809,21 +844,39 @@ fn write_plugin_state_chunk(
         }
     }
 
+    // Resolve the runtime under the map lock and release it before the restore.
+    // `set_state_invalidating_pending_parameters` waits up to 2 s for control
+    // access and then runs the plugin's own `set_state`; the worklet relay
+    // (`process_plugin_audio`) takes this same map lock once per render quantum,
+    // so holding it across that work parks the relay for seconds.
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        match engine_plugins.get(instance_id) {
+            Some(instance) => Arc::clone(&instance.runtime),
+            None => return Err(format!("No plugin instance: {}", instance_id)),
+        }
+    };
+
+    let refreshed_parameters = runtime.set_state_invalidating_pending_parameters(
+        std::time::Duration::from_secs(2),
+        plugin_state,
+    )?;
+
     let mut engine_plugins = state
         .engine_plugins
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
     if let Some(instance) = engine_plugins.get_mut(instance_id) {
-        let refreshed_parameters = instance.runtime.set_state_invalidating_pending_parameters(
-            std::time::Duration::from_secs(2),
-            plugin_state,
-        )?;
-        instance.parameters = refreshed_parameters;
-        return Ok(());
+        // An unload+reload during the restore leaves a different runtime under
+        // the same id; the parameters the old one reported are not its values.
+        if Arc::ptr_eq(&instance.runtime, &runtime) {
+            instance.parameters = refreshed_parameters;
+        }
     }
-    drop(engine_plugins);
-
-    Err(format!("No plugin instance: {}", instance_id))
+    Ok(())
 }
 
 /// Read a plugin instance's opaque state chunk over Tauri's binary IPC path.
@@ -1015,9 +1068,12 @@ pub async fn update_plugin_transport(
 /// together. Two sequential mutex takes on this path were two chances per block
 /// to wait behind an unrelated control command.
 ///
-/// One allocation remains, and it is the return value: the processed block is
-/// handed to the IPC layer by value, so its buffer cannot be pooled here. Every
-/// intermediate buffer is preallocated.
+/// The de-interleave scratch is preallocated on the instance, so this path
+/// performs no heap allocation except the IPC return value: the processed block
+/// is handed to the IPC layer by value, so its buffer cannot be pooled here.
+/// `push_input` still stack-constructs a zeroed `AudioBlock` per call before
+/// copying into it — that is a stack cost inside the bridge, not an allocation
+/// this command can pool away.
 #[tauri::command]
 
 pub async fn process_plugin_audio(
@@ -1326,6 +1382,12 @@ mod tests {
     /// buffers every time. They are preallocated on the instance now: the same
     /// storage must serve consecutive blocks, including blocks of different
     /// lengths, without moving.
+    ///
+    /// Both channels are checked: the relay fills two independent `Vec`s, so a
+    /// regression that reallocated only the right one would pass a left-only
+    /// assertion. What this cannot see is an added *clone* of the scratch — the
+    /// address it reads is the instance's own buffer either way — so the
+    /// no-copy property is carried by the code, not by this test.
     #[test]
     fn the_relay_refills_one_preallocated_scratch_buffer_across_blocks() {
         let app = command_test_app();
@@ -1338,22 +1400,33 @@ mod tests {
             Some(bridge_handle),
         );
 
-        let scratch_address = || {
+        // Both channels, every time: pointer, capacity and length.
+        type ScratchShape = ((*const f32, usize, usize), (*const f32, usize, usize));
+        let scratch_shape = || -> ScratchShape {
             let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
             let instance = engine_plugins
                 .get("instance-scratch")
                 .expect("fixture should exist");
             (
-                instance.relay_scratch.left.as_ptr(),
-                instance.relay_scratch.left.capacity(),
-                instance.relay_scratch.left.len(),
+                (
+                    instance.relay_scratch.left.as_ptr(),
+                    instance.relay_scratch.left.capacity(),
+                    instance.relay_scratch.left.len(),
+                ),
+                (
+                    instance.relay_scratch.right.as_ptr(),
+                    instance.relay_scratch.right.capacity(),
+                    instance.relay_scratch.right.len(),
+                ),
             )
         };
 
-        let (address_before, capacity_before, _) = scratch_address();
+        let ((left_before, left_capacity_before, _), (right_before, right_capacity_before, _)) =
+            scratch_shape();
         assert_eq!(
-            capacity_before, MAX_BLOCK_FRAMES,
-            "the scratch must be sized once to the largest block the bridge accepts"
+            (left_capacity_before, right_capacity_before),
+            (MAX_BLOCK_FRAMES, MAX_BLOCK_FRAMES),
+            "both scratch channels must be sized once to the largest block the bridge accepts"
         );
 
         tauri::async_runtime::block_on(process_plugin_audio(
@@ -1362,10 +1435,14 @@ mod tests {
             app.state::<AppState>(),
         ))
         .expect("a 128-frame block should round-trip");
-        let (address_after_short, capacity_after_short, frames_after_short) = scratch_address();
+        let (
+            (left_after_short, left_capacity_after_short, left_frames_after_short),
+            (right_after_short, right_capacity_after_short, right_frames_after_short),
+        ) = scratch_shape();
         assert_eq!(
-            frames_after_short, 128,
-            "the block must be de-interleaved into the instance's own scratch"
+            (left_frames_after_short, right_frames_after_short),
+            (128, 128),
+            "the block must be de-interleaved into the instance's own scratch, both channels"
         );
 
         tauri::async_runtime::block_on(process_plugin_audio(
@@ -1374,18 +1451,44 @@ mod tests {
             app.state::<AppState>(),
         ))
         .expect("a 256-frame block should round-trip");
-        let (address_after_long, capacity_after_long, frames_after_long) = scratch_address();
+        let (
+            (left_after_long, left_capacity_after_long, left_frames_after_long),
+            (right_after_long, right_capacity_after_long, right_frames_after_long),
+        ) = scratch_shape();
 
-        assert_eq!(frames_after_long, 256);
         assert_eq!(
-            (address_before, capacity_before),
-            (address_after_short, capacity_after_short),
-            "the relay must reuse its buffer, not allocate a new one per block"
+            (left_frames_after_long, right_frames_after_long),
+            (256, 256)
         );
         assert_eq!(
-            (address_before, capacity_before),
-            (address_after_long, capacity_after_long),
-            "a longer block must fit the preallocated capacity without moving it"
+            (
+                left_before,
+                left_capacity_before,
+                right_before,
+                right_capacity_before
+            ),
+            (
+                left_after_short,
+                left_capacity_after_short,
+                right_after_short,
+                right_capacity_after_short
+            ),
+            "the relay must reuse both buffers, not allocate new ones per block"
+        );
+        assert_eq!(
+            (
+                left_before,
+                left_capacity_before,
+                right_before,
+                right_capacity_before
+            ),
+            (
+                left_after_long,
+                left_capacity_after_long,
+                right_after_long,
+                right_capacity_after_long
+            ),
+            "a longer block must fit the preallocated capacity without moving either channel"
         );
     }
 
@@ -1487,6 +1590,304 @@ mod tests {
             parameters.iter().map(|p| p.value).collect::<Vec<_>>(),
             vec![0.75],
             "a queued write must not be reported as the value it is replacing"
+        );
+    }
+
+    /// Replace the record under an instance id with a fresh runtime, exactly as
+    /// an unload followed by a reload of the same id does.
+    fn reload_engine_owned_fixture(
+        state: &tauri::State<'_, AppState>,
+        instance_id: &str,
+        parameter_value: f64,
+    ) {
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .remove(instance_id);
+
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Reloaded Fixture", Vec::new(), true);
+        wrapper.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(
+            7,
+            parameter_value,
+        )]);
+        let parameters = wrapper.get_parameters();
+        state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .insert(
+                instance_id.to_string(),
+                EnginePluginInstanceData {
+                    engine_plugin_id: 18,
+                    runtime: Arc::new(SharedClapPlugin::new(wrapper)),
+                    name: "Reloaded Fixture".to_string(),
+                    parameters,
+                    has_gui: true,
+                    bridge: None,
+                    relay_scratch: crate::state::PluginRelayScratch::default(),
+                },
+            );
+    }
+
+    fn parameter_values(parameters: &[PluginParameter]) -> Vec<f64> {
+        parameters.iter().map(|parameter| parameter.value).collect()
+    }
+
+    /// The relay (`process_plugin_audio`) takes the `engine_plugins` map lock
+    /// once per render quantum. `set_plugin_parameter` used to hold that same
+    /// lock across `enqueue_parameter`, which blocks unbounded on the instance's
+    /// non-RT control lock — so a plugin holding control parked the audio relay
+    /// with it. The map must be free while the control write is in flight.
+    ///
+    /// And once it is free, an unload+reload can land in that window: the value
+    /// went to the runtime that is gone, so it must not be written onto the
+    /// record that replaced it.
+    #[test]
+    fn set_plugin_parameter_frees_the_map_during_the_write_and_refuses_a_swapped_record() {
+        let app = command_test_app();
+        // `tauri::App` is not `Sync`, so the scoped threads below reach managed
+        // state through an owned `AppHandle` rather than borrowing the app.
+        let app_handle = app.handle().clone();
+        let state = app_handle.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-swapped-write", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "instance-swapped-write");
+
+        std::thread::scope(|scope| {
+            // The plugin owns its control path for longer than the map-lock
+            // deadline below, so a command that held the map across the write
+            // would hold it past that deadline.
+            let control_holder = scope.spawn(|| {
+                runtime.with_control(Duration::from_secs(5), |_| {
+                    std::thread::sleep(Duration::from_millis(800));
+                    Ok(())
+                })
+            });
+            std::thread::sleep(Duration::from_millis(100));
+
+            let writer = scope.spawn(|| {
+                tauri::async_runtime::block_on(set_plugin_parameter(
+                    PluginInstanceId("instance-swapped-write".to_string()),
+                    7,
+                    0.75,
+                    app_handle.state::<AppState>(),
+                ))
+            });
+            std::thread::sleep(Duration::from_millis(100));
+
+            let deadline = Instant::now() + Duration::from_millis(300);
+            loop {
+                if state.engine_plugins.try_lock().is_ok() {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "set_plugin_parameter must not hold engine_plugins across the control write"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+
+            reload_engine_owned_fixture(&state, "instance-swapped-write", 0.25);
+
+            assert_eq!(writer.join().expect("writer thread"), Ok(()));
+            control_holder
+                .join()
+                .expect("control holder thread")
+                .expect("fixture control access should succeed");
+        });
+
+        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+        let instance = engine_plugins
+            .get("instance-swapped-write")
+            .expect("the reloaded record should exist");
+        assert_eq!(
+            parameter_values(&instance.parameters),
+            vec![0.25],
+            "a write addressed to the unloaded runtime must not land on its replacement"
+        );
+    }
+
+    /// Same window on the read side: an unload+reload between the poll and the
+    /// cache write-back makes `get_mut` resolve a NEW record, and the dead
+    /// plugin's parameters used to be stored onto it and returned as its own.
+    #[test]
+    fn get_plugin_parameters_refuses_to_store_a_dead_runtimes_poll_onto_its_replacement() {
+        let app = command_test_app();
+        // `tauri::App` is not `Sync`, so the scoped threads below reach managed
+        // state through an owned `AppHandle` rather than borrowing the app.
+        let app_handle = app.handle().clone();
+        let state = app_handle.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-swapped-poll", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "instance-swapped-poll");
+        runtime
+            .with_control(Duration::from_secs(2), |plugin| {
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
+                Ok(())
+            })
+            .expect("fixture control access should succeed");
+
+        let polled = std::thread::scope(|scope| {
+            let control_holder = scope.spawn(|| {
+                runtime.with_control(Duration::from_secs(5), |_| {
+                    std::thread::sleep(Duration::from_millis(500));
+                    Ok(())
+                })
+            });
+            std::thread::sleep(Duration::from_millis(100));
+
+            let reader = scope.spawn(|| {
+                tauri::async_runtime::block_on(get_plugin_parameters(
+                    PluginInstanceId("instance-swapped-poll".to_string()),
+                    app_handle.state::<AppState>(),
+                ))
+            });
+            std::thread::sleep(Duration::from_millis(150));
+
+            reload_engine_owned_fixture(&state, "instance-swapped-poll", 0.25);
+
+            let polled = reader.join().expect("reader thread");
+            control_holder
+                .join()
+                .expect("control holder thread")
+                .expect("fixture control access should succeed");
+            polled
+        })
+        .expect("parameters should resolve");
+
+        assert_eq!(
+            parameter_values(&polled),
+            vec![0.25],
+            "the replacement instance must answer with its own values, not the dead runtime's"
+        );
+        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+        assert_eq!(
+            parameter_values(
+                &engine_plugins
+                    .get("instance-swapped-poll")
+                    .expect("the reloaded record should exist")
+                    .parameters
+            ),
+            vec![0.25],
+            "the replacement instance's cache must be untouched by the dead runtime's poll"
+        );
+    }
+
+    /// The other hole in the same window: a parameter write accepted after the
+    /// poll was determined is newer than the poll, and the cache already holds
+    /// it. Storing the poll on top reverts it — the exact knob snap-back
+    /// `poll_parameters` claims to prevent.
+    #[test]
+    fn get_plugin_parameters_does_not_revert_a_write_accepted_during_the_poll() {
+        let app = command_test_app();
+        // `tauri::App` is not `Sync`, so the scoped threads below reach managed
+        // state through an owned `AppHandle` rather than borrowing the app.
+        let app_handle = app.handle().clone();
+        let state = app_handle.state::<AppState>();
+        insert_engine_owned_fixture(&state, "instance-late-write", Vec::new());
+        let runtime = engine_fixture_runtime(&state, "instance-late-write");
+        runtime
+            .with_control(Duration::from_secs(2), |plugin| {
+                plugin.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(7, 0.9)]);
+                Ok(())
+            })
+            .expect("fixture control access should succeed");
+
+        let polled = std::thread::scope(|scope| {
+            let control_holder = scope.spawn(|| {
+                runtime.with_control(Duration::from_secs(5), |_| {
+                    std::thread::sleep(Duration::from_millis(600));
+                    Ok(())
+                })
+            });
+            std::thread::sleep(Duration::from_millis(100));
+
+            let reader = scope.spawn(|| {
+                tauri::async_runtime::block_on(get_plugin_parameters(
+                    PluginInstanceId("instance-late-write".to_string()),
+                    app_handle.state::<AppState>(),
+                ))
+            });
+            // The reader has cloned the runtime and is parked in the poll.
+            std::thread::sleep(Duration::from_millis(200));
+
+            // Occupy the map so the reader cannot store the instant its poll
+            // returns, then land the write in that window exactly as
+            // `set_plugin_parameter` does: enqueue, then record it in the cache.
+            let mut engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+            std::thread::sleep(Duration::from_millis(600));
+            runtime
+                .enqueue_parameter(7, 0.75)
+                .expect("the queued write should be accepted");
+            engine_plugins
+                .get_mut("instance-late-write")
+                .expect("fixture should exist")
+                .parameters = vec![plugin_parameter(7, 0.75)];
+            drop(engine_plugins);
+
+            let polled = reader.join().expect("reader thread");
+            control_holder
+                .join()
+                .expect("control holder thread")
+                .expect("fixture control access should succeed");
+            polled
+        })
+        .expect("parameters should resolve");
+
+        assert_eq!(
+            parameter_values(&polled),
+            vec![0.75],
+            "a write accepted during the poll must not be reverted by the poll's write-back"
+        );
+        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+        assert_eq!(
+            parameter_values(
+                &engine_plugins
+                    .get("instance-late-write")
+                    .expect("fixture should exist")
+                    .parameters
+            ),
+            vec![0.75],
+            "the cache must keep the newer write, not the older poll"
+        );
+    }
+
+    /// The scan publisher recovers a poisoned registry lock, so the registry is
+    /// populated. The reader refused it, which turned the poison into "every
+    /// load fails forever with a lock error" — a state no user action clears.
+    #[test]
+    fn load_plugin_reads_past_a_poisoned_registry_lock() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+
+        let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = state
+                .plugin_registry
+                .lock()
+                .expect("first lock should succeed");
+            panic!("poison the registry lock");
+        }));
+        assert!(poisoning.is_err());
+        assert!(state.plugin_registry.is_poisoned());
+
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let error = tauri::async_runtime::block_on(load_plugin(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("poisoned-registry-instance".to_string()),
+            state.clone(),
+        ))
+        .expect_err("a fake plugin path cannot load");
+
+        assert!(
+            error.starts_with("Failed to load CLAP plugin at /plugins/aaaa1111.clap:"),
+            "the load must get past the registry read and fail at the library, got: {error}"
         );
     }
 
@@ -1946,6 +2347,11 @@ mod tests {
     /// A poisoned registry lock used to be swallowed, so the scan returned
     /// plugins while the registry stayed empty and every later load blamed the
     /// user for not scanning.
+    ///
+    /// This exercises the publisher against a bare `Mutex`, not the `scan_plugins`
+    /// command: the command path is covered by reading plus the reader-side test
+    /// `load_plugin_reads_past_a_poisoned_registry_lock`, which drives the whole
+    /// publish-then-load sequence through the managed state.
     #[test]
     fn a_poisoned_registry_still_receives_the_scan_results() {
         let plugin_registry: Mutex<HashMap<String, PluginRegistryEntry>> =

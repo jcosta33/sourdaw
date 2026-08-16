@@ -112,10 +112,13 @@ pub struct AppState {
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
     /// Open plugin GUI windows, keyed by instance_id → window label.
     pub plugin_windows: Arc<Mutex<HashMap<String, String>>>,
-    /// Audio bridge handles for engine-owned slots that are not CLAP plugin
-    /// instances, keyed by engine_plugin_id. A CLAP instance's handle lives on
-    /// its `EnginePluginInstanceData` instead, because the relay resolves it by
-    /// instance id on the audio relay path.
+    /// Audio bridge handles keyed by engine_plugin_id.
+    ///
+    /// Only the crumbs sampler writes this map, and nothing reads it: the
+    /// producer wiring that would feed those rings is missing and tracked
+    /// separately. A CLAP instance's handle is not here — it lives on its
+    /// `EnginePluginInstanceData`, because the relay resolves it by instance id
+    /// on the audio relay path.
     pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
     /// Retired engine-owned runtimes kept alive after scheduler removal is
     /// queued so the CPAL callback never final-drops a hosted plugin. Declared
@@ -167,7 +170,8 @@ fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtim
     retired_runtimes.push(runtime);
 }
 
-/// Drop every retired runtime the scheduler has already released.
+/// Move every retired runtime the scheduler has already released out of the vec
+/// and hand it back to the caller — *without* dropping it.
 ///
 /// The retirement vec exists so the CPAL callback never final-drops a hosted
 /// plugin: removal from the scheduler is *queued*, so at the moment a runtime is
@@ -177,13 +181,46 @@ fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtim
 ///
 /// The scheduler's own `Arc` is therefore the acknowledgment: when the slot is
 /// dropped, that clone goes with it, and a retirement entry whose strong count
-/// is back to 1 is provably referenced by nothing but this vec. Dropping it here
-/// runs the CLAP teardown on the calling (non-RT) thread, which is the only
-/// thread allowed to do it. An entry the scheduler still holds keeps a count
-/// above 1 and survives every sweep — the conservatism is unchanged, this only
-/// adds the point at which it stops being needed.
-fn drain_released_retired_runtimes<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>) {
-    retired_runtimes.retain(|retired_runtime| Arc::strong_count(retired_runtime) > 1);
+/// is back to 1 is provably referenced by nothing but this vec. An entry the
+/// scheduler still holds keeps a count above 1 and survives every sweep — the
+/// conservatism is unchanged, this only marks the point at which it stops being
+/// needed.
+///
+/// The released entries are *returned* rather than freed here because dropping
+/// one runs CLAP teardown — arbitrary third-party code, including a plugin's
+/// `destroy`, which may take unbounded time. See `sweep_retired_runtimes` for
+/// the lock discipline that depends on this.
+fn take_released_retired_runtimes<Runtime>(
+    retired_runtimes: &mut Vec<Arc<Runtime>>,
+) -> Vec<Arc<Runtime>> {
+    let (released_runtimes, scheduler_held_runtimes): (Vec<_>, Vec<_>) =
+        std::mem::take(retired_runtimes)
+            .into_iter()
+            .partition(|retired_runtime| Arc::strong_count(retired_runtime) == 1);
+    *retired_runtimes = scheduler_held_runtimes;
+    released_runtimes
+}
+
+/// Reclaim every released runtime in a retirement vec, running its teardown
+/// outside the retirement critical section.
+///
+/// Dropping a released runtime runs CLAP `deactivate`/`destroy` — third-party
+/// code of unbounded duration. Doing that while the retirement mutex is held
+/// would park every concurrent `retain_retired_engine_plugin` (i.e. every
+/// unload) for the whole teardown, so the released entries are taken out under
+/// the lock, the guard is released, and only then are they dropped.
+fn sweep_retired_runtimes<Runtime>(retired_runtimes: &Mutex<Vec<Arc<Runtime>>>) {
+    let released_runtimes = {
+        let mut retired_runtimes = match retired_runtimes.lock() {
+            Ok(retired_runtimes) => retired_runtimes,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        take_released_retired_runtimes(&mut retired_runtimes)
+    };
+
+    // Guard released. CLAP teardown runs here, on this non-RT thread, with the
+    // retirement mutex free.
+    drop(released_runtimes);
 }
 
 impl AppState {
@@ -219,14 +256,12 @@ impl AppState {
     }
 
     /// Reclamation point for the retirement vec. Runs off the audio thread, on
-    /// the load and unload paths — the moments a plugin's memory is about to be
-    /// wanted again — and frees only runtimes the scheduler has demonstrably
-    /// released. See `drain_released_retired_runtimes`.
+    /// the load and unload paths and once more at app exit — the moments a
+    /// plugin's memory is about to be wanted again, plus the terminal one — and
+    /// frees only runtimes the scheduler has demonstrably released. Teardown
+    /// runs with the retirement mutex free; see `sweep_retired_runtimes`.
     pub fn sweep_retired_engine_plugins(&self) {
-        match self.retired_engine_plugins.lock() {
-            Ok(mut retired_plugins) => drain_released_retired_runtimes(&mut retired_plugins),
-            Err(poisoned) => drain_released_retired_runtimes(&mut poisoned.into_inner()),
-        }
+        sweep_retired_runtimes(&self.retired_engine_plugins);
     }
 }
 
@@ -276,37 +311,119 @@ mod tests {
     /// of the process. Once the scheduler has dropped its own reference there
     /// is nothing left to protect, and the entry must go.
     #[test]
-    fn drain_frees_a_runtime_the_scheduler_has_released() {
+    fn taking_released_runtimes_removes_one_the_scheduler_has_released() {
         let mut retired_runtimes = vec![Arc::new(17_u32)];
 
-        drain_released_retired_runtimes(&mut retired_runtimes);
+        let released_runtimes = take_released_retired_runtimes(&mut retired_runtimes);
 
         assert!(retired_runtimes.is_empty());
+        assert_eq!(released_runtimes.len(), 1);
     }
 
     /// The other half of the same invariant, and the reason the vec exists:
     /// while the scheduler still holds the runtime, the audio thread may still
     /// be processing it. Freeing then is a use-after-free.
     #[test]
-    fn drain_keeps_a_runtime_the_scheduler_still_references() {
+    fn taking_released_runtimes_keeps_one_the_scheduler_still_references() {
         let scheduler_reference = Arc::new(17_u32);
         let mut retired_runtimes = vec![Arc::clone(&scheduler_reference)];
 
-        drain_released_retired_runtimes(&mut retired_runtimes);
-
+        assert!(take_released_retired_runtimes(&mut retired_runtimes).is_empty());
         assert_eq!(retired_runtimes.len(), 1);
         assert!(Arc::ptr_eq(&retired_runtimes[0], &scheduler_reference));
 
         // Releasing the scheduler's reference is the acknowledgment the sweep
         // waits for; the next sweep reclaims it.
         drop(scheduler_reference);
-        drain_released_retired_runtimes(&mut retired_runtimes);
+        assert_eq!(
+            take_released_retired_runtimes(&mut retired_runtimes).len(),
+            1
+        );
 
         assert!(retired_runtimes.is_empty());
     }
 
+    /// A sweep never sees a vec of one kind: an unload retires a runtime while
+    /// earlier ones are still held by the scheduler. Exactly the released ones
+    /// must leave, and the held ones must survive in place.
+    #[test]
+    fn a_mixed_retirement_vec_loses_only_the_released_runtimes() {
+        let first_scheduler_reference = Arc::new(1_u32);
+        let second_scheduler_reference = Arc::new(2_u32);
+        let mut retired_runtimes = vec![
+            Arc::new(10_u32),
+            Arc::clone(&first_scheduler_reference),
+            Arc::new(11_u32),
+            Arc::clone(&second_scheduler_reference),
+            Arc::new(12_u32),
+        ];
+
+        let released_runtimes = take_released_retired_runtimes(&mut retired_runtimes);
+
+        assert_eq!(
+            released_runtimes.iter().map(|r| **r).collect::<Vec<_>>(),
+            vec![10, 11, 12],
+            "every runtime the scheduler released must be handed back"
+        );
+        assert_eq!(retired_runtimes.len(), 2);
+        assert!(Arc::ptr_eq(
+            &retired_runtimes[0],
+            &first_scheduler_reference
+        ));
+        assert!(Arc::ptr_eq(
+            &retired_runtimes[1],
+            &second_scheduler_reference
+        ));
+    }
+
+    /// Dropping a released runtime runs CLAP teardown — third-party code of
+    /// unbounded duration. Running it under the retirement mutex parks every
+    /// concurrent unload for its whole duration, so the sweep must release the
+    /// guard first. Observed by asking, from inside the teardown itself,
+    /// whether the retirement lock is free.
+    struct RetirementLockProbe {
+        retired_runtimes: Arc<Mutex<Vec<Arc<RetirementLockProbe>>>>,
+        retirement_lock_was_free: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl Drop for RetirementLockProbe {
+        fn drop(&mut self) {
+            let retirement_lock_was_free = self.retired_runtimes.try_lock().is_ok();
+            self.retirement_lock_was_free.store(
+                retirement_lock_was_free,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+    }
+
+    #[test]
+    fn teardown_runs_after_the_retirement_guard_is_released() {
+        let retired_runtimes: Arc<Mutex<Vec<Arc<RetirementLockProbe>>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let retirement_lock_was_free = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        retired_runtimes
+            .lock()
+            .expect("retirement lock")
+            .push(Arc::new(RetirementLockProbe {
+                retired_runtimes: Arc::clone(&retired_runtimes),
+                retirement_lock_was_free: Arc::clone(&retirement_lock_was_free),
+            }));
+
+        sweep_retired_runtimes(&retired_runtimes);
+
+        assert!(
+            retirement_lock_was_free.load(std::sync::atomic::Ordering::Relaxed),
+            "CLAP teardown must not run inside the retirement critical section"
+        );
+        assert!(retired_runtimes.lock().expect("retirement lock").is_empty());
+    }
+
     /// Load/unload cycling is what accumulates retirements, so the sweep has to
     /// hold across repeats, not just once.
+    ///
+    /// The command fixture's CLAP plugin pointer is null, so no real CLAP
+    /// teardown runs here: what this pins is the Arc-count logic that decides
+    /// *when* teardown is allowed, not the teardown itself.
     #[test]
     fn repeated_retire_and_sweep_cycles_leave_the_retirement_vec_empty() {
         let state = AppState::default();
