@@ -11,8 +11,6 @@ import { useStore } from '#/infra/store/useStore';
 import {
     getPlatformPlugins,
     getPluginById,
-    bypassDevice,
-    removeDevice,
     addExternalDevice,
     reorderDevices,
     projectTrackToLiveStrip,
@@ -321,7 +319,14 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     data-testid={`device-bypass-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        bypassDevice(device.id, !device.bypassed);
+                                        // Action boundary: the bypassDevice
+                                        // action is undoable; the raw use case
+                                        // write never entered history (#1938
+                                        // precedent for the add path).
+                                        executeAppAction({
+                                            type: 'bypassDevice',
+                                            payload: { deviceId: device.id, bypassed: !device.bypassed },
+                                        });
                                     }}
                                 >
                                     <Power
@@ -379,7 +384,13 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     data-testid={`device-remove-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        removeDevice(device.id);
+                                        // Action boundary: removeDevice is
+                                        // undoable via its restoreDevice
+                                        // inverse.
+                                        executeAppAction({
+                                            type: 'removeDevice',
+                                            payload: { deviceId: device.id },
+                                        });
                                     }}
                                 >
                                     <Trash2 className="size-3 text-muted-foreground" />

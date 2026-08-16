@@ -275,18 +275,27 @@ describe('TrackDevicesSection', () => {
         expect(removeButtons.length).toBe(2);
     });
 
-    it('should call bypassDevice when bypass button is clicked', () => {
+    it('should dispatch the bypassDevice action when bypass button is clicked', () => {
         render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
         const bypassButton = screen.getByLabelText('Bypass Compressor');
         fireEvent.click(bypassButton);
-        expect(mockBypassDevice).toHaveBeenCalledWith('device-1', true);
+        // Action boundary: the action is undoable; the raw use-case write
+        // this replaced never entered history.
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'bypassDevice',
+            payload: { deviceId: 'device-1', bypassed: true },
+        });
     });
 
-    it('should call removeDevice when remove button is clicked', () => {
+    it('should dispatch the removeDevice action when remove button is clicked', () => {
         render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
         const removeButton = screen.getByLabelText('Remove Compressor');
         fireEvent.click(removeButton);
-        expect(mockRemoveDevice).toHaveBeenCalledWith('device-1');
+        // removeDevice is undoable via its restoreDevice inverse.
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'removeDevice',
+            payload: { deviceId: 'device-1' },
+        });
     });
 
     it('should add a platform device from the menu and close the menu', () => {
@@ -425,7 +434,7 @@ describe('TrackDevicesSection', () => {
             trackId: 'track-1',
             activateDormantExternalPlugins: true,
         });
-        expect(mockBypassDevice).not.toHaveBeenCalled();
+        expect(mockExecuteAppAction).not.toHaveBeenCalled();
     });
 
     it('surfaces a degraded plugin that activated without a running native engine', () => {
