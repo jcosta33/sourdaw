@@ -101,4 +101,64 @@ describe('agent cost budget', () => {
             consumed: { remoteTokens: 20, commands: 1 },
         });
     });
+
+    it('reserves multi-category work atomically and rejects duplicate attempt identities before mutation', () => {
+        agentRunLifecycle.create({
+            runId: 'atomic-budget-run',
+            request: 'Prepare stems.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            budgets: { limits: { localAnalysis: 2, downloadBytes: 10, storageBytes: 10 }, consumed: {} },
+        });
+
+        expect(
+            agentRunLifecycle.reserveBudgetBatch({
+                runId: 'atomic-budget-run',
+                attempts: [
+                    {
+                        attemptId: 'stem:analysis',
+                        category: 'localAnalysis',
+                        estimate: 2,
+                        provenance: 'versioned-estimate',
+                    },
+                    {
+                        attemptId: 'stem:download',
+                        category: 'downloadBytes',
+                        estimate: 11,
+                        provenance: 'versioned-estimate',
+                    },
+                    {
+                        attemptId: 'stem:storage',
+                        category: 'storageBytes',
+                        estimate: 2,
+                        provenance: 'versioned-estimate',
+                    },
+                ],
+            })
+        ).toEqual({ status: 'hard-limit-reached', reason: 'downloadBytes' });
+        expect(agentRunLifecycle.get('atomic-budget-run')?.budgets.consumed).toEqual({});
+        expect(agentRunLifecycle.get('atomic-budget-run')?.budgetAttempts).toEqual([]);
+
+        expect(() =>
+            agentRunLifecycle.reserveBudgetBatch({
+                runId: 'atomic-budget-run',
+                attempts: [
+                    {
+                        attemptId: 'duplicate',
+                        category: 'localAnalysis',
+                        estimate: 1,
+                        provenance: 'versioned-estimate',
+                    },
+                    {
+                        attemptId: 'duplicate',
+                        category: 'storageBytes',
+                        estimate: 1,
+                        provenance: 'versioned-estimate',
+                    },
+                ],
+            })
+        ).toThrow('Duplicate budget attempt: duplicate');
+        expect(agentRunLifecycle.get('atomic-budget-run')?.budgets.consumed).toEqual({});
+        expect(agentRunLifecycle.get('atomic-budget-run')?.budgetAttempts).toEqual([]);
+    });
 });

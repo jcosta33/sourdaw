@@ -366,15 +366,16 @@ export async function sendChatMessage(
                         ['downloadBytes', downloadBytes],
                         ['storageBytes', storageBytes],
                     ] as const;
-                    return estimates.every(
-                        ([category, estimate]) =>
-                            agentRunLifecycle.reserveBudget({
-                                runId,
+                    return (
+                        agentRunLifecycle.reserveBudgetBatch({
+                            runId,
+                            attempts: estimates.map(([category, estimate]) => ({
                                 attemptId: `stem-preparation:${category}`,
                                 category,
                                 estimate,
                                 provenance: 'versioned-estimate',
-                            }).status === 'reserved'
+                            })),
+                        }).status === 'reserved'
                     );
                 },
             });

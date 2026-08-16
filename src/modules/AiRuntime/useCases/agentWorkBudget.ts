@@ -31,30 +31,16 @@ function reserveAgentCommandWork(input: { runId: string; envelope: CommandBatchW
     estimates: AgentWorkBudgetEstimate[];
 } {
     const estimates = estimateCommandBatchWork(input.envelope);
-    const run = agentRunLifecycle.get(input.runId);
-    if (run === null) {
-        throw new Error(`Unknown agent run: ${input.runId}`);
-    }
-    for (const estimate of estimates) {
-        const limit = run.budgets.limits[estimate.category];
-        const consumed = run.budgets.consumed[estimate.category] ?? 0;
-        if (limit !== undefined && consumed + estimate.amount > limit) {
-            return { status: 'hard-limit-reached', reason: estimate.category, estimates };
-        }
-    }
-    for (const estimate of estimates) {
-        const result = agentRunLifecycle.reserveBudget({
-            runId: input.runId,
+    const reservation = agentRunLifecycle.reserveBudgetBatch({
+        runId: input.runId,
+        attempts: estimates.map((estimate) => ({
             attemptId: `${input.attemptId}:${estimate.category}`,
             category: estimate.category,
             estimate: estimate.amount,
             provenance: 'versioned-estimate',
-        });
-        if (result.status === 'hard-limit-reached') {
-            return { ...result, estimates };
-        }
-    }
-    return { status: 'reserved', estimates };
+        })),
+    });
+    return { ...reservation, estimates };
 }
 
 function reconcileAgentCommandWork(input: {

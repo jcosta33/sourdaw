@@ -317,51 +317,88 @@ function recordAgentRunProviderUsage(input: {
     });
 }
 
-function reserveAgentRunBudget(input: {
-    runId: string;
+type AgentRunBudgetReservation = {
     attemptId: string;
     category: string;
     estimate: number;
     provenance: AgentRunBudgetAttempt['provenance'];
     estimateMethod?: AgentRunBudgetAttempt['estimateMethod'];
+};
+
+type AgentRunBudgetReservationInput = AgentRunBudgetReservation & {
+    runId: string;
+};
+
+type AgentRunBudgetReservationResult = { status: 'reserved' | 'hard-limit-reached'; reason?: string };
+
+function reserveAgentRunBudgetBatch(input: {
+    runId: string;
+    attempts: readonly AgentRunBudgetReservation[];
     reservedAt?: number;
-}): { status: 'reserved' | 'hard-limit-reached'; reason?: string } {
-    if (!Number.isFinite(input.estimate) || input.estimate < 0) {
-        throw new Error('Budget estimate must be a non-negative finite number');
-    }
+}): AgentRunBudgetReservationResult {
     const run = getAgentRun(input.runId);
     if (run === null) {
         throw new Error(`Unknown agent run: ${input.runId}`);
     }
-    const existing = run.budgetAttempts.find((attempt) => attempt.attemptId === input.attemptId);
-    if (existing !== undefined) {
+    const attemptIds = new Set<string>();
+    const newAttempts: AgentRunBudgetReservation[] = [];
+    const additionalByCategory = new Map<string, number>();
+    for (const attempt of input.attempts) {
+        if (!Number.isFinite(attempt.estimate) || attempt.estimate < 0) {
+            throw new Error('Budget estimate must be a non-negative finite number');
+        }
+        if (attemptIds.has(attempt.attemptId)) {
+            throw new Error(`Duplicate budget attempt: ${attempt.attemptId}`);
+        }
+        attemptIds.add(attempt.attemptId);
+        if (run.budgetAttempts.some((existing) => existing.attemptId === attempt.attemptId)) {
+            continue;
+        }
+        newAttempts.push(attempt);
+        additionalByCategory.set(
+            attempt.category,
+            (additionalByCategory.get(attempt.category) ?? 0) + attempt.estimate
+        );
+    }
+    for (const [category, additional] of additionalByCategory) {
+        const limit = run.budgets.limits[category];
+        const consumed = run.budgets.consumed[category] ?? 0;
+        if (limit !== undefined && consumed + additional > limit) {
+            return { status: 'hard-limit-reached', reason: category };
+        }
+    }
+    if (newAttempts.length === 0) {
         return { status: 'reserved' };
     }
-    const limit = run.budgets.limits[input.category];
-    const consumed = run.budgets.consumed[input.category] ?? 0;
-    if (limit !== undefined && consumed + input.estimate > limit) {
-        return { status: 'hard-limit-reached', reason: input.category };
-    }
-    updateAgentRun(input.runId, input.reservedAt ?? Date.now(), (current) => ({
-        ...current,
-        budgets: {
-            ...current.budgets,
-            consumed: { ...current.budgets.consumed, [input.category]: consumed + input.estimate },
-        },
-        budgetAttempts: [
-            ...current.budgetAttempts,
-            {
-                attemptId: input.attemptId,
-                category: input.category,
-                reserved: input.estimate,
-                actual: 0,
-                provenance: input.provenance,
-                ...(input.estimateMethod === undefined ? {} : { estimateMethod: input.estimateMethod }),
-                final: false,
-            },
-        ],
-    }));
+    updateAgentRun(input.runId, input.reservedAt ?? Date.now(), (current) => {
+        const consumed = { ...current.budgets.consumed };
+        for (const [category, additional] of additionalByCategory) {
+            consumed[category] = (consumed[category] ?? 0) + additional;
+        }
+        return {
+            ...current,
+            budgets: { ...current.budgets, consumed },
+            budgetAttempts: [
+                ...current.budgetAttempts,
+                ...newAttempts.map((attempt) => ({
+                    attemptId: attempt.attemptId,
+                    category: attempt.category,
+                    reserved: attempt.estimate,
+                    actual: 0,
+                    provenance: attempt.provenance,
+                    ...(attempt.estimateMethod === undefined ? {} : { estimateMethod: attempt.estimateMethod }),
+                    final: false,
+                })),
+            ],
+        };
+    });
     return { status: 'reserved' };
+}
+
+function reserveAgentRunBudget(
+    input: AgentRunBudgetReservationInput & { reservedAt?: number }
+): AgentRunBudgetReservationResult {
+    return reserveAgentRunBudgetBatch({ ...input, attempts: [input] });
 }
 
 function reconcileAgentRunBudgetAttempt(input: {
@@ -702,6 +739,7 @@ export const agentRunLifecycle = {
     recordProviderUsage: recordAgentRunProviderUsage,
     reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
     reserveBudget: reserveAgentRunBudget,
+    reserveBudgetBatch: reserveAgentRunBudgetBatch,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
     prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,
