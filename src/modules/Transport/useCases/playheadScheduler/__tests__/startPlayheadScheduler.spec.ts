@@ -306,6 +306,39 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(1);
     });
 
+    // A worker message posted before `terminate()` can still land on the main
+    // thread after the next session is running. Delivering it to the retired
+    // closure must not let it claim `tickInFlight`: `runTick` bails on the
+    // generation, and the `finally` will not release a flag that now belongs to
+    // another generation — so the live session would skip every tick at the
+    // in-flight guard and freeze the playhead while still reporting playback.
+    it('keeps the restarted session ticking after a stale tick from the retired session', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0 });
+        startPlayheadScheduler();
+        const retiredWorker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        const retiredGeneration = schedulerSession.generation;
+
+        disposePlayheadScheduler();
+        startPlayheadScheduler();
+        const activeWorker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+
+        emitSchedulerTick(retiredWorker, retiredGeneration);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(schedulerSession.tickInFlight).toBe(false);
+
+        // 0.1s at 120bpm advances the live session by 0.2 beats — it only moves
+        // if the stale tick left the in-flight flag alone.
+        ctxTime.now = 0.1;
+        emitSchedulerTick(activeWorker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(vi.mocked(scheduleMetronome)).toHaveBeenCalledTimes(1);
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(0.2, 5);
+        expect(schedulerTimingDiagnostics.snapshot().ticksSkippedInFlight).toBe(0);
+    });
+
     it('halts the tick when transport is no longer current (not playing)', async () => {
         transportStoreState.value = playingState();
 
@@ -522,6 +555,32 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.punchRecordingActive).toBe(true);
     });
 
+    // The crossing is only detected once the playhead is at or past punchInBeat,
+    // so the tick that opens the recording already sits inside the region. The
+    // clip belongs at the punch point, not at the tick — and least of all at the
+    // transport store's playhead, which has not moved since playback started.
+    it('anchors the punched clip at punchInBeat when the tick lands past it', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        transportStoreState.value = playingState({
+            playheadPosition: 15.9,
+            punchInEnabled: true,
+            punchInBeat: 16,
+            punchOutBeat: 24,
+        });
+        startPlayheadScheduler();
+        // 0.1s at 120bpm = 0.2 beats: 15.9 → 16.1, one tick past punchInBeat 16.
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(schedulerSession.accumulatedPosition).toBeGreaterThan(16);
+        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(16);
+    });
+
     it('routes the punch-in recording buffer through cacheAudioBuffer + updateClip', async () => {
         trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
         transportStoreState.value = playingState({
@@ -579,6 +638,9 @@ describe('startPlayheadScheduler', () => {
 
         expect(audioEngineMocks.stopAudioRecording).toHaveBeenCalledTimes(1);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledTimes(1);
+        // The tick overshoots to 8.3; the take ends at the punch-out point.
+        expect(schedulerSession.accumulatedPosition).toBeGreaterThan(8);
+        expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(8);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 

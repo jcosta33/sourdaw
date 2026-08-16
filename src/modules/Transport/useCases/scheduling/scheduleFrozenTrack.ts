@@ -28,15 +28,6 @@ export function scheduleFrozenTrack(
         return false;
     }
 
-    const strip = ensureTrackStrip(track.id);
-    const source = createBufferSource();
-    source.buffer = buffer;
-
-    const fadeGain = getAudioContext().createGain();
-    (source as SourceWithFade).fadeGainNode = fadeGain;
-    fadeGain.connect(strip.preFaderTap);
-    source.connect(fadeGain);
-
     // The frozen buffer was rendered starting at the track's earliest clip
     // startBeat (see renderTrackOffline), not at beat 0. Offset playback by that
     // start beat so frozen tracks line up with the playhead instead of firing at
@@ -61,16 +52,31 @@ export function scheduleFrozenTrack(
     const compensation = track.freezeState.compensationSeconds ?? getCompensationDelay(track.id);
     const startTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
     const now = getCurrentTime();
+    const elapsed = now - startTime;
+
+    // Resolve the timing before building anything. The buffer can already have
+    // played out in full by the time this tick fires, and there is then nothing
+    // to start — creating the source and its fade gain first left a GainNode
+    // wired into the track strip on every such call, with no source to end and
+    // release it. The track still counts as scheduled: `true` is what stops the
+    // caller from retrying it every grain.
+    if (startTime < now && elapsed >= buffer.duration) {
+        return true;
+    }
+
+    const strip = ensureTrackStrip(track.id);
+    const source = createBufferSource();
+    source.buffer = buffer;
+
+    const fadeGain = getAudioContext().createGain();
+    (source as SourceWithFade).fadeGainNode = fadeGain;
+    fadeGain.connect(strip.preFaderTap);
+    source.connect(fadeGain);
 
     if (startTime >= now) {
         source.start(startTime);
     } else {
-        const elapsed = now - startTime;
-        if (elapsed < buffer.duration) {
-            source.start(now, elapsed);
-        } else {
-            return true;
-        }
+        source.start(now, elapsed);
     }
 
     activeAudioSources.push(source);

@@ -379,12 +379,12 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.1;
         await fireTick();
 
-        const [fromBeat, toBeat, , lastScheduledBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+        const [fromBeat, toBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
         // The real re-emission gate in scheduleMidiNotes:
-        // `startBeat < fromBeat || startBeat >= toBeat || startBeat <= lastScheduledBeat`.
+        // `startBeat < fromBeat || startBeat >= toBeat`, where `fromBeat` is the
+        // high-water mark the transport rewound for this re-emit.
         expect(noteInCutWindow).toBeGreaterThanOrEqual(fromBeat as number);
         expect(noteInCutWindow).toBeLessThan(toBeat as number);
-        expect(noteInCutWindow).toBeGreaterThan(lastScheduledBeat as number);
     });
 
     it('re-opens the MIDI window on a loop-region edit as well', async () => {
@@ -398,10 +398,9 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.1;
         await fireTick();
 
-        const [fromBeat, toBeat, , lastScheduledBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+        const [fromBeat, toBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
         expect(noteInCutWindow).toBeGreaterThanOrEqual(fromBeat as number);
         expect(noteInCutWindow).toBeLessThan(toBeat as number);
-        expect(noteInCutWindow).toBeGreaterThan(lastScheduledBeat as number);
     });
 
     it('keeps the MIDI high-water mark monotonic across steady ticks so notes are not re-emitted twice', async () => {
@@ -411,10 +410,10 @@ describe('playhead scheduler tick', () => {
         await fireTick();
         harness.clock = 0.1;
         await fireTick();
-        const [, , , afterSecond] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+        const [afterSecond] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
         harness.clock = 0.15;
         await fireTick();
-        const [, , , afterThird] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+        const [afterThird] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
 
         expect(afterThird as number).toBeGreaterThan(afterSecond as number);
     });
@@ -445,12 +444,12 @@ describe('playhead scheduler tick', () => {
 
         harness.clock = 0.05;
         await fireTick();
-        const beforeWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
+        const beforeWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
         const beforeWrapEpoch = beforeWrap?.discontinuityEpoch;
 
         harness.clock = 0.1;
         await fireTick();
-        const afterWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
+        const afterWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
 
         expect(beforeWrapEpoch).toEqual(expect.any(Number));
         expect(afterWrap?.discontinuityEpoch).toBeGreaterThan(beforeWrapEpoch ?? 0);
@@ -465,13 +464,13 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.05;
         await fireTick();
-        const beforeJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
+        const beforeJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
         const beforeJumpEpoch = beforeJump?.discontinuityEpoch;
 
         vi.mocked(evaluateFollowActions).mockReturnValueOnce({ jumpToPosition: 8, shouldStop: false });
         harness.clock = 0.1;
         await fireTick();
-        const afterJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
+        const afterJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
 
         expect(afterJump?.discontinuityEpoch).toBeGreaterThan(beforeJumpEpoch ?? 0);
         expect(afterJump?.generation).toBe(beforeJump?.generation);
@@ -485,7 +484,7 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.05;
         await fireTick();
-        const beforeRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
+        const beforeRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
         const beforeRestartEpoch = beforeRestart?.discontinuityEpoch;
         const beforeRestartGeneration = beforeRestart?.generation;
 
@@ -495,7 +494,7 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.15;
         await fireTick();
-        const afterRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
+        const afterRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
 
         expect(afterRestart?.discontinuityEpoch).toBeGreaterThan(beforeRestartEpoch ?? 0);
         expect(afterRestart?.generation).toBeGreaterThan(beforeRestartGeneration ?? 0);
@@ -603,7 +602,7 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        const beforeDisposeEpoch = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8]?.discontinuityEpoch;
+        const beforeDisposeEpoch = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7]?.discontinuityEpoch;
         disposePlayheadScheduler();
 
         expect(vi.mocked(worker.terminate)).toHaveBeenCalled();
@@ -611,7 +610,7 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.1;
         await fireTick();
-        expect(vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8]?.discontinuityEpoch).toBeGreaterThan(
+        expect(vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7]?.discontinuityEpoch).toBeGreaterThan(
             beforeDisposeEpoch ?? 0
         );
     });

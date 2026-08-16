@@ -158,6 +158,17 @@ export function startPlayheadScheduler(): void {
     schedulerTimingDiagnostics.reset(grainMs);
 
     async function tick(): Promise<void> {
+        // This closure belongs to a retired session. Bail before touching
+        // `tickInFlight`: the flag now belongs to whichever session is live, and
+        // claiming it here would wedge that session. `runTick` bails on the same
+        // check, so the `finally` below would then refuse to release the flag
+        // (releasing another generation's claim is exactly what that guard
+        // prevents) — leaving it stuck true, so every tick of the live session
+        // is skipped at the in-flight guard and the playhead freezes while the
+        // transport still reads as playing.
+        if (schedulerSession.generation !== schedulerGeneration) {
+            return;
+        }
         // A prior tick is still awaiting its scheduling work (the Yeast Worker
         // round-trip in particular). Starting now would let two ticks mutate the
         // shared session mutables across one another's awaits. Skip this worker
@@ -337,7 +348,13 @@ export function startPlayheadScheduler(): void {
             newPosition >= current.punchInBeat
         ) {
             schedulerSession.punchRecordingActive = true;
-            const clips = startRecording();
+            // Anchor the punched clip at the punch-in point, not at the beat this
+            // tick happened to land on. The crossing is detected once
+            // `newPosition >= punchInBeat`, so the tick is already up to one grain
+            // past the region start, and `startRecording`'s own default (the
+            // transport store's playhead) is staler still — nothing writes it
+            // during playback, so it holds the beat playback *started* at.
+            const clips = startRecording(current.punchInBeat);
             updateTransportState({ isRecording: true });
 
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
@@ -370,7 +387,9 @@ export function startPlayheadScheduler(): void {
             if (!cancellation.isCurrent()) {
                 return;
             }
-            stopRecording();
+            // Same anchoring as punch-in: the region's own end beat, not the
+            // overshooting tick position and not the stale store playhead.
+            stopRecording(current.punchOutBeat);
             schedulerSession.punchRecordingActive = false;
             updateTransportState({ isRecording: false });
         }
@@ -389,7 +408,6 @@ export function startPlayheadScheduler(): void {
             schedulerSession.lastScheduledBeat,
             scheduleUpTo,
             schedulerSession.accumulatedPosition,
-            schedulerSession.lastScheduledBeat,
             schedulerSession.scheduledFrozenTracks,
             schedulerSession.activeAudioSources,
             current,
