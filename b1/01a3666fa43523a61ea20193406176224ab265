@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts
+  s_ab5443e65c7fba::t_2a993bb4dcc444 59-76
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_ab5443e65c7fba::t_30406da9547cdb 298-299,301-304,306-319,355,362-373
+src/modules/AiRuntime/useCases/__tests__/agentCostBudget.spec.ts
+  s_9d308318037b34::t_535997095326ec 55-103
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_9d308318037b34::t_cd0e7e97c2ef18 41-52,210,251
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_9d308318037b34::t_8e144a24bd93b3 48-52,119-120,232-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b101a3666fa43523a61ea20193406176224ab265",
+  "prompts": {},
+  "sessions": {
+    "s_9d308318037b34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00819-8242-7cf1-af60-cb6842213286",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
