@@ -1,0 +1,33 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_ab5443e65c7fba::t_93b4b1976330e7 278,282-287,290,294-298,437
+src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx
+  s_a40848e8f8cca9::t_fe0fa344f3343b 3-4,41-49,79-85,102-105,124-127
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  s_a40848e8f8cca9::t_f137dcef8bc436 14,26-29,94,100-105,108,114-118,121,134,141-144
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_a40848e8f8cca9::t_aa88c06054a6df 322-329,387-393
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a1757e05091936200f4712dfc8b694a75b7818bf",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
