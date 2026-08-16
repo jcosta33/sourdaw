@@ -8,7 +8,15 @@ use std::f32::consts::PI;
 
 // ── Modulated Delay Line (shared by Chorus & Flanger) ────────────────────────
 
-/// Fractional-delay circular buffer with cubic interpolation.
+/// Fractional-delay circular buffer with linear interpolation.
+///
+/// Linear and not a higher-order interpolator on purpose. Its error is a
+/// gentle lowpass that falls off with the fractional part of the delay, and
+/// the delays here are short (0.5–40 ms) and modulated slowly, so the moving
+/// read point spends its time far from the worst-case half-sample offset and
+/// the residual sits well above the audio band at engine rates. Cubic would
+/// cost three more taps per sample per channel to correct an error that the
+/// wet/dry mix already buries.
 struct DelayLine {
     buffer: Vec<f32>,
     write_pos: usize,
