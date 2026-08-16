@@ -1,43 +1,276 @@
+import { type ScannedPluginParameter } from '../models/ScannedPlugin';
 import { defaultPluginScanState, pluginScanStore } from '../stores/pluginScanStore';
 
-function factoryType(plugin: { format: string; clap_id: string; id: string }): string {
-    return plugin.clap_id
-        ? `${plugin.format.toLowerCase()}:${plugin.clap_id}`
-        : `${plugin.format.toLowerCase()}:${plugin.id}`;
+const EXTERNAL_FACTORY_VERSION_PREFIX = 'external-factory-v1';
+const EXTERNAL_FACTORY_IDENTITY_SCHEME = 'clap-id-v2';
+const MAX_PUBLIC_SCAN_TEXT_LENGTH = 128;
+const MAX_SCANNED_PARAMETER_COUNT = 4096;
+const MAX_SCANNED_PARAMETER_DESCRIPTORS = 256;
+const MAX_SCANNED_PARAMETER_NAME_LENGTH = 128;
+const PARAMETER_DESCRIPTOR_SOURCE = 'plugin-scan.parameter-descriptors-v1';
+const PARAMETER_DESCRIPTOR_UNAVAILABLE_REASON =
+    'The CLAP scan exposes only a factory descriptor. Parameter descriptors are instance-scoped and unavailable without instantiation.';
+const PARAMETER_SCAN_FAILED_REASON = 'The scanner could not safely complete external parameter inspection.';
+
+type ScannedFactory = {
+    clap_id: string;
+    id: string;
+    version: string;
+    vendor: string;
+    name: string;
+    category: string;
+    num_inputs: number;
+    num_outputs: number;
+    num_parameters: number;
+    parameters?: ScannedPluginParameter[];
+    parameter_metadata_reason?: string;
+};
+
+type PublicScannedFactory = {
+    scannerVersion: string;
+    vendor: string;
+    name: string;
+    category: string;
+    parameterCount: number | null;
+};
+
+type PublicParameter = {
+    id: string;
+    name: string;
+    module: { availability: 'available'; value: string } | { availability: 'unavailable'; reason: string };
+    type: { availability: 'unavailable'; reason: string };
+    unit: { availability: 'unavailable'; reason: string };
+    bounds: { minimum: number; maximum: number };
+    default: number;
+    step: { availability: 'unavailable'; reason: string };
+    choices: { availability: 'unavailable'; reason: string };
+    automatable: boolean;
+    modulatable: boolean;
+    flags: { stepped: boolean; enum: boolean };
+    metadata: { source: 'plugin-scan'; confidence: 'declared' };
+};
+
+type ParameterContract =
+    | { availability: 'available'; parameters: PublicParameter[]; fingerprint: string }
+    | { availability: 'unavailable'; reason: string; fingerprint: string };
+
+function normalizedScanText(value: string): string {
+    return Array.from(value.normalize('NFC'))
+        .filter((character) => {
+            const codePoint = character.codePointAt(0)!;
+            return codePoint > 0x1f && codePoint !== 0x7f;
+        })
+        .join('')
+        .trim();
 }
 
-function sameAdvertisedFactory(
-    left: {
-        version: string;
-        vendor: string;
-        name: string;
-        category: string;
-        num_inputs: number;
-        num_outputs: number;
-        num_parameters: number;
-    },
-    right: {
-        version: string;
-        vendor: string;
-        name: string;
-        category: string;
-        num_inputs: number;
-        num_outputs: number;
-        num_parameters: number;
+function boundedText(value: string, fallback: string): string {
+    const normalized = normalizedScanText(value);
+    if (normalized.length === 0) {
+        return fallback;
     }
-): boolean {
+    return Array.from(normalized).slice(0, MAX_PUBLIC_SCAN_TEXT_LENGTH).join('');
+}
+
+function stableFingerprint(parts: readonly string[]): string {
+    let hash = 0x811c9dc5;
+    for (const part of parts) {
+        for (let index = 0; index < part.length; index += 1) {
+            hash ^= part.charCodeAt(index);
+            hash = Math.imul(hash, 0x01000193);
+        }
+        hash ^= part.length;
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function factoryType(plugin: Pick<ScannedFactory, 'clap_id' | 'id'>): string {
+    const clapId = normalizedScanText(plugin.clap_id);
+    const declaredType = `clap:${clapId}`;
+    if (
+        clapId.length > 0 &&
+        Array.from(clapId).length <= 240 &&
+        clapId === plugin.clap_id &&
+        declaredType.length <= 256
+    ) {
+        return declaredType;
+    }
+    return `clap-scan:${EXTERNAL_FACTORY_IDENTITY_SCHEME}:${stableFingerprint([plugin.clap_id])}`;
+}
+
+function boundedParameterCount(value: number): number | null {
+    return Number.isSafeInteger(value) && value >= 0 && value <= MAX_SCANNED_PARAMETER_COUNT ? value : null;
+}
+
+function publicScannedFactory(plugin: ScannedFactory): PublicScannedFactory {
+    return {
+        scannerVersion: boundedText(plugin.version, 'unavailable'),
+        vendor: boundedText(plugin.vendor, 'unavailable'),
+        name: boundedText(plugin.name, 'unavailable'),
+        category: boundedText(plugin.category, 'unavailable'),
+        parameterCount: boundedParameterCount(plugin.num_parameters),
+    };
+}
+
+function unavailableParameterContract(reason: string): ParameterContract {
+    return {
+        availability: 'unavailable',
+        reason,
+        fingerprint: stableFingerprint(['unavailable', reason]),
+    };
+}
+
+function isScannedPluginParameter(value: unknown): value is ScannedPluginParameter {
+    if (value === null || typeof value !== 'object') {
+        return false;
+    }
+    const parameter = value as Record<string, unknown>;
     return (
-        left.version === right.version &&
-        left.vendor === right.vendor &&
-        left.name === right.name &&
-        left.category === right.category &&
-        left.num_inputs === right.num_inputs &&
-        left.num_outputs === right.num_outputs &&
-        left.num_parameters === right.num_parameters
+        typeof parameter.id === 'number' &&
+        typeof parameter.name === 'string' &&
+        (parameter.module === undefined || typeof parameter.module === 'string') &&
+        typeof parameter.min_value === 'number' &&
+        typeof parameter.max_value === 'number' &&
+        typeof parameter.default_value === 'number' &&
+        typeof parameter.is_automatable === 'boolean' &&
+        typeof parameter.is_modulatable === 'boolean' &&
+        typeof parameter.is_stepped === 'boolean' &&
+        typeof parameter.is_enum === 'boolean'
     );
 }
 
-/** Scan factories are not loaded PluginHost instances and are never queried as such. */
+function parameterContract(plugin: ScannedFactory): ParameterContract {
+    if (!Array.isArray(plugin.parameters)) {
+        return unavailableParameterContract(
+            plugin.parameter_metadata_reason === undefined
+                ? PARAMETER_DESCRIPTOR_UNAVAILABLE_REASON
+                : PARAMETER_SCAN_FAILED_REASON
+        );
+    }
+    if (
+        plugin.parameters.length > MAX_SCANNED_PARAMETER_DESCRIPTORS ||
+        boundedParameterCount(plugin.num_parameters) !== plugin.parameters.length
+    ) {
+        return unavailableParameterContract(PARAMETER_SCAN_FAILED_REASON);
+    }
+    const ids = new Set<number>();
+    const parameters: PublicParameter[] = [];
+    for (const untrustedParameter of plugin.parameters) {
+        if (!isScannedPluginParameter(untrustedParameter)) {
+            return unavailableParameterContract(PARAMETER_SCAN_FAILED_REASON);
+        }
+        const parameter = untrustedParameter;
+        const name = parameter.name.normalize('NFC');
+        const module = parameter.module === undefined ? undefined : parameter.module.normalize('NFC');
+        if (
+            !Number.isSafeInteger(parameter.id) ||
+            parameter.id < 0 ||
+            parameter.id >= 0xffffffff ||
+            ids.has(parameter.id) ||
+            name.length === 0 ||
+            Array.from(name).length > MAX_SCANNED_PARAMETER_NAME_LENGTH ||
+            Array.from(name).some((character) => {
+                const codePoint = character.codePointAt(0)!;
+                return codePoint <= 0x1f || codePoint === 0x7f;
+            }) ||
+            (module !== undefined &&
+                (module.length === 0 ||
+                    Array.from(module).length > MAX_SCANNED_PARAMETER_NAME_LENGTH ||
+                    Array.from(module).some((character) => {
+                        const codePoint = character.codePointAt(0)!;
+                        return codePoint <= 0x1f || codePoint === 0x7f;
+                    }))) ||
+            !Number.isFinite(parameter.min_value) ||
+            !Number.isFinite(parameter.default_value) ||
+            !Number.isFinite(parameter.max_value) ||
+            parameter.min_value > parameter.default_value ||
+            parameter.default_value > parameter.max_value
+        ) {
+            return unavailableParameterContract(PARAMETER_SCAN_FAILED_REASON);
+        }
+        ids.add(parameter.id);
+        parameters.push({
+            id: `clap-param:${parameter.id}`,
+            name,
+            module:
+                module === undefined
+                    ? {
+                          availability: 'unavailable',
+                          reason: 'CLAP parameter metadata does not declare a module.',
+                      }
+                    : { availability: 'available', value: module },
+            type: {
+                availability: 'unavailable',
+                reason: 'CLAP parameter metadata does not declare a value type.',
+            },
+            unit: {
+                availability: 'unavailable',
+                reason: 'CLAP parameter metadata does not declare a unit.',
+            },
+            bounds: { minimum: parameter.min_value, maximum: parameter.max_value },
+            default: parameter.default_value,
+            step: {
+                availability: 'unavailable',
+                reason: 'CLAP parameter metadata does not declare a step size.',
+            },
+            choices: {
+                availability: 'unavailable',
+                reason: 'CLAP parameter metadata does not declare discrete choices.',
+            },
+            automatable: parameter.is_automatable,
+            modulatable: parameter.is_modulatable,
+            flags: { stepped: parameter.is_stepped, enum: parameter.is_enum },
+            metadata: { source: 'plugin-scan', confidence: 'declared' },
+        });
+    }
+    parameters.sort((left, right) => left.id.localeCompare(right.id));
+    return {
+        availability: 'available',
+        parameters,
+        fingerprint: stableFingerprint(
+            parameters.flatMap((parameter) => [
+                parameter.id,
+                parameter.name,
+                parameter.module.availability === 'available' ? parameter.module.value : 'unavailable',
+                String(parameter.bounds.minimum),
+                String(parameter.bounds.maximum),
+                String(parameter.default),
+                String(parameter.automatable),
+                String(parameter.modulatable),
+                String(parameter.flags.stepped),
+                String(parameter.flags.enum),
+            ])
+        ),
+    };
+}
+
+function advertisedFactoryFingerprint(plugin: ScannedFactory): string {
+    return stableFingerprint([
+        factoryType(plugin),
+        plugin.clap_id || plugin.id,
+        plugin.version,
+        plugin.vendor,
+        plugin.name,
+        plugin.category,
+        String(plugin.num_inputs),
+        String(plugin.num_outputs),
+        String(plugin.num_parameters),
+        PARAMETER_DESCRIPTOR_SOURCE,
+        parameterContract(plugin).fingerprint,
+    ]);
+}
+
+function factoryVersion(fingerprints: readonly string[]): string {
+    return `${EXTERNAL_FACTORY_VERSION_PREFIX}:${stableFingerprint([...fingerprints].sort())}`;
+}
+
+/**
+ * Scan factories are not loaded PluginHost instances and are never queried as such.
+ * CLAP does not publish parameter descriptors on its factory descriptor, so the
+ * manifest names the scanner-owned extension that would be required instead of
+ * creating an instance to inspect CLAP_EXT_PARAMS.
+ */
 export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
     const scannedPlugins = (pluginScanStore.value ?? defaultPluginScanState).scannedPlugins;
     const devices = [
@@ -50,44 +283,74 @@ export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
         ]
             .sort(([left], [right]) => left.localeCompare(right))
             .map(([type, candidates]) => {
-                const plugin = candidates[0]!;
-                const conflict = candidates.some((candidate) => !sameAdvertisedFactory(plugin, candidate));
+                const fingerprints = [...new Set(candidates.map(advertisedFactoryFingerprint))].sort();
+                const conflict = fingerprints.length > 1;
+                const plugin = [...candidates].sort((left, right) =>
+                    advertisedFactoryFingerprint(left).localeCompare(advertisedFactoryFingerprint(right))
+                )[0]!;
+                const publicFactory = publicScannedFactory(plugin);
+                const version = factoryVersion(fingerprints);
+                const parameterMetadata = parameterContract(plugin);
+                const parameterDescriptors =
+                    parameterMetadata.availability === 'available'
+                        ? {
+                              availability: 'available' as const,
+                              source: PARAMETER_DESCRIPTOR_SOURCE,
+                          }
+                        : {
+                              availability: 'unavailable' as const,
+                              source: PARAMETER_DESCRIPTOR_SOURCE,
+                              reason: parameterMetadata.reason,
+                          };
+                const configuration = (() => {
+                    if (conflict) {
+                        return {
+                            availability: 'unavailable' as const,
+                            reason: 'Conflicting scan records for one canonical factory identity.',
+                            source: 'plugin-scan' as const,
+                        };
+                    }
+                    if (parameterMetadata.availability === 'unavailable') {
+                        return {
+                            availability: 'unavailable' as const,
+                            reason: parameterMetadata.reason,
+                            source: 'plugin-scan' as const,
+                        };
+                    }
+                    return { availability: 'available' as const, source: 'plugin-scan' as const };
+                })();
                 return {
                     type,
-                    version: plugin.version,
-                    vendor: plugin.vendor,
-                    name: plugin.name,
-                    category: plugin.category,
+                    version,
+                    versions: {
+                        factory: version,
+                        scanner: publicFactory.scannerVersion,
+                    },
+                    vendor: publicFactory.vendor,
+                    name: publicFactory.name,
+                    category: publicFactory.category,
                     capabilities: ['external-plugin'],
                     ports: { availability: 'unavailable' as const, source: 'plugin-scan' as const },
                     latency: { availability: 'unavailable' as const, source: 'plugin-scan' as const },
                     tail: null,
                     presets: { availability: 'unavailable' as const },
                     safetyNotes: ['External plugin state is opaque and is not patched by the manifest.'],
-                    usageRecipes: ['Configuration requires PluginHost factory parameter evidence.'],
-                    parameters: [],
-                    parameterCount: plugin.num_parameters,
-                    configuration: {
-                        availability: 'unavailable' as const,
-                        reason: conflict
-                            ? 'Conflicting scan records for one canonical factory identity.'
-                            : 'A scan factory identity is not a loaded PluginHost instance identity.',
-                        source: 'plugin-scan' as const,
+                    usageRecipes:
+                        parameterMetadata.availability === 'available'
+                            ? ['Configure only through the owning PluginHost command boundary.']
+                            : ['Configuration remains unavailable until the scanner publishes parameter descriptors.'],
+                    parameters: parameterMetadata.availability === 'available' ? parameterMetadata.parameters : [],
+                    parameterCount:
+                        parameterMetadata.availability === 'available'
+                            ? parameterMetadata.parameters.length
+                            : publicFactory.parameterCount,
+                    parameterDescriptors,
+                    configuration,
+                    metadata: {
+                        source: 'plugin-scan',
+                        confidence: parameterMetadata.availability === 'available' ? 'declared' : 'inferred',
                     },
-                    metadata: { source: 'plugin-scan', confidence: 'inferred' as const },
                     opaqueState: true,
-                    ...(conflict
-                        ? {
-                              candidates: candidates.slice(0, 8).map((candidate) => ({
-                                  path: candidate.path,
-                                  version: candidate.version,
-                                  vendor: candidate.vendor,
-                                  name: candidate.name,
-                                  category: candidate.category,
-                                  parameterCount: candidate.num_parameters,
-                              })),
-                          }
-                        : {}),
                 };
             }),
     ];
