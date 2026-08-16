@@ -4,6 +4,7 @@
 /// stored in `SampleMeta` and used for auto-mode detection, waveform
 /// rendering, and sample organization.
 pub mod bpm;
+pub mod fft;
 pub mod loop_points;
 pub mod onset;
 pub mod peaks;
