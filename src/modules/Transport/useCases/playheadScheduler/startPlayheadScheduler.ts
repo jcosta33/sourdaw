@@ -6,6 +6,7 @@ import {
     startAudioRecording,
     stopAudioRecording,
     getAudioContext,
+    getCompensationDelay,
     audioEngine,
     scheduleAdjustmentLayers,
     cacheAudioBuffer,
@@ -158,14 +159,17 @@ export function startPlayheadScheduler(): void {
     schedulerTimingDiagnostics.reset(grainMs);
 
     async function tick(): Promise<void> {
-        // This closure belongs to a retired session. Bail before touching
-        // `tickInFlight`: the flag now belongs to whichever session is live, and
-        // claiming it here would wedge that session. `runTick` bails on the same
-        // check, so the `finally` below would then refuse to release the flag
-        // (releasing another generation's claim is exactly what that guard
-        // prevents) — leaving it stuck true, so every tick of the live session
-        // is skipped at the in-flight guard and the playhead freezes while the
-        // transport still reads as playing.
+        // Second line of defence, not the primary filter: `worker.onmessage`
+        // already drops a message whose generation is not the live one, so on
+        // the message path this is unreachable. It covers the gap between that
+        // check and this body — a retirement landing in between, or any future
+        // caller that reaches `tick` without going through `onmessage`. Bail
+        // before touching `tickInFlight`, because the flag then belongs to
+        // whichever session is live: `runTick` bails on the same generation
+        // check, and the `finally` below refuses to release a flag owned by
+        // another generation, so a claim made here would stay stuck true and
+        // every tick of the live session would be skipped at the in-flight
+        // guard — the playhead freezes while the transport still reads playing.
         if (schedulerSession.generation !== schedulerGeneration) {
             return;
         }
@@ -245,6 +249,12 @@ export function startPlayheadScheduler(): void {
         const beatsPerSecond = currentTempo / 60;
         const deltaBeats = deltaSec * beatsPerSecond;
         let newPosition = schedulerSession.accumulatedPosition + deltaBeats;
+        // Where this tick's window opens, before the advance below commits
+        // `newPosition`. Punch-in needs it to tell "rolled across the punch
+        // point during this tick" from "was already inside the region when the
+        // transport started". A relocation restarts the window at its
+        // destination, so re-anchor this alongside `lastScheduledBeat`.
+        let tickStartPosition = schedulerSession.accumulatedPosition;
         let rackDiscontinuity = false;
 
         if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
@@ -286,6 +296,7 @@ export function startPlayheadScheduler(): void {
             // no epsilon: the gate is already inclusive at its lower bound, and
             // nudging below it would re-open the seam a second time.
             schedulerSession.lastScheduledBeat = current.loopStart;
+            tickStartPosition = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
@@ -311,6 +322,7 @@ export function startPlayheadScheduler(): void {
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
             schedulerSession.lastScheduledBeat = newPosition;
+            tickStartPosition = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
@@ -345,20 +357,55 @@ export function startPlayheadScheduler(): void {
             !schedulerSession.punchRecordingActive &&
             hasArmedTracks &&
             current.punchInBeat < current.punchOutBeat &&
-            newPosition >= current.punchInBeat
+            newPosition >= current.punchInBeat &&
+            // Upper bound. Without it, starting playback past the region fires
+            // punch-in and punch-out on the same tick: a full-width clip and
+            // take are stamped across [punchInBeat, punchOutBeat) and captured
+            // nothing. Punching in only makes sense while the region is still
+            // ahead of the tick's end.
+            newPosition < current.punchOutBeat
         ) {
             schedulerSession.punchRecordingActive = true;
-            // Anchor the punched clip at the punch-in point, not at the beat this
-            // tick happened to land on. The crossing is detected once
-            // `newPosition >= punchInBeat`, so the tick is already up to one grain
-            // past the region start, and `startRecording`'s own default (the
-            // transport store's playhead) is staler still — nothing writes it
-            // during playback, so it holds the beat playback *started* at.
-            const clips = startRecording(current.punchInBeat);
+            // Anchor the punched clip where capture actually begins. The tick is
+            // already up to one grain past the region start when the crossing is
+            // detected, so `punchInBeat` is the right anchor when the transport
+            // rolled across it during this tick. When playback *started* inside
+            // the region the capture begins at the entry beat instead, and
+            // anchoring at `punchInBeat` would displace the take backwards by
+            // the whole distance already covered, leaving the tail silent.
+            // `tickStartPosition` is the window's own opening beat, so the max
+            // of the two is the first beat this recording can contain.
+            // `startRecording`'s default (the transport store's playhead) is
+            // wrong on both paths — nothing writes it during playback.
+            const punchAnchorBeat = Math.max(current.punchInBeat, tickStartPosition);
+            const clips = startRecording(punchAnchorBeat);
             updateTransportState({ isRecording: true });
 
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
+                if (track.kind === 'midi') {
+                    const recClip = clips.find((context) => context.trackId === track.id);
+                    if (recClip) {
+                        // Input-latency compensation shifts a recorded note
+                        // earlier by the round-trip time. With the clip origin
+                        // sitting exactly on the anchor, a note played on the
+                        // punch downbeat has nowhere to go: the clip-relative
+                        // beat clamps at 0 and the note is stored uncompensated,
+                        // late by the round trip, unrecoverably. A media lead-in
+                        // of the same size moves the clip's media origin earlier
+                        // (`origin = startBeat - midiOffsetBeats`) while leaving
+                        // `startBeat` on the punch point, so the compensation is
+                        // representable and the clip still begins where the user
+                        // asked. Derived exactly as the manual record path does
+                        // (handleWebMidiNoteOff), so both agree on the origin.
+                        const totalLatencySec =
+                            (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id);
+                        const leadInBeats = (totalLatencySec * currentTempo) / 60;
+                        if (leadInBeats > 0) {
+                            updateClip(recClip.id, (clip) => ({ ...clip, midiOffsetBeats: leadInBeats }));
+                        }
+                    }
+                }
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
                     Promise.resolve(

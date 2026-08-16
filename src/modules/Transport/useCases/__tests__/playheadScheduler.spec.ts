@@ -382,8 +382,11 @@ describe('playhead scheduler tick', () => {
         const [fromBeat, toBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
         // The real re-emission gate in scheduleMidiNotes:
         // `startBeat < fromBeat || startBeat >= toBeat`, where `fromBeat` is the
-        // high-water mark the transport rewound for this re-emit.
-        expect(noteInCutWindow).toBeGreaterThanOrEqual(fromBeat as number);
+        // high-water mark the transport rewound for this re-emit. Assert the
+        // strict inequality, deliberately stronger than the gate: the rewind has
+        // to land strictly below the cut note, not merely at it, or an epsilon
+        // that shrinks to zero would leave the boundary note on the gate's edge.
+        expect(noteInCutWindow).toBeGreaterThan(fromBeat as number);
         expect(noteInCutWindow).toBeLessThan(toBeat as number);
     });
 
@@ -399,7 +402,8 @@ describe('playhead scheduler tick', () => {
         await fireTick();
 
         const [fromBeat, toBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
-        expect(noteInCutWindow).toBeGreaterThanOrEqual(fromBeat as number);
+        // Strict, as above: the rewound high-water mark must sit below the note.
+        expect(noteInCutWindow).toBeGreaterThan(fromBeat as number);
         expect(noteInCutWindow).toBeLessThan(toBeat as number);
     });
 
