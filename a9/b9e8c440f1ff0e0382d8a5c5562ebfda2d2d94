@@ -1,0 +1,65 @@
+.agents/decisions/0027-windows-device-layer-iaudioclient3.md
+  s_ab5443e65c7fba::t_0bde108bc3ccea 1-100
+.agents/decisions/README.md
+  s_ab5443e65c7fba::t_81bc22f0ec5f04 17-43
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_a330a78a89be84 31-32,35,40,43-46,48-49
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_ab5443e65c7fba::t_553d9a6b4eff2a 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_95e8c6890735c4 1
+public/wasm/scoring/scoring.d.ts
+  s_ab5443e65c7fba::t_f5dfc7ab3bc7bc 1,25,27,29,31,64-65
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_6446cc01bd2ffe 1,18-19
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_ab5443e65c7fba::t_fce1451b519f8b 140-175
+src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts
+  s_ab5443e65c7fba::t_f5a1802b0de540 84-108
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_ab5443e65c7fba::t_8b7837d17e4f41 15-24,31,39,65-66,80
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_ab5443e65c7fba::t_d7ca6e145b7089 20-24,26,40
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_ab5443e65c7fba::t_dd7864b8ce2462 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_ab5443e65c7fba::t_81316faff9a508 1,25,27,29,31,64-65
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_ab5443e65c7fba::t_2b40d7b007d538 86-87,505,511-565
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_ab5443e65c7fba::t_70467a16a476fd 382,384-389,404-406,417,420,451,456,471,477,491,501,609,617
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_ab5443e65c7fba::t_02df2985aa9e59 26-28,40-45,47,119-120,210-215,217,225-226,330-370,587-725,783-785
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ab5443e65c7fba::t_2f9bd854819671 9,162-175,252-257,299,325,360-366,369-381,386-408,437-439
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  s_ab5443e65c7fba::t_d8573f615bcad1 11,28-34
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_ab5443e65c7fba::t_e94bd5e989788c 13-16,21,133-140
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ab5443e65c7fba::t_e714be40f8e4f3 191-192,210,212,222,241,274,285,300,311,330,349,386,401,413,461,490,551,574,609,653,677,725,745,762,783,812,856,887,935,937,962,997,1041-1042,1076,1097,1152,1185,1211,1238,1257,1289,1331,1383,1416,1461,1475,1493,1512,1531,1549,1569,1589,1607,1637,1643,1650-1653,1666,1702,1704,1717,1727,1747,1760,1773,1811,1828,1853,1880,1909,1924,1941,1974,1993
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_ab5443e65c7fba::t_a600cfbf6aa405 55-74,79
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ab5443e65c7fba::t_8d308a648af0b6 203,206,337-344,698-700,744
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_ab5443e65c7fba::t_0a9b11b4d76ae3 4,6,13-17
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_ab5443e65c7fba::t_4817bf37a85048 17,79-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a9b9e8c440f1ff0e0382d8a5c5562ebfda2d2d94",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
