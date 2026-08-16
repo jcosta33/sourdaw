@@ -214,7 +214,7 @@ impl BandChain {
             hilbert_l: HilbertShifter::new(sample_rate),
             hilbert_r: HilbertShifter::new(sample_rate),
             lofi: LofiProcessor::new(),
-            convolution: ConvolutionProcessor::new(),
+            convolution: ConvolutionProcessor::new(sample_rate),
             oversampler_l: OversamplingChain::new(1),
             oversampler_r: OversamplingChain::new(1),
             distortion_enabled: false,

@@ -1,23 +1,28 @@
 //! Convolution body modeling for Bacteria.
 //!
-//! FFT-based partitioned convolution for applying impulse responses of
+//! Direct-form (time-domain) convolution applying impulse responses of
 //! physical objects (ceramic, wood, metal) to create resonant body character.
 //! Includes a stereo separation control for widening mono IRs.
+//!
+//! Cost is O(N) multiply-accumulates per sample per channel, with N the IR
+//! length — 1024 for the built-in bodies, capped at 4096 for any loaded one.
+//! There is no partitioning and no FFT here; a longer IR would need one.
 
-/// Partitioned convolution using overlap-save method.
-/// Splits long IRs into segments for real-time processing.
+/// Direct-form convolution against a stereo IR pair.
 pub struct ConvolutionProcessor {
     // IR storage
     ir_left: Vec<f32>,
     ir_right: Vec<f32>,
     ir_loaded: bool,
 
-    // Simple direct convolution for short IRs (< 1024 samples)
-    // For longer IRs, partitioned FFT would be used
     input_buffer_l: Vec<f32>,
     input_buffer_r: Vec<f32>,
     write_pos: usize,
     ir_length: usize,
+
+    /// Rate the built-in IRs are synthesized against, so their resonances land
+    /// on the frequencies they are named for at whatever rate the context runs.
+    sample_rate: f32,
 
     // Parameters
     mix: f32,
@@ -25,7 +30,7 @@ pub struct ConvolutionProcessor {
 }
 
 impl ConvolutionProcessor {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Self {
             ir_left: Vec::new(),
             ir_right: Vec::new(),
@@ -34,29 +39,30 @@ impl ConvolutionProcessor {
             input_buffer_r: Vec::new(),
             write_pos: 0,
             ir_length: 0,
+            sample_rate,
             mix: 0.3,
             separation: 0.5,
         }
     }
 
-    /// Load an impulse response. For mono IRs, uses separation to create stereo.
-    pub fn load_ir(&mut self, ir_data: &[f32], channels: usize) {
-        let length = if channels >= 2 {
-            ir_data.len() / 2
-        } else {
-            ir_data.len()
-        };
-        let length = length.min(4096); // Cap IR length for real-time safety
+    /// Load an impulse response from one planar slice per channel.
+    ///
+    /// Planar rather than interleaved because every IR source this can be fed
+    /// is already planar: the built-in bodies below synthesize one channel at a
+    /// time, and a decoded audio file arrives from the engine as separate
+    /// channel buffers. Pass the same slice twice for a mono IR — `separation`
+    /// then widens it.
+    ///
+    /// The shorter of the two slices sets the length, so a mismatched pair
+    /// truncates instead of reading past the end.
+    pub fn load_ir(&mut self, ir_left: &[f32], ir_right: &[f32]) {
+        // Cap IR length for real-time safety: this is a direct convolution, so
+        // the per-sample cost is the length.
+        let length = ir_left.len().min(ir_right.len()).min(4096);
 
         self.ir_length = length;
-
-        if channels >= 2 {
-            self.ir_left = ir_data[..length].to_vec();
-            self.ir_right = ir_data[length..length * 2].to_vec();
-        } else {
-            self.ir_left = ir_data[..length].to_vec();
-            self.ir_right = ir_data[..length].to_vec();
-        }
+        self.ir_left = ir_left[..length].to_vec();
+        self.ir_right = ir_right[..length].to_vec();
 
         self.input_buffer_l = vec![0.0; length];
         self.input_buffer_r = vec![0.0; length];
@@ -67,7 +73,7 @@ impl ConvolutionProcessor {
     /// Load a built-in body IR by type.
     pub fn load_builtin(&mut self, ir_type: &str) {
         // Generate synthetic IRs for different body types
-        let sample_rate = 44100.0_f32;
+        let sample_rate = self.sample_rate;
         let length = 1024;
         let mut ir = vec![0.0_f32; length];
 
@@ -126,7 +132,7 @@ impl ConvolutionProcessor {
             *s /= max_val;
         }
 
-        self.load_ir(&ir, 1);
+        self.load_ir(&ir, &ir);
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -188,5 +194,56 @@ impl ConvolutionProcessor {
         self.input_buffer_l.fill(0.0);
         self.input_buffer_r.fill(0.0);
         self.write_pos = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Peak amplitude of `signal` at `freq`, sampled at `sample_rate`.
+    fn amplitude_at(signal: &[f32], freq: f32, sample_rate: f32) -> f64 {
+        let mut re = 0.0_f64;
+        let mut im = 0.0_f64;
+        for (n, &s) in signal.iter().enumerate() {
+            let angle = 2.0 * std::f64::consts::PI * freq as f64 * n as f64 / sample_rate as f64;
+            re += s as f64 * angle.cos();
+            im += s as f64 * angle.sin();
+        }
+        (re * re + im * im).sqrt()
+    }
+
+    /// Strongest frequency in `signal` between `low` and `high`, to 1 Hz.
+    fn dominant_frequency(signal: &[f32], sample_rate: f32, low: u32, high: u32) -> f32 {
+        let mut best = low as f32;
+        let mut best_magnitude = 0.0_f64;
+        for hz in low..=high {
+            let magnitude = amplitude_at(signal, hz as f32, sample_rate);
+            if magnitude > best_magnitude {
+                best_magnitude = magnitude;
+                best = hz as f32;
+            }
+        }
+        best
+    }
+
+    /// A "wood" body resonates at 800 Hz. It has to do that at whatever rate
+    /// the audio context runs at — synthesizing the IR against a hardcoded
+    /// 44.1 kHz puts the resonance at 800·fs/44100, which is 871 Hz at 48 kHz
+    /// and 1600 Hz at 88.2 kHz: the body changes pitch with the session rate.
+    #[test]
+    fn a_builtin_body_resonates_at_the_same_hz_at_every_context_rate() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut convolution = ConvolutionProcessor::new(sample_rate);
+            convolution.load_builtin("wood");
+
+            let peak = dominant_frequency(&convolution.ir_left, sample_rate, 400, 1_200);
+            let error = (peak - 800.0).abs() / 800.0;
+            assert!(
+                error < 0.03,
+                "wood body resonates at {peak} Hz when the context runs at \
+                 {sample_rate} Hz; it is named for 800 Hz"
+            );
+        }
     }
 }
