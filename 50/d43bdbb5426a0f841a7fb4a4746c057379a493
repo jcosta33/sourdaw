@@ -1,0 +1,45 @@
+scripts/__tests__/wasmManifestProvenance.spec.ts
+  s_d91dcbe5f07151::t_54efc244518ca2 142-156
+  s_d91dcbe5f07151::t_47e0f74b7c2bfc 4-141,157-255
+  s_d91dcbe5f07151::t_2e854a9765d593 1-3
+  s_d91dcbe5f07151::t_17f40084a6fb01 256-258
+scripts/wasm-artifacts.ts
+  s_d91dcbe5f07151::t_d0496d21b92892 727-760,767-780
+  s_d91dcbe5f07151::t_24ea08ee59bb2a 761-766
+  s_d91dcbe5f07151::t_1adae5e86f48bb 201
+  s_d91dcbe5f07151::t_fd339b5f717d4b 225
+  s_d91dcbe5f07151::t_31520bd11f5eb8 795-797
+  s_d91dcbe5f07151::t_d23477e1f3c603 153
+  s_d91dcbe5f07151::t_9a91547925cec4 593-596
+  s_d91dcbe5f07151::t_b0b809484ce7f5 142-147
+  s_d91dcbe5f07151::t_24f733c64520df 177
+  s_d91dcbe5f07151::t_adf8a6c0271674 75,104-131
+  s_d91dcbe5f07151::t_62e8ef8d4312be 550-592,609-614,636-639
+  s_d91dcbe5f07151::t_272f8bb3f7b0b2 617-623,627-635,640,642-643,645-647,649
+  s_d91dcbe5f07151::t_a2ccbe0ff0d76b 76-81
+  s_d91dcbe5f07151::t_d424f05843bdfc 661
+  s_d91dcbe5f07151::t_8418a84afe322a 615
+package.json
+  s_d91dcbe5f07151::t_a7e2a19f414643 54
+scripts/gen-wasm-manifest.ts
+  s_d91dcbe5f07151::t_c687e22b46dee9 14-19
+  s_d91dcbe5f07151::t_d515ccf8328b6d 48-50,53-59
+scripts/verify-wasm-artifacts.ts
+  s_d91dcbe5f07151::t_08bc99b9845c36 113,123,157,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "50d43bdbb5426a0f841a7fb4a4746c057379a493",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
