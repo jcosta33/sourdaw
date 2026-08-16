@@ -1,0 +1,62 @@
+src/modules/AudioEngine/services/createRuntimeGraphTopologyFingerprint.ts
+  s_a40848e8f8cca9::t_7f60aec30c3999 1-13
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_a40848e8f8cca9::t_65d165a913b765 16,39-40
+  s_a40848e8f8cca9::t_e0e332021e7f2d 38
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_a40848e8f8cca9::t_341cdfd7a00103 246,428,435-454,456-457,460-487,491
+  s_a40848e8f8cca9::t_11aad4e27146ff 197-214,375-427,429-434,455,458-459
+  s_a40848e8f8cca9::t_c3c6bff8b7efe4 488-490
+  s_a40848e8f8cca9::t_5d3febb967156e 517
+src/modules/AudioEngine/useCases/createRuntimeGraphTopologyFingerprint.ts
+  s_a40848e8f8cca9::t_7f60aec30c3999 1
+src/modules/AudioEngine/useCases/configureRuntimeGraphTopologyValidator.ts
+  s_a40848e8f8cca9::t_7f60aec30c3999 1-7
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_a40848e8f8cca9::t_19938235faf1d3 47-57,77-81
+src/modules/Arrangement/useCases/__tests__/runtimeGraphTopology.spec.ts
+  s_a40848e8f8cca9::t_65d165a913b765 5,30,46,50-51,53,80-84,93
+  s_a40848e8f8cca9::t_19938235faf1d3 1-3,6-13,15-29,31-45,47-49,54-55,57-65,67-75,77-79,85-92,94-95
+  s_a40848e8f8cca9::t_98129ee2174cd5 4,14,52,56,66,76
+src/modules/AudioEngine/models/RuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_7f60aec30c3999 47-52
+  s_a40848e8f8cca9::t_792eb2eab21ba1 35-36
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_a40848e8f8cca9::t_19938235faf1d3 42
+  s_a40848e8f8cca9::t_792eb2eab21ba1 23,78
+src/modules/Arrangement/useCases/runtimeGraphTopology.ts
+  s_a40848e8f8cca9::t_e0e332021e7f2d 2-4,6,17,19-34,36-49
+  s_a40848e8f8cca9::t_98129ee2174cd5 1,7-8,10-16,18,35
+  s_a40848e8f8cca9::t_f684e6f3683d19 5,9
+  s_a40848e8f8cca9::t_65d165a913b765 50-55
+src/modules/Arrangement/useCases/index.ts
+  s_a40848e8f8cca9::t_65d165a913b765 20
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_e0e332021e7f2d 50
+  s_a40848e8f8cca9::t_65d165a913b765 22,186
+src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_792eb2eab21ba1 44,47-48,56
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_a40848e8f8cca9::t_7f60aec30c3999 1-5,473-474
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_7f60aec30c3999 150-151
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_a40848e8f8cca9::t_9c1fde7e7c3f17 879,895
+  s_a40848e8f8cca9::t_7f60aec30c3999 21,303,409-413,788-791,839-862,875-878,891-894
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fd954d458fbe3e76fa0da41f0500ba5460b8f400",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
