@@ -1,0 +1,40 @@
+src/modules/Setlist/useCases/setlist/addSetlistItem.ts
+  s_ab5443e65c7fba::t_28661f35ffeb3f 6-7
+  s_ab5443e65c7fba::t_5c5d960440ac7d 30,33-34
+src/modules/Setlist/useCases/setlist/__tests__/removeSetlistItem.spec.ts
+  s_ab5443e65c7fba::t_b16d49e084752b 150-165
+src/modules/Setlist/useCases/setlist/updateSetlistItem.ts
+  s_ab5443e65c7fba::t_ba03fd1efce39b 5-6
+  s_ab5443e65c7fba::t_542e0fc2c8f325 18,21-22
+src/modules/SessionLauncher/useCases/loopStation/stopSlot.ts
+  s_ab5443e65c7fba::t_2ebdb77f7db661 3-11,19-27
+src/modules/Setlist/useCases/setlist/__tests__/addSetlistItem.spec.ts
+  s_ab5443e65c7fba::t_cc1a0402ee88e1 108-125
+src/modules/Setlist/useCases/setlist/__tests__/updateSetlistItem.spec.ts
+  s_ab5443e65c7fba::t_84a777aabf5cd2 52-87
+src/modules/Setlist/useCases/setlist/removeSetlistItem.ts
+  s_ab5443e65c7fba::t_d21335b226c428 39
+  s_ab5443e65c7fba::t_054edeb46b5ad3 5-6
+src/modules/Setlist/useCases/setlist/computeTotalDuration.ts
+  s_ab5443e65c7fba::t_691b209a67e03b 1-16
+src/modules/SessionLauncher/useCases/loopStation/__tests__/stopSlot.spec.ts
+  s_ab5443e65c7fba::t_c5a2711cbf4b95 65-150
+src/modules/SessionLauncher/useCases/loopStation/toggleRecord.ts
+  s_ab5443e65c7fba::t_00a4d5780dda02 48-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "68a5ee85880e1286a93a403a0237bbc117fb8a34",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
