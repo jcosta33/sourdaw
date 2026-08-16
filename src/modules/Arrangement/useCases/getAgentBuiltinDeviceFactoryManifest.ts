@@ -9,13 +9,13 @@ type AgentDeviceParameter = {
     default: number;
     enumValues: readonly string[] | null;
     automatable: boolean;
-    modulatable: boolean;
-    semanticRole: 'unspecified';
-    perceptualRole: 'unspecified';
+    modulatable: { availability: 'unavailable'; source: 'Arrangement descriptor' };
+    semanticRole: { value: string; confidence: 'inferred'; source: 'parameter type' };
+    perceptualRole: { value: 'audible-parameter'; confidence: 'inferred'; source: 'device descriptor' };
     typicalRange: { minimum: number; maximum: number; confidence: 'declared' };
-    interactions: readonly string[];
-    risks: readonly string[];
-    gainCompensation: 'unknown';
+    interactions: readonly [string];
+    risks: readonly [string];
+    gainCompensation: { availability: 'unavailable'; source: 'Arrangement descriptor' };
 };
 
 type AgentBuiltinDevice = {
@@ -24,17 +24,13 @@ type AgentBuiltinDevice = {
     vendor: string;
     name: string;
     category: PluginDescriptor['category'];
-    capabilities: readonly string[];
-    ports: {
-        inputs: readonly [{ id: 'main-in'; channels: 2 }];
-        outputs: readonly [{ id: 'main-out'; channels: 2 }];
-        sidechain: readonly [];
-    };
-    latency: { samples: 0; confidence: 'declared' };
+    capabilities: readonly [string];
+    ports: { availability: 'unavailable'; source: 'Arrangement descriptor' };
+    latency: { availability: 'unavailable'; source: 'Arrangement descriptor' };
     tail: PluginDescriptor['tail'] | null;
     presets: readonly [];
-    safetyNotes: readonly string[];
-    usageRecipes: readonly string[];
+    safetyNotes: readonly [string];
+    usageRecipes: readonly [string];
     parameters: readonly AgentDeviceParameter[];
     metadata: { source: 'Arrangement descriptor'; confidence: 'declared' };
 };
@@ -54,22 +50,23 @@ function parameterType(parameter: DeviceParameter): AgentDeviceParameter['type']
 }
 
 function toManifestParameter(parameter: DeviceParameter): AgentDeviceParameter {
+    const type = parameterType(parameter);
     return {
         id: parameter.id,
         name: parameter.name,
-        type: parameterType(parameter),
+        type,
         unit: parameter.unit,
         bounds: { minimum: parameter.minValue, maximum: parameter.maxValue },
         default: parameter.defaultValue,
         enumValues: parameter.choices ?? null,
         automatable: parameter.automatable,
-        modulatable: false,
-        semanticRole: 'unspecified',
-        perceptualRole: 'unspecified',
+        modulatable: { availability: 'unavailable', source: 'Arrangement descriptor' },
+        semanticRole: { value: `${type}-control`, confidence: 'inferred', source: 'parameter type' },
+        perceptualRole: { value: 'audible-parameter', confidence: 'inferred', source: 'device descriptor' },
         typicalRange: { minimum: parameter.minValue, maximum: parameter.maxValue, confidence: 'declared' },
-        interactions: [],
-        risks: [],
-        gainCompensation: 'unknown',
+        interactions: ['Writes are bounded by the descriptor minimum and maximum.'],
+        risks: ['Automation changes the audible device output.'],
+        gainCompensation: { availability: 'unavailable', source: 'Arrangement descriptor' },
     };
 }
 
@@ -81,13 +78,17 @@ export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDev
         vendor: descriptor.vendor,
         name: descriptor.name,
         category: descriptor.category,
-        capabilities: descriptor.platform === 'native' ? ['native-runtime'] : ['audio-processing'],
-        ports: { inputs: [{ id: 'main-in', channels: 2 }], outputs: [{ id: 'main-out', channels: 2 }], sidechain: [] },
-        latency: { samples: 0, confidence: 'declared' },
+        capabilities: [descriptor.category === 'instrument' ? 'instrument-generation' : 'audio-processing'],
+        ports: { availability: 'unavailable', source: 'Arrangement descriptor' },
+        latency: { availability: 'unavailable', source: 'Arrangement descriptor' },
         tail: descriptor.tail ?? null,
         presets: [],
-        safetyNotes: [],
-        usageRecipes: [],
+        safetyNotes: ['Apply only declared parameter bounds through the owning device write path.'],
+        usageRecipes: [
+            descriptor.category === 'instrument'
+                ? 'Use on a MIDI-capable track through an application-approved insertion.'
+                : 'Use through an application-approved device insertion.',
+        ],
         parameters: descriptor.parameters.map(toManifestParameter),
         metadata: { source: 'Arrangement descriptor', confidence: 'declared' },
     }));

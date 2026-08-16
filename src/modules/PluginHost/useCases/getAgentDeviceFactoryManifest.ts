@@ -29,6 +29,11 @@ export function getAgentDeviceFactoryManifest(types?: readonly string[]) {
             usageRecipes: [],
             parameters: [],
             parameterCount: plugin.num_parameters,
+            configuration: {
+                availability: 'unavailable' as const,
+                reason: 'Plugin scan published only an aggregate parameter count; no stable parameter descriptors are available.',
+                source: 'plugin-scan' as const,
+            },
             metadata: { source: 'plugin-scan', confidence: 'inferred' as const },
             opaqueState: true,
         })),
