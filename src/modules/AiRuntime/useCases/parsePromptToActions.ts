@@ -24,6 +24,7 @@ import {
     tryParameterizedPath,
     tryCompoundFastPath,
 } from '../transformers/promptParser/parsing';
+import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
@@ -39,6 +40,7 @@ import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRou
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
+import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from './agentToolCatalog';
 import {
     APPLICATION_OWNED_TOOL_SCHEMAS,
     ApplicationOwnedToolLoopRequestError,
@@ -58,6 +60,53 @@ type CreateFastPathResultInput = {
     context: ProjectContext;
     prompt: string;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function expandCatalogCommandBatchProposal(calls: readonly ToolCallResult[]) {
+    const proposals = calls.filter((call) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME);
+    if (proposals.length > 1) {
+        return { status: 'invalid' as const, reason: 'Provider proposed more than one command batch.' };
+    }
+    const proposal = proposals[0];
+    if (!proposal) {
+        return { status: 'valid' as const, calls: [...calls] };
+    }
+    if (Object.keys(proposal.arguments).length !== 1 || !Array.isArray(proposal.arguments.commands)) {
+        return {
+            status: 'invalid' as const,
+            reason: 'Provider command batch proposal does not match the strict catalog contract.',
+        };
+    }
+    const commands = proposal.arguments.commands;
+    if (commands.length === 0 || commands.length > 32) {
+        return { status: 'invalid' as const, reason: 'Provider command batch proposal exceeds the command budget.' };
+    }
+    const expanded: ToolCallResult[] = [];
+    for (const command of commands) {
+        if (!isRecord(command) || Object.keys(command).some((key) => key !== 'name' && key !== 'arguments')) {
+            return {
+                status: 'invalid' as const,
+                reason: 'Provider command batch proposal has an invalid command shape.',
+            };
+        }
+        if (
+            typeof command.name !== 'string' ||
+            command.name.length === 0 ||
+            command.name.length > 128 ||
+            !isRecord(command.arguments)
+        ) {
+            return { status: 'invalid' as const, reason: 'Provider command batch proposal has an invalid command.' };
+        }
+        expanded.push({ name: command.name, arguments: command.arguments });
+    }
+    return {
+        status: 'valid' as const,
+        calls: calls.flatMap((call) => (call === proposal ? expanded : [call])),
+    };
+}
 
 function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
     const validated = validateActions(input.actions);
@@ -193,12 +242,13 @@ export const parsePromptToActions = inject({ logger })(
                     context,
                     projectRevision
                 )?.capability;
-                const terminalToolSchemas = [
-                    createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS),
-                    ...getExecutableAppActionToolSchemas(),
-                ];
-                const providerToolSchemas = [...APPLICATION_OWNED_TOOL_SCHEMAS, ...terminalToolSchemas];
-                const terminalToolNames = new Set(terminalToolSchemas.map((schema) => schema.function.name));
+                const workflowCapabilityToolSchema = createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS);
+                const providerToolSchemas = [...APPLICATION_OWNED_TOOL_SCHEMAS, workflowCapabilityToolSchema];
+                const terminalToolNames = new Set([
+                    WORKFLOW_CAPABILITY_TOOL_NAME,
+                    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                    ...getExecutableAppActionToolSchemas().map((schema) => schema.function.name),
+                ]);
                 const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.`;
                 const userMessage = buildLlmActionUserMessage({
                     prompt,
@@ -256,7 +306,18 @@ export const parsePromptToActions = inject({ logger })(
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
                     };
                 }
-                const workflowSelectionCalls = planningOutcome.toolCalls.filter(
+                const expandedProposal = expandCatalogCommandBatchProposal(planningOutcome.toolCalls);
+                if (expandedProposal.status === 'invalid') {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        rejectionReason: `Provider action rejected: ${expandedProposal.reason}`,
+                    };
+                }
+                const providerToolCalls = expandedProposal.calls;
+                const workflowSelectionCalls = providerToolCalls.filter(
                     (call) => call.name === WORKFLOW_CAPABILITY_TOOL_NAME
                 );
                 if (workflowSelectionCalls.length > 1) {
@@ -271,7 +332,7 @@ export const parsePromptToActions = inject({ logger })(
                 let workflowCapabilityId: WorkflowCapabilityId | undefined;
                 const workflowSelectionCall = workflowSelectionCalls[0];
                 if (workflowSelectionCall) {
-                    if (planningOutcome.toolCalls[0] !== workflowSelectionCall) {
+                    if (providerToolCalls[0] !== workflowSelectionCall) {
                         return {
                             actions: [],
                             rawText: prompt,
@@ -294,9 +355,7 @@ export const parsePromptToActions = inject({ logger })(
                     }
                     workflowCapabilityId = capabilityId;
                 }
-                const toolCalls = planningOutcome.toolCalls.filter(
-                    (call) => call.name !== WORKFLOW_CAPABILITY_TOOL_NAME
-                );
+                const toolCalls = providerToolCalls.filter((call) => call.name !== WORKFLOW_CAPABILITY_TOOL_NAME);
                 if (workflowCapabilityId === 'stem-import-starting-mix' && !stemImportScope) {
                     if (toolCalls.length > 0) {
                         return {

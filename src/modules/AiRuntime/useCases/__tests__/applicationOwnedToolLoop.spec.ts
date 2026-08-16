@@ -187,14 +187,14 @@ describe('application-owned tool loop', () => {
         }
     );
 
-    it('publishes data-only schemas and rejects unavailable tools before local execution', async () => {
+    it('publishes the compact catalog and rejects unavailable tools before local execution', async () => {
         const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
-        expect(schemas).toHaveLength(1);
-        expect(schemas[0]?.function).toMatchObject({
-            name: 'project.query',
-            parameters: { additionalProperties: false },
-        });
-        expect(JSON.stringify(schemas)).not.toContain('execute');
+        expect(schemas.map((schema) => schema.function.name)).toEqual(
+            expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
+        );
+        expect(schemas).toHaveLength(11);
+        expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);
+        expect(schemas.some((schema) => schema.function.name === 'setTempo')).toBe(false);
 
         const result = await runApplicationOwnedToolLoop({
             loopId: 'loop-1',

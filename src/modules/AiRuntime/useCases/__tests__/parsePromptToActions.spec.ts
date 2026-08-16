@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
-
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
@@ -309,19 +307,20 @@ describe('parsePromptToActions', () => {
 
         const result = await parsePromptToActions('make the project faster', baseContext);
 
-        expect(generateToolCalls).toHaveBeenCalledWith(
-            expect.stringContaining('command system prompt'),
-            'command user message',
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('command system prompt');
+        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
                 }),
-                ...getExecutableAppActionToolSchemas(),
-            ]),
-            undefined,
-            'make the project faster',
-            undefined
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+            ])
         );
+        expect(firstProviderCall?.[4]).toBe('make the project faster');
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
             prompt: 'make the project faster',
             context: baseContext,
@@ -444,19 +443,20 @@ describe('parsePromptToActions', () => {
         expect(result.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
-        expect(generateToolCalls).toHaveBeenCalledWith(
-            expect.stringContaining('command system prompt'),
-            'command user message',
+        const firstProviderCall = vi.mocked(generateToolCalls).mock.calls[0];
+        expect(firstProviderCall?.[0]).toContain('command system prompt');
+        expect(firstProviderCall?.[1]).toBe('command user message');
+        expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
                 }),
-                ...getExecutableAppActionToolSchemas(),
-            ]),
-            undefined,
-            'enable punch in/out',
-            undefined
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+            ])
         );
+        expect(firstProviderCall?.[4]).toBe('enable punch in/out');
     });
 
     it('proposes a grounded provider marker as one reversible atomic action', async () => {

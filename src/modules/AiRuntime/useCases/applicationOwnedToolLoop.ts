@@ -1,8 +1,15 @@
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
-import { type ApplicationToolReceipt, PROJECT_QUERY_TOOL_NAME } from '../models/ApplicationOwnedTool';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { type ToolCallResult } from '../transformers/toolCallParser';
+
+import {
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    getAgentToolCatalogSchemas,
+    PROJECT_QUERY_TOOL_NAME,
+} from './agentToolCatalog';
+import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 
 const DEFAULT_LIMITS = {
     maxTurns: 3,
@@ -257,6 +264,7 @@ function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): Pa
 
 function failureReceipt(input: {
     callId: string;
+    toolName?: string;
     turn: number;
     code: string;
     safeMessage: string;
@@ -266,7 +274,7 @@ function failureReceipt(input: {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
         callId: input.callId,
-        toolName: PROJECT_QUERY_TOOL_NAME,
+        toolName: input.toolName ?? PROJECT_QUERY_TOOL_NAME,
         turn: input.turn,
         status: 'failure',
         revision: null,
@@ -318,6 +326,126 @@ function executeProjectQuery(call: ToolCallResult, callId: string, turn: number)
     }
 }
 
+const catalogCategories = new Set([
+    'query',
+    'resolve',
+    'capability',
+    'catalog',
+    'preview',
+    'command',
+    'commit',
+    'history',
+    'render',
+    'analysis',
+    'approval',
+]);
+
+function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>):
+    | {
+          status: 'valid';
+          category: Parameters<typeof getAgentToolCatalogEntries>[0]['category'];
+          names?: string[];
+          page?: { cursor?: string; limit?: number };
+      }
+    | { status: 'invalid'; reason: string } {
+    if (Object.keys(argumentsValue).some((key) => key !== 'category' && key !== 'names' && key !== 'page')) {
+        return {
+            status: 'invalid',
+            reason: 'agent.catalog.discover arguments do not match the strict catalog contract',
+        };
+    }
+    const category = argumentsValue.category;
+    if (typeof category !== 'string' || !catalogCategories.has(category)) {
+        return { status: 'invalid', reason: 'agent.catalog.discover category is unavailable' };
+    }
+    const names = argumentsValue.names;
+    if (names !== undefined) {
+        if (
+            !Array.isArray(names) ||
+            names.length === 0 ||
+            names.length > 8 ||
+            names.some((name) => typeof name !== 'string' || name.length === 0 || name.length > 128)
+        ) {
+            return {
+                status: 'invalid',
+                reason: 'agent.catalog.discover names do not match the strict catalog contract',
+            };
+        }
+    }
+    const pageValue = argumentsValue.page;
+    let page: { cursor?: string; limit?: number } | undefined;
+    if (pageValue !== undefined) {
+        if (
+            !isRecord(pageValue) ||
+            Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'limit') ||
+            (pageValue.cursor !== undefined &&
+                (typeof pageValue.cursor !== 'string' || !/^(0|[1-9][0-9]{0,15})$/.test(pageValue.cursor))) ||
+            (pageValue.limit !== undefined &&
+                (typeof pageValue.limit !== 'number' ||
+                    !Number.isInteger(pageValue.limit) ||
+                    pageValue.limit < 1 ||
+                    pageValue.limit > 8))
+        ) {
+            return {
+                status: 'invalid',
+                reason: 'agent.catalog.discover page does not match the strict catalog contract',
+            };
+        }
+        page = {};
+        if (typeof pageValue.cursor === 'string') {
+            page.cursor = pageValue.cursor;
+        }
+        if (typeof pageValue.limit === 'number') {
+            page.limit = pageValue.limit;
+        }
+    }
+    return {
+        status: 'valid',
+        category: category as Parameters<typeof getAgentToolCatalogEntries>[0]['category'],
+        ...(names === undefined ? {} : { names }),
+        ...(page === undefined ? {} : { page }),
+    };
+}
+
+function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const parsed = parseCatalogDiscoveryArguments(call.arguments);
+    if (parsed.status === 'invalid') {
+        return failureReceipt({
+            callId,
+            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: parsed.reason,
+            retryable: true,
+        });
+    }
+    try {
+        const catalog = getAgentToolCatalogEntries(parsed);
+        return {
+            schema: 'sourdaw.application-tool-receipt',
+            schemaVersion: 1,
+            callId,
+            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            turn,
+            status: 'success',
+            revision: null,
+            data: catalog,
+            summary: `${catalog.category}: ${String(catalog.items.length)} schema(s)`,
+            warnings: catalog.truncated ? ['Catalog page is truncated; request exact schema names.'] : [],
+            error: null,
+        };
+    } catch {
+        return failureReceipt({
+            callId,
+            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'tool-execution-failed',
+            safeMessage: 'Catalog discovery failed inside the application authority.',
+            retryable: true,
+        });
+    }
+}
+
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
     const callId = call.id ?? `${loopId}:${String(turn)}:${String(index)}`;
     return callId.length > 0 && callId.length <= MAX_CALL_ID_LENGTH && /^[A-Za-z0-9._:-]+$/.test(callId)
@@ -331,6 +459,7 @@ function boundReceipt(receipt: ApplicationToolReceipt, maxBytes: number): Applic
     }
     return failureReceipt({
         callId: receipt.callId,
+        toolName: receipt.toolName,
         turn: receipt.turn,
         code: 'tool-receipt-too-large',
         safeMessage: 'Tool receipt exceeded the per-call budget; request a narrower page.',
@@ -347,63 +476,7 @@ function serializeReceiptContext(receipts: readonly ApplicationToolReceipt[], tu
     ].join('\n');
 }
 
-const queryTypes = getProjectProtocolContracts().query.operations.map((operation) => operation.name);
-
-export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = [
-    {
-        type: 'function',
-        function: {
-            name: PROJECT_QUERY_TOOL_NAME,
-            description:
-                'Read bounded, revision-bearing project facts. Query calls must be returned alone; use their receipts in a later planning turn.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    type: { type: 'string', enum: queryTypes },
-                    filters: {
-                        type: 'object',
-                        properties: {
-                            stableId: { type: 'string', maxLength: 256 },
-                            exactName: { type: 'string', maxLength: 256 },
-                            fuzzyName: { type: 'string', maxLength: 256 },
-                            kind: { type: 'string', maxLength: 256 },
-                            tag: { type: 'string', maxLength: 256 },
-                            role: { type: 'string', maxLength: 256 },
-                            parentId: { type: 'string', maxLength: 256 },
-                            startBeat: { type: 'number' },
-                            endBeat: { type: 'number' },
-                            sectionId: { type: 'string', maxLength: 256 },
-                            selected: { type: 'boolean' },
-                            locked: { type: 'boolean' },
-                            muted: { type: 'boolean' },
-                            soloed: { type: 'boolean' },
-                            deviceType: { type: 'string', maxLength: 256 },
-                            deviceCategory: { type: 'string', maxLength: 256 },
-                            routeFromId: { type: 'string', maxLength: 256 },
-                            routeToId: { type: 'string', maxLength: 256 },
-                            hasAutomation: { type: 'boolean' },
-                            contentType: { type: 'string', enum: ['audio', 'midi'] },
-                            assetType: { type: 'string', maxLength: 256 },
-                            minInferredConfidence: { type: 'number', minimum: 0, maximum: 1 },
-                        },
-                        additionalProperties: false,
-                    },
-                    page: {
-                        type: 'object',
-                        properties: {
-                            limit: { type: 'integer', minimum: 1, maximum: 50 },
-                            cursor: { type: 'string', maxLength: 256 },
-                        },
-                        additionalProperties: false,
-                    },
-                    sinceRevision: { type: 'string', maxLength: 65_536 },
-                },
-                required: ['type'],
-                additionalProperties: false,
-            },
-        },
-    },
-];
+export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = getAgentToolCatalogSchemas();
 
 export async function runApplicationOwnedToolLoop(
     input: RunApplicationOwnedToolLoopInput
@@ -477,11 +550,16 @@ export async function runApplicationOwnedToolLoop(
             identifiedCalls.push({ call, callId });
         }
 
-        const queryCalls = identifiedCalls.filter(({ call }) => call.name === PROJECT_QUERY_TOOL_NAME);
-        const terminalCalls = identifiedCalls.filter(
-            ({ call }) => call.name !== PROJECT_QUERY_TOOL_NAME && input.terminalToolNames.has(call.name)
+        const safeReadCalls = identifiedCalls.filter(
+            ({ call }) => call.name === PROJECT_QUERY_TOOL_NAME || call.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME
         );
-        if (queryCalls.length + terminalCalls.length !== outcome.toolCalls.length) {
+        const terminalCalls = identifiedCalls.filter(
+            ({ call }) =>
+                call.name !== PROJECT_QUERY_TOOL_NAME &&
+                call.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME &&
+                input.terminalToolNames.has(call.name)
+        );
+        if (safeReadCalls.length + terminalCalls.length !== outcome.toolCalls.length) {
             return {
                 status: 'rejected',
                 reason: 'Provider requested an unavailable application tool.',
@@ -489,7 +567,7 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
-        if (queryCalls.length > 0 && terminalCalls.length > 0) {
+        if (safeReadCalls.length > 0 && terminalCalls.length > 0) {
             return {
                 status: 'rejected',
                 reason: 'Provider mixed project reads with terminal action calls in one turn.',
@@ -514,10 +592,16 @@ export async function runApplicationOwnedToolLoop(
             };
         }
 
-        const turnReceipts: ApplicationToolReceipt[] = [];
-        for (const { call, callId } of queryCalls) {
-            turnReceipts.push(boundReceipt(executeProjectQuery(call, callId, turn), limits.maxReceiptBytesPerCall));
-        }
+        const turnReceipts = await Promise.all(
+            safeReadCalls.map(async ({ call, callId }) =>
+                boundReceipt(
+                    call.name === PROJECT_QUERY_TOOL_NAME
+                        ? executeProjectQuery(call, callId, turn)
+                        : executeCatalogDiscovery(call, callId, turn),
+                    limits.maxReceiptBytesPerCall
+                )
+            )
+        );
         const serializedTurn = serializeReceiptContext(turnReceipts, turn);
         const turnBytes = byteLength(serializedTurn);
         if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {
