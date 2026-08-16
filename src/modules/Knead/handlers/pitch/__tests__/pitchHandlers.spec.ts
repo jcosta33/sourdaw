@@ -91,7 +91,11 @@ describe('Command Pitch Handlers', () => {
             })
         ).toEqual({
             label: 'Commit Pitch Edit',
-            inverseAction: { type: 'restoreClipFileId', payload: { clipId: 'c1', fileId: 'orig.wav' } },
+            // No analysis is seeded for this clip, so there are no blobs and no contour
+            // to carry — but the key is present, because an absent `blobs` would make
+            // the restore preserve whatever is there at undo time instead of putting
+            // the clip back the way the commit found it.
+            inverseAction: { type: 'restoreClipFileId', payload: { clipId: 'c1', fileId: 'orig.wav', blobs: [] } },
         });
     });
 

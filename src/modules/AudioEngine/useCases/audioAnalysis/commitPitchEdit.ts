@@ -14,16 +14,23 @@ type PitchEditSegment = {
 type CommitPitchEditInput = {
     inputAudioPath: string;
     outputAudioPath: string;
+    outputAudioBufferId: string;
     audioBufferId?: string;
     segments: PitchEditSegment[];
     contour: PitchContour;
 };
 
-type CommitPitchEditOutput = Promise<void>;
+/** `renderedAudioBufferId` names the cache entry holding the rendered audio, for
+ *  the caller to repoint the clip at — playback resolves a clip through
+ *  `audioBufferId`, never through its file path. It is null on the native path,
+ *  which writes a file and decodes nothing into this realm's cache: there is no
+ *  buffer to point at, and the clip's restored file pointer is the whole result. */
+type CommitPitchEditOutput = Promise<{ renderedAudioBufferId: string | null }>;
 
 export async function commitPitchEdit({
     inputAudioPath,
     outputAudioPath,
+    outputAudioBufferId,
     audioBufferId,
     segments,
     contour,
@@ -36,7 +43,7 @@ export async function commitPitchEdit({
     });
 
     if (didCommitNatively) {
-        return;
+        return { renderedAudioBufferId: null };
     }
 
     if (!audioBufferId) {
@@ -48,5 +55,6 @@ export async function commitPitchEdit({
         throw new Error('Could not get audio buffer for clip');
     }
 
-    processPitchEditWasm(buffer, segments, contour, outputAudioPath);
+    processPitchEditWasm(buffer, segments, contour, outputAudioBufferId);
+    return { renderedAudioBufferId: outputAudioBufferId };
 }

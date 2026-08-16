@@ -74,11 +74,16 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     // so the control for it belongs to the pitch mode that owns the edit, the way
     // Flex Pitch, VariAudio and Live all keep pitch editing an exclusive mode.
     //
-    // Gated on the contour rather than on the blobs: the commit clears the stored
-    // contour, and only a fresh analysis restores it — and that analysis rebuilds
-    // every blob with `originalPitchCenterCents` rebased onto the rendered audio.
-    // So the gate is what stops a second commit from baking the same shift twice.
-    const canCommitPitchEdit = (contour?.points.length ?? 0) > 0 && (kneadState?.blobs.length ?? 0) > 0;
+    // Gated on the contour rather than on the blobs: the commit drops the whole
+    // analysis — contour and blobs together — so the control returns only after a
+    // fresh analysis of the rendered audio, which rebases every blob's original
+    // pitch onto it. That is what stops a second commit baking the same shift twice.
+    //
+    // `hasKnead` belongs in the gate, not just in the enclosing panel: the disabled
+    // state is an absolute overlay that does not trap focus, so without it the
+    // button stayed keyboard-reachable (Tab, Enter) and fired a destructive render
+    // from a screen that reads "Pitch Correction Disabled".
+    const canCommitPitchEdit = hasKnead && (contour?.points.length ?? 0) > 0 && (kneadState?.blobs.length ?? 0) > 0;
 
     const handleCommitPitchEdit = () => {
         if (!contour || !kneadState || !canCommitPitchEdit) {
@@ -86,11 +91,33 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         }
         // Each blob carries the pitch the analysis found and the pitch the user
         // dragged it to; their difference is the shift to render over that span.
-        const segments = kneadState.blobs.map((blob) => ({
-            start_time_ms: blob.startTime * 1000,
-            end_time_ms: blob.endTime * 1000,
-            shift_semitones: (blob.pitchCenterCents - blob.originalPitchCenterCents) / 100,
-        }));
+        //
+        // `originalPitchCenterCents` is optional in the persisted blob shape, so it
+        // rehydrates as undefined for anything written before the field existed. A
+        // bare subtraction would yield NaN, `JSON.stringify` would emit null, and
+        // the Rust side's `from_str(...).unwrap_or_default()` fails the WHOLE array
+        // on one bad element — so a single legacy blob would silently discard every
+        // other blob's edit, render a zero shift, repoint the clip and close the
+        // gate. Same fallback the Knead worklet applies: no original, no shift.
+        const segments = kneadState.blobs
+            .map((blob) => {
+                const originalCents = blob.originalPitchCenterCents;
+                const baseCents = Number.isFinite(originalCents) ? originalCents : blob.pitchCenterCents;
+                return {
+                    start_time_ms: blob.startTime * 1000,
+                    end_time_ms: blob.endTime * 1000,
+                    shift_semitones: (blob.pitchCenterCents - baseCents) / 100,
+                };
+            })
+            .filter(
+                (segment) =>
+                    Number.isFinite(segment.start_time_ms) &&
+                    Number.isFinite(segment.end_time_ms) &&
+                    Number.isFinite(segment.shift_semitones)
+            );
+        if (segments.length === 0) {
+            return;
+        }
         // Dispatch through the action layer so the commit gets a real undo entry
         // (`handleCommitPitchEdit` describes `restoreClipFileId` as its inverse).
         // The handler notifies the user on render failure and rethrows, so swallow
@@ -123,6 +150,13 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     // near-silence, a very short clip) legitimately produces zero blobs. Once a
     // contour exists, analysis has run; re-triggering on empty blobs would loop
     // forever because `kneadState` is in this effect's deps.
+    //
+    // This effect is the product's only caller of `analyzeClipPitch`, which makes
+    // the pairing load-bearing: anything that invalidates a clip's analysis has to
+    // drop the blobs and the contour together (`clearClipPitchAnalysis`). Dropping
+    // only the contour would leave blobs standing, hold this gate shut forever, and
+    // — because blobs are CRDT-persisted — make pitch editing one-shot per clip,
+    // across reloads and for every collaborator, with nothing on screen to say why.
     useEffect(() => {
         const needsAnalysis = (!kneadState || kneadState.blobs.length === 0) && !contour;
         if (hasKnead && needsAnalysis) {
@@ -638,6 +672,20 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     <div className="flex flex-col items-center gap-2 mb-4">
                         <div className="size-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
                         <p className="text-xs text-muted-foreground font-medium">Analyzing pitch tracking data...</p>
+                        {/* The analyser reports progress through `onProgress`; an
+                            indeterminate spinner throws that away and leaves a long
+                            take indistinguishable from a hang. */}
+                        <div className="flex items-center gap-2">
+                            <div className="w-24 h-1.5 bg-surface-sunken rounded overflow-hidden">
+                                <div
+                                    className="h-full bg-primary transition-all duration-100"
+                                    style={{ width: `${Math.max(5, kneadStoreState.analysisProgress * 100)}%` }}
+                                />
+                            </div>
+                            <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
+                                {Math.round(kneadStoreState.analysisProgress * 100)}%
+                            </span>
+                        </div>
                     </div>
                 </div>
             );

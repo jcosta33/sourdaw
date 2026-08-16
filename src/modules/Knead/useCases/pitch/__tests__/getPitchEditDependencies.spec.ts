@@ -9,8 +9,8 @@ describe('getPitchEditDependencies', () => {
     });
 
     it('returns the exact registered dependencies once set', () => {
-        function commitPitchEdit(): Promise<void> {
-            return Promise.resolve();
+        function commitPitchEdit(): Promise<{ renderedAudioBufferId: string | null }> {
+            return Promise.resolve({ renderedAudioBufferId: null });
         }
         setPitchEditDependencies({ commitPitchEdit });
 

@@ -381,15 +381,18 @@ describe('KneadEditor', () => {
                 hop_size: 256,
             };
 
-            const installAnalyzedStateWithContour = (clipState: KneadClipState): void => {
+            const installKneadStoreState = (kneadStoreState: {
+                clips: Record<string, unknown>;
+                contours: Record<string, unknown>;
+                analysisProgress?: number;
+            }): void => {
                 vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
                     if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
                         return {
                             activeClipId: null,
-                            clips: { 'clip-1': clipState },
-                            contours: { 'clip-1': contour },
                             isAnalyzing: false,
                             analysisProgress: 0,
+                            ...kneadStoreState,
                         };
                     }
                     if (fallback && typeof fallback === 'object' && 'isPlaying' in fallback) {
@@ -397,6 +400,10 @@ describe('KneadEditor', () => {
                     }
                     return { keyRoot: 0, scaleName: 'major' };
                 });
+            };
+
+            const installAnalyzedStateWithContour = (clipState: KneadClipState): void => {
+                installKneadStoreState({ clips: { 'clip-1': clipState }, contours: { 'clip-1': contour } });
             };
 
             beforeEach(() => {
@@ -434,10 +441,10 @@ describe('KneadEditor', () => {
                 });
             });
 
-            // The commit clears the contour, and only a fresh analysis restores it
-            // — rebuilding every blob with its original pitch rebased onto the
-            // rendered audio. Offering the control without a contour would let the
-            // same shift be baked into the audio twice.
+            // The commit drops the whole analysis — contour and blobs together — and a
+            // fresh analysis of the rendered audio restores both, rebuilding every blob
+            // with its original pitch rebased onto the new audio. Offering the control
+            // without a contour would let the same shift be baked in twice.
             it('offers no commit control until an analysis has produced a contour', () => {
                 installAnalyzedState(makeClipState([makeBlob({ pitchCenterCents: 6300 })]));
                 render(<KneadEditor {...defaultProps} />);
@@ -451,6 +458,95 @@ describe('KneadEditor', () => {
 
                 expect(screen.queryByText('Bounce & Commit')).not.toBeInTheDocument();
             });
+
+            // This is what makes pitch editing repeatable. The analysis effect is the
+            // product's only caller of `analyzeClipPitch` and it fires only when a clip
+            // has neither blobs nor a contour, so a commit that dropped the contour but
+            // left the blobs standing left the clip permanently un-analysable — and
+            // because blobs are CRDT-persisted, permanently across reloads and for every
+            // collaborator, with nothing on screen to say why.
+            it('re-analyses the clip after a commit and gives the commit control back', () => {
+                // Post-commit: the whole analysis is gone.
+                installKneadStoreState({ clips: { 'clip-1': makeClipState([]) }, contours: {} });
+                const postCommit = render(<KneadEditor {...defaultProps} />);
+
+                expect(analyzeClipPitch).toHaveBeenCalledWith('clip-1');
+                expect(screen.queryByText('Bounce & Commit')).not.toBeInTheDocument();
+                postCommit.unmount();
+
+                // What that analysis produces: blobs rebased onto the rendered audio,
+                // plus its contour.
+                installAnalyzedStateWithContour(makeClipState([makeBlob()]));
+                render(<KneadEditor {...defaultProps} />);
+
+                expect(screen.getByText('Bounce & Commit')).toBeInTheDocument();
+            });
+
+            // The disabled state is an absolute overlay; it does not trap focus, so a
+            // control rendered behind it stays reachable with Tab and Enter. Firing a
+            // destructive render from a screen that reads "Pitch Correction Disabled"
+            // is not a state the user can be in.
+            it('offers no commit control on a track without a Knead device', () => {
+                vi.mocked(useTracks).mockReturnValue({ tracks: [] } as never);
+                installAnalyzedStateWithContour(makeClipState([makeBlob({ pitchCenterCents: 6300 })]));
+                render(<KneadEditor {...defaultProps} />);
+
+                expect(screen.getByText('Pitch Correction Disabled')).toBeInTheDocument();
+                expect(screen.queryByText('Bounce & Commit')).not.toBeInTheDocument();
+            });
+
+            // `originalPitchCenterCents` is optional in the persisted blob shape, and
+            // hydration widens it straight into the store — so a blob written before the
+            // field existed arrives with it missing. Subtracting it yields NaN,
+            // `JSON.stringify` emits null, and the Rust side fails the WHOLE segment
+            // array on one bad element: every other blob's edit silently discarded, a
+            // zero shift rendered, the clip repointed at it.
+            it('renders a finite shift for a blob that has no original pitch recorded', () => {
+                const { originalPitchCenterCents: _absent, ...legacyBlob } = makeBlob({ pitchCenterCents: 6300 });
+                installKneadStoreState({
+                    clips: { 'clip-1': { ...makeClipState([]), blobs: [legacyBlob] } },
+                    contours: { 'clip-1': contour },
+                });
+                render(<KneadEditor {...defaultProps} />);
+
+                fireEvent.click(screen.getByText('Bounce & Commit'));
+
+                expect(executeAppAction).toHaveBeenCalledWith({
+                    type: 'commitPitchEdit',
+                    payload: {
+                        clipId: 'clip-1',
+                        // No original means no shift, the same fallback the Knead worklet
+                        // applies — not NaN, and not a dropped array.
+                        segments: [{ start_time_ms: 100, end_time_ms: 500, shift_semitones: 0 }],
+                        contour,
+                    },
+                });
+            });
+        });
+
+        // `analysisProgress` is reported by the analyser and was read by nothing: an
+        // indeterminate spinner leaves a long take indistinguishable from a hang.
+        it('shows how far the pitch analysis has got', () => {
+            vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
+                if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
+                    return {
+                        activeClipId: null,
+                        clips: {},
+                        contours: {},
+                        isAnalyzing: true,
+                        analysisProgress: 0.42,
+                    };
+                }
+                if (fallback && typeof fallback === 'object' && 'isPlaying' in fallback) {
+                    return fallback;
+                }
+                return { keyRoot: 0, scaleName: 'major' };
+            });
+
+            render(<KneadEditor {...defaultProps} />);
+
+            expect(screen.getByText('Analyzing pitch tracking data...')).toBeInTheDocument();
+            expect(screen.getByText('42%')).toBeInTheDocument();
         });
 
         describe('blob pointer interactions', () => {

@@ -13,7 +13,13 @@ import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Comman
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { defaultKneadState, kneadStore, type PitchContour } from '../../../stores/kneadStore';
+import {
+    defaultKneadState,
+    kneadStore,
+    type KneadClipState,
+    type NoteBlob,
+    type PitchContour,
+} from '../../../stores/kneadStore';
 import { getPitchHandlers } from '../../getPitchHandlers';
 import { commitPitchEdit } from '../commitPitchEdit';
 import { setPitchEditDependencies } from '../pitchEditDependencies';
@@ -110,6 +116,40 @@ const storedContour: PitchContour = {
     hop_size: 256,
 };
 
+// The clip is seeded with `fileId: 'test.wav'`, so the render writes
+// `test_pitch.wav` and caches it under this id.
+const RENDERED_BUFFER_ID = 'audio-pitch:test_pitch.wav';
+
+const storedBlob: NoteBlob = {
+    id: 'blob-1',
+    startTime: 0,
+    endTime: 0.5,
+    pitchCenterCents: 6300,
+    originalPitchCenterCents: 6000,
+    pitchCurveCents: [],
+    voicedConfidence: 0.9,
+    driftPercent: 0,
+    vibratoDepthPercent: 0,
+    vibratoRateHz: 0,
+    formantShiftCents: 0,
+    gainDb: 0,
+    muted: false,
+};
+
+const storedClipState: KneadClipState = {
+    clipId: 'c1',
+    blobs: [storedBlob],
+    retuneSpeedMs: 25,
+    toleranceCents: 0,
+    toleranceTimeMs: 0,
+    humanizePercent: 40,
+    formantPreserve: true,
+};
+
+function getFirstClipAudioBufferId(): string | undefined {
+    return trackStore.value?.tracks[0]?.clips[0]?.audioBufferId;
+}
+
 function commitAction(clipId: string): Extract<AppAction, { type: 'commitPitchEdit' }> {
     return { type: 'commitPitchEdit', payload: { clipId, segments, contour } };
 }
@@ -123,7 +163,7 @@ describe('commitPitchEdit through action dispatch', () => {
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
         setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
-        commitPitchEditMock.mockResolvedValue(undefined);
+        commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
 
         const clipOverrides: Partial<PitchEditTestClip>[] = [
             { id: 'c1', type: 'audio', fileId: 'test.wav', audioBufferId: 'buffer-c1' },
@@ -139,7 +179,7 @@ describe('commitPitchEdit through action dispatch', () => {
             ghostClips: [],
         } satisfies TrackStoreState;
         trackStore.set(state);
-        kneadStore.set({ ...defaultKneadState, contours: { c1: storedContour } });
+        kneadStore.set({ ...defaultKneadState, contours: { c1: storedContour }, clips: { c1: storedClipState } });
     });
 
     afterEach(() => {
@@ -148,10 +188,19 @@ describe('commitPitchEdit through action dispatch', () => {
         configureAutomergeStoragePort(null);
     });
 
-    it('describes a restoreClipFileId inverse that captures the pre-edit file pointer', () => {
+    it('describes a restoreClipFileId inverse that captures everything the commit consumes', () => {
         expect(getPitchHandlers().commitPitchEdit.describe(commitAction('c1'))).toEqual({
             label: 'Commit Pitch Edit',
-            inverseAction: { type: 'restoreClipFileId', payload: { clipId: 'c1', fileId: 'test.wav' } },
+            inverseAction: {
+                type: 'restoreClipFileId',
+                payload: {
+                    clipId: 'c1',
+                    fileId: 'test.wav',
+                    audioBufferId: 'buffer-c1',
+                    blobs: [storedBlob],
+                    contour: storedContour,
+                },
+            },
         });
     });
 
@@ -161,6 +210,7 @@ describe('commitPitchEdit through action dispatch', () => {
         expect(commitPitchEditMock).toHaveBeenCalledWith({
             inputAudioPath: 'test.wav',
             outputAudioPath: 'test_pitch.wav',
+            outputAudioBufferId: RENDERED_BUFFER_ID,
             audioBufferId: 'buffer-c1',
             segments,
             contour,
@@ -188,12 +238,74 @@ describe('commitPitchEdit through action dispatch', () => {
         expect(commitPitchEditMock).toHaveBeenCalledTimes(2);
     });
 
+    // Playback, export, `collectProjectAudioBufferIds` and the next pitch analysis all
+    // resolve a clip's audio through `audioBufferId`; nothing reads `fileId` at all in
+    // the browser realm. A commit that moved only the file pointer was therefore
+    // inaudible, and the render it produced was referenced by nothing — not even saved
+    // with the project.
+    it('repoints the clip at the rendered buffer after a successful commit', async () => {
+        expect(getFirstClipAudioBufferId()).toBe('buffer-c1');
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
+        expect(getFirstClipFileId()).toBe('test_pitch.wav');
+    });
+
+    // The native path writes a file and decodes nothing into this realm's cache, so
+    // there is no buffer to point at; repointing at an uncached key would silence the
+    // clip outright.
+    it('leaves the clip audio buffer alone when the render decoded nothing', async () => {
+        commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: null });
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(getFirstClipAudioBufferId()).toBe('buffer-c1');
+        expect(getFirstClipFileId()).toBe('test_pitch.wav');
+    });
+
     it('clears the clip pitch contour after a successful commit so the editor gate re-opens', async () => {
         expect(kneadStore.value?.contours.c1).toEqual(storedContour);
 
         await executeAppAction(commitAction('c1'));
 
         expect(commitPitchEditMock).toHaveBeenCalled();
+        expect(kneadStore.value?.contours.c1).toBeUndefined();
+    });
+
+    // The blobs are the live pitch shift the Knead worklet keeps applying. Left
+    // standing over freshly baked audio they apply the same shift a second time, and
+    // because the editor treats a clip with blobs as already analysed they also hold
+    // the analysis gate shut forever — one pitch edit per clip, silently, for good.
+    it('clears the clip pitch blobs after a successful commit', async () => {
+        expect(kneadStore.value?.clips.c1?.blobs).toEqual([storedBlob]);
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(kneadStore.value?.clips.c1?.blobs).toEqual([]);
+        // Mirrored onto the clip too: `kneadState` is what persistence and collaboration
+        // read, so a Knead-store-only clear would come straight back on the next load.
+        expect(trackStore.value?.tracks[0]?.clips[0]?.kneadState?.blobs).toEqual([]);
+    });
+
+    it('undo gives back the buffer, the blobs and the contour, not just the file pointer', async () => {
+        await executeAppAction(commitAction('c1'));
+
+        expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
+        expect(kneadStore.value?.clips.c1?.blobs).toEqual([]);
+
+        await undo();
+
+        expect(getFirstClipFileId()).toBe('test.wav');
+        expect(getFirstClipAudioBufferId()).toBe('buffer-c1');
+        expect(kneadStore.value?.clips.c1?.blobs).toEqual([storedBlob]);
+        expect(kneadStore.value?.contours.c1).toEqual(storedContour);
+        expect(trackStore.value?.tracks[0]?.clips[0]?.kneadState?.blobs.map((blob) => blob.id)).toEqual(['blob-1']);
+
+        await redo();
+
+        expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
+        expect(kneadStore.value?.clips.c1?.blobs).toEqual([]);
         expect(kneadStore.value?.contours.c1).toBeUndefined();
     });
 
@@ -254,7 +366,7 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
         registerHandlerMap(getPitchHandlers());
         clearUndoHistory();
         setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
-        commitPitchEditMock.mockResolvedValue(undefined);
+        commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
 
         doc = {};
         mutations = 0;
@@ -277,7 +389,7 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
             selectedTrackId: 't1',
             ghostClips: [],
         } satisfies TrackStoreState);
-        kneadStore.set({ ...defaultKneadState, contours: { c1: storedContour } });
+        kneadStore.set({ ...defaultKneadState, contours: { c1: storedContour }, clips: { c1: storedClipState } });
 
         // Commit the seed so the transaction below starts from a persisted
         // baseline rather than from pending writes.

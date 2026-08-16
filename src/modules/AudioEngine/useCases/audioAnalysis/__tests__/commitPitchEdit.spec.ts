@@ -42,14 +42,18 @@ describe('commitPitchEdit', () => {
         const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
         vi.mocked(commitNativePitchEdit).mockResolvedValue(true);
 
-        await commitPitchEdit({
+        const result = await commitPitchEdit({
             inputAudioPath: 'test.wav',
             outputAudioPath: 'test_pitch.wav',
+            outputAudioBufferId: 'audio-pitch:test_pitch.wav',
             audioBufferId: 'buffer-c1',
             segments,
             contour,
         });
 
+        // The native path writes a file and decodes nothing into this realm's cache, so
+        // it reports no buffer — repointing the clip at an uncached key would silence it.
+        expect(result).toEqual({ renderedAudioBufferId: null });
         expect(commitNativePitchEdit).toHaveBeenCalledWith({
             inputAudioPath: 'test.wav',
             outputAudioPath: 'test_pitch.wav',
@@ -60,7 +64,7 @@ describe('commitPitchEdit', () => {
         expect(processPitchEditWasm).not.toHaveBeenCalled();
     });
 
-    it('should fallback to WASM and cache by output path when native commit is unavailable', async () => {
+    it('should fallback to WASM and cache under the buffer id when native commit is unavailable', async () => {
         const contour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
         const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
         const originalBuffer = new AudioBuffer({
@@ -72,16 +76,27 @@ describe('commitPitchEdit', () => {
         vi.mocked(commitNativePitchEdit).mockResolvedValue(false);
         vi.mocked(audioBufferCache.get).mockReturnValue(originalBuffer);
 
-        await commitPitchEdit({
+        const result = await commitPitchEdit({
             inputAudioPath: 'test.wav',
             outputAudioPath: 'test_pitch.wav',
+            outputAudioBufferId: 'audio-pitch:test_pitch.wav',
             audioBufferId: 'buffer-c1',
             segments,
             contour,
         });
 
         expect(audioBufferCache.get).toHaveBeenCalledWith('buffer-c1');
-        expect(processPitchEditWasm).toHaveBeenCalledWith(originalBuffer, segments, contour, 'test_pitch.wav');
+        // Cached under a buffer id, not the output path: playback, export and the next
+        // pitch analysis all resolve a clip's audio through `audioBufferId`, so a render
+        // keyed by path was reachable by nothing.
+        expect(processPitchEditWasm).toHaveBeenCalledWith(
+            originalBuffer,
+            segments,
+            contour,
+            'audio-pitch:test_pitch.wav'
+        );
+        // Reported back so the caller can repoint the clip at the render.
+        expect(result).toEqual({ renderedAudioBufferId: 'audio-pitch:test_pitch.wav' });
     });
 
     it('should throw when native commit is unavailable and the source buffer is missing', async () => {
@@ -92,6 +107,7 @@ describe('commitPitchEdit', () => {
             commitPitchEdit({
                 inputAudioPath: 'test.wav',
                 outputAudioPath: 'test_pitch.wav',
+                outputAudioBufferId: 'audio-pitch:test_pitch.wav',
                 audioBufferId: 'buffer-c1',
                 segments: [],
                 contour: { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' },
