@@ -323,6 +323,27 @@ impl ScoringEngine {
         }
     }
 
+    /// One analysis tick that produced no usable detection. Confidence decays,
+    /// and once it runs out the note is over.
+    ///
+    /// Every retained frame describes the note that just ended, so carrying
+    /// them forward lets the previous pitch win the weighted median at the
+    /// *next* onset (and makes the jump between the two register as vibrato).
+    /// Start the next note from nothing. RT-safe: field writes and a counter
+    /// reset, no allocation.
+    #[inline]
+    fn release(&mut self) {
+        self.confidence *= 0.9;
+        if self.confidence < 0.05 {
+            if self.active {
+                self.stabilizer.reset();
+                self.vibrato.reset();
+                self.smoothed_freq = 0.0;
+            }
+            self.active = false;
+        }
+    }
+
     /// Process a block of audio. Passes through (or mutes) the audio while analyzing pitch.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         for i in 0..left.len() {
@@ -395,23 +416,17 @@ impl ScoringEngine {
                     // Update tone generator to target note frequency
                     let target_freq = self.tuning.midi_to_freq(midi);
                     self.tone.set_freq(target_freq);
+                } else {
+                    // Loud but unpitched: a damped string, a pick scrape, or
+                    // the previous string still ringing while the player moves
+                    // to the next one. Without this the release only ever runs
+                    // below the gate, so the tuner holds the dead note's
+                    // history through the whole string-to-string move.
+                    self.release();
                 }
             } else if should_analyze && rms <= GATE_THRESHOLD {
                 // Below noise gate — fade out
-                self.confidence *= 0.9;
-                if self.confidence < 0.05 {
-                    // The note is over. Every retained frame describes it, so
-                    // carrying them past the gate lets the previous pitch bleed
-                    // into the weighted median of the *next* onset (and the
-                    // jump between the two register as vibrato). Start the next
-                    // note from nothing. RT-safe: counter writes only.
-                    if self.active {
-                        self.stabilizer.reset();
-                        self.vibrato.reset();
-                        self.smoothed_freq = 0.0;
-                    }
-                    self.active = false;
-                }
+                self.release();
             }
 
             // Add tone generator output
@@ -550,16 +565,36 @@ impl ScoringInstance {
     /// Import an AnaMark .tun file and apply it as tuning offsets. Returns
     /// whether the file was applied. A file that declares no `BaseFreq` leaves
     /// the current concert-A reference alone — silence about the reference is
-    /// not a request to reset it to 440. A declared reference goes through
-    /// `set_param` so it lands inside the same range the reference knob
-    /// enforces.
+    /// not a request to reset it to 440.
+    ///
+    /// `BaseFreq` is the frequency of MIDI note 0, not concert A: the default
+    /// is 8.1757989156 Hz, which is A440. It is converted, not clamped. Running
+    /// it through `set_param` would fold every out-of-range value into
+    /// 400..=490 and silently retune a 415 or 432 session while reporting
+    /// success, so a converted reference outside that range fails the whole
+    /// import and nothing is applied — a declared-but-unusable reference is
+    /// corruption, not absence.
     pub fn import_tun(&mut self, tun_text: &str) -> bool {
         let Some(tuning) = scala::AnaMarkTuning::parse_tun(tun_text) else {
             return false;
         };
+
+        // Validate before applying anything: a rejected file must leave the
+        // offsets table exactly as it was.
+        let a4_hz = match tuning.base_freq {
+            Some(base_freq) => {
+                let a4 = base_freq * (2.0_f32).powf(69.0 / 12.0);
+                if !(400.0..=490.0).contains(&a4) {
+                    return false;
+                }
+                Some(a4)
+            }
+            None => None,
+        };
+
         self.engine.tuning.offsets = tuning.to_12tet_offsets();
-        if let Some(base_freq) = tuning.base_freq {
-            self.engine.tuning.set_param("a4_hz", base_freq);
+        if let Some(a4) = a4_hz {
+            self.engine.tuning.a4_hz = a4;
         }
         true
     }
@@ -904,6 +939,74 @@ mod tests {
         );
     }
 
+    /// The gate is not the only way a note ends. Tuning string to string, the
+    /// player damps one string and moves to the next: the signal stays loud —
+    /// well above the gate — while the pitch detector has nothing usable to
+    /// report. Decaying confidence only below the gate means the release never
+    /// runs here, `active` never falls, and the dead string's frames keep
+    /// winning the weighted median at the next onset.
+    ///
+    /// Mutation that reds this: delete the `else { self.release(); }` arm from
+    /// the `freq > 0.0 && conf > 0.3` test in `ScoringEngine::process` — the
+    /// engine stays active with A3's history intact for as long as the loud
+    /// unpitched signal lasts.
+    #[test]
+    fn a_loud_unpitched_signal_still_releases_the_tuner() {
+        const SAMPLE_RATE: f32 = 44100.0;
+        let blocks_per_second = (SAMPLE_RATE / 128.0) as usize;
+
+        let mut engine = ScoringEngine::new(SAMPLE_RATE);
+        let mut feeder = BlockFeeder::new(SAMPLE_RATE);
+
+        for _ in 0..blocks_per_second * 2 {
+            feeder.feed(&mut engine, 220.0, 0.8);
+        }
+        assert!(engine.active, "engine never locked onto the note");
+        assert_eq!(engine.midi_note, 57, "note misread");
+
+        // Deterministic broadband noise at half scale: loud, and nothing a
+        // pitch detector can lock onto.
+        let mut rng = 0x2545_f491_4f6c_dd1d_u64;
+        let mut released = false;
+        let mut lowest_rms = f32::INFINITY;
+        for _ in 0..blocks_per_second * 3 {
+            let mut left = [0.0_f32; 128];
+            let mut right = [0.0_f32; 128];
+            for i in 0..128 {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                let s = ((rng >> 40) as f32 / 8_388_608.0 - 1.0) * 0.5;
+                left[i] = s;
+                right[i] = s;
+            }
+            engine.process(&mut left, &mut right);
+            lowest_rms = lowest_rms.min(engine.rms.level());
+            if !engine.active {
+                released = true;
+                break;
+            }
+        }
+
+        assert!(
+            lowest_rms > GATE_THRESHOLD,
+            "the signal dipped to RMS {lowest_rms} — this has to exercise the \
+             above-gate path, not the silence path"
+        );
+        assert!(
+            released,
+            "three seconds of loud unpitched signal never released the tuner"
+        );
+        assert_eq!(
+            engine.stabilizer.count, 0,
+            "the ended note's frames are still in the stabilizer"
+        );
+        assert_eq!(
+            engine.smoothed_freq, 0.0,
+            "the smoothed needle was retained"
+        );
+    }
+
     /// A 12-degree scale in equal temperament: valid, and its offsets are all
     /// zero, so applying it is observable only through the return value.
     const TWELVE_TET_SCL: &str = "\
@@ -999,10 +1102,16 @@ C twenty cents flat
     ///
     /// Mutation that reds this: assign `a4_hz` unconditionally on import — the
     /// 415 and 432 rows come back reading 440.
+    /// AnaMark `BaseFreq` is the frequency of MIDI note 0. The concert A it
+    /// implies is `basefreq * 2^(69/12)`.
+    fn base_freq_for(a4: f32) -> f32 {
+        a4 / (2.0_f32).powf(69.0 / 12.0)
+    }
+
     #[test]
     fn import_tun_without_a_base_frequency_keeps_the_current_reference() {
         // C4 ten cents flat, everything else at 12-TET.
-        let tun = "[Tuning]\n[Scale Begin]\n60=-910.0\n[Scale End]\n";
+        let tun = "; ten cents flat\n[Tuning]\nnote 60 = 5990.0\n";
         for reference in [415.0_f32, 432.0, 440.0] {
             let mut instance = ScoringInstance::new(44100.0);
             instance.set_param("a4_hz", reference);
@@ -1019,13 +1128,68 @@ C twenty cents flat
         }
     }
 
+    /// The default `BaseFreq` the format prints for a 440 Hz session is
+    /// 8.1757989156, and it has to arrive as 440 — not as a clamped 400.
     #[test]
-    fn import_tun_applies_a_declared_base_frequency() {
-        let tun = "BaseFreq=432.0\n[Tuning]\n[Scale Begin]\n69=0.0\n[Scale End]\n";
+    fn import_tun_converts_the_default_base_frequency_to_concert_a() {
+        let tun = "[Scale Begin]\n[Exact Tuning]\nBaseFreq = 8.1757989156\nnote 69 = 6900.0\n[Scale End]\n";
         let mut instance = ScoringInstance::new(44100.0);
         instance.set_param("a4_hz", 415.0);
         assert!(instance.import_tun(tun), "valid .tun refused");
-        assert_eq!(instance.engine.tuning.a4_hz, 432.0);
+        assert!(
+            (instance.engine.tuning.a4_hz - 440.0).abs() < 0.01,
+            "default BaseFreq gave a4 {}",
+            instance.engine.tuning.a4_hz
+        );
+    }
+
+    #[test]
+    fn import_tun_applies_a_declared_base_frequency() {
+        let tun = format!(
+            "[Tuning]\nBaseFreq = {}\nnote 69 = 6900.0\n",
+            base_freq_for(432.0)
+        );
+        let mut instance = ScoringInstance::new(44100.0);
+        instance.set_param("a4_hz", 415.0);
+        assert!(instance.import_tun(&tun), "valid .tun refused");
+        assert!(
+            (instance.engine.tuning.a4_hz - 432.0).abs() < 0.01,
+            "read {}",
+            instance.engine.tuning.a4_hz
+        );
+    }
+
+    /// A `BaseFreq` whose concert A lands outside the reference range the tuner
+    /// supports is not a request to move the reference to the nearest legal
+    /// value — clamping it retunes a 415 or 432 session behind the player's
+    /// back while reporting success. The whole import fails and nothing moves.
+    ///
+    /// `BaseFreq=440.0` is the decisive row: read as concert A it looks
+    /// perfectly ordinary, and read correctly it is a 23.7 kHz reference.
+    ///
+    /// Mutation that reds this: route the reference through
+    /// `set_param("a4_hz", ...)` — the import reports success and the session
+    /// comes back at 490.
+    #[test]
+    fn import_tun_rejects_a_reference_outside_the_supported_range() {
+        for base_freq in ["440.0", "0.5", "8000.0"] {
+            let tun = format!("[Tuning]\nBaseFreq = {base_freq}\nnote 60 = 5990.0\n");
+            let mut instance = ScoringInstance::new(44100.0);
+            instance.set_param("a4_hz", 432.0);
+            let untouched = instance.engine.tuning.offsets;
+            assert!(
+                !instance.import_tun(&tun),
+                "BaseFreq={base_freq} accepted as a reference"
+            );
+            assert_eq!(
+                instance.engine.tuning.a4_hz, 432.0,
+                "BaseFreq={base_freq} moved the reference"
+            );
+            assert_eq!(
+                instance.engine.tuning.offsets, untouched,
+                "BaseFreq={base_freq} applied the offsets of a refused file"
+            );
+        }
     }
 
     #[test]

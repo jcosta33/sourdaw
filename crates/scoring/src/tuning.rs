@@ -37,20 +37,56 @@ impl TuningSystem {
         let adjusted =
             midi_continuous - self.transpose_semitones as f32 - self.capo_semitones as f32;
 
-        // Nearest integer MIDI note
-        let midi_note = adjusted.round() as i32;
-        let note_index = ((midi_note % 12 + 12) % 12) as usize;
+        // Nearest note on the *tempered* grid. Rounding `adjusted` alone picks
+        // the nearest note of an untempered 12-TET, which is the wrong note
+        // whenever the offsets are sizeable: 1/4-comma meantone reaches -27 and
+        // +18 cents, so a tone sitting 55 cents below untempered C but only 15
+        // below a 40-cent-flat tempered C would be named B and read +45 — off
+        // the ±50 the needle is scaled for. Checking the two neighbours is
+        // enough because no legal offset exceeds a semitone. RT-safe: three
+        // array reads, no allocation.
+        let nearest = adjusted.round() as i32;
+        let mut midi_note = nearest;
+        let mut smallest = f32::INFINITY;
+        for candidate in [nearest, nearest - 1, nearest + 1] {
+            let deviation = (self.tempered_cents(adjusted, candidate)).abs();
+            if deviation < smallest {
+                smallest = deviation;
+                midi_note = candidate;
+            }
+        }
+
+        let note_index = midi_note.rem_euclid(12) as usize;
         let octave = (midi_note / 12) - 1;
 
-        // Cent deviation from the nearest note, measured on the *adjusted*
-        // grid. `midi_note` is the rounding of `adjusted`, so the deviation has
+        // Cent deviation from the chosen note, measured on the *adjusted*
+        // grid. `midi_note` is derived from `adjusted`, so the deviation has
         // to come from `adjusted` too: measuring it from the unshifted
         // `midi_continuous` leaves the whole transpose+capo shift inside the
         // readout, and an in-tune A4 with transpose +12 reads +1200 cents.
-        let sweetener = self.offsets[note_index];
-        let cents = (adjusted - midi_note as f32) * 100.0 - sweetener;
+        let cents = self.tempered_cents(adjusted, midi_note);
 
         (midi_note, note_index, octave, cents)
+    }
+
+    /// Deviation in cents of the reading `adjusted` from the tempered position
+    /// of the displayed note `midi_note`.
+    #[inline]
+    fn tempered_cents(&self, adjusted: f32, midi_note: i32) -> f32 {
+        (adjusted - midi_note as f32) * 100.0 - self.offsets[self.sounding_class(midi_note)]
+    }
+
+    /// The absolute pitch class that a displayed note actually sounds at.
+    ///
+    /// The offsets table is absolute-pitch: a Scala scale maps its degrees onto
+    /// absolute classes with 1/1 = C, and a .tun keys off absolute MIDI note
+    /// numbers. A temperament states what frequency a sounding C must have.
+    /// Transpose and capo rename what the tuner *displays*; they must not move
+    /// which offset applies, so the offset is looked up by undoing the shift
+    /// that `map_frequency` applied.
+    #[inline]
+    fn sounding_class(&self, midi_note: i32) -> usize {
+        (midi_note + self.transpose_semitones + self.capo_semitones).rem_euclid(12) as usize
     }
 
     /// Get the note name string for a note index (0-11).
@@ -154,9 +190,13 @@ mod tests {
         );
     }
 
-    /// Sweeteners still bend the readout, and they follow the *named* pitch
-    /// class, so a transposed reading picks up the offset of the note it
-    /// displays.
+    /// Sweeteners bend the readout, and they follow the *sounding* pitch class,
+    /// not the displayed one. Transpose renames the note; the physical tone is
+    /// unchanged, so the same offset must apply and the reading must not move.
+    ///
+    /// The interval is deliberately not an octave: at +12 the sounding and
+    /// displayed classes coincide, so an octave case passes just as happily
+    /// when the offset is indexed by the displayed note.
     #[test]
     fn sweetener_offset_is_applied_at_any_transpose() {
         let mut tuning = TuningSystem::new();
@@ -167,14 +207,56 @@ mod tests {
             "expected -10 cents from the A sweetener, read {cents:.3}",
         );
 
-        // Transposed by an octave the note is still an A, so the same
-        // sweetener applies and the reading is unchanged.
-        tuning.set_param("transpose", 12.0);
+        // Transpose +2 displays A440 as G4. It still sounds an A, so the A
+        // sweetener still applies. Indexed by the displayed class (G, 7) the
+        // reading comes back 0.
+        tuning.set_param("transpose", 2.0);
         let (midi, note_index, _, transposed) = tuning.map_frequency(440.0);
-        assert_eq!((midi, note_index), (57, 9));
+        assert_eq!((midi, note_index), (67, 7));
         assert!(
             (transposed + 10.0).abs() < 0.01,
-            "expected -10 cents at transpose +12, read {transposed:.3}",
+            "expected -10 cents at transpose +2, read {transposed:.3}",
+        );
+    }
+
+    /// Same defect through the capo, which is the control a guitarist actually
+    /// reaches for: a correctly tempered C4 reads 0 at capo 0 and must still
+    /// read 0 at capo 1 — the capo renamed the display, it did not retune the
+    /// string.
+    #[test]
+    fn sweetener_follows_the_sounding_class_under_capo() {
+        // C tempered 10 cents flat, and a tone sitting exactly there.
+        let tempered_c4 = 261.625_57_f32 * (2.0_f32).powf(-10.0 / 1200.0);
+        for capo in [0, 1, 5] {
+            let mut tuning = TuningSystem::new();
+            tuning.offsets[0] = -10.0;
+            tuning.set_param("capo", capo as f32);
+            let (midi, _, _, cents) = tuning.map_frequency(tempered_c4);
+            assert_eq!(midi, 60 - capo, "capo {capo} named the wrong note");
+            assert!(
+                cents.abs() < 0.05,
+                "a correctly tempered C at capo {capo} read {cents:.3} cents",
+            );
+        }
+    }
+
+    /// The offsets move the grid, so they move the rounding boundary with it.
+    /// A tone 55 cents below untempered C4, against a C tempered 40 cents flat,
+    /// is 15 cents below that C — not 45 above B3.
+    #[test]
+    fn note_choice_is_made_on_the_tempered_grid() {
+        let mut tuning = TuningSystem::new();
+        tuning.offsets[0] = -40.0; // C
+        let freq = 261.625_57_f32 * (2.0_f32).powf(-55.0 / 1200.0);
+        let (midi, note_index, octave, cents) = tuning.map_frequency(freq);
+        assert_eq!(
+            (midi, note_index, octave),
+            (60, 0, 4),
+            "named the untempered nearest note, read {cents:.3} cents",
+        );
+        assert!(
+            (cents + 15.0).abs() < 0.05,
+            "expected -15 cents against the tempered C, read {cents:.3}",
         );
     }
 

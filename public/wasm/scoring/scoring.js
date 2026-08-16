@@ -112,9 +112,15 @@ export class ScoringInstance {
      * Import an AnaMark .tun file and apply it as tuning offsets. Returns
      * whether the file was applied. A file that declares no `BaseFreq` leaves
      * the current concert-A reference alone — silence about the reference is
-     * not a request to reset it to 440. A declared reference goes through
-     * `set_param` so it lands inside the same range the reference knob
-     * enforces.
+     * not a request to reset it to 440.
+     *
+     * `BaseFreq` is the frequency of MIDI note 0, not concert A: the default
+     * is 8.1757989156 Hz, which is A440. It is converted, not clamped. Running
+     * it through `set_param` would fold every out-of-range value into
+     * 400..=490 and silently retune a 415 or 432 session while reporting
+     * success, so a converted reference outside that range fails the whole
+     * import and nothing is applied — a declared-but-unusable reference is
+     * corruption, not absence.
      * @param {string} tun_text
      * @returns {boolean}
      */
