@@ -436,6 +436,10 @@ export async function sendChatMessage(
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
                 if (interactionMode === 'plan') {
+                    const admittedRun = agentRunLifecycle.get(runId);
+                    if (!admittedRun) {
+                        throw new Error('Agent run disappeared before plan materialization.');
+                    }
                     const plannedRun = planAgentRun({
                         request: userText,
                         revision: projectRevision,
@@ -447,21 +451,11 @@ export async function sendChatMessage(
                             protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                             protectedRanges: [],
                         },
-                        grants: {
-                            allowedOperationPrefixes: [],
-                            create: false,
-                            delete: false,
-                            routing: false,
-                            tempo: false,
-                            master: false,
-                            file: false,
-                            audioUpload: false,
-                            remoteGeneration: false,
-                            autoCommit: false,
-                        },
-                        budgets: { limits: {}, consumed: {} },
+                        grants: admittedRun.grants,
+                        budgets: admittedRun.budgets,
                         requiresConfirmation: false,
                         applicationToolReceipts: result.applicationToolReceipts,
+                        providerProposal: result.providerProposal,
                     });
                     if (plannedRun.status === 'needs-user-decision') {
                         createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -469,6 +463,24 @@ export async function sendChatMessage(
                             runId,
                             reason: plannedRun.decision.reason,
                             workIds: [],
+                        });
+                        agentRunLifecycle.recordDecision({
+                            runId,
+                            decision: {
+                                revision: projectRevision,
+                                scope: {
+                                    targetIds: confirmationDescription.affectedIds,
+                                    targetRanges: [],
+                                    protectedTargetIds: confirmationDescription.protectedUnchanged.map(
+                                        (item) => item.id
+                                    ),
+                                    protectedRanges: [],
+                                },
+                                grants: admittedRun.grants,
+                                alternatives: plannedRun.decision.alternatives,
+                                reason: plannedRun.decision.reason,
+                                selectedAlternativeId: null,
+                            },
                         });
                         updateChatMessage(assistantMsgId, {
                             isStreaming: false,
@@ -564,6 +576,7 @@ export async function sendChatMessage(
                     budgets: { limits: { ...commandBatch.authority.budgets }, consumed: {} },
                     requiresConfirmation: compiledActionExecution.requiresConfirmation,
                     applicationToolReceipts: result.applicationToolReceipts,
+                    providerProposal: result.providerProposal,
                 });
                 if (plannedRun.status === 'needs-user-decision') {
                     createStemImportConfirmationResourceLease(result.actions)?.release();
@@ -571,6 +584,35 @@ export async function sendChatMessage(
                         runId,
                         reason: plannedRun.decision.reason,
                         workIds: [],
+                    });
+                    agentRunLifecycle.recordDecision({
+                        runId,
+                        decision: {
+                            revision: projectRevision,
+                            scope: {
+                                targetIds: [...commandBatch.authority.scope.targetIds],
+                                targetRanges: commandBatch.authority.scope.targetRanges.map((range) => ({ ...range })),
+                                protectedTargetIds: [...commandBatch.authority.scope.protectedTargetIds],
+                                protectedRanges: commandBatch.authority.scope.protectedRanges.map((range) => ({
+                                    ...range,
+                                })),
+                            },
+                            grants: {
+                                allowedOperationPrefixes: [...commandBatch.authority.grants.allowedOperationPrefixes],
+                                create: commandBatch.authority.grants.create,
+                                delete: commandBatch.authority.grants.delete,
+                                routing: commandBatch.authority.grants.routing,
+                                tempo: commandBatch.authority.grants.tempo,
+                                master: commandBatch.authority.grants.master,
+                                file: commandBatch.authority.grants.file,
+                                audioUpload: commandBatch.authority.grants.audioUpload,
+                                remoteGeneration: commandBatch.authority.grants.remoteGeneration,
+                                autoCommit: commandBatch.authority.grants.autoCommit,
+                            },
+                            alternatives: plannedRun.decision.alternatives,
+                            reason: plannedRun.decision.reason,
+                            selectedAlternativeId: null,
+                        },
                     });
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,

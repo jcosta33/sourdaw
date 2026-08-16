@@ -3,15 +3,14 @@ import {
     type AgentRunGrants,
     type AgentRunPlan,
     type AgentRunPlanAlternative,
+    type AgentRunProviderProposal,
     type AgentRunScope,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { RUNTIME_ACTION_TYPES } from '../models/RuntimeAction';
 
-type ProviderPlanProposal = {
-    alternatives?: AgentRunPlanAlternative[];
-    capabilityIds?: string[];
-    scope?: AgentRunScope;
+type AgentRunSemanticEvidence = {
+    uncertainty: Array<'ambiguous-target' | 'exploratory-outcome' | 'conflicted-constraints' | 'capability-mismatch'>;
 };
 
 type PlanAgentRunInput = {
@@ -24,7 +23,8 @@ type PlanAgentRunInput = {
     budgets: AgentRunBudgets;
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
-    providerProposal?: ProviderPlanProposal;
+    providerProposal?: AgentRunProviderProposal;
+    semanticEvidence?: AgentRunSemanticEvidence;
 };
 
 type PlanAgentRunResult =
@@ -45,17 +45,28 @@ function isComplex(input: PlanAgentRunInput): boolean {
         input.scope.targetIds.length > 1 ||
         input.scope.targetRanges.length > 0 ||
         input.requiresConfirmation ||
+        (input.semanticEvidence?.uncertainty.length ?? 0) > 0 ||
         (input.applicationToolReceipts?.length ?? 0) > 0
     );
 }
 
 function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilities'] {
-    const capabilities: AgentRunPlan['capabilities'] = input.actions.map((action) => ({
-        id: action.type,
-        source: 'action-catalog',
-        prerequisite: `The registered ${action.type} action remains available for this revision.`,
-        status: 'available',
-    }));
+    const capabilities: AgentRunPlan['capabilities'] = input.actions.map((action) => {
+        const allowed =
+            !input.requiresConfirmation ||
+            input.grants.allowedOperationPrefixes.length === 0 ||
+            input.grants.allowedOperationPrefixes.some(
+                (prefix) => action.type.startsWith(prefix) || prefix.startsWith(action.type)
+            );
+        return {
+            id: action.type,
+            source: 'action-catalog',
+            prerequisite: allowed
+                ? `The validated run grant admits ${action.type} for this revision.`
+                : `No validated run grant admits ${action.type}.`,
+            status: allowed ? 'available' : 'unavailable',
+        };
+    });
     for (const receipt of input.applicationToolReceipts ?? []) {
         capabilities.push({
             id: receipt.toolName,
@@ -69,7 +80,7 @@ function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilitie
             id: `budget:${category}`,
             source: 'budget',
             prerequisite: `Budget ${category} is limited to ${limit}; ${input.budgets.consumed[category] ?? 0} is already consumed.`,
-            status: 'required',
+            status: limit === 0 || (input.budgets.consumed[category] ?? 0) < limit ? 'required' : 'unavailable',
         });
     }
     if (input.actions.some((action) => action.type === 'importStemSet')) {
@@ -86,7 +97,7 @@ function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilitie
         prerequisite: input.grants.remoteGeneration
             ? 'Remote generation is explicitly granted for this run.'
             : 'Remote generation is not granted and cannot be added by the provider.',
-        status: input.grants.remoteGeneration ? 'available' : 'unavailable',
+        status: 'available',
     });
     return capabilities;
 }
@@ -106,6 +117,12 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };
     }
     const capabilities = deriveCapabilities(input);
+    if (capabilities.some((capability) => capability.status === 'unavailable')) {
+        return {
+            status: 'rejected',
+            reason: 'A validated capability, budget, asset, or data-policy prerequisite is unavailable.',
+        };
+    }
     if (
         input.providerProposal?.capabilityIds?.some(
             (capabilityId) => !capabilities.some((capability) => capability.id === capabilityId)
@@ -114,6 +131,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
         return { status: 'rejected', reason: 'Provider proposed a capability outside the application catalog.' };
     }
     const alternatives = input.providerProposal?.alternatives ?? [];
+    const uncertainty = input.providerProposal?.uncertainty ?? input.semanticEvidence?.uncertainty ?? [];
     if (alternatives.some((alternative) => alternative.changesAuthority)) {
         return {
             status: 'needs-user-decision',
@@ -142,6 +160,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             objective: input.request,
             interpretedConstraints: [
                 `Plan is bound to project revision ${input.revision}.`,
+                ...uncertainty.map((entry) => `Structured uncertainty: ${entry}.`),
                 ...input.scope.protectedTargetIds.map((targetId) => `Protect ${targetId}.`),
             ],
             scope: structuredClone(input.scope),

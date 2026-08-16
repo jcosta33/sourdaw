@@ -602,6 +602,11 @@ export const parsePromptToActions = inject({ logger })(
                         ...applicationToolReceiptFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
+                        providerProposal: {
+                            capabilityIds: guarded.actions.map((action) => action.type),
+                            alternatives: [],
+                            uncertainty: [],
+                        },
                     };
                 }
 

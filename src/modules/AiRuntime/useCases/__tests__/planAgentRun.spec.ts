@@ -123,6 +123,57 @@ describe('planAgentRun', () => {
         });
     });
 
+    it('classifies structured uncertainty on a one-action request as complex without inspecting request prose', () => {
+        const result = planAgentRun({
+            request: 'Do it.',
+            revision: 'heads-1',
+            actions: [{ type: 'muteTrack' }],
+            actionLabels: ['Mute Bass'],
+            scope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            grants: {
+                allowedOperationPrefixes: ['muteTrack'],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: {}, consumed: {} },
+            requiresConfirmation: false,
+            semanticEvidence: { uncertainty: ['ambiguous-target'] },
+        });
+        expect(result).toMatchObject({ status: 'planned', plan: { classification: 'complex', showPlanPanel: true } });
+    });
+
+    it('stops an executable plan before confirmation when validated authority or budget prerequisites are unavailable', () => {
+        const base = {
+            request: 'Mute Bass.',
+            revision: 'heads-1',
+            actions: [{ type: 'muteTrack' }],
+            actionLabels: ['Mute Bass'],
+            scope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            grants: {
+                allowedOperationPrefixes: ['setTrackGain'],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: { providerTokens: 10 }, consumed: { providerTokens: 10 } },
+            requiresConfirmation: false,
+        };
+        expect(planAgentRun(base)).toEqual(expect.objectContaining({ status: 'rejected' }));
+    });
+
     it('rejects provider scope enlargement and capabilities that are absent from the application catalog', () => {
         const input = {
             request: 'Mute Bass.',
@@ -228,6 +279,53 @@ describe('planAgentRun', () => {
                         validationStrategy: expect.any(Array),
                         stoppingConditions: expect.any(Array),
                     },
+                },
+            ],
+        });
+    });
+
+    it('persists an authority-bound unresolved decision before pausing a run', () => {
+        agentRunLifecycle.create({
+            runId: 'run-decision',
+            request: 'Process vocals.',
+            mode: 'apply',
+            createdRevision: 'heads-9',
+        });
+        agentRunLifecycle.recordDecision({
+            runId: 'run-decision',
+            decision: {
+                revision: 'heads-9',
+                scope: { targetIds: ['vocal-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                grants: {
+                    allowedOperationPrefixes: ['setTrackGain'],
+                    create: false,
+                    delete: false,
+                    routing: false,
+                    tempo: false,
+                    master: false,
+                    file: false,
+                    audioUpload: false,
+                    remoteGeneration: false,
+                    autoCommit: false,
+                },
+                alternatives: [
+                    { id: 'gain', label: 'Adjust the existing gain', changesAuthority: false },
+                    { id: 'upload', label: 'Upload a reference', changesAuthority: true },
+                ],
+                reason: 'The alternatives change authority.',
+                selectedAlternativeId: null,
+            },
+        });
+        agentRunLifecycle.requireManualResume({
+            runId: 'run-decision',
+            reason: 'The alternatives change authority.',
+            workIds: [],
+        });
+        expect(sanitizeAgentRunState(readAgentRunState())).toMatchObject({
+            runs: [
+                {
+                    phase: 'paused',
+                    decision: { revision: 'heads-9', selectedAlternativeId: null, alternatives: expect.any(Array) },
                 },
             ],
         });

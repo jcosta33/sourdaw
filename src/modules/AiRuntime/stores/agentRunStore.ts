@@ -12,6 +12,7 @@ import {
     type AgentRunBatch,
     type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
+    type AgentRunDecision,
     type AgentRunError,
     type AgentRunPlan,
     type AgentRunProviderUsage,
@@ -825,6 +826,78 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
           };
 }
 
+function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefined {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    if (!isRecord(value) || !isRecord(value.scope) || !isRecord(value.grants)) {
+        return undefined;
+    }
+    const grants = value.grants;
+    const revision = readString(value.revision);
+    const reason = readString(value.reason);
+    const selectedAlternativeId = readNullableString(value.selectedAlternativeId);
+    const targetIds = readStringArray(value.scope.targetIds);
+    const targetRanges = readRanges(value.scope.targetRanges);
+    const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
+    const protectedRanges = readRanges(value.scope.protectedRanges);
+    const allowedOperationPrefixes = readStringArray(value.grants.allowedOperationPrefixes);
+    const alternatives = readCollection(value.alternatives, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const label = readString(candidate.label);
+        return id === null || label === null || typeof candidate.changesAuthority !== 'boolean'
+            ? null
+            : { id, label, changesAuthority: candidate.changesAuthority };
+    });
+    const grantNames = [
+        'create',
+        'delete',
+        'routing',
+        'tempo',
+        'master',
+        'file',
+        'audioUpload',
+        'remoteGeneration',
+        'autoCommit',
+    ] as const;
+    if (
+        revision === null ||
+        reason === null ||
+        selectedAlternativeId === undefined ||
+        targetIds === null ||
+        targetRanges === null ||
+        protectedTargetIds === null ||
+        protectedRanges === null ||
+        allowedOperationPrefixes === null ||
+        alternatives === null ||
+        grantNames.some((name) => typeof grants[name] !== 'boolean')
+    ) {
+        return undefined;
+    }
+    return {
+        revision,
+        scope: { targetIds, targetRanges, protectedTargetIds, protectedRanges },
+        grants: {
+            allowedOperationPrefixes,
+            create: grants.create as boolean,
+            delete: grants.delete as boolean,
+            routing: grants.routing as boolean,
+            tempo: grants.tempo as boolean,
+            master: grants.master as boolean,
+            file: grants.file as boolean,
+            audioUpload: grants.audioUpload as boolean,
+            remoteGeneration: grants.remoteGeneration as boolean,
+            autoCommit: grants.autoCommit as boolean,
+        },
+        alternatives,
+        reason,
+        selectedAlternativeId,
+    };
+}
+
 function readAgentRun(value: unknown): AgentRun | null {
     if (!isRecord(value) || value.schemaVersion !== AGENT_RUN_SCHEMA_VERSION) {
         return null;
@@ -913,6 +986,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         protectedTargetIds: protectedTargetIds ?? [],
         protectedRanges: protectedRanges ?? [],
     });
+    const decision = readAgentRunDecision(value.decision);
     const batches = readCollection(value.batches, readBatch);
     const receipts = readCollection(value.receipts, readReceipt);
     const renders = readCollection(value.renders, readArtifact);
@@ -972,6 +1046,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         consumed === null ||
         budgetAttempts === null ||
         plan === undefined ||
+        decision === undefined ||
         batches === null ||
         receipts === null ||
         renders === null ||
@@ -1034,6 +1109,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         budgets: { limits, consumed },
         budgetAttempts,
         plan,
+        decision,
         batches,
         receipts,
         renders,

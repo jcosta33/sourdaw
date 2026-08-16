@@ -109,6 +109,22 @@ export type AgentRunPlanAlternative = {
     changesAuthority: boolean;
 };
 
+export type AgentRunProviderProposal = {
+    scope?: AgentRunScope;
+    capabilityIds?: string[];
+    alternatives?: AgentRunPlanAlternative[];
+    uncertainty?: Array<'ambiguous-target' | 'exploratory-outcome' | 'conflicted-constraints' | 'capability-mismatch'>;
+};
+
+export type AgentRunDecision = {
+    revision: string;
+    scope: AgentRunScope;
+    grants: AgentRunGrants;
+    alternatives: AgentRunPlanAlternative[];
+    reason: string;
+    selectedAlternativeId: string | null;
+};
+
 export type AgentRunBatch = {
     batchId: string;
     commandIds: string[];
@@ -249,6 +265,7 @@ export type AgentRun = {
     budgets: AgentRunBudgets;
     budgetAttempts: AgentRunBudgetAttempt[];
     plan: AgentRunPlan | null;
+    decision: AgentRunDecision | null;
     batches: AgentRunBatch[];
     receipts: AgentRunReceipt[];
     renders: AgentRunArtifact[];

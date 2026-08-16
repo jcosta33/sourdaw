@@ -7,6 +7,7 @@ import {
     type AgentRunBatch,
     type AgentRunBudgetAttempt,
     type AgentRunBudgets,
+    type AgentRunDecision,
     type AgentRunError,
     type AgentRunGrants,
     type AgentRunPlan,
@@ -171,6 +172,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
         budgetAttempts: [],
         plan: null,
+        decision: null,
         batches: [],
         receipts: [],
         renders: [],
@@ -271,6 +273,13 @@ function recordAgentRunPlan(input: {
                     scope: input.scope,
                 })
         ),
+    }));
+}
+
+function recordAgentRunDecision(input: { runId: string; decision: AgentRunDecision; recordedAt?: number }): AgentRun {
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
+        ...run,
+        decision: structuredClone(input.decision),
     }));
 }
 
@@ -796,6 +805,7 @@ export const agentRunLifecycle = {
     recordError: recordAgentRunError,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
+    recordDecision: recordAgentRunDecision,
     recordProviderUsage: recordAgentRunProviderUsage,
     reconcileBudgetAttempt: reconcileAgentRunBudgetAttempt,
     reserveBudget: reserveAgentRunBudget,
