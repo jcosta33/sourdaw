@@ -1,0 +1,47 @@
+crates/daw-dsp/src/grinder/engine.rs
+  s_ab5443e65c7fba::t_2f6d16c179042b 233-243
+  s_ab5443e65c7fba::t_bebeb1ec19a173 1292-1357
+  s_ab5443e65c7fba::t_072cd52b44158d 283
+  s_ab5443e65c7fba::t_8d38f901901bcd 272-282
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_22e69307a106a1 1,857,978-1028
+crates/daw-dsp/src/grinder/cabinet.rs
+  s_ab5443e65c7fba::t_7f41c360eb8d53 337-340,342-344
+  s_ab5443e65c7fba::t_110abf64f9d484 8-13
+  s_ab5443e65c7fba::t_667c2b1f66c4fc 454-458,465-474,476-480
+crates/daw-dsp/src/grand_boule/midi2.rs
+  s_ab5443e65c7fba::t_f16d976aa44aa5 117-123
+  s_ab5443e65c7fba::t_02408e68d3b855 379-382,384,388
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_ab5443e65c7fba::t_511867207ba764 8-15
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_22e69307a106a1 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_22e69307a106a1 1,857,978-1028
+crates/daw-dsp/src/grand_boule/voice.rs
+  s_ab5443e65c7fba::t_b7d234d505a19e 206-213
+  s_ab5443e65c7fba::t_312ff4d5cfd5c9 618-621
+  s_ab5443e65c7fba::t_cd803f39371320 15
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_22e69307a106a1 1,38,159-209
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_ab5443e65c7fba::t_0027a477dd90af 172-175,179-183,186-190
+  s_ab5443e65c7fba::t_e5087ef8e2a7a7 857-876,878,883-885,887
+  s_ab5443e65c7fba::t_5dd4b0086e023d 877,881-882,886
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c5d170145d2c7dea1456c6304595d552af4a2fa2",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
