@@ -34,6 +34,7 @@ const { persistDevicePatchMock, persistedProjectPatches } = vi.hoisted(() => {
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioSampleRate: () => sampleRateMock(),
     getMasterAnalyser: () => null,
+    isEngineAudioAvailable: () => true,
 }));
 
 // Spied, not replaced: the panel calls it once per render of its own body, so

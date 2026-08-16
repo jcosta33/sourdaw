@@ -7,15 +7,22 @@
  */
 import { useRef, useEffect, useState } from 'react';
 
-import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
+import { getMasterAnalyser, getAudioSampleRate, isEngineAudioAvailable } from '#/modules/AudioEngine/useCases';
 
 /**
  * Whether the panel has a working spectrum tap.
  *
  * `unavailable` is a real, displayable state: without it a dead tap looks
  * exactly like a working analyser on a silent master, and the user is left
- * reading an empty spectrum as a mix result. It is also the starting state —
- * the tap is `active` from its first delivered frame onwards, never before.
+ * reading an empty spectrum as a mix result.
+ *
+ * It is decided once, at mount, from the engine's own availability. Connecting
+ * the tap cannot decide it — `AudioNode.connect` throws only for a cross-context
+ * destination or an out-of-range port, neither of which this call can produce,
+ * so it succeeds on the fallback shim exactly as it does on a live graph. A
+ * status raised from the frame loop instead cannot decide it either: it reports
+ * `unavailable` for the first frame of every mount, which the panel renders as
+ * a flash of the dead-tap notice on a working analyser.
  */
 export type ProofAnalyserStatus = 'active' | 'unavailable';
 
@@ -42,13 +49,16 @@ export function useProofAnalyser(): {
     // rAF callback (not synchronously in the effect body) to carry the stable reference.
     const [fftData, setFftData] = useState<Float32Array<ArrayBuffer> | null>(null);
     const [tick, setTick] = useState(0);
-    const [status, setStatus] = useState<ProofAnalyserStatus>('unavailable');
-    // Bumped to re-run the connect attempt. The tap fails while the context is
-    // suspended, which is a transient condition — the panel used to stay blank
-    // until it was unmounted and rebuilt.
-    const [connectAttempt, setConnectAttempt] = useState(0);
+    // Fixed at mount: fallback mode is entered in the engine constructor and never
+    // left, so nothing later in this hook's life can change the verdict.
+    const [status] = useState<ProofAnalyserStatus>(() =>
+        isEngineAudioAvailable() && getMasterAnalyser()?.context ? 'active' : 'unavailable'
+    );
 
     useEffect(() => {
+        if (status === 'unavailable') {
+            return undefined;
+        }
         const masterAnalyser = getMasterAnalyser();
         if (!masterAnalyser?.context) {
             return undefined;
@@ -61,18 +71,7 @@ export function useProofAnalyser(): {
         analyser.smoothingTimeConstant = 0.85;
 
         // Connect: masterAnalyser output → our analyser (tapping the signal)
-        try {
-            masterAnalyser.connect(analyser);
-        } catch {
-            // Connecting throws while the context is not running. The event that
-            // makes it possible is the context changing state, so wait for that
-            // and try again instead of leaving the display permanently dead.
-            const retry = (): void => setConnectAttempt((attempt) => attempt + 1);
-            ctx.addEventListener('statechange', retry);
-            return () => {
-                ctx.removeEventListener('statechange', retry);
-            };
-        }
+        masterAnalyser.connect(analyser);
 
         analyserRef.current = analyser;
         const buf = new Float32Array(analyser.frequencyBinCount);
@@ -82,17 +81,8 @@ export function useProofAnalyser(): {
         let rafId = 0;
         let frameCount = 0;
         let initialized = false;
-        let announced = false;
         const update = () => {
             rafId = requestAnimationFrame(update);
-            // Announced from the loop rather than the effect body: `unavailable`
-            // is the starting state, so only a tap that actually runs has news,
-            // and its first frame is the evidence. A status set synchronously in
-            // an effect cascades a second render pass on every mount.
-            if (!announced) {
-                announced = true;
-                setStatus('active');
-            }
             frameCount++;
             if (frameCount % 4 !== 0) {
                 return;
@@ -124,7 +114,7 @@ export function useProofAnalyser(): {
             }
             analyserRef.current = null;
         };
-    }, [connectAttempt]);
+    }, [status]);
 
     return {
         status,

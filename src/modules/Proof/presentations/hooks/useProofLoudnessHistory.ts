@@ -14,13 +14,25 @@ import {
     PROOF_LOUDNESS_SAMPLE_INTERVAL_MS,
 } from '../../stores/proofLoudnessHistory';
 
-const NO_SAMPLES: readonly number[] = [];
-
 export function useProofLoudnessHistory(deviceId: string, momentaryLufs: number): readonly number[] {
     // The latest reading, held out of the render path: the clock decides when a
     // value is recorded, not the frame that delivered it.
     const momentaryRef = useRef(momentaryLufs);
-    const [samples, setSamples] = useState<readonly number[]>(NO_SAMPLES);
+    // Seeded from the retained window rather than empty: the graph unmounts on
+    // every desk-level switch, and starting blank until the first tick is what
+    // the module-level buffer exists to prevent.
+    const [samples, setSamples] = useState<readonly number[]>(() => readProofLoudnessHistory(deviceId));
+    const [publishedDeviceId, setPublishedDeviceId] = useState(deviceId);
+
+    if (publishedDeviceId !== deviceId) {
+        // The panel swaps device in place, so the effect below has not restarted
+        // the clock yet. Adjusting during render rather than in an effect is what
+        // keeps the previous device's history off the incoming device's graph:
+        // an effect publishes one paint too late, and the tick that would fix it
+        // is a full interval away.
+        setPublishedDeviceId(deviceId);
+        setSamples(readProofLoudnessHistory(deviceId));
+    }
 
     useEffect(() => {
         momentaryRef.current = momentaryLufs;

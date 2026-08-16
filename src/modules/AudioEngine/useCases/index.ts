@@ -67,6 +67,7 @@ export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
 export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
 export { getEngineHealth } from './engineAccess/getEngineHealth';
+export { isEngineAudioAvailable } from './engineAccess/isEngineAudioAvailable';
 export { refreshEngineRtDiagnostics } from './engineAccess/refreshEngineRtDiagnostics';
 export { getDeviceReadinessDiagnostics } from './engineAccess/getDeviceReadinessDiagnostics';
 export { resetEnginePlaybackLatencyStats } from './engineAccess/resetEnginePlaybackLatencyStats';

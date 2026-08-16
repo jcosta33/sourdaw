@@ -512,6 +512,10 @@ class AudioEngineImpl implements AudioEngine {
         return this.deviceReadinessDiagnostics.snapshot();
     }
 
+    public isAudioAvailable(): boolean {
+        return !this.fallbackMode;
+    }
+
     public getDiagnostics(): AudioEngineDiagnostics {
         const engineState = this.getState();
         const context = {
