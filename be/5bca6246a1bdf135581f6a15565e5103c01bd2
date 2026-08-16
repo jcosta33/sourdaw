@@ -1,0 +1,31 @@
+crates/daw-dsp/src/crumbs/analysis/loop_points.rs
+  s_ab5443e65c7fba::t_e34354c041f307 504-553
+  s_ab5443e65c7fba::t_be7dd84352241e 60-61,63-68,70-89,92-114
+  s_ab5443e65c7fba::t_b38862d768dadf 175-177
+  s_ab5443e65c7fba::t_0b70f0e00bd5f3 468-469
+  s_ab5443e65c7fba::t_ab8b31155de17e 433-434
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_ef7c64c99c715f 1,983-999
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_06a1e671241b48 1,152-168
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_7c9a7157b6a21b 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_03727294ab7019 1,983-999
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "be5bca6246a1bdf135581f6a15565e5103c01bd2",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
