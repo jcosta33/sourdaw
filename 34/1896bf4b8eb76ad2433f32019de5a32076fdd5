@@ -1,0 +1,84 @@
+src/modules/Arrangement/useCases/timeOperations/timeOperationDependencies.ts
+  s_ab5443e65c7fba::t_9ee584b533fa8a 87-88
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_ab5443e65c7fba::t_0c0382ecf0bb60 1480-1482,1485-1487
+  s_ab5443e65c7fba::t_9b165685a07f72 1560-1564
+  s_ab5443e65c7fba::t_61e0fa216a3118 614-691
+  s_ab5443e65c7fba::t_c6d70873977eaf 1483-1484
+  s_ab5443e65c7fba::t_fecf2074fac6b3 1365
+  s_ab5443e65c7fba::t_6e506b3f3133fe 1537
+  s_ab5443e65c7fba::t_9d00b39ae22ef0 1596-1602
+  s_ab5443e65c7fba::t_6abd7e70eab455 6,11
+  s_ab5443e65c7fba::t_d8757063c8de35 1438,1442
+  s_ab5443e65c7fba::t_02fdf748bef79f 9
+  s_ab5443e65c7fba::t_3d0e5623a4c88d 1400
+  s_ab5443e65c7fba::t_03f59c61fc00ca 1378-1379
+  s_ab5443e65c7fba::t_3039bbdd73f59e 1557-1559,1565-1566
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_ab5443e65c7fba::t_b4e61fa2cdc40e 62-70
+  s_ab5443e65c7fba::t_e9d493ce920188 865
+  s_ab5443e65c7fba::t_cfa90aa68cf829 206-208,214,224-226,235
+  s_ab5443e65c7fba::t_01c4ff34516ba7 837-843,849-850
+  s_ab5443e65c7fba::t_4f77124779c39c 37
+  s_ab5443e65c7fba::t_20c20d201551c1 695-697
+  s_ab5443e65c7fba::t_eb35cb49226cc8 7
+  s_ab5443e65c7fba::t_93056c5c6f55ac 669-672
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_ab5443e65c7fba::t_d319b2d2c47b30 290
+  s_ab5443e65c7fba::t_48e985fb67c2f7 315
+src/modules/Arrangement/useCases/clip/__tests__/removeClipSatelliteData.spec.ts
+  s_ab5443e65c7fba::t_9a3293d64ac40c 1-119
+  s_ab5443e65c7fba::t_1c5504c8c32177 120-125
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  s_ab5443e65c7fba::t_b1bf9e490c7eb0 1-88
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeClipSatellites.spec.ts
+  s_ab5443e65c7fba::t_fcb12044621d39 1-293
+src/modules/Arrangement/useCases/clip/removeClipSatelliteData.ts
+  s_ab5443e65c7fba::t_25ae07b200294f 1-38,46-72
+  s_ab5443e65c7fba::t_a9460de9f3c3c5 39-45
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_ab5443e65c7fba::t_9ffa5a53987073 1055
+src/modules/Arrangement/useCases/timeOperations/__tests__/executeUndoableDuplicateTimeRange.spec.ts
+  s_ab5443e65c7fba::t_db012e0b8e712d 15
+src/modules/Arrangement/useCases/timeOperations/createUndoableGlobalTimeOperation.ts
+  s_ab5443e65c7fba::t_a2a6dd7ee600ff 37
+src/modules/Arrangement/useCases/clip/removeClip.ts
+  s_ab5443e65c7fba::t_173fe8d988cbd2 5,11-14
+  s_ab5443e65c7fba::t_5677e6324d97e1 4
+src/modules/Arrangement/useCases/timeOperations/prepareClipSatelliteStateRestore.ts
+  s_ab5443e65c7fba::t_9d8c36858f09d5 240-241,244-246,250
+  s_ab5443e65c7fba::t_fb033c1e28d718 87-88,91-93,103-107,109
+  s_ab5443e65c7fba::t_78553b5fb65174 1-7,16,23-24,33-38,82-83,94,116-117,120-122,126-129,134-138,145-146,150,191,197,209,231-232,264-266
+  s_ab5443e65c7fba::t_40ce1e089f3638 12
+  s_ab5443e65c7fba::t_d6af5d2aa30679 284
+  s_ab5443e65c7fba::t_8692f0ff31d3e6 8-11,13-15,17-22,25-32,39-81,84-86,89-90,95-102,108,110-115,118-119,123-125,139-144,147-149,151-190,192-196,198-208,210-230,233-239,242-243,247-249,251-263,267-283,285-291,293-301
+  s_ab5443e65c7fba::t_9c7f9e6a7e24d7 292
+  s_ab5443e65c7fba::t_c9548c5d570734 130-133
+src/modules/Automation/useCases/automation/__tests__/prepareAutomationTimeOperation.spec.ts
+  s_ab5443e65c7fba::t_d5e63f35d7cc6f 160-198
+src/modules/Arrangement/useCases/timeOperations/__tests__/executeUndoableInsertTime.spec.ts
+  s_ab5443e65c7fba::t_ded9e516905118 15
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_ab5443e65c7fba::t_819e26a9a27311 297
+src/modules/Automation/useCases/automation/prepareAutomationTimeOperation.ts
+  s_ab5443e65c7fba::t_cc34b7ed21c89c 165-182,186,202-206,210,323
+  s_ab5443e65c7fba::t_6ce3567db56e2a 28-34
+  s_ab5443e65c7fba::t_a28b26ea1e2f65 396-401
+  s_ab5443e65c7fba::t_8eb01b53e7942f 295-296,317-322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "341896bf4b8eb76ad2433f32019de5a32076fdd5",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
