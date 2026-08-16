@@ -52,6 +52,7 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import { getAgentPlanProposalIdentity } from '../transformers/normalizeAgentPlanProposal';
 
+import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
@@ -71,6 +72,7 @@ import { createModelProviderProtocol } from './modelProviderProtocol';
 import { planAgentRun } from './planAgentRun';
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { planPromptActions } from './planPromptActions';
+import { recordAgentRunReceiptSaga } from './recordAgentRunReceiptSaga';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
@@ -124,10 +126,6 @@ type AgentApplyReceipt = Extract<
     { status: 'committed' | 'executed' }
 >['receipt'];
 
-function getAgentRunReceiptIdentity(receipt: NonNullable<AgentApplyReceipt>): string {
-    return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
-}
-
 const AGENT_RUN_PERSISTENCE_WARNING =
     'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 const AGENT_RUN_STALE_COMPLETION_WARNING =
@@ -136,18 +134,17 @@ const AGENT_RUN_STALE_COMPLETION_WARNING =
 function tryRecordCommittedAgentRunWork(input: {
     runId: string;
     receipt: NonNullable<AgentApplyReceipt>;
+    actions: Parameters<typeof recordAgentRunReceiptSaga>[0]['actions'];
     revertGroupId?: string;
     committedRevision?: string;
     completesRun?: boolean;
 }): string | null {
     try {
-        agentRunLifecycle.recordCommittedWork({
+        recordAgentRunReceiptSaga({
             runId: input.runId,
-            workId: input.receipt.batchId,
-            receiptIdentity: getAgentRunReceiptIdentity(input.receipt),
+            receipt: input.receipt,
+            actions: input.actions,
             ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
-            renderJobIds: input.receipt.links.render.map((link) => link.jobId),
-            analysisIds: input.receipt.links.analysis.map((link) => link.analysisId),
             ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
             ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
         });
@@ -868,13 +865,19 @@ export async function sendChatMessage(
                         });
                         agentRunLifecycle.recordError({
                             runId,
-                            error: {
-                                code: 'confirmation-not-retained',
-                                message: reason,
-                                occurredAt: Date.now(),
-                                retriable: true,
-                                workId: parsedCommandBatch.envelope.batchId,
-                            },
+                            error: normalizeAgentFailure({
+                                category: 'budget',
+                                source: 'command-execution',
+                                related: {
+                                    targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
+                                    commandIds: parsedCommandBatch.envelope.commands.map(
+                                        (command) => command.commandId
+                                    ),
+                                    workIds: [parsedCommandBatch.envelope.batchId],
+                                },
+                                retry: 'never',
+                                knownDomain: true,
+                            }),
                             terminal: true,
                         });
                         updateChatMessage(assistantMsgId, {
@@ -980,6 +983,7 @@ export async function sendChatMessage(
                     const runPersistenceWarning = tryRecordCommittedAgentRunWork({
                         runId,
                         receipt: execution.receipt,
+                        actions: result.actions,
                         revertGroupId: commandGroup.groupId,
                         committedRevision: captureProjectRevision(),
                         completesRun: commandLeaseSettlement.accepted,
@@ -1021,6 +1025,7 @@ export async function sendChatMessage(
                     const runPersistenceWarning = tryRecordCommittedAgentRunWork({
                         runId,
                         receipt: execution.receipt,
+                        actions: result.actions,
                         completesRun: commandLeaseSettlement.accepted,
                     });
                     if (runPersistenceWarning) {
@@ -1095,13 +1100,19 @@ export async function sendChatMessage(
                     if (commandLeaseSettlement.accepted) {
                         agentRunLifecycle.recordError({
                             runId,
-                            error: {
-                                code: 'ambiguous-command-outcome',
-                                message: execution.reason,
-                                occurredAt: Date.now(),
-                                retriable: false,
-                                workId: parsedCommandBatch.envelope.batchId,
-                            },
+                            error: normalizeAgentFailure({
+                                category: 'conflict',
+                                source: 'command-execution',
+                                related: {
+                                    targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
+                                    commandIds: parsedCommandBatch.envelope.commands.map(
+                                        (command) => command.commandId
+                                    ),
+                                    workIds: [parsedCommandBatch.envelope.batchId],
+                                },
+                                compensation: 'manual-repair',
+                                knownDomain: true,
+                            }),
                             terminal: true,
                         });
                     }
@@ -1121,26 +1132,27 @@ export async function sendChatMessage(
                 if (commandLeaseSettlement.accepted) {
                     agentRunLifecycle.recordError({
                         runId,
-                        error: {
-                            code: 'command-execution-failed',
-                            message: execution.reason,
-                            occurredAt: Date.now(),
-                            retriable: false,
-                            workId: parsedCommandBatch.envelope.batchId,
-                        },
+                        error: normalizeAgentFailure({
+                            category: 'project',
+                            source: 'command-execution',
+                            related: {
+                                targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
+                                commandIds: parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+                                workIds: [parsedCommandBatch.envelope.batchId],
+                            },
+                            knownDomain: true,
+                        }),
                         terminal: true,
                     });
                 }
             } else if (result.rejectionReason) {
                 agentRunLifecycle.recordError({
                     runId,
-                    error: {
-                        code: 'planning-rejected',
-                        message: result.rejectionReason,
-                        occurredAt: Date.now(),
-                        retriable: false,
-                        workId: null,
-                    },
+                    error: normalizeAgentFailure({
+                        category: /schema/i.test(result.rejectionReason) ? 'schema' : 'resolution',
+                        source: 'provider-planning',
+                        knownDomain: true,
+                    }),
                     terminal: true,
                 });
                 appendChatMessage({
@@ -1192,13 +1204,11 @@ export async function sendChatMessage(
                 trySettleAgentRunWorkLease(providerLease, 'failed');
                 agentRunLifecycle.recordError({
                     runId,
-                    error: {
-                        code: 'prompt-run-failed',
-                        message: reason,
-                        occurredAt: Date.now(),
-                        retriable: false,
-                        workId: null,
-                    },
+                    error: normalizeAgentFailure({
+                        category: 'internal',
+                        source: 'provider-planning',
+                        knownDomain: false,
+                    }),
                     terminal: true,
                 });
             }
@@ -1368,13 +1378,12 @@ export async function sendChatMessage(
         if (budgetReservation.status === 'hard-limit-reached') {
             agentRunLifecycle.recordError({
                 runId,
-                error: {
-                    code: 'agent-budget-hard-limit',
-                    message: `The ${budgetReservation.reason} budget would be exceeded before provider work starts.`,
-                    occurredAt: Date.now(),
-                    retriable: false,
-                    workId: providerWorkId,
-                },
+                error: normalizeAgentFailure({
+                    category: 'budget',
+                    source: 'provider-planning',
+                    related: { workIds: [providerWorkId] },
+                    knownDomain: true,
+                }),
                 terminal: true,
             });
             throw createAiRuntimeError('The agent budget limit was reached before work started.');
@@ -1696,13 +1705,12 @@ export async function sendChatMessage(
         } else {
             agentRunLifecycle.recordError({
                 runId,
-                error: {
-                    code: 'provider-stream-failed',
-                    message: errorMessage,
-                    occurredAt: Date.now(),
-                    retriable: true,
-                    workId: null,
-                },
+                error: normalizeAgentFailure({
+                    category: 'provider',
+                    source: 'provider-planning',
+                    retry: 'read-only',
+                    knownDomain: false,
+                }),
                 terminal: true,
             });
             const parsed = thinkParser.snapshot();

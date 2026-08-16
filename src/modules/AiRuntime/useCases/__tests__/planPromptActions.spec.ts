@@ -60,6 +60,59 @@ describe('planPromptActions', () => {
         expect(result.result.actions).toEqual([]);
     });
 
+    it('does not start a model correction without application-owned attempt admission', async () => {
+        mocks.captureProjectRevision.mockReturnValue('rev-1');
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [],
+            raw: 'rejected',
+            rejectionReason: 'The proposed action schema is invalid.',
+        });
+        const callsBeforePlanning = mocks.parsePromptToActions.mock.calls.length;
+
+        const result = await planPromptActions({ prompt: 'do something' });
+
+        expect(result.result.rejectionReason).toBe('The proposed action schema is invalid.');
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(callsBeforePlanning + 1);
+    });
+
+    it('runs one admitted correction and retains the validation failure as durable run evidence', async () => {
+        const randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000003');
+        mocks.captureProjectRevision.mockReturnValue('rev-1');
+        mocks.parsePromptToActions
+            .mockResolvedValueOnce({
+                actions: [],
+                raw: 'rejected',
+                rejectionReason: 'The proposed action schema is invalid.',
+            })
+            .mockResolvedValueOnce({ actions: [{ type: 'testAction' }], raw: 'corrected' });
+        const callsBeforePlanning = mocks.parsePromptToActions.mock.calls.length;
+
+        try {
+            const result = await planPromptActions({
+                prompt: 'do something',
+                onProviderAttempt: () => ({ status: 'admitted' }),
+            });
+
+            expect(result.result.actions).toHaveLength(1);
+        } finally {
+            randomUuid.mockRestore();
+        }
+
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(callsBeforePlanning + 2);
+        expect(agentRunLifecycle.get('agent-run-00000000-0000-0000-0000-000000000003')).toMatchObject({
+            phase: 'completed',
+            errors: [
+                expect.objectContaining({
+                    code: 'agent.schema',
+                    category: 'schema',
+                    related: expect.objectContaining({
+                        workIds: ['planning:agent-run-00000000-0000-0000-0000-000000000003'],
+                    }),
+                }),
+            ],
+        });
+    });
+
     it('terminalizes an auto-created run as cancelled before pre-aborted planning can complete it', async () => {
         const randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
         mocks.captureProjectRevision.mockReturnValue('rev-1');

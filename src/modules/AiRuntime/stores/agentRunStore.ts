@@ -7,6 +7,7 @@ import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
     AGENT_RUN_PHASES,
     AGENT_RUN_SCHEMA_VERSION,
+    AGENT_RUN_ERROR_CATEGORIES,
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
@@ -18,6 +19,8 @@ import {
     type AgentRunProviderUsage,
     type AgentRunReceipt,
     type AgentRunRetriableWork,
+    type AgentRunSaga,
+    type AgentRunSagaStep,
     type AgentRunState,
     type AgentRunTemporaryAsset,
     type AgentRunWorkLease,
@@ -317,7 +320,121 @@ function readError(value: unknown): AgentRunError | null {
     ) {
         return null;
     }
-    return { code, message, occurredAt, retriable: value.retriable, workId };
+    const category = AGENT_RUN_ERROR_CATEGORIES.find((candidate) => candidate === value.category);
+    const related = isRecord(value.related)
+        ? {
+              targetIds: readStringArray(value.related.targetIds),
+              commandIds: readStringArray(value.related.commandIds),
+              workIds: readStringArray(value.related.workIds),
+              receiptIdentities: readStringArray(value.related.receiptIdentities),
+              artifactIds: readStringArray(value.related.artifactIds),
+          }
+        : null;
+    const remediation = isRecord(value.remediation) ? value.remediation : null;
+    const cause = isRecord(value.cause) ? value.cause : null;
+    const extended =
+        category !== undefined &&
+        related !== null &&
+        related.targetIds !== null &&
+        related.commandIds !== null &&
+        related.workIds !== null &&
+        related.receiptIdentities !== null &&
+        related.artifactIds !== null &&
+        remediation !== null &&
+        (['never', 'read-only', 'owner-proven-idempotent'] as const).some(
+            (candidate) => candidate === remediation.retry
+        ) &&
+        (['none', 'review-scope', 'resolve-conflict', 'retry-later', 'manual-repair', 'reconfigure'] as const).some(
+            (candidate) => candidate === remediation.userAction
+        ) &&
+        (['not-needed', 'available', 'attempted', 'completed', 'uncompensated', 'manual-repair'] as const).some(
+            (candidate) => candidate === remediation.compensation
+        ) &&
+        cause !== null &&
+        (cause.kind === 'known-domain' || cause.kind === 'unknown-internal') &&
+        readString(cause.source) !== null;
+    return {
+        code,
+        message,
+        occurredAt,
+        retriable: value.retriable,
+        workId,
+        ...(extended
+            ? {
+                  category,
+                  related: related as NonNullable<AgentRunError['related']>,
+                  remediation: remediation as NonNullable<AgentRunError['remediation']>,
+                  cause: { kind: cause.kind, source: cause.source as string } as NonNullable<AgentRunError['cause']>,
+              }
+            : {}),
+    };
+}
+
+function readSagaStep(value: unknown): AgentRunSagaStep | null {
+    if (!isRecord(value) || !isRecord(value.compensation)) {
+        return null;
+    }
+    const stepId = readString(value.stepId);
+    const workId = readString(value.workId);
+    const receiptIdentity = readNullableString(value.receiptIdentity);
+    const updatedAt = readTimestamp(value.updatedAt);
+    const relatedArtifactIds = readStringArray(value.relatedArtifactIds);
+    const order = readNonNegativeInteger(value.order);
+    const owners: AgentRunSagaStep['owner'][] = [
+        'provider',
+        'command',
+        'render',
+        'analysis',
+        'import',
+        'external-effect',
+    ];
+    const states: AgentRunSagaStep['state'][] = [
+        'pending',
+        'external-pending',
+        'committed',
+        'compensated',
+        'uncompensated',
+        'manual-repair',
+    ];
+    const lastError = readNullableString(value.compensation.lastError);
+    const attempts = readNonNegativeInteger(value.compensation.attempts);
+    if (
+        stepId === null ||
+        workId === null ||
+        receiptIdentity === undefined ||
+        updatedAt === null ||
+        relatedArtifactIds === null ||
+        order === null ||
+        attempts === null ||
+        lastError === undefined ||
+        typeof value.compensation.available !== 'boolean' ||
+        !owners.some((owner) => owner === value.owner) ||
+        !states.some((state) => state === value.state)
+    ) {
+        return null;
+    }
+    return {
+        stepId,
+        order,
+        owner: value.owner as AgentRunSagaStep['owner'],
+        workId,
+        receiptIdentity,
+        state: value.state as AgentRunSagaStep['state'],
+        compensation: { available: value.compensation.available, attempts, lastError },
+        relatedArtifactIds,
+        updatedAt,
+    };
+}
+
+function readSaga(value: unknown): AgentRunSaga | null {
+    if (value === undefined) {
+        return { schemaVersion: 1, steps: [] };
+    }
+    if (!isRecord(value) || value.schemaVersion !== 1) {
+        return null;
+    }
+    const steps = readCollection(value.steps, readSagaStep);
+    return steps === null ? null : { schemaVersion: 1, steps };
 }
 
 function readCommittedWork(value: unknown): AgentRunCommittedWork | null {
@@ -1103,6 +1220,7 @@ function readAgentRun(value: unknown): AgentRun | null {
             : { requestedRoute, selectedRouteId };
     })();
     const errors = readCollection(value.errors, readError);
+    const saga = readSaga(value.saga);
     const committedWork = readCollection(value.committedWork, readCommittedWork);
     const retriableWork = readCollection(value.retriableWork, readRetriableWork);
     const temporaryAssets = readCollection(value.temporaryAssets, readTemporaryAsset);
@@ -1149,6 +1267,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         modelRoute === null ||
         providerUsage === null ||
         errors === null ||
+        saga === null ||
         committedWork === null ||
         retriableWork === null ||
         temporaryAssets === null ||
@@ -1213,6 +1332,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         modelRoute,
         providerUsage,
         errors,
+        saga,
         cancellation: {
             generation: cancellationGeneration,
             requestedAt,
