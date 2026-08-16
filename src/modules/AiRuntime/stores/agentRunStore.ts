@@ -843,6 +843,8 @@ function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefin
         : null;
     const reason = readString(value.reason);
     const selectedAlternativeId = readNullableString(value.selectedAlternativeId);
+    // A persisted decision from before resumptions were leased was not claimed.
+    const resumeAttemptId = value.resumeAttemptId === undefined ? null : readNullableString(value.resumeAttemptId);
     const targetIds = readStringArray(value.scope.targetIds);
     const targetRanges = readRanges(value.scope.targetRanges);
     const protectedTargetIds = readStringArray(value.scope.protectedTargetIds);
@@ -884,6 +886,7 @@ function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefin
         revision === null ||
         reason === null ||
         selectedAlternativeId === undefined ||
+        resumeAttemptId === undefined ||
         targetIds === null ||
         targetRanges === null ||
         protectedTargetIds === null ||
@@ -916,6 +919,7 @@ function readAgentRunDecision(value: unknown): AgentRunDecision | null | undefin
         alternatives,
         reason,
         selectedAlternativeId,
+        resumeAttemptId,
     };
 }
 
@@ -1050,6 +1054,7 @@ function readAgentRun(value: unknown): AgentRun | null {
                       alternatives: [selectedAlternative],
                       reason: 'resume',
                       selectedAlternativeId,
+                      resumeAttemptId: null,
                   });
                   const alternative = parsedDecision?.alternatives[0];
                   return parsedDecision === null ||

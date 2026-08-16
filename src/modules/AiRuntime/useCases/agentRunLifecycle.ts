@@ -743,9 +743,36 @@ function requireAgentRunManualResume(input: {
     });
 }
 
+function claimAgentRunDecisionResume(input: { runId: string; attemptId: string; claimedAt?: number }): AgentRun {
+    assertNonEmpty(input.attemptId, 'attemptId');
+    return updateAgentRun(input.runId, input.claimedAt ?? Date.now(), (run) => {
+        if (run.phase !== 'paused' || run.cancellation.requestedAt !== null || run.decision === null) {
+            throw new Error('Agent run has no resumable decision.');
+        }
+        if (run.decision.selectedAlternativeId !== null || run.decision.resumeAttemptId !== null) {
+            throw new Error('Agent run decision was already consumed or claimed.');
+        }
+        return { ...run, decision: { ...run.decision, resumeAttemptId: input.attemptId } };
+    });
+}
+
+function releaseAgentRunDecisionResumeClaim(input: {
+    runId: string;
+    attemptId: string;
+    releasedAt?: number;
+}): AgentRun {
+    return updateAgentRun(input.runId, input.releasedAt ?? Date.now(), (run) => {
+        if (run.decision?.resumeAttemptId !== input.attemptId || run.decision.selectedAlternativeId !== null) {
+            return run;
+        }
+        return { ...run, decision: { ...run.decision, resumeAttemptId: null } };
+    });
+}
+
 function selectAgentRunDecisionAlternative(input: {
     runId: string;
     alternativeId: string;
+    attemptId?: string;
     selectedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.selectedAt ?? Date.now(), (run) => {
@@ -755,12 +782,19 @@ function selectAgentRunDecisionAlternative(input: {
         if (run.decision.selectedAlternativeId !== null) {
             throw new Error('Agent run decision was already consumed.');
         }
+        if (
+            input.attemptId === undefined
+                ? run.decision.resumeAttemptId !== null
+                : run.decision.resumeAttemptId !== input.attemptId
+        ) {
+            throw new Error('Agent run decision is not claimed by this replacement attempt.');
+        }
         if (!run.decision.alternatives.some((alternative) => alternative.id === input.alternativeId)) {
             throw new Error('Agent run decision alternative is unavailable.');
         }
         return {
             ...run,
-            decision: { ...run.decision, selectedAlternativeId: input.alternativeId },
+            decision: { ...run.decision, selectedAlternativeId: input.alternativeId, resumeAttemptId: null },
             manualResume: { required: false, reason: null, workIds: [], requiredAt: null },
         };
     });
@@ -821,6 +855,7 @@ export const agentRunLifecycle = {
     acknowledgeCancellation: acknowledgeAgentRunCancellation,
     cancel: cancelAgentRun,
     clear: clearAgentRuns,
+    claimDecisionResume: claimAgentRunDecisionResume,
     create: createAgentRun,
     get: getAgentRun,
     forgetTemporaryAsset: forgetAgentRunTemporaryAsset,
@@ -837,6 +872,7 @@ export const agentRunLifecycle = {
     reserveBudget: reserveAgentRunBudget,
     reserveBudgetBatch: reserveAgentRunBudgetBatch,
     selectDecisionAlternative: selectAgentRunDecisionAlternative,
+    releaseDecisionResumeClaim: releaseAgentRunDecisionResumeClaim,
     releaseTemporaryAsset: releaseAgentRunTemporaryAsset,
     prepareTemporaryAssetCleanup: prepareAgentRunTemporaryAssetCleanup,
     registerTemporaryAsset: registerAgentRunTemporaryAsset,

@@ -3,6 +3,7 @@ import { type AgentRunError, type AgentRunPhase } from '../models/AgentRun';
 import { readAgentRunState } from '../stores/agentRunStore';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { getAgentRunDecisionResumeAdmission } from './getAgentRunDecisionResumeAdmission';
 import { resumeAgentRunDecision } from './resumeAgentRunDecision';
 
 type AgentRunControlProjection = {
@@ -21,6 +22,7 @@ type AgentRunControlProjection = {
         retryWorkIds: string[];
     };
     manualResumeReason: string | null;
+    resumeRejectionReason: string | null;
     committedReceipts: Array<{
         workId: string;
         receiptIdentity: string;
@@ -63,14 +65,7 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
                 )
         )
         .map((work) => work.workId);
-    const canResumeDecision =
-        run.phase === 'paused' &&
-        run.cancellation.requestedAt === null &&
-        run.decision !== null &&
-        run.decision.selectedAlternativeId === null &&
-        run.decision.alternatives.length > 0 &&
-        JSON.stringify(run.decision.scope) === JSON.stringify(run.scope) &&
-        JSON.stringify(run.decision.grants) === JSON.stringify(run.grants);
+    const resumeAdmission = getAgentRunDecisionResumeAdmission(run);
     return {
         runId: run.runId,
         schemaVersion: run.schemaVersion,
@@ -83,10 +78,11 @@ function getAgentRunControlProjection(runId: string): AgentRunControlProjection 
         },
         allowedActions: {
             cancel: !TERMINAL_PHASES.has(run.phase),
-            resume: canResumeDecision,
+            resume: resumeAdmission.status === 'admitted',
             retryWorkIds,
         },
         manualResumeReason: run.manualResume.reason,
+        resumeRejectionReason: resumeAdmission.status === 'rejected' ? resumeAdmission.reason : null,
         committedReceipts: run.committedWork.map((work) => ({
             workId: work.workId,
             receiptIdentity: work.receiptIdentity,

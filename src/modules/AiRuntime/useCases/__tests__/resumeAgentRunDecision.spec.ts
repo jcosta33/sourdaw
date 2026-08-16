@@ -3,9 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const { resumeSend } = vi.hoisted(() => ({
-    resumeSend: vi
-        .fn()
-        .mockImplementation(async (_request, options) => options.onResumedRunAdmitted('run-decision-resume-attempt')),
+    resumeSend: vi.fn().mockImplementation(async (_request, options) => {
+        options.onResumedRunAdmitted('run-decision-resume-attempt');
+        options.onResumedPlanAccepted();
+    }),
 }));
 
 vi.mock('../sendChatMessage', () => ({ sendChatMessage: resumeSend }));
@@ -56,6 +57,7 @@ function createPendingDecision(input?: {
             alternatives: [{ id: 'mute', label: 'Mute Bass', changesAuthority: false }],
             reason: 'Choose the bounded interpretation.',
             selectedAlternativeId: null,
+            resumeAttemptId: null,
         },
     });
     agentRunLifecycle.requireManualResume({
@@ -130,5 +132,17 @@ describe('resumeAgentRunDecision', () => {
 
         expect(resumeSend).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get('run-decision-resume')?.decision?.selectedAlternativeId).toBeNull();
+    });
+
+    it('admits only one concurrent replacement attempt for a pending decision', async () => {
+        createPendingDecision();
+        resumeSend.mockImplementation(() => new Promise(() => undefined));
+
+        void agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' });
+        void agentRunControls.resumeDecision({ runId: 'run-decision-resume', alternativeId: 'mute' });
+        await Promise.resolve();
+
+        expect(resumeSend).toHaveBeenCalledTimes(1);
+        expect(agentRunControls.get('run-decision-resume')?.allowedActions.resume).toBe(false);
     });
 });

@@ -362,6 +362,7 @@ describe('planAgentRun', () => {
                 ],
                 reason: 'The alternatives change authority.',
                 selectedAlternativeId: null,
+                resumeAttemptId: null,
             },
         });
         agentRunLifecycle.requireManualResume({

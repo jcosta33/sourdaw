@@ -1,29 +1,6 @@
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-
 import { agentRunLifecycle } from './agentRunLifecycle';
-import { getPlanningProviderSchemaContract } from './planningProviderSchema';
+import { getAgentRunDecisionResumeAdmission } from './getAgentRunDecisionResumeAdmission';
 import { sendChatMessage } from './sendChatMessage';
-
-function hasRemainingBudget(run: {
-    budgets: { limits: Record<string, number>; consumed: Record<string, number> };
-}): boolean {
-    return Object.entries(run.budgets.limits).every(
-        ([category, limit]) => (run.budgets.consumed[category] ?? 0) < limit
-    );
-}
-
-function hasSameBoundAuthority(run: {
-    scope: unknown;
-    grants: unknown;
-    budgets: unknown;
-    decision: { scope: unknown; grants: unknown; budgets: unknown };
-}): boolean {
-    return (
-        JSON.stringify(run.scope) === JSON.stringify(run.decision.scope) &&
-        JSON.stringify(run.grants) === JSON.stringify(run.decision.grants) &&
-        JSON.stringify(run.budgets) === JSON.stringify(run.decision.budgets)
-    );
-}
 
 export async function resumeAgentRunDecision(input: {
     runId: string;
@@ -33,37 +10,34 @@ export async function resumeAgentRunDecision(input: {
     | { status: 'rejected'; reason: string }
 > {
     const run = agentRunLifecycle.get(input.runId);
-    if (
-        run === null ||
-        run.phase !== 'paused' ||
-        run.cancellation.requestedAt !== null ||
-        run.decision === null ||
-        run.decision.selectedAlternativeId !== null
-    ) {
-        return { status: 'rejected', reason: 'The pending decision is unavailable or already consumed.' };
-    }
-    const decision = run.decision;
-    if (captureProjectRevision() !== decision.revision) {
-        return { status: 'rejected', reason: 'The project revision changed while the decision was pending.' };
-    }
-    if (!hasSameBoundAuthority({ ...run, decision })) {
+    const admission = getAgentRunDecisionResumeAdmission(run);
+    if (run === null || admission.status === 'rejected') {
         return {
             status: 'rejected',
-            reason: 'The persisted decision authority or budget state no longer matches this run.',
+            reason:
+                admission.status === 'rejected'
+                    ? admission.reason
+                    : 'The pending decision is unavailable or already consumed.',
         };
     }
-    if (!hasRemainingBudget(run)) {
-        return { status: 'rejected', reason: 'The remaining agent budget cannot admit another planning attempt.' };
-    }
-    if (getPlanningProviderSchemaContract().identity !== decision.capabilitySchemaIdentity) {
-        return { status: 'rejected', reason: 'The provider capability schema changed while the decision was pending.' };
-    }
+    const decision = admission.decision;
     const selectedAlternative = decision.alternatives.find((alternative) => alternative.id === input.alternativeId);
     if (!selectedAlternative) {
         return { status: 'rejected', reason: 'The selected decision alternative is unavailable.' };
     }
 
+    const attemptId = `decision-resume-${crypto.randomUUID()}`;
+    try {
+        agentRunLifecycle.claimDecisionResume({ runId: run.runId, attemptId });
+    } catch (error) {
+        return {
+            status: 'rejected',
+            reason: error instanceof Error ? error.message : 'The pending decision could not be reserved.',
+        };
+    }
+
     let resumedRunId: string | null = null;
+    let resumedPlanAccepted = false;
     try {
         await sendChatMessage(run.request, {
             mode: run.mode,
@@ -83,14 +57,18 @@ export async function resumeAgentRunDecision(input: {
                 budgets: run.budgets,
             },
             onResumedRunAdmitted: (newRunId) => {
+                resumedRunId = newRunId;
+            },
+            onResumedPlanAccepted: () => {
                 agentRunLifecycle.selectDecisionAlternative({
                     runId: run.runId,
                     alternativeId: selectedAlternative.id,
+                    attemptId,
                 });
-                resumedRunId = newRunId;
+                resumedPlanAccepted = true;
             },
         });
-        if (resumedRunId === null) {
+        if (resumedRunId === null || !resumedPlanAccepted) {
             return { status: 'rejected', reason: 'The replacement planning attempt was not admitted.' };
         }
         return {
@@ -105,5 +83,9 @@ export async function resumeAgentRunDecision(input: {
             status: 'rejected',
             reason: error instanceof Error ? error.message : 'The pending decision could not resume.',
         };
+    } finally {
+        if (!resumedPlanAccepted) {
+            agentRunLifecycle.releaseDecisionResumeClaim({ runId: run.runId, attemptId });
+        }
     }
 }

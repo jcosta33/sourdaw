@@ -128,6 +128,61 @@ export function extractAgentPlanProposal(
     return normalizeAgentPlanProposal(proposalCalls[0]!.arguments.plan);
 }
 
+/**
+ * Canonical identity for the provider interpretation plus the application-owned
+ * authority derived from it. Resume binds this value before a replacement
+ * provider attempt and recomputes it after that attempt's shared normalization.
+ */
+export function getAgentPlanProposalIdentity(input: {
+    actions: unknown;
+    providerProposal: unknown;
+    scope: {
+        targetIds: readonly string[];
+        targetRanges: readonly { startBeat: number; endBeat: number }[];
+        protectedTargetIds: readonly string[];
+        protectedRanges: readonly { startBeat: number; endBeat: number }[];
+    };
+    grants: {
+        allowedOperationPrefixes: readonly string[];
+        create: boolean;
+        delete: boolean;
+        routing: boolean;
+        tempo: boolean;
+        master: boolean;
+        file: boolean;
+        audioUpload: boolean;
+        remoteGeneration: boolean;
+        autoCommit: boolean;
+    };
+}): string {
+    const proposal = input.providerProposal === null ? null : normalizeAgentPlanProposal(input.providerProposal);
+    if (input.providerProposal !== null && proposal === null) {
+        throw new Error('Agent plan proposal failed shared normalization.');
+    }
+    return JSON.stringify({
+        actions: input.actions,
+        providerProposal: proposal,
+        scope: {
+            targetIds: [...input.scope.targetIds],
+            targetRanges: input.scope.targetRanges.map((range) => ({ ...range })),
+            protectedTargetIds: [...input.scope.protectedTargetIds],
+            protectedRanges: input.scope.protectedRanges.map((range) => ({ ...range })),
+        },
+        grants: {
+            allowedOperationPrefixes: [...input.grants.allowedOperationPrefixes],
+            create: input.grants.create,
+            delete: input.grants.delete,
+            routing: input.grants.routing,
+            tempo: input.grants.tempo,
+            master: input.grants.master,
+            file: input.grants.file,
+            audioUpload: input.grants.audioUpload,
+            remoteGeneration: input.grants.remoteGeneration,
+            autoCommit: input.grants.autoCommit,
+        },
+    });
+}
+
 export function createDeterministicAgentPlanProposal(input: {
     objective: string;
     scope: AgentRunScope;

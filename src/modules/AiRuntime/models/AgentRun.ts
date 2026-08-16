@@ -148,6 +148,7 @@ export type AgentRunDecision = {
     alternatives: AgentRunPlanAlternative[];
     reason: string;
     selectedAlternativeId: string | null;
+    resumeAttemptId: string | null;
 };
 
 /** Typed handoff evidence for a replacement planning attempt after a user decision. */

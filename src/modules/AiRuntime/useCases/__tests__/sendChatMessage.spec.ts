@@ -21,6 +21,7 @@ import {
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
+import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -401,7 +402,7 @@ describe('sendChatMessage injectables', () => {
         expect(setChatGenerating).not.toHaveBeenCalled();
     });
 
-    it('hands a selected structured decision into a correlated replacement planning run', async () => {
+    it('rejects a correlated replacement run when provider planning omits the selected interpretation', async () => {
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -421,6 +422,9 @@ describe('sendChatMessage injectables', () => {
             remoteGeneration: false,
             autoCommit: false,
         };
+        const sourceActions = [
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: false, expectedMuted: true } },
+        ];
         agentRunLifecycle.create({
             runId: 'source-decision-run',
             request: 'Mute Track 1.',
@@ -435,7 +439,12 @@ describe('sendChatMessage injectables', () => {
             decision: {
                 decisionId: 'decision-mute-track-1',
                 capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
-                proposalIdentity: 'plan-mute-track-1',
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: sourceActions,
+                    providerProposal: null,
+                    scope,
+                    grants,
+                }),
                 budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
                 revision: 'revision-1',
                 scope,
@@ -443,6 +452,7 @@ describe('sendChatMessage injectables', () => {
                 alternatives: [{ id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false }],
                 reason: 'Choose the bounded interpretation.',
                 selectedAlternativeId: null,
+                resumeAttemptId: null,
             },
         });
         agentRunLifecycle.requireManualResume({
@@ -451,32 +461,47 @@ describe('sendChatMessage injectables', () => {
             workIds: [],
         });
 
-        const result = await agentRunControls.resumeDecision({
-            runId: 'source-decision-run',
-            alternativeId: 'mute-track-1',
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } }],
+            rawText: 'Mute Track 1.',
+            requiresConfirmation: false,
         });
 
-        expect(result).toMatchObject({
-            status: 'resumed',
-            sourceRunId: 'source-decision-run',
-            decisionId: 'decision-mute-track-1',
-            selectedAlternativeId: 'mute-track-1',
-        });
-        if (result.status !== 'resumed') {
-            throw new Error('Expected the replacement planning run to be admitted');
+        const [firstResult, secondResult] = await Promise.all([
+            agentRunControls.resumeDecision({ runId: 'source-decision-run', alternativeId: 'mute-track-1' }),
+            agentRunControls.resumeDecision({ runId: 'source-decision-run', alternativeId: 'mute-track-1' }),
+        ]);
+
+        expect(firstResult).toMatchObject({ status: 'rejected' });
+        expect(secondResult).toMatchObject({ status: 'rejected' });
+        expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(1);
+        const replacementRun = getAgentRunControlProjections().find(
+            (projection) => projection.runId !== 'source-decision-run'
+        );
+        expect(replacementRun).toBeDefined();
+        if (!replacementRun) {
+            throw new Error('Expected the replacement planning run to be retained for correlation');
         }
-        expect(getAgentRun(result.runId)).toMatchObject({
-            runId: result.runId,
+        expect(getAgentRun(replacementRun.runId)).toMatchObject({
             mode: 'plan',
             resume: {
                 sourceRunId: 'source-decision-run',
                 decisionId: 'decision-mute-track-1',
                 selectedAlternativeId: 'mute-track-1',
                 selectedAlternative: { id: 'mute-track-1', label: 'Mute Track 1', changesAuthority: false },
-                proposalIdentity: 'plan-mute-track-1',
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: sourceActions,
+                    providerProposal: null,
+                    scope,
+                    grants,
+                }),
             },
+            plan: null,
         });
-        expect(getAgentRun('source-decision-run')?.decision?.selectedAlternativeId).toBe('mute-track-1');
+        expect(getAgentRun('source-decision-run')?.decision).toMatchObject({
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        });
         expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
             'Mute Track 1.',
             expect.anything(),
@@ -484,7 +509,7 @@ describe('sendChatMessage injectables', () => {
             'revision-1',
             undefined,
             expect.any(Function),
-            expect.objectContaining({ runId: result.runId }),
+            expect.objectContaining({ runId: replacementRun.runId }),
             expect.any(Function)
         );
     });
