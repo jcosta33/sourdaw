@@ -1,0 +1,81 @@
+src/modules/TimelineEditor/presentations/hooks/useTempoEditorState.ts
+  s_ab5443e65c7fba::t_c8935b8480eb88 250-256
+src/modules/TimelineEditor/presentations/views/__tests__/InspectorPanel.spec.tsx
+  s_ab5443e65c7fba::t_b7149cbfda52da 1-2
+  s_ab5443e65c7fba::t_93897c4494a509 97-104
+  s_ab5443e65c7fba::t_334f55382e4b2d 182-210
+src/modules/TimelineEditor/presentations/helpers/__tests__/mouseDrag.spec.ts
+  s_ab5443e65c7fba::t_339731d504dab3 33-71,75-93
+  s_ab5443e65c7fba::t_98f67365178ca3 72-74
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_ab5443e65c7fba::t_642efeedc62ed2 124
+  s_ab5443e65c7fba::t_38fd592a8e0b5f 34-35
+  s_ab5443e65c7fba::t_6ae5b75d722003 545-547
+src/modules/TimelineEditor/presentations/helpers/automationDrag.ts
+  s_ab5443e65c7fba::t_d23c0301ec9e66 33-38,46,49,55,73,77,81,92
+  s_ab5443e65c7fba::t_5ffe95d8d6e102 184,188,195,200,207
+  s_ab5443e65c7fba::t_4cc88a21c586fa 227-232
+  s_ab5443e65c7fba::t_4b5733992cafc8 155,159,164
+src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx
+  s_ab5443e65c7fba::t_28e5fcf6c62d0f 148-153
+src/modules/TimelineEditor/presentations/views/InspectorPanel.tsx
+  s_ab5443e65c7fba::t_2de3961a30c6f1 49-60
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_ab5443e65c7fba::t_ba1ac9f3cb2f0c 421-425
+  s_ab5443e65c7fba::t_dfd9ab1d17db9e 282-288
+  s_ab5443e65c7fba::t_68b4057746208c 253-255
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_ab5443e65c7fba::t_9a6a73a839c01d 219,221-236
+  s_ab5443e65c7fba::t_f121a51a296a0a 204,213-215,217-218
+  s_ab5443e65c7fba::t_25b735be292d4a 12
+  s_ab5443e65c7fba::t_814ac32cf38237 126
+  s_ab5443e65c7fba::t_de0f82071b651d 220
+src/modules/Transport/useCases/__tests__/setTimeSignature.spec.ts
+  s_ab5443e65c7fba::t_a07883ce833ece 21-38
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_ab5443e65c7fba::t_b777e2a967d2a4 381-405,407-431
+  s_ab5443e65c7fba::t_4d56747c535394 406
+  s_ab5443e65c7fba::t_2e33e8e30a5071 5-10
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDrag.spec.tsx
+  s_ab5443e65c7fba::t_1ad75c8b51de64 332-370
+  s_ab5443e65c7fba::t_d628ff8bc9ea7d 331
+src/modules/TimelineEditor/presentations/hooks/__tests__/useTempoEditorState.spec.ts
+  s_ab5443e65c7fba::t_8a6df0cce543ad 414-438
+src/modules/TimelineEditor/presentations/helpers/mouseDrag.ts
+  s_ab5443e65c7fba::t_feff36c106077a 5-11,13-20,23-35,37,40-42
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_ab5443e65c7fba::t_fc5986b7f7fe92 81-91
+  s_ab5443e65c7fba::t_9594bbc6eb469f 27,58,65,76,94,101,112,121,128,142,303,356,421,467,521,536,544,556
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_ab5443e65c7fba::t_53cd0b4dd705e8 98-103
+  s_ab5443e65c7fba::t_13accac441afe4 331-339
+  s_ab5443e65c7fba::t_b223e071574927 407
+  s_ab5443e65c7fba::t_a427dba969b9a6 599-600,607-608
+  s_ab5443e65c7fba::t_92089a9afec73b 253,255
+  s_ab5443e65c7fba::t_9d261517e76957 535-542
+  s_ab5443e65c7fba::t_2a211a6eecb39d 9
+src/modules/TimelineEditor/presentations/components/__tests__/ResizeHandle.spec.tsx
+  s_ab5443e65c7fba::t_443510b0f3f37d 140-162
+src/modules/Transport/useCases/setTimeSignature.ts
+  s_ab5443e65c7fba::t_6e6ba33654a7d3 7-10
+src/modules/TimelineEditor/presentations/components/ResizeHandle.tsx
+  s_ab5443e65c7fba::t_ccfa4853e0fd75 41-48
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_ab5443e65c7fba::t_c4a5c062e751a1 172-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "78484be9136450a8dcb5751d3b7e24c0a6ccdff2",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
