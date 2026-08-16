@@ -1,0 +1,19 @@
+tests/e2e/mixerUndoRedo.spec.ts
+  s_7011c1c40589bf::t_34a24030d419b3 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5d460267c5d224954054c875c6bc89ea504861b3",
+  "prompts": {},
+  "sessions": {
+    "s_7011c1c40589bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00a61-4046-7b60-87fa-5000e59157cc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
