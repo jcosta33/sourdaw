@@ -1,0 +1,21 @@
+src/modules/Yeast/engine/__tests__/YeastWorkerClient.spec.ts
+  s_ab5443e65c7fba::t_22522ee6104ac9 1220-1264
+src/modules/Yeast/engine/YeastWorkerClient.ts
+  s_ab5443e65c7fba::t_0d445691562f00 775-781
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "17d130744765a5e5ef1bbc3ebe3385d8a51d8fc0",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
