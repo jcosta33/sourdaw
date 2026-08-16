@@ -1,0 +1,183 @@
+crates/sourdaw-native/build.rs
+  s_d91dcbe5f07151::t_344a0483aeb638 1-7
+src-tauri/src/commands/pitch_edit.rs
+  s_d91dcbe5f07151::t_36f845e600841c 8
+  s_d91dcbe5f07151::t_77d8f11d07bae5 1,3,5-7,12,16,21
+crates/sourdaw-native/src/commands/plugins.rs
+  s_d91dcbe5f07151::t_9557f67feca987 49,101,107,114,150,180,301,493,507,525,556-557,662,679-680,733,803,810-811,840,846-847,894-922,929,958-959,983,1000,1004,1009,1011-1012,1032-1033,1052,1056,1063,1069,1077,1079-1080
+  s_d91dcbe5f07151::t_80ad53808d2817 2044,2058
+  s_d91dcbe5f07151::t_e814e0abca654b 793-799
+  s_d91dcbe5f07151::t_c61f7a8af09cde 1-48,50-100,102-106,108-113,115-149,151-179,181-300,302-492,494-506,508-524,526-555,558-661,663-678,681-732,734-792,800-802,804-809,812-839,841-845,848-893,923-928,930-957,960-982,984-999,1001-1003,1005-1008,1010,1013-1031,1034-1051,1053-1055,1057-1062,1064-1068,1070-1076,1078,1081-2043,2045-2057,2059-2378
+src-tauri/src/commands/filesystem.rs
+  s_d91dcbe5f07151::t_809e371b6aef57 5
+  s_d91dcbe5f07151::t_13e2d291fa69fe 1,3,9,14,17,19-20,23,26,29,32,38
+crates/sourdaw-native/src/commands/binary_ipc.rs
+  s_d91dcbe5f07151::t_367831a64fe60b 1-14
+  s_d91dcbe5f07151::t_b21b58af158920 22
+  s_d91dcbe5f07151::t_1d717532a73f27 53-58
+  s_ab5443e65c7fba::t_5543352fbd933b 15-21,23-52,59-154
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_d91dcbe5f07151::t_28e1a18c060b57 1-3
+  s_d91dcbe5f07151::t_9186cb4a4a3962 528-531
+  s_d91dcbe5f07151::t_a357069d9f9724 460-468
+  s_d91dcbe5f07151::t_face8f628d26ed 4-459,469-527,532-916
+crates/sourdaw-native/src/commands/plugin_gui.rs
+  s_d91dcbe5f07151::t_1724cca3b44548 106-120
+  s_d91dcbe5f07151::t_cc64981354cc4a 145
+  s_d91dcbe5f07151::t_b5f750912b86ff 192
+  s_d91dcbe5f07151::t_0141336f9dd3ae 161-162
+  s_d91dcbe5f07151::t_2dd0e96131219b 53-65
+  s_d91dcbe5f07151::t_5e2853a43d1de8 158,272-273,334-351,777,805
+  s_d91dcbe5f07151::t_663576133399e1 463-499
+  s_d91dcbe5f07151::t_40c38f25487eec 308
+  s_d91dcbe5f07151::t_6cd73989dfe020 26,52,66,229-251,309,359,368,370,378,399
+  s_d91dcbe5f07151::t_959683eac680df 1-12
+  s_d91dcbe5f07151::t_fd1e90121849a1 379-398
+  s_d91dcbe5f07151::t_ce02ece7c51757 13-25,27-51,67-105,121-144,146-157,159-160,163-191,193-228,252-271,274-307,310-333,352-358,360-367,369,371-377,400-462,500-776,778-804,806-925
+src-tauri/src/commands/audio_gen.rs
+  s_d91dcbe5f07151::t_bcf25600ed80d5 8
+  s_d91dcbe5f07151::t_b3d81dfad3276b 3,5-6,11-20,25,31,33-35,41-43,48
+src-tauri/AGENTS.md
+  s_d91dcbe5f07151::t_f42c108bd59fa1 3,7-9,16,20-22
+Cargo.toml
+  s_d91dcbe5f07151::t_08a7c6841657b3 12
+crates/sourdaw-native/src/host/plugin_window.rs
+  s_d91dcbe5f07151::t_9935b15b462cc9 1-183
+src-tauri/Cargo.toml
+  s_d91dcbe5f07151::t_19c4732d84c64b 40
+crates/sourdaw-native/src/host/sidecar.rs
+  s_d91dcbe5f07151::t_0d0b586053e8fe 1-50
+  s_d91dcbe5f07151::t_62a4dc46f82473 51-65
+crates/sourdaw-native/Cargo.toml
+  s_d91dcbe5f07151::t_6ebf1d2606a5e7 1-59
+crates/sourdaw-native/src/commands/engine_diagnostics.rs
+  s_d91dcbe5f07151::t_656e265799773c 291
+  s_d91dcbe5f07151::t_c8ad534f3630a8 1
+  s_d91dcbe5f07151::t_68c7b5f008479d 286
+  s_d91dcbe5f07151::t_51b5a3822d9169 2-285,287-290,292-296
+src-tauri/src/sidecar.rs
+  s_d91dcbe5f07151::t_f82976fa291c46 1-115
+crates/sourdaw-native/src/commands/pitch_edit.rs
+  s_d91dcbe5f07151::t_29e8c4694c4a62 8-9
+  s_ab5443e65c7fba::t_e8a65ee5a34a18 1-7,10-250
+crates/sourdaw-native/AGENTS.md
+  s_d91dcbe5f07151::t_029a86e5b985d2 1-29
+src-tauri/src/windows.rs
+  s_d91dcbe5f07151::t_b09eee222ac89f 1-279
+src-tauri/src/commands/midi.rs
+  s_d91dcbe5f07151::t_6bfc8d9022a28f 9
+  s_d91dcbe5f07151::t_175f9f1e0c782a 1,3,5,7,11-13,16-22,25-27,33,36,39-41,45,49,52-54,58,62,67
+src-tauri/tests/provider_gateway_webview_boundary.rs
+  s_d91dcbe5f07151::t_71068543eb0f4d 94
+  s_d91dcbe5f07151::t_5224050b0f4861 10-24,27
+crates/sourdaw-native/src/commands/midi.rs
+  s_d91dcbe5f07151::t_d4c222e5d34732 351-353
+  s_d91dcbe5f07151::t_29bff9181283c0 296-302
+  s_d91dcbe5f07151::t_faa276d747338b 1-295,303-350,354-533
+crates/sourdaw-native/src/commands/audio_gen.rs
+  s_d91dcbe5f07151::t_22f1f0dfb4b2fc 88-186
+  s_d91dcbe5f07151::t_5da783137fcc33 69
+  s_d91dcbe5f07151::t_955e30e917c30b 5-7
+  s_ab5443e65c7fba::t_ee7f5b97cbd0a3 1-4,8-68,70-87,187-250
+src-tauri/src/host.rs
+  s_d91dcbe5f07151::t_2f81d28b769a5a 1-7
+src-tauri/src/events.rs
+  s_d91dcbe5f07151::t_2236d801fd2b48 1-31
+crates/sourdaw-native/src/events.rs
+  s_d91dcbe5f07151::t_32240270854505 1-92
+crates/sourdaw-native/src/host/mod.rs
+  s_d91dcbe5f07151::t_e5491f45231622 4
+  s_d91dcbe5f07151::t_da21c7891dd252 5
+  s_d91dcbe5f07151::t_9f353e25642dfb 6
+crates/sourdaw-native/src/lib.rs
+  s_d91dcbe5f07151::t_74fbb3c1f1eac5 1-82
+  s_d91dcbe5f07151::t_643b9ad5e6d24f 83-96
+crates/sourdaw-native/src/addon/mod.rs
+  s_d91dcbe5f07151::t_074fc2dcec1d97 1-961
+src-tauri/src/state.rs
+  s_d91dcbe5f07151::t_0896acc0429a94 1-5,7
+crates/sourdaw-native/src/commands/filesystem.rs
+  s_d91dcbe5f07151::t_b819b429c583de 29,41-78
+  s_d91dcbe5f07151::t_468ae2a67e0b9f 1-28,30-40,79-333
+src-tauri/src/lib.rs
+  s_d91dcbe5f07151::t_87dcd1534d3342 129-132
+  s_d91dcbe5f07151::t_01daabd1a8f458 152,154
+  s_d91dcbe5f07151::t_080969e6bd9bfa 2,4,6,8
+  s_d91dcbe5f07151::t_35c08a037b3641 10
+Cargo.lock
+  s_d91dcbe5f07151::t_766e42980058d5 645-653,930-935,1090,1477-1491,1499,1554,2902-2962,3037-3042,5006,5016-5049,5737
+crates/sourdaw-native/CLAUDE.md
+  s_d91dcbe5f07151::t_2369da982c15c4 1
+crates/sourdaw-native/GEMINI.md
+  s_d91dcbe5f07151::t_bc2e3287c36a56 1
+crates/sourdaw-native/src/commands/ai_audio.rs
+  s_d91dcbe5f07151::t_e5cfee78fe58ce 1-363
+crates/sourdaw-native/src/commands/audio_postprocess.rs
+  s_d91dcbe5f07151::t_57d047c62c91ff 1-136
+crates/sourdaw-native/src/commands/collab.rs
+  s_d91dcbe5f07151::t_56f8d970328bde 1-202
+crates/sourdaw-native/src/commands/link.rs
+  s_d91dcbe5f07151::t_2f75b8c62a2e29 1-106
+crates/sourdaw-native/src/commands/mod.rs
+  s_d91dcbe5f07151::t_c0c3cb48fef16c 1-17
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  s_d91dcbe5f07151::t_01bd7784fda29e 1-557
+crates/sourdaw-native/src/commands/speech.rs
+  s_d91dcbe5f07151::t_346c2c128c0ba8 1-357
+crates/sourdaw-native/src/commands/tuning.rs
+  s_d91dcbe5f07151::t_c1ef9356b89f47 1-20
+crates/sourdaw-native/src/host/latency_watcher.rs
+  s_d91dcbe5f07151::t_d91502fa3de9bf 16,83,108,126
+crates/sourdaw-native/src/state.rs
+  s_d91dcbe5f07151::t_7f86129153de5e 1-466
+src-tauri/src/commands/ai_audio.rs
+  s_d91dcbe5f07151::t_75b76bfc1aa97c 1,3-5,9,14
+src-tauri/src/commands/audio_postprocess.rs
+  s_d91dcbe5f07151::t_c3d4d0a23b4007 1,3,7
+src-tauri/src/commands/binary_ipc.rs
+  s_d91dcbe5f07151::t_80c4c3df81a7c2 1,10-13,15
+src-tauri/src/commands/collab.rs
+  s_d91dcbe5f07151::t_8a2076196cc965 3,5-6,10,14,18-22,27,30,35,38,43,46,51,55,60,67-71,74,78-79,83-84,88-89,94,96
+src-tauri/src/commands/crumbs.rs
+  s_d91dcbe5f07151::t_09f1a3d50c4f56 1-2,4-7,14-15,17,23-24,26,33,35,43,45,52,54,62,64,71,73,76,78-80,87,89,98,100,107,109,115,117,123,125,132,134,143,145-152,158,160
+src-tauri/src/commands/engine_diagnostics.rs
+  s_d91dcbe5f07151::t_58771b877dc391 1-2,4,10
+src-tauri/src/commands/link.rs
+  s_d91dcbe5f07151::t_b517d1e3dbaeba 1,3,7,12,17,22,27,32
+src-tauri/src/commands/mod.rs
+  s_d91dcbe5f07151::t_947e8857a73529 1-7
+src-tauri/src/commands/plugin_gui.rs
+  s_d91dcbe5f07151::t_bc981f631315d9 1-2,4,6,13,16-17,24,33,40-41,49,57
+src-tauri/src/commands/plugins.rs
+  s_d91dcbe5f07151::t_3d3353fb8a5cee 2-4,6,8,10,17,22,31,40,50,58,64-66,72,78-79,85,88,93,105,107-111,113,122,126,136,143-145,154
+src-tauri/src/commands/provider_gateway.rs
+  s_d91dcbe5f07151::t_5610aea061e2d8 1-2,5,7-12,14-18,27,31,42-52
+src-tauri/src/commands/speech.rs
+  s_d91dcbe5f07151::t_ece6354744af7c 1,3,5,7,14,21,26,29,34,39
+src-tauri/src/commands/tuning.rs
+  s_d91dcbe5f07151::t_a97925bfeac48f 1,3,7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e281e8e78c3fb826690b483e5354ca867786b6c8",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
