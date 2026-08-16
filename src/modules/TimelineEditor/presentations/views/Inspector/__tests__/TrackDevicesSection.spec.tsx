@@ -170,12 +170,14 @@ vi.mock('../../../components/Inspector/ChoiceCard', () => ({
         children,
         onClick,
         className,
+        title,
     }: {
         children: React.ReactNode;
         onClick?: () => void;
         className?: string;
+        title?: string;
     }) => (
-        <div data-testid="choice-card" className={className} onClick={onClick}>
+        <div data-testid="choice-card" className={className} title={title} onClick={onClick}>
             {children}
         </div>
     ),
@@ -424,6 +426,58 @@ describe('TrackDevicesSection', () => {
             activateDormantExternalPlugins: true,
         });
         expect(mockBypassDevice).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a degraded plugin that activated without a running native engine', () => {
+        // Activation records the degradation on an 'active' entry, and the rack
+        // discriminates on 'error' alone — so a plugin that loaded but
+        // processes no audio used to render as a healthy one.
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Dormant CLAP', format: 'clap' }],
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: {
+                'dormant-instance': {
+                    status: 'active',
+                    message: 'Loaded without a running native engine — this plugin processes no audio yet.',
+                },
+            },
+        });
+        const trackWithDormantClap: Track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'dormant-clap-slot',
+                    name: 'Dormant CLAP',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'path-hash',
+                    externalInstanceId: 'dormant-instance',
+                },
+            ],
+        };
+
+        render(<TrackDevicesSection track={trackWithDormantClap} onSelectDevice={mockOnSelectDevice} />);
+
+        const card = screen.getByTestId('choice-card');
+        expect(card).toHaveAttribute(
+            'title',
+            'Loaded without a running native engine — this plugin processes no audio yet.'
+        );
+        // Still not 'unavailable': it loaded, and the retry path is for failures.
+        expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+    });
+
+    it('leaves a healthy device without a degradation tooltip', () => {
+        render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
+        const cards = screen.getAllByTestId('choice-card');
+        const firstCard = cards[0];
+        if (!firstCard) {
+            throw new Error('expected a choice card');
+        }
+        expect(firstCard).not.toHaveAttribute('title');
     });
 
     it('should apply opacity to bypassed devices', () => {

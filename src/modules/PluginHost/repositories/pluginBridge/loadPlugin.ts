@@ -12,6 +12,7 @@ export async function loadPlugin(pluginId: string, instanceId: string): Promise<
             is_active: false,
             latency_samples: 0,
             latency_ms: 0,
+            engine_plugin_id: null,
         };
     }
     return tauriInvoke('load_plugin', { pluginId, instanceId }) as Promise<PluginInstance>;

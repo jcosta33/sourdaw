@@ -6,6 +6,7 @@ import {
     getEngineHealth,
     getEngineState,
     getMasterPeakLevel,
+    refreshEngineRtDiagnostics,
 } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
@@ -107,6 +108,12 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const engineInfo = getEngineState();
             const masterLevel = getMasterPeakLevel();
             if (now - lastDiagnosticsAtRef.current >= 1_000) {
+                // The native engine publishes stream errors into a bounded ring
+                // that only this command drains. Nothing else calls it in the
+                // running app, so without this the ring fills once and every
+                // later report is dropped at the push. Fire-and-forget: the tick
+                // is synchronous and the payload is read from the store.
+                void refreshEngineRtDiagnostics();
                 const diagnostics = getEngineDiagnostics();
                 const health = getEngineHealth();
                 const dropoutSummary = describeDropouts({ playback: diagnostics.playback, health });

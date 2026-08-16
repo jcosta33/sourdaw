@@ -79,7 +79,17 @@ export function activateExternalPlugin({
     void (async () => {
         try {
             const instance = await loadPlugin(pluginId, instanceId);
-            setActivationStatus(instanceId, 'active');
+            if (instance.engine_plugin_id === null) {
+                // Loaded, but no native engine was running to attach it to, so
+                // it renders nothing. Recorded on the activation entry rather
+                // than raised: this is the legitimate load-before-engine-start
+                // flow, and failing it would break project open.
+                const message = 'Loaded without a running native engine — this plugin processes no audio yet.';
+                setActivationStatus(instanceId, 'active', message);
+                logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
+            } else {
+                setActivationStatus(instanceId, 'active');
+            }
             // Report the latency read at activation (PH-4). loadPlugin always
             // resolves a PluginInstance with a numeric latency_ms (0 in the
             // browser stub), so no runtime guard is needed. Later changes arrive

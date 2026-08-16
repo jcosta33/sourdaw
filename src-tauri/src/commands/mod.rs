@@ -4,6 +4,7 @@ pub mod audio_postprocess;
 pub mod binary_ipc;
 pub mod collab;
 pub mod crumbs;
+pub mod engine_diagnostics;
 pub mod filesystem;
 pub mod link;
 pub mod midi;

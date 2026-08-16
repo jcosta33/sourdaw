@@ -9,6 +9,7 @@ import {
     getEngineHealth,
     getEngineState,
     getMasterPeakLevel,
+    refreshEngineRtDiagnostics,
 } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
@@ -21,6 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getEngineHealth: vi.fn(),
     getEngineState: vi.fn(),
     getMasterPeakLevel: vi.fn(),
+    refreshEngineRtDiagnostics: vi.fn(() => Promise.resolve()),
 }));
 
 let capturedTick: TickFn | null = null;
@@ -628,6 +630,39 @@ describe('useStatusBarMetrics', () => {
         capturedTick!();
         expect(getEngineDiagnostics).toHaveBeenCalledTimes(2);
         expect(refs.engineState.current!.title).toContain('ready device instances: 25');
+    });
+
+    it('drains the native engine event ring on the same once-per-second cadence', () => {
+        // The ring is bounded and only this call empties it. With no production
+        // caller it fills once and silently drops every later stream error, so
+        // the drain running on the tick is the whole point of the reader.
+        let now = 0;
+        vi.stubGlobal('performance', { now: () => now });
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48_000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        expect(refreshEngineRtDiagnostics).toHaveBeenCalledTimes(1);
+
+        now = 500;
+        capturedTick!();
+        expect(refreshEngineRtDiagnostics).toHaveBeenCalledTimes(1);
+
+        now = 1_000;
+        capturedTick!();
+        expect(refreshEngineRtDiagnostics).toHaveBeenCalledTimes(2);
     });
 
     it('writes a CPU percentage text and applies the success color when CPU is low', () => {
