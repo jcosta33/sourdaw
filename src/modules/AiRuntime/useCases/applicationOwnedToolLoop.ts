@@ -1,4 +1,5 @@
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
+import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
@@ -457,7 +458,41 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
         types.push(type);
     }
     const external = getAgentDeviceFactoryManifest(types);
-    const builtins = getAgentBuiltinDeviceFactoryManifest().filter((device) => types.includes(device.type));
+    const descriptors = getAgentBuiltinDeviceFactoryManifest().filter((device) => types.includes(device.type));
+    const runtimeByType = new Map(
+        getAgentBuiltinDeviceRuntimeManifest(descriptors.map((descriptor) => descriptor.type)).map((runtime) => [
+            runtime.type,
+            runtime,
+        ])
+    );
+    const builtins = descriptors.map((descriptor) => {
+        const runtime = runtimeByType.get(descriptor.type);
+        const runtimeVersion = runtime?.runtimeVersion ?? 'runtime-v1:unavailable';
+        const compositeVersion = `builtin-factory-v2:${descriptor.descriptorVersion}:${descriptor.presetVersion}:${runtimeVersion}`;
+        return {
+            ...descriptor,
+            capabilities: {
+                domain: descriptor.capabilities,
+                runtime: runtime?.capabilities ?? {
+                    availability: 'unavailable' as const,
+                    reason: 'No exact AudioEngine factory claims this descriptor type in the current runtime.',
+                },
+            },
+            version: compositeVersion,
+            versions: {
+                descriptor: descriptor.descriptorVersion,
+                preset: descriptor.presetVersion,
+                runtime: runtimeVersion,
+                composite: compositeVersion,
+            },
+            runtime: runtime
+                ? { live: runtime.live, offline: runtime.offline }
+                : {
+                      availability: 'unavailable' as const,
+                      reason: 'No exact AudioEngine factory claims this descriptor type in the current runtime.',
+                  },
+        };
+    });
     const manifest = { ...external, devices: [...builtins, ...external.devices] };
     return {
         schema: 'sourdaw.application-tool-receipt',

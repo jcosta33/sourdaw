@@ -7,6 +7,9 @@
 
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
 const GRINDER_PARAMS: readonly PluginParamDef[] = [
     // Input
     { id: 'inputGain', label: 'Input', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5 },
@@ -93,7 +96,7 @@ const GRINDER_PARAMS: readonly PluginParamDef[] = [
     { id: 'limiterThreshold', label: 'Limiter', min: -12, max: 0, default: -0.3, unit: 'dB', step: 0.1 },
 ];
 
-export const GRINDER_DESCRIPTOR: PluginDescriptor = {
+const GRINDER_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'grinder',
     name: 'Grinder',
     vendor: 'Sourdaw',
@@ -115,3 +118,26 @@ export const GRINDER_DESCRIPTOR: PluginDescriptor = {
         hasAutomation: false,
     })),
 };
+
+export const GRINDER_DESCRIPTOR = applySingleDescriptorGuidance(
+    GRINDER_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'grinder',
+        effectGuidance(
+            'Build an amp and cabinet signal path from input staging through gain, tone, and output controls.',
+            ['Set input and output gain conservatively before increasing amp drive.'],
+            ['Amp, cabinet, pedal, and capture choices interact with input impedance and output staging.'],
+            ['High gain can amplify noise, create harshness, and overload later processing.'],
+            {
+                availability: 'unavailable',
+                reason: 'Grinder declares no automatic loudness matching across amp and cabinet choices.',
+            }
+        ),
+        declaredControl(
+            'Amp and cabinet control',
+            'Changes gain staging, tone, model choice, or signal-chain routing.',
+            ['Set input stage before drive and output.'],
+            ['High gain can amplify noise and overload later devices.']
+        )
+    )
+);

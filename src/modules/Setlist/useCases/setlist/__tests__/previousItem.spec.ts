@@ -46,7 +46,6 @@ describe('previousItem', () => {
             currentIndex: 1,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 2,
         };
         mockSetlistStore.value = state;
 

@@ -7,6 +7,11 @@
  *   - `OfflineDeviceNode` — shared node-graph descriptor
  */
 
+import {
+    SIDECHAIN_COMPRESSOR_RUNTIME_STRATEGY,
+    type BuiltinDeviceRuntimeStrategy,
+} from '../models/BuiltinDeviceRuntime';
+
 import { createCompressor } from './devices/dynamics/createCompressor';
 import { createEq } from './devices/dynamics/createEq';
 import { createLimiter } from './devices/dynamics/createLimiter';
@@ -32,27 +37,62 @@ export type { OfflineDeviceNode };
 
 // ── Factory map ──────────────────────────────────────────────────────────
 
-const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext, device?: object) => OfflineDeviceNode> = {
-    'builtin-eq': createEq,
-    'builtin-compressor': createCompressor,
-    'builtin-sidechain-compressor': createSidechainCompressorFallback,
-    'builtin-limiter': createLimiter,
-    'builtin-reverb': createReverb,
-    'builtin-delay': createDelay,
-    'builtin-convolution-reverb': createConvolutionReverb,
-    'builtin-gain': createGainDevice,
-    'builtin-filter': createFilter,
-    'builtin-distortion': createDistortion,
-    'builtin-bitcrusher': createBitcrusher,
-    'builtin-deesser': createDeEsser,
-    'builtin-lufs-meter': createLufsMeter,
-    'builtin-chorus': createChorus,
-    'builtin-phaser': createPhaser,
-    'builtin-flanger': createFlanger,
-    'builtin-tremolo': createTremolo,
-    'builtin-autopan': createAutoPan,
-    'builtin-stereo-widener': createStereoWidener,
+type BuiltinDeviceNodeFactory = {
+    readonly type: string;
+    readonly create: (ctx: BaseAudioContext, device?: object) => OfflineDeviceNode;
+    readonly runtime: BuiltinDeviceRuntimeStrategy;
 };
+
+const STANDARD_WEB_AUDIO_RUNTIME_STRATEGY: BuiltinDeviceRuntimeStrategy = {
+    live: {
+        source: 'AudioEngine.deviceNodeFactory',
+        ports: {
+            inputs: 1,
+            outputs: 1,
+            channelsPerPort: 2,
+            externalInputs: 0,
+            sidechainRouting: 'not-applicable',
+        },
+        notes: { availability: 'unavailable' },
+        // A factory with no latency reporter has the PDC default, not a certified
+        // zero-latency measurement.
+        latency: { kind: 'pdc-default-zero' },
+    },
+    offline: {
+        source: 'AudioEngine.deviceNodeFactory',
+        availability: 'available',
+    },
+};
+
+export const BUILTIN_DEVICE_NODE_FACTORIES: readonly BuiltinDeviceNodeFactory[] = [
+    { type: 'builtin-eq', create: createEq, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-compressor', create: createCompressor, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    {
+        type: 'builtin-sidechain-compressor',
+        create: createSidechainCompressorFallback,
+        runtime: SIDECHAIN_COMPRESSOR_RUNTIME_STRATEGY,
+    },
+    { type: 'builtin-limiter', create: createLimiter, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-reverb', create: createReverb, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-delay', create: createDelay, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    {
+        type: 'builtin-convolution-reverb',
+        create: createConvolutionReverb,
+        runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY,
+    },
+    { type: 'builtin-gain', create: createGainDevice, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-filter', create: createFilter, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-distortion', create: createDistortion, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-bitcrusher', create: createBitcrusher, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-deesser', create: createDeEsser, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-lufs-meter', create: createLufsMeter, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-chorus', create: createChorus, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-phaser', create: createPhaser, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-flanger', create: createFlanger, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-tremolo', create: createTremolo, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-autopan', create: createAutoPan, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+    { type: 'builtin-stereo-widener', create: createStereoWidener, runtime: STANDARD_WEB_AUDIO_RUNTIME_STRATEGY },
+];
 
 type CreateOfflineDeviceNodeInput = {
     context: BaseAudioContext;
@@ -67,10 +107,10 @@ export function createOfflineDeviceNode({
     device,
     deviceType,
 }: CreateOfflineDeviceNodeInput): CreateOfflineDeviceNodeOutput {
-    const factory = DEVICE_FACTORIES[deviceType];
+    const factory = BUILTIN_DEVICE_NODE_FACTORIES.find((candidate) => candidate.type === deviceType);
     if (!factory) {
         return null;
     }
 
-    return factory(context, device);
+    return factory.create(context, device);
 }

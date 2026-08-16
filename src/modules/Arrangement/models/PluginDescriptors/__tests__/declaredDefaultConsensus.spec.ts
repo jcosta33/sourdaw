@@ -713,6 +713,11 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
             '(`declaredRangeVsKnobTravel.spec.ts`); this file only reads the value a control starts at.',
     },
     {
+        file: 'src/modules/Proof/models/ProofPatch.ts',
+        exportName: 'TARGET_LABELS',
+        reason: 'Display labels for delivery targets, not device-parameter defaults.',
+    },
+    {
         file: 'src/modules/GrandBoule/models/GrandBouleMidiCalibration.ts',
         exportName: 'MIDI_CALIBRATION_RANGES',
         reason:

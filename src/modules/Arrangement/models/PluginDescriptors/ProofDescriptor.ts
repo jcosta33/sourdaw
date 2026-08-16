@@ -5,7 +5,10 @@
 
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
-export const PROOF_DESCRIPTOR: PluginDescriptor = {
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
+const PROOF_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'proof',
     name: 'Proof',
     vendor: 'Sourdaw',
@@ -54,3 +57,23 @@ export const PROOF_DESCRIPTOR: PluginDescriptor = {
         },
     ],
 };
+
+export const PROOF_DESCRIPTOR = applySingleDescriptorGuidance(
+    PROOF_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'proof',
+        effectGuidance(
+            'Use mastering controls for restrained final-stage tonal and level decisions.',
+            ['Leave delivery headroom and compare changes at matched loudness.'],
+            ['Mastering tone, dynamics, and ceiling controls interact across the whole mix.'],
+            ['Aggressive mastering can hide balance problems and reduce transient detail.'],
+            { availability: 'unavailable', reason: 'Proof declares no automatic loudness matching.' }
+        ),
+        declaredControl(
+            'Mastering control',
+            'Changes final-stage tonal, dynamic, or ceiling behavior.',
+            ['Compare at matched loudness against bypass.'],
+            ['Aggressive settings can reduce transient detail.']
+        )
+    )
+);

@@ -41,7 +41,6 @@ describe('getRemainingDuration', () => {
             currentIndex: 1,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         };
         mockSetlistStore.value = state;
 

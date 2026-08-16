@@ -53,7 +53,6 @@ function baseState(items: SetlistItem[], currentIndex: number): SetlistState {
         currentIndex,
         autoAdvance: false,
         countInBars: 1,
-        totalDuration: 0,
     };
 }
 

@@ -7,6 +7,9 @@
 
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, effectGuidance } from './GuidanceProfiles';
+
 const CRUST_PARAMS: readonly PluginParamDef[] = [
     { id: 'gain', label: 'Gain', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },
     { id: 'ceiling', label: 'Ceiling', min: -6, max: 0, default: -0.3, unit: 'dBTP', step: 0.1 },
@@ -59,7 +62,7 @@ const CRUST_PARAMS: readonly PluginParamDef[] = [
     { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 200, default: 60, unit: 'Hz', step: 1 },
 ];
 
-export const CRUST_DESCRIPTOR: PluginDescriptor = {
+const CRUST_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'crust',
     name: 'Crust',
     vendor: 'Sourdaw',
@@ -81,3 +84,23 @@ export const CRUST_DESCRIPTOR: PluginDescriptor = {
         hasAutomation: false,
     })),
 };
+
+export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
+    CRUST_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'crust',
+        effectGuidance(
+            'Limit and saturate a signal while preserving a deliberate ceiling and downstream headroom.',
+            ['Set ceiling before driving gain and compare loudness against bypass.'],
+            ['Gain drives limiting and saturation while timing and oversampling shape artifacts.'],
+            ['Aggressive drive can flatten transients and create misleading loudness.'],
+            { availability: 'unavailable', reason: 'Crust declares no automatic loudness matching.' }
+        ),
+        declaredControl(
+            'Limiter and saturator control',
+            'Changes peak handling, harmonic density, or output ceiling.',
+            ['Set ceiling before gain and timing.'],
+            ['High drive can flatten transients or overload later stages.']
+        )
+    )
+);

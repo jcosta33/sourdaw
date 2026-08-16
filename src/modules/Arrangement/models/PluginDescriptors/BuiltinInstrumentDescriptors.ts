@@ -1,7 +1,10 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
+import { applyDescriptorGuidance, descriptorGuidance, parameterGuidance } from './DescriptorGuidance';
+import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+
 /** Built-in instrument plugin descriptors (Synth, Drum Kit). */
-export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
+const BUILTIN_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     {
         id: 'builtin-synth',
         name: 'Synth',
@@ -340,3 +343,68 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
     },
     // ─── Native DSP (Rust/WASM) ─────────────────────────────────────────
 ];
+
+const noExternalModulation = {
+    availability: 'unavailable' as const,
+    reason: 'This descriptor declares no source-specific modulation route beyond its separate automation capability.',
+};
+
+const BUILTIN_INSTRUMENT_DESCRIPTORS_GUIDANCE = [
+    descriptorGuidance(
+        'builtin-synth',
+        instrumentGuidance(
+            'Create foundational subtractive sounds, then shape envelope and filter before adding movement.',
+            ['Keep output gain conservative when using resonance, detune, or unison.'],
+            [
+                'Oscillators feed the filter; envelope and velocity settings determine how that spectrum changes over time.',
+            ],
+            ['High resonance, unison, and gain can build level quickly across held chords.']
+        ),
+        declaredControl(
+            'Synth voice control',
+            'Changes oscillator, filter, envelope, or stereo behavior of each voice.',
+            ['Evaluate voice controls together with amp gain and polyphony.'],
+            ['Layered voices and resonance can use output headroom quickly.']
+        ),
+        {
+            attack: parameterGuidance(
+                'Amplitude-envelope attack time',
+                'Sets how quickly a played note reaches its full level.',
+                0.005,
+                0.1,
+                ['Use with decay, sustain, and release to shape the note contour.'],
+                ['Very slow attacks can hide rhythmic note starts.'],
+                noExternalModulation
+            ),
+            filterCutoff: parameterGuidance(
+                'Filter cutoff frequency',
+                'Sets the upper frequency region passed by the selected filter type.',
+                200,
+                8000,
+                ['Use with resonance, envelope amount, and key tracking.'],
+                ['High resonance near the cutoff can create sharp peaks.'],
+                noExternalModulation
+            ),
+        }
+    ),
+    descriptorGuidance(
+        'builtin-drum-kit',
+        instrumentGuidance(
+            'Choose a synthesized kit, then set output level for the surrounding drum bus.',
+            ['Gain-stage the kit before bus processing and leave transient headroom.'],
+            ['Kit selection changes the generated voices while gain sets their output staging.'],
+            ['High kit gain can overload later drum-bus processing.']
+        ),
+        declaredControl(
+            'Drum-kit control',
+            'Changes the selected synthesized kit or its output level.',
+            ['Set kit choice before adjusting bus processing.'],
+            ['High output gain can overload the drum bus.']
+        )
+    ),
+];
+
+export const BUILTIN_INSTRUMENT_DESCRIPTORS = applyDescriptorGuidance(
+    BUILTIN_INSTRUMENT_DESCRIPTOR_DATA,
+    BUILTIN_INSTRUMENT_DESCRIPTORS_GUIDANCE
+);

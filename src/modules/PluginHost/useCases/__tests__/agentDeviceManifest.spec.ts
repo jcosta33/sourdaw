@@ -10,7 +10,7 @@ describe('agent device factory manifest', () => {
         pluginScanStore.set(defaultPluginScanState);
     });
 
-    it('marks owner-undeclared topology and latency unavailable while retaining bounded inferred guidance', () => {
+    it('keeps Arrangement descriptors separate from AudioEngine runtime facts', () => {
         const manifest = {
             schema: 'sourdaw.agent-device-factory-manifest',
             schemaVersion: 1,
@@ -24,26 +24,20 @@ describe('agent device factory manifest', () => {
                 expect.objectContaining({
                     type: 'builtin-compressor',
                     vendor: 'Sourdaw',
-                    ports: expect.objectContaining({ availability: 'unavailable' }),
-                    latency: expect.objectContaining({ availability: 'unavailable' }),
-                    safetyNotes: expect.arrayContaining([expect.any(String)]),
-                    usageRecipes: expect.arrayContaining([expect.any(String)]),
                     parameters: expect.arrayContaining([
                         expect.objectContaining({
                             id: 'comp-threshold',
                             type: 'continuous',
                             bounds: { minimum: -60, maximum: 0 },
                             automatable: true,
-                            modulatable: expect.objectContaining({ availability: 'unavailable' }),
-                            semanticRole: expect.objectContaining({ confidence: 'inferred' }),
-                            perceptualRole: expect.objectContaining({ confidence: 'inferred' }),
-                            interactions: expect.arrayContaining([expect.any(String)]),
-                            risks: expect.arrayContaining([expect.any(String)]),
                         }),
                     ]),
                 }),
             ]),
         });
+        const builtinCompressor = manifest.devices.find((device) => device.type === 'builtin-compressor');
+        expect(builtinCompressor).not.toHaveProperty('ports');
+        expect(builtinCompressor).not.toHaveProperty('latency');
     });
 
     it('prevents external configuration when the scan did not publish real parameter descriptors', () => {

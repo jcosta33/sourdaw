@@ -8,6 +8,9 @@
 
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
+import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
+import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
+
 const FERMENTER_PARAMS: readonly PluginParamDef[] = [
     // Oscillator
     { id: 'oscEngine', label: 'Engine', min: 0, max: 6, default: 0, unit: '', step: 1 },
@@ -178,7 +181,7 @@ const FERMENTER_PARAMS: readonly PluginParamDef[] = [
     { id: 'masterGain', label: 'Master', min: 0, max: 2, default: 1, unit: '' },
 ];
 
-export const FERMENTER_DESCRIPTOR: PluginDescriptor = {
+const FERMENTER_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'fermenter',
     name: 'Fermenter',
     vendor: 'Sourdaw',
@@ -201,3 +204,24 @@ export const FERMENTER_DESCRIPTOR: PluginDescriptor = {
         hasAutomation: false,
     })),
 };
+
+export const FERMENTER_DESCRIPTOR = applySingleDescriptorGuidance(
+    FERMENTER_DESCRIPTOR_DATA,
+    descriptorGuidance(
+        'fermenter',
+        instrumentGuidance(
+            'Design a voice from an engine, oscillator, filter, envelope, and internal effects in that order.',
+            ['Keep output staging conservative when using unison, resonance, drive, or FM depth.'],
+            [
+                'Engine choice determines which voice controls are most audible; envelopes and modulation shape their motion.',
+            ],
+            ['Dense unison, high resonance, and internal effects can build level across chords.']
+        ),
+        declaredControl(
+            'Fermenter voice control',
+            'Changes an oscillator, engine, envelope, filter, internal effect, or voice-modulation behavior.',
+            ['Evaluate controls in the context of the selected synthesis engine.'],
+            ['Complex voice settings can build level or reduce note definition.']
+        )
+    )
+);

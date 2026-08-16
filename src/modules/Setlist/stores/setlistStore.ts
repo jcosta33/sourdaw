@@ -41,8 +41,6 @@ export type SetlistState = {
     autoAdvance: boolean;
     /** Count-in bars before each item */
     countInBars: number;
-    /** Total estimated duration */
-    totalDuration: number;
 };
 
 export const setlistStore = createStore<SetlistState>({
@@ -52,6 +50,5 @@ export const setlistStore = createStore<SetlistState>({
         currentIndex: 0,
         autoAdvance: false,
         countInBars: 1,
-        totalDuration: 0,
     },
 });

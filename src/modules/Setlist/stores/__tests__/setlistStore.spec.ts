@@ -10,7 +10,6 @@ describe('setlistStore', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         });
     });
 
@@ -21,7 +20,6 @@ describe('setlistStore', () => {
             currentIndex: 0,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 0,
         });
     });
 
@@ -37,7 +35,6 @@ describe('setlistStore', () => {
             currentIndex: 0,
             autoAdvance: true,
             countInBars: 4,
-            totalDuration: 120,
         });
 
         expect(setlistStore.value).toEqual({
@@ -46,7 +43,6 @@ describe('setlistStore', () => {
             currentIndex: 0,
             autoAdvance: true,
             countInBars: 4,
-            totalDuration: 120,
         });
     });
 
