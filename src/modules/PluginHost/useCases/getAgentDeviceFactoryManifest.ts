@@ -87,10 +87,16 @@ function stableFingerprint(parts: readonly string[]): string {
 
 function factoryType(plugin: Pick<ScannedFactory, 'clap_id' | 'id'>): string {
     const clapId = normalizedScanText(plugin.clap_id);
-    if (clapId.length > 0 && Array.from(clapId).length <= 240 && clapId === plugin.clap_id) {
-        return `clap:${clapId}`;
+    const declaredType = `clap:${clapId}`;
+    if (
+        clapId.length > 0 &&
+        Array.from(clapId).length <= 240 &&
+        clapId === plugin.clap_id &&
+        declaredType.length <= 256
+    ) {
+        return declaredType;
     }
-    return `clap-scan:${EXTERNAL_FACTORY_IDENTITY_SCHEME}:${stableFingerprint([plugin.clap_id, plugin.id])}`;
+    return `clap-scan:${EXTERNAL_FACTORY_IDENTITY_SCHEME}:${stableFingerprint([plugin.clap_id])}`;
 }
 
 function boundedParameterCount(value: number): number | null {

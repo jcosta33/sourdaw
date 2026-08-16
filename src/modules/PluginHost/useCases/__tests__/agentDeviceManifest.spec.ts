@@ -469,6 +469,17 @@ describe('agent device factory manifest', () => {
         expect(getAgentDeviceFactoryManifest([`clap:${first}`]).devices).toHaveLength(1);
     });
 
+    it('uses bounded v2 identities for non-BMP CLAP ids that exceed provider bounds', () => {
+        const first = `org.example.${'😀'.repeat(230)}`;
+        const second = `org.example.${'😃'.repeat(230)}`;
+        const base = { id: 'scan-a', clap_id: first, name: 'Effect', vendor: 'Example', format: 'clap', category: 'effect', path: '/plugins/a.clap', version: '1.0.0', num_inputs: 0, num_outputs: 0, num_parameters: 0, has_custom_ui: false };
+        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [base, { ...base, id: 'scan-b', path: '/plugins/b.clap' }, { ...base, id: 'scan-c', clap_id: second, path: '/plugins/c.clap' }] });
+        const types = getAgentDeviceFactoryManifest().devices.map((device) => device.type);
+        expect(types).toHaveLength(2);
+        expect(types[0]).not.toBe(types[1]);
+        expect(types.every((type) => type.length <= 256 && type.startsWith('clap-scan:clap-id-v2:'))).toBe(true);
+    });
+
     it('does not expand an explicitly selected external factory set', () => {
         const first = {
             id: 'first',
