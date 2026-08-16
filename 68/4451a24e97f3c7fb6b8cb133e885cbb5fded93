@@ -1,0 +1,39 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ab5443e65c7fba::t_2c5975f4b6d82c 299
+  s_ab5443e65c7fba::t_2b44625e55f43b 360-366,369-381,386-408
+  s_ab5443e65c7fba::t_f98f509cb2841d 325
+  s_ab5443e65c7fba::t_a19ab915327a21 162-172
+  s_ab5443e65c7fba::t_b2e161917736d6 252-257
+  s_ab5443e65c7fba::t_eb6fe6d420e0a2 9
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_ab5443e65c7fba::t_a372db13b76b71 511-565
+  s_ab5443e65c7fba::t_28ea31891310de 86-87
+  s_ab5443e65c7fba::t_a19dbb4a69dc1a 505
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_ab5443e65c7fba::t_a6ee271f3ff705 405-406
+  s_ab5443e65c7fba::t_99fef04cf7d82e 385-389
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_ab5443e65c7fba::t_8b2415c3e20e22 119-120
+  s_ab5443e65c7fba::t_dd9e0f8952fef6 225-226
+  s_ab5443e65c7fba::t_794918b655557a 210-215,217
+  s_ab5443e65c7fba::t_6f38c82c51c564 330-340,343-351,353,357-360
+  s_ab5443e65c7fba::t_3953fbd61af858 26-28
+  s_ab5443e65c7fba::t_ac6a1a73c9734e 40-45,47
+  s_ab5443e65c7fba::t_99b726dd5bba1e 613-725
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "684451a24e97f3c7fb6b8cb133e885cbb5fded93",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
