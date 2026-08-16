@@ -139,7 +139,12 @@ export function validateArbitraryCommandListEvidence(input: {
             itemIds.has(item.itemId) ||
             item.commandStart !== commandCursor ||
             !Number.isInteger(item.commandCount) ||
-            item.commandCount < 1 ||
+            item.commandCount < 0 ||
+            !Number.isInteger(item.declaredCommandCount) ||
+            item.declaredCommandCount < 1 ||
+            !Number.isInteger(item.omittedCommandCount) ||
+            item.omittedCommandCount < 0 ||
+            item.declaredCommandCount !== item.commandCount + item.omittedCommandCount ||
             item.dependsOn.some((dependency) => !itemIds.has(dependency))
         ) {
             return {
@@ -155,6 +160,12 @@ export function validateArbitraryCommandListEvidence(input: {
             return { status: 'rejected', reason: 'Structured command compiler evidence contains unproven targets.' };
         }
         if (
+            new Set(item.canonicalStableIds).size !== item.canonicalStableIds.length ||
+            item.canonicalStableIds.some((stableId) => !item.stableIds.includes(stableId))
+        ) {
+            return { status: 'rejected', reason: 'Structured command compiler evidence canonicalization is invalid.' };
+        }
+        if (
             !evidence.commands
                 .slice(item.commandStart, item.commandStart + item.commandCount)
                 .every((command) => command.name === item.commandName)
@@ -162,7 +173,11 @@ export function validateArbitraryCommandListEvidence(input: {
             return { status: 'rejected', reason: 'Structured command compiler evidence command order is invalid.' };
         }
         if (selector === undefined) {
-            if (item.targetArgument !== undefined || item.targetCapability !== undefined) {
+            if (
+                item.canonicalStableIds.length > 0 ||
+                item.targetArgument !== undefined ||
+                item.targetCapability !== undefined
+            ) {
                 return {
                     status: 'rejected',
                     reason: 'Structured command compiler evidence target override is invalid.',
@@ -172,16 +187,15 @@ export function validateArbitraryCommandListEvidence(input: {
             if (
                 item.targetArgument === undefined ||
                 item.targetCapability === undefined ||
-                item.commandCount % item.stableIds.length !== 0
+                item.commandCount !== item.canonicalStableIds.length
             ) {
                 return {
                     status: 'rejected',
                     reason: 'Structured command compiler evidence target override is invalid.',
                 };
             }
-            const repeatsPerTarget = item.commandCount / item.stableIds.length;
             for (let offset = 0; offset < item.commandCount; offset += 1) {
-                const stableId = item.stableIds[Math.floor(offset / repeatsPerTarget)];
+                const stableId = item.canonicalStableIds[offset];
                 const commandIndex = item.commandStart + offset;
                 const command = evidence.commands[commandIndex];
                 if (stableId === undefined || command?.arguments[item.targetArgument] !== stableId) {
@@ -196,7 +210,11 @@ export function validateArbitraryCommandListEvidence(input: {
             }
         }
         itemIds.add(item.itemId);
-        resolvedTargetIds.push(...item.stableIds);
+        for (const stableId of item.stableIds) {
+            if (!resolvedTargetIds.includes(stableId)) {
+                resolvedTargetIds.push(stableId);
+            }
+        }
         commandCursor += item.commandCount;
     }
     if (

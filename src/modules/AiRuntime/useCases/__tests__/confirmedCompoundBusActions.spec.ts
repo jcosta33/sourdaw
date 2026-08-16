@@ -12,17 +12,20 @@ import {
     serializeVersionedCommandEnvelope,
     setActionHistoryMetadataPort,
     undo,
+    redo,
 } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
     createCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { type ProjectContext } from '../../models/ProjectContext';
+import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
@@ -30,7 +33,9 @@ import {
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -147,6 +152,156 @@ function createCompoundActions(includeConflictingSend = false): ExecutableRuntim
         });
     }
     return actions;
+}
+
+function createRepeatedMuteCompilerContext(): ProjectContext {
+    return {
+        tempo: 120,
+        timeSignature: [4, 4],
+        isPlaying: false,
+        isRecording: false,
+        isLooping: false,
+        loopStart: 0,
+        loopEnd: 16,
+        punchInEnabled: false,
+        punchInBeat: 0,
+        punchOutBeat: 16,
+        metronomeEnabled: false,
+        metronomeVolume: 0.5,
+        masterGain: 0.8,
+        tracks: [
+            {
+                id: 'track-vocals',
+                name: 'Vocals',
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                soloSafe: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                automationMode: 'read',
+                clipCount: 0,
+                deviceCount: 0,
+                clips: [],
+                devices: [],
+                sends: [],
+            },
+        ],
+        selectedTrackId: 'track-vocals',
+        selectedClipId: null,
+        selectedClipIds: [],
+        activeView: 'arrange',
+        playheadPosition: 0,
+    };
+}
+
+function compileRepeatedMuteActions(): ExecutableRuntimeAction[] {
+    const compilerContext = createRepeatedMuteCompilerContext();
+    const result = compileArbitraryCommandList({
+        context: compilerContext,
+        revision: 'revision-repeated-mute',
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: {
+                        semantic: { classification: 'simple', uncertainty: [] },
+                        objective: 'Mute vocals.',
+                        constraints: [],
+                        scope: {
+                            targetIds: ['track-vocals'],
+                            targetRanges: [],
+                            protectedTargetIds: [],
+                            protectedRanges: [],
+                        },
+                        capabilityIds: [],
+                        assetIds: [],
+                        alternatives: [],
+                        validationStrategy: [],
+                        stoppingConditions: [],
+                    },
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'mute-vocals',
+                                name: 'muteTrack',
+                                arguments: { muted: true },
+                                selector: {
+                                    targetArgument: 'trackId',
+                                    entity: 'track',
+                                    where: { name: 'Vocals' },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                                repeat: { count: 2 },
+                            },
+                        ],
+                    },
+                },
+            },
+        ],
+    });
+    if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+        throw new Error('Expected repeated mute command compilation.');
+    }
+    const unguardedActions = result.compilerEvidence.commands.map((command) => {
+        if (
+            command.name !== 'muteTrack' ||
+            typeof command.arguments.trackId !== 'string' ||
+            typeof command.arguments.muted !== 'boolean'
+        ) {
+            throw new Error('Expected canonical mute command.');
+        }
+        return {
+            type: 'muteTrack' as const,
+            payload: { trackId: command.arguments.trackId, muted: command.arguments.muted },
+        };
+    });
+    const materialized = materializeActionStateGuards(unguardedActions, compilerContext);
+    if (materialized.status !== 'accepted') {
+        throw new Error(materialized.reason);
+    }
+    return materialized.actions;
+}
+
+function registerCanonicalMuteHandler(): void {
+    clearHandlerRegistry();
+    registerHandlerMap({
+        muteTrack: {
+            canReapplyAfterDivergence: () => true,
+            validate: (action) =>
+                trackStore.value?.tracks.find((track) => track.id === action.payload.trackId)?.muted ===
+                action.payload.expectedMuted,
+            execute: (action) => {
+                const current = trackStore.value;
+                const track = current?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+                if (!current || !track || track.muted !== action.payload.expectedMuted) {
+                    return { status: 'conflict' };
+                }
+                trackStore.set({
+                    ...current,
+                    tracks: current.tracks.map((candidate) =>
+                        candidate.id === track.id ? { ...candidate, muted: action.payload.muted } : candidate
+                    ),
+                });
+                return { status: 'written' };
+            },
+            isNoop: () => false,
+            describe: (action) => ({
+                label: action.payload.muted ? 'Mute track' : 'Unmute track',
+                inverseAction: {
+                    type: 'muteTrack',
+                    payload: {
+                        trackId: action.payload.trackId,
+                        muted: action.payload.expectedMuted,
+                        expectedMuted: action.payload.muted,
+                    },
+                },
+            }),
+            undoable: true,
+        },
+    });
 }
 
 function propose(actions: ExecutableRuntimeAction[], id: string): void {
@@ -270,5 +425,74 @@ describe('confirmed compound bus actions', () => {
         expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
         expect(getPendingActionConfirmation('confirmation-conflict')?.status).toBe('failed');
+    });
+
+    it('commits a compiler-canonical repeated write as one receipt and one undo-redo group', async () => {
+        registerCanonicalMuteHandler();
+        const actions = compileRepeatedMuteActions();
+        expect(actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+        ]);
+        propose(actions, 'confirmation-repeated-mute');
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-repeated-mute' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(true);
+        expect(getPendingActionConfirmation('confirmation-repeated-mute')).toMatchObject({
+            status: 'executed',
+            executedActions: [
+                {
+                    actionType: 'muteTrack',
+                    affectedIds: ['track-vocals'],
+                    outcome: 'committed',
+                },
+            ],
+        });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(aiActionHistoryStore.value?.groups).toHaveLength(1);
+
+        await undo();
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(false);
+        await redo();
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(true);
+    });
+
+    it('does not write a canonical repeated batch after a competing track update', async () => {
+        registerCanonicalMuteHandler();
+        const actions = compileRepeatedMuteActions();
+        propose(actions, 'confirmation-repeated-mute-conflict');
+        const vocals = trackStore.value?.tracks.find((track) => track.id === 'track-vocals');
+        if (!vocals) {
+            throw new Error('Expected vocals track.');
+        }
+        trackStore.set({ tracks: [{ ...vocals, muted: true }], selectedTrackId: vocals.id, ghostClips: [] });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-repeated-mute-conflict' })
+        ).resolves.toMatchObject({ status: 'failed' });
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(true);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(aiActionHistoryStore.value?.groups).toEqual([]);
+    });
+
+    it('does not write a canonical repeated batch after its confirmation snapshot is stale', async () => {
+        registerCanonicalMuteHandler();
+        const actions = compileRepeatedMuteActions();
+        propose(actions, 'confirmation-repeated-mute-stale');
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'root',
+            changeFn: (document) => {
+                document.collaboratorRevision = true;
+            },
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-repeated-mute-stale' })
+        ).resolves.toMatchObject({ status: 'invalidated' });
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(false);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(aiActionHistoryStore.value?.groups).toEqual([]);
     });
 });

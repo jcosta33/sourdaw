@@ -33,9 +33,12 @@ export type ArbitraryCommandListSelectorEvidence = {
 };
 
 type CompiledItemEvidence = {
+    canonicalStableIds: string[];
     itemId: string;
     commandName: string;
     dependsOn: string[];
+    declaredCommandCount: number;
+    omittedCommandCount: number;
     stableIds: string[];
     commandStart: number;
     commandCount: number;
@@ -285,6 +288,10 @@ function hasExactScope(plan: ReturnType<typeof normalizeAgentPlanProposal>, stab
     );
 }
 
+function isIdempotentSetCommand(name: string): boolean {
+    return name.startsWith('set') || ['armTrack', 'bypassDevice', 'muteTrack', 'soloTrack'].includes(name);
+}
+
 function detectDependencyCycle(items: readonly Record<string, unknown>[]): string | null {
     const dependencies = new Map<string, string[]>();
     for (const item of items) {
@@ -374,6 +381,8 @@ export function compileArbitraryCommandList(input: {
     const compiledItems: CompiledItemEvidence[] = [];
     const orderedTargetIds: string[] = [];
     const targetWrites = new Map<string, { destructive: boolean; itemId: string }>();
+    const targetCommandArguments = new Map<string, string>();
+    const canonicalCommandKeys = new Set<string>();
 
     for (const [index, item] of items.entries()) {
         const commandStart = commands.length;
@@ -423,11 +432,19 @@ export function compileArbitraryCommandList(input: {
             }
         }
         if (item.selector === undefined) {
+            let omittedCommandCount = 0;
             if (rules.targetRules.length > 0) {
                 return { status: 'rejected', reason: 'Targeted command requires a bounded semantic bulk selector.' };
             }
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
-                commands.push({ name: item.name, arguments: { ...item.arguments } });
+                const command = { name: item.name, arguments: { ...item.arguments } };
+                const commandKey = JSON.stringify(command);
+                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                    omittedCommandCount += 1;
+                    continue;
+                }
+                canonicalCommandKeys.add(commandKey);
+                commands.push(command);
             }
             if (commands.length > MAX_COMMANDS) {
                 return {
@@ -436,9 +453,12 @@ export function compileArbitraryCommandList(input: {
                 };
             }
             compiledItems.push({
+                canonicalStableIds: [],
                 itemId: item.id,
                 commandName: item.name,
                 dependsOn,
+                declaredCommandCount: repeat,
+                omittedCommandCount,
                 stableIds: [],
                 commandStart,
                 commandCount: commands.length - commandStart,
@@ -468,7 +488,19 @@ export function compileArbitraryCommandList(input: {
             return resolved;
         }
         evidence.push(resolved.evidence);
-        orderedTargetIds.push(...resolved.stableIds);
+        for (const stableId of resolved.stableIds) {
+            if (!orderedTargetIds.includes(stableId)) {
+                orderedTargetIds.push(stableId);
+            }
+        }
+        if (repeat > 1 && !isIdempotentSetCommand(item.name)) {
+            return {
+                status: 'rejected',
+                reason: `Structured command repetition is not safely composable: ${item.name}`,
+            };
+        }
+        const canonicalStableIds: string[] = [];
+        let omittedCommandCount = 0;
         for (const stableId of resolved.stableIds) {
             const isDestructive = /^remove|^delete/u.test(item.name);
             const previousWrite = targetWrites.get(stableId);
@@ -479,20 +511,40 @@ export function compileArbitraryCommandList(input: {
                 };
             }
             targetWrites.set(stableId, { destructive: isDestructive, itemId: item.id });
+            const targetCommandKey = `${item.name}\u0000${stableId}`;
             for (let occurrence = 0; occurrence < repeat; occurrence += 1) {
-                commands.push({
+                const command = {
                     name: item.name,
                     arguments: { ...item.arguments, [selector.targetArgument]: stableId },
-                });
+                };
+                const commandKey = JSON.stringify(command);
+                const priorArguments = targetCommandArguments.get(targetCommandKey);
+                if (priorArguments !== undefined && priorArguments !== commandKey) {
+                    return {
+                        status: 'rejected',
+                        reason: `Structured command writes for ${item.name} on ${stableId} are not safely composable.`,
+                    };
+                }
+                targetCommandArguments.set(targetCommandKey, commandKey);
+                if (isIdempotentSetCommand(item.name) && canonicalCommandKeys.has(commandKey)) {
+                    omittedCommandCount += 1;
+                    continue;
+                }
+                canonicalCommandKeys.add(commandKey);
+                canonicalStableIds.push(stableId);
+                commands.push(command);
             }
         }
         if (commands.length > MAX_COMMANDS) {
             return { status: 'rejected', reason: 'Structured command list exceeds the application command budget.' };
         }
         compiledItems.push({
+            canonicalStableIds,
             itemId: item.id,
             commandName: item.name,
             dependsOn,
+            declaredCommandCount: resolved.stableIds.length * repeat,
+            omittedCommandCount,
             stableIds: [...resolved.stableIds],
             commandStart,
             commandCount: commands.length - commandStart,

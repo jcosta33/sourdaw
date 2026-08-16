@@ -107,7 +107,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
-    it('resolves an ordered bulk selector once into stable IDs and locally expands its repetition', () => {
+    it('canonicalizes idempotent selector repetition into one guarded write per stable target', () => {
         const result = compileArbitraryCommandList({
             context,
             revision: 'revision-1',
@@ -150,8 +150,6 @@ describe('compileArbitraryCommandList', () => {
                     plan: plan(['track-kick', 'track-hat']),
                     commands: [
                         { name: 'muteTrack', arguments: { muted: true, trackId: 'track-kick' } },
-                        { name: 'muteTrack', arguments: { muted: true, trackId: 'track-kick' } },
-                        { name: 'muteTrack', arguments: { muted: true, trackId: 'track-hat' } },
                         { name: 'muteTrack', arguments: { muted: true, trackId: 'track-hat' } },
                     ],
                 },
@@ -160,6 +158,104 @@ describe('compileArbitraryCommandList', () => {
         expect(result.evidence).toEqual([
             expect.objectContaining({ stableIds: ['track-kick', 'track-hat'], protectedExclusions: [] }),
         ]);
+        expect(result.compilerEvidence?.items).toEqual([
+            expect.objectContaining({
+                canonicalStableIds: ['track-kick', 'track-hat'],
+                declaredCommandCount: 4,
+                omittedCommandCount: 2,
+            }),
+        ]);
+    });
+
+    it('canonicalizes duplicate idempotent items while retaining their declared dependency identity', () => {
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                { id: 'mute-kick', name: 'muteTrack', arguments: { muted: true }, selector },
+                                {
+                                    id: 'mute-kick-again',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector,
+                                    dependsOn: ['mute-kick'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.compilerEvidence?.commands).toEqual([
+            { name: 'muteTrack', arguments: { muted: true, trackId: 'track-kick' } },
+        ]);
+        expect(result.compilerEvidence?.items).toEqual([
+            expect.objectContaining({ itemId: 'mute-kick', commandStart: 0, commandCount: 1 }),
+            expect.objectContaining({
+                itemId: 'mute-kick-again',
+                commandStart: 1,
+                commandCount: 0,
+                declaredCommandCount: 1,
+                omittedCommandCount: 1,
+            }),
+        ]);
+    });
+
+    it('rejects target writes whose different values have no declared local composition', () => {
+        const selector = {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', exactly: 1 },
+        };
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                { id: 'mute-kick', name: 'muteTrack', arguments: { muted: true }, selector },
+                                {
+                                    id: 'unmute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: false },
+                                    selector,
+                                    dependsOn: ['mute-kick'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for muteTrack on track-kick are not safely composable.',
+        });
     });
 
     it('excludes protected targets before it records a stable, revision-bearing scope', () => {
