@@ -127,6 +127,12 @@ impl TemporalStabilizer {
         }
     }
 
+    /// Forget every retained frame. RT-safe: two counter writes, no allocation.
+    fn reset(&mut self) {
+        self.pos = 0;
+        self.count = 0;
+    }
+
     /// Weighted median of recent frequencies.
     fn stable_freq(&self) -> f32 {
         if self.count == 0 {
@@ -189,6 +195,15 @@ impl VibratoDetector {
         }
     }
 
+    /// Forget every retained frame, including the vibrato verdict and the
+    /// smoothing coefficient it derived. RT-safe: field writes only.
+    fn reset(&mut self) {
+        self.pos = 0;
+        self.count = 0;
+        self.detected = false;
+        self.alpha = 0.2;
+    }
+
     fn update(&mut self, freq: f32, confidence: f32) {
         self.freq_history[self.pos] = freq;
         self.pos = (self.pos + 1) % 32;
@@ -240,8 +255,7 @@ pub struct ScoringEngine {
     stabilizer: TemporalStabilizer,
     vibrato: VibratoDetector,
 
-    // Smoothed output (dual path: raw for strobe, smoothed for needle)
-    raw_freq: f32,
+    // Smoothed output (needle path)
     smoothed_freq: f32,
 
     // Tuning
@@ -278,7 +292,6 @@ impl ScoringEngine {
             poly: PolyStringTracker::new(sample_rate),
             stabilizer: TemporalStabilizer::new(),
             vibrato: VibratoDetector::new(),
-            raw_freq: 0.0,
             smoothed_freq: 0.0,
             tuning: TuningSystem::new(),
             tone: ToneGenerator::new(sample_rate),
@@ -355,7 +368,6 @@ impl ScoringEngine {
                 };
 
                 if freq > 0.0 && conf > 0.3 {
-                    self.raw_freq = freq;
                     self.stabilizer.push(freq, conf);
                     self.vibrato.update(freq, conf);
 
@@ -388,6 +400,16 @@ impl ScoringEngine {
                 // Below noise gate — fade out
                 self.confidence *= 0.9;
                 if self.confidence < 0.05 {
+                    // The note is over. Every retained frame describes it, so
+                    // carrying them past the gate lets the previous pitch bleed
+                    // into the weighted median of the *next* onset (and the
+                    // jump between the two register as vibrato). Start the next
+                    // note from nothing. RT-safe: counter writes only.
+                    if self.active {
+                        self.stabilizer.reset();
+                        self.vibrato.reset();
+                        self.smoothed_freq = 0.0;
+                    }
                     self.active = false;
                 }
             }
@@ -509,19 +531,37 @@ impl ScoringInstance {
             .unwrap_or(false)
     }
 
-    /// Import a Scala .scl file and apply as tuning offsets.
-    pub fn import_scala(&mut self, scl_text: &str) {
-        if let Some(scale) = scala::ScalaScale::parse_scl(scl_text) {
-            self.engine.tuning.offsets = scale.to_12tet_offsets();
+    /// Import a Scala .scl file and apply it as tuning offsets. Returns whether
+    /// the file was applied: a malformed scale, or one that is not 12 degrees,
+    /// changes nothing. The offsets table is one entry per 12-TET pitch class,
+    /// so a scale of any other size cannot be represented and is refused rather
+    /// than truncated into a different tuning.
+    pub fn import_scala(&mut self, scl_text: &str) -> bool {
+        let Some(scale) = scala::ScalaScale::parse_scl(scl_text) else {
+            return false;
+        };
+        if scale.note_count != 12 {
+            return false;
         }
+        self.engine.tuning.offsets = scale.to_12tet_offsets();
+        true
     }
 
-    /// Import an AnaMark .tun file and apply as tuning offsets.
-    pub fn import_tun(&mut self, tun_text: &str) {
-        if let Some(tuning) = scala::AnaMarkTuning::parse_tun(tun_text) {
-            self.engine.tuning.offsets = tuning.to_12tet_offsets();
-            self.engine.tuning.a4_hz = tuning.base_freq;
+    /// Import an AnaMark .tun file and apply it as tuning offsets. Returns
+    /// whether the file was applied. A file that declares no `BaseFreq` leaves
+    /// the current concert-A reference alone — silence about the reference is
+    /// not a request to reset it to 440. A declared reference goes through
+    /// `set_param` so it lands inside the same range the reference knob
+    /// enforces.
+    pub fn import_tun(&mut self, tun_text: &str) -> bool {
+        let Some(tuning) = scala::AnaMarkTuning::parse_tun(tun_text) else {
+            return false;
+        };
+        self.engine.tuning.offsets = tuning.to_12tet_offsets();
+        if let Some(base_freq) = tuning.base_freq {
+            self.engine.tuning.set_param("a4_hz", base_freq);
         }
+        true
     }
 }
 
@@ -758,6 +798,247 @@ mod tests {
              (440 -> {default_reading:.2}, {TONE_HZ} -> {matched_reading:.2})",
             default_reading - matched_reading
         );
+    }
+
+    /// Feeds the engine one 128-frame block at a time with a continuous phase,
+    /// so a test can watch the readout across an onset instead of only after
+    /// it, and so switching tone or dropping to silence introduces no click.
+    struct BlockFeeder {
+        phase: f32,
+        sample_rate: f32,
+    }
+
+    impl BlockFeeder {
+        fn new(sample_rate: f32) -> Self {
+            Self {
+                phase: 0.0,
+                sample_rate,
+            }
+        }
+
+        fn feed(&mut self, engine: &mut ScoringEngine, freq: f32, amplitude: f32) {
+            let mut left = [0.0_f32; 128];
+            let mut right = [0.0_f32; 128];
+            let step = TAU * freq / self.sample_rate;
+            for i in 0..128 {
+                let s = self.phase.sin() * amplitude;
+                self.phase += step;
+                if self.phase >= TAU {
+                    self.phase -= TAU;
+                }
+                left[i] = s;
+                right[i] = s;
+            }
+            engine.process(&mut left, &mut right);
+        }
+    }
+
+    /// A note ends and another begins. The stabilizer keeps eight frames and
+    /// the vibrato detector thirty-two, so history carried across the gate
+    /// makes the *old* pitch win the weighted median at the new onset: play
+    /// A3, stop, play A4, and the first thing the tuner says is still A3.
+    ///
+    /// Asserted on the first active report after the second onset, which is
+    /// exactly the reading a player looks at — a guard that waited for the
+    /// history to refill would pass on the broken engine.
+    ///
+    /// Mutation that reds this: drop the `stabilizer.reset()` call from the
+    /// gate branch in `ScoringEngine::process` — the first report comes back as
+    /// MIDI 57 (220 Hz), the note that already ended.
+    #[test]
+    fn a_new_note_after_silence_is_not_blended_with_the_previous_one() {
+        const SAMPLE_RATE: f32 = 44100.0;
+        let blocks_per_second = (SAMPLE_RATE / 128.0) as usize;
+
+        let mut engine = ScoringEngine::new(SAMPLE_RATE);
+        let mut feeder = BlockFeeder::new(SAMPLE_RATE);
+
+        // First note: A3.
+        for _ in 0..blocks_per_second * 2 {
+            feeder.feed(&mut engine, 220.0, 0.8);
+        }
+        assert!(engine.active, "engine never locked onto the first note");
+        assert_eq!(engine.midi_note, 57, "first note misread");
+
+        // Silence, long enough for the gate to release the tuner.
+        let mut released = false;
+        for _ in 0..blocks_per_second * 3 {
+            feeder.feed(&mut engine, 220.0, 0.0);
+            if !engine.active {
+                released = true;
+                break;
+            }
+        }
+        assert!(
+            released,
+            "gate never released after three seconds of silence"
+        );
+
+        // Second note: A4, an octave up. The first active report has to be the
+        // note being played now.
+        let mut first_report: Option<(i32, f32)> = None;
+        for _ in 0..blocks_per_second * 2 {
+            feeder.feed(&mut engine, 440.0, 0.8);
+            if engine.active {
+                first_report = Some((engine.midi_note, engine.frequency));
+                break;
+            }
+        }
+        let (midi_note, frequency) =
+            first_report.expect("engine never locked onto the second note");
+        assert_eq!(
+            midi_note, 69,
+            "first report after re-onset was MIDI {midi_note} ({frequency:.1} Hz); \
+             the tuner is still showing the note that ended"
+        );
+
+        // The octave jump between the two notes is not vibrato. Retained
+        // vibrato history turns it into one, which narrows the smoothing
+        // coefficient at exactly the moment the tuner should be settling.
+        //
+        // Mutation that reds this: drop `vibrato.reset()` from the gate branch.
+        assert!(
+            !engine.vibrato.detected,
+            "steady 440 Hz re-onset reported as vibrato — the jump from the \
+             previous note is still in the history"
+        );
+    }
+
+    /// A 12-degree scale in equal temperament: valid, and its offsets are all
+    /// zero, so applying it is observable only through the return value.
+    const TWELVE_TET_SCL: &str = "\
+12-tone equal temperament
+ 12
+ 100.0
+ 200.0
+ 300.0
+ 400.0
+ 500.0
+ 600.0
+ 700.0
+ 800.0
+ 900.0
+ 1000.0
+ 1100.0
+ 1200.0
+";
+
+    /// A quarter-comma-ish scale: C is 20 cents flat, the rest 12-TET.
+    const FLATTENED_C_SCL: &str = "\
+C twenty cents flat
+ 12
+ 100.0
+ 200.0
+ 300.0
+ 400.0
+ 500.0
+ 600.0
+ 700.0
+ 800.0
+ 900.0
+ 1000.0
+ 1100.0
+ 1180.0
+";
+
+    #[test]
+    fn import_scala_applies_a_twelve_degree_scale() {
+        let mut instance = ScoringInstance::new(44100.0);
+        assert!(instance.import_scala(TWELVE_TET_SCL), "12-TET .scl refused");
+        assert!(instance.import_scala(FLATTENED_C_SCL), "valid .scl refused");
+        assert!(
+            (instance.engine.tuning.offsets[0] + 20.0).abs() < 0.01,
+            "C offset was {}",
+            instance.engine.tuning.offsets[0]
+        );
+    }
+
+    /// Import has to be able to fail, and failure has to leave the instrument
+    /// as it was. Before this returned a bool the caller had no way to tell a
+    /// rejected file from an applied one.
+    #[test]
+    fn import_scala_reports_failure_and_changes_nothing() {
+        let mut instance = ScoringInstance::new(44100.0);
+        assert!(instance.import_scala(FLATTENED_C_SCL));
+        let applied = instance.engine.tuning.offsets;
+
+        // Thirteen degrees: the offsets table has room for twelve pitch
+        // classes, so this must be refused rather than truncated.
+        let thirteen = "\
+13 of them
+ 13
+ 92.0
+ 185.0
+ 277.0
+ 369.0
+ 462.0
+ 554.0
+ 646.0
+ 738.0
+ 831.0
+ 923.0
+ 1015.0
+ 1108.0
+ 1200.0
+";
+        assert!(!instance.import_scala(thirteen), "13-degree scale accepted");
+        assert!(
+            !instance.import_scala("this is a text file, not a scale"),
+            "garbage accepted"
+        );
+        assert_eq!(
+            instance.engine.tuning.offsets, applied,
+            "a refused import still moved the tuning"
+        );
+    }
+
+    /// The reference is the player's, not the file's. A .tun that says nothing
+    /// about `BaseFreq` must leave a Baroque 415 or a 432 session exactly where
+    /// the player put it; resetting it to 440 retunes the whole instrument
+    /// behind their back.
+    ///
+    /// Mutation that reds this: assign `a4_hz` unconditionally on import — the
+    /// 415 and 432 rows come back reading 440.
+    #[test]
+    fn import_tun_without_a_base_frequency_keeps_the_current_reference() {
+        // C4 ten cents flat, everything else at 12-TET.
+        let tun = "[Tuning]\n[Scale Begin]\n60=-910.0\n[Scale End]\n";
+        for reference in [415.0_f32, 432.0, 440.0] {
+            let mut instance = ScoringInstance::new(44100.0);
+            instance.set_param("a4_hz", reference);
+            assert!(instance.import_tun(tun), "valid .tun refused");
+            assert_eq!(
+                instance.engine.tuning.a4_hz, reference,
+                "import moved the reference away from {reference}"
+            );
+            assert!(
+                (instance.engine.tuning.offsets[0] + 10.0).abs() < 0.01,
+                "C offset was {}",
+                instance.engine.tuning.offsets[0]
+            );
+        }
+    }
+
+    #[test]
+    fn import_tun_applies_a_declared_base_frequency() {
+        let tun = "BaseFreq=432.0\n[Tuning]\n[Scale Begin]\n69=0.0\n[Scale End]\n";
+        let mut instance = ScoringInstance::new(44100.0);
+        instance.set_param("a4_hz", 415.0);
+        assert!(instance.import_tun(tun), "valid .tun refused");
+        assert_eq!(instance.engine.tuning.a4_hz, 432.0);
+    }
+
+    #[test]
+    fn import_tun_reports_failure_and_changes_nothing() {
+        let mut instance = ScoringInstance::new(44100.0);
+        instance.set_param("a4_hz", 432.0);
+        let untouched = instance.engine.tuning.offsets;
+        assert!(
+            !instance.import_tun("Dear diary, today I did not tune anything."),
+            "garbage accepted as a .tun"
+        );
+        assert_eq!(instance.engine.tuning.a4_hz, 432.0);
+        assert_eq!(instance.engine.tuning.offsets, untouched);
     }
 }
 
