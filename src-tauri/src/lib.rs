@@ -1,10 +1,13 @@
 mod commands;
+mod events;
 pub mod host;
+mod sidecar;
 pub mod state;
+mod windows;
+
+use std::sync::Arc;
 
 use tauri::Manager;
-
-const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -123,7 +126,10 @@ pub fn run() {
                 let app_state = app.state::<state::AppState>();
                 std::sync::Arc::clone(&app_state.engine_plugins)
             };
-            host::latency_watcher::start(app.handle().clone(), engine_plugins);
+            host::latency_watcher::start(
+                Arc::new(events::TauriEventSink::new(app.handle().clone())),
+                engine_plugins,
+            );
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -143,8 +149,9 @@ pub fn run() {
                 // there is still a process to run it in. A plugin that refuses
                 // is reported, never fatal: exit must not be blocked by a
                 // third-party editor.
+                let window_host = windows::TauriWindowHost::new(app_handle.clone());
                 match commands::plugin_gui::close_every_plugin_gui(
-                    Some(app_handle),
+                    Some(&window_host),
                     plugin_state.inner(),
                 ) {
                     Ok(report) if !report.1.is_empty() => {

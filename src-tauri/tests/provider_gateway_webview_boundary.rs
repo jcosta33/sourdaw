@@ -7,11 +7,24 @@ fn read(path: &Path) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
 }
 
-fn command_names(source: &str, line_prefix: &str) -> BTreeSet<String> {
-    source
+/// The command set registered with the webview, read from the single
+/// `generate_handler!` block.
+///
+/// Scoped to that block rather than scanned over the whole file: `commands::`
+/// also opens lines elsewhere in `lib.rs` — the exit handler calls command
+/// bodies directly — and a whole-file scan reads a call expression as a
+/// registration, inventing a name no manifest can ever match.
+fn handler_command_names(source: &str) -> BTreeSet<String> {
+    let handler_block = source
+        .split("tauri::generate_handler![")
+        .nth(1)
+        .and_then(|tail| tail.split("])").next())
+        .expect("lib.rs must register commands in one explicit invoke handler");
+
+    handler_block
         .lines()
         .map(str::trim)
-        .filter(|line| line.starts_with(line_prefix))
+        .filter(|line| line.starts_with("commands::"))
         .filter_map(|line| {
             line.rsplit("::")
                 .next()
@@ -78,7 +91,7 @@ fn provider_gateway_webview_boundary() {
     assert!(development_csp.contains("http://localhost:*"));
     assert!(development_csp.contains("ws://localhost:*"));
 
-    let handler_commands = command_names(&read(&root.join("src/lib.rs")), "commands::");
+    let handler_commands = handler_command_names(&read(&root.join("src/lib.rs")));
     let manifest_commands = manifest_command_names(&read(&root.join("build.rs")));
     assert_eq!(manifest_commands, handler_commands);
 
