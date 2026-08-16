@@ -8,8 +8,8 @@ describe('agent device factory manifest', () => {
         pluginScanStore.set(defaultPluginScanState);
     });
 
-    it('marks owner-undeclared topology and latency unavailable while retaining bounded inferred guidance', async () => {
-        const manifest = await getAgentDeviceFactoryManifest();
+    it('marks owner-undeclared topology and latency unavailable while retaining bounded inferred guidance', () => {
+        const manifest = getAgentDeviceFactoryManifest();
 
         expect(manifest).toMatchObject({
             schema: 'sourdaw.agent-device-factory-manifest',
@@ -40,7 +40,7 @@ describe('agent device factory manifest', () => {
         });
     });
 
-    it('prevents external configuration when the scan did not publish real parameter descriptors', async () => {
+    it('prevents external configuration when the scan did not publish real parameter descriptors', () => {
         pluginScanStore.set({
             ...defaultPluginScanState,
             scannedPlugins: [
@@ -61,7 +61,7 @@ describe('agent device factory manifest', () => {
             ],
         });
 
-        expect((await getAgentDeviceFactoryManifest(['org.example.effect'])).devices).toEqual([
+        expect(getAgentDeviceFactoryManifest(['org.example.effect']).devices).toEqual([
             expect.objectContaining({
                 type: 'org.example.effect',
                 configuration: expect.objectContaining({ availability: 'unavailable' }),
