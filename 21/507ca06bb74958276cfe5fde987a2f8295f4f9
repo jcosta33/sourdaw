@@ -1,0 +1,58 @@
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_f63db6c8be8816 161-186,189-192,195
+  s_a40848e8f8cca9::t_d2da325372d921 109,116,122-131,143-147,153,159
+  s_a40848e8f8cca9::t_d45fb19daf0537 194
+  s_a40848e8f8cca9::t_14d9931668aef6 160,196-233
+  s_a40848e8f8cca9::t_ce8ddbd938e2a0 187-188,193
+  s_a40848e8f8cca9::t_dcff9b5b98f476 234-235
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_0df9dd1c062edd 416,543-566
+  s_a40848e8f8cca9::t_3d10d763d11a1c 436,452-455,497
+  s_a40848e8f8cca9::t_c151765d6621d1 526-528,536-537,717
+  s_a40848e8f8cca9::t_6968f4400e9fc9 8,10-11,14-15,297-302,304,309,329-382,384-415
+  s_a40848e8f8cca9::t_a49666a40acc37 383,450-451,456-459,465
+  s_a40848e8f8cca9::t_7671a7fb747223 671-678,680
+  s_a40848e8f8cca9::t_e6bb0d7f6dcd4e 417
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_681042f3c970d0 190-192,194
+  s_a40848e8f8cca9::t_4f7728d791136e 167-176,179-187
+  s_a40848e8f8cca9::t_a377ad49ca3120 133-166,177-178,195-196
+  s_a40848e8f8cca9::t_d8b12d1892665f 188-189,193
+  s_a40848e8f8cca9::t_72b0539f407072 259
+src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts
+  s_a40848e8f8cca9::t_604d81607d7780 6,8-9,12-13,31-107,111-113,115-130,137,140-141,143-151,158
+  s_a40848e8f8cca9::t_df7426da15027b 131-132,142
+  s_a40848e8f8cca9::t_80d4304859d5ab 3-4
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_a40848e8f8cca9::t_6541bc9ad6890c 6-7,10-12,58-59,61,63-68,105,128-135,139-140,142-147,149,152-153,155,157
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_e176ff2a966088 44-47,72,109,111-121,126-133
+  s_a40848e8f8cca9::t_48423b7132be18 78-80,83,86-108,110,122-125,134-138
+  s_a40848e8f8cca9::t_da310dad540a3a 43
+  s_a40848e8f8cca9::t_9f63bf58be6c41 139-141
+  s_eea179c0c9a3bb::t_388ca3f731852b 142-143,145,149,292-293,353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "21507ca06bb74958276cfe5fde987a2f8295f4f9",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_eea179c0c9a3bb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00895-5159-7011-8095-bf2956dec3fa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
