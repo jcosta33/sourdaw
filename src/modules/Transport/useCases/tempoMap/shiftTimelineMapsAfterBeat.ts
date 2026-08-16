@@ -14,8 +14,17 @@ type ShiftTimelineMapsAfterBeatInput = {
 // beat 0 (below `atBeat`); a same-beat collision from clamping is preferable
 // to a change that is always active, and is resolved like any other
 // same-beat duplicate — last write wins for that beat.
+//
+// A non-finite `deltaBeats` (e.g. NaN) would otherwise write `beat: NaN` and
+// corrupt the map. Unlike a large negative shift, there is no sensible
+// clamped position to fall back to, so leave the beat unchanged — the
+// conservative no-op — rather than guess one.
 function clampShiftedBeat(beat: number, deltaBeats: number): number {
-    return Math.max(0, beat + deltaBeats);
+    const shifted = beat + deltaBeats;
+    if (!Number.isFinite(shifted)) {
+        return beat;
+    }
+    return Math.max(0, shifted);
 }
 
 export function shiftTimelineMapsAfterBeat(input: ShiftTimelineMapsAfterBeatInput): void {

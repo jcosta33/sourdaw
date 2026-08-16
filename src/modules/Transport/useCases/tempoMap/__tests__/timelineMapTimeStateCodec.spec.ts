@@ -71,14 +71,14 @@ describe('timelineMapTimeStateCodec — negative-zero distinction', () => {
 });
 
 describe('timelineMapTimeStateCodec — tempo range validation', () => {
-    it('rejects tempo below MIN_TEMPO (20) on encode', () => {
+    it('rejects tempo below MIN_TEMPO_MAP_TEMPO (20) on encode', () => {
         const state = makeState({
             tempo: { changes: [{ id: 't1', beat: 0, tempo: 19, curve: 'linear' }] },
         });
         expect(encodeState(state)).toBeNull();
     });
 
-    it('rejects tempo above MAX_TEMPO (999) on encode', () => {
+    it('rejects tempo above MAX_TEMPO_MAP_TEMPO (999) on encode', () => {
         const state = makeState({
             tempo: { changes: [{ id: 't1', beat: 0, tempo: 1000, curve: 'linear' }] },
         });

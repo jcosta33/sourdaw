@@ -51,7 +51,10 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
     },
 }));
 
+import { getTempoAtBeat } from '../../../models/TempoMap';
 import { shiftTimelineMapsAfterBeat } from '../shiftTimelineMapsAfterBeat';
+
+import type { TempoChange } from '../../../models/TempoMap';
 
 describe('shiftTimelineMapsAfterBeat', () => {
     beforeEach(() => {
@@ -141,6 +144,48 @@ describe('shiftTimelineMapsAfterBeat', () => {
         });
         expect(timeSignatureMapStoreSet).toHaveBeenCalledWith({
             changes: [{ id: 'sig-at', beat: 0, numerator: 5, denominator: 4 }],
+        });
+    });
+
+    it('resolves a beat-0 collision from clamping as last-write-wins, matching the map query the store answers from', () => {
+        // An untouched change already sits at beat 0. The shifted change
+        // clamps down onto the same beat. The doc comment on
+        // `clampShiftedBeat` says the clamped write wins the collision — this
+        // proves it against `getTempoAtBeat`, the same query the scheduler
+        // uses to read the governing tempo, rather than asserting array order.
+        tempoMapStoreValue.value = {
+            changes: [
+                { id: 'tempo-zero', beat: 0, tempo: 90, curve: 'instant' },
+                { id: 'tempo-shifted', beat: 4, tempo: 150, curve: 'instant' },
+            ],
+        };
+        timeSignatureMapStoreValue.value = { changes: [] };
+
+        shiftTimelineMapsAfterBeat({ atBeat: 4, deltaBeats: -10 });
+
+        const written = tempoMapStoreSet.mock.calls[0]?.[0] as TempoState;
+        expect(written.changes).toEqual([
+            { id: 'tempo-zero', beat: 0, tempo: 90, curve: 'instant' },
+            { id: 'tempo-shifted', beat: 0, tempo: 150, curve: 'instant' },
+        ]);
+        expect(getTempoAtBeat(written.changes as TempoChange[], 0, 120)).toBe(150);
+    });
+
+    it('leaves a beat unchanged when the shift is non-finite instead of writing NaN', () => {
+        tempoMapStoreValue.value = {
+            changes: [{ id: 'tempo-at', beat: 4, tempo: 120, curve: 'instant' }],
+        };
+        timeSignatureMapStoreValue.value = {
+            changes: [{ id: 'sig-at', beat: 4, numerator: 5, denominator: 4 }],
+        };
+
+        shiftTimelineMapsAfterBeat({ atBeat: 4, deltaBeats: Number.NaN });
+
+        expect(tempoMapStoreSet).toHaveBeenCalledWith({
+            changes: [{ id: 'tempo-at', beat: 4, tempo: 120, curve: 'instant' }],
+        });
+        expect(timeSignatureMapStoreSet).toHaveBeenCalledWith({
+            changes: [{ id: 'sig-at', beat: 4, numerator: 5, denominator: 4 }],
         });
     });
 });

@@ -12,6 +12,12 @@ const MIN_TIME_SIGNATURE_NUMERATOR = 1;
 const MAX_TIME_SIGNATURE_NUMERATOR = 32;
 const MIN_BARS = 1;
 const MAX_BARS = 8;
+/**
+ * Shared with `setMasterGain`'s [0, 100] write contract — hydration must not
+ * accept a value the engine cannot express. `MasterChannelStrip` derives its
+ * dB readout and fader position from this same ceiling.
+ */
+export const MAX_MASTER_GAIN = 100;
 
 const RUNTIME_TRANSPORT_KEYS = [
     'isPlaying',
@@ -121,6 +127,10 @@ function is_non_negative_finite_number(value: unknown): value is number {
     return is_finite_number(value) && value >= 0;
 }
 
+function is_valid_master_gain(value: unknown): value is number {
+    return is_finite_number(value) && value >= 0 && value <= MAX_MASTER_GAIN;
+}
+
 function is_unit_interval_number(value: unknown): value is number {
     return is_finite_number(value) && value >= 0 && value <= 1;
 }
@@ -132,17 +142,26 @@ function is_valid_bar_count(value: unknown): value is number {
 // Per-field fallback: an absent or invalid field simply leaves `next_state`'s
 // seeded default in place. Nothing here can fail the overall normalization —
 // one bad field must not wipe every other durable setting in the snapshot.
-function apply_durable_field<TValue>(input: ApplyDurableFieldInput<TValue>): void {
+//
+// Returns `false` only when the field was *present but rejected* — the one
+// case a caller cannot infer from `next_state` alone, because the seeded
+// default can coincidentally satisfy a downstream cross-field check (e.g. a
+// rejected `loopStart` falls back to `0`, which can still be `<= loopEnd`).
+// Callers that gate a cross-field reset on this must capture it into a const
+// rather than short-circuit it with `&&`, or a later field in the same
+// expression would never get applied.
+function apply_durable_field<TValue>(input: ApplyDurableFieldInput<TValue>): boolean {
     const property = get_own_value({ value: input.source, key: input.key });
     if (!property.found) {
-        return;
+        return true;
     }
 
     if (!input.is_valid(property.value)) {
-        return;
+        return false;
     }
 
     input.assign_value(property.value);
+    return true;
 }
 
 function has_valid_loop_configuration(state: TransportState): boolean {
@@ -196,7 +215,7 @@ function normalize_transport_object(value: object): TransportState {
             next_state.isLooping = is_looping;
         },
     });
-    apply_durable_field({
+    const loop_start_ok = apply_durable_field({
         source: value,
         key: 'loopStart',
         is_valid: is_non_negative_finite_number,
@@ -204,7 +223,7 @@ function normalize_transport_object(value: object): TransportState {
             next_state.loopStart = loop_start;
         },
     });
-    apply_durable_field({
+    const loop_end_ok = apply_durable_field({
         source: value,
         key: 'loopEnd',
         is_valid: is_non_negative_finite_number,
@@ -236,7 +255,7 @@ function normalize_transport_object(value: object): TransportState {
             next_state.punchInEnabled = punch_in_enabled;
         },
     });
-    apply_durable_field({
+    const punch_in_beat_ok = apply_durable_field({
         source: value,
         key: 'punchInBeat',
         is_valid: is_non_negative_finite_number,
@@ -244,7 +263,7 @@ function normalize_transport_object(value: object): TransportState {
             next_state.punchInBeat = punch_in_beat;
         },
     });
-    apply_durable_field({
+    const punch_out_beat_ok = apply_durable_field({
         source: value,
         key: 'punchOutBeat',
         is_valid: is_non_negative_finite_number,
@@ -287,7 +306,7 @@ function normalize_transport_object(value: object): TransportState {
     apply_durable_field({
         source: value,
         key: 'masterGain',
-        is_valid: is_non_negative_finite_number,
+        is_valid: is_valid_master_gain,
         assign_value: (master_gain) => {
             next_state.masterGain = master_gain;
         },
@@ -295,13 +314,20 @@ function normalize_transport_object(value: object): TransportState {
 
     // Cross-field invariants narrow to only the fields they own: an invalid
     // loop pair must not wipe punch/tempo/etc, and vice versa.
-    if (!has_valid_loop_configuration(next_state)) {
+    //
+    // Post-fallback state alone is not enough: a rejected member of the pair
+    // falls back to its default, which can coincidentally satisfy the other
+    // member's ordering check and let a region the user never authored
+    // survive (e.g. a rejected `loopStart` defaults to `0`, and `0 <=
+    // loopEnd` passes for almost any authored `loopEnd`). Gate the reset on
+    // the per-field rejection too.
+    if (!loop_start_ok || !loop_end_ok || !has_valid_loop_configuration(next_state)) {
         next_state.isLooping = defaultTransportState.isLooping;
         next_state.loopStart = defaultTransportState.loopStart;
         next_state.loopEnd = defaultTransportState.loopEnd;
     }
 
-    if (!has_valid_punch_configuration(next_state)) {
+    if (!punch_in_beat_ok || !punch_out_beat_ok || !has_valid_punch_configuration(next_state)) {
         next_state.punchInEnabled = defaultTransportState.punchInEnabled;
         next_state.punchInBeat = defaultTransportState.punchInBeat;
         next_state.punchOutBeat = defaultTransportState.punchOutBeat;
