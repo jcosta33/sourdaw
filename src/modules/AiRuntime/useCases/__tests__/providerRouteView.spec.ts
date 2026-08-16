@@ -56,4 +56,22 @@ describe('provider route view', () => {
             usage: { provenance: 'provider-reported', priceProvenance: 'unavailable' },
         });
     });
+
+    it('does not invent an actual route when no provider attempt reached durable run truth', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'unattempted-route-run',
+            request: 'Explain the mix.',
+            mode: 'explain',
+            createdRevision: 'revision-a',
+            requestedRoute: 'cloud',
+        });
+
+        expect(getProviderRouteView(agentRunLifecycle.get('unattempted-route-run')!)).toMatchObject({
+            requestedRoute: 'remote',
+            actualRoute: null,
+            availability: { status: 'unavailable', reason: 'no-provider-attempt' },
+            usage: { provenance: 'unavailable', priceProvenance: 'unavailable' },
+        });
+    });
 });

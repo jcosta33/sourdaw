@@ -10,6 +10,7 @@ import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVib
 import { prepareStemImport } from './agentReference/prepareStemImport';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { getProjectContext } from './getProjectContext';
+import { type ProviderAttemptAdmission, type ProviderAttemptAdmissionResult } from './llmOrchestration/inference';
 import { parsePromptToActions } from './parsePromptToActions';
 
 type PlanPromptActionsInput = {
@@ -17,6 +18,7 @@ type PlanPromptActionsInput = {
     signal?: AbortSignal;
     onProviderResult?: (result: ModelProviderResult) => void;
     streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
+    onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult;
 };
 
 export async function planPromptActions(input: PlanPromptActionsInput) {
@@ -32,7 +34,8 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             projectRevision,
             undefined,
             input.onProviderResult,
-            input.streamIdentity
+            input.streamIdentity,
+            input.onProviderAttempt
         );
         if (result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal);
@@ -57,7 +60,8 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 projectRevision,
                 stemImportScope,
                 input.onProviderResult,
-                input.streamIdentity
+                input.streamIdentity,
+                input.onProviderAttempt
             );
         }
     } catch (error) {

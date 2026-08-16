@@ -87,6 +87,25 @@ function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutc
     return { status: 'complete', toolCalls };
 }
 
+export type ProviderAttemptAdmission = {
+    backend: RunnableAiBackend;
+    provider: ModelProviderName;
+    correlationId: string;
+    request: ModelProviderRequest;
+};
+
+export type ProviderAttemptAdmissionResult = { status: 'admitted' } | { status: 'rejected'; reason: string };
+
+function createProviderAttemptAdmissionError(reason: string): Error {
+    const error = new Error(reason);
+    error.name = 'ProviderAttemptAdmissionError';
+    return error;
+}
+
+function isProviderAttemptAdmissionError(error: unknown): error is Error {
+    return error instanceof Error && error.name === 'ProviderAttemptAdmissionError';
+}
+
 async function waitForInference<TResult>(inference: Promise<TResult>, signal?: AbortSignal): Promise<TResult> {
     if (!signal) {
         return inference;
@@ -150,7 +169,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
     async function generateNativeToolCalls(
         providerRequest: ModelProviderRequest,
         toolSchemas: readonly ToolSchema[],
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
+        onProviderResult?: (result: ModelProviderResult) => void
     ): Promise<ToolPlanningOutcome> {
         const toolCalls: ToolCallResult[] = [];
         const nativeOutcome = await runNativeModelProviderRequest({
@@ -236,6 +257,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         if (compiledFallback.status === 'unavailable') {
             throw createModelProviderFailureError(compiledFallback.failure);
         }
+        const fallbackAdmission = onProviderAttempt?.({
+            backend: 'native',
+            provider: 'native',
+            correlationId: compiledFallback.request.correlationId,
+            request: compiledFallback.request,
+        });
+        if (fallbackAdmission?.status === 'rejected') {
+            throw createProviderAttemptAdmissionError(fallbackAdmission.reason);
+        }
         const fallbackSession = fallbackProtocol.start(compiledFallback.request);
         const fallbackOutcome = await runNativeModelProviderRequest({
             request: compiledFallback.request,
@@ -252,6 +282,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             return { status: 'rejected', reason: fallbackOutcome.finish.finish.failure.safeMessage };
         }
         const fallbackResult = fallbackSession.finish(fallbackOutcome.finish);
+        onProviderResult?.(fallbackResult);
         if (fallbackResult.status !== 'complete') {
             if (fallbackResult.failure !== null) {
                 throw createModelProviderFailureError(fallbackResult.failure);
@@ -270,7 +301,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         signal?: AbortSignal,
         toolSelectionPrompt: string = userMessage,
         onProviderResult?: (result: ModelProviderResult) => void,
-        streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>
+        streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
+        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
@@ -390,6 +422,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     return { status: 'rejected', reason: compiledRequest.failure.safeMessage };
                 }
                 const providerRequest = compiledRequest.request;
+                const admission = onProviderAttempt?.({
+                    backend,
+                    provider: providerName,
+                    correlationId: providerRequest.correlationId,
+                    request: providerRequest,
+                });
+                if (admission?.status === 'rejected') {
+                    throw createProviderAttemptAdmissionError(admission.reason);
+                }
                 providerSession = providerProtocol.start(providerRequest);
                 providerSource = createModelProviderStreamWriter(providerRequest, providerSession);
                 const providerSystemPrompt = providerRequest.messages.find(
@@ -445,7 +486,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const generatedOutcome = await waitForInference(generatedInference, signal);
                     outcome = normalizeGeneratedToolPlanningOutcome(generatedOutcome);
                 } else {
-                    outcome = await generateNativeToolCalls(providerRequest, providerTools, signal);
+                    outcome = await generateNativeToolCalls(
+                        providerRequest,
+                        providerTools,
+                        signal,
+                        onProviderAttempt,
+                        reportProviderResult
+                    );
                 }
 
                 if (backend === 'webllm' && outcome.status === 'complete') {
@@ -502,6 +549,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 return outcome;
             } catch (error) {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
+                const isAdmissionRejection = isProviderAttemptAdmissionError(error);
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
                 const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
                 let normalizedAttemptError: Error | null = null;
@@ -564,7 +612,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     }
                     throw createToolPlanningAbortError();
                 }
-                if (isTerminalModelRejection) {
+                if (isTerminalModelRejection || isAdmissionRejection) {
                     llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                     return { status: 'rejected', reason: error.message };
                 }

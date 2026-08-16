@@ -4,7 +4,7 @@ import { type ModelProviderUsageProvenance } from '../models/ModelProviderProtoc
 
 export type ProviderRouteViewInput = {
     requestedRoute: 'browser-local' | 'native-local' | 'remote';
-    actualRoute: 'browser-local' | 'native-local' | 'remote';
+    actualRoute: 'browser-local' | 'native-local' | 'remote' | null;
     availability: { status: 'available' | 'unavailable'; reason: string | null };
     capability: { role: string; fidelity: string };
     fallback: { attempted: boolean; reason: string | null };
@@ -28,11 +28,13 @@ const UNKNOWN_RETENTION: AgentDataRetention = {
 
 export function getProviderRouteView(run: AgentRun): ProviderRouteView {
     const usage = run.providerUsage.at(-1);
-    let actualRoute: ProviderRouteViewInput['actualRoute'] = 'browser-local';
+    let actualRoute: ProviderRouteViewInput['actualRoute'] = null;
     if (usage?.executor === 'cloud') {
         actualRoute = 'remote';
     } else if (usage?.executor === 'native') {
         actualRoute = 'native-local';
+    } else if (usage?.executor === 'webllm') {
+        actualRoute = 'browser-local';
     }
     let requestedRoute: ProviderRouteViewInput['requestedRoute'] = 'browser-local';
     if (run.modelRoute.requestedRoute === 'cloud') {
@@ -40,13 +42,20 @@ export function getProviderRouteView(run: AgentRun): ProviderRouteView {
     } else if (run.modelRoute.requestedRoute === 'native') {
         requestedRoute = 'native-local';
     }
-    return {
+
+    const availability = (() => {
+        if (usage === undefined) {
+            return { status: 'unavailable' as const, reason: 'no-provider-attempt' };
+        }
+        if (usage.status === 'unavailable') {
+            return { status: 'unavailable' as const, reason: usage.fallbackReason ?? 'provider-unavailable' };
+        }
+        return { status: 'available' as const, reason: null };
+    })();
+    return buildProviderRouteView({
         requestedRoute,
         actualRoute,
-        availability: {
-            status: usage?.status === 'unavailable' ? 'unavailable' : 'available',
-            reason: usage?.status === 'unavailable' ? (usage.fallbackReason ?? 'provider-unavailable') : null,
-        },
+        availability,
         capability: {
             role: run.mode === 'explain' ? 'text' : 'tool-planning',
             fidelity: usage?.model ?? 'unavailable',
@@ -60,5 +69,5 @@ export function getProviderRouteView(run: AgentRun): ProviderRouteView {
             retention: usage?.disclosure?.retention ?? UNKNOWN_RETENTION,
         },
         usage: { provenance: usage?.provenance ?? 'unavailable', priceProvenance: 'unavailable' },
-    };
+    });
 }

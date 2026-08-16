@@ -52,4 +52,53 @@ describe('agent cost budget', () => {
             })
         ).toMatchObject({ status: 'hard-limit-reached', reason: 'renderJobs' });
     });
+
+    it('preserves already-reserved provider usage when the resulting plan records its own command budget', () => {
+        agentRunLifecycle.create({
+            runId: 'budget-plan-run',
+            request: 'Plan a chorus render.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            budgets: { limits: { remoteTokens: 100, commands: 3 }, consumed: {} },
+        });
+        agentRunLifecycle.reserveBudget({
+            runId: 'budget-plan-run',
+            attemptId: 'remote-attempt',
+            category: 'remoteTokens',
+            estimate: 20,
+            provenance: 'versioned-estimate',
+        });
+
+        agentRunLifecycle.recordPlan({
+            runId: 'budget-plan-run',
+            summary: 'Plan a chorus render.',
+            commandIds: ['command-a'],
+            serializedBatchIdentity: 'batch-a',
+            revision: 'revision-a',
+            scope: {
+                targetIds: [],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            },
+            grants: {
+                allowedOperationPrefixes: [],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: false,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: false,
+            },
+            budgets: { limits: { commands: 1 }, consumed: { commands: 1 } },
+        });
+
+        expect(agentRunLifecycle.get('budget-plan-run')?.budgets).toEqual({
+            limits: { remoteTokens: 100, commands: 1 },
+            consumed: { remoteTokens: 20, commands: 1 },
+        });
+    });
 });

@@ -60,4 +60,34 @@ describe('tool-planning remote data disclosure', () => {
         expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
     });
+
+    it('stops a denied provider attempt before its adapter has any effect', async () => {
+        const generateWithAdmission = generateToolPlanningOutcome as unknown as (
+            systemPrompt: string,
+            userMessage: string,
+            toolSchemas: readonly [],
+            signal: undefined,
+            toolSelectionPrompt: string,
+            onProviderResult: undefined,
+            streamIdentity: undefined,
+            onProviderAttempt: (input: { backend: string; correlationId: string }) => {
+                status: 'rejected';
+                reason: string;
+            }
+        ) => ReturnType<typeof generateToolPlanningOutcome>;
+
+        const result = await generateWithAdmission(
+            'system',
+            'user',
+            [],
+            undefined,
+            'user',
+            undefined,
+            undefined,
+            () => ({ status: 'rejected', reason: 'remoteTokens' })
+        );
+
+        expect(result).toEqual({ status: 'rejected', reason: 'remoteTokens' });
+        expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
+    });
 });

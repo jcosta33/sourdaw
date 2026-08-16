@@ -295,26 +295,28 @@ export async function sendChatMessage(
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
     const providerReceiptIdentity = `provider:${backend}:${runId}`;
-    const budgetReservation = agentRunLifecycle.reserveBudget({
-        runId,
-        attemptId: providerReceiptIdentity,
-        category: getProviderBudgetCategory(backend),
-        estimate: estimateProviderBudget(userText, backend),
-        provenance: 'versioned-estimate',
-    });
-    if (budgetReservation.status === 'hard-limit-reached') {
-        agentRunLifecycle.recordError({
+    if (interactionMode === 'explain') {
+        const budgetReservation = agentRunLifecycle.reserveBudget({
             runId,
-            error: {
-                code: 'agent-budget-hard-limit',
-                message: `The ${budgetReservation.reason} budget would be exceeded before provider work starts.`,
-                occurredAt: Date.now(),
-                retriable: false,
-                workId: providerWorkId,
-            },
-            terminal: true,
+            attemptId: providerReceiptIdentity,
+            category: getProviderBudgetCategory(backend),
+            estimate: estimateProviderBudget(userText, backend),
+            provenance: 'versioned-estimate',
         });
-        throw createAiRuntimeError('The agent budget limit was reached before work started.');
+        if (budgetReservation.status === 'hard-limit-reached') {
+            agentRunLifecycle.recordError({
+                runId,
+                error: {
+                    code: 'agent-budget-hard-limit',
+                    message: `The ${budgetReservation.reason} budget would be exceeded before provider work starts.`,
+                    occurredAt: Date.now(),
+                    retriable: false,
+                    workId: providerWorkId,
+                },
+                terminal: true,
+            });
+            throw createAiRuntimeError('The agent budget limit was reached before work started.');
+        }
     }
     const providerLeaseResult = agentRunWorkLease.claim({
         runId,
@@ -350,12 +352,24 @@ export async function sendChatMessage(
                 prompt: userText,
                 signal: aborter.signal,
                 onProviderResult: (providerResult) => {
-                    recordModelProviderUsage(runId, providerResult, providerReceiptIdentity);
+                    recordModelProviderUsage(runId, providerResult, providerResult.correlationId);
                 },
                 streamIdentity: {
                     runId,
                     requestId: providerReceiptIdentity,
                     cancellationGeneration: providerLease.cancellationGeneration,
+                },
+                onProviderAttempt: ({ backend: attemptBackend, correlationId }) => {
+                    const budgetReservation = agentRunLifecycle.reserveBudget({
+                        runId,
+                        attemptId: correlationId,
+                        category: getProviderBudgetCategory(attemptBackend),
+                        estimate: estimateProviderBudget(userText, attemptBackend),
+                        provenance: 'versioned-estimate',
+                    });
+                    return budgetReservation.status === 'reserved'
+                        ? { status: 'admitted' as const }
+                        : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
                 },
             });
             agentRunWorkLease.settle({

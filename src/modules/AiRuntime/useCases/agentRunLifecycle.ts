@@ -38,6 +38,18 @@ const DEFAULT_GRANTS: AgentRunGrants = {
 
 const DEFAULT_BUDGETS: AgentRunBudgets = { limits: {}, consumed: {} };
 
+function mergeAgentRunBudgets(current: AgentRunBudgets, next: AgentRunBudgets): AgentRunBudgets {
+    const limits = { ...current.limits };
+    for (const [category, limit] of Object.entries(next.limits)) {
+        limits[category] = limits[category] === undefined ? limit : Math.min(limits[category], limit);
+    }
+    const consumed = { ...current.consumed };
+    for (const [category, amount] of Object.entries(next.consumed)) {
+        consumed[category] = Math.max(consumed[category] ?? 0, amount);
+    }
+    return { limits, consumed };
+}
+
 const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 
 const ALLOWED_PHASE_TRANSITIONS: Record<AgentRunPhase, ReadonlySet<AgentRunPhase>> = {
@@ -195,7 +207,7 @@ function recordAgentRunPlan(input: {
         revisions: { ...run.revisions, planned: input.revision },
         scope: structuredClone(input.scope),
         grants: structuredClone(input.grants),
-        budgets: structuredClone(input.budgets),
+        budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
         plan: {
             summary: input.summary,
             commandIds: [...input.commandIds],
@@ -236,7 +248,7 @@ function recordAgentRunApplicationToolEvidence(input: {
             revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
             scope: structuredClone(input.scope),
             grants: structuredClone(input.grants),
-            budgets: structuredClone(input.budgets),
+            budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan,
         };
     });
