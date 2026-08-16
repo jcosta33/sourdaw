@@ -1,0 +1,19 @@
+src/modules/Proof/models/__tests__/LinkedBandValues.spec.ts
+  s_ab5443e65c7fba::t_e2420196e107af 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3666fdeda573787b98c595b25eda32197f56b347",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
