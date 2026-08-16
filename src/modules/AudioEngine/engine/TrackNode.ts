@@ -324,9 +324,11 @@ export class TrackNode {
         return peak;
     }
 
-    public setOutput(outputId: string): void {
+    public setOutput(outputId: string): boolean {
+        const changed = this.strip.outputId !== outputId;
         this.strip.outputId = outputId;
         this.routeOutput();
+        return changed;
     }
 
     public getDefaultDestination(): AudioNode {
@@ -755,13 +757,13 @@ export class TrackNode {
         deviceType: string,
         externalInstanceId?: string,
         precedingDeviceIds?: readonly string[]
-    ): void {
+    ): boolean {
         if (this._disposed) {
-            return;
+            return false;
         }
         if (this.strip.deviceNodes.some((d) => d.deviceId === deviceId)) {
             logger.debug(`Device ${deviceId} already exists on track ${this.trackId}`);
-            return;
+            return false;
         }
 
         const { context } = this.deps;
@@ -899,7 +901,7 @@ export class TrackNode {
             } else {
                 if (!descriptor) {
                     this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'node' });
-                    return;
+                    return false;
                 }
                 const pendingLoad: PendingDeviceLoad = {
                     abortController: new AbortController(),
@@ -962,7 +964,7 @@ export class TrackNode {
                 this.destroyRejectedDeviceNode(dn);
                 throw error;
             }
-            return;
+            return true;
         }
         this.deps.readinessDiagnostics.markNodeReady({ token: readinessToken });
         try {
@@ -980,9 +982,10 @@ export class TrackNode {
             }
             throw error;
         }
+        return true;
     }
 
-    public removeDevice(deviceId: string): void {
+    public removeDevice(deviceId: string): boolean {
         this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true, clearFailure: true });
         const readinessToken = this._deviceReadinessTokens.get(deviceId);
         if (readinessToken) {
@@ -993,13 +996,14 @@ export class TrackNode {
         this._runtimeRecoveryAttempts.delete(deviceId);
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
-            return;
+            return false;
         }
 
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.deps.onDeviceRemoved?.(this.trackId, dn);
         this.destroyPublishedDeviceNode(dn);
         this.rebuildChain();
+        return true;
     }
 
     public updateParam(deviceId: string, paramId: string, value: number): void {
@@ -1047,11 +1051,12 @@ export class TrackNode {
         dn?.controller?.keyOff?.(0, pitch, velocity, time);
     }
 
-    public updateBypass(deviceId: string, bypassed: boolean): void {
+    public updateBypass(deviceId: string, bypassed: boolean): boolean {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
-            return;
+            return false;
         }
+        const changed = dn.bypassed !== bypassed;
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (pendingLoad && !pendingLoad.resolved) {
             pendingLoad.bypassed = bypassed;
@@ -1069,10 +1074,11 @@ export class TrackNode {
         // summed into the strip), so even a synth whose controller cannot release
         // voices is removed from the audible path. Idempotent for effects whose
         // own setBypass already set dn.bypassed + scheduled a rebuild.
-        if (dn.bypassed !== bypassed) {
+        if (changed) {
             dn.bypassed = bypassed;
             this.scheduleRebuildChain();
         }
+        return changed;
     }
 
     public dispose(): void {

@@ -43,22 +43,65 @@ vi.mock('../../engine/TrackNode', () => ({
         setPan = vi.fn();
         setMute = vi.fn();
         setOutput = vi.fn((outputId: string) => {
+            const changed = this.strip.outputId !== outputId;
             this.strip.outputId = outputId;
             this.strip.analyserNode.disconnect(this.outputDestination);
             const destination = outputId === 'hw_out' ? this.deps.masterGainNode : this.deps.getTrackGainNode(outputId);
             this.strip.analyserNode.connect(destination ?? this.deps.masterGainNode);
             this.outputDestination = destination ?? this.deps.masterGainNode;
+            return changed;
         });
+        addDevice = vi.fn(
+            (deviceId: string, type: string, _externalInstanceId?: string, precedingDeviceIds?: readonly string[]) => {
+                if (
+                    this.strip.deviceNodes.some(
+                        (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
+                    )
+                ) {
+                    return false;
+                }
+                const device = { deviceId, type };
+                let targetIndex = this.strip.deviceNodes.length;
+                if (precedingDeviceIds !== undefined) {
+                    const precedingIds = new Set(precedingDeviceIds);
+                    targetIndex = 0;
+                    for (const [index, candidate] of this.strip.deviceNodes.entries()) {
+                        if (precedingIds.has((candidate as { deviceId?: string }).deviceId ?? '')) {
+                            targetIndex = index + 1;
+                        }
+                    }
+                }
+                this.strip.deviceNodes.splice(targetIndex, 0, device);
+                this.rebuildChain();
+                return true;
+            }
+        );
         getPeakLevel = vi.fn().mockReturnValue(0.5);
         removeDevice = vi.fn((deviceId: string) => {
             const device = this.strip.deviceNodes.find(
                 (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
             );
             if (!device) {
-                return;
+                return false;
             }
             this.strip.deviceNodes = this.strip.deviceNodes.filter((candidate) => candidate !== device);
             this.deps.onDeviceRemoved?.(this.trackId, device);
+            this.rebuildChain();
+            return true;
+        });
+        updateBypass = vi.fn((deviceId: string, bypassed: boolean) => {
+            const device = this.strip.deviceNodes.find(
+                (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
+            ) as { bypassed?: boolean } | undefined;
+            if (!device) {
+                return false;
+            }
+            const changed = device.bypassed !== bypassed;
+            device.bypassed = bypassed;
+            if (changed) {
+                this.rebuildChain();
+            }
+            return changed;
         });
         rebuildChain = vi.fn(() => this.deps.reconnectRoutingForTrack?.(this.trackId));
         notifyDeviceLoaded(device: unknown) {
@@ -212,6 +255,32 @@ function createDeviceRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta 
     };
 }
 
+function createRuntimeOutputDeltaWithDevices(
+    appRevision: number,
+    sourceDevices: ReadonlyArray<{ id: string; type: string }>,
+    targetDevices: ReadonlyArray<{ id: string; type: string }> = []
+): RuntimeGraphDelta {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [
+            {
+                id: 'source',
+                kind: 'audio',
+                devices: sourceDevices.map((device) => ({ ...device, parameterIds: [] })),
+            },
+            {
+                id: 'target',
+                kind: 'bus',
+                devices: targetDevices.map((device) => ({ ...device, parameterIds: [] })),
+            },
+        ],
+        edges: [{ kind: 'output', sourceId: 'source', targetId: 'target' }],
+        parameters: [] as const,
+    };
+}
+
 describe('AudioEngine', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
@@ -324,8 +393,8 @@ describe('AudioEngine', () => {
         expect(applied).toMatchObject({
             acceptance: 'accepted',
             application: 'applied',
-            correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
-            runtimeRevision: 1,
+            correlation: { appRevision: 2, projectRevision: 'project-revision-1' },
+            runtimeRevision: 3,
         });
         expect(source.outputId).toBe('target');
         expect(staleReplay).toMatchObject({
@@ -333,6 +402,164 @@ describe('AudioEngine', () => {
             application: 'not-applied',
             reason: expect.stringContaining('stale'),
         });
+    });
+
+    it('rejects a delta compiled before target deletion reroutes its source and the target is recreated', () => {
+        const source = engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.setTrackOutput('source', 'target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+
+        engine.removeTrackStrip('target');
+        expect(source.outputId).toBe('hw_out');
+        engine.ensureTrackStrip('target');
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+        expect(engine.getRuntimeGraphRevision()).toBeGreaterThan(staleDelta.correlation.appRevision);
+    });
+
+    it('rejects a delta after a device is added then removed back to the same topology', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        const staleDelta = createRuntimeOutputDelta(engine.getRuntimeGraphRevision());
+
+        engine.addDeviceToStrip('source', 'transient-device', 'builtin-compressor');
+        engine.removeDeviceFromStrip('source', 'transient-device');
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a delta after a device reorder cycle restores the original canonical order', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.addDeviceToStrip('source', 'device-a', 'builtin-compressor');
+        engine.addDeviceToStrip('source', 'device-b', 'builtin-limiter');
+        const staleDelta = createRuntimeOutputDeltaWithDevices(engine.getRuntimeGraphRevision(), [
+            { id: 'device-a', type: 'builtin-compressor' },
+            { id: 'device-b', type: 'builtin-limiter' },
+        ]);
+
+        engine.removeDeviceFromStrip('source', 'device-b');
+        engine.addDeviceToStrip('source', 'device-b', 'builtin-limiter', undefined, []);
+        engine.removeDeviceFromStrip('source', 'device-b');
+        engine.addDeviceToStrip('source', 'device-b', 'builtin-limiter', undefined, ['device-a']);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects a delta after a bypass cycle changes the active device path and restores it', () => {
+        engine.ensureTrackStrip('source');
+        engine.ensureTrackStrip('target');
+        engine.addDeviceToStrip('source', 'compressor', 'builtin-compressor');
+        const staleDelta = createRuntimeOutputDeltaWithDevices(engine.getRuntimeGraphRevision(), [
+            { id: 'compressor', type: 'builtin-compressor' },
+        ]);
+
+        engine.updateDeviceBypass('source', 'compressor', true);
+        engine.updateDeviceBypass('source', 'compressor', false);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+
+        const result = engine.applyRuntimeGraphDelta(staleDelta);
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('rejects deltas across sidechain route creation and removal without treating alignment writes as topology', () => {
+        engine.ensureTrackStrip('source');
+        const target = engine.ensureTrackStrip('target');
+        target.deviceNodes.push({
+            deviceId: 'sidechain-compressor',
+            type: 'builtin-sidechain-compressor',
+            inputNode: makeStripNode() as unknown as AudioNode,
+        } as never);
+        const deltaBeforeWire = createRuntimeOutputDeltaWithDevices(
+            engine.getRuntimeGraphRevision(),
+            [],
+            [{ id: 'sidechain-compressor', type: 'builtin-sidechain-compressor' }]
+        );
+
+        engine.wireSidechainRoute('source', 'target', 'sidechain-compressor');
+        const revisionAfterWire = engine.getRuntimeGraphRevision();
+        engine.refreshSidechainAlignment(() => 0.01);
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionAfterWire);
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+        const afterWire = engine.applyRuntimeGraphDelta(deltaBeforeWire);
+
+        expect(afterWire).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+
+        const deltaBeforeUnwire = createRuntimeOutputDeltaWithDevices(
+            engine.getRuntimeGraphRevision(),
+            [],
+            [{ id: 'sidechain-compressor', type: 'builtin-sidechain-compressor' }]
+        );
+        engine.unwireSidechainRoute('source', 'sidechain-compressor');
+        vi.mocked(getMockTrackNode(engine, 'source').setOutput).mockClear();
+        const afterUnwire = engine.applyRuntimeGraphDelta(deltaBeforeUnwire);
+
+        expect(afterUnwire).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
+    });
+
+    it('advances once for a new send topology, skips level writes, and advances for a tap change', () => {
+        engine.ensureTrackStrip('source');
+        const initialRevision = engine.getRuntimeGraphRevision();
+
+        engine.setSend('source', 'bus', 0.25, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(initialRevision + 1);
+
+        engine.setSend('source', 'bus', 0.75, false);
+        expect(engine.getRuntimeGraphRevision()).toBe(initialRevision + 1);
+
+        engine.setSend('source', 'bus', 0.75, true);
+        expect(engine.getRuntimeGraphRevision()).toBe(initialRevision + 2);
+    });
+
+    it('does not publish a second revision when a bus facade follows its already-removed track strip', () => {
+        engine.ensureBusStrip('bus');
+        const beforeRemoval = engine.getRuntimeGraphRevision();
+
+        engine.removeTrackStrip('bus');
+        engine.removeBusStrip('bus');
+
+        expect(engine.getRuntimeGraphRevision()).toBe(beforeRemoval + 1);
+    });
+
+    it('does not advance for idempotent, rejected, or absent graph commands', () => {
+        engine.ensureTrackStrip('source');
+        const revision = engine.getRuntimeGraphRevision();
+
+        engine.ensureTrackStrip('source');
+        engine.setTrackOutput('source', 'missing-runtime-destination');
+        engine.removeDeviceFromStrip('source', 'absent-device');
+        engine.removeSend('source', 'absent-bus');
+        engine.unwireSidechainRoute('source', 'absent-device');
+        engine.removeTrackStrip('absent-track');
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revision);
+
+        engine.setTrackOutput('source', 'master');
+        const revisionAfterRoute = engine.getRuntimeGraphRevision();
+        engine.setTrackOutput('source', 'master');
+
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionAfterRoute);
     });
 
     it('applies current project deltas to master and track outputs', () => {
@@ -344,8 +571,8 @@ describe('AudioEngine', () => {
         );
         const trackResult = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
 
-        expect(masterResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1 });
-        expect(trackResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 2 });
+        expect(masterResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 3 });
+        expect(trackResult).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 4 });
         expect(getMockTrackNode(engine, 'source').setOutput).toHaveBeenNthCalledWith(1, 'master');
         expect(source.outputId).toBe('target');
     });
@@ -369,7 +596,7 @@ describe('AudioEngine', () => {
         });
         expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
         expect(source.outputId).toBeUndefined();
-        expect(engine.getRuntimeGraphRevision()).toBe(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
     });
 
     it('rejects a same-id device with a different supported factory type before the live output mutation', () => {
@@ -392,7 +619,7 @@ describe('AudioEngine', () => {
 
         expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
         expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
-        expect(engine.getRuntimeGraphRevision()).toBe(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
     });
 
     it.each([
@@ -438,7 +665,7 @@ describe('AudioEngine', () => {
 
         expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
         expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
-        expect(engine.getRuntimeGraphRevision()).toBe(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
     });
 
     it('rejects duplicate parameter ids before the live output mutation', () => {
@@ -461,7 +688,7 @@ describe('AudioEngine', () => {
         expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
         expect(getMockTrackNode(engine, 'source').setOutput).not.toHaveBeenCalled();
         expect(source.outputId).toBeUndefined();
-        expect(engine.getRuntimeGraphRevision()).toBe(0);
+        expect(engine.getRuntimeGraphRevision()).toBe(2);
     });
 
     it('applies unchanged exact topology to a terminal output', () => {
@@ -485,7 +712,7 @@ describe('AudioEngine', () => {
 
         const result = engine.applyRuntimeGraphDelta(delta);
 
-        expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1 });
+        expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied', runtimeRevision: 2 });
         expect(source.outputId).toBe('master');
     });
 
@@ -503,7 +730,7 @@ describe('AudioEngine', () => {
             acceptance: 'accepted',
             application: 'needs-reconcile',
             compensation: 'not-attempted',
-            runtimeRevision: 1,
+            runtimeRevision: 3,
         });
     });
 

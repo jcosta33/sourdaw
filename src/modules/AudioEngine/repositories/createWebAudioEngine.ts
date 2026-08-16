@@ -75,6 +75,16 @@ type ToasterPadRoute = {
     controls: ToasterDeviceControls | null;
 };
 
+type RuntimeGraphMutation<TValue> = Readonly<{
+    value: TValue;
+    changed: boolean;
+}>;
+
+type RuntimeGraphMutationReceipt<TValue> = Readonly<{
+    value: TValue;
+    runtimeRevision: number;
+}>;
+
 type ChromeAudioPlaybackStats = AudioEnginePlaybackStats & {
     resetLatency(): void;
     toJSON(): object;
@@ -398,6 +408,22 @@ class AudioEngineImpl implements AudioEngine {
     private advanceRuntimeGraphRevision(): number {
         this.runtimeGraphRevision++;
         return this.runtimeGraphRevision;
+    }
+
+    /**
+     * The sole revision writer for control-thread graph topology. A public graph
+     * command reports whether it materially changed the graph; compound commands
+     * (for example, removing a strip and its dependent edges) therefore publish
+     * one generation, while no-ops and completed rollbacks publish none.
+     */
+    private mutateRuntimeGraph<TValue>(
+        mutation: () => RuntimeGraphMutation<TValue>
+    ): RuntimeGraphMutationReceipt<TValue> {
+        const result = mutation();
+        return Object.freeze({
+            value: result.value,
+            runtimeRevision: result.changed ? this.advanceRuntimeGraphRevision() : this.runtimeGraphRevision,
+        });
     }
 
     private hasRuntimeOutputDestination(outputId: string): boolean {
@@ -896,23 +922,30 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
 
-        try {
-            source.setOutput(edge.targetId);
-        } catch (error) {
-            // A host-side node operation may have partially taken effect. Do not
-            // claim a CRDT rollback restored it: advance the generation and force
-            // an owner-led reconcile instead.
+        const outputMutation = this.mutateRuntimeGraph<
+            { status: 'applied' } | { status: 'needs-reconcile'; error: unknown }
+        >(() => {
+            try {
+                return { value: { status: 'applied' as const }, changed: source.setOutput(edge.targetId) };
+            } catch (error) {
+                // A host-side node operation may have partially taken effect. Do
+                // not claim a CRDT rollback restored it: invalidate the current
+                // generation and force an owner-led reconcile instead.
+                return { value: { status: 'needs-reconcile' as const, error }, changed: true };
+            }
+        });
+        if (outputMutation.value.status === 'needs-reconcile') {
             return this.needsRuntimeGraphReconciliation(
                 delta,
-                `Live output application threw: ${String(error)}`,
-                this.advanceRuntimeGraphRevision()
+                `Live output application threw: ${String(outputMutation.value.error)}`,
+                outputMutation.runtimeRevision
             );
         }
         return Object.freeze({
             acceptance: 'accepted' as const,
             application: 'applied' as const,
             correlation: delta.correlation,
-            runtimeRevision: this.advanceRuntimeGraphRevision(),
+            runtimeRevision: outputMutation.runtimeRevision,
         });
     }
 
@@ -952,10 +985,10 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    private detachToasterPadRoute(trackId: string, forgetRoute: boolean): void {
+    private detachToasterPadRoute(trackId: string, forgetRoute: boolean): boolean {
         const route = this.toasterPadRoutes.get(trackId);
         if (!route) {
-            return;
+            return false;
         }
         if (route.destinationNode) {
             try {
@@ -969,6 +1002,7 @@ class AudioEngineImpl implements AudioEngine {
         if (forgetRoute) {
             this.toasterPadRoutes.delete(trackId);
         }
+        return true;
     }
 
     private reconcileToasterParent(toasterParentTrackId: string): void {
@@ -1013,9 +1047,39 @@ class AudioEngineImpl implements AudioEngine {
         this.reconcileToasterParent(trackId);
     }
 
-    public ensureTrackStrip(trackId: string): TrackChannelStrip {
+    private updateToasterPadBinding(
+        trackId: string,
+        padBinding: { toasterParentTrackId: string; padIndex: number } | undefined
+    ): boolean {
+        if (
+            !padBinding ||
+            !Number.isInteger(padBinding.padIndex) ||
+            padBinding.padIndex < 0 ||
+            padBinding.padIndex >= 16
+        ) {
+            return this.detachToasterPadRoute(trackId, true);
+        }
+        const existing = this.toasterPadRoutes.get(trackId);
+        const changedOwner =
+            existing &&
+            (existing.toasterParentTrackId !== padBinding.toasterParentTrackId ||
+                existing.padIndex !== padBinding.padIndex);
+        if (changedOwner) {
+            this.detachToasterPadRoute(trackId, true);
+        }
+        if (!this.toasterPadRoutes.has(trackId)) {
+            this.toasterPadRoutes.set(trackId, { ...padBinding, destinationNode: null, controls: null });
+            this.reconcileToasterParent(padBinding.toasterParentTrackId);
+            return true;
+        }
+        this.reconcileToasterParent(padBinding.toasterParentTrackId);
+        return false;
+    }
+
+    private ensureTrackStripInGraph(trackId: string): RuntimeGraphMutation<TrackChannelStrip> {
         this.assertActive();
         let node = this.trackNodes.get(trackId);
+        let created = false;
         if (!node) {
             if (this.fallbackMode) {
                 const sG = this.context.createGain();
@@ -1047,11 +1111,16 @@ class AudioEngineImpl implements AudioEngine {
                 });
             }
             this.trackNodes.set(trackId, node);
+            created = true;
         }
-        return node.strip;
+        return { value: node.strip, changed: created && !this.fallbackMode };
     }
 
-    public removeTrackStrip(trackId: string): void {
+    public ensureTrackStrip(trackId: string): TrackChannelStrip {
+        return this.mutateRuntimeGraph(() => this.ensureTrackStripInGraph(trackId)).value;
+    }
+
+    private removeTrackStripFromGraph(trackId: string): boolean {
         const node = this.trackNodes.get(trackId);
         // TrackNode.dispose() clears deviceNodes. Capture the ids first so all
         // live and pending sidechains targeting this strip can be identified.
@@ -1076,7 +1145,7 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
         if (!node) {
-            return;
+            return false;
         }
 
         // Sweep dependent routing keyed on this track as the source, mirroring
@@ -1085,7 +1154,7 @@ class AudioEngineImpl implements AudioEngine {
         // target device, leaking nodes and (for sends) re-summing a ghost tap.
         for (const send of Array.from(this.sendNodes.values())) {
             if (send.sourceTrackId === trackId) {
-                this.removeSend(send.sourceTrackId, send.busId);
+                this.removeSendFromGraph(send.sourceTrackId, send.busId);
             }
         }
         for (const [key, connection] of this.sidechainConnections) {
@@ -1103,6 +1172,11 @@ class AudioEngineImpl implements AudioEngine {
         }
         node.dispose();
         this.trackNodes.delete(trackId);
+        return !this.fallbackMode;
+    }
+
+    public removeTrackStrip(trackId: string): void {
+        this.mutateRuntimeGraph(() => ({ value: undefined, changed: this.removeTrackStripFromGraph(trackId) }));
     }
 
     public getTrackStrip(trackId: string): TrackChannelStrip | undefined {
@@ -1181,33 +1255,47 @@ class AudioEngineImpl implements AudioEngine {
         return peak;
     }
 
-    public ensureBusStrip(busId: string): BusStrip {
+    private ensureBusStripInGraph(busId: string): RuntimeGraphMutation<BusStrip> {
         let node = this.busNodes.get(busId);
+        let created = false;
         if (!node) {
-            this.ensureTrackStrip(busId);
+            this.ensureTrackStripInGraph(busId);
             const trackNode = this.trackNodes.get(busId);
             if (!trackNode) {
                 throw new Error(`Failed to create track strip for bus ${busId}`);
             }
             node = new BusNode(busId, trackNode);
             this.busNodes.set(busId, node);
+            created = !this.fallbackMode;
         }
-        return node.strip;
+        return { value: node.strip, changed: created };
     }
 
-    public removeBusStrip(busId: string): void {
+    public ensureBusStrip(busId: string): BusStrip {
+        return this.mutateRuntimeGraph(() => this.ensureBusStripInGraph(busId)).value;
+    }
+
+    private removeBusStripFromGraph(busId: string): boolean {
         const node = this.busNodes.get(busId);
         if (!node) {
-            return;
+            return false;
         }
         for (const send of Array.from(this.sendNodes.values())) {
             if (send.busId === busId) {
-                this.removeSend(send.sourceTrackId, send.busId);
+                this.removeSendFromGraph(send.sourceTrackId, send.busId);
             }
         }
-        this.removeTrackStrip(busId);
+        const removedTrack = this.removeTrackStripFromGraph(busId);
         node.dispose();
         this.busNodes.delete(busId);
+        // BusNode is a facade over its paired TrackNode and owns no AudioNodes.
+        // If an enclosing track-removal already disposed that strip, deleting the
+        // facade changes no live topology and must not publish a second revision.
+        return removedTrack;
+    }
+
+    public removeBusStrip(busId: string): void {
+        this.mutateRuntimeGraph(() => ({ value: undefined, changed: this.removeBusStripFromGraph(busId) }));
     }
 
     public setBusGain(busId: string, gain: number): void {
@@ -1228,15 +1316,23 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.ensureTrackStrip(trackId);
-        this.trackNodes.get(trackId)?.addDevice(deviceId, deviceType, externalInstanceId, precedingDeviceIds);
+        this.mutateRuntimeGraph(() => {
+            const stripMutation = this.ensureTrackStripInGraph(trackId);
+            const deviceAdded =
+                this.trackNodes.get(trackId)?.addDevice(deviceId, deviceType, externalInstanceId, precedingDeviceIds) ??
+                false;
+            return { value: undefined, changed: stripMutation.changed || deviceAdded };
+        });
     }
 
     public removeDeviceFromStrip(trackId: string, deviceId: string): void {
         if (this.fallbackMode) {
             return;
         }
-        this.trackNodes.get(trackId)?.removeDevice(deviceId);
+        this.mutateRuntimeGraph(() => ({
+            value: undefined,
+            changed: this.trackNodes.get(trackId)?.removeDevice(deviceId) ?? false,
+        }));
     }
 
     public updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
@@ -1290,7 +1386,10 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        this.trackNodes.get(trackId)?.updateBypass(deviceId, bypassed);
+        this.mutateRuntimeGraph(() => ({
+            value: undefined,
+            changed: this.trackNodes.get(trackId)?.updateBypass(deviceId, bypassed) ?? false,
+        }));
     }
 
     public addMidiFxToStrip(trackId: string, fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void {
@@ -1377,30 +1476,32 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return;
         }
-        const trackNode = this.trackNodes.get(sourceTrackId);
-        if (!trackNode) {
-            return;
-        }
-        const busStrip = this.ensureBusStrip(busId);
-        const key = `${sourceTrackId}→${busId}`;
-
-        const clampedLevel = Math.max(0, Math.min(1, level));
-        const existing = this.sendNodes.get(key);
-        if (existing) {
-            if (existing.preFader !== preFader) {
-                this.crossfadeSendTap(existing, busStrip, preFader, clampedLevel);
-            } else {
-                existing.gainNode.gain.setTargetAtTime(clampedLevel, this.context.currentTime, 0.01);
+        this.mutateRuntimeGraph(() => {
+            const trackNode = this.trackNodes.get(sourceTrackId);
+            if (!trackNode) {
+                return { value: undefined, changed: false };
             }
-            return;
-        }
+            const busMutation = this.ensureBusStripInGraph(busId);
+            const key = `${sourceTrackId}→${busId}`;
+            const clampedLevel = Math.max(0, Math.min(1, level));
+            const existing = this.sendNodes.get(key);
+            if (existing) {
+                if (existing.preFader !== preFader) {
+                    this.crossfadeSendTap(existing, busMutation.value, preFader, clampedLevel);
+                    return { value: undefined, changed: true };
+                }
+                existing.gainNode.gain.setTargetAtTime(clampedLevel, this.context.currentTime, 0.01);
+                return { value: undefined, changed: busMutation.changed };
+            }
 
-        const sendGain = this.context.createGain();
-        sendGain.gain.value = clampedLevel;
-        const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
-        tap.connect(sendGain);
-        sendGain.connect(busStrip.gainNode);
-        this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, sourceNode: tap, preFader });
+            const sendGain = this.context.createGain();
+            sendGain.gain.value = clampedLevel;
+            const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
+            tap.connect(sendGain);
+            sendGain.connect(busMutation.value.gainNode);
+            this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, sourceNode: tap, preFader });
+            return { value: undefined, changed: true };
+        });
     }
 
     public scheduleSendAutomation(sourceTrackId: string, busId: string, level: number, time: number): void {
@@ -1464,18 +1565,27 @@ class AudioEngineImpl implements AudioEngine {
         }, teardownMs);
     }
 
-    public removeSend(sourceTrackId: string, busId: string): void {
+    private removeSendFromGraph(sourceTrackId: string, busId: string): boolean {
         const key = `${sourceTrackId}→${busId}`;
         const send = this.sendNodes.get(key);
-        if (send) {
-            try {
-                send.sourceNode.disconnect(send.gainNode);
-            } catch {
-                // The source edge may already be gone after a graph rebuild.
-            }
-            send.gainNode.disconnect();
-            this.sendNodes.delete(key);
+        if (!send) {
+            return false;
         }
+        try {
+            send.sourceNode.disconnect(send.gainNode);
+        } catch {
+            // The source edge may already be gone after a graph rebuild.
+        }
+        send.gainNode.disconnect();
+        this.sendNodes.delete(key);
+        return true;
+    }
+
+    public removeSend(sourceTrackId: string, busId: string): void {
+        this.mutateRuntimeGraph(() => ({
+            value: undefined,
+            changed: this.removeSendFromGraph(sourceTrackId, busId),
+        }));
     }
 
     public setTrackOutput(
@@ -1483,37 +1593,21 @@ class AudioEngineImpl implements AudioEngine {
         outputId: string,
         padBinding?: { toasterParentTrackId: string; padIndex: number }
     ): void {
-        const trackNode = this.trackNodes.get(trackId);
-        if (!trackNode) {
-            return;
-        }
-        if (!this.hasRuntimeOutputDestination(outputId)) {
-            logger.warn(`[AudioEngine] Rejected output route to absent live destination: ${trackId} -> ${outputId}`);
-            return;
-        }
-        trackNode.setOutput(outputId);
-        this.advanceRuntimeGraphRevision();
-        if (
-            !padBinding ||
-            !Number.isInteger(padBinding.padIndex) ||
-            padBinding.padIndex < 0 ||
-            padBinding.padIndex >= 16
-        ) {
-            this.detachToasterPadRoute(trackId, true);
-            return;
-        }
-        const existing = this.toasterPadRoutes.get(trackId);
-        const changedOwner =
-            existing &&
-            (existing.toasterParentTrackId !== padBinding.toasterParentTrackId ||
-                existing.padIndex !== padBinding.padIndex);
-        if (changedOwner) {
-            this.detachToasterPadRoute(trackId, true);
-        }
-        if (!this.toasterPadRoutes.has(trackId)) {
-            this.toasterPadRoutes.set(trackId, { ...padBinding, destinationNode: null, controls: null });
-        }
-        this.reconcileToasterParent(padBinding.toasterParentTrackId);
+        this.mutateRuntimeGraph(() => {
+            const trackNode = this.trackNodes.get(trackId);
+            if (!trackNode) {
+                return { value: undefined, changed: false };
+            }
+            if (!this.hasRuntimeOutputDestination(outputId)) {
+                logger.warn(
+                    `[AudioEngine] Rejected output route to absent live destination: ${trackId} -> ${outputId}`
+                );
+                return { value: undefined, changed: false };
+            }
+            const outputChanged = trackNode.setOutput(outputId);
+            const padBindingChanged = this.updateToasterPadBinding(trackId, padBinding);
+            return { value: undefined, changed: outputChanged || padBindingChanged };
+        });
     }
 
     public async waitForDevices(timeoutMs = 10000): Promise<void> {
@@ -1555,8 +1649,11 @@ class AudioEngineImpl implements AudioEngine {
         // Recovery: drain any routes queued while the engine was in fallback mode
         // before honoring this request, so a route requested before the engine
         // was usable is now wired up.
-        this.replayPendingSidechainRoutes();
-        this.applySidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
+        this.mutateRuntimeGraph(() => {
+            const replayed = this.replayPendingSidechainRoutes();
+            const applied = this.applySidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
+            return { value: undefined, changed: replayed || applied };
+        });
     }
 
     /**
@@ -1565,32 +1662,35 @@ class AudioEngineImpl implements AudioEngine {
      * dropped from the queue by applySidechainRoute's own guards — they are no
      * longer recoverable through this path and the caller owns re-requesting.
      */
-    private replayPendingSidechainRoutes(): void {
+    private replayPendingSidechainRoutes(): boolean {
         if (this.pendingSidechainRoutes.size === 0) {
-            return;
+            return false;
         }
         const queued = Array.from(this.pendingSidechainRoutes.values());
         this.pendingSidechainRoutes.clear();
+        let changed = false;
         for (const route of queued) {
-            this.applySidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
+            changed =
+                this.applySidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId) || changed;
         }
+        return changed;
     }
 
-    private applySidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
+    private applySidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): boolean {
         const sourceStrip = this.trackNodes.get(sourceTrackId)?.strip;
         const targetStrip = this.trackNodes.get(targetTrackId)?.strip;
         if (!sourceStrip || !targetStrip) {
-            return;
+            return false;
         }
 
         const deviceNode = targetStrip.deviceNodes.find((data) => data.deviceId === targetDeviceId);
         if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
-            return;
+            return false;
         }
 
         const key = `${sourceTrackId}→${targetDeviceId}`;
         if (this.sidechainConnections.has(key)) {
-            return;
+            return false;
         }
 
         const scGain = this.context.createGain();
@@ -1616,6 +1716,7 @@ class AudioEngineImpl implements AudioEngine {
             appliedKeyDelaySec: 0,
             gainNode: scGain,
         });
+        return true;
     }
 
     /**
@@ -1653,10 +1754,10 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    private removeLiveSidechainConnection(key: string): void {
+    private removeLiveSidechainConnection(key: string): boolean {
         const connection = this.sidechainConnections.get(key);
         if (!connection) {
-            return;
+            return false;
         }
         try {
             connection.sourceNode.disconnect(connection.keyDelayNode);
@@ -1674,6 +1775,7 @@ class AudioEngineImpl implements AudioEngine {
             // The target edge was already detached by a wider graph teardown.
         }
         this.sidechainConnections.delete(key);
+        return true;
     }
 
     public unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void {
@@ -1681,7 +1783,7 @@ class AudioEngineImpl implements AudioEngine {
         // Cancel a still-pending (queued-in-fallback) wire so an unwire issued
         // before recovery does not get replayed back into the live graph.
         this.pendingSidechainRoutes.delete(key);
-        this.removeLiveSidechainConnection(key);
+        this.mutateRuntimeGraph(() => ({ value: undefined, changed: this.removeLiveSidechainConnection(key) }));
     }
 
     public scheduleOscillator(frequency: number, startTime: number, duration: number, gain = 0.3): void {
@@ -1774,27 +1876,37 @@ class AudioEngineImpl implements AudioEngine {
         // Tear down all per-project audio graph state (tracks, buses, sends,
         // sidechain routes) without closing the AudioContext, master nodes,
         // or already-loaded worklet modules. Used when switching projects.
-        this.stopAllScheduled();
-        this.adjustmentRuntime.reset();
-        for (const [key] of this.sidechainConnections) {
-            this.removeLiveSidechainConnection(key);
-        }
-        // Drop sidechain routes queued during fallback: they belong to the
-        // project being torn down and must not replay into the next one.
-        this.pendingSidechainRoutes.clear();
-        for (const send of Array.from(this.sendNodes.values())) {
-            this.removeSend(send.sourceTrackId, send.busId);
-        }
-        for (const [id] of this.busNodes) {
-            this.removeBusStrip(id);
-        }
-        for (const [id] of this.trackNodes) {
-            this.removeTrackStrip(id);
-        }
-        this.toasterPadRoutes.clear();
-        this.pendingDevicePromises.clear();
-        this.deviceReadinessDiagnostics.reset();
-        this.advanceRuntimeGraphRevision();
+        this.mutateRuntimeGraph(() => {
+            const hadLiveGraph =
+                !this.fallbackMode &&
+                (this.trackNodes.size > 0 ||
+                    this.busNodes.size > 0 ||
+                    this.sendNodes.size > 0 ||
+                    this.sidechainConnections.size > 0 ||
+                    this.adjustmentRuntime.listLiveBusKeys().length > 0 ||
+                    Array.from(this.toasterPadRoutes.values()).some((route) => route.destinationNode !== null));
+            this.stopAllScheduled();
+            this.adjustmentRuntime.reset();
+            for (const [key] of this.sidechainConnections) {
+                this.removeLiveSidechainConnection(key);
+            }
+            // Drop sidechain routes queued during fallback: they belong to the
+            // project being torn down and must not replay into the next one.
+            this.pendingSidechainRoutes.clear();
+            for (const send of Array.from(this.sendNodes.values())) {
+                this.removeSendFromGraph(send.sourceTrackId, send.busId);
+            }
+            for (const [id] of this.busNodes) {
+                this.removeBusStripFromGraph(id);
+            }
+            for (const [id] of this.trackNodes) {
+                this.removeTrackStripFromGraph(id);
+            }
+            this.toasterPadRoutes.clear();
+            this.pendingDevicePromises.clear();
+            this.deviceReadinessDiagnostics.reset();
+            return { value: undefined, changed: hadLiveGraph };
+        });
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {
