@@ -1,0 +1,16 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  h_1228e573df1f42 827-837
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  h_1228e573df1f42 443-465,471-472,490-491,513-514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3cea149740df5471877060d65168f0d43e39e038",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
