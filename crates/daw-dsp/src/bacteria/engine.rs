@@ -28,8 +28,8 @@ const MAX_MOD_ASSIGNMENTS: usize = 64;
 /// is the whole latency of the slowest band measured against a band with none.
 /// The oversampler contributes at most 11.375 base-rate samples (8x); Smudge's
 /// overlap-add window contributes 2048 more at 1x, and less as the factor
-/// divides it. 2060 is the worst case; 4096 is the next power of two, so the
-/// wrap still compiles to a mask.
+/// divides it; the lo-fi codec's frame adds 256. 2316 is the worst case; 4096
+/// is the next power of two, so the wrap still compiles to a mask.
 ///
 /// Heap-backed rather than a `[f32; ALIGNMENT_RING_LEN]` inside `BandChain`:
 /// at this length the inline arrays would put ~200 kB of `BacteriaEngine`
@@ -214,7 +214,7 @@ impl BandChain {
             hilbert_l: HilbertShifter::new(sample_rate),
             hilbert_r: HilbertShifter::new(sample_rate),
             lofi: LofiProcessor::new(),
-            convolution: ConvolutionProcessor::new(),
+            convolution: ConvolutionProcessor::new(sample_rate),
             oversampler_l: OversamplingChain::new(1),
             oversampler_r: OversamplingChain::new(1),
             distortion_enabled: false,
@@ -294,8 +294,15 @@ impl BandChain {
     /// The distortion stage's own delay rides on the same reasoning: it comes
     /// from the configured *mode*, which is a setup choice like the factor, not
     /// a performance toggle like `distortionEnabled`.
+    ///
+    /// The lo-fi codec's framed transform is the third contributor. It sits
+    /// outside the oversampled loop, so its frame is base-rate samples already,
+    /// and it is gated on `codecArtifact` rather than on `lofiEnabled` for the
+    /// same reason the distortion stage reads its mode and not its enable flag.
     fn latency_samples(&self) -> f32 {
-        self.oversampler_l.latency_samples() + self.distortion_latency_samples()
+        self.oversampler_l.latency_samples()
+            + self.distortion_latency_samples()
+            + self.lofi.latency_samples()
     }
 
     /// The distortion stage's group delay, converted to base-rate samples.
@@ -334,12 +341,21 @@ impl BandChain {
     ///
     /// Smudge's window is in the path on exactly the same condition — it is a
     /// distortion mode — so it is gated the same way.
+    ///
+    /// The lo-fi codec is an independent stage with its own enable flag, so it
+    /// is added on its own condition rather than under the distortion one.
     fn engaged_latency_samples(&self) -> f32 {
+        let mut engaged = if self.lofi_enabled {
+            self.lofi.latency_samples()
+        } else {
+            0.0
+        };
+
         if !self.distortion_enabled {
-            return 0.0;
+            return engaged;
         }
 
-        let mut engaged = self.distortion_latency_samples();
+        engaged += self.distortion_latency_samples();
         if self.oversampling_factor > 1 {
             engaged += self.oversampler_l.latency_samples();
         }
@@ -368,8 +384,14 @@ impl BandChain {
     /// A band the caller skips — solo, or a routing mode that does not use it
     /// — must keep its ring moving. A frozen ring replays whatever was in
     /// flight at the moment it was skipped, the instant the band comes back.
+    ///
+    /// The frequency shifter is on the same rule and is not self-draining: its
+    /// all-pass network holds a ~5500-sample memory, so a frozen one flushes a
+    /// full-scale burst on re-entry. See [`HilbertShifter::bypass`].
     fn skip_sample(&mut self) {
         self.alignment.process(0.0, 0.0);
+        self.hilbert_l.bypass();
+        self.hilbert_r.bypass();
     }
 
     /// Drop the band's in-flight alignment audio.
@@ -380,6 +402,8 @@ impl BandChain {
     /// grows back over this index.
     fn clear_alignment(&mut self) {
         self.alignment.reset();
+        self.hilbert_l.reset();
+        self.hilbert_r.reset();
     }
 
     fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
@@ -458,6 +482,11 @@ impl BandChain {
         if self.freq_shift_enabled {
             l = self.hilbert_l.process_sample(l);
             r = self.hilbert_r.process_sample(r);
+        } else {
+            // Switching the stage off has to empty it, not pause it — see
+            // `skip_sample`.
+            self.hilbert_l.bypass();
+            self.hilbert_r.bypass();
         }
 
         // Lo-Fi / Codec
@@ -1537,6 +1566,78 @@ mod tests {
         assert!(
             leaked < 1.0e-6,
             "band 3 flushed {leaked:.4} of pre-shrink audio when bandCount grew back"
+        );
+    }
+
+    /// Muting a band with the frequency shifter running must empty the shifter,
+    /// not pause it.
+    ///
+    /// The Hilbert network is eight all-pass sections with pole radius up to
+    /// 0.9987 — ~5500 samples of memory, where the collapsed one-pole structure
+    /// it replaced held about one. A frozen network keeps the whole burst and
+    /// hands it back on the first samples after the unmute, above full scale,
+    /// on every band at once.
+    #[test]
+    fn unmuting_a_band_does_not_flush_the_frequency_shifter() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("freqShiftEnabled", 1.0);
+        engine.set_param("freqShiftHz", 200.0);
+        engine.set_param("freqShiftMix", 1.0);
+
+        // Load the network up with loud audio.
+        for block in 0..40usize {
+            let mut left: Vec<f32> = (0..512usize)
+                .map(|i| {
+                    let n = (block * 512 + i) % 4_800;
+                    (2.0 * PI * 440.0 * n as f32 / SAMPLE_RATE).sin()
+                })
+                .collect();
+            let mut right = left.clone();
+            engine.process_block(&mut left, &mut right);
+        }
+
+        // Mute, run a little, unmute — the ordinary performance gesture.
+        engine.set_param("mute", 1.0);
+        let mut muted_l = vec![0.0_f32; 64];
+        let mut muted_r = vec![0.0_f32; 64];
+        engine.process_block(&mut muted_l, &mut muted_r);
+        engine.set_param("mute", 0.0);
+
+        let mut silent_l = vec![0.0_f32; 8_192];
+        let mut silent_r = vec![0.0_f32; 8_192];
+        engine.process_block(&mut silent_l, &mut silent_r);
+
+        let burst = silent_l
+            .iter()
+            .chain(silent_r.iter())
+            .fold(0.0_f32, |worst, s| worst.max(s.abs()));
+        assert!(
+            burst < 1.0e-3,
+            "unmuting over silence produced {burst} ({:.1} dBFS) — the frequency \
+             shifter flushed what it was holding while muted",
+            20.0 * burst.max(1e-12).log10()
+        );
+    }
+
+    /// The lo-fi codec's framed transform delays the band, so the band has to
+    /// say so. Its frames are per channel and base-rate, so it is a flat 256.
+    #[test]
+    fn reported_latency_includes_the_lofi_codec_frame() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        let quiet = engine.latency_samples();
+
+        engine.set_param("codecArtifact", 0.5);
+        assert_eq!(
+            engine.latency_samples(),
+            quiet + 256,
+            "engaging the codec added delay the host was never told about"
+        );
+
+        engine.set_param("codecArtifact", 0.0);
+        assert_eq!(
+            engine.latency_samples(),
+            quiet,
+            "the codec kept reporting delay after being switched off"
         );
     }
 
