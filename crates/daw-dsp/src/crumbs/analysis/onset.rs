@@ -14,7 +14,7 @@
 /// Complex Domain (Duxbury et al., 2003): Combines magnitude and phase
 /// deviation, making it sensitive to both tonal and transient onsets.
 /// Best for melodic content.
-use std::f32::consts::PI;
+use super::fft::{fill_windowed_frame, hann_window, RealFftPlan};
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -310,51 +310,52 @@ fn snap_to_zero_crossing(samples: &[f32], position: usize, window: usize) -> usi
 
 // ── Spectrogram Computation ────────────────────────────────────────────
 
+/// Number of STFT frames a source of `samples` length yields at these settings.
+///
+/// Frames start every `hop_size` samples and a frame only exists if a whole
+/// `fft_size` window fits, so a source shorter than one window yields none.
+fn frame_count(num_samples: usize, fft_size: usize, hop_size: usize) -> usize {
+    if num_samples >= fft_size {
+        (num_samples - fft_size) / hop_size + 1
+    } else {
+        0
+    }
+}
+
 /// Compute a complex spectrogram returning both magnitude and phase.
 ///
 /// Returns (magnitudes, phases), each a Vec of frames with `fft_size/2 + 1` bins.
+///
+/// # Panics
+///
+/// Panics if `fft_size` is not a power of two — see [`RealFftPlan::new`]. Every
+/// caller in the tree takes it from [`OnsetConfig::default`], which is
+/// `DEFAULT_FFT_SIZE`.
 fn compute_complex_spectrogram(
     samples: &[f32],
     fft_size: usize,
     hop_size: usize,
 ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
     let num_bins = fft_size / 2 + 1;
-    let num_frames = if samples.len() >= fft_size {
-        (samples.len() - fft_size) / hop_size + 1
-    } else {
-        0
-    };
+    let num_frames = frame_count(samples.len(), fft_size, hop_size);
 
-    let window: Vec<f32> = (0..fft_size)
-        .map(|n| 0.5 * (1.0 - (2.0 * PI * n as f32 / fft_size as f32).cos()))
-        .collect();
+    // One plan and one window for the whole spectrogram: the tables cost
+    // O(fft_size) to build and would otherwise be rebuilt per frame.
+    let mut plan = RealFftPlan::new(fft_size);
+    let window = hann_window(fft_size);
+    let mut frame = vec![0.0f32; fft_size];
 
     let mut mag_spec = Vec::with_capacity(num_frames);
     let mut phase_spec = Vec::with_capacity(num_frames);
 
     for frame_idx in 0..num_frames {
-        let start = frame_idx * hop_size;
+        fill_windowed_frame(samples, frame_idx * hop_size, &window, &mut frame);
+        plan.forward(&frame);
+
         let mut magnitudes = vec![0.0f32; num_bins];
         let mut phases = vec![0.0f32; num_bins];
-
-        for bin in 0..num_bins {
-            let mut real = 0.0f32;
-            let mut imag = 0.0f32;
-            let freq = 2.0 * PI * bin as f32 / fft_size as f32;
-
-            for n in 0..fft_size {
-                let sample = if start + n < samples.len() {
-                    samples[start + n] * window[n]
-                } else {
-                    0.0
-                };
-                real += sample * (freq * n as f32).cos();
-                imag -= sample * (freq * n as f32).sin();
-            }
-
-            magnitudes[bin] = (real * real + imag * imag).sqrt();
-            phases[bin] = imag.atan2(real);
-        }
+        plan.magnitudes_into(&mut magnitudes);
+        plan.phases_into(&mut phases);
 
         mag_spec.push(magnitudes);
         phase_spec.push(phases);
@@ -363,54 +364,199 @@ fn compute_complex_spectrogram(
     (mag_spec, phase_spec)
 }
 
-/// Compute a magnitude spectrogram using a simple DFT.
+/// Compute a magnitude spectrogram.
 ///
 /// Returns a Vec of frames, each containing `fft_size/2 + 1` magnitude bins.
+///
+/// # Panics
+///
+/// Panics if `fft_size` is not a power of two — see [`RealFftPlan::new`].
 fn compute_magnitude_spectrogram(
     samples: &[f32],
     fft_size: usize,
     hop_size: usize,
 ) -> Vec<Vec<f32>> {
     let num_bins = fft_size / 2 + 1;
-    let num_frames = if samples.len() >= fft_size {
-        (samples.len() - fft_size) / hop_size + 1
-    } else {
-        0
-    };
+    let num_frames = frame_count(samples.len(), fft_size, hop_size);
 
-    // Precompute Hann window.
-    let window: Vec<f32> = (0..fft_size)
-        .map(|n| 0.5 * (1.0 - (2.0 * PI * n as f32 / fft_size as f32).cos()))
-        .collect();
+    let mut plan = RealFftPlan::new(fft_size);
+    let window = hann_window(fft_size);
+    let mut frame = vec![0.0f32; fft_size];
 
     let mut spectrogram = Vec::with_capacity(num_frames);
 
     for frame_idx in 0..num_frames {
-        let start = frame_idx * hop_size;
+        fill_windowed_frame(samples, frame_idx * hop_size, &window, &mut frame);
+        plan.forward(&frame);
+
         let mut magnitudes = vec![0.0f32; num_bins];
-
-        // Simple DFT for each bin (no FFT library dependency).
-        // This is O(N*K) but runs offline in the analysis thread, not RT.
-        for (bin, mag) in magnitudes.iter_mut().enumerate() {
-            let mut real = 0.0f32;
-            let mut imag = 0.0f32;
-            let freq = 2.0 * PI * bin as f32 / fft_size as f32;
-
-            for n in 0..fft_size {
-                let sample = if start + n < samples.len() {
-                    samples[start + n] * window[n]
-                } else {
-                    0.0
-                };
-                real += sample * (freq * n as f32).cos();
-                imag -= sample * (freq * n as f32).sin();
-            }
-
-            *mag = (real * real + imag * imag).sqrt();
-        }
+        plan.magnitudes_into(&mut magnitudes);
 
         spectrogram.push(magnitudes);
     }
 
     spectrogram
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::PI;
+
+    /// The direct DFT the spectrograms used before the FFT swap, reproduced
+    /// verbatim so the equivalence claim does not depend on the source it is
+    /// checking. Windowing, tail zero-padding and the `imag -= …sin` sign
+    /// convention are all part of what is being pinned.
+    fn reference_complex_spectrogram(
+        samples: &[f32],
+        fft_size: usize,
+        hop_size: usize,
+    ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        let num_bins = fft_size / 2 + 1;
+        let num_frames = if samples.len() >= fft_size {
+            (samples.len() - fft_size) / hop_size + 1
+        } else {
+            0
+        };
+
+        let window: Vec<f32> = (0..fft_size)
+            .map(|n| 0.5 * (1.0 - (2.0 * PI * n as f32 / fft_size as f32).cos()))
+            .collect();
+
+        let mut mag_spec = Vec::with_capacity(num_frames);
+        let mut phase_spec = Vec::with_capacity(num_frames);
+
+        for frame_idx in 0..num_frames {
+            let start = frame_idx * hop_size;
+            let mut magnitudes = vec![0.0f32; num_bins];
+            let mut phases = vec![0.0f32; num_bins];
+
+            for bin in 0..num_bins {
+                let mut real = 0.0f32;
+                let mut imag = 0.0f32;
+                let freq = 2.0 * PI * bin as f32 / fft_size as f32;
+
+                for n in 0..fft_size {
+                    let sample = if start + n < samples.len() {
+                        samples[start + n] * window[n]
+                    } else {
+                        0.0
+                    };
+                    real += sample * (freq * n as f32).cos();
+                    imag -= sample * (freq * n as f32).sin();
+                }
+
+                magnitudes[bin] = (real * real + imag * imag).sqrt();
+                phases[bin] = imag.atan2(real);
+            }
+
+            mag_spec.push(magnitudes);
+            phase_spec.push(phases);
+        }
+
+        (mag_spec, phase_spec)
+    }
+
+    /// Deterministic pseudo-random source, no external `rand`.
+    fn lcg_noise(len: usize, seed: u64) -> Vec<f32> {
+        let mut state = seed;
+        (0..len)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                // Top 24 bits scaled to [-1, 1).
+                ((state >> 40) as f32 / (1u64 << 24) as f32) * 2.0 - 1.0
+            })
+            .collect()
+    }
+
+    /// Smallest signed difference between two angles, so a bin sitting on the
+    /// `±π` branch cut does not read as a 2π disagreement.
+    fn wrapped_phase_diff(a: f32, b: f32) -> f32 {
+        let mut diff = a - b;
+        while diff > PI {
+            diff -= 2.0 * PI;
+        }
+        while diff < -PI {
+            diff += 2.0 * PI;
+        }
+        diff
+    }
+
+    /// The tail frame is the one that exercises zero-padding, and the source
+    /// length here is deliberately not a whole number of hops so that frame
+    /// exists.
+    const FFT_SIZE: usize = 64;
+    const HOP_SIZE: usize = 21;
+    const SOURCE_LEN: usize = 64 + 21 * 5 + 7;
+
+    #[test]
+    fn the_magnitude_spectrogram_matches_the_direct_dft() {
+        let samples = lcg_noise(SOURCE_LEN, 0x5EED_1833);
+        let actual = compute_magnitude_spectrogram(&samples, FFT_SIZE, HOP_SIZE);
+        let (expected, _) = reference_complex_spectrogram(&samples, FFT_SIZE, HOP_SIZE);
+
+        assert_eq!(actual.len(), expected.len(), "frame count changed");
+        assert!(!actual.is_empty(), "fixture produced no frames");
+
+        let peak = expected
+            .iter()
+            .flatten()
+            .fold(0.0f32, |acc, &mag| acc.max(mag));
+
+        for (frame_idx, (got, want)) in actual.iter().zip(&expected).enumerate() {
+            assert_eq!(
+                got.len(),
+                want.len(),
+                "bin count changed on frame {frame_idx}"
+            );
+            for (bin, (&got_mag, &want_mag)) in got.iter().zip(want).enumerate() {
+                assert!(
+                    (got_mag - want_mag).abs() <= 1e-3 * peak,
+                    "frame {frame_idx} bin {bin}: {got_mag} vs direct DFT {want_mag}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_complex_spectrogram_matches_the_direct_dft_in_magnitude_and_phase() {
+        let samples = lcg_noise(SOURCE_LEN, 0x5EED_1834);
+        let (mags, phases) = compute_complex_spectrogram(&samples, FFT_SIZE, HOP_SIZE);
+        let (expected_mags, expected_phases) =
+            reference_complex_spectrogram(&samples, FFT_SIZE, HOP_SIZE);
+
+        assert_eq!(mags.len(), expected_mags.len(), "frame count changed");
+        assert!(!mags.is_empty(), "fixture produced no frames");
+
+        let peak = expected_mags
+            .iter()
+            .flatten()
+            .fold(0.0f32, |acc, &mag| acc.max(mag));
+
+        for frame_idx in 0..mags.len() {
+            for bin in 0..mags[frame_idx].len() {
+                let got_mag = mags[frame_idx][bin];
+                let want_mag = expected_mags[frame_idx][bin];
+                assert!(
+                    (got_mag - want_mag).abs() <= 1e-3 * peak,
+                    "frame {frame_idx} bin {bin} magnitude: {got_mag} vs {want_mag}"
+                );
+
+                // Phase is meaningless where there is no energy to carry it.
+                if want_mag <= 1e-2 * peak {
+                    continue;
+                }
+                let diff =
+                    wrapped_phase_diff(phases[frame_idx][bin], expected_phases[frame_idx][bin]);
+                assert!(
+                    diff.abs() <= 1e-3,
+                    "frame {frame_idx} bin {bin} phase: {} vs {} (diff {diff})",
+                    phases[frame_idx][bin],
+                    expected_phases[frame_idx][bin]
+                );
+            }
+        }
+    }
 }
