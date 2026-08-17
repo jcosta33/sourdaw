@@ -247,6 +247,23 @@ describe('createGrinderNode', () => {
         expect(postMessage).not.toHaveBeenCalled();
     });
 
+    it('rejects a scheduled fallback control when telemetry capacity cannot acknowledge a latency change', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue(null);
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['latency-control'],
+        });
+        expect(telemetryAllocator.allocateSlot).toHaveReturnedWith(null);
+        postMessage.mockClear();
+
+        node.setParam('latency-control', 0.5, 48_000);
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
     it('should invoke the latency callback only for a latency-changed message with a numeric latency', async () => {
         const node = await createGrinderNode(makeCtx());
         const cb = vi.fn();
@@ -560,6 +577,13 @@ describe('GrinderNode setParam coalescing', () => {
     });
 
     it('preserves ordered scheduled controls for one parameter before a frame flush', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view: new Float32Array(32),
+            seqView: new Int32Array(32),
+        });
         const node = await makeNode();
         postMessage.mockClear();
 

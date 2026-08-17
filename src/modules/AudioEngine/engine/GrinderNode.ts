@@ -217,6 +217,12 @@ export async function createGrinderNode(
         const scheduling = toControlScheduling(sampleFrame);
         const pending = Object.freeze({ value, ...scheduling });
         if (scheduling.targetFrame !== null) {
+            // Scheduled fallback controls apply on the render thread. Their latency
+            // changes are observable only through the preallocated telemetry slot,
+            // so reject them when the pool is exhausted rather than leave PDC stale.
+            if (!slot) {
+                return;
+            }
             postFallbackControl(name, pending);
             return;
         }
