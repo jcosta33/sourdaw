@@ -67,8 +67,8 @@
                 "vite.config.ts"
             ],
             "sources": ["git:github.com/jcosta33/sourdaw", "package.json", "server/package.json", "Cargo.toml"],
-            "revisions": ["9b2de18559cd681d5a4bd1dabb3a980523dda3d6", "pnpm-lock.yaml", "Cargo.lock"],
-            "digests": ["git:9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553", "pnpm-lock.yaml", "Cargo.lock"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
             "licenses": ["pending:OS-10"],
             "productSurfaces": ["repository source"],
             "evidence": ["Git history and the dependency manifests named in paths."],
@@ -533,8 +533,8 @@
             "releaseModes": ["web", "desktop"],
             "paths": ["crates/daw-dsp/src/grand_boule/**"],
             "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
-            "revisions": ["9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
-            "digests": ["git:9b2de18559cd681d5a4bd1dabb3a980523dda3d6:crates/daw-dsp/src/grand_boule"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:crates/daw-dsp/src/grand_boule"],
             "licenses": ["pending:OS-05-patent-and-parameter-source-review"],
             "productSurfaces": ["Grand Boule piano engine", "piano controls and presets"],
             "evidence": ["Current research follows an active patent without a complete claim-to-code map."],
@@ -588,7 +588,7 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": ["public/wasm/**"],
             "sources": ["crates/daw-dsp/", "crates/daw-wasm-decoder/", "crates/proof-chamber/", "crates/scoring/"],
-            "revisions": ["9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
             "digests": ["public/wasm/manifest.json"],
             "licenses": ["pending:OS-10-project-grant", "dependency terms from Cargo.lock"],
             "productSurfaces": ["browser DSP", "desktop webview DSP"],
@@ -603,7 +603,7 @@
             "releaseModes": ["source", "web", "desktop"],
             "paths": ["public/audio/worklets/**"],
             "sources": ["tracked project worklet sources and generators"],
-            "revisions": ["9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
             "digests": ["pending:OS-07-source-to-output-map"],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
@@ -652,8 +652,8 @@
                 "src-tauri/icons/**"
             ],
             "sources": ["unknown pending OS-08 owner attestation"],
-            "revisions": ["9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
-            "digests": ["git:9b2de18559cd681d5a4bd1dabb3a980523dda3d6:public/logo-parts"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:public/logo-parts"],
             "licenses": ["pending:OS-08-owner-attestation"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
             "evidence": ["Repository history proves custody but no external provenance record."],
@@ -712,8 +712,8 @@
                 "src/modules/Toaster/repositories/toasterPresets.ts"
             ],
             "sources": ["curated candidate values and exact current text paths"],
-            "revisions": ["9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
-            "digests": ["git:9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
             "licenses": ["trademark disposition pending:OS-08"],
             "productSurfaces": ["presets", "model selectors", "public screenshots"],
             "evidence": [
@@ -751,10 +751,10 @@
             "releaseModes": ["source"],
             "paths": [".agents/specs/**", "docs/**", "README.md"],
             "sources": ["git:github.com/jcosta33/sourdaw"],
-            "revisions": ["9b2de18559cd681d5a4bd1dabb3a980523dda3d6"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
             "digests": [
-                "git:9b2de18559cd681d5a4bd1dabb3a980523dda3d6:.agents/specs",
-                "git:9b2de18559cd681d5a4bd1dabb3a980523dda3d6:docs"
+                "git:4b6012ef4560c78df09405515a0ad9365a41a553:.agents/specs",
+                "git:4b6012ef4560c78df09405515a0ad9365a41a553:docs"
             ],
             "licenses": ["pending:OS-10-project-grant"],
             "productSurfaces": ["current specifications", "architecture documentation", "public README"],
@@ -767,7 +767,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "e35eb9f967551b303e71e77a08e86cf1a9dc96f20b1ffb4d2919e0ab77a9b1d8"
+            "sha256": "8945202756d509fec21e555ec207ce3e3cd016e11b1792aeaeacf604446b82d1"
         },
         {
             "path": "server/package.json",
@@ -803,7 +803,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "01692033fe02fd3411c5b36f6cc8be0fc9e2afe17fd4dd5ec29f60be79ef3adf"
+            "sha256": "f567a15ea9576c12dd599ca3e39868c06584df68288ae0620bbf654f35e9b88c"
         }
     ],
     "externalReferences": [
