@@ -1,0 +1,23 @@
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_a40848e8f8cca9::t_ac51ec6f15e589 580-586
+  s_a40848e8f8cca9::t_17324d19bebbe6 251-252,259
+  s_a40848e8f8cca9::t_9c4c3d5709973e 250,253-258,260-266
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_a40848e8f8cca9::t_70a76ba93d38a7 220-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "aae6a797837bd2dc6431be84684382569fcbe9cf",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
