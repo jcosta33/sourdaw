@@ -233,6 +233,12 @@ export async function createGrinderNode(
             Object.freeze({
                 schemaVersion: 1,
                 command: 'initialize-fallback-control',
+                target: Object.freeze({
+                    trackId: controlTarget.trackId,
+                    deviceId: controlTarget.deviceId,
+                    deviceType: controlTarget.deviceType,
+                    parameterIds: Object.freeze([...controlTarget.parameterIds]),
+                }),
                 correlation: Object.freeze({ workletGeneration }),
             })
         );

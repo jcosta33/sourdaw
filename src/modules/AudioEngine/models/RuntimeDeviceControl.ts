@@ -25,6 +25,7 @@ export type RuntimeDeviceControl = Readonly<{
 export type RuntimeDeviceControlInitialization = Readonly<{
     schemaVersion: 1;
     command: 'initialize-fallback-control';
+    target: RuntimeDeviceControlTarget;
     correlation: Readonly<{
         workletGeneration: number;
     }>;

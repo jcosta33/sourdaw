@@ -132,6 +132,22 @@ describe('createGrinderNode', () => {
             deviceType: 'grinder',
             parameterIds: ['unmapped-param'],
         });
+        const initialization = postMessage.mock.calls.find(
+            (call) => (call[0] as { command?: string }).command === 'initialize-fallback-control'
+        )?.[0];
+        expect(initialization).toEqual({
+            schemaVersion: 1,
+            command: 'initialize-fallback-control',
+            target: {
+                trackId: 'track-1',
+                deviceId: 'grinder-1',
+                deviceType: 'grinder',
+                parameterIds: ['unmapped-param'],
+            },
+            correlation: { workletGeneration: expect.any(Number) },
+        });
+        expect(Object.isFrozen(initialization)).toBe(true);
+        expect(Object.isFrozen((initialization as { target: unknown }).target)).toBe(true);
         postMessage.mockClear();
 
         node.setPatch({ drive: 0.5 });

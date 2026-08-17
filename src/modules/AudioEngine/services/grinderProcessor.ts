@@ -184,6 +184,13 @@ type ScheduledFallbackControl = {
     deadlineFrame: number;
 };
 
+type FallbackControlTarget = {
+    trackId: string;
+    deviceId: string;
+    deviceType: string;
+    parameterIds: readonly string[];
+};
+
 type GrinderNeuralProfilePatch = {
     neuralModelMode?: unknown;
     profile?: {
@@ -312,6 +319,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
     /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
     _sabSeqView: Int32Array | null = null;
     _fallbackControlGeneration: number | null = null;
+    _fallbackControlTarget: FallbackControlTarget | null = null;
     _lastFallbackControlSequence = 0;
     _pendingFallbackControls: Array<ScheduledFallbackControl | null> = Array.from(
         { length: MAX_PENDING_FALLBACK_CONTROLS },
@@ -373,15 +381,30 @@ class GrinderProcessor extends AudioWorkletProcessor {
 
     _initializeFallbackControl(message: UnknownRecord): boolean {
         if (
-            !hasOnlyKeys(message, ['schemaVersion', 'command', 'correlation']) ||
+            this._fallbackControlGeneration !== null ||
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'correlation']) ||
             message.schemaVersion !== 1 ||
             message.command !== 'initialize-fallback-control' ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            !isBoundedId(message.target.deviceType) ||
+            !Array.isArray(message.target.parameterIds) ||
+            !message.target.parameterIds.every(isBoundedId) ||
+            new Set(message.target.parameterIds).size !== message.target.parameterIds.length ||
             !isRecord(message.correlation) ||
             !hasOnlyKeys(message.correlation, ['workletGeneration']) ||
             !isPositiveSafeInteger(message.correlation.workletGeneration)
         ) {
             return false;
         }
+        this._fallbackControlTarget = Object.freeze({
+            trackId: message.target.trackId,
+            deviceId: message.target.deviceId,
+            deviceType: message.target.deviceType,
+            parameterIds: Object.freeze([...message.target.parameterIds]),
+        });
         this._fallbackControlGeneration = message.correlation.workletGeneration;
         this._lastFallbackControlSequence = 0;
         this._pendingFallbackControls.fill(null);
@@ -412,10 +435,16 @@ class GrinderProcessor extends AudioWorkletProcessor {
         ) {
             return true;
         }
+        const controlTarget = this._fallbackControlTarget;
         if (
             this._fallbackControlGeneration === null ||
+            controlTarget === null ||
             message.correlation.workletGeneration !== this._fallbackControlGeneration ||
-            message.correlation.controlSequence <= this._lastFallbackControlSequence
+            message.correlation.controlSequence <= this._lastFallbackControlSequence ||
+            message.target.trackId !== controlTarget.trackId ||
+            message.target.deviceId !== controlTarget.deviceId ||
+            message.target.deviceType !== controlTarget.deviceType ||
+            !controlTarget.parameterIds.includes(message.target.parameterId)
         ) {
             return true;
         }
