@@ -116,6 +116,31 @@ describe('startPlayback', () => {
         expect(playheadPositionRef.current).toBe(6);
     });
 
+    it('opens the pre-roll on a real bar line when a meter change lands mid-bar', () => {
+        // 3/4 arriving at beat 5, one quarter into the second 4/4 bar. Nothing
+        // snaps a change to a bar line, so this is an ordinary project state. Bar
+        // lines run 0, 4, 5, 8, 11, and a 3-bar pre-roll from 11 must open at 4.
+        // Subtracting bar lengths walked 8, 5, then 1 — three quarter notes early
+        // and not a bar line at all, so the count came in off the bar.
+        timeSignatureMapStore.value = {
+            changes: [{ id: 'ts-a', beat: 5, numerator: 3, denominator: 4 }],
+        };
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 11,
+            preRollEnabled: true,
+            preRollBars: 3,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        startPlayback();
+
+        expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 4 });
+        expect(playheadPositionRef.current).toBe(4);
+    });
+
     it('sizes a pre-roll bar by the meter denominator, not by the numerator alone', () => {
         // 6/8 bars are three quarter notes long, so two of them reach back six
         // beats from 12. Treating the numerator as quarter notes reached back
