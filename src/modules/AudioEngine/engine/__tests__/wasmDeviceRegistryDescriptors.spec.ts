@@ -839,6 +839,41 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(externalLatencyRegistry.get('bac-2')).toBe(0);
         });
 
+        it('retires a post-ready fault into the loading bypass without default recovery', async () => {
+            const result = makeBacteriaResult({ latency: 96 });
+            factoryMocks.createBacteriaNode.mockResolvedValue(result);
+            const updateBacteriaMeters = vi.fn();
+            const onRuntimeFailure = vi.fn(() => true);
+            const onRuntimeRecovery = vi.fn();
+            setAudioDeviceRuntimeSink({ updateBacteriaMeters });
+            const deps = createDeps({
+                deviceType: 'bacteria',
+                deviceId: 'bac-fault',
+                onRuntimeFailure,
+                onRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('bacteria').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const reporter = factoryMocks.createBacteriaNode.mock.calls[0]?.[4];
+            if (!isRuntimeFailureReporter(reporter)) {
+                throw new Error('expected Bacteria runtime failure reporter');
+            }
+            reporter('WASM panic');
+
+            expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(externalLatencyRegistry.has('bac-fault')).toBe(false);
+            expect(updateBacteriaMeters).toHaveBeenCalledWith('bac-fault', {
+                inputDb: 0,
+                outputDb: 0,
+                bandLevels: [0, 0, 0, 0, 0, 0],
+                latency: 0,
+            });
+            expect(onRuntimeRecovery).not.toHaveBeenCalled();
+        });
+
         it('destroys an invalidated late load before it reports latency or installs callbacks', async () => {
             const readiness = Promise.withResolvers<Record<string, unknown>>();
             const result = makeBacteriaResult(readiness.promise);
