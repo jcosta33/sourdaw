@@ -81,6 +81,7 @@
             "owner": "OS-07",
             "releaseModes": ["source", "desktop"],
             "paths": [
+                "electron/**",
                 "src-tauri/.cargo/**",
                 "src-tauri/Cargo.toml",
                 "src-tauri/Entitlements.plist",
@@ -92,14 +93,19 @@
                 "src-tauri/permissions/**",
                 "src-tauri/tauri.conf.json"
             ],
-            "sources": ["https://github.com/tauri-apps/tauri", "src-tauri/Cargo.toml"],
-            "revisions": ["Cargo.lock"],
+            "sources": [
+                "https://github.com/electron/electron",
+                "https://github.com/tauri-apps/tauri",
+                "package.json",
+                "src-tauri/Cargo.toml"
+            ],
+            "revisions": ["pnpm-lock.yaml", "Cargo.lock"],
             "digests": ["pending:OS-07-final-desktop-package"],
             "licenses": ["pending:OS-07"],
-            "productSurfaces": ["desktop application shell"],
-            "evidence": ["src-tauri/Cargo.toml"],
+            "productSurfaces": ["Electron shell", "Tauri shell"],
+            "evidence": ["package.json", "src-tauri/Cargo.toml"],
             "obligations": [
-                "Reconcile the final desktop shell and every bundled runtime notice after campaign 2037 settles."
+                "Reconcile both desktop shells and every bundled runtime notice after campaign 2037 settles."
             ]
         },
         {
@@ -707,7 +713,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "8945202756d509fec21e555ec207ce3e3cd016e11b1792aeaeacf604446b82d1"
+            "sha256": "63cc44243e32c48981327c5d5075fa929e4122ff9032c54bff6fbb3c5cbc46e4"
         },
         {
             "path": "server/package.json",
@@ -719,7 +725,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "419dc35165521cd97f925fcb7ed27ca86300c5f77f7065e71d0c65c7a8772378"
+            "sha256": "45a404bf4f58bf405d9b4acb35a025da3075aa6aa62ef204837c75378763d51f"
         },
         {
             "path": "Cargo.toml",
