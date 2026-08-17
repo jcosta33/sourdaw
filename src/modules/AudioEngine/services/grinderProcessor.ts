@@ -172,11 +172,24 @@ const GRINDER_AUTOMATABLE_PARAM_COUNT = GRINDER_AUDIO_PARAM_DESCRIPTORS.length;
 const GRINDER_AUTOMATION_BUFFER_SIZE =
     GRINDER_AUTOMATABLE_PARAM_COUNT + GRINDER_AUTOMATABLE_PARAM_COUNT * MAX_GRINDER_BLOCK_SIZE;
 
-type GrinderMsg =
-    | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
-    | { type: 'param'; name: string; value: number }
-    | { type: 'patch'; patch: Record<string, unknown> };
+const MAX_PENDING_FALLBACK_CONTROLS = 32;
+const MAX_RUNTIME_CONTROL_ID_LENGTH = 128;
+
+type UnknownRecord = Record<string, unknown>;
+
+type ScheduledFallbackControl = {
+    parameterId: string;
+    value: number;
+    targetFrame: number;
+    deadlineFrame: number;
+};
+
+type FallbackControlTarget = {
+    trackId: string;
+    deviceId: string;
+    deviceType: string;
+    parameterIds: readonly string[];
+};
 
 type GrinderNeuralProfilePatch = {
     neuralModelMode?: unknown;
@@ -200,6 +213,27 @@ const NEURAL_TIER_INDEX: Record<string, number> = {
 
 function to_finite_number(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: UnknownRecord, keys: readonly string[]): boolean {
+    const actualKeys = Object.keys(value);
+    return actualKeys.length === keys.length && actualKeys.every((key) => keys.includes(key));
+}
+
+function isBoundedId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_RUNTIME_CONTROL_ID_LENGTH;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+    return isNonNegativeSafeInteger(value) && value > 0;
 }
 
 function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unknown>): void {
@@ -284,13 +318,23 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _sabView: Float32Array | null = null;
     /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
     _sabSeqView: Int32Array | null = null;
+    _fallbackControlGeneration: number | null = null;
+    _fallbackControlTarget: FallbackControlTarget | null = null;
+    _lastFallbackControlSequence = 0;
+    _pendingFallbackControls: Array<ScheduledFallbackControl | null> = Array.from(
+        { length: MAX_PENDING_FALLBACK_CONTROLS },
+        () => null
+    );
 
     constructor(...args: unknown[]) {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
-        this.port.onmessage = (event: MessageEvent<GrinderMsg>) => {
+        this.port.onmessage = (event: MessageEvent<unknown>) => {
             const msg = event.data;
             try {
+                if (!isRecord(msg)) {
+                    return;
+                }
                 if (msg.type === 'init') {
                     if (this._ready) {
                         return;
@@ -300,19 +344,18 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (
+                    msg.type === 'init-sab' &&
+                    msg.sab instanceof SharedArrayBuffer &&
+                    isNonNegativeSafeInteger(msg.byteOffset)
+                ) {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
-                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
-                    const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                    const oldLatency = this._instance.get_latency_samples();
-                    this._instance.set_param(rustName, msg.value);
-                    const newLatency = this._instance.get_latency_samples();
-                    this._refreshWasmViewsIfMemoryChanged();
-                    if (newLatency !== oldLatency) {
-                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
-                    }
-                } else if (msg.type === 'patch' && this._instance !== null && !this._faulted) {
+                } else if (this._initializeFallbackControl(msg)) {
+                    return;
+                } else if (this._handleFallbackControl(msg)) {
+                    return;
+                } else if (msg.type === 'patch' && isRecord(msg.patch) && this._instance !== null && !this._faulted) {
                     const oldLatency = this._instance.get_latency_samples();
                     applyNeuralPatch(this._instance, msg.patch);
                     const newLatency = this._instance.get_latency_samples();
@@ -334,6 +377,135 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 });
             }
         };
+    }
+
+    _initializeFallbackControl(message: UnknownRecord): boolean {
+        if (
+            this._fallbackControlGeneration !== null ||
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'correlation']) ||
+            message.schemaVersion !== 1 ||
+            message.command !== 'initialize-fallback-control' ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            !isBoundedId(message.target.deviceType) ||
+            !Array.isArray(message.target.parameterIds) ||
+            !message.target.parameterIds.every(isBoundedId) ||
+            new Set(message.target.parameterIds).size !== message.target.parameterIds.length ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration)
+        ) {
+            return false;
+        }
+        this._fallbackControlTarget = Object.freeze({
+            trackId: message.target.trackId,
+            deviceId: message.target.deviceId,
+            deviceType: message.target.deviceType,
+            parameterIds: Object.freeze([...message.target.parameterIds]),
+        });
+        this._fallbackControlGeneration = message.correlation.workletGeneration;
+        this._lastFallbackControlSequence = 0;
+        this._pendingFallbackControls.fill(null);
+        return true;
+    }
+
+    _handleFallbackControl(message: UnknownRecord): boolean {
+        if (message.command !== 'set-fallback-param') {
+            return false;
+        }
+        if (
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
+            message.schemaVersion !== 1 ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            !isBoundedId(message.target.deviceType) ||
+            !isBoundedId(message.target.parameterId) ||
+            typeof message.value !== 'number' ||
+            !Number.isFinite(message.value) ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration', 'controlSequence']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration) ||
+            !isPositiveSafeInteger(message.correlation.controlSequence) ||
+            !isRecord(message.scheduling) ||
+            !hasOnlyKeys(message.scheduling, ['targetFrame', 'deadlineFrame'])
+        ) {
+            return true;
+        }
+        const controlTarget = this._fallbackControlTarget;
+        if (
+            this._fallbackControlGeneration === null ||
+            controlTarget === null ||
+            message.correlation.workletGeneration !== this._fallbackControlGeneration ||
+            message.correlation.controlSequence <= this._lastFallbackControlSequence ||
+            message.target.trackId !== controlTarget.trackId ||
+            message.target.deviceId !== controlTarget.deviceId ||
+            message.target.deviceType !== controlTarget.deviceType ||
+            !controlTarget.parameterIds.includes(message.target.parameterId)
+        ) {
+            return true;
+        }
+        const { targetFrame, deadlineFrame } = message.scheduling;
+        const immediate = targetFrame === null && deadlineFrame === null;
+        const scheduled = isNonNegativeSafeInteger(targetFrame) && isNonNegativeSafeInteger(deadlineFrame);
+        if (!immediate && (!scheduled || targetFrame > deadlineFrame)) {
+            return true;
+        }
+        this._lastFallbackControlSequence = message.correlation.controlSequence;
+        if (scheduled && currentFrame > deadlineFrame) {
+            return true;
+        }
+        if (scheduled && currentFrame < targetFrame) {
+            const slot = this._pendingFallbackControls.findIndex((entry) => entry === null);
+            if (slot === -1) {
+                return true;
+            }
+            this._pendingFallbackControls[slot] = {
+                parameterId: message.target.parameterId,
+                value: message.value,
+                targetFrame,
+                deadlineFrame,
+            };
+            return true;
+        }
+        this._applyFallbackControl(message.target.parameterId, message.value, true);
+        return true;
+    }
+
+    _applyFallbackControl(parameterId: string, value: number, reportLatency: boolean): void {
+        if (this._instance === null || this._faulted) {
+            return;
+        }
+        const rustName = PARAM_MAP[parameterId] ?? parameterId;
+        const oldLatency = this._instance.get_latency_samples();
+        this._instance.set_param(rustName, value);
+        const newLatency = this._instance.get_latency_samples();
+        if (reportLatency && newLatency !== oldLatency) {
+            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+        }
+    }
+
+    _applyDueFallbackControls(): void {
+        for (let index = 0; index < this._pendingFallbackControls.length; index++) {
+            const pending = this._pendingFallbackControls[index];
+            if (!pending) {
+                continue;
+            }
+            if (currentFrame > pending.deadlineFrame) {
+                this._pendingFallbackControls[index] = null;
+                continue;
+            }
+            if (currentFrame >= pending.targetFrame) {
+                this._pendingFallbackControls[index] = null;
+                // `process()` is the render callback: latency publication travels
+                // through the preallocated SAB telemetry slot below instead of
+                // allocating a message object or posting across the worklet port.
+                this._applyFallbackControl(pending.parameterId, pending.value, false);
+            }
+        }
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {
@@ -439,6 +611,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
             ) {
                 return true;
             }
+
+            this._applyDueFallbackControls();
 
             const in0 = input[0];
             if (!in0) {

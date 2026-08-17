@@ -901,6 +901,45 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(pendingDevicePromises.size).toBe(0);
         });
 
+        it('preserves scheduled placeholder order while coalescing only immediate runs on promotion', () => {
+            const deferred = installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+
+            track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'drive', 0.2);
+            track.updateParam('wasm-1', 'drive', 0.8);
+            track.scheduleParam('wasm-1', 'tone', 0.3, 0);
+            track.updateParam('wasm-1', 'tone', 0.7);
+
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+
+            expect(loaded.controller.setParam.mock.calls).toEqual([
+                ['drive', 0.8],
+                ['tone', 0.3, 0],
+                ['tone', 0.7],
+            ]);
+        });
+
+        it('preserves A/B/A immediate placeholder writes on promotion', () => {
+            const deferred = installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+
+            track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'drive', 0.1);
+            track.updateParam('wasm-1', 'tone', 0.2);
+            track.updateParam('wasm-1', 'drive', 0.9);
+
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+
+            expect(loaded.controller.setParam.mock.calls).toEqual([
+                ['drive', 0.1],
+                ['tone', 0.2],
+                ['drive', 0.9],
+            ]);
+        });
+
         it('reports exactly one owner-owned graph mutation when an async placeholder promotes and rebuilds', async () => {
             const deferred = installDeferredWasmDevice({ requiresContent: false });
             const onAsyncRuntimeGraphMutation = vi.fn();
