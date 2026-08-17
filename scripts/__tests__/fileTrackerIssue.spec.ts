@@ -106,6 +106,27 @@ describe('renderIssueSubmission', () => {
         expect(submission.body).toContain('### Subsystem\n\nai / airuntime (AI agentic tools, proposals, streaming)');
     });
 
+    it('accepts slash aliases after the first scope token', () => {
+        const form = parseIssueForm(load('bug_report.yml'));
+        for (const [token, expected] of [
+            ['ui', 'workspace-shell / ui (Presentation components, mixer, piano roll)'],
+            ['airuntime', 'ai / airuntime (AI agentic tools, proposals, streaming)'],
+            ['ci', 'build / ci (TypeScript, Rust, WASM, bundling)'],
+            ['knead', 'yeast / bacteria / knead / levain / crumbs (Instruments & processors)'],
+        ] as const) {
+            const submission = renderIssueSubmission(form, {
+                title: `fix(${token}): probe`,
+                fields: {
+                    scope: token,
+                    priority: 'P2',
+                    description: 'd',
+                    reproduction: '1',
+                },
+            });
+            expect(submission.body).toContain(`### Subsystem\n\n${expected}`);
+        }
+    });
+
     it('rejects a missing required field', () => {
         expect(() =>
             renderIssueSubmission(parseIssueForm(load('feature_request.yml')), {

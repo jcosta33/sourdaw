@@ -159,13 +159,22 @@ export function parseCliArgs(args: string[]): {
 
 function resolveOption(value: string, options: string[], id: string): string {
     const trimmed = value.trim();
-    const match = options.find(
-        (option) => option === trimmed || option.startsWith(`${trimmed} `) || option.startsWith(`${trimmed} (`)
-    );
+    const match = options.find((option) => optionMatchesToken(option, trimmed));
     if (match === undefined) {
         fail(`invalid ${id}: ${trimmed}`);
     }
     return match;
+}
+
+function optionMatchesToken(option: string, token: string): boolean {
+    if (option === token || option.startsWith(`${token} `) || option.startsWith(`${token} (`)) {
+        return true;
+    }
+    const labels = option.replace(/ \([^)]*\)\s*$/, '');
+    return labels
+        .split(' / ')
+        .map((part) => part.trim())
+        .includes(token);
 }
 
 function nonempty(value: string | undefined): string | undefined {
