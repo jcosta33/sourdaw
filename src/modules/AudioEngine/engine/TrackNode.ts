@@ -823,7 +823,7 @@ export class TrackNode {
             }
 
             const precedingDeviceIds = this.strip.deviceNodes.slice(0, index).map((device) => device.deviceId);
-            const { bypassed, type } = replacementDn;
+            const { bypassed, type, parameterIds } = replacementDn;
             this.reportAsyncRuntimeGraphMutation(
                 'needs-reconcile',
                 `Recovered device ${deviceId} is rebuilding its live graph slot`
@@ -831,7 +831,7 @@ export class TrackNode {
             this.invalidatePendingDeviceLoad({ deviceId });
             this.strip.deviceNodes.splice(index, 1);
             this.destroyRejectedDeviceNode(replacementDn);
-            this.addDevice(deviceId, type, undefined, precedingDeviceIds);
+            this.addDevice(deviceId, type, undefined, precedingDeviceIds, parameterIds);
             if (bypassed !== undefined) {
                 this.updateBypass(deviceId, bypassed);
             }
