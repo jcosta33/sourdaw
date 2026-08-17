@@ -1,0 +1,35 @@
+electron/__tests__/security.spec.ts
+  s_d91dcbe5f07151::t_75f1ad43f64dfa 1-23,26-176,178-182,184-191,193-197,199-238
+  s_d91dcbe5f07151::t_716cf3e9906706 24-25
+  s_d91dcbe5f07151::t_633e18bbb468d1 177,183,192,198
+scripts/checkVitestCollectionScope.ts
+  s_d91dcbe5f07151::t_5a2b46edac131d 66-73
+  s_d91dcbe5f07151::t_e458291b59bce6 92-93
+  s_d91dcbe5f07151::t_a7bc639dd0bff2 52
+electron/security.ts
+  s_d91dcbe5f07151::t_f7cdb6c5d8c243 155-156,158-161,164-167,180-183,191-199
+  s_d91dcbe5f07151::t_a5226af570e53f 50-52,65-78,81-118
+  s_d91dcbe5f07151::t_b161d36e1e8971 22-34
+  s_d91dcbe5f07151::t_296614f93bb66a 79-80
+  s_d91dcbe5f07151::t_91abf6ed4fb6df 170-177
+  s_d91dcbe5f07151::t_a57d89bf095d44 184-188
+  s_d91dcbe5f07151::t_2cf87041d86fd2 119
+vite.config.ts
+  s_d91dcbe5f07151::t_8e932b9891e848 56-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2138fcd3ccb3b62ca48c6add3bfca555a0ba90ac",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
