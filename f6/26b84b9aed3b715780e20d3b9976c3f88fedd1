@@ -1,0 +1,38 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts
+  s_ab5443e65c7fba::t_b976ffbe179e9b 202
+  s_ab5443e65c7fba::t_7478c7fb73e52f 179-182,186-201,203-224
+  s_ab5443e65c7fba::t_3b433278171a50 225
+src/modules/Transport/models/TimeSignatureMap.ts
+  s_ab5443e65c7fba::t_d2ce05c45918a4 71-147,152-174
+  s_ab5443e65c7fba::t_5af6c74d35a1b0 27-36
+  s_ab5443e65c7fba::t_9bb79cca6e7846 148-151
+  s_ab5443e65c7fba::t_644442a6a0dcc6 234-247,273-284
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  s_ab5443e65c7fba::t_c3e998b057219a 4
+  s_ab5443e65c7fba::t_4152000efd1e27 49-61
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  s_ab5443e65c7fba::t_8755da16c49f95 69-137
+  s_ab5443e65c7fba::t_11a9f45a8d4e60 165-208
+  s_ab5443e65c7fba::t_138dbe6fe426ce 6,9
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_ab5443e65c7fba::t_9459d030b684e9 497-502,506-509,511-523,527-528
+  s_ab5443e65c7fba::t_c4a4573ed110f0 503-505,510,524-526
+  s_ab5443e65c7fba::t_fc345e0a7c2a37 661
+  s_ab5443e65c7fba::t_b46afe6c708bc5 641-660,662-668
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f626b84b9aed3b715780e20d3b9976c3f88fedd1",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
