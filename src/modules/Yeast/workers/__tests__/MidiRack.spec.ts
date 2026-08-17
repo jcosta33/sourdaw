@@ -2177,12 +2177,23 @@ describe('MidiRack', () => {
 
         it('versions a processor reorder and resets downstream terminal capture', () => {
             const rack = new MidiRack('rack-a');
-            rack.addProcessor(new PassthroughProcessor('p1'));
-            rack.addProcessor(new PassthroughProcessor('p2'));
+            const factory = (_type: ProcessorType, id: string): MidiProcessor => new PassthroughProcessor(id);
+            rack.addProcessor(new PassthroughProcessor('p1'), 'arpeggiator');
+            rack.addProcessor(new PassthroughProcessor('p2'), 'filter');
             rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
             const beforeReorder = takePreviewBlock(rack);
 
-            rack.reorder(0, 1);
+            // A reorder has no dedicated worker method — `replaceProjection` is
+            // the single reconciliation path, and it detects the swapped order
+            // as a topology change via `topologyMatches`' index-positional
+            // comparison, the same as it does for a type or bypass change.
+            rack.replaceProjection(
+                [
+                    { id: 'p2', type: 'filter', bypassed: false, params: {} },
+                    { id: 'p1', type: 'arpeggiator', bypassed: false, params: {} },
+                ],
+                factory
+            );
             rack.processBlock(
                 [noteOff(128, 60)],
                 128,
