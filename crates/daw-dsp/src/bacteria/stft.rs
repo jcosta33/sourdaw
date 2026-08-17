@@ -17,9 +17,10 @@ const DEFAULT_FFT_SIZE: usize = 2048;
 /// Every frame is windowed on the way in and again on the way out, so the
 /// overlap-add sum carries `Σ_k w²(n − kN/4)`, which for a Hann window at a
 /// hop of `N/4` is exactly `3/2` and independent of `n`. A stage that means to
-/// be unity through the transform has to divide it back out; the freeze/blur
-/// path predates this constant and does not, which is why it is opt-in through
-/// [`StftProcessor::output_scale`] rather than folded into `process_sample`.
+/// be unity through the transform has to divide it back out, so
+/// [`StftProcessor::output_scale`] defaults to `1 / OLA_GAIN`: a transform
+/// that changes nothing has to deliver the level it was handed, and a stage
+/// that wants the raw reconstruction says so.
 pub const OLA_GAIN: f32 = 1.5;
 const DEFAULT_BIT_REVERSE: [usize; DEFAULT_FFT_SIZE] =
     build_bit_reverse_indices::<DEFAULT_FFT_SIZE>();
@@ -150,9 +151,8 @@ pub struct StftProcessor {
     blur_alpha: f32,
     freeze: bool,
     mix: f32,
-    /// Gain applied to the wet path only. Defaults to 1.0 so the freeze/blur
-    /// stage renders exactly as it did before this field existed; stages that
-    /// want unity through the transform set it to `1.0 / OLA_GAIN`.
+    /// Gain applied to the wet path only, defaulting to `1 / OLA_GAIN` so the
+    /// transform is unity end to end. See [`OLA_GAIN`].
     output_scale: f32,
 
     ready: bool,
@@ -194,7 +194,7 @@ impl StftProcessor {
             blur_alpha: 0.5,
             freeze: false,
             mix: 0.5,
-            output_scale: 1.0,
+            output_scale: 1.0 / OLA_GAIN,
             ready: false,
         }
     }
@@ -238,8 +238,23 @@ impl StftProcessor {
         self.input_write_pos = (self.input_write_pos + 1) % (self.fft_size * 2);
         self.samples_since_last_hop += 1;
 
+        // The dry tap is held back to the transform's own delay rather than
+        // taken from `input`.
+        //
+        // The wet path costs [`Self::latency_samples`]; blending it against an
+        // undelayed dry made the stage a comb — silent at `mix` 1.0, where
+        // Smudge lives, and deepest at 0.5, which is the freeze/blur default.
+        // It also left the stage with no single group delay to report: half its
+        // output arrived a full window early, so any number handed to host PDC
+        // was wrong for the other half. Delayed here, the stage presents
+        // `latency_samples()` at every mix value and the report is exact.
+        //
+        // The ring already holds the history, so this is a read offset, not a
+        // second buffer.
+        let dry =
+            self.input_buffer[(self.input_write_pos + self.fft_size - 1) % (self.fft_size * 2)];
+
         // Read output from overlap-add buffer
-        let dry = input;
         let wet = self.output_buffer[self.output_read_pos];
         self.output_buffer[self.output_read_pos] = 0.0; // Clear after reading
         self.output_read_pos = (self.output_read_pos + 1) % (self.fft_size * 2);
@@ -346,9 +361,9 @@ impl StftProcessor {
 /// Smudge processor — temporal/spectral hybrid that blurs transients before distortion.
 /// Operates in STFT domain, smooths FFT magnitudes across successive frames.
 ///
-/// Fully wet and gain-corrected: the wrapper divides the Hann-pair overlap-add
-/// gain back out (see [`OLA_GAIN`]) so selecting Smudge changes the character
-/// of a band without changing its level by +3.5 dB.
+/// Fully wet and gain-corrected: [`StftProcessor`] divides the Hann-pair
+/// overlap-add gain back out (see [`OLA_GAIN`]) so selecting Smudge changes the
+/// character of a band without changing its level by +3.5 dB.
 ///
 /// Costs [`Self::latency_samples`] of group delay, which the band chain folds
 /// into the engine's reported latency.
@@ -361,7 +376,6 @@ impl SmudgeProcessor {
         let mut stft = StftProcessor::new(2048);
         stft.blur_alpha = 0.85; // Heavy smoothing for smudge
         stft.mix = 1.0;
-        stft.output_scale = 1.0 / OLA_GAIN;
         Self { stft }
     }
 
@@ -466,11 +480,16 @@ mod tests {
     /// phases and the overlap-add reconstructs the input exactly, scaled by
     /// [`OLA_GAIN`]. An impulse in therefore comes out as an impulse, and its
     /// position is the group delay by direct reading.
+    ///
+    /// `output_scale` is pushed back to 1 here so the same reading still pins
+    /// the raw overlap-add gain. The shipped default divides it out; that is
+    /// what `the_default_output_scale_makes_the_transform_unity` measures.
     #[test]
     fn latency_samples_is_the_delay_the_transform_delivers() {
         let mut stft = StftProcessor::new(FFT_SIZE);
         stft.set_param("spectralBlur", 0.0);
         stft.set_param("spectralMix", 1.0);
+        stft.output_scale = 1.0;
 
         // Past the first hop, so the `!ready` dry passthrough is behind us.
         const IMPULSE_AT: usize = 4096;
@@ -556,6 +575,77 @@ mod tests {
             gain_db.abs() < 0.5,
             "smudge delivers {gain_db:+.2} dB on a steady tone; the \
              overlap-add gain is not being divided back out"
+        );
+    }
+
+    /// The freeze/blur path used to render the raw overlap-add reconstruction,
+    /// so switching `spectralEnabled` on added +3.5 dB to the band on top of
+    /// whatever the blur did. Only the Smudge wrapper divided the gain out.
+    ///
+    /// Same identity configuration as the delay reading above, so the impulse
+    /// that arrives is the input unchanged and its height is the stage's gain.
+    #[test]
+    fn the_default_output_scale_makes_the_transform_unity() {
+        let mut stft = StftProcessor::new(FFT_SIZE);
+        stft.set_param("spectralBlur", 0.0);
+        stft.set_param("spectralMix", 1.0);
+
+        const IMPULSE_AT: usize = 4096;
+        const TOTAL: usize = IMPULSE_AT + 3 * FFT_SIZE;
+
+        let peak = (0..TOTAL)
+            .map(|index| {
+                let input = if index == IMPULSE_AT { 1.0 } else { 0.0 };
+                stft.process_sample(input)
+            })
+            .fold(0.0_f32, |worst, s| worst.max(s.abs()));
+
+        assert!(
+            (peak - 1.0).abs() < 0.01,
+            "the transform delivered {peak:.4}x on an identity configuration; \
+             the overlap-add gain is not being divided back out"
+        );
+    }
+
+    /// The stage blends a dry tap against a wet path that costs a whole
+    /// window, so the dry tap has to wait for it. Undelayed, the blend was a
+    /// comb — invisible at `mix` 1.0 where Smudge sits, deepest at the
+    /// freeze/blur default of 0.5 — and the stage had no single group delay to
+    /// report to host PDC.
+    ///
+    /// Probed at `mix` 0, where the output is dry alone and its delay can be
+    /// read directly off an impulse.
+    #[test]
+    fn the_dry_tap_carries_the_reported_delay() {
+        let mut stft = StftProcessor::new(FFT_SIZE);
+        stft.set_param("spectralMix", 0.0);
+
+        const IMPULSE_AT: usize = 4096;
+        let latency = stft.latency_samples();
+        let rendered: Vec<f32> = (0..IMPULSE_AT + 2 * FFT_SIZE)
+            .map(|index| {
+                let input = if index == IMPULSE_AT { 1.0 } else { 0.0 };
+                stft.process_sample(input)
+            })
+            .collect();
+
+        let (arrival, amplitude) = rendered
+            .iter()
+            .enumerate()
+            .skip(IMPULSE_AT)
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(index, value)| (index, *value))
+            .expect("render produced no samples");
+
+        assert_eq!(
+            arrival - IMPULSE_AT,
+            latency,
+            "the dry tap arrived {} samples late against a reported {latency}",
+            arrival - IMPULSE_AT
+        );
+        assert!(
+            (amplitude - 1.0).abs() < 1.0e-4,
+            "the dry tap must be the input itself, got {amplitude}"
         );
     }
 
