@@ -191,7 +191,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AiGeneration/useCases')>()),
     handleAiDenoiseClip: vi.fn(),
-    handleStemSeparationPreview: vi.fn(),
 }));
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
