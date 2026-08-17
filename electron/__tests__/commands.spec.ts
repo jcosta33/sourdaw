@@ -228,6 +228,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],
+    ['close_provider_gateway_session', ['session_id']],
     ['close_push_transport', []],
     ['collab_apply_change', ['doc_id', 'change_bytes']],
     ['collab_create_project', ['name', 'sample_rate']],
@@ -263,10 +264,11 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['load_sample', ['instance_id', 'file_path']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
+    ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
     ['open_push_transport', ['model']],
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],
-    ['provider_gateway_request', ['request_id', 'adapter_id', 'origin', 'operation', 'api_key', 'body']],
+    ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
     ['scan_plugins', ['paths']],
     ['send_push_midi', ['bytes']],
@@ -302,10 +304,8 @@ describe('positional argument contract', () => {
         expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id']);
         expect(COMMAND_ARGUMENTS.get('provider_gateway_request')).toEqual([
             'request_id',
-            'adapter_id',
-            'origin',
+            'session_id',
             'operation',
-            'api_key',
             'body',
         ]);
     });

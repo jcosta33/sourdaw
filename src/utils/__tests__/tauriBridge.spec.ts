@@ -491,10 +491,8 @@ describe('the Electron bridge branch', () => {
 
             const result = await tauriInvoke('provider_gateway_request', {
                 requestId: 'req-1',
-                adapterId: 'openai',
-                origin: 'https://api.openai.com',
+                sessionId: 'sess-1',
                 operation: 'request',
-                apiKey: 'k',
                 body: null,
                 onEvent: channel,
             });
@@ -502,7 +500,7 @@ describe('the Electron bridge branch', () => {
             expect(result).toBe('streamed');
             const [command, positional] = bridge.stream.mock.calls[0] as [string, unknown[], unknown];
             expect(command).toBe('provider_gateway_request');
-            expect(positional).toEqual(['req-1', 'openai', 'https://api.openai.com', 'request', 'k', null]);
+            expect(positional).toEqual(['req-1', 'sess-1', 'request', null]);
             expect(received).toEqual([{ sequence: 0 }, { sequence: 1 }]);
             expect(bridge.invoke).not.toHaveBeenCalled();
         });
