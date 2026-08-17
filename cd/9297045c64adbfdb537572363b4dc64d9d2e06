@@ -1,0 +1,29 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_95466a36868d8c::t_4bfed6c1457043 742-781
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_d91dcbe5f07151::t_a5dcc5cee74c5d 321-325,333-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "cd9297045c64adbfdb537572363b4dc64d9d2e06",
+  "prompts": {},
+  "sessions": {
+    "s_95466a36868d8c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00e0d-f95e-72f2-8fbf-b045a6c000f5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
