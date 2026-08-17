@@ -4,6 +4,7 @@ use daw_plugin_host::scanner::{
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -14,6 +15,80 @@ pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
 pub const PARAMETER_WORKER_ARGUMENT: &str = "--sourdaw-plugin-parameter-scan-worker";
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
+
+/// Env var a host sets to describe how a leaf worker process is launched.
+///
+/// The default — re-executing this process — holds only where the executable
+/// scans its own arguments on startup. A host whose executable is a runtime
+/// rather than the application (it is handed a script, and would treat a bare
+/// `--sourdaw-plugin-scan-worker` as an unknown option) has to say how to get
+/// back into worker mode, and this is where it says it.
+///
+/// The value is a JSON object, deliberately transport- and shell-agnostic:
+///
+/// ```json
+/// { "program": "…", "args": ["…"], "env": { "…": "…" } }
+/// ```
+///
+/// `args` is prepended to the worker arguments and `env` is added to the child's
+/// environment. Nothing about the policy moves: the child is still bounded, still
+/// killed as a process group at the deadline, and still the only process that
+/// loads a plugin entry point.
+pub const SCAN_WORKER_COMMAND_ENV: &str = "SOURDAW_PLUGIN_SCAN_WORKER_COMMAND";
+
+/// How a leaf worker process is launched. See [`SCAN_WORKER_COMMAND_ENV`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScanWorkerCommand {
+    /// `PathBuf` and `String`, not `OsString`: serde renders an `OsString` as a
+    /// tagged byte enum rather than a plain JSON string, so a host writing the
+    /// obvious `"program": "/path"` would fail to parse.
+    pub program: PathBuf,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+}
+
+impl ScanWorkerCommand {
+    /// Re-execute this process. The contract the Tauri binary always used.
+    fn from_current_exe() -> Result<Self, String> {
+        Ok(Self {
+            program: std::env::current_exe().map_err(|error| {
+                format!("Cannot resolve plugin scan helper executable: {error}")
+            })?,
+            args: Vec::new(),
+            env: BTreeMap::new(),
+        })
+    }
+
+    /// Parse a host's declaration.
+    ///
+    /// An unparseable or empty declaration is an error rather than a silent
+    /// fallback to re-execution: falling back would launch the wrong program for
+    /// every plugin on the machine and report each one as a scan failure, which
+    /// reads to a user as "this system has no working plugins" instead of "this
+    /// setting is wrong".
+    fn from_json(declared: &str) -> Result<Self, String> {
+        let command: Self = serde_json::from_str(declared).map_err(|error| {
+            format!("{SCAN_WORKER_COMMAND_ENV} is not a valid command: {error}")
+        })?;
+        if command.program.as_os_str().is_empty() {
+            return Err(format!("{SCAN_WORKER_COMMAND_ENV} names no program"));
+        }
+        Ok(command)
+    }
+
+    /// Read the host's declaration, or fall back to re-execution.
+    fn resolve() -> Result<Self, String> {
+        let Some(declared) = std::env::var_os(SCAN_WORKER_COMMAND_ENV) else {
+            return Self::from_current_exe();
+        };
+        let declared = declared
+            .to_str()
+            .ok_or_else(|| format!("{SCAN_WORKER_COMMAND_ENV} is not valid UTF-8"))?;
+        Self::from_json(declared)
+    }
+}
 #[derive(Serialize, Deserialize)]
 struct WorkerResponse<T> {
     worker_pid: u32,
@@ -44,39 +119,69 @@ impl Drop for ResponseDirectory {
 pub fn run_from_process_args() -> Option<i32> {
     run_from_args(std::env::args_os())
 }
+/// What a set of process arguments asks this process to be.
+#[derive(Debug, PartialEq, Eq)]
+enum WorkerRole<'args> {
+    /// Extract one plugin's descriptor, or its parameters, into a response file.
+    Extract {
+        scans_parameters: bool,
+        plugin_path: &'args OsString,
+        response_path: &'args OsString,
+    },
+    /// The arguments name a worker but are not a usable invocation.
+    Malformed,
+}
+
+/// Decide this process's role from its arguments.
+///
+/// The marker is *located* rather than required at a fixed index, because a host
+/// that re-enters through a runtime puts its own arguments — a script path —
+/// between the executable and ours (see [`SCAN_WORKER_COMMAND_ENV`]). Index 0 is
+/// excluded from the search so an executable whose own path spells the marker
+/// cannot claim the role.
+///
+/// Everything strict about the fixed-index form is kept: the marker must be
+/// followed by exactly two arguments and nothing after them, so an invocation
+/// with a stray extra argument is refused rather than half-interpreted.
+fn worker_role(args: &[OsString]) -> Option<WorkerRole<'_>> {
+    let marker_index = args.iter().skip(1).position(|argument| {
+        argument == std::ffi::OsStr::new(WORKER_ARGUMENT)
+            || argument == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT)
+    })? + 1;
+    if args.len() != marker_index + 3 {
+        return Some(WorkerRole::Malformed);
+    }
+    Some(WorkerRole::Extract {
+        scans_parameters: args[marker_index] == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT),
+        plugin_path: &args[marker_index + 1],
+        response_path: &args[marker_index + 2],
+    })
+}
+
 fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
-    let mut args = args.into_iter();
-    let _executable = args.next();
-    let Some(worker_argument) = args.next() else {
-        return None;
+    let args: Vec<OsString> = args.into_iter().collect();
+    let (scans_parameters, plugin_path, response_path) = match worker_role(&args)? {
+        WorkerRole::Malformed => return Some(2),
+        WorkerRole::Extract {
+            scans_parameters,
+            plugin_path,
+            response_path,
+        } => (scans_parameters, plugin_path, response_path),
     };
-    let scans_parameters = worker_argument == std::ffi::OsStr::new(PARAMETER_WORKER_ARGUMENT);
-    if !scans_parameters && worker_argument != std::ffi::OsStr::new(WORKER_ARGUMENT) {
-        return None;
-    }
-    let Some(plugin_path) = args.next() else {
-        return Some(2);
-    };
-    let Some(response_path) = args.next() else {
-        return Some(2);
-    };
-    if args.next().is_some() {
-        return Some(2);
-    }
     let result = if scans_parameters {
         write_response(
-            Path::new(&response_path),
+            Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: extract_clap_parameter_metadata(Path::new(&plugin_path)),
+                result: extract_clap_parameter_metadata(Path::new(plugin_path)),
             },
         )
     } else {
         write_response(
-            Path::new(&response_path),
+            Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: extract_clap_metadata(Path::new(&plugin_path)),
+                result: extract_clap_metadata(Path::new(plugin_path)),
             },
         )
     };
@@ -115,15 +220,16 @@ fn scan_clap_worker<T: DeserializeOwned>(
     timeout: Duration,
     worker_argument: &str,
 ) -> Result<T, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("Cannot resolve plugin scan helper executable: {error}"))?;
+    let launcher = ScanWorkerCommand::resolve()?;
     let response_directory = ResponseDirectory::create()?;
     let response_path = response_directory.0.join("metadata.json");
-    let mut command = Command::new(executable);
+    let mut command = Command::new(&launcher.program);
     command
+        .args(&launcher.args)
         .arg(worker_argument)
         .arg(path)
         .arg(&response_path)
+        .envs(&launcher.env)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -209,6 +315,112 @@ fn terminate_process_tree(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn args(values: &[&str]) -> Vec<OsString> {
+        values.iter().map(OsString::from).collect()
+    }
+
+    /// The Tauri form: the application binary scanning its own argv.
+    #[test]
+    fn the_marker_is_found_directly_after_the_executable() {
+        assert_eq!(
+            worker_role(&args(&["/app", WORKER_ARGUMENT, "/p.clap", "/out.json"])),
+            Some(WorkerRole::Extract {
+                scans_parameters: false,
+                plugin_path: &OsString::from("/p.clap"),
+                response_path: &OsString::from("/out.json"),
+            })
+        );
+    }
+
+    /// The Electron form: a runtime executable that is handed its script first.
+    /// Without this the leaf process would decide it is not a worker at all,
+    /// run the host's entry point instead, and every scan would time out.
+    #[test]
+    fn the_marker_is_found_after_a_runtime_argument() {
+        assert_eq!(
+            worker_role(&args(&[
+                "/electron",
+                "/shell/scanWorker.js",
+                PARAMETER_WORKER_ARGUMENT,
+                "/p.clap",
+                "/out.json",
+            ])),
+            Some(WorkerRole::Extract {
+                scans_parameters: true,
+                plugin_path: &OsString::from("/p.clap"),
+                response_path: &OsString::from("/out.json"),
+            })
+        );
+    }
+
+    #[test]
+    fn arguments_without_the_marker_are_not_a_worker() {
+        assert_eq!(worker_role(&args(&["/app"])), None);
+        assert_eq!(worker_role(&args(&["/app", "/shell/main.js"])), None);
+    }
+
+    /// An executable whose own path spells the marker must not be able to claim
+    /// the role — index 0 is never searched.
+    #[test]
+    fn the_executable_path_cannot_claim_the_worker_role() {
+        assert_eq!(
+            worker_role(&args(&[WORKER_ARGUMENT, "/p.clap", "/out.json"])),
+            None
+        );
+    }
+
+    #[test]
+    fn a_worker_invocation_with_the_wrong_argument_count_is_malformed() {
+        assert_eq!(
+            worker_role(&args(&["/app", WORKER_ARGUMENT, "/p.clap"])),
+            Some(WorkerRole::Malformed)
+        );
+        assert_eq!(
+            worker_role(&args(&[
+                "/app",
+                WORKER_ARGUMENT,
+                "/p.clap",
+                "/out.json",
+                "extra"
+            ])),
+            Some(WorkerRole::Malformed)
+        );
+    }
+
+    #[test]
+    fn a_declared_launch_command_carries_its_arguments_and_environment() {
+        let command = ScanWorkerCommand::from_json(
+            r#"{"program":"/electron","args":["/shell/scanWorker.js"],"env":{"RUN_AS_NODE":"1"}}"#,
+        )
+        .expect("a well-formed command should parse");
+
+        assert_eq!(command.program, PathBuf::from("/electron"));
+        assert_eq!(command.args, vec!["/shell/scanWorker.js".to_string()]);
+        assert_eq!(
+            command.env.get("RUN_AS_NODE").map(String::as_str),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn a_declared_launch_command_may_omit_its_arguments_and_environment() {
+        let command =
+            ScanWorkerCommand::from_json(r#"{"program":"/app"}"#).expect("program alone is enough");
+
+        assert!(command.args.is_empty());
+        assert!(command.env.is_empty());
+    }
+
+    /// Falling back to re-execution here would launch the wrong program once
+    /// per plugin and report every one of them as a broken plugin.
+    #[test]
+    fn an_unusable_launch_command_is_refused_rather_than_ignored() {
+        assert!(ScanWorkerCommand::from_json("not json").is_err());
+        assert!(ScanWorkerCommand::from_json(r#"{"program":""}"#).is_err());
+        assert!(ScanWorkerCommand::from_json(r#"{"args":["/shell/scanWorker.js"]}"#).is_err());
+    }
+
     fn build_hostile_clap(test_name: &str) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "sourdaw-hostile-clap-{test_name}-{}",

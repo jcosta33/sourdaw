@@ -123,6 +123,67 @@ export type PermissionPolicy = {
 };
 
 /**
+ * Whether the shell will navigate to this URL.
+ *
+ * Anything off-app is off-app: a link in a chat panel, a redirect from a model
+ * provider, a crafted `location =`. Those belong in the user's browser, never
+ * in a window that holds the session.
+ *
+ * A separate function from `isPermissionAllowed` only because the inputs
+ * differ; the origin comparison is the same one, deliberately, so a URL that
+ * cannot navigate here also cannot hold a permission.
+ */
+export const isNavigationAllowed = (allowedOrigins: readonly string[], url: string): boolean => {
+    const origin = normalizeOrigin(url);
+    return origin !== undefined && allowedOrigins.some((allowed) => normalizeOrigin(allowed) === origin);
+};
+
+/**
+ * The origin check every IPC handler runs before it does anything (REQ-004).
+ *
+ * The same allow-list navigation uses, lifted here rather than composed at the
+ * call site: this one line is the whole sender-origin guard, and a copy of it
+ * living in the composition root is a line no spec can reach. The spoofed-frame
+ * assertions drive this export, so they observe the guard the shell installs
+ * rather than a re-implementation of it.
+ *
+ * `undefined` is refused. A sender frame that has already gone has no URL, and
+ * a request from a frame that no longer exists cannot be shown to be the app —
+ * the ordinary case during a renderer crash, and not one to trust.
+ *
+ * The origins are read through a function because the allow-list depends on the
+ * dev server, which is resolved after this guard is handed to the router.
+ */
+export const trustedFrameGuard =
+    (allowedOrigins: () => readonly string[]) =>
+    (url: string | undefined): boolean =>
+        url !== undefined && isNavigationAllowed(allowedOrigins(), url);
+
+/**
+ * What to do with a window-open request.
+ *
+ * A DAW window is the session. Nothing gets to open a second one, so the action
+ * is always `deny`; the only question is whether the target is an ordinary web
+ * URL worth handing to the user's browser.
+ *
+ * The URL comes from the renderer and is not guaranteed to parse. An exception
+ * inside Electron's window-open path propagates rather than denying, so an
+ * unparseable target is treated as hostile here instead of thrown on.
+ */
+export type WindowOpenDecision = {
+    readonly action: 'deny';
+    readonly openExternally: boolean;
+};
+
+export const decideWindowOpen = (url: string): WindowOpenDecision => {
+    try {
+        return { action: 'deny', openExternally: /^https?:$/u.test(new URL(url).protocol) };
+    } catch {
+        return { action: 'deny', openExternally: false };
+    }
+};
+
+/**
  * Reduce a URL or origin string to `scheme://host`.
  *
  * Not `URL.origin`: Node does not know that Chromium treats `app:` as a
