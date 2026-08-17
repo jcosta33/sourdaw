@@ -679,6 +679,11 @@ pub struct TimelineGraph {
     track_order: Vec<usize>,
     /// Bus indices, on the same contract.
     bus_order: Vec<usize>,
+    /// Scratch for an order rebuild, sized once on the control thread. The
+    /// route walk is resolved into it exactly once per node, because a
+    /// comparison key that walked the route itself would repeat that walk for
+    /// every comparison the sort makes, on the callback.
+    route_depths: Vec<usize>,
     master_gain: RampedParam,
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
@@ -692,6 +697,7 @@ impl TimelineGraph {
             buses: Vec::with_capacity(MAX_TIMELINE_BUSES),
             track_order: Vec::with_capacity(MAX_TIMELINE_TRACKS),
             bus_order: Vec::with_capacity(MAX_TIMELINE_BUSES),
+            route_depths: Vec::with_capacity(MAX_TIMELINE_TRACKS.max(MAX_TIMELINE_BUSES)),
             master_gain: RampedParam::new(1.0),
             scratch_left: vec![0.0; MAX_CALLBACK_FRAMES],
             scratch_right: vec![0.0; MAX_CALLBACK_FRAMES],
@@ -710,6 +716,7 @@ impl TimelineGraph {
             buses: Vec::new(),
             track_order: Vec::new(),
             bus_order: Vec::new(),
+            route_depths: Vec::new(),
             master_gain: RampedParam::new(1.0),
             scratch_left: Vec::new(),
             scratch_right: Vec::new(),
@@ -876,20 +883,32 @@ impl TimelineGraph {
 
     /// Returns whether the chain took the effect, so the caller only claims an
     /// effect the chain accepted.
+    ///
+    /// An effect belongs to exactly one chain. A second claim — by the same
+    /// track or by another one — is refused and counted as an id collision:
+    /// one instance spliced into two chains would run its state over two
+    /// unrelated streams interleaved, and the effect's single-valued placement
+    /// could only ever name one of the two claimants.
     pub(crate) fn insert_track_device(
         &mut self,
         track_id: usize,
         effect_id: usize,
         index: usize,
     ) -> bool {
-        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+        let Some(target) = self.tracks.iter().position(|track| track.id == track_id) else {
             self.diagnostics.record_unknown_target();
             return false;
         };
-        if track.chain.contains(&effect_id) {
+        if self
+            .tracks
+            .iter()
+            .any(|track| track.chain.contains(&effect_id))
+        {
             self.diagnostics.record_id_collision();
             return false;
         }
+
+        let track = &mut self.tracks[target];
         if track.chain.len() == track.chain.capacity() {
             self.diagnostics.record_capacity_refusal();
             return false;
@@ -1093,30 +1112,36 @@ impl TimelineGraph {
 
     /// Deepest first, ties broken by insertion order so the render sequence is
     /// a function of the command stream alone.
+    ///
+    /// Each node's depth is resolved once into the graph's scratch buffer and
+    /// the sort then reads it, because the route walk is far more expensive
+    /// than the comparison and a sort makes many comparisons per element.
     fn rebuild_track_order(&mut self) {
         let mut order = std::mem::take(&mut self.track_order);
+        let mut depths = std::mem::take(&mut self.route_depths);
         order.clear();
-        order.extend(0..self.tracks.len());
-        order.sort_unstable_by_key(|&index| {
-            (
-                std::cmp::Reverse(self.track_route_depth(index).unwrap_or(0)),
-                index,
-            )
-        });
+        depths.clear();
+        for index in 0..self.tracks.len() {
+            depths.push(self.track_route_depth(index).unwrap_or(0));
+            order.push(index);
+        }
+        order.sort_unstable_by_key(|&index| (std::cmp::Reverse(depths[index]), index));
         self.track_order = order;
+        self.route_depths = depths;
     }
 
     fn rebuild_bus_order(&mut self) {
         let mut order = std::mem::take(&mut self.bus_order);
+        let mut depths = std::mem::take(&mut self.route_depths);
         order.clear();
-        order.extend(0..self.buses.len());
-        order.sort_unstable_by_key(|&index| {
-            (
-                std::cmp::Reverse(self.bus_route_depth(index).unwrap_or(0)),
-                index,
-            )
-        });
+        depths.clear();
+        for index in 0..self.buses.len() {
+            depths.push(self.bus_route_depth(index).unwrap_or(0));
+            order.push(index);
+        }
+        order.sort_unstable_by_key(|&index| (std::cmp::Reverse(depths[index]), index));
         self.bus_order = order;
+        self.route_depths = depths;
     }
 
     /// Render one block of the timeline, summing the master output into
@@ -1125,10 +1150,19 @@ impl TimelineGraph {
     /// `block_start` is the absolute timeline frame of the block's first
     /// sample, which is what makes clip starts and parameter stamps land on
     /// the sample they name rather than at a block boundary.
+    ///
+    /// `render_clips` is false while the transport is not playing. The
+    /// playhead stands still then, so a clip under it would re-render the same
+    /// span every callback — a buffer-length loop, and one its pre-fader sends
+    /// would keep pumping into the buses. Every other stage still runs on a
+    /// stopped transport: the device chains, the sends, the buses and the
+    /// master sum drain the tails of what was already sounding, which is what
+    /// a stopped transport does in any DAW.
     pub(crate) fn render(
         &mut self,
         block_start: u64,
         frames: usize,
+        render_clips: bool,
         devices: &mut impl DeviceChain,
         master_left: &mut [f32],
         master_right: &mut [f32],
@@ -1160,8 +1194,10 @@ impl TimelineGraph {
                 let track = &mut tracks[index];
                 left.copy_from_slice(&track.input_left[..frames]);
                 right.copy_from_slice(&track.input_right[..frames]);
-                for clip in &track.clips {
-                    clip.render_into(block_start, frames, left, right);
+                if render_clips {
+                    for clip in &track.clips {
+                        clip.render_into(block_start, frames, left, right);
+                    }
                 }
             }
 
@@ -1431,4 +1467,272 @@ fn pan_frame(gains: (f32, f32, f32, f32), left: f32, right: f32) -> (f32, f32) {
         left * left_from_left + right * left_from_right,
         left * right_from_left + right * right_from_right,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn placement(start_frame: u64, source_offset_frames: u64, length_frames: u64) -> ClipPlacement {
+        ClipPlacement {
+            start_frame,
+            source_offset_frames,
+            length_frames,
+        }
+    }
+
+    fn ramp(at_frame: u64, duration_frames: u32, value: f32, shape: RampShape) -> AutomationEvent {
+        AutomationEvent {
+            at_frame,
+            duration_frames,
+            value,
+            shape,
+        }
+    }
+
+    /// Walk a parameter frame by frame the way `apply_gain` does, so the
+    /// values asserted are the ones a block would multiply by.
+    fn walk(
+        param: &mut RampedParam,
+        frames: u64,
+        diagnostics: &mut TimelineRtDiagnostics,
+    ) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| param.value_at(frame, diagnostics))
+            .collect()
+    }
+
+    #[test]
+    fn a_linear_ramp_interpolates_frame_by_frame_between_its_endpoints() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.schedule(ramp(0, 4, 0.0, RampShape::Linear));
+
+        assert_eq!(
+            walk(&mut param, 6, &mut diagnostics),
+            vec![1.0, 0.75, 0.5, 0.25, 0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn an_exponential_ramp_moves_at_a_constant_ratio_between_its_endpoints() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.schedule(ramp(0, 4, 0.25, RampShape::Exponential));
+
+        // 1.0 -> 0.25 is two halvings, so the ramp's midpoint is the geometric
+        // mean 0.5 rather than the arithmetic 0.625 a linear ramp would land
+        // on. That difference is the whole reason a fader wants this shape.
+        let values = walk(&mut param, 5, &mut diagnostics);
+        let expected = [1.0, 0.25_f32.powf(0.25), 0.5, 0.25_f32.powf(0.75), 0.25];
+        for (index, (value, want)) in values.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (value - want).abs() < 1e-6,
+                "frame {index}: {value} should be {want}"
+            );
+        }
+        assert!((values[2] - 0.5).abs() < 1e-6);
+        assert_eq!(diagnostics.snapshot().exponential_ramp_fallbacks, 0);
+    }
+
+    #[test]
+    fn an_exponential_ramp_onto_zero_falls_back_to_linear_and_says_so() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.schedule(ramp(0, 4, 0.0, RampShape::Exponential));
+
+        // A constant-ratio ramp cannot reach zero. Running it anyway produces
+        // NaN, so the parameter runs the linear ramp and records the
+        // substitution rather than emitting a silent fault into the mix.
+        assert_eq!(
+            walk(&mut param, 4, &mut diagnostics),
+            vec![1.0, 0.75, 0.5, 0.25]
+        );
+        assert_eq!(diagnostics.snapshot().exponential_ramp_fallbacks, 1);
+    }
+
+    #[test]
+    fn a_stamp_the_playhead_has_already_passed_resolves_to_the_ramps_end_state() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.schedule(ramp(10, 4, 0.5, RampShape::Linear));
+
+        assert_eq!(param.value_at(100, &mut diagnostics), 0.5);
+    }
+
+    #[test]
+    fn events_land_in_timeline_order_however_they_arrive() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(0.0);
+        // Queued newest-stamp-first: the stamp is authoritative, not the
+        // arrival order, or the same command stream would render differently
+        // depending on how the control thread batched it.
+        param.schedule(ramp(4, 0, 0.75, RampShape::Step));
+        param.schedule(ramp(2, 0, 0.5, RampShape::Step));
+
+        assert_eq!(
+            walk(&mut param, 6, &mut diagnostics),
+            vec![0.0, 0.0, 0.5, 0.5, 0.75, 0.75]
+        );
+    }
+
+    #[test]
+    fn a_settled_parameter_resolves_once_for_the_whole_block_and_a_ramped_one_does_not() {
+        let mut param = RampedParam::new(0.5);
+        assert_eq!(param.block_constant(0, 8), Some(0.5));
+
+        param.schedule(ramp(4, 0, 1.0, RampShape::Step));
+        assert_eq!(param.block_constant(0, 8), None);
+        // The stamp falls beyond this block, so the block is still constant.
+        assert_eq!(param.block_constant(0, 4), Some(0.5));
+    }
+
+    #[test]
+    fn a_parameter_queue_past_its_capacity_refuses_the_newest_event() {
+        let mut param = RampedParam::new(1.0);
+        for index in 0..AUTOMATION_QUEUE_CAPACITY {
+            assert!(param.schedule(ramp(index as u64, 0, 0.5, RampShape::Step)));
+        }
+
+        // Growing the queue would have called the allocator inside the audio
+        // deadline. A refusal the caller counts is the alternative.
+        assert!(!param.schedule(ramp(100, 0, 0.5, RampShape::Step)));
+    }
+
+    #[test]
+    fn a_refused_automation_event_is_counted_rather_than_grown() {
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        for index in 0..=AUTOMATION_QUEUE_CAPACITY {
+            graph.automate(
+                AutomationTarget::TrackGain(1),
+                ramp(1_000 + index as u64, 0, 0.5, RampShape::Step),
+            );
+        }
+
+        assert_eq!(graph.diagnostics().automation_queue_overflows, 1);
+    }
+
+    #[test]
+    fn device_parameter_events_pop_in_stamp_order_once_the_block_reaches_them() {
+        let mut queue = DeviceParamQueue::new();
+        assert!(queue.is_empty());
+        assert!(queue.schedule(DeviceParamEvent {
+            param: DeviceParam::RetuneSpeedMs,
+            value: 20.0,
+            at_frame: 8,
+        }));
+        assert!(queue.schedule(DeviceParamEvent {
+            param: DeviceParam::ShiftSemitones,
+            value: 5.0,
+            at_frame: 4,
+        }));
+        assert_eq!(queue.len(), 2);
+
+        // Nothing is due before the earliest stamp, and the earliest comes out
+        // first whichever order the two arrived in.
+        assert_eq!(queue.pop_due(3), None);
+        assert_eq!(
+            queue.pop_due(4).map(|event| (event.param, event.value)),
+            Some((DeviceParam::ShiftSemitones, 5.0))
+        );
+        assert_eq!(queue.pop_due(4), None);
+        assert_eq!(
+            queue.pop_due(9).map(|event| (event.param, event.value)),
+            Some((DeviceParam::RetuneSpeedMs, 20.0))
+        );
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn a_device_parameter_queue_past_its_capacity_refuses_rather_than_growing() {
+        let mut queue = DeviceParamQueue::new();
+        for index in 0..DEVICE_PARAM_QUEUE_CAPACITY {
+            assert!(queue.schedule(DeviceParamEvent {
+                param: DeviceParam::ShiftSemitones,
+                value: 1.0,
+                at_frame: index as u64,
+            }));
+        }
+
+        assert!(!queue.schedule(DeviceParamEvent {
+            param: DeviceParam::ShiftSemitones,
+            value: 1.0,
+            at_frame: 100,
+        }));
+        assert_eq!(queue.len(), DEVICE_PARAM_QUEUE_CAPACITY);
+    }
+
+    #[test]
+    fn a_trimmed_clip_renders_the_window_its_placement_names_and_keeps_its_material() {
+        let material = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        let mut clip = TimelineClip::new(9, material, Vec::new(), placement(0, 2, 3), 1.0);
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        clip.render_into(0, 4, &mut left, &mut right);
+        assert_eq!(left, vec![2.0, 3.0, 4.0, 0.0]);
+
+        // Retrimming moves the window only. A destructive trim would have
+        // consumed or rewritten the material and could not produce the later
+        // samples afterwards.
+        clip.placement = placement(0, 5, 3);
+        left.fill(0.0);
+        right.fill(0.0);
+        clip.render_into(0, 4, &mut left, &mut right);
+        assert_eq!(left, vec![5.0, 6.0, 7.0, 0.0]);
+        assert_eq!(right, left);
+    }
+
+    #[test]
+    fn a_placement_reaching_past_its_material_renders_silence_rather_than_stale_samples() {
+        let clip = TimelineClip::new(9, vec![1.0, 1.0], Vec::new(), placement(0, 0, 6), 1.0);
+        let mut left = vec![0.0; 6];
+        let mut right = vec![0.0; 6];
+        clip.render_into(0, 6, &mut left, &mut right);
+
+        assert_eq!(left, vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_clip_sums_into_the_span_it_names_and_leaves_the_rest_of_the_block_alone() {
+        let clip = TimelineClip::new(9, vec![1.0; 8], Vec::new(), placement(3, 0, 2), 0.5);
+        let mut left = vec![0.0; 8];
+        let mut right = vec![0.0; 8];
+        clip.render_into(0, 8, &mut left, &mut right);
+        assert_eq!(left, vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0]);
+
+        // A block the clip's span does not reach is untouched.
+        let mut later_left = vec![0.0; 8];
+        let mut later_right = vec![0.0; 8];
+        clip.render_into(8, 8, &mut later_left, &mut later_right);
+        assert_eq!(later_left, vec![0.0; 8]);
+        assert_eq!(later_right, vec![0.0; 8]);
+    }
+
+    #[test]
+    fn an_effect_one_track_already_claims_is_refused_by_every_other_chain() {
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        assert!(graph.add_track(TimelineTrack::new(2)).is_none());
+        assert!(graph.insert_track_device(1, 7, 0));
+
+        // One instance on two chains would run its state over two unrelated
+        // streams interleaved, and the effect's placement could only name one
+        // of the two tracks that hold it.
+        assert!(!graph.insert_track_device(2, 7, 0));
+        assert!(!graph.insert_track_device(1, 7, 0));
+        assert_eq!(graph.diagnostics().id_collisions, 2);
+        assert_eq!(
+            graph.track(1).map(|track| track.device_chain().to_vec()),
+            Some(vec![7])
+        );
+        assert_eq!(
+            graph.track(2).map(|track| track.device_chain().to_vec()),
+            Some(Vec::new())
+        );
+
+        // Freed by the track that holds it, the effect is available again.
+        assert!(graph.remove_track_device(1, 7));
+        assert!(graph.insert_track_device(2, 7, 0));
+    }
 }

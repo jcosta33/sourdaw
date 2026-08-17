@@ -591,13 +591,19 @@ impl AudioScheduler {
                     RetiredGraphObjects::timeline(RetiredTimelineObject::Track(rejected))
                 }),
                 GraphCommand::RemoveTrack(id) => {
+                    let placed_on = EffectPlacement::Track(id);
                     self.timeline.remove_track(id).map(|track| {
                         // The track's devices outlive it, so anything that was
                         // on its chain has to stop processing rather than fall
-                        // back onto the master mix.
+                        // back onto the master mix. Only a placement that
+                        // names this track is cleared: an effect's placement
+                        // is single-valued, so detaching one that some other
+                        // chain is running would silence a live device.
                         for effect_id in track.device_chain() {
-                            if let Some(effect) =
-                                self.effects.iter_mut().find(|e| e.id == *effect_id)
+                            if let Some(effect) = self
+                                .effects
+                                .iter_mut()
+                                .find(|e| e.id == *effect_id && e.placement == placed_on)
                             {
                                 effect.placement = EffectPlacement::Detached;
                             }
@@ -642,11 +648,13 @@ impl AudioScheduler {
                     effect_id,
                 } => {
                     if self.timeline.remove_track_device(track_id, effect_id) {
-                        if let Some(effect) = self
-                            .effects
-                            .iter_mut()
-                            .find(|effect| effect.id == effect_id)
-                        {
+                        // Return it to the master chain only when its
+                        // placement is the one this track owns, for the reason
+                        // given on `RemoveTrack`.
+                        if let Some(effect) = self.effects.iter_mut().find(|effect| {
+                            effect.id == effect_id
+                                && effect.placement == EffectPlacement::Track(track_id)
+                        }) {
                             effect.placement = EffectPlacement::MasterChain;
                         }
                     }
@@ -979,6 +987,13 @@ impl AudioScheduler {
     ///
     /// An empty graph is skipped entirely, so an engine with no tracks and no
     /// buses renders exactly what it did before the timeline existed.
+    ///
+    /// Clips sound only while the transport plays. The playhead stands still
+    /// otherwise, so a clip under a parked playhead would re-render the same
+    /// span every callback. The rest of the graph keeps running on a stopped
+    /// transport — device chains, sends, buses and the master sum — exactly as
+    /// the master insert chain below does, so what was already sounding drains
+    /// its tail instead of being cut off.
     fn render_timeline(
         &mut self,
         block_start: u64,
@@ -1010,6 +1025,7 @@ impl AudioScheduler {
         timeline.render(
             block_start,
             frames,
+            transport.is_playing,
             &mut devices,
             &mut left[..frames],
             &mut right[..frames],
@@ -1063,12 +1079,20 @@ impl AudioScheduler {
                 continue;
             }
 
+            // A detached effect runs nowhere: no chain will consume the MIDI
+            // addressed to it, so it is discarded each block on the same
+            // contract as the bypass arm below. Banking it instead would empty
+            // as a burst of stale note-ons — note-ons with no note-offs behind
+            // them — the moment the effect is placed on a chain again.
+            if effect.placement == EffectPlacement::Detached {
+                effect.pending_midi.clear();
+                continue;
+            }
+
             // Only an effect no track claims belongs on the master insert
             // chain. One on a track chain already ran over that track's signal
-            // in `render_timeline`; one left behind by a removed track runs
-            // nowhere, because putting a deleted track's device on the whole
-            // mix is worse than leaving it silent until it is placed or
-            // removed.
+            // in `render_timeline`, which owns clearing its MIDI exactly as
+            // this loop does.
             if effect.placement != EffectPlacement::MasterChain {
                 continue;
             }
@@ -2000,12 +2024,20 @@ mod tests {
     }
 }
 
+/// Timeline behaviour that only a rendered block can show: the command path,
+/// the playhead, the scheduler's device table, the retirement channel and the
+/// master chain. Timeline logic that stands on its own — ramp interpolation,
+/// the parameter queues, clip trim math, the chain's own guards — is tested in
+/// `timeline.rs` beside the code that defines it; the integration tests that
+/// need the whole block pipeline live here deliberately.
 #[cfg(test)]
 mod timeline_tests {
     use super::*;
     use crate::timeline::{RampShape, MAX_TIMELINE_TRACKS};
     use rtrb::RingBuffer;
     use std::any::Any;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     /// Scales whatever it is handed, so a chain's position in the graph is
     /// visible in the mix rather than only in the graph's own bookkeeping.
@@ -2031,6 +2063,81 @@ mod timeline_tests {
 
         fn as_any_mut(&mut self) -> &mut dyn Any {
             self
+        }
+    }
+
+    /// Emits with no input, standing in for a device with a tail: a reverb or
+    /// a delay still sounding after the material that fed it has stopped.
+    struct TailPlugin {
+        value: f32,
+    }
+
+    impl NativePlugin for TailPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                left[index] += self.value;
+                right[index] += self.value;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "tail-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// Counts the MIDI events actually handed to a device, so a burst that
+    /// was banked while the device ran nowhere is visible.
+    struct MidiCountingPlugin {
+        received: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for MidiCountingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            self.received
+                .fetch_add(midi_events.len(), Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "midi-counting-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    fn note_on(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            note,
+            velocity: 100,
+            channel: 0,
+            is_note_on: true,
+            probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+            project_probability_seed: 0,
+            clip_id_hash: 0,
+            event_id_hash: 0,
+            absolute_occurrence_index: 0,
         }
     }
 
@@ -2183,20 +2290,6 @@ mod timeline_tests {
     }
 
     #[test]
-    fn a_placement_reaching_past_its_material_renders_silence_rather_than_stale_samples() {
-        let mut harness = Harness::new(16);
-        harness.playing();
-        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
-        harness.send(GraphCommand::AddClip(
-            1,
-            TimelineClip::new(9, vec![1.0, 1.0], Vec::new(), placement(0, 0, 6), 1.0),
-        ));
-
-        let (left, _) = harness.render(6);
-        assert_eq!(left, vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
-    }
-
-    #[test]
     fn a_stereo_clip_keeps_its_channels_and_a_mono_clip_is_heard_on_both() {
         let mut harness = Harness::new(16);
         harness.playing();
@@ -2261,7 +2354,7 @@ mod timeline_tests {
     }
 
     #[test]
-    fn an_exponential_ramp_onto_zero_falls_back_to_linear_and_says_so() {
+    fn an_exponential_gain_ramp_reaches_the_mix_at_a_constant_ratio() {
         let mut harness = Harness::new(16);
         harness.playing();
         track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
@@ -2270,36 +2363,19 @@ mod timeline_tests {
             event: AutomationEvent {
                 at_frame: 0,
                 duration_frames: 4,
-                value: 0.0,
+                value: 0.25,
                 shape: RampShape::Exponential,
             },
         });
 
-        // A constant-ratio ramp cannot reach zero. Running it anyway produces
-        // NaN, so the graph runs the linear ramp and records the substitution
-        // rather than emitting a silent fault into the mix.
+        // Two halvings across four frames, so the halfway frame carries the
+        // geometric mean 0.5 rather than the 0.625 a linear ramp would land
+        // on. The fallback to linear is the substitution this shape makes only
+        // through zero, and it must not happen here.
         let (left, _) = harness.render(4);
-        assert_eq!(left, vec![1.0, 0.75, 0.5, 0.25]);
-        assert_eq!(harness.diagnostics().exponential_ramp_fallbacks, 1);
-    }
-
-    #[test]
-    fn automation_past_the_queue_is_refused_and_counted_rather_than_grown() {
-        let mut harness = Harness::new(64);
-        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
-        for index in 0..=crate::timeline::AUTOMATION_QUEUE_CAPACITY {
-            harness.send(GraphCommand::AutomateParam {
-                target: AutomationTarget::TrackGain(1),
-                event: AutomationEvent {
-                    at_frame: 1_000 + index as u64,
-                    duration_frames: 0,
-                    value: 0.5,
-                    shape: RampShape::Step,
-                },
-            });
-        }
-
-        assert_eq!(harness.diagnostics().automation_queue_overflows, 1);
+        assert!((left[0] - 1.0).abs() < 1e-6, "{left:?}");
+        assert!((left[2] - 0.5).abs() < 1e-6, "{left:?}");
+        assert_eq!(harness.diagnostics().exponential_ramp_fallbacks, 0);
     }
 
     #[test]
@@ -2748,5 +2824,160 @@ mod timeline_tests {
         harness.send(GraphCommand::SetClipPlacement(404, 9, placement(0, 0, 1)));
 
         assert_eq!(harness.diagnostics().unknown_targets, 3);
+    }
+
+    #[test]
+    fn a_clip_under_a_parked_playhead_is_silent_while_its_devices_tail_still_drains() {
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            Box::new(TailPlugin { value: 0.25 }),
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+            index: 0,
+        });
+
+        // The playhead stands still while the transport is stopped, so a clip
+        // rendered anyway would repeat the same span every callback — a
+        // buffer-length loop, and one the sends would pump into the buses.
+        // The chain still runs, so a device with a tail keeps draining it.
+        let (first, right) = harness.render(4);
+        assert_eq!(first, vec![0.25; 4]);
+        assert_eq!(right, first);
+        let (second, _) = harness.render(4);
+        assert_eq!(second, vec![0.25; 4]);
+        assert_eq!(harness.scheduler.playhead_frames(), 0);
+
+        // The same clip under the same playhead sounds the moment the
+        // transport rolls, so the silence above is the transport's doing and
+        // not a clip that never played.
+        harness.playing();
+        let (playing, _) = harness.render(4);
+        assert_eq!(playing, vec![1.25; 4]);
+    }
+
+    #[test]
+    fn an_effect_one_track_holds_is_refused_by_a_second_track_rather_than_run_on_both() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 2, 8, 1.0, 4);
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            Box::new(ScalingPlugin { factor: 0.5 }),
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+            index: 0,
+        });
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 2,
+            effect_id: 7,
+            index: 0,
+        });
+
+        // One instance spliced into two chains would run its state over two
+        // unrelated streams interleaved, and its single-valued placement could
+        // name only one of the two tracks holding it.
+        assert_eq!(harness.diagnostics().id_collisions, 1);
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .map(|track| track.device_chain().to_vec()),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Track(1)
+        );
+
+        // Track 1 halved, track 2 untouched. The device running on both would
+        // have halved the second track too, giving 1.0.
+        let (left, _) = harness.render(4);
+        assert_eq!(left, vec![1.5; 4]);
+    }
+
+    #[test]
+    fn a_detached_effect_discards_midi_queued_while_it_is_detached() {
+        let received = Arc::new(AtomicUsize::new(0));
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            Box::new(MidiCountingPlugin {
+                received: Arc::clone(&received),
+            }),
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+            index: 0,
+        });
+        harness.send(GraphCommand::RemoveTrack(1));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.render(4);
+        assert_eq!(received.load(Ordering::Relaxed), 0);
+        assert!(
+            harness.scheduler.effects[0].pending_midi.is_empty(),
+            "an effect no chain runs must not bank the MIDI addressed to it"
+        );
+
+        // Placing it back on a chain must not fire the note queued while it
+        // ran nowhere: a banked note-on has no note-off behind it.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 2,
+            effect_id: 7,
+            index: 0,
+        });
+        harness.render(4);
+        assert_eq!(received.load(Ordering::Relaxed), 0);
+
+        // A note sent once it is placed still reaches it, so the silence above
+        // is the drain and not a device that never receives anything.
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.render(4);
+        assert_eq!(received.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_removed_send_stops_feeding_its_bus() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+        });
+        // Muted, so the bus hears the send alone and nothing of the track's
+        // own output.
+        harness.send(GraphCommand::SetTrackMute(1, true));
+
+        let (before, _) = harness.render(4);
+        assert_eq!(before, vec![1.0; 4]);
+
+        harness.send(GraphCommand::RemoveSend {
+            track_id: 1,
+            bus_id: 50,
+        });
+        harness.send(GraphCommand::SeekFrames(0));
+        let (after, _) = harness.render(4);
+        assert_eq!(after, vec![0.0; 4]);
+        assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
     }
 }
