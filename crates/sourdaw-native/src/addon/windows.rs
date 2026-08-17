@@ -131,6 +131,7 @@ fn create_over_js(
     callbacks: &JsWindowCallbacks,
     request: CreateEditorWindowRequest,
 ) -> std::result::Result<usize, String> {
+    let label = request.label.clone();
     let (sender, receiver) = mpsc::channel();
     let status = callbacks.create.call_with_return_value(
         request,
@@ -155,9 +156,16 @@ fn create_over_js(
     if status != Status::Ok {
         return Err(format!("Window host is unreachable: {status}"));
     }
-    receiver
-        .recv_timeout(WINDOW_HOST_DEADLINE)
-        .map_err(|_| "Window host did not create the editor window in time".to_string())?
+    receiver.recv_timeout(WINDOW_HOST_DEADLINE).map_err(|_| {
+        // The create call may still be queued behind whatever has the main
+        // thread stalled past the deadline. This destroy queues behind it on
+        // the same loop, so a window created after the timeout is torn down
+        // immediately and its close handler frees the label — instead of
+        // surviving hidden, unclosable, with the label occupied until the app
+        // restarts.
+        fire(&callbacks.destroy, &label);
+        "Window host did not create the editor window in time".to_string()
+    })?
 }
 
 impl PluginWindowHost for JsWindowHost {

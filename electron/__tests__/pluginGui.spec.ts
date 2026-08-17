@@ -15,6 +15,7 @@ import {
     type CreateEditorWindowRequest,
     type EditorWindow,
     type EditorWindowOptions,
+    type PluginWindowHost,
     type PluginWindowHostDeps,
 } from '../pluginGui.js';
 
@@ -23,6 +24,7 @@ type FakeWindow = EditorWindow & {
     readonly options: EditorWindowOptions;
     readonly setContentSize: ReturnType<typeof vi.fn>;
     readonly show: ReturnType<typeof vi.fn>;
+    readonly showInactive: ReturnType<typeof vi.fn>;
     readonly focus: ReturnType<typeof vi.fn>;
     readonly hide: ReturnType<typeof vi.fn>;
     readonly destroy: ReturnType<typeof vi.fn>;
@@ -43,6 +45,7 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
         getNativeWindowHandle: () => Buffer.alloc(8, 1),
         setContentSize: vi.fn(),
         show: vi.fn(),
+        showInactive: vi.fn(),
         focus: vi.fn(),
         hide: vi.fn(),
         destroy: vi.fn(() => {
@@ -180,6 +183,23 @@ describe('createPluginWindowHost', () => {
         }
     });
 
+    it('fails the open cleanly when the platform cannot create any window', () => {
+        // The outer catch in `create` is what turns a factory throw into a
+        // failed open instead of an uncaught main-process exception plus a
+        // Rust worker parked on the full deadline.
+        const { host } = createHarness({
+            createWindow: () => {
+                throw new Error('no window system');
+            },
+        });
+
+        const response = host.create(request());
+
+        expect(response.error).toContain('no window system');
+        expect(response.handle).toBeNull();
+        expect(host.exists('plugin-a')).toBe(false);
+    });
+
     it('destroys the window and refuses the open when the handle cannot be read', () => {
         const { host, notifyClosed } = createHarness({
             createWindow: (options) => {
@@ -220,7 +240,10 @@ describe('createPluginWindowHost', () => {
         expect(window.setContentSize).toHaveBeenCalledExactlyOnceWith(1024, 768);
         expect(window.focus).toHaveBeenCalledTimes(1);
         expect(window.hide).toHaveBeenCalledTimes(1);
-        expect(window.show).toHaveBeenCalledTimes(2);
+        expect(window.show).toHaveBeenCalledTimes(1);
+        // The label-addressed show is focus-free, matching Tauri's
+        // `show_window`; only `showAndFocus` may steal focus.
+        expect(window.showInactive).toHaveBeenCalledTimes(1);
     });
 
     it('stops addressing a window once it is destroyed', () => {
@@ -237,24 +260,59 @@ describe('createPluginWindowHost', () => {
 });
 
 describe('registerPluginWindowHost', () => {
-    it('hands the addon all seven callbacks', () => {
+    it('hands the addon the seven callbacks in the order it consumes them', () => {
+        // Four of the callbacks share the type `(label: string) => void`, so a
+        // transposition typechecks; each slot is therefore driven by index and
+        // pinned to its discriminating effect on the window.
         const register = vi.fn();
-        const native = {
-            registerPluginWindowHost: register,
-            notifyPluginWindowClosed: vi.fn(),
-        };
-
-        const registered = registerPluginWindowHost(native, {
-            createWindow: createFakeWindow,
-            getParentWindow: () => undefined,
-        });
-
+        const windows: FakeWindow[] = [];
+        const registered = registerPluginWindowHost(
+            { registerPluginWindowHost: register, notifyPluginWindowClosed: vi.fn() },
+            {
+                createWindow: (options) => {
+                    const window = createFakeWindow(options);
+                    windows.push(window);
+                    return window;
+                },
+                getParentWindow: () => undefined,
+            }
+        );
         expect(registered).toBe(true);
-        expect(register).toHaveBeenCalledTimes(1);
         expect(register.mock.calls[0]).toHaveLength(7);
-        for (const callback of register.mock.calls[0] ?? []) {
-            expect(typeof callback).toBe('function');
+        const [create, exists, setSize, showAndFocus, destroy, hide, show] = (register.mock.calls[0] ?? []) as [
+            PluginWindowHost['create'],
+            PluginWindowHost['exists'],
+            PluginWindowHost['setSize'],
+            PluginWindowHost['showAndFocus'],
+            PluginWindowHost['destroy'],
+            PluginWindowHost['hide'],
+            PluginWindowHost['show'],
+        ];
+
+        expect(create(request()).error).toBeNull();
+        const window = windows[0];
+        if (window === undefined) {
+            throw new Error('expected a window');
         }
+        expect(exists('plugin-a')).toBe(true);
+
+        setSize({ label: 'plugin-a', width: 640, height: 480 });
+        expect(window.setContentSize).toHaveBeenCalledExactlyOnceWith(640, 480);
+
+        showAndFocus('plugin-a');
+        expect(window.show).toHaveBeenCalledTimes(1);
+        expect(window.focus).toHaveBeenCalledTimes(1);
+
+        hide('plugin-a');
+        expect(window.hide).toHaveBeenCalledTimes(1);
+
+        show('plugin-a');
+        expect(window.showInactive).toHaveBeenCalledTimes(1);
+        expect(window.show).toHaveBeenCalledTimes(1);
+
+        destroy('plugin-a');
+        expect(window.destroy).toHaveBeenCalledTimes(1);
+        expect(exists('plugin-a')).toBe(false);
     });
 
     it('reports the OS close to the addon off the event path when a window closes', () => {

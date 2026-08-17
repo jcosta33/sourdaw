@@ -57,6 +57,7 @@ export type EditorWindow = {
     readonly getNativeWindowHandle: () => Buffer;
     readonly setContentSize: (width: number, height: number) => void;
     readonly show: () => void;
+    readonly showInactive: () => void;
     readonly focus: () => void;
     readonly hide: () => void;
     readonly destroy: () => void;
@@ -169,7 +170,10 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
         },
         show: (label) => {
             withEditor(label, (window) => {
-                window.show();
+                // Focus-free by seam parity: Tauri's `show_window` does not
+                // steal focus, and `show_all_plugin_guis` re-focusing each
+                // editor in iteration order would land focus arbitrarily.
+                window.showInactive();
             });
         },
     };
