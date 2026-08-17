@@ -1385,7 +1385,12 @@ const proofDescriptor: WasmDeviceDescriptor = {
             failed = true;
             publishedNode.controller!.ready = false;
             pendingParams.length = 0;
-            placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+            const terminalControls = { ready: false, setParam: () => {}, setBypass: () => {}, destroy: () => {} };
+            placeholder.nativeDspControls = terminalControls;
+            // TrackNode keeps the placeholder controller after demotion. Replace
+            // that exact write surface too: otherwise automation retains values
+            // in the pre-ready queue after this terminal no-recovery state.
+            placeholder.controller = terminalControls;
             replaceRuntimeFailure?.(publishedNode, placeholder);
             publishedResult.destroy();
             clearReportedLatency(deviceId);
