@@ -1,0 +1,35 @@
+crates/sourdaw-native/Cargo.toml
+  s_ab5443e65c7fba::t_13132b7acad2c2 56-60
+crates/sourdaw-native/src/commands/speech.rs
+  s_ab5443e65c7fba::t_b51a93f05023e5 49
+  s_ab5443e65c7fba::t_d84bab875f78fb 191-221,226-228,235-237,809
+  s_ab5443e65c7fba::t_5535b9a92debdd 277-281,283-285,287-289,291,293-298,302
+  s_ab5443e65c7fba::t_b8f3ae90e57187 28-35
+  s_ab5443e65c7fba::t_e43a5b09d8bd1e 713-808
+  s_ab5443e65c7fba::t_57b95d4b238c68 810-816
+crates/sourdaw-native/src/commands/model_download.rs
+  s_ab5443e65c7fba::t_a7aa6f6c89dac1 2,5-6
+  s_ab5443e65c7fba::t_fa7003b8d4d519 25-44,47-50,53-54
+  s_ab5443e65c7fba::t_5be61d32031f86 71-76,81-86
+  s_ab5443e65c7fba::t_0155dc964a1656 302,323-395
+  s_ab5443e65c7fba::t_640bafced06e94 247-258,261-265,268-273,276,283-301
+  s_ab5443e65c7fba::t_a009043034f2a8 87-88,303-305,396-397
+Cargo.lock
+  s_ab5443e65c7fba::t_b5b74c29bb48c4 4721
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "98fe6181b67118af5ba7523a8eb37f532cb8ff76",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
