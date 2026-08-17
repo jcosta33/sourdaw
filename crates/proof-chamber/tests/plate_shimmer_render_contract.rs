@@ -4,9 +4,9 @@
 //! output stays finite, stays under a ceiling, and settles. All three hold for
 //! a stage that emits broadband hiss, and all three hold for a stage that emits
 //! nothing at all — `plate_shimmer_stability.rs` passes with the granular
-//! shifter deleted. What the control claims on the panel is narrower and is not
-//! covered anywhere: Shimmer Pitch offers a **fifth up** and an **octave up**,
-//! and the tail is supposed to come back carrying that interval.
+//! shifter deleted. What the control claims on the panel is narrower, and this
+//! file is where it is covered: Shimmer Pitch offers a **fifth up** and an
+//! **octave up**, and the tail has to come back carrying that interval.
 //!
 //! So the measurement is a spectral one, taken on a sustained tone rather than
 //! a burst: with the shifter inside the tank feedback and Amount at full, the
@@ -16,32 +16,31 @@
 //! Both rates, because the grain length is derived from the sample rate
 //! (`GranularShifter::new`) and a rate-dependent error is invisible at one.
 //!
-//! # Why this test is `#[ignore]`d
+//! # What this holds the shifter to
 //!
-//! It is red against the shipped engine, and it pins two defects in
-//! `src/proof_chamber.rs` that both have to be repaired before it can go green:
+//! Three properties of `GranularShifter` have to hold together for the measured
+//! partial to exist at all, and each of them is a way the stage has been broken
+//! before:
 //!
-//! * **The phase increment runs the read pointer the wrong way** (`:320`-`:324`).
-//!   `read = write_pos - grain_size * phase` with `phase += (ratio - 1) / gs`
-//!   walks the read pointer *backwards* relative to the write pointer, so the
-//!   grain plays slower than real time. A ratio of 1.5 resamples at 0.5x — an
-//!   octave **down**, not a fifth up — and a ratio of 2.0 pins the pointer
-//!   still, which is not a pitch shift in either direction.
-//! * **One `GranularShifter` is shared by both tank halves** (`:454` declares
-//!   it, `:653` builds one, `:906` and `:936` step it once for the left half
-//!   and once for the right). Its delay line therefore holds the two halves
-//!   *interleaved*, one sample each, and the `±8`-sample read jitter (`:318`
-//!   -`:319`) is redrawn per sample, so consecutive grain reads land on
-//!   alternating channels at random. The shifted signal that comes back is a
-//!   per-sample scramble of two unrelated tank signals, which is why the
-//!   measured tail carries a flat noise floor from 1 kHz to Nyquist and no
-//!   pitched partial anywhere.
+//! * **The read pointer has to advance faster than the write pointer.** A grain
+//!   that trails by a *growing* delay plays slower than real time and transposes
+//!   down; at a ratio of 2.0 it stands still.
+//! * **Each tank half needs its own shifter.** One shifter fed both halves holds
+//!   them interleaved a sample apiece in a single delay line, and grain reads
+//!   land on alternating channels — the tail comes back as a scramble of two
+//!   unrelated signals with a flat noise floor and no partial anywhere.
+//! * **Grains have to be placed randomly, and placement drawn per grain.** A
+//!   read offset redrawn every sample is audio-rate noise, not placement. And
+//!   grains that all start from the same point in history make the shifter a
+//!   linear periodically time-varying system, whose output for a partial at `f`
+//!   can only land on the grid `f + k / grain_period` — a grid that never
+//!   contains `f * ratio`, so the one frequency it cannot produce is the one it
+//!   exists to produce.
 //!
-//! Un-ignore this when the shifter is repaired. The `10x` floor margin below is
-//! deliberately far under what a working shifter should deliver — the
-//! fundamental sits some 300x over the same floor — so a repair that lands
-//! under it has not made Shimmer audible and the number is not the thing to
-//! move.
+//! The `10x` floor margin below is deliberately far under what a working shifter
+//! should deliver — the fundamental sits some 300x over the same floor — so a
+//! change that lands under it has stopped Shimmer being audible and the number
+//! is not the thing to move.
 
 use proof_chamber::ProofChamberInstance;
 
@@ -161,7 +160,6 @@ fn spectral_floor(samples: &[f32], sample_rate: f32) -> f32 {
 }
 
 #[test]
-#[ignore = "pins the plate's dead Shimmer path — the inverted grain phase increment (src/proof_chamber.rs:320-324) and the single GranularShifter shared across both tank halves (src/proof_chamber.rs:454, :653, :906, :936). Red until the shimmer repair lane lands."]
 fn shimmer_puts_its_selected_interval_into_the_tail() {
     for sample_rate in SAMPLE_RATES {
         for (setting, ratio, label) in PITCH_SETTINGS {

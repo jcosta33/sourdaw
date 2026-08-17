@@ -267,30 +267,42 @@ struct GranularShifter {
     write_pos: usize,
     phase1: f64,
     phase2: f64,
+    /// Extra delay the grain currently in flight reads back from, drawn once
+    /// when that grain starts. See `draw_scatter`.
+    scatter1: f64,
+    scatter2: f64,
     pitch_ratio: f64,
     grain_size: usize,
     enabled: bool,
     amount: f32,
-    // Random jitter for Eno/Lanois wash character
+    // Random grain placement for Eno/Lanois wash character
     jitter_state: u32,
-    jitter_amount: f64, // ±samples of position scatter
+    scatter_range: f64, // samples of grain-position scatter
 }
 
 impl GranularShifter {
-    fn new(sample_rate: f32) -> Self {
+    /// One shifter owns one channel. `jitter_seed` decorrelates the wash
+    /// between the two tank halves, which would otherwise scatter their grains
+    /// in lockstep and collapse the shimmer to the centre of the image.
+    fn new(sample_rate: f32, jitter_seed: u32) -> Self {
         let grain_size = (0.030 * sample_rate as f64) as usize; // 30ms grain
+                                                                // A grain reaches back one grain of history, plus however far its own
+                                                                // scatter draw pushes it. Four grains of buffer covers both with room
+                                                                // to spare.
         let buf_size = grain_size * 4;
         Self {
             buffer: vec![0.0; buf_size],
             write_pos: 0,
             phase1: 0.0,
-            phase2: 0.5,      // 180° offset for overlap
+            phase2: 0.5, // 180° offset for overlap
+            scatter1: 0.0,
+            scatter2: 0.0,
             pitch_ratio: 2.0, // octave up
             grain_size,
             enabled: false,
             amount: 0.2,
-            jitter_state: 54321,
-            jitter_amount: 8.0, // ±8 samples (5-10ms at 44.1kHz)
+            jitter_state: jitter_seed,
+            scatter_range: grain_size as f64,
         }
     }
 
@@ -300,6 +312,28 @@ impl GranularShifter {
         self.jitter_state ^= self.jitter_state >> 17;
         self.jitter_state ^= self.jitter_state << 5;
         (self.jitter_state as f64 / u32::MAX as f64) * 2.0 - 1.0
+    }
+
+    /// Where in recent history the next grain starts reading from.
+    ///
+    /// Scattering *grains* is what granular processing randomises, and it has
+    /// to be redrawn per grain rather than per sample. A read offset redrawn
+    /// every sample is not placement at all: it modulates the read pointer at
+    /// audio rate, which is a noise generator, and it is the reason the tail
+    /// used to come back as a flat hiss.
+    ///
+    /// The draw has to span a good fraction of a grain to do its job. Grains
+    /// restart on a fixed period, and a periodically restarting resampler is a
+    /// linear periodically time-varying system: its output for an input partial
+    /// at `f` can only land on the grid `f + k / grain_period`, so the
+    /// transposed partial at `f * ratio` — which is not on that grid — is the
+    /// one frequency such a shifter can never produce. Restarting each grain at
+    /// an unrelated point in history randomises the phase every grain inherits,
+    /// which breaks the periodicity that builds the grid and leaves the energy
+    /// where the resampling put it, at `f * ratio`.
+    #[inline]
+    fn draw_scatter(&mut self) -> f64 {
+        (self.jitter() * 0.5 + 0.5) * self.scatter_range
     }
 
     #[inline]
@@ -314,29 +348,48 @@ impl GranularShifter {
 
         let gs = self.grain_size as f64;
 
-        // Add random jitter for Eno/Lanois wash character
-        let j1 = self.jitter() * self.jitter_amount;
-        let j2 = self.jitter() * self.jitter_amount;
-        let read1 = self.write_pos as f64 - gs * self.phase1 + j1;
-        let read2 = self.write_pos as f64 - gs * self.phase2 + j2;
+        // A grain raises pitch by replaying recent history *faster* than it was
+        // written, so its read pointer has to trail the write pointer by a
+        // delay that shrinks as the grain plays: one grain of history at
+        // `phase = 0` down to none at `phase = 1`, offset by wherever this
+        // grain's scatter draw started it. The delay is consumed at
+        // `pitch_ratio - 1` samples per sample, so the pointer advances at
+        // `pitch_ratio` and the grain comes back up-shifted by exactly that
+        // factor. Trailing by a *growing* delay is the same construction upside
+        // down and shifts down instead, which is what a `gs * phase` delay does.
+        let read1 = self.write_pos as f64 - gs * (1.0 - self.phase1) - self.scatter1;
+        let read2 = self.write_pos as f64 - gs * (1.0 - self.phase2) - self.scatter2;
 
-        self.phase1 += (self.pitch_ratio - 1.0) / gs;
-        self.phase2 += (self.pitch_ratio - 1.0) / gs;
-        if self.phase1 >= 1.0 {
-            self.phase1 -= 1.0;
-        }
-        if self.phase2 >= 1.0 {
-            self.phase2 -= 1.0;
-        }
-
-        // Hann envelope
+        // Hann envelope, taken at the phase the pointers above were taken at so
+        // a grain's window stays aligned with its own pointer. The window sits
+        // at its zero on both ends of the ramp, which is where the pointer jumps
+        // back to a fresh start; the two grains stay a half period apart, so
+        // their envelopes sum to unity and the seam is inaudible.
         let env1 = (0.5 * (1.0 - (TAU as f64 * self.phase1).cos())) as f32;
         let env2 = (0.5 * (1.0 - (TAU as f64 * self.phase2).cos())) as f32;
 
-        let idx1 = ((read1 as isize).rem_euclid(buf_len as isize)) as usize;
-        let idx2 = ((read2 as isize).rem_euclid(buf_len as isize)) as usize;
+        // `floor` rather than a cast: the read positions go negative whenever a
+        // grain reaches back past the start of the buffer, and a cast truncates
+        // toward zero there, which would fold one sample of the grain onto its
+        // neighbour.
+        let idx1 = (read1.floor() as isize).rem_euclid(buf_len as isize) as usize;
+        let idx2 = (read2.floor() as isize).rem_euclid(buf_len as isize) as usize;
 
         let shifted = self.buffer[idx1] * env1 + self.buffer[idx2] * env2;
+
+        // Advance last, and redraw each grain's placement at its own wrap —
+        // where its envelope is at zero, so the jump costs nothing.
+        let increment = (self.pitch_ratio - 1.0) / gs;
+        self.phase1 += increment;
+        if self.phase1 >= 1.0 {
+            self.phase1 -= 1.0;
+            self.scatter1 = self.draw_scatter();
+        }
+        self.phase2 += increment;
+        if self.phase2 >= 1.0 {
+            self.phase2 -= 1.0;
+            self.scatter2 = self.draw_scatter();
+        }
 
         // Shimmer lives inside the tank feedback path. Adding the shifted
         // signal at full scale makes the path's gain exceed unity when Decay
@@ -450,8 +503,13 @@ pub struct ProofChamber {
     /// mid/side matrix this engine used to own alone.
     output: OutputStage,
 
-    // Shimmer
-    shimmer: GranularShifter,
+    // Shimmer. One shifter per tank half: a shifter holds a delay line of its
+    // own history, so feeding one shifter both halves interleaves them a sample
+    // at a time and every grain read lands on whichever half the jitter happens
+    // to point at. What comes back from that is a scramble of two unrelated
+    // signals, not either one of them transposed.
+    shimmer_left: GranularShifter,
+    shimmer_right: GranularShifter,
 
     // Parameter smoothing (30ms ramp to prevent clicks)
     smooth_mix: f32,
@@ -650,7 +708,8 @@ impl ProofChamber {
 
             output: OutputStage::new(sample_rate),
 
-            shimmer: GranularShifter::new(sample_rate),
+            shimmer_left: GranularShifter::new(sample_rate, 54321),
+            shimmer_right: GranularShifter::new(sample_rate, 1_402_237),
 
             smooth_mix: 0.3,
             smooth_decay: 0.5,
@@ -707,13 +766,23 @@ impl ProofChamber {
             "freeze" => {
                 self.freeze = value > 0.5;
                 if self.freeze {
-                    self.shimmer.enabled = false; // disable shimmer during freeze
+                    // disable shimmer during freeze
+                    self.shimmer_left.enabled = false;
+                    self.shimmer_right.enabled = false;
                 }
             }
-            "shimmer" => self.shimmer.enabled = value > 0.5,
-            "shimmer_amount" => self.shimmer.amount = value.clamp(0.0, 1.0),
+            "shimmer" => {
+                self.shimmer_left.enabled = value > 0.5;
+                self.shimmer_right.enabled = value > 0.5;
+            }
+            "shimmer_amount" => {
+                self.shimmer_left.amount = value.clamp(0.0, 1.0);
+                self.shimmer_right.amount = value.clamp(0.0, 1.0);
+            }
             "shimmer_pitch" => {
-                self.shimmer.pitch_ratio = if value < 0.5 { 1.5 } else { 2.0 }; // fifth or octave
+                let ratio = if value < 0.5 { 1.5 } else { 2.0 }; // fifth or octave
+                self.shimmer_left.pitch_ratio = ratio;
+                self.shimmer_right.pitch_ratio = ratio;
             }
             "gravity" => self.gravity = value.clamp(-1.0, 1.0),
             // Same name, same range and the same blend as `FdnReverb`. The
@@ -903,7 +972,7 @@ impl ProofChamber {
             let ap_out_l = self.left_ap.process(decayed_l);
 
             // Shimmer: blend the pitch-shifted signal into the tank feedback.
-            let shimmer_l = self.shimmer.process(ap_out_l);
+            let shimmer_l = self.shimmer_left.process(ap_out_l);
 
             // Fixed delay 2
             self.left_delay_2.write(shimmer_l);
@@ -933,7 +1002,7 @@ impl ProofChamber {
 
             let ap_out_r = self.right_ap.process(decayed_r);
 
-            let shimmer_r = self.shimmer.process(ap_out_r);
+            let shimmer_r = self.shimmer_right.process(ap_out_r);
 
             self.right_delay_2.write(shimmer_r);
             self.right_tank_output = self.right_delay_2.read(self.scaled_delays[5]);
