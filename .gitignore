@@ -6,6 +6,10 @@ coverage/
 # Compiled Electron main process (`pnpm desktop:dev` output)
 electron/out/
 
+# Packaged desktop artifacts (`pnpm desktop:build` output). `release/` itself is
+# tracked — it holds the open-source inventory.
+release/desktop/
+
 .env
 .env.*
 !.env.example
