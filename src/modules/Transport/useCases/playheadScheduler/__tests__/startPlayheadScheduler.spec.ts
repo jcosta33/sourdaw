@@ -23,6 +23,9 @@ const takeLaneStoreState: { value: { lanes: unknown[] } | null } = { value: { la
 // currentTime holder so tests can advance the clock BETWEEN init and a tick
 // without vi.mocked() overrides that don't reach the module's bound import.
 const ctxTime = { now: 0 };
+// Round-trip latency the punch path reads off the context to size the recorded
+// clip's media lead-in. Zero by default so existing tests see no offset.
+const ctxLatency = { base: 0, output: 0 };
 // AudioEngine mock holder. The vi.mock factory wraps each export in a thin
 // forwarder to these vi.fn instances; both the module-under-test and the test
 // assertions read/write the SAME spies (the factory's arrow wrappers are stable
@@ -34,7 +37,14 @@ const audioEngineMocks = {
         get currentTime() {
             return ctxTime.now;
         },
+        get baseLatency() {
+            return ctxLatency.base;
+        },
+        get outputLatency() {
+            return ctxLatency.output;
+        },
     })),
+    getCompensationDelay: vi.fn(() => 0),
     audioEngine: { setTransportInfo: vi.fn() },
     stopAllScheduled: vi.fn(),
     startAudioRecording: vi.fn(),
@@ -106,6 +116,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => audioEngineMocks.getAudioContext(),
+    getCompensationDelay: (...args: unknown[]) =>
+        (audioEngineMocks.getCompensationDelay as (...a: unknown[]) => unknown)(...args),
     audioEngine: {
         setTransportInfo: (...args: unknown[]) =>
             (audioEngineMocks.audioEngine.setTransportInfo as (...a: unknown[]) => unknown)(...args),
@@ -195,7 +207,14 @@ describe('startPlayheadScheduler', () => {
             get currentTime() {
                 return ctxTime.now;
             },
+            get baseLatency() {
+                return ctxLatency.base;
+            },
+            get outputLatency() {
+                return ctxLatency.output;
+            },
         }));
+        audioEngineMocks.getCompensationDelay.mockImplementation(() => 0);
         arrangementMocks.startRecording.mockImplementation(() => []);
         evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
         transportStoreState.value = playingState();
@@ -203,6 +222,8 @@ describe('startPlayheadScheduler', () => {
         trackStoreState.value = { tracks: [] };
         takeLaneStoreState.value = { lanes: [] };
         ctxTime.now = 0;
+        ctxLatency.base = 0;
+        ctxLatency.output = 0;
         schedulerTickSequence = 0;
         disposePlayheadScheduler();
         // disposePlayheadScheduler nulls the worker; startPlayheadScheduler will
@@ -304,6 +325,47 @@ describe('startPlayheadScheduler', () => {
         midiScheduling.resolve();
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(1);
+    });
+
+    // `onmessage` filters a stale generation before it ever calls `tick`, so the
+    // guard inside `tick` only earns its place if the session can be retired
+    // between the two. `recordTickMessage` runs in exactly that gap; driving the
+    // retirement from there reaches the retired `tick` body directly.
+    //
+    // Without the guard, that tick claims `tickInFlight`, `runTick` bails on the
+    // generation, and the `finally` refuses to release a flag owned by another
+    // generation — leaving it stuck true, so the live session skips every tick
+    // at the in-flight guard and the playhead freezes while still reporting
+    // playback.
+    it('does not let a tick retired between the message filter and the tick body claim the in-flight flag', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0 });
+        startPlayheadScheduler();
+        const staleWorker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        const recordTickMessage = vi
+            .spyOn(schedulerTimingDiagnostics, 'recordTickMessage')
+            .mockImplementationOnce(() => {
+                schedulerSession.generation += 1;
+            });
+
+        emitSchedulerTick(staleWorker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        recordTickMessage.mockRestore();
+
+        expect(schedulerSession.tickInFlight).toBe(false);
+
+        // The next session must still run. 0.1s at 120bpm advances it by 0.2
+        // beats — it only moves if the retired tick left the flag alone.
+        startPlayheadScheduler();
+        const activeWorker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        ctxTime.now = 0.1;
+        emitSchedulerTick(activeWorker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(vi.mocked(scheduleMetronome)).toHaveBeenCalledTimes(1);
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(0.2, 5);
+        expect(schedulerTimingDiagnostics.snapshot().ticksSkippedInFlight).toBe(0);
     });
 
     it('halts the tick when transport is no longer current (not playing)', async () => {
@@ -522,6 +584,145 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.punchRecordingActive).toBe(true);
     });
 
+    // The crossing is only detected once the playhead is at or past punchInBeat,
+    // so the tick that opens the recording already sits inside the region. The
+    // clip belongs at the punch point, not at the tick — and least of all at the
+    // transport store's playhead, which has not moved since playback started.
+    it('anchors the punched clip at punchInBeat when the tick lands past it', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        transportStoreState.value = playingState({
+            playheadPosition: 15.9,
+            punchInEnabled: true,
+            punchInBeat: 16,
+            punchOutBeat: 24,
+        });
+        startPlayheadScheduler();
+        // 0.1s at 120bpm = 0.2 beats: 15.9 → 16.1, one tick past punchInBeat 16.
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(schedulerSession.accumulatedPosition).toBeGreaterThan(16);
+        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(16);
+    });
+
+    // Rolling in from inside the region is the other half of that anchor. Here
+    // nothing was captured between punchInBeat and the entry beat, so anchoring
+    // at punchInBeat would displace the take backwards by the whole distance
+    // already covered and leave the tail of the clip silent.
+    it('anchors the punched clip at the entry beat when playback starts inside the region', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        transportStoreState.value = playingState({
+            playheadPosition: 20,
+            punchInEnabled: true,
+            punchInBeat: 16,
+            punchOutBeat: 24,
+        });
+        startPlayheadScheduler();
+        // The transport is already 4 beats inside [16, 24); the first tick opens
+        // the recording at 20, where capture actually begins.
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.startRecording).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(20);
+        expect(arrangementMocks.startRecording).not.toHaveBeenCalledWith(16);
+    });
+
+    // Past the region there is nothing left to punch. Without an upper bound the
+    // same tick satisfies punch-in and punch-out, stamping a full-width clip and
+    // take across the region that captured nothing.
+    it('does not punch in when playback starts past the punch region', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        transportStoreState.value = playingState({
+            playheadPosition: 30,
+            punchInEnabled: true,
+            punchInBeat: 16,
+            punchOutBeat: 24,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.startRecording).not.toHaveBeenCalled();
+        expect(audioEngineMocks.startAudioRecording).not.toHaveBeenCalled();
+        expect(arrangementMocks.stopRecording).not.toHaveBeenCalled();
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    // The punched clip is anchored on the punch point, so a note played on the
+    // punch downbeat has no room to move earlier unless the clip carries a media
+    // lead-in. midiOffsetBeats supplies it: the media origin sits at
+    // `startBeat - midiOffsetBeats`, leaving the clip start on the punch point.
+    it('gives a punched MIDI clip a media lead-in the size of the round-trip latency', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'midi' }] };
+        transportStoreState.value = playingState({
+            playheadPosition: 15.9,
+            punchInEnabled: true,
+            punchInBeat: 16,
+            punchOutBeat: 24,
+        });
+        // 0.005 + 0.015 context + 0.010 track = 0.030s; at 120bpm that is 0.06
+        // beats of compensation the recorded notes have to be able to express.
+        ctxLatency.base = 0.005;
+        ctxLatency.output = 0.015;
+        audioEngineMocks.getCompensationDelay.mockImplementation(() => 0.01);
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.startRecording).toHaveBeenCalledWith(16);
+        expect(arrangementMocks.updateClip).toHaveBeenCalledWith('clip-rec-1', expect.any(Function));
+        const [, updater] = arrangementMocks.updateClip.mock.calls.at(-1) as unknown as [
+            string,
+            (clip: Record<string, unknown>) => Record<string, unknown>,
+        ];
+        const updated = updater({ id: 'clip-rec-1', startBeat: 16, endBeat: 24 });
+        expect(updated.midiOffsetBeats).toBeCloseTo(0.06, 6);
+        // The clip still begins on the punch point; only its media origin moved.
+        expect(updated.startBeat).toBe(16);
+        // Media origin = startBeat - midiOffsetBeats, so a note struck inside the
+        // compensation window resolves to a positive clip-relative beat instead
+        // of clamping to 0 the way an origin exactly on the anchor forces.
+        const mediaOrigin = 16 - (updated.midiOffsetBeats as number);
+        expect(Math.max(0, 16.03 - 0.06 - mediaOrigin)).toBeCloseTo(0.03, 6);
+    });
+
+    it('leaves a punched audio clip without a MIDI lead-in', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        transportStoreState.value = playingState({
+            playheadPosition: 15.9,
+            punchInEnabled: true,
+            punchInBeat: 16,
+            punchOutBeat: 24,
+        });
+        ctxLatency.base = 0.005;
+        ctxLatency.output = 0.015;
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.updateClip).not.toHaveBeenCalled();
+    });
+
     it('routes the punch-in recording buffer through cacheAudioBuffer + updateClip', async () => {
         trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
         transportStoreState.value = playingState({
@@ -579,6 +780,9 @@ describe('startPlayheadScheduler', () => {
 
         expect(audioEngineMocks.stopAudioRecording).toHaveBeenCalledTimes(1);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledTimes(1);
+        // The tick overshoots to 8.3; the take ends at the punch-out point.
+        expect(schedulerSession.accumulatedPosition).toBeGreaterThan(8);
+        expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(8);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 

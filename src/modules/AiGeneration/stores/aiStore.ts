@@ -5,7 +5,7 @@
 
 import { createStore } from '#/infra/store/createStore';
 
-export type AiTaskType = 'midi-generation' | 'audio-generation' | 'stem-separation' | 'denoise';
+export type AiTaskType = 'midi-generation' | 'stem-separation' | 'denoise';
 export type AiTaskStatus = 'idle' | 'processing' | 'success' | 'error';
 
 export type AiTaskResult = {

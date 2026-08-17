@@ -1,10 +1,12 @@
 mod commands;
+mod events;
 pub mod host;
 pub mod state;
+mod windows;
+
+use std::sync::Arc;
 
 use tauri::Manager;
-
-const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -15,10 +17,8 @@ pub fn run() {
         .manage(commands::midi::MidiState::default())
         .manage(commands::midi::PushState::default())
         .manage(commands::speech::DictationState::default())
-        .manage(commands::audio_gen::AudioGenState::default())
         .manage(commands::crumbs::CrumbsState::default())
         .manage(commands::provider_gateway::ProviderGatewayState::default())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
             // Privileged model-provider gateway
@@ -27,10 +27,6 @@ pub fn run() {
             // AI audio processing (DeepFilterNet + Demucs ONNX)
             commands::ai_audio::denoise_audio,
             commands::ai_audio::separate_stems,
-            // Audio generation sidecar (Stable Audio Open)
-            commands::audio_gen::start_audio_gen_sidecar,
-            commands::audio_gen::generate_audio_clip,
-            commands::audio_gen::stop_audio_gen_sidecar,
             commands::audio_postprocess::post_process_audio,
             commands::speech::load_whisper_model,
             commands::speech::ensure_whisper_ready,
@@ -123,50 +119,35 @@ pub fn run() {
                 let app_state = app.state::<state::AppState>();
                 std::sync::Arc::clone(&app_state.engine_plugins)
             };
-            host::latency_watcher::start(app.handle().clone(), engine_plugins);
+            host::latency_watcher::start(
+                Arc::new(events::TauriEventSink::new(app.handle().clone())),
+                engine_plugins,
+            );
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Quit is the only chance to retire the mDNS advertisement and the
-            // discovery threads. Skipping it leaves peers a joinable ghost
-            // session until the record's TTL expires.
+            // `RunEvent::Exit` is this shell's only hook onto the exit cascade.
+            // The cascade itself — its three steps and their order — belongs to
+            // `sourdaw_native::shutdown`, so the Node shell runs the same one.
             if let tauri::RunEvent::Exit = event {
-                commands::collab::shutdown_discovery(
+                let window_host = windows::TauriWindowHost::new(app_handle.clone());
+                let report = sourdaw_native::shutdown::shutdown(
                     &app_handle.state::<commands::collab::CollabState>(),
+                    app_handle.state::<state::AppState>().inner(),
+                    Some(&window_host),
                 );
 
-                let plugin_state = app_handle.state::<state::AppState>();
-
-                // Give every open plugin editor its CLAP `gui.destroy` while
-                // there is still a process to run it in. A plugin that refuses
-                // is reported, never fatal: exit must not be blocked by a
-                // third-party editor.
-                match commands::plugin_gui::close_every_plugin_gui(
-                    Some(app_handle),
-                    plugin_state.inner(),
-                ) {
-                    Ok(report) if !report.1.is_empty() => {
-                        eprintln!(
-                            "[Plugin] editors that did not close on exit: {:?}",
-                            report.1
-                        );
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        eprintln!("[Plugin] closing plugin editors on exit failed: {error}");
-                    }
+                if !report.editors_that_refused.is_empty() {
+                    eprintln!(
+                        "[Plugin] editors that did not close on exit: {:?}",
+                        report.editors_that_refused
+                    );
                 }
-
-                // Terminal reclamation point for the retirement vec: load and
-                // unload are the only other sweep sites, so without this the
-                // last retirement of a session is never freed and a plugin that
-                // persists settings in `destroy` never gets to. Best effort — a
-                // runtime whose scheduler slot has not dropped yet still
-                // survives, and that residual (the reclaimer-thread
-                // acknowledgment) is tracked separately.
-                plugin_state.sweep_retired_engine_plugins();
+                if let Some(error) = report.editor_close_error {
+                    eprintln!("[Plugin] closing plugin editors on exit failed: {error}");
+                }
             }
         });
 }

@@ -1,0 +1,59 @@
+[package]
+name = "sourdaw-native"
+version = "0.1.0"
+description = "Sourdaw native audio, DSP and plugin-hosting addon"
+authors = ["Sourdaw Team"]
+edition = "2021"
+
+[lib]
+name = "sourdaw_native"
+# `rlib` so the Tauri shell can link the relocated bodies; `cdylib` so the same
+# bodies ship as a Node addon once `napi-addon` is on.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# The napi surface is opt-in: the Tauri shell links this crate as a plain rlib
+# and must not pull the Node addon registration in with it.
+default = []
+napi-addon = ["dep:napi", "dep:napi-derive"]
+
+[build-dependencies]
+napi-build = "2"
+
+[dependencies]
+napi = { version = "3", default-features = false, features = [
+    "napi6",
+    "dyn-symbols",
+    "async",
+    "serde-json",
+], optional = true }
+napi-derive = { version = "3", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+raw-window-handle = "0.6"
+midir = "0.11"
+rusb = { version = "0.9", features = ["vendored"] }
+tokio = { version = "1", features = ["macros", "time", "net", "rt", "rt-multi-thread", "sync"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
+futures-util = "0.3"
+whisper-rs = { version = "0.16", features = ["metal"] }
+cpal = "0.18"
+rubato = "4"
+audioadapter-buffers = "4"
+ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
+ndarray = "0.17"
+sha2 = "0.11"
+rtrb = "0.3"
+hound = "3.5"
+uuid = { version = "1.23.0", features = ["v4"] }
+daw-core = { path = "../daw-core" }
+daw-collab = { path = "../daw-collab" }
+daw-engine = { path = "../daw-engine" }
+daw-plugin-host = { path = "../daw-plugin-host" }
+daw-dsp = { path = "../daw-dsp" }
+daw-io = { path = "../daw-io" }
+
+[dev-dependencies]
+daw-plugin-host = { path = "../daw-plugin-host", features = ["engine-owned-command-fixture"] }
+tokio = { version = "1", features = ["macros", "time", "net", "rt", "rt-multi-thread", "sync"] }

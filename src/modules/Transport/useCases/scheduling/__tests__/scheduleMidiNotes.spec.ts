@@ -188,8 +188,8 @@ describe('scheduleMidiNotes', () => {
         // frozen buffer is scheduled in one shot, so the second tick must not
         // layer another copy (the audio path dedups via scheduledFrozenTracks).
         const scheduledFrozenTracks = new Set<string>();
-        await scheduleMidiNotes(0, 4, 0, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
-        await scheduleMidiNotes(0.2, 4.2, 0.2, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, scheduledFrozenTracks, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0.2, 4.2, 0.2, scheduledFrozenTracks, [], defaultTransportState, 120);
 
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
     });
@@ -207,9 +207,9 @@ describe('scheduleMidiNotes', () => {
             freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
         });
         (trackStore as { value: unknown }).value = { tracks: [frozenV1] };
-        await scheduleMidiNotes(0, 4, 0, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, scheduledFrozenTracks, [], defaultTransportState, 120);
         // Next tick, same buffer: still deduped.
-        await scheduleMidiNotes(0.2, 4.2, 0.2, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0.2, 4.2, 0.2, scheduledFrozenTracks, [], defaultTransportState, 120);
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
 
         // Refreeze mid-session: same track.id, new frozen render. The dedup
@@ -219,7 +219,7 @@ describe('scheduleMidiNotes', () => {
             freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-2' },
         });
         (trackStore as { value: unknown }).value = { tracks: [frozenV2] };
-        await scheduleMidiNotes(0.4, 4.4, 0.4, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0.4, 4.4, 0.4, scheduledFrozenTracks, [], defaultTransportState, 120);
 
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
@@ -238,7 +238,7 @@ describe('scheduleMidiNotes', () => {
             notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }] },
         };
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(registerScheduledSourceMock).toHaveBeenCalledExactlyOnceWith(voice);
@@ -271,7 +271,7 @@ describe('scheduleMidiNotes', () => {
         it('plays a built-in synth bend at the range it was recorded under', async () => {
             scheduleBentNote(bentNote({ pitchBendRangeSemitones: 12 }));
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             // scheduleNote(ctx, dest, pitch, time, duration, velocity, params, mpe, gain)
             const mpe = vi.mocked(scheduleNote).mock.calls[0]?.[7];
@@ -282,7 +282,7 @@ describe('scheduleMidiNotes', () => {
         it('sounds that bend at the depth performed, not four times deeper', async () => {
             scheduleBentNote(bentNote({ pitchBendRangeSemitones: 12 }));
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             const mpe = vi.mocked(scheduleNote).mock.calls[0]?.[7];
             const soundedSemitones = ((mpe?.pitchBend ?? 0) / 8192) * (mpe?.pitchBendRangeSemitones ?? 0);
@@ -297,7 +297,7 @@ describe('scheduleMidiNotes', () => {
             // assertion downstream pin a fallback instead of a decision.
             scheduleBentNote({ id: 'n1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100, pressure: 64 });
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             const mpe = vi.mocked(scheduleNote).mock.calls[0]?.[7];
             expect(mpe?.pressure).toBe(64);
@@ -308,7 +308,7 @@ describe('scheduleMidiNotes', () => {
             // Existing recordings carry no range and were performed at ±48.
             scheduleBentNote(bentNote({}));
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(vi.mocked(scheduleNote).mock.calls[0]?.[7]?.pitchBendRangeSemitones).toBe(48);
         });
@@ -327,7 +327,7 @@ describe('scheduleMidiNotes', () => {
                 ],
             } as never);
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(applyNoteExpression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
         });
@@ -346,7 +346,7 @@ describe('scheduleMidiNotes', () => {
                 ],
             } as never);
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(applyNoteExpression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 48 }));
         });
@@ -383,7 +383,7 @@ describe('scheduleMidiNotes', () => {
             ],
         } as never);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(scheduleNote).not.toHaveBeenCalled();
         // Every slot, not just pitch and velocity. Crumbs' node was written
@@ -398,7 +398,7 @@ describe('scheduleMidiNotes', () => {
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {
-        await scheduleMidiNotes(0, 4, 0, 0, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(getSynthParamsForTrack).not.toHaveBeenCalled();
     });
@@ -410,7 +410,7 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': source } };
         vi.mocked(projectClipMidiEvents).mockReturnValue([{ ...source[0]!, startBeat: 0.5, velocity: 40 }]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(projectClipMidiEvents).toHaveBeenCalledWith({
             events: [source[0]],
@@ -458,7 +458,7 @@ describe('scheduleMidiNotes', () => {
                 }) as never
         );
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(toasterNoteOn).toHaveBeenCalledTimes(1);
         expect(toasterNoteOn).toHaveBeenCalledWith(0, 100, 60, expect.any(Number));
@@ -487,7 +487,7 @@ describe('scheduleMidiNotes', () => {
             deviceNodes: [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }],
         } as never);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(toasterNoteOn).toHaveBeenNthCalledWith(1, 0, 100, 60, expect.any(Number));
         expect(toasterNoteOn).toHaveBeenNthCalledWith(2, 0, 90, 60, expect.any(Number));
@@ -548,7 +548,7 @@ describe('scheduleMidiNotes', () => {
                 }) as never
         );
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeastMidi).toHaveBeenCalled();
         expect(toasterNoteOn.mock.calls[0]?.[3]).toBe(31_200);
@@ -571,7 +571,7 @@ describe('scheduleMidiNotes', () => {
 
         async function pitchesFromRun() {
             vi.mocked(scheduleNote).mockClear();
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
             return vi.mocked(scheduleNote).mock.calls.map((call) => call[2]);
         }
 
@@ -606,7 +606,7 @@ describe('scheduleMidiNotes', () => {
         };
         shouldPlayProbability.mockImplementation(({ eventId }: { eventId: string }) => eventId === 'event-alpha');
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([60]);
         expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
@@ -650,7 +650,7 @@ describe('scheduleMidiNotes', () => {
             },
         ]);
 
-        await scheduleMidiNotes(4, 6, 4, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(4, 6, 4, new Set<string>(), [], defaultTransportState, 120);
 
         expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
             projectProbabilitySeed: 0xdecafbad,
@@ -674,7 +674,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 48000, kind: { type: 'noteOff', channel: 0, note: 64 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -722,7 +722,7 @@ describe('scheduleMidiNotes', () => {
             events.map((event) => ({ ...event, startBeat: event.startBeat + 1 }))
         );
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(getChordAtBeat).toHaveBeenCalledWith(2.5);
         expect(getChordAtBeat).toHaveBeenCalledWith(2.75);
@@ -742,7 +742,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 24000, kind: { type: 'noteOff', channel: 0, note: 60 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0);
@@ -759,7 +759,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.125);
@@ -780,7 +780,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 24480, kind: { type: 'noteOff', channel: 0, note: 67 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         const durationByPitch = new Map(vi.mocked(scheduleNote).mock.calls.map((call) => [call[2], call[4]] as const));
         expect(durationByPitch.get(60)).toBe(0);
@@ -809,17 +809,7 @@ describe('scheduleMidiNotes', () => {
             yeastRouteLineage: new Map(),
         };
 
-        const scheduling = scheduleMidiNotes(
-            0,
-            4,
-            0,
-            -1,
-            new Set<string>(),
-            [],
-            defaultTransportState,
-            120,
-            cancellation
-        );
+        const scheduling = scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120, cancellation);
         await Promise.resolve();
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -863,7 +853,7 @@ describe('scheduleMidiNotes', () => {
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
         // clip endBeat 8, loopLength 2 => ceil(8/2) = 4 iterations.
-        await scheduleMidiNotes(0, 8, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeast).toHaveBeenCalledTimes(1);
         expect(processYeast).toHaveBeenCalledWith(expect.objectContaining({ preserveInputTrackIds: true }));
@@ -894,7 +884,7 @@ describe('scheduleMidiNotes', () => {
             },
         ]);
 
-        await scheduleMidiNotes(6, 8, 6, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(6, 8, 6, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeastMidi).toHaveBeenCalledTimes(1);
         expect(processYeastMidi).toHaveBeenCalledWith(
@@ -942,9 +932,9 @@ describe('scheduleMidiNotes', () => {
                 },
             ]);
 
-        await scheduleMidiNotes(0, 1, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
+        await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120, cancellation);
         vi.mocked(scheduleNote).mockClear();
-        await scheduleMidiNotes(4, 5, 4, 4, new Set<string>(), [], defaultTransportState, 120, cancellation);
+        await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120, cancellation);
 
         expect(scheduleNote).not.toHaveBeenCalled();
     });
@@ -969,7 +959,7 @@ describe('scheduleMidiNotes', () => {
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         // spb = 240/60 = 4; beat 1 => round(1 * 48000 / 4) = 12000.
         // Flat-tempo (buggy) spb = 120/60 = 2 would give 24000.
@@ -1004,7 +994,7 @@ describe('scheduleMidiNotes', () => {
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
-        await scheduleMidiNotes(3, 6, 3, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(3, 6, 3, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeast).toHaveBeenCalledTimes(2);
         expect(processYeast.mock.calls.map(([input]) => input.blockStartSamples)).toEqual([72000, 96000]);
@@ -1048,8 +1038,8 @@ describe('scheduleMidiNotes', () => {
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
-        await scheduleMidiNotes(4, 8, 4, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(4, 8, 4, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeast.mock.calls[0]![0].events.map((event) => event.kind.type)).toEqual(['noteOn']);
         expect(processYeast.mock.calls[1]![0].events.map((event) => event.kind.type)).toEqual(['noteOff']);
@@ -1083,7 +1073,7 @@ describe('scheduleMidiNotes', () => {
 
         // Block starts at beat 6 — bar 3 (index 2), beat 1 in 3/4. Flat 4/4 (buggy)
         // would report barIndex floor(6/4)=1, beatInBar 6%4=2, timeSigNum 4.
-        await scheduleMidiNotes(6, 10, 6, -1, new Set<string>(), [], { ...defaultTransportState }, 120);
+        await scheduleMidiNotes(6, 10, 6, new Set<string>(), [], { ...defaultTransportState }, 120);
 
         expect(seenTransport).toBeDefined();
         expect(seenTransport!.timeSigNum).toBe(3);
@@ -1104,7 +1094,7 @@ describe('scheduleMidiNotes', () => {
             input.events.map((event) => ({ ...event, startBeat: input.iterationStartBeat }))
         );
 
-        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
         // Old behaviour: noteStartBeat (-1) < clip.startBeat (0) => dropped.
         // New behaviour: clamped to the iteration start (0) and scheduled.
@@ -1159,7 +1149,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(noteOn).toHaveBeenCalledTimes(1);
             const noteSampleFrame = vi.mocked(noteOn).mock.calls[0]![2] as number;
@@ -1192,7 +1182,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(applyNoteExpression).toHaveBeenCalledWith({
                 trackId: 'track-1',
@@ -1218,7 +1208,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.25, velocity: 110 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleDrumKitNote).toHaveBeenCalledTimes(1);
             expect(scheduleKitNote).not.toHaveBeenCalled();
@@ -1245,7 +1235,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 38, startBeat: 0, duration: 0.5, velocity: 95 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleKitNote).toHaveBeenCalledTimes(1);
             // The resolved kit (not the kit-def) carries the note duration, so the
@@ -1264,7 +1254,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleFaustNote).toHaveBeenCalledTimes(1);
             // (trackId, deviceId, pitch, time, duration, velocity, noteGain)
@@ -1296,7 +1286,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleFaustNote).not.toHaveBeenCalled();
             expect(scheduleNote).toHaveBeenCalledTimes(1);
@@ -1338,7 +1328,7 @@ describe('scheduleMidiNotes', () => {
                     },
                 };
 
-                await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+                await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
                 const offlineAcceptsNotes = isFaustInstrumentModule(deviceType);
                 const liveSentNotesToTheFaustDevice = vi.mocked(scheduleFaustNote).mock.calls.length > 0;
@@ -1390,7 +1380,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(noteOn).toHaveBeenCalledOnce();
             expect(noteOn).toHaveBeenCalledWith(62, 96, 6_000, 4, 8);
@@ -1423,7 +1413,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 127 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             // grand-boule velocityTransform divides by 127 → 1.0.
             expect(noteOn).toHaveBeenCalledWith(60, 1, expect.any(Number), 0);
@@ -1468,7 +1458,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(noteOff).toHaveBeenCalledWith(60, expect.any(Number), undefined, 3);
         });
@@ -1482,7 +1472,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).toHaveBeenCalledTimes(1);
             // 8th arg is the mpe object.
@@ -1500,7 +1490,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 90 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(vi.mocked(scheduleNote).mock.calls[0]![7]).toBeUndefined();
         });
@@ -1519,7 +1509,7 @@ describe('scheduleMidiNotes', () => {
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
 
-            await scheduleMidiNotes(64, 65, 64, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(64, 65, 64, new Set<string>(), [], defaultTransportState, 120);
 
             expect(projectClipMidiEvents).toHaveBeenCalledTimes(30);
             expect(scheduleNote).toHaveBeenCalledTimes(10);
@@ -1538,7 +1528,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             const projectedIds = vi.mocked(projectClipMidiEvents).mock.calls.map(([input]) => input.events[0]!.id);
             expect(projectedIds).toEqual(['late', 'early', 'middle']);
@@ -1556,7 +1546,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(64, 65, 64, new Set<string>(), [], defaultTransportState, 120);
 
             expect(projectClipMidiEvents).toHaveBeenCalledTimes(1);
             expect(scheduleNote).toHaveBeenCalledTimes(1);
@@ -1576,7 +1566,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(4, 4.01, 4, 4, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(4, 4.01, 4, new Set<string>(), [], defaultTransportState, 120);
 
             expect(projectClipMidiEvents).toHaveBeenCalledTimes(5);
             expect(scheduleNote).toHaveBeenCalledTimes(4);
@@ -1596,7 +1586,7 @@ describe('scheduleMidiNotes', () => {
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
 
-            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(64, 65, 64, new Set<string>(), [], defaultTransportState, 120);
 
             expect(projectClipMidiEvents).toHaveBeenCalledTimes(30);
             expect(scheduleNote).toHaveBeenCalledTimes(10);
@@ -1614,7 +1604,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(4.5, 5.5, 4.5, 4.5, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(4.5, 5.5, 4.5, new Set<string>(), [], defaultTransportState, 120);
 
             expect(shouldPlayMidiEvent).toHaveBeenCalledTimes(1);
             expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
@@ -1644,21 +1634,23 @@ describe('scheduleMidiNotes', () => {
                 input.events.map((event) => ({ ...event, startBeat: 4, duration: 1 }))
             );
 
-            await scheduleMidiNotes(4, 5, 4, 4, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
 
             expect(projectClipMidiEvents).toHaveBeenCalledTimes(1);
             expect(scheduleNote).toHaveBeenCalledTimes(1);
         });
 
-        it('skips a note whose start beat is before lastScheduledBeat', async () => {
+        it('skips a note that sits behind the scheduler high-water mark', async () => {
             const track = midiTrack({ clips: [midiClip()] });
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100 }] },
             };
 
-            // lastScheduledBeat=5 ⇒ note at beat 1 (<=5) is dropped.
-            await scheduleMidiNotes(0, 4, 0, 5, new Set<string>(), [], defaultTransportState, 120);
+            // fromBeat is the high-water mark the previous window ended on: the
+            // note at beat 1 was already emitted then, so it must not fire again
+            // even though its clip still overlaps this window.
+            await scheduleMidiNotes(2, 4, 2, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
         });
@@ -1671,7 +1663,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
             expect(projectClipMidiEvents).not.toHaveBeenCalled();
@@ -1707,9 +1699,9 @@ describe('scheduleMidiNotes', () => {
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = { notesByClipId: {} };
 
-            await scheduleMidiNotes(2_048, 2_049, 2_048, 2_048, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(2_048, 2_049, 2_048, new Set<string>(), [], defaultTransportState, 120);
             geometryReads = 0;
-            await scheduleMidiNotes(2_048, 2_049, 2_048, 2_048, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(2_048, 2_049, 2_048, new Set<string>(), [], defaultTransportState, 120);
 
             expect(geometryReads).toBeLessThan(100);
             expect(resolveClipsWithComping).toHaveBeenLastCalledWith('track-1', [clips[1_024]]);
@@ -1722,7 +1714,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 }] },
             };
 
-            await scheduleMidiNotes(0, 8, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
         });
@@ -1732,7 +1724,7 @@ describe('scheduleMidiNotes', () => {
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = { notesByClipId: {} };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
         });
@@ -1752,7 +1744,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
         });
@@ -1765,7 +1757,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: {},
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
         });
@@ -1778,7 +1770,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 3, duration: 0.25, velocity: 100 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
         });
@@ -1816,7 +1808,7 @@ describe('scheduleMidiNotes', () => {
                     }) as never
             );
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             // The note reaches the toaster; pitch 60 yields pad 0 via the fold.
             expect(toasterNoteOn).toHaveBeenCalledWith(0, 100, 60, expect.any(Number));
@@ -1833,7 +1825,7 @@ describe('scheduleMidiNotes', () => {
             };
 
             // No throw — the nullish coalesce keeps beatToSamples on [] changes.
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             expect(vi.mocked(scheduleNote)).toHaveBeenCalledTimes(1);
         });
@@ -1858,7 +1850,7 @@ describe('scheduleMidiNotes', () => {
                 yeastRouteLineage: new Map(),
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120, cancellation);
 
             // Track A passes the guard (scheduled); the loop returns before B.
             expect(vi.mocked(scheduleNote)).toHaveBeenCalledTimes(1);
@@ -1885,7 +1877,7 @@ describe('scheduleMidiNotes', () => {
                 yeastRouteLineage: new Map(),
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120, cancellation);
 
             expect(vi.mocked(scheduleNote)).not.toHaveBeenCalled();
         });
@@ -1914,7 +1906,7 @@ describe('scheduleMidiNotes', () => {
                 yeastRouteLineage: new Map(),
             };
 
-            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120, cancellation);
+            await scheduleMidiNotes(64, 65, 64, new Set<string>(), [], defaultTransportState, 120, cancellation);
 
             expect(projectClipMidiEvents).not.toHaveBeenCalled();
         });
@@ -1929,7 +1921,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             // The collapsed clip yields no live-yeast iteration and no default synth call.
             expect(processYeastMidi).not.toHaveBeenCalled();
@@ -1946,7 +1938,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             // No buffer id → not a real freeze; the frozen-schedule arm is skipped
             // and the clip flows through the normal synth path.
@@ -1979,7 +1971,7 @@ describe('scheduleMidiNotes', () => {
                     }) as never
             );
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             // swingOffsetBeats falls through to 0; sampleFrame = round(time*sr) with no swing delta.
             expect(toasterNoteOn).toHaveBeenCalledTimes(1);
@@ -1998,7 +1990,7 @@ describe('scheduleMidiNotes', () => {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 38, startBeat: 0.5, duration: 0.25, velocity: 90 }] },
             };
 
-            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
 
             // Drum kits keep raw pitch; the chord-transpose arm is short-circuited.
             expect(transposeForChordTrack).not.toHaveBeenCalled();

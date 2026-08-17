@@ -10,11 +10,15 @@ import {
 
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 
+// A stable createGain spy: the fade gain is the node that leaked, so the tests
+// need the same identity the module calls, not a fresh fn per getAudioContext().
+const contextMocks = vi.hoisted(() => ({ createGain: vi.fn(() => ({ connect: vi.fn() })) }));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     createBufferSource: vi.fn(),
     ensureTrackStrip: vi.fn(() => ({ preFaderTap: { connect: vi.fn() } })),
     getAudioContext: vi.fn(() => ({
-        createGain: vi.fn(() => ({ connect: vi.fn() })),
+        createGain: contextMocks.createGain,
     })),
     getCachedAudioBuffer: vi.fn(() => null),
     getCompensationDelay: vi.fn(() => 0),
@@ -126,6 +130,14 @@ describe('scheduleFrozenTrack', () => {
         expect(scheduled).toBe(true);
         expect(start).not.toHaveBeenCalled();
         expect(activeAudioSources).toHaveLength(0);
+        // Nothing is built for a buffer that has nothing left to play. The fade
+        // gain used to be created and connected to the strip before this branch
+        // was reached, so every tick over an elapsed frozen track stranded a
+        // GainNode wired into the graph with no source whose `onended` could
+        // ever release it.
+        expect(createBufferSource).not.toHaveBeenCalled();
+        expect(contextMocks.createGain).not.toHaveBeenCalled();
+        expect(ensureTrackStrip).not.toHaveBeenCalled();
     });
 
     it('removes the source from the active pool once its playback ends', () => {

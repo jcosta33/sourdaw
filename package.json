@@ -20,6 +20,7 @@
         "test:full": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- vitest run",
         "test:collection-scope": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- node --experimental-strip-types scripts/checkVitestCollectionScope.ts",
         "test:command-schema": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node scripts/generateVersionedCommandArgumentSchemas.mjs --check",
+        "test:release-inventory": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/checkReleaseInventory.ts",
         "test:barrel-mocks": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- node --experimental-strip-types scripts/checkBarrelMockCoverage.ts",
         "test:e2e": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended --require-target -- playwright test",
         "test:e2e:full": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- playwright test",
@@ -54,7 +55,7 @@
         "wasm:dsp": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- sh -c 'cd crates/daw-dsp && wasm-pack build --target web --out-dir ../../public/wasm/daw-dsp && rm -f ../../public/wasm/daw-dsp/.gitignore && node --experimental-strip-types ../../scripts/gen-daw-dsp-worklet.ts'",
         "wasm:proof-chamber": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- sh -c 'cd crates/proof-chamber && wasm-pack build --target web --out-dir ../../public/wasm/proof-chamber && rm -f ../../public/wasm/proof-chamber/.gitignore && node --experimental-strip-types ../../scripts/gen-proof-chamber-worklet.ts'",
         "wasm:scoring": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- sh -c 'cd crates/scoring && wasm-pack build --target web --out-dir ../../public/wasm/scoring && rm -f ../../public/wasm/scoring/.gitignore && node --experimental-strip-types ../../scripts/gen-scoring-worklet.ts'",
-        "wasm:decoder": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- sh -c 'cd crates/daw-wasm-decoder && wasm-pack build --target web --out-dir ../../public/wasm/daw-wasm-decoder --no-typescript && rm -f ../../public/wasm/daw-wasm-decoder/.gitignore'",
+        "wasm:decoder": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- sh -c 'cd crates/daw-wasm-decoder && wasm-pack build --target web --out-dir ../../public/wasm/daw-wasm-decoder --no-typescript && rm -f ../../public/wasm/daw-wasm-decoder/.gitignore && node --experimental-strip-types ../../scripts/gen-wasm-manifest.ts --package daw-wasm-decoder'",
         "wasm:all": "pnpm wasm:dsp && pnpm wasm:proof-chamber && pnpm wasm:scoring && pnpm wasm:decoder && pnpm wasm:manifest",
         "wasm:manifest": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/gen-wasm-manifest.ts",
         "wasm:verify": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/verify-wasm-artifacts.ts"

@@ -14,7 +14,7 @@ sources:
 
 Generate singing-voice audio from MIDI notes plus lyrics using a DiffSinger ONNX pipeline
 that runs natively in Rust (phonemize → variance → acoustic → vocoder), with optional RVC
-voice conversion through the existing Python sidecar. Output is a 44.1 kHz WAV clip the
+voice conversion through a separately admitted Python sidecar. Output is a 44.1 kHz WAV clip the
 audio engine plays back like any other clip. A new `SingingVoice` frontend module owns the
 voice registry, render queue, and progress state.
 
@@ -45,8 +45,9 @@ Verify with: `pnpm cargo:test -- -p daw-engine rt_safety`
 
 ### AC-003 — Model router dispatches by declared runtime
 
-The router must send `onnx-native` models to in-process `ort` and `python-sidecar` models to
-the stdin-JSON sidecar, selected from each model's `runtime` field.
+The router must send `onnx-native` models to in-process `ort`. It may send `python-sidecar`
+models to a sidecar only after the complete model stack passes admission, selected from each
+model's `runtime` field.
 
 Verify with: `pnpm cargo:test -- -p src-tauri model_router`
 
@@ -295,7 +296,7 @@ Verify with: `pnpm test:run -- executeDsoEdit`
   `list_voice_models`, `download_voice_model`, `remove_voice_model`, `get_gpu_capabilities`,
   `apply_rvc_conversion`)
 - `src-tauri/src/commands/model_download.rs` (registry extension)
-- `src-tauri/sidecar/audio_gen.py` (RVC backend: `rvc_load`, `rvc_convert`)
+- `src-tauri/sidecar/rvc.py` after complete RVC stack admission (`rvc_load`, `rvc_convert`)
 - reuses `crates/daw-io/src/audio_decode.rs` and `audio_postprocess.rs` for playback/crossfade
 
 ## Dropped from sources

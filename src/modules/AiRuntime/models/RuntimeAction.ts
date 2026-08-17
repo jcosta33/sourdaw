@@ -208,7 +208,6 @@ export const RUNTIME_ACTION_TYPES = [
     'enableWarping',
     'exportDawProject',
     'generateAllTransitions',
-    'generateAudio',
     'generateBassline',
     'generateFill',
     'getMentorTips',

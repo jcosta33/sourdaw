@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
     updateTrack: vi.fn(),
     engineSetTrackOutput: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
+    getRuntimeGraphRevision: vi.fn(() => 4),
+    captureProjectRevision: vi.fn(() => 'project-revision-4'),
     getAllSidechainRoutes: vi.fn(),
 }));
 
@@ -22,6 +25,13 @@ vi.mock('#/modules/Arrangement/repositories/track/updateTrack', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     setTrackOutput: mocks.engineSetTrackOutput,
+    applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
+    getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    captureProjectRevision: mocks.captureProjectRevision,
 }));
 
 describe('setTrackOutput', () => {
@@ -34,9 +44,19 @@ describe('setTrackOutput', () => {
     it('should update the track output id in the store and notify the audio engine', () => {
         mocks.getTrackById.mockImplementation((trackId: string) => {
             if (trackId === 't1') {
-                return { id: 't1', kind: 'audio' };
+                return {
+                    id: 't1',
+                    kind: 'audio',
+                    devices: [
+                        {
+                            id: 'compressor',
+                            type: 'builtin-compressor',
+                            parameterValues: { ratio: 4, attack: 20 },
+                        },
+                    ],
+                };
             }
-            return { id: 'bus-main', kind: 'bus' };
+            return { id: 'bus-main', kind: 'bus', devices: [] };
         });
 
         const didWrite = setTrackOutput('t1', 'bus-main');
@@ -49,16 +69,30 @@ describe('setTrackOutput', () => {
         };
         expect(patch({ outputId: 'old', id: 't1' })).toEqual({ outputId: 'bus-main', id: 't1' });
 
-        expect(mocks.engineSetTrackOutput).toHaveBeenCalledWith('t1', 'bus-main');
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenCalledWith({
+            schemaVersion: 1,
+            command: 'set-track-output',
+            correlation: { appRevision: 4, projectRevision: 'project-revision-4' },
+            nodes: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
+                },
+                { id: 'bus-main', kind: 'bus', devices: [] },
+            ],
+            edges: [{ kind: 'output', sourceId: 't1', targetId: 'bus-main' }],
+            parameters: [],
+        });
         expect(didWrite).toBe(true);
     });
 
     it('defers the live engine route until the project transaction commits', () => {
         mocks.getTrackById.mockImplementation((trackId: string) => {
             if (trackId === 't1') {
-                return { id: 't1', kind: 'audio' };
+                return { id: 't1', kind: 'audio', devices: [] };
             }
-            return { id: 'bus-main', kind: 'bus' };
+            return { id: 'bus-main', kind: 'bus', devices: [] };
         });
 
         const runtimeEffect = setTrackOutput('t1', 'bus-main', { deferRuntimeEffect: true });
@@ -70,12 +104,13 @@ describe('setTrackOutput', () => {
         }
         runtimeEffect.afterCommit();
         runtimeEffect.afterCommit();
-        expect(mocks.engineSetTrackOutput).toHaveBeenCalledOnce();
-        expect(mocks.engineSetTrackOutput).toHaveBeenCalledWith('t1', 'bus-main');
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenCalledOnce();
 
-        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', outputId: 'master' });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', outputId: 'master', devices: [] });
         runtimeEffect.afterAmbiguousCommit();
-        expect(mocks.engineSetTrackOutput).toHaveBeenLastCalledWith('t1', 'master');
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenLastCalledWith(
+            expect.objectContaining({ edges: [{ kind: 'output', sourceId: 't1', targetId: 'master' }] })
+        );
     });
 
     it('rejects a missing source before project or engine work', () => {
@@ -92,16 +127,16 @@ describe('setTrackOutput', () => {
         const parent = {
             id: 'toaster-parent',
             kind: 'folder',
-            devices: [{ id: 'toaster-device', type: 'toaster' }],
+            devices: [{ id: 'toaster-device', type: 'toaster', parameterValues: {} }],
         };
-        const child = { id: 'pad-track', kind: 'audio', parentId: parent.id };
+        const child = { id: 'pad-track', kind: 'audio', parentId: parent.id, devices: [] };
         mocks.getAllTracks.mockReturnValue([parent, child]);
         mocks.getTrackById.mockImplementation((trackId: string) => {
             if (trackId === child.id) {
                 return child;
             }
             if (trackId === 'return-bus') {
-                return { id: 'return-bus', kind: 'bus' };
+                return { id: 'return-bus', kind: 'bus', devices: [] };
             }
             return undefined;
         });
@@ -183,16 +218,24 @@ describe('setTrackOutput', () => {
     });
 
     it('accepts an output change that leaves the graph acyclic', () => {
-        const busA = { id: 'busA', kind: 'bus', outputId: 'busB', sends: [] };
-        const busB = { id: 'busB', kind: 'bus', outputId: 'master', sends: [{ busId: 'busC', level: 1 }] };
-        const busC = { id: 'busC', kind: 'bus', outputId: 'master', sends: [] };
+        const busA = { id: 'busA', kind: 'bus', outputId: 'busB', sends: [], devices: [] };
+        const busB = {
+            id: 'busB',
+            kind: 'bus',
+            outputId: 'master',
+            sends: [{ busId: 'busC', level: 1 }],
+            devices: [],
+        };
+        const busC = { id: 'busC', kind: 'bus', outputId: 'master', sends: [], devices: [] };
         const tracks = [busA, busB, busC];
         mocks.getAllTracks.mockReturnValue(tracks);
         mocks.getTrackById.mockImplementation((trackId: string) => tracks.find((track) => track.id === trackId));
 
         const didWrite = setTrackOutput('busA', 'busC');
 
-        expect(mocks.engineSetTrackOutput).toHaveBeenCalledWith('busA', 'busC');
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ edges: [{ kind: 'output', sourceId: 'busA', targetId: 'busC' }] })
+        );
         expect(didWrite).toBe(true);
     });
 });

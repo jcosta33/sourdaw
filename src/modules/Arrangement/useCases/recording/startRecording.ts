@@ -12,13 +12,23 @@ import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 const recordClipId = 1;
 let takeCounter = 1;
 
-export function startRecording(): Clip[] {
+/**
+ * Open recording clips on every armed, recording-eligible track.
+ *
+ * `atBeat` anchors the new clips. Callers that record from a moving transport
+ * must pass it: the store's `playheadPosition` is written on discrete events
+ * only (start, stop, pause, seek), so during playback it holds the beat
+ * playback *started* at, not the live position. Omitting it keeps the
+ * stationary behaviour — anchor at the store playhead.
+ */
+export function startRecording(atBeat?: number): Clip[] {
     const trackState = getTrackState();
     const transportState = transportStore.value;
     if (!trackState || !transportState) {
         return [];
     }
 
+    const recordBeat = atBeat ?? transportState.playheadPosition;
     const armedTracks = trackState.tracks.filter(
         (time) => time.armed && getTrackEligibility(time.kind).acceptsRecording
     );
@@ -26,7 +36,7 @@ export function startRecording(): Clip[] {
 
     for (const track of armedTracks) {
         if (track.kind === 'midi' && transportState.overdubEnabled) {
-            const ph = transportState.playheadPosition;
+            const ph = recordBeat;
             const intersecting = track.clips.find(
                 (context) => context.type === 'midi' && ph >= context.startBeat && ph < context.endBeat
             );
@@ -52,8 +62,8 @@ export function startRecording(): Clip[] {
             id: clipId,
             trackId: track.id,
             name: `Recording ${recordClipId}`,
-            startBeat: transportState.playheadPosition,
-            endBeat: transportState.playheadPosition,
+            startBeat: recordBeat,
+            endBeat: recordBeat,
             type: track.kind === 'midi' ? 'midi' : 'audio',
             fadeInBeats: 0,
             fadeOutBeats: 0,
@@ -67,13 +77,7 @@ export function startRecording(): Clip[] {
         if (!getTakeLaneForTrack(track.id)) {
             addTakeLane(track.id);
         }
-        addTake(
-            track.id,
-            clipId,
-            `Take ${takeCounter++}`,
-            transportState.playheadPosition,
-            transportState.playheadPosition
-        );
+        addTake(track.id, clipId, `Take ${takeCounter++}`, recordBeat, recordBeat);
     }
 
     if (newClips.length > 0) {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
-import { TrackNode, type TrackNodeDeps } from '../TrackNode';
+import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected, TrackNode, type TrackNodeDeps } from '../TrackNode';
 
 // The external-plugin path loads its native bridge asynchronously. Mock the
 // bridge factory so the spec can capture the param ids/values that actually
@@ -286,6 +286,67 @@ describe('TrackNode', () => {
         expect(track.strip.analyserNode.disconnect).toHaveBeenCalledTimes(1);
         expect(track.strip.analyserNode.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
         expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith();
+    });
+
+    it('reports a rejected output mutation after restoring its previous live route', () => {
+        const busGain = ctx.createGain();
+        vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as unknown as GainNode);
+        const track = new TrackNode('track-1', deps);
+        const connectError = new Error('output connect failed');
+        vi.mocked(track.strip.analyserNode.connect).mockClear();
+        vi.mocked(track.strip.analyserNode.disconnect).mockClear();
+        vi.mocked(track.strip.analyserNode.connect).mockImplementationOnce(() => {
+            throw connectError;
+        });
+
+        expect(() => track.setOutput('bus-1')).toThrow(RuntimeGraphMutationRejected);
+        expect(track.strip.outputId).toBeUndefined();
+        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
+        expect(track.strip.analyserNode.connect).toHaveBeenLastCalledWith(deps.masterGainNode);
+    });
+
+    it('reports an uncompensated output mutation when restoring its previous live route fails', () => {
+        const busGain = ctx.createGain();
+        vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as unknown as GainNode);
+        const track = new TrackNode('track-1', deps);
+        const connectError = new Error('output connect failed');
+        const restoreError = new Error('output restore failed');
+        vi.mocked(track.strip.analyserNode.connect).mockClear();
+        vi.mocked(track.strip.analyserNode.disconnect).mockClear();
+        vi.mocked(track.strip.analyserNode.connect)
+            .mockImplementationOnce(() => {
+                throw connectError;
+            })
+            .mockImplementationOnce(() => {
+                throw restoreError;
+            });
+
+        try {
+            track.setOutput('bus-1');
+            throw new Error('expected the output mutation to fail');
+        } catch (error) {
+            expect(error).toBeInstanceOf(RuntimeGraphMutationFailure);
+            expect(error).toMatchObject({
+                mutation: { application: 'needs-reconcile' },
+                cause: connectError,
+                rollbackError: restoreError,
+            });
+        }
+        expect(track.strip.outputId).toBeUndefined();
+    });
+
+    it('rejects an output disconnect failure before changing the live route', () => {
+        const busGain = ctx.createGain();
+        vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as unknown as GainNode);
+        const track = new TrackNode('track-1', deps);
+        vi.mocked(track.strip.analyserNode.connect).mockClear();
+        vi.mocked(track.strip.analyserNode.disconnect).mockImplementationOnce(() => {
+            throw new Error('output disconnect failed');
+        });
+
+        expect(() => track.setOutput('bus-1')).toThrow(RuntimeGraphMutationRejected);
+        expect(track.strip.outputId).toBeUndefined();
+        expect(track.strip.analyserNode.connect).not.toHaveBeenCalled();
     });
 
     it('preserves analyser output, send, and sidechain edges across a chain rebuild', () => {
