@@ -159,4 +159,29 @@ describe('Yeast rack preview feedback', () => {
         expect(screen.getByText('Bypassed')).toBeInTheDocument();
         expect(screen.getByText('0 active · 0 enabled · 1 bypassed · 0 failed')).toBeInTheDocument();
     });
+
+    it("reports the rack sounding pitches through onSoundingNotesChange — KeyboardSplit's note-activity source", () => {
+        const onSoundingNotesChange = vi.fn();
+        render(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' }}
+                processors={[{ id: 'arp-1', bypassed: false }]}
+                runtimeStatus="ready"
+                onSoundingNotesChange={onSoundingNotesChange}
+            />
+        );
+
+        act(() => {
+            // Playhead defaults to beat 0; this event's window [-0.5, 0.5) contains it.
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([
+                    createPreviewEvent({ eventId: 1, beatTime: -0.5, durationBeats: 1, pitch: 67, realized: true }),
+                ]),
+                performance.now()
+            );
+            previewMocks.frames.shift()?.(performance.now());
+        });
+
+        expect(onSoundingNotesChange).toHaveBeenLastCalledWith([67]);
+    });
 });

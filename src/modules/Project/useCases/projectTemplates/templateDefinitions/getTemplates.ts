@@ -1,9 +1,11 @@
+import { isTauri } from '#/utils/tauriRuntime';
+
 import { templates } from './helpers';
 
 import type { ProjectTemplate } from './helpers';
 
 function isNativePlatform(): boolean {
-    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    return isTauri();
 }
 
 export function getTemplates(): ProjectTemplate[] {

@@ -146,6 +146,95 @@ describe('YeastPanel', () => {
         expect(screen.getByRole('slider', { name: 'Velocity' })).toHaveAttribute('aria-valuenow', '64');
     });
 
+    it('renders honest Gate/Swing readouts at mid-range values instead of a collapsed "%"', () => {
+        // Pre-fix both readouts used `unit="%"` with the raw fraction: gate 0.8
+        // and swing 0.5 both rendered as "1%" (toFixed(0) of the unscaled
+        // value), collapsing the entire range to 0/1/2%. Gate is a note-length
+        // multiplier (Arpeggiator.ts multiplies step length by it), not a
+        // percentage, so it now reads as "×"; swing is a fraction and is
+        // scaled to an honest percent.
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { gate: 0.8, swing: 0.5 },
+                },
+            ],
+            uiLevel: 2,
+        };
+
+        render(<YeastPanel />);
+
+        expect(screen.getByText('0.8×')).toBeInTheDocument();
+        expect(screen.getByText('50%')).toBeInTheDocument();
+    });
+
+    it('resets a modified Gate knob to its compiled default via alt-click', async () => {
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { gate: 1.2 },
+                },
+            ],
+            uiLevel: 2,
+        };
+
+        render(<YeastPanel />);
+        const gateSlider = screen.getByRole('slider', { name: 'Gate' });
+        expect(gateSlider).toHaveAttribute('aria-valuenow', '1.2');
+
+        // RotaryKnob treats an alt-clicked pointerdown as reset-to-default
+        // rather than the start of a drag. Pre-fix, KnobCol passed
+        // `defaultValue={value}` (the live value itself), so
+        // `Object.is(value, defaultValue)` was always true and this gesture
+        // was a permanent no-op.
+        fireEvent.pointerDown(gateSlider, { button: 0, pointerId: 1, altKey: true });
+
+        await waitFor(() => {
+            expect(storeMock.yeastState?.processors[0]?.params?.gate).toBe(0.8);
+        });
+    });
+
+    it('commits an integer when dragging the Octaves knob (integer-domain param)', () => {
+        // Pre-fix, KnobCol hardcoded step={0.01} for every knob including the
+        // integer-domain octave_range (1-4). The worker rounds this param
+        // (Arpeggiator.ts setParam), so a fractional commit here would store a
+        // value the audio thread silently disagrees with.
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { octave_range: 1 },
+                },
+            ],
+            uiLevel: 2,
+        };
+
+        render(<YeastPanel />);
+        const octavesSlider = screen.getByRole('slider', { name: 'Octaves' });
+
+        fireEvent.pointerDown(octavesSlider, { button: 0, pointerId: 1, clientY: 100 });
+        // deltaY = 55 against a (max-min)/150 = 0.02 sensitivity puts the raw
+        // value at 2.1 — step=0.01 would commit 2.1 (fractional); step=1
+        // quantizes to the integer 2.
+        fireEvent.pointerMove(octavesSlider, { pointerId: 1, clientY: 45 });
+        fireEvent.pointerUp(octavesSlider, { pointerId: 1 });
+
+        const committed = storeMock.yeastState?.processors[0]?.params?.octave_range;
+        expect(committed).toBe(2);
+        expect(Number.isInteger(committed)).toBe(true);
+    });
+
     it('defaults latch to off without a stored param', () => {
         storeMock.yeastState = {
             processors: [

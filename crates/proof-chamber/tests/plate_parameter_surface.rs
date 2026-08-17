@@ -502,6 +502,78 @@ fn density_defaults_to_full_cross_coupling() {
 }
 
 // ---------------------------------------------------------------------------
+// size
+// ---------------------------------------------------------------------------
+
+#[test]
+fn size_renders_differently_at_interior_settings() {
+    // Size reaches one thing on this engine — the early-reflection spacing, via
+    // `EarlyReflections::update_room_size` — because the tank delays are fixed
+    // at Dattorro's Table 1 lengths and do not scale. That makes the render
+    // delta the only evidence that the control does anything at all, and it is
+    // measured at interior points for the same reason every other row here is:
+    // wiring that reacts only at 0 and 1 is not a room-size control.
+    let small = render(&[("size", 0.25)]);
+    let middle = render(&[("size", 0.5)]);
+    let large = render(&[("size", 0.75)]);
+
+    for (left, right, names) in [
+        (&small, &middle, "0.25 vs 0.50"),
+        (&middle, &large, "0.50 vs 0.75"),
+    ] {
+        let delta = max_delta(left, right);
+        assert!(
+            delta > 1e-4,
+            "size {names} should render differently; peak difference {delta:e}"
+        );
+    }
+}
+
+/// The default row for Size, in the shape every other control in this file
+/// uses: an engine nobody wrote to must render as the engine's own documented
+/// default.
+///
+/// # Why this test is `#[ignore]`d
+///
+/// It is red against the shipped engine, and it is red because the plate seeds
+/// its two copies of the room size from different numbers.
+/// `ProofChamber::new` stores `size: 0.75` in the field
+/// (`src/proof_chamber.rs:550`) and builds its reflection network with
+/// `EarlyReflections::new(sample_rate, 0.5)` (`:614`). Nothing reconciles them:
+/// `update_room_size` only runs from the `"size"` arm, so an untouched plate
+/// renders a 0.5 room while reporting a 0.75 one.
+///
+/// What that costs is not abstract. Writing Size the value the engine already
+/// claims to be at moves the render by 0.856 peak on this stimulus — an
+/// automation lane that writes its own default at frame 0, a preset that stores
+/// it, or a project reload that replays `parameterValues` all change what the
+/// user was hearing, and each one is a different sound from the last.
+///
+/// Un-ignore this when the constructor seeds `EarlyReflections` from the field
+/// it also stores. Note the direction of that fix: seeding from 0.75 changes
+/// what an untouched plate renders, so it moves `UNTOUCHED_PLATE_DIGEST` and
+/// `UNTOUCHED_PLATE_SHAPE` with it and belongs in a release note.
+#[test]
+#[ignore = "pins the plate's split Size default — the field is seeded 0.75 (src/proof_chamber.rs:550) while EarlyReflections is built at 0.5 (:614), so an untouched plate renders a room it does not report. Red until the plate Size default lane lands."]
+fn size_defaults_to_the_documented_value() {
+    let untouched = render(&[]);
+    let explicit = render(&[("size", 0.75)]);
+    assert!(
+        identical(&untouched, &explicit),
+        "an engine nobody wrote to should render as size=0.75, the value the constructor \
+         stores in the field; peak difference {:e}",
+        max_delta(&untouched, &explicit)
+    );
+
+    let half = render(&[("size", 0.5)]);
+    assert!(
+        !identical(&untouched, &half),
+        "the shipped default renders identically to size=0.5, which is what the constructor \
+         hands `EarlyReflections` rather than what it stores"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // gravity
 // ---------------------------------------------------------------------------
 

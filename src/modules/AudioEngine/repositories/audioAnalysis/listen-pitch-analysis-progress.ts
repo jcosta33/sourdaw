@@ -1,4 +1,4 @@
-import { isTauri } from '#/utils/tauriBridge';
+import { isTauri, tauriListen } from '#/utils/tauriBridge';
 
 type ListenPitchAnalysisProgressInput = {
     analysisId: string;
@@ -20,12 +20,12 @@ export async function listenPitchAnalysisProgress({
         return null;
     }
 
-    const { listen } = await import('@tauri-apps/api/event');
-    return listen<AnalysisProgress>('pitch-analysis-progress', (event) => {
-        if (event.payload.analysisId !== analysisId) {
+    return tauriListen('pitch-analysis-progress', (envelope) => {
+        const { payload } = envelope as { payload: AnalysisProgress };
+        if (payload.analysisId !== analysisId) {
             return;
         }
 
-        onProgress(event.payload.progress);
+        onProgress(payload.progress);
     });
 }
