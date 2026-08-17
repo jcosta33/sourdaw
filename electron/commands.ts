@@ -82,7 +82,6 @@ export const EXPOSED_COMMANDS = [
     'read_file_bytes',
     'scan_plugins',
     'send_push_midi',
-    'separate_stems',
     'set_crumbs_mode',
     'set_crumbs_param',
     'set_link_tempo',
