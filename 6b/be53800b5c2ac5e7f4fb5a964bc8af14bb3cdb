@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts
+  s_a40848e8f8cca9::t_d5f0941cc0a1b6 57,100-102
+  s_a40848e8f8cca9::t_0e15e11a37d39f 169-171
+src/modules/Arrangement/useCases/device/__tests__/prepareRemoveDevice.spec.ts
+  s_a40848e8f8cca9::t_39dfcf987e9088 151-173
+  s_a40848e8f8cca9::t_0e15e11a37d39f 356,364-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6bbe53800b5c2ac5e7f4fb5a964bc8af14bb3cdb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
