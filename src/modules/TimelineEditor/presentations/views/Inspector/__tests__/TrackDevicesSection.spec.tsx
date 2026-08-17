@@ -27,8 +27,7 @@ type TestActivationState = {
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
 const mockAddDevice = vi.fn<(trackId: string, pluginName: string) => void>();
-const mockAddExternalDevice = vi.fn<(trackId: string, pluginId: string, pluginName: string) => void>();
-const mockReorderDevices = vi.fn<(trackId: string, fromIndex: number, toIndex: number) => void>();
+const mockCompileReorderDevicesAction = vi.fn();
 const mockProjectTrackToLiveStrip =
     vi.fn<(input: { trackId: string; activateDormantExternalPlugins: boolean }) => void>();
 const mockGetPlatformPlugins = vi.fn<() => TestPlatformPlugin[]>(() => []);
@@ -47,12 +46,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         addDevice: (trackId: string, pluginName: string): void => {
             mockAddDevice(trackId, pluginName);
         },
-        addExternalDevice: (trackId: string, pluginId: string, pluginName: string): void => {
-            mockAddExternalDevice(trackId, pluginId, pluginName);
-        },
-        reorderDevices: (trackId: string, fromIndex: number, toIndex: number): void => {
-            mockReorderDevices(trackId, fromIndex, toIndex);
-        },
+        compileReorderDevicesAction: (trackId: string, deviceId: string, targetDeviceId: string): unknown =>
+            mockCompileReorderDevicesAction(trackId, deviceId, targetDeviceId),
         projectTrackToLiveStrip: (input: { trackId: string; activateDormantExternalPlugins: boolean }): void => {
             mockProjectTrackToLiveStrip(input);
         },
@@ -169,15 +164,26 @@ vi.mock('../../../components/Inspector/ChoiceCard', () => ({
     ChoiceCard: ({
         children,
         onClick,
+        onDragStart,
+        onDrop,
         className,
         title,
     }: {
         children: React.ReactNode;
         onClick?: () => void;
+        onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
+        onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
         className?: string;
         title?: string;
     }) => (
-        <div data-testid="choice-card" className={className} title={title} onClick={onClick}>
+        <div
+            data-testid="choice-card"
+            className={className}
+            title={title}
+            onClick={onClick}
+            onDragStart={onDragStart}
+            onDrop={onDrop}
+        >
             {children}
         </div>
     ),
@@ -298,6 +304,31 @@ describe('TrackDevicesSection', () => {
         });
     });
 
+    it('routes a mixer device drop through the committed reorder action', () => {
+        const action = { type: 'reorderDevices', payload: { trackId: 'track-1' } };
+        mockCompileReorderDevicesAction.mockReturnValue(action);
+        render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
+
+        const cards = screen.getAllByTestId('choice-card');
+        const draggedCard = cards[0];
+        const targetCard = cards[1];
+        if (!draggedCard || !targetCard) {
+            throw new Error('expected device cards');
+        }
+        const dataTransfer = {
+            effectAllowed: '',
+            dropEffect: '',
+            getData: vi.fn(() => 'device-1'),
+            setData: vi.fn(),
+        };
+
+        fireEvent.dragStart(draggedCard, { dataTransfer });
+        fireEvent.drop(targetCard, { dataTransfer });
+
+        expect(mockCompileReorderDevicesAction).toHaveBeenCalledWith('track-1', 'device-1', 'device-2');
+        expect(mockExecuteAppAction).toHaveBeenCalledWith(action);
+    });
+
     it('should add a platform device from the menu and close the menu', () => {
         mockGetPlatformPlugins.mockReturnValue([{ id: 'chorus', name: 'Chorus', category: 'effect' }]);
 
@@ -337,7 +368,10 @@ describe('TrackDevicesSection', () => {
         expect(screen.queryByRole('menuitem', { name: /Stale AU/ })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('menuitem', { name: /Working CLAP/ }));
-        expect(mockAddExternalDevice).toHaveBeenCalledWith('track-1', 'clap-1', 'Working CLAP');
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'clap-1', trackId: 'track-1' },
+        });
     });
 
     it('marks a persisted external plugin unavailable when it is absent from the supported scan', () => {

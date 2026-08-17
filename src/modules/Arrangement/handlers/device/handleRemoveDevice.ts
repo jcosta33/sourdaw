@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { removeDevice } from '../../useCases/device/removeDevice';
+import { prepareRemoveDevice } from '../../useCases/device/prepareRemoveDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
@@ -46,7 +46,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
                 return { status: 'conflict' };
             }
         }
-        const result = removeDevice(alpha.payload.deviceId, { deferRuntimeEffects: true });
+        const result = prepareRemoveDevice(alpha.payload.deviceId);
         if (result === 'conflict') {
             return { status: 'conflict' };
         }

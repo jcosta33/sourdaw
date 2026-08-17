@@ -3,9 +3,9 @@
  *
  * The compiler owns the runtime form: callers may supply a structured-cloneable
  * value, but AudioEngine applies only its frozen compiled representation at the
- * main-thread graph boundary. This command deliberately covers one output edge;
- * device construction and worklet controls keep their existing owners until they
- * have equivalent contracts.
+ * main-thread graph boundary. Output and one-device topology transitions use
+ * discriminated commands; worklet controls keep their existing owner until they
+ * have an equivalent contract.
  */
 /**
  * What a graph write is correlated against, so a stale one can be refused.
@@ -23,7 +23,10 @@ export type RuntimeGraphCorrelation = Readonly<{
     projectRevision: string;
 }>;
 
-export type RuntimeGraphDelta = Readonly<{
+export type RuntimeGraphDelta =
+    RuntimeGraphOutputDelta | RuntimeGraphDeviceChainDelta | RuntimeGraphTrackStripInitializationDelta;
+
+export type RuntimeGraphOutputDelta = Readonly<{
     schemaVersion: 1;
     command: 'set-track-output';
     correlation: RuntimeGraphCorrelation;
@@ -31,6 +34,48 @@ export type RuntimeGraphDelta = Readonly<{
     nodes: readonly RuntimeGraphDeltaNode[];
     edges: readonly [RuntimeGraphOutputEdge];
     /** This topology command has no continuous-control payload. */
+    parameters: readonly [];
+}>;
+
+/**
+ * One complete, ordered device-chain transition for a single project-owned
+ * track. `before` guards the live graph; `after` guards the current CRDT
+ * projection. Values and worklet messages deliberately remain outside this
+ * topology-only protocol.
+ */
+export type RuntimeGraphDeviceChainDelta = Readonly<{
+    schemaVersion: 1;
+    command: 'replace-track-device-chain';
+    correlation: Readonly<{
+        /** Expected live-engine revision immediately before this command applies. */
+        appRevision: number;
+        /** CRDT project revision that produced the post-operation graph view. */
+        projectRevision: string;
+    }>;
+    operation: 'add-device' | 'remove-device' | 'reorder-device' | 'replace-device-chain';
+    before: RuntimeGraphDeltaNode;
+    after: RuntimeGraphDeltaNode;
+    /** Device topology changes never carry continuous values or worklet messages. */
+    parameters: readonly [];
+}>;
+
+/**
+ * One complete, immutable live-strip baseline. Unlike a mutation delta this
+ * establishes a missing strip once; it never replays ordinary device writes.
+ */
+export type RuntimeGraphTrackStripInitializationDelta = Readonly<{
+    schemaVersion: 1;
+    command: 'initialize-track-strip';
+    correlation: Readonly<{
+        /** Expected live-engine revision immediately before this strip publishes. */
+        appRevision: number;
+        /** CRDT project revision that produced this complete strip snapshot. */
+        projectRevision: string;
+    }>;
+    /** Source first, then the non-terminal output destination when there is one. */
+    nodes: readonly RuntimeGraphDeltaNode[];
+    output: RuntimeGraphInitializationOutput;
+    /** Baseline topology binds parameter schema, never continuous values. */
     parameters: readonly [];
 }>;
 
@@ -45,6 +90,8 @@ export type RuntimeGraphDeltaDevice = Readonly<{
     id: string;
     /** Device-factory type required by the live graph node. */
     type: string;
+    /** Stable native-host instance identity for an external-plugin device. */
+    externalInstanceId?: string;
     /** Sorted, stable parameter IDs; values are intentionally not transported by this topology command. */
     parameterIds: readonly string[];
 }>;
@@ -65,6 +112,17 @@ export type RuntimeGraphOutputEdge = Readonly<{
     kind: 'output';
     sourceId: string;
     targetId: string;
+}>;
+
+export type RuntimeGraphInitializationOutput = Readonly<{
+    kind: 'output';
+    sourceId: string;
+    targetId: string;
+    /** Optional Toaster pad ownership, validated with the immutable output. */
+    padBinding?: Readonly<{
+        toasterParentTrackId: string;
+        padIndex: number;
+    }>;
 }>;
 
 export type RuntimeGraphDeltaResult =

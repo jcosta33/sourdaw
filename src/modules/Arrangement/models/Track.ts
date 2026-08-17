@@ -232,11 +232,13 @@ export function createTrack(input: {
     name: string;
     kind: TrackKind;
     parentId?: string;
+    outputId?: string;
+    withoutDefaultDevice?: boolean;
 }): Track {
     const color = input.color ?? reserveNextTrackColor();
 
     const defaultDevices: Device[] =
-        input.kind === 'midi'
+        input.kind === 'midi' && !input.withoutDefaultDevice
             ? [
                   {
                       id: input.initialDeviceId ?? `dev-synth-${crypto.randomUUID()}`,
@@ -271,7 +273,7 @@ export function createTrack(input: {
         hidden: false,
         disabled: false,
         height: 80,
-        outputId: input.kind === 'master' ? 'hw_out' : 'master',
+        outputId: input.outputId ?? (input.kind === 'master' ? 'hw_out' : 'master'),
         automationMode: 'read',
         groupId: null,
         soloSafe: input.kind === 'bus',

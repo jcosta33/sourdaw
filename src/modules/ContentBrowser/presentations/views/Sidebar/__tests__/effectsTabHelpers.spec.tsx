@@ -7,11 +7,16 @@ import { NavCard, EffectItem, UnimplementedBadge, SoonBadge } from '../effectsTa
 import type { PluginDescriptorView as PluginDescriptor } from '../../../../models/PluginDescriptorViewTypes';
 
 const mocks = vi.hoisted(() => ({
-    addDevice: vi.fn(),
+    compileAddDeviceAction: vi.fn(),
+    executeAppAction: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    addDevice: mocks.addDevice,
+    compileAddDeviceAction: mocks.compileAddDeviceAction,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
 }));
 
 const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({
@@ -27,7 +32,13 @@ const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor =
 
 describe('effectsTabHelpers components', () => {
     beforeEach(() => {
-        mocks.addDevice.mockReset();
+        mocks.compileAddDeviceAction.mockReset();
+        mocks.executeAppAction.mockReset();
+        mocks.compileAddDeviceAction.mockImplementation((trackId: string, deviceType: string) => ({
+            type: 'addDevice',
+            payload: { trackId, deviceType, deviceId: 'device-1', expectedDeviceIds: [] },
+        }));
+        mocks.executeAppAction.mockResolvedValue(undefined);
     });
 
     describe('NavCard', () => {
@@ -59,7 +70,7 @@ describe('effectsTabHelpers components', () => {
             expect(screen.getByText('2 params')).toBeInTheDocument();
         });
 
-        // `addDevice` matches a plugin by name *or* id. `De-esser`, `LUFS Meter`
+        // The application compiler carries the catalog id. `De-esser`, `LUFS Meter`
         // and `Stereo Widener` each name two catalog plugins — a builtin and a
         // Faust one — so a name lookup returns whichever the registry lists
         // first, which need not be the card that was clicked.
@@ -69,7 +80,11 @@ describe('effectsTabHelpers components', () => {
             render(<EffectItem plugin={mockPlugin} selectedTrackId="t1" />);
             fireEvent.click(screen.getByRole('button'));
 
-            expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'faust-de-esser');
+            expect(mocks.compileAddDeviceAction).toHaveBeenCalledWith('t1', 'faust-de-esser');
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'faust-de-esser', deviceId: 'device-1', expectedDeviceIds: [] },
+            });
         });
 
         it('adds the keyboard-activated effect by id as well', () => {
@@ -78,7 +93,16 @@ describe('effectsTabHelpers components', () => {
             render(<EffectItem plugin={mockPlugin} selectedTrackId="t1" />);
             fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' });
 
-            expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'builtin-stereo-widener');
+            expect(mocks.compileAddDeviceAction).toHaveBeenCalledWith('t1', 'builtin-stereo-widener');
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'addDevice',
+                payload: {
+                    trackId: 't1',
+                    deviceType: 'builtin-stereo-widener',
+                    deviceId: 'device-1',
+                    expectedDeviceIds: [],
+                },
+            });
         });
     });
 
