@@ -500,20 +500,39 @@ impl BandChain {
         engaged
     }
 
-    /// Delay this band's output until it presents `target` base-rate samples.
+    /// Delay this band's output until it presents `target` base-rate samples,
+    /// and answer with the delay it will now actually present.
     ///
     /// Called whenever a parameter could have moved any band's latency. The
     /// deficit rounds to whole samples, leaving the irreducible fractional
     /// skew described on [`AlignmentDelay`] — worst case 0.75 samples,
     /// between a band on 4x (9.75, padded to 11.75) and one on 1x (padded to
     /// 11.0), when some band holds the 8x target of 11.375.
-    fn set_alignment_target(&mut self, target: f32) {
-        let deficit = target - self.engaged_latency_samples();
+    ///
+    /// `contributing` is what makes the deficit the right subtrahend. A band
+    /// the routing skips this sample runs none of its stages — it only clocks
+    /// the ring, through [`Self::pass_through_sample`] or [`Self::skip_sample`]
+    /// — so its engaged delay is not in the path and subtracting it would leave
+    /// the band delivering `target - engaged` while every consumer of the
+    /// number believes `target`. Under `Serial` that consumer is the next link
+    /// in the chain and the host's own compensation.
+    ///
+    /// The answer is the delay *after* rounding and after `set_delay`'s clamp
+    /// to the ring, not the float target, so a caller summing these gets what
+    /// the cascade delivers rather than what it was asked for.
+    fn set_alignment_target(&mut self, target: f32, contributing: bool) -> f32 {
+        let engaged = if contributing {
+            self.engaged_latency_samples()
+        } else {
+            0.0
+        };
+        let deficit = target - engaged;
         if deficit <= 0.0 {
             self.alignment.set_delay(0);
-            return;
+            return engaged;
         }
         self.alignment.set_delay(deficit.round() as usize);
+        engaged + self.alignment.delay as f32
     }
 
     /// Advance the alignment ring by one silent frame for a band that
@@ -541,6 +560,13 @@ impl BandChain {
     /// to reach the next link. Running it through the alignment ring anyway is
     /// what keeps the chain's total delay, and therefore the number the host
     /// was given, from moving when a band is soloed or muted mid-performance.
+    ///
+    /// The ring alone only carries that whole delay because
+    /// [`Self::set_alignment_target`] is told this band is not contributing and
+    /// programs it to the full target rather than to a deficit against stages
+    /// that are not running. Programmed as a deficit, muting a band holding a
+    /// spectral window would have shortened the chain by that window while the
+    /// report stood still.
     fn pass_through_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
         self.hilbert_l.bypass();
         self.hilbert_r.bypass();
@@ -824,6 +850,17 @@ pub struct BacteriaEngine {
     /// present its reported latency at every mix value, not only fully wet.
     dry_alignment: AlignmentDelay,
 
+    /// What the device actually delays by, accumulated in `realign_bands` from
+    /// each band's programmed delay.
+    ///
+    /// Cached rather than recomputed on demand because the two derivations have
+    /// to agree exactly: the host reads this and the dry tap is set from it, and
+    /// a second pass over the float targets would round differently from the
+    /// per-band deficits that were actually programmed. `set_param` re-runs
+    /// `realign_bands` unconditionally, so there is no path that moves a band's
+    /// delay without moving this.
+    reported_latency: u32,
+
     // Computed parameter offsets from modulations.
     // Convention: [0] = global mix; [1..=6] = per-band gain offsets (linear scale, bands 0-5).
     param_offsets: [f32; PARAM_OFFSET_COUNT],
@@ -877,7 +914,7 @@ impl BacteriaEngine {
             .map(|_| BandChain::new(sample_rate))
             .collect();
 
-        Self {
+        let mut engine = Self {
             sample_rate,
             crossover: CrossoverEngine::new(sample_rate),
             band_count: 1,
@@ -914,8 +951,16 @@ impl BacteriaEngine {
             bands_l: [0.0; MAX_BANDS],
             bands_r: [0.0; MAX_BANDS],
             dry_alignment: AlignmentDelay::new(DRY_ALIGNMENT_RING_LEN),
+            reported_latency: 0,
             param_offsets: [0.0; PARAM_OFFSET_COUNT],
-        }
+        };
+
+        // The report is only ever written by `realign_bands`, so a fresh
+        // instance has to run one before anything can read it. A default
+        // Bacteria delays nothing, but that is a fact about the defaults and
+        // not one to hardcode here.
+        engine.realign_bands();
+        engine
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -944,11 +989,20 @@ impl BacteriaEngine {
     /// cascade's total — and so [`Self::latency_samples`] — stay put while
     /// stages are switched during a performance.
     ///
-    /// Either way the target each band is given is exactly the term it
+    /// A band the routing is currently skipping is padded to the full target
+    /// rather than to a deficit, because none of its stages are in the path to
+    /// make up the difference — see [`BandChain::set_alignment_target`].
+    ///
+    /// Either way the delay each band is left presenting is exactly the term it
     /// contributes to the reported figure, so the report is what the device
-    /// delivers.
+    /// delivers. That is why the figure is accumulated here from what each band
+    /// answers rather than derived a second time from the float targets: the
+    /// per-band deficit rounds to a whole sample, and six of those roundings in
+    /// a chain diverge from the float sum by samples, which is a comb across
+    /// the dry blend and an under-report to the host.
     fn realign_bands(&mut self) {
         let serial = self.routing == RoutingMode::Serial;
+        let any_solo = self.bands[..self.band_count].iter().any(|b| b.solo);
         let summed_target = self
             .bands
             .iter()
@@ -961,7 +1015,7 @@ impl BacteriaEngine {
             // Bands past `bandCount` contribute nothing and must not hold a
             // stale delay into a later band-count change.
             if index >= self.band_count {
-                band.set_alignment_target(0.0);
+                band.set_alignment_target(0.0, false);
                 // Nothing advances a band past `bandCount` — not even
                 // `skip_sample` — so its ring has to be emptied here or it
                 // replays pre-shrink audio when the count grows back.
@@ -975,20 +1029,21 @@ impl BacteriaEngine {
             } else {
                 summed_target
             };
-            band.set_alignment_target(target);
+            let delivered = band.set_alignment_target(target, band.contributes(any_solo));
 
             // Chained delays add; summed ones do not.
             if serial {
-                device_delay += target;
+                device_delay += delivered;
             } else {
-                device_delay = target;
+                device_delay = device_delay.max(delivered);
             }
         }
 
         // The dry mix tap bypasses the bands entirely, so it needs the whole
         // device delay rather than a deficit against something it already
-        // spent.
-        self.dry_alignment.set_delay(device_delay.round() as usize);
+        // spent. Same figure the host is handed, from the same accumulation.
+        self.reported_latency = device_delay.round() as u32;
+        self.dry_alignment.set_delay(self.reported_latency as usize);
     }
 
     /// Zero the meter of every band past `bandCount`.
@@ -1483,16 +1538,15 @@ impl BacteriaEngine {
     /// `StftProcessor` window on the same terms — see
     /// [`BandChain::spectral_latency_samples`] for why that one term reads an
     /// enable flag where the distortion window reads a configured mode.
+    ///
+    /// Read straight out of `realign_bands`'s accumulation rather than derived
+    /// here a second time. Deriving it from the float targets was the same
+    /// number only while nothing rounded: each band's compensation is programmed
+    /// as a whole-sample deficit, so a six-link chain delivered up to three
+    /// samples more than this said — under-reported to the host, and three
+    /// samples of skew against a dry tap set from the other derivation.
     pub fn latency_samples(&self) -> u32 {
-        let active = self.bands.iter().take(self.band_count);
-        let total = if self.routing == RoutingMode::Serial {
-            active.map(BandChain::latency_samples).sum::<f32>()
-        } else {
-            active
-                .map(BandChain::latency_samples)
-                .fold(0.0_f32, f32::max)
-        };
-        total.round() as u32
+        self.reported_latency
     }
 
     /// Get current modulation source values (for UI visualization).
@@ -1519,6 +1573,21 @@ mod tests {
 
     fn rms(samples: &[f32]) -> f32 {
         (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    /// Where an impulse response's energy actually sits, in samples.
+    ///
+    /// The abs-weighted centroid, which is how `oversample.rs` pins the
+    /// oversampling chain's own delay. A peak index would answer the same for a
+    /// pure delay and lie about every stage that smears, which is most of them.
+    fn impulse_centroid(response: &[f32]) -> f32 {
+        let mut numerator = 0.0_f32;
+        let mut denominator = 0.0_f32;
+        for (n, &sample) in response.iter().enumerate() {
+            numerator += n as f32 * sample.abs();
+            denominator += sample.abs();
+        }
+        numerator / denominator
     }
 
     /// The parameter id `BACTERIA_DESCRIPTOR` advertises for per-band gain.
@@ -2362,6 +2431,100 @@ mod tests {
             output_rms > 0.5 * input_rms,
             "soloing the first link of a serial chain silenced the device \
              ({output_rms:.5} out of {input_rms:.5})"
+        );
+    }
+
+    /// The chain has to *deliver* what it reports, not merely add its targets
+    /// up correctly.
+    ///
+    /// Each band's compensation is programmed as a whole-sample deficit while
+    /// the report was derived a second time from the float targets, so the two
+    /// only agreed while nothing rounded. Six 2x-class links round up by half a
+    /// sample each: this chain delivers 52 against a float sum of 50.375, and
+    /// the host was told 50 — under-reported, with the dry tap set from the
+    /// same wrong figure and combing against the wet path two samples ahead of
+    /// it.
+    ///
+    /// The bands carry unequal factors so the divergence cannot be an artefact
+    /// of one factor's rounding, and `distortionEnabled` stays off so nothing
+    /// but the alignment rings is in the path — the delay is then whole-sample
+    /// and the centroid is exact rather than approximate.
+    #[test]
+    fn a_serial_chain_delivers_the_delay_it_reports() {
+        const IMPULSE: f32 = 0.01;
+        const BLOCK: usize = 512;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 6.0);
+        engine.set_param("globalRouting", ROUTING_SERIAL);
+        engine.set_param("drive", 0.0);
+        for (index, factor) in [2.0_f32, 2.0, 2.0, 4.0, 4.0, 8.0].iter().enumerate() {
+            engine.set_param(&format!("band{index}_oversampling"), *factor);
+        }
+
+        let reported = engine.latency_samples();
+        assert_eq!(
+            reported, 52,
+            "three 2x, two 4x and one 8x link deliver 3x7 + 2x10 + 11 samples"
+        );
+
+        let mut left = vec![0.0_f32; BLOCK];
+        left[0] = IMPULSE;
+        let mut right = left.clone();
+        engine.process_block(&mut left, &mut right);
+
+        let centroid = impulse_centroid(&left);
+        assert!(
+            (centroid - reported as f32).abs() < 0.55,
+            "the chain reports {reported} samples and delivers a centroid of \
+             {centroid:.3} — the report is derived from the float targets \
+             rather than from the delays actually programmed"
+        );
+    }
+
+    /// Muting a link must not shorten the chain.
+    ///
+    /// A bypassed link runs none of its stages, so the alignment ring is the
+    /// only thing left to carry its share of the delay and has to be programmed
+    /// to the whole target rather than to a deficit against stages that are not
+    /// running. Programmed as a deficit, muting band 0 here dropped 2048
+    /// samples — 43 ms — out of the path while `latency_samples` went on
+    /// reporting them: host compensation wrong in the direction this file calls
+    /// unsafe, and a flam against the dry tap at any mix below 1.
+    ///
+    /// The spectral window is what makes the gap visible: it is the one stage
+    /// whose delay is engaged independently of `distortionEnabled`, so a muted
+    /// band holding one has a real deficit to get wrong. With the band muted
+    /// its transform is out of the path entirely, so what is left is a clean
+    /// whole-sample ring and the centroid is exact.
+    #[test]
+    fn muting_a_link_does_not_shorten_the_serial_chain() {
+        const IMPULSE: f32 = 0.01;
+        const BLOCK: usize = 8_192;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("globalRouting", ROUTING_SERIAL);
+        engine.set_param("band0_spectralEnabled", 1.0);
+        engine.set_param("band0_mute", 1.0);
+
+        let reported = engine.latency_samples();
+        assert_eq!(
+            reported, 2_048,
+            "the muted link still owes the chain its spectral window"
+        );
+
+        let mut left = vec![0.0_f32; BLOCK];
+        left[0] = IMPULSE;
+        let mut right = left.clone();
+        engine.process_block(&mut left, &mut right);
+
+        let centroid = impulse_centroid(&left);
+        assert!(
+            (centroid - reported as f32).abs() < 0.55,
+            "muting the spectral link left the chain reporting {reported} \
+             samples while delivering a centroid of {centroid:.3} — the \
+             bypassed band was padded to its deficit instead of its target"
         );
     }
 
