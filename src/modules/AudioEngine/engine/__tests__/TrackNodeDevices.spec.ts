@@ -901,23 +901,23 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(pendingDevicePromises.size).toBe(0);
         });
 
-        it('preserves scheduled placeholder frames while retaining only the latest immediate value on promotion', () => {
+        it('preserves scheduled placeholder order while coalescing only immediate runs on promotion', () => {
             const deferred = installDeferredWasmDevice();
             const track = new TrackNode('t1', makeDeps(ctx));
 
             track.addDevice('wasm-1', 'levain');
             track.updateParam('wasm-1', 'drive', 0.2);
             track.updateParam('wasm-1', 'drive', 0.8);
-            track.scheduleParam('wasm-1', 'tone', 0.3, 1);
-            track.scheduleParam('wasm-1', 'tone', 0.7, 2);
+            track.scheduleParam('wasm-1', 'tone', 0.3, 0);
+            track.updateParam('wasm-1', 'tone', 0.7);
 
             const loaded = createLoadedDevice();
             deferred.resolve(loaded.device);
 
             expect(loaded.controller.setParam.mock.calls).toEqual([
                 ['drive', 0.8],
-                ['tone', 0.3, 48_000],
-                ['tone', 0.7, 96_000],
+                ['tone', 0.3, 0],
+                ['tone', 0.7],
             ]);
         });
 

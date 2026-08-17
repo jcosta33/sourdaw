@@ -995,15 +995,26 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     matches: isGrinderDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({ context, trackId, deviceId, deviceType, parameterIds, isCurrent, signal, onLoaded }) {
-        type PendingScheduledParam = Readonly<{ name: string; value: number; sampleFrame: number }>;
-        const pendingImmediateParams = new Map<string, number>();
-        const pendingScheduledParams: PendingScheduledParam[] = [];
+        type PendingParam =
+            | Readonly<{ kind: 'immediate'; name: string; value: number }>
+            | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
+        const pendingParams: PendingParam[] = [];
         const queueParam = (name: string, value: number, sampleFrame?: number): void => {
             if (sampleFrame !== undefined && Number.isSafeInteger(sampleFrame) && sampleFrame >= 0) {
-                pendingScheduledParams.push(Object.freeze({ name, value, sampleFrame }));
+                pendingParams.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
                 return;
             }
-            pendingImmediateParams.set(name, value);
+            for (let index = pendingParams.length - 1; index >= 0; index--) {
+                const pending = pendingParams[index];
+                if (!pending || pending.kind === 'scheduled') {
+                    break;
+                }
+                if (pending.name === name) {
+                    pendingParams[index] = Object.freeze({ kind: 'immediate', name, value });
+                    return;
+                }
+            }
+            pendingParams.push(Object.freeze({ kind: 'immediate', name, value }));
         };
         let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
@@ -1041,11 +1052,12 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
-                for (const [name, value] of pendingImmediateParams) {
-                    result.setParam(name, value);
-                }
-                for (const { name, value, sampleFrame } of pendingScheduledParams) {
-                    result.setParam(name, value, sampleFrame);
+                for (const pending of pendingParams) {
+                    if (pending.kind === 'scheduled') {
+                        result.setParam(pending.name, pending.value, pending.sampleFrame);
+                    } else {
+                        result.setParam(pending.name, pending.value);
+                    }
                 }
                 if (pendingPatch) {
                     result.setPatch(pendingPatch);

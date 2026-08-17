@@ -944,6 +944,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             placeholder.controller?.setParam('drive', 0.7);
             placeholder.controller?.setParam('sag', 0.25, 48_000);
             placeholder.controller?.setParam('sag', 0.75, 96_000);
+            placeholder.controller?.setParam('sag', 0.9);
             placeholder.controller?.setPatch?.({ amp: 'lead' });
             placeholder.controller?.setBypass?.(true);
             await loadPromise;
@@ -952,6 +953,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 ['drive', 0.7],
                 ['sag', 0.25, 48_000],
                 ['sag', 0.75, 96_000],
+                ['sag', 0.9],
             ]);
             expect(result.setPatch).toHaveBeenCalledWith({ amp: 'lead' });
             expect(result.setBypass).toHaveBeenCalledWith(true);
