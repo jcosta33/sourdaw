@@ -1,14 +1,11 @@
 import {
-    getRuntimeGraphRevision,
     initializeTrackStripFromSnapshot,
     reportLatency,
-    resolveToasterPadBinding,
     setTrackGain,
     setTrackPan,
     updateDeviceBypass,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
@@ -16,7 +13,7 @@ import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDevic
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { trackStore } from '../stores/trackStore';
 
-import { runtimeGraphTopology } from './runtimeGraphTopology';
+import { compileTrackStripInitializationSnapshot } from './compileTrackStripInitializationSnapshot';
 import { applySoloLogic } from './toggleTrackState/applySoloLogic';
 
 import type { Track } from '../stores/trackStore';
@@ -47,38 +44,6 @@ function acceptsRoutingEndpoint(tracks: readonly Track[], targetId: string): boo
     return target ? getTrackEligibility(target.kind).acceptsRoutingEndpoint : false;
 }
 
-function createTrackStripInitializationSnapshot(
-    track: Track,
-    tracks: readonly Track[],
-    padBinding: ReturnType<typeof resolveToasterPadBinding>
-) {
-    const source = runtimeGraphTopology.createNode(track);
-    const targets =
-        track.outputId === 'master' || track.outputId === 'hw_out'
-            ? []
-            : tracks.filter((candidate) => candidate.id === track.outputId);
-    if (targets.length > 1 || (targets[0] && !getTrackEligibility(targets[0].kind).acceptsRoutingEndpoint)) {
-        return null;
-    }
-    const target = targets[0];
-    return {
-        schemaVersion: 1,
-        command: 'initialize-track-strip',
-        correlation: {
-            appRevision: getRuntimeGraphRevision(),
-            projectRevision: captureProjectRevision(),
-        },
-        nodes: target ? [source, runtimeGraphTopology.createNode(target)] : [source],
-        output: {
-            kind: 'output',
-            sourceId: track.id,
-            targetId: track.outputId,
-            ...(padBinding ? { padBinding } : {}),
-        },
-        parameters: [],
-    };
-}
-
 export function projectTrackToLiveStrip({
     trackId,
     deferSidechainWiring = false,
@@ -103,8 +68,7 @@ export function projectTrackToLiveStrip({
     if (!acceptsRoutingEndpoint(tracks, track.outputId)) {
         return;
     }
-    const padBinding = resolveToasterPadBinding(tracks, track.id);
-    const snapshot = createTrackStripInitializationSnapshot(track, tracks, padBinding);
+    const snapshot = compileTrackStripInitializationSnapshot(track, tracks);
     if (!snapshot) {
         return;
     }

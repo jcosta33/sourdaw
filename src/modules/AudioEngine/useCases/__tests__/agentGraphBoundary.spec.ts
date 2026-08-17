@@ -101,6 +101,32 @@ describe('agent runtime graph boundary', () => {
         expect(Object.isFrozen(result.delta.after.devices[1]?.parameterIds)).toBe(true);
     });
 
+    it('compiles one immutable preset replacement only when its complete ordered chain changes', () => {
+        const result = compileRuntimeGraphDelta(
+            createDeviceChainDelta({
+                operation: 'replace-device-chain',
+                after: {
+                    id: 'track-1',
+                    kind: 'audio',
+                    devices: [{ id: 'preset-synth', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+            })
+        );
+
+        expect(result).toMatchObject({ status: 'compiled' });
+        expect(compileRuntimeGraphDelta(createDeviceChainDelta({ operation: 'replace-device-chain' })).status).toBe(
+            'compiled'
+        );
+        expect(
+            compileRuntimeGraphDelta(
+                createDeviceChainDelta({
+                    operation: 'replace-device-chain',
+                    after: createDeviceChainDelta().before,
+                })
+            ).status
+        ).toBe('invalid');
+    });
+
     it('compiles one immutable baseline snapshot with exact output and device schema', () => {
         const result = compileRuntimeGraphDelta(createTrackStripInitialization());
 

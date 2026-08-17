@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -6,23 +6,49 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { InstrumentsTab } from '../InstrumentsTab';
 import { type SidebarPanelActions } from '../SidebarTypes';
 
+type FactoryPresetMock = {
+    id: string;
+    name: string;
+    category: string;
+    description: string;
+    trackKind: string;
+    devices: Array<{ type: string; name: string; parameterValues: Record<string, number> }>;
+    tags: string[];
+    author: string;
+    isFactory: boolean;
+};
+
 // The Levain card must resolve the track it just created and forward the new
 // device's id to showLevain — mirror Fermenter/Toaster. Mock the create + lookup
 // so the handler has a concrete device id to pass on.
+const arrangementMocks = vi.hoisted(() => ({
+    compileLoadPresetActions: vi.fn(),
+    getFactoryPresets: vi.fn<() => FactoryPresetMock[]>(() => []),
+}));
+
+const commandMocks = vi.hoisted(() => ({
+    executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
+}));
+
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
-    getFactoryPresets: vi.fn(() => []),
+    getFactoryPresets: arrangementMocks.getFactoryPresets,
     getUserPresets: vi.fn(() => []),
     saveCurrentAsPreset: vi.fn(),
     deleteUserPreset: vi.fn(),
-    loadPresetToTrack: vi.fn(),
-    createTrackFromPreset: vi.fn(() => 'levain-track-1'),
+    compileLoadPresetActions: arrangementMocks.compileLoadPresetActions,
     getAllTracks: vi.fn(() => [
         {
             id: 'levain-track-1',
             devices: [{ id: 'levain-device-9', type: 'levain', name: 'Levain', parameterValues: {} }],
         },
     ]),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: commandMocks.executeAppAction,
+    executeAppActionBatch: commandMocks.executeAppActionBatch,
 }));
 
 vi.mock('#/modules/GrandBoule/useCases', () => ({ createGrandBouleTrack: vi.fn(() => 'grand-boule-1') }));
@@ -92,6 +118,8 @@ describe('InstrumentsTab', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        arrangementMocks.getFactoryPresets.mockReturnValue([]);
+        commandMocks.executeAppAction.mockResolvedValue(undefined);
     });
 
     it('should render without crashing', () => {
@@ -143,8 +171,57 @@ describe('InstrumentsTab', () => {
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('opens the Levain device panel for the track it just created (showLevain receives the new device id)', () => {
+    it('loads an instrument preset through the compiled action instead of directly mutating the selected track', () => {
+        const preset = {
+            id: 'pad-1',
+            name: 'Glass Pad',
+            category: 'pad',
+            description: '',
+            trackKind: 'audio',
+            devices: [{ type: 'builtin-synth', name: 'Synth', parameterValues: { cutoff: 0.6 } }],
+            tags: [],
+            author: 'test',
+            isFactory: true,
+        };
+        const action = { type: 'loadPreset', payload: { presetId: preset.id, trackId: mockTrack.id } } as const;
+        arrangementMocks.getFactoryPresets.mockReturnValue([preset]);
+        arrangementMocks.compileLoadPresetActions.mockReturnValue({
+            actions: [action],
+            deviceIds: ['preset-device-1'],
+            groupLabel: 'Load preset',
+            trackId: mockTrack.id,
+        });
+
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery="glass"
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview as any}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Glass Pad'));
+
+        expect(arrangementMocks.compileLoadPresetActions).toHaveBeenCalledWith({
+            presetId: preset.id,
+            trackId: mockTrack.id,
+        });
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
+    });
+
+    it('opens the Levain device panel after the catalog action commits (showLevain receives the app-owned device id)', async () => {
         const showLevain = vi.fn();
+        arrangementMocks.compileLoadPresetActions.mockReturnValue({
+            actions: [{ type: 'loadPreset', payload: { presetId: 'levain-default', trackId: 'levain-track-1' } }],
+            deviceIds: ['levain-device-9'],
+            groupLabel: 'Load preset',
+            trackId: 'levain-track-1',
+        });
         renderWithTooltip(
             <InstrumentsTab
                 selectedTrackId={mockTrack.id}
@@ -165,7 +242,6 @@ describe('InstrumentsTab', () => {
         // device's id, not null. Passing null left the Levain bottom panel
         // unmounted — the card created a track but never opened its panel, unlike
         // every other instrument card.
-        expect(showLevain).toHaveBeenCalledTimes(1);
-        expect(showLevain).toHaveBeenCalledWith('levain-device-9');
+        await waitFor(() => expect(showLevain).toHaveBeenCalledWith('levain-device-9'));
     });
 });

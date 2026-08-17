@@ -171,8 +171,7 @@ export { renameMixerSnapshot } from './mixerSnapshot/operations/renameMixerSnaps
 
 // ── Preset ────────────────────────────────────────────────────────────────────
 
-export { createTrackFromPreset } from './preset/createTrackFromPreset';
-export { loadPresetToTrack } from './preset/presetLoading';
+export { compileLoadPresetActions } from './preset/compileLoadPresetActions';
 export { getUserPresets } from './preset/presetStorage/getUserPresets';
 export { saveCurrentAsPreset } from './preset/presetStorage/saveCurrentAsPreset';
 export { deleteUserPreset } from './preset/presetStorage/deleteUserPreset';

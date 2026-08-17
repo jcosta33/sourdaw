@@ -8,7 +8,7 @@ import type { Track } from '../../stores/trackStore';
 type ApplyDeviceChainRuntimeDeltaInput = Readonly<{
     before: Track;
     after: Track;
-    operation: 'add-device' | 'remove-device' | 'reorder-device';
+    operation: 'add-device' | 'remove-device' | 'reorder-device' | 'replace-device-chain';
 }>;
 
 /**

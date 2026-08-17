@@ -194,6 +194,22 @@ function hasSingleDeviceMove(
     return false;
 }
 
+/**
+ * A preset applies one catalog-owned replacement, not a sequence of ordinary
+ * add/remove commands. The compiled nodes already reject duplicate identities,
+ * unsupported parameter schemas, and unbounded chains; requiring a changed
+ * ordered topology prevents a replacement label from smuggling a no-op.
+ */
+function hasDeviceChainReplacement(
+    before: readonly RuntimeGraphDeltaDevice[],
+    after: readonly RuntimeGraphDeltaDevice[]
+): boolean {
+    if (before.length !== after.length) {
+        return true;
+    }
+    return !before.every((device, index) => isSameDevice(device, after[index]!));
+}
+
 function compileOutputDelta(input: UnknownRecord): RuntimeGraphDeltaCompilation {
     if (!hasOnlyKeys(input, ['schemaVersion', 'command', 'correlation', 'nodes', 'edges', 'parameters'])) {
         return invalid('Runtime graph delta has an unsupported schema');
@@ -379,6 +395,8 @@ function compileDeviceChainDelta(input: UnknownRecord): RuntimeGraphDeltaCompila
     } else if (input.operation === 'remove-device' && hasSingleDeviceRemoval(before.devices, after.devices)) {
         operation = input.operation;
     } else if (input.operation === 'reorder-device' && hasSingleDeviceMove(before.devices, after.devices)) {
+        operation = input.operation;
+    } else if (input.operation === 'replace-device-chain' && hasDeviceChainReplacement(before.devices, after.devices)) {
         operation = input.operation;
     } else {
         return invalid('Runtime device-chain delta operation does not match its ordered before/after topology');

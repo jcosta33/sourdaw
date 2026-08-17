@@ -13,14 +13,15 @@ import {
     getUserPresets,
     saveCurrentAsPreset,
     deleteUserPreset,
-    createTrackFromPreset,
-    loadPresetToTrack,
+    compileLoadPresetActions,
     getAllTracks,
 } from '#/modules/Arrangement/useCases';
 import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
+import { executePresetLoad } from '../../../useCases/executePresetLoad';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
@@ -136,6 +137,21 @@ export const InstrumentsTab = ({
     const soundPresets = factoryPresets.filter((param) => isSoundPreset(param) && matchesSearch(param));
     const filteredUser = userPresets.filter((param) => matchesSearch(param));
 
+    const executeCatalogPreset = async (presetId: string, trackId?: string) => {
+        const plan = compileLoadPresetActions({ presetId, ...(trackId ? { trackId } : {}) });
+        if (!plan) {
+            notifyUser('Preset cannot be applied to the current track.', 'error');
+            return null;
+        }
+        try {
+            await executePresetLoad(plan);
+            return plan;
+        } catch {
+            notifyUser('Preset project changes require runtime retry or repair.', 'error');
+            return null;
+        }
+    };
+
     const handlePresetClick = (preset: SoundPreset) => {
         // Load onto the selected track if it's a compatible kind, else create new
         const trackKindMatches =
@@ -143,9 +159,9 @@ export const InstrumentsTab = ({
             (preset.trackKind === 'midi' && selectedTrack?.kind === 'midi') ||
             (preset.trackKind === 'audio' && selectedTrack?.kind === 'audio');
         if (selectedTrackId && trackKindMatches) {
-            loadPresetToTrack(selectedTrackId, preset);
+            void executeCatalogPreset(preset.id, selectedTrackId);
         } else {
-            createTrackFromPreset(preset);
+            void executeCatalogPreset(preset.id);
         }
     };
 
@@ -178,21 +194,9 @@ export const InstrumentsTab = ({
     };
 
     const handleAddFermenterTrack = () => {
-        const preset: SoundPreset = {
-            id: 'fermenter-default',
-            name: 'Fermenter',
-            category: 'synth',
-            description: 'Fermenter synthesizer',
-            trackKind: 'midi',
-            devices: [{ type: 'fermenter', name: 'Fermenter', parameterValues: {} }],
-            tags: ['synth', 'wavetable', 'analog'],
-            author: 'Sourdaw',
-            isFactory: true,
-        };
-        const trackId = createTrackFromPreset(preset);
-        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
-        const device = track?.devices.find((data) => data.type === 'fermenter');
-        panelActions?.showFermenter(device?.id ?? null);
+        void executeCatalogPreset('fermenter-default').then((plan) => {
+            panelActions?.showFermenter(plan?.deviceIds[0] ?? null);
+        });
     };
 
     const handleAddToasterTrack = () => {
@@ -210,39 +214,15 @@ export const InstrumentsTab = ({
     };
 
     const handleAddLevainTrack = () => {
-        const preset: SoundPreset = {
-            id: 'levain-default',
-            name: 'Levain',
-            category: 'keys',
-            description: 'Levain instrument',
-            trackKind: 'midi',
-            devices: [{ type: 'levain', name: 'Levain', parameterValues: {} }],
-            tags: ['levain', 'strings', 'brass', 'woodwinds'],
-            author: 'Sourdaw',
-            isFactory: true,
-        };
-        const trackId = createTrackFromPreset(preset);
-        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
-        const device = track?.devices.find((data) => data.type === 'levain');
-        panelActions?.showLevain(device?.id ?? null);
+        void executeCatalogPreset('levain-default').then((plan) => {
+            panelActions?.showLevain(plan?.deviceIds[0] ?? null);
+        });
     };
 
     const handleAddCrumbsTrack = () => {
-        const preset: SoundPreset = {
-            id: 'sampler-default',
-            name: 'Sampler',
-            category: 'keys',
-            description: 'Unified Sampler Suite',
-            trackKind: 'midi',
-            devices: [{ type: 'builtin-sampler', name: 'Sampler', parameterValues: {} }],
-            tags: ['sampler', 'sample', 'playback'],
-            author: 'Sourdaw',
-            isFactory: true,
-        };
-        const trackId = createTrackFromPreset(preset);
-        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
-        const device = track?.devices.find((data) => data.type === 'builtin-sampler');
-        panelActions?.showCrumbs(device?.id ?? null);
+        void executeCatalogPreset('sampler-default').then((plan) => {
+            panelActions?.showCrumbs(plan?.deviceIds[0] ?? null);
+        });
     };
 
     void userPresetsVersion; // Read to cause re-render when preset version bumps

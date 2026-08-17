@@ -8,8 +8,9 @@ import { projectTrackThroughPriorBatchActions } from './projectTrackThroughPrior
 function createPlannedTrack(input: {
     id: string;
     name: string;
-    kind: 'audio' | 'bus' | 'folder';
+    kind: 'audio' | 'midi' | 'bus' | 'folder';
     gain: number;
+    initialDeviceId?: string;
 }): Track {
     const alternativeId = `planned-alternative-${input.id}`;
     return createTrack({
@@ -19,6 +20,7 @@ function createPlannedTrack(input: {
         gain: input.gain,
         color: '#000000',
         initialAlternativeId: alternativeId,
+        initialDeviceId: input.initialDeviceId,
     });
 }
 
@@ -28,18 +30,14 @@ export function getPlannedTrackState(context: HandlerValidationContext, trackId:
         return projectTrackThroughPriorBatchActions(current, context);
     }
     for (const action of context.actions.slice(0, context.actionIndex)) {
-        if (
-            action.type === 'addTrack' &&
-            action.payload.id === trackId &&
-            action.payload.kind !== 'master' &&
-            action.payload.kind !== 'midi'
-        ) {
+        if (action.type === 'addTrack' && action.payload.id === trackId && action.payload.kind !== 'master') {
             return projectTrackThroughPriorBatchActions(
                 createPlannedTrack({
                     id: trackId,
                     name: action.payload.name,
                     kind: action.payload.kind,
                     gain: 0.8,
+                    initialDeviceId: action.payload.initialDeviceId,
                 }),
                 context
             );

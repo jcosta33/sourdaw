@@ -11,19 +11,25 @@ import type { SidebarPanelActions } from '../SidebarTypes';
 
 const arrangementMocks = vi.hoisted(() => ({
     compileAddDeviceAction: vi.fn(),
+    compileLoadPresetActions: vi.fn(),
+    getFactoryPresets: vi.fn(),
 }));
 
 const commandMocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     compileAddDeviceAction: arrangementMocks.compileAddDeviceAction,
+    compileLoadPresetActions: arrangementMocks.compileLoadPresetActions,
+    getFactoryPresets: arrangementMocks.getFactoryPresets,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: commandMocks.executeAppAction,
+    executeAppActionBatch: commandMocks.executeAppActionBatch,
 }));
 
 const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({
@@ -82,11 +88,46 @@ describe('EffectsTab', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        arrangementMocks.getFactoryPresets.mockReturnValue([
+            {
+                id: 'fx-chain-1',
+                name: 'Vocal Chain',
+                category: 'fx',
+                description: '',
+                trackKind: 'audio',
+                devices: [{ type: 'builtin-delay', name: 'Delay', parameterValues: { mix: 0.4 } }],
+                tags: [],
+                author: 'test',
+                isFactory: true,
+            },
+        ]);
         arrangementMocks.compileAddDeviceAction.mockImplementation((trackId: string, deviceType: string) => ({
             type: 'addDevice',
             payload: { trackId, deviceType, deviceId: 'device-77', expectedDeviceIds: [] },
         }));
         commandMocks.executeAppAction.mockResolvedValue(undefined);
+    });
+
+    it('loads an FX preset through the compiled action instead of directly mutating the selected track', () => {
+        const action = { type: 'loadPreset', payload: { presetId: 'fx-chain-1', trackId: 'track-1' } } as const;
+        arrangementMocks.compileLoadPresetActions.mockReturnValue({
+            actions: [action],
+            deviceIds: ['preset-device-1'],
+            groupLabel: 'Load preset',
+            trackId: 'track-1',
+        });
+
+        renderWithTooltip(
+            <EffectsTab {...defaultProps} currentRoute={{ id: 'effects-fxpresets', title: 'FX Chain Presets' }} />
+        );
+
+        fireEvent.click(screen.getByText('Vocal Chain'));
+
+        expect(arrangementMocks.compileLoadPresetActions).toHaveBeenCalledWith({
+            presetId: 'fx-chain-1',
+            trackId: 'track-1',
+        });
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
     });
 
     it('should render without crashing', () => {

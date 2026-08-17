@@ -3,18 +3,15 @@ import { type ReactElement } from 'react';
 import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar, Bug, GitBranch } from 'lucide-react';
 
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
-import {
-    compileAddDeviceAction,
-    getFactoryPresets,
-    createTrackFromPreset,
-    loadPresetToTrack,
-} from '#/modules/Arrangement/useCases';
+import { compileAddDeviceAction, compileLoadPresetActions, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
+import { executePresetLoad } from '../../../useCases/executePresetLoad';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
@@ -74,11 +71,17 @@ export const EffectsTab = ({
         : fxPresets;
 
     const handleFxPresetClick = (preset: SoundPreset) => {
-        if (selectedTrackId) {
-            loadPresetToTrack(selectedTrackId, preset);
-        } else {
-            createTrackFromPreset(preset);
+        const plan = compileLoadPresetActions({
+            presetId: preset.id,
+            ...(selectedTrackId ? { trackId: selectedTrackId } : {}),
+        });
+        if (!plan) {
+            notifyUser('Preset cannot be applied to the current track.', 'error');
+            return;
         }
+        void executePresetLoad(plan).catch(() => {
+            notifyUser('Preset project changes require runtime retry or repair.', 'error');
+        });
     };
 
     const addDeviceThroughAction = (deviceType: string, afterApplied?: (deviceId: string | null) => void): void => {

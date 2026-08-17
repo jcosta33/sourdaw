@@ -26,7 +26,7 @@ import { handleRemoveMarker } from '../handlers/marker/handleRemoveMarker';
 import { handleRemoveSection } from '../handlers/marker/handleRemoveSection';
 import { handleRenameSection } from '../handlers/marker/handleRenameSection';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
-import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
+import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handlers/preset/handleLoadPreset';
 import { handleSavePreset } from '../handlers/preset/handleSavePreset';
 import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
 import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
@@ -161,6 +161,7 @@ export function getArrangementHandlers() {
         restoreClipStretchState: handleRestoreClipStretchState,
         fitClipToBeats: handleFitClipToBeats,
         loadPreset: handleLoadPreset,
+        restorePresetDeviceChain: handleRestorePresetDeviceChain,
         savePreset: handleSavePreset,
         restoreTrack: handleRestoreTrack,
         restoreClip: handleRestoreClip,

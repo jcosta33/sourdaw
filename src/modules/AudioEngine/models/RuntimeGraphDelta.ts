@@ -41,7 +41,7 @@ export type RuntimeGraphDeviceChainDelta = Readonly<{
         /** CRDT project revision that produced the post-operation graph view. */
         projectRevision: string;
     }>;
-    operation: 'add-device' | 'remove-device' | 'reorder-device';
+    operation: 'add-device' | 'remove-device' | 'reorder-device' | 'replace-device-chain';
     before: RuntimeGraphDeltaNode;
     after: RuntimeGraphDeltaNode;
     /** Device topology changes never carry continuous values or worklet messages. */
