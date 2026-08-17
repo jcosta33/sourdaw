@@ -3,7 +3,15 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 import { PROCESSOR_TYPES } from '../models/ProcessorCatalog';
 import { type YeastProcessorInfo, type YeastState } from '../models/YeastState';
 
-const YEAST_CRDT_SCHEMA_VERSION = 1;
+const YEAST_CRDT_SCHEMA_VERSION = 2;
+// v1 stored no explicit order — decodeProcessors always sorted entities by id,
+// silently discarding any reorder the moment it round-tripped through this
+// storage (audit #2039: the Yeast rack's advertised reorder capability had no
+// way to survive a hydrate). v2 adds `order`; v1 documents are still accepted
+// on read (decodeProcessors falls back to id order for an entity with no
+// `order`, matching the only order v1 ever had) and are migrated to v2 the
+// next time a local mutation writes through `mutateYeastCrdt`.
+const SUPPORTED_YEAST_CRDT_SCHEMA_VERSIONS = new Set([1, 2]);
 
 /** Empty Yeast rack — the store's seed value and its projection default. */
 export const defaultYeastState: YeastState = {
@@ -12,7 +20,9 @@ export const defaultYeastState: YeastState = {
 };
 
 type MutableRecord = Record<string, unknown>;
-type YeastProcessorEntity = { deleted: boolean; value: YeastProcessorInfo };
+// `order` is optional on the type because a v1 entity read from an existing
+// document has none; every entity this module WRITES sets it.
+type YeastProcessorEntity = { deleted: boolean; value: YeastProcessorInfo; order?: number };
 type YeastCrdtState = {
     schemaVersion: number;
     processors: Record<string, YeastProcessorEntity>;
@@ -66,6 +76,14 @@ function normalizeProcessor(value: unknown): YeastProcessorInfo | null {
     return processor;
 }
 
+/**
+ * Validate and de-duplicate, keeping each id's LAST occurrence but its FIRST
+ * position — a `Map` never moves an existing key on re-`set`. Order here is
+ * "whatever order the caller supplied it in", not a canonical one: callers
+ * that need a specific order (a fresh encode, a decode from stored `order`
+ * fields) impose it themselves. Resorting here unconditionally is what
+ * silently discarded every reorder before this module tracked `order`.
+ */
 function normalizeProcessors(values: unknown): YeastProcessorInfo[] {
     if (!Array.isArray(values)) {
         return [];
@@ -77,16 +95,16 @@ function normalizeProcessors(values: unknown): YeastProcessorInfo[] {
             processorsById.set(processor.id, processor);
         }
     }
-    return [...processorsById.values()].sort((left, right) => compareEntityKeys(left.id, right.id));
+    return [...processorsById.values()];
 }
 
 function encodeState(processors: readonly YeastProcessorInfo[]): YeastCrdtState {
     return {
         schemaVersion: YEAST_CRDT_SCHEMA_VERSION,
         processors: Object.fromEntries(
-            normalizeProcessors(processors).map((processor) => [
+            normalizeProcessors(processors).map((processor, index) => [
                 processor.id,
-                { deleted: false, value: structuredClone(processor) },
+                { deleted: false, order: index, value: structuredClone(processor) },
             ])
         ),
     };
@@ -97,16 +115,26 @@ function isLegacyState(value: unknown): value is { processors: unknown[] } {
 }
 
 function isCrdtState(value: unknown): value is YeastCrdtState {
-    return isRecord(value) && value.schemaVersion === YEAST_CRDT_SCHEMA_VERSION && isRecord(value.processors);
+    return (
+        isRecord(value) &&
+        typeof value.schemaVersion === 'number' &&
+        SUPPORTED_YEAST_CRDT_SCHEMA_VERSIONS.has(value.schemaVersion) &&
+        isRecord(value.processors)
+    );
 }
 
 function assertSupportedSchema(value: unknown): void {
     if (!isRecord(value) || !Object.hasOwn(value, 'schemaVersion')) {
         return;
     }
-    if (value.schemaVersion !== YEAST_CRDT_SCHEMA_VERSION) {
+    if (typeof value.schemaVersion !== 'number' || !SUPPORTED_YEAST_CRDT_SCHEMA_VERSIONS.has(value.schemaVersion)) {
         throw new Error(`Unsupported Yeast CRDT schema version: ${String(value.schemaVersion)}`);
     }
+}
+
+/** An entity's `order`, or +Infinity for a v1 entity that never had one — sorted to the end, then by id. */
+function entityOrder(entity: YeastProcessorEntity): number {
+    return typeof entity.order === 'number' ? entity.order : Number.POSITIVE_INFINITY;
 }
 
 function decodeProcessors(value: unknown): YeastProcessorInfo[] {
@@ -114,15 +142,14 @@ function decodeProcessors(value: unknown): YeastProcessorInfo[] {
     if (!isCrdtState(value)) {
         return isRecord(value) ? normalizeProcessors(value.processors) : [];
     }
-    const processors: unknown[] = [];
-    for (const [, entity] of Object.entries(value.processors).sort(([left], [right]) =>
-        compareEntityKeys(left, right)
-    )) {
-        if (isRecord(entity) && entity.deleted === false) {
-            processors.push(entity.value);
-        }
-    }
-    return normalizeProcessors(processors);
+    const live = Object.entries(value.processors).filter(
+        (entry): entry is [string, YeastProcessorEntity] => isRecord(entry[1]) && entry[1].deleted === false
+    );
+    live.sort(([leftId, left], [rightId, right]) => {
+        const orderDelta = entityOrder(left) - entityOrder(right);
+        return orderDelta !== 0 ? orderDelta : compareEntityKeys(leftId, rightId);
+    });
+    return normalizeProcessors(live.map(([, entity]) => entity.value));
 }
 
 function encodeMigratedState(previous: unknown, processors: readonly YeastProcessorInfo[]): YeastCrdtState {
@@ -184,22 +211,32 @@ function syncProcessorValue(target: MutableRecord, processor: YeastProcessorInfo
 }
 
 function syncProcessorEntities(current: MutableRecord, desiredProcessors: readonly YeastProcessorInfo[]): void {
+    // `desired`'s iteration order IS the target order — normalizeProcessors no
+    // longer imposes one of its own, so this is exactly desiredProcessors'
+    // order, deduplicated.
     const desired = new Map(normalizeProcessors(desiredProcessors).map((processor) => [processor.id, processor]));
     for (const [id, entity] of Object.entries(current)) {
         if (!desired.has(id) && isRecord(entity) && entity.deleted !== true) {
             entity.deleted = true;
         }
     }
+    let index = 0;
     for (const [id, processor] of desired) {
         const entity = current[id];
         if (!isRecord(entity) || !isRecord(entity.value)) {
-            current[id] = { deleted: false, value: processor };
+            current[id] = { deleted: false, order: index, value: processor };
+            index += 1;
             continue;
         }
         if (entity.deleted !== false) {
             entity.deleted = false;
         }
+        // Every commit re-asserts order from the current desired position —
+        // this is what actually makes a reorder (or a v1 entity that never
+        // had one) converge, not just a brand-new entity.
+        replaceIfChanged(entity, 'order', index);
         syncProcessorValue(entity.value, processor);
+        index += 1;
     }
 }
 
@@ -211,6 +248,9 @@ function mutateYeastCrdt({ doc, key, value }: { doc: MutableRecord; key: string;
         return;
     }
     syncProcessorEntities(current.processors, value.processors);
+    // Backfills `order` onto every entity above, so a v1 document is fully
+    // migrated to v2 the first time it is locally mutated.
+    current.schemaVersion = YEAST_CRDT_SCHEMA_VERSION;
 }
 
 function rebaseProcessors({
@@ -237,7 +277,14 @@ function rebaseProcessors({
             rebasedById.delete(id);
         }
     }
-    return [...rebasedById.values()].sort((left, right) => compareEntityKeys(left.id, right.id));
+    // `rebasedById` is seeded from `hydrated`, so it already carries the
+    // correct order (decodeProcessors now returns processors in persisted
+    // `order`, not id order) — `Map.set` on an existing key does not move it,
+    // so an edited-in-place entry keeps its hydrated position and only a
+    // newly pending-added entry lands at the end. Re-sorting by id here would
+    // undo that and is what silently discarded order before this module
+    // tracked it explicitly.
+    return [...rebasedById.values()];
 }
 
 function rebasePendingYeastState({

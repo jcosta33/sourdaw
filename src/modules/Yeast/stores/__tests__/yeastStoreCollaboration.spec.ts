@@ -150,4 +150,62 @@ describe('Yeast collaboration storage', () => {
         flushAutomergeStorageWrites();
         expect(localStorage.get()?.processors.map((processor) => processor.id)).toEqual(['local', 'remote']);
     });
+
+    it('round-trips a reorder of the processor list through storage', () => {
+        // Mirrors what reorderYeastProcessor commits: the same three entities,
+        // written back in a new order. A peer that hydrates afterward must see
+        // the new order, not a merge that keeps the original positions.
+        const baseline = createBaseline(
+            createState([createProcessor('a'), createProcessor('b'), createProcessor('c')])
+        );
+        const peer = createPeer(clone(baseline));
+        const storage = createStorage();
+        configureAutomergeStoragePort(peer.port);
+        storage.hydrate();
+
+        storage.set(createState([createProcessor('b'), createProcessor('c'), createProcessor('a')]));
+        flushAutomergeStorageWrites();
+
+        const freshPeer = createPeer(clone(peer.getDoc()));
+        const freshStorage = createStorage();
+        configureAutomergeStoragePort(freshPeer.port);
+
+        expect(freshStorage.hydrate()).toBe(true);
+        expect(freshStorage.get()?.processors.map((processor) => processor.id)).toEqual(['b', 'c', 'a']);
+    });
+
+    it('migrates a v1 document (no explicit order) and then preserves a reorder written on top of it', () => {
+        // v1 stored no `order` field and decodeProcessors always sorted by id
+        // — this is the shape every already-persisted Yeast document has.
+        // decodeProcessors must still read it (falling back to id order, the
+        // only order v1 ever had), and the next local mutation must migrate
+        // it so a SUBSEQUENT reorder actually sticks.
+        const v1Doc = from<RootDocument>({});
+        const migrated = change(v1Doc, (draft) => {
+            (draft as unknown as { yeast: unknown }).yeast = {
+                schemaVersion: 1,
+                processors: {
+                    b: { deleted: false, value: createProcessor('b') },
+                    a: { deleted: false, value: createProcessor('a') },
+                },
+            };
+        });
+        const peer = createPeer(clone(migrated));
+        const storage = createStorage();
+        configureAutomergeStoragePort(peer.port);
+
+        // Read: v1 has no order, so decode falls back to id order.
+        expect(storage.hydrate()).toBe(true);
+        expect(storage.get()?.processors.map((processor) => processor.id)).toEqual(['a', 'b']);
+
+        // Write: reorder on top of the migrated-in-memory state.
+        storage.set(createState([createProcessor('b'), createProcessor('a')]));
+        flushAutomergeStorageWrites();
+
+        const freshPeer = createPeer(clone(peer.getDoc()));
+        const freshStorage = createStorage();
+        configureAutomergeStoragePort(freshPeer.port);
+        expect(freshStorage.hydrate()).toBe(true);
+        expect(freshStorage.get()?.processors.map((processor) => processor.id)).toEqual(['b', 'a']);
+    });
 });
