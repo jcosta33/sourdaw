@@ -1,0 +1,25 @@
+electron/main.ts
+  s_d91dcbe5f07151::t_a91ab8d94395d9 232,235,238-243,248-249,253-256,265-271,273
+electron/__tests__/protocol.spec.ts
+  s_d91dcbe5f07151::t_f521183afbb391 1-14,17,20-69
+  s_d91dcbe5f07151::t_969b26eca74c65 15-16,18-19
+electron/protocol.ts
+  s_d91dcbe5f07151::t_06b276371be67e 165-176
+  s_d91dcbe5f07151::t_5ab8971ce22590 177-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "41868e9fa2ef6462a9ae604c627ed9507435dba5",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
