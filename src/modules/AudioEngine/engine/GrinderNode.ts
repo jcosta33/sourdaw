@@ -8,6 +8,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
+import { compileRuntimeGrinderNeuralPatch } from '../services/compileRuntimeGrinderNeuralPatch';
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -105,7 +106,8 @@ export async function createGrinderNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
     signal?: AbortSignal,
-    controlTarget?: RuntimeDeviceControlTarget
+    controlTarget?: RuntimeDeviceControlTarget,
+    onRuntimeFailure?: (message: string) => void
 ): Promise<GrinderNodeResult> {
     // Grinder's neural-amp telemetry uses a SAB slot. Fail fast if the
     // environment cannot provide one — see `buildDeviceChain` for the UX path.
@@ -205,6 +207,32 @@ export async function createGrinderNode(
         node.port.postMessage(result.control);
     };
 
+    const postNeuralPatch = (patch: Record<string, unknown>): void => {
+        if (!fallbackControlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
+            return;
+        }
+        const result = compileRuntimeGrinderNeuralPatch({
+            schemaVersion: 1,
+            command: 'apply-grinder-neural-patch',
+            target: {
+                trackId: fallbackControlTarget.trackId,
+                deviceId: fallbackControlTarget.deviceId,
+                deviceType: fallbackControlTarget.deviceType,
+            },
+            patch,
+            correlation: {
+                workletGeneration,
+                controlSequence: nextControlSequence,
+            },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        });
+        if (result.status !== 'compiled') {
+            return;
+        }
+        nextControlSequence++;
+        node.port.postMessage(result.patch);
+    };
+
     const flushParamPosts = (): void => {
         paramFlushRafId = null;
         for (const [name, pending] of pendingParamPosts) {
@@ -255,6 +283,7 @@ export async function createGrinderNode(
         ) {
             const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
             logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', message);
+            onRuntimeFailure?.(message);
         }
     };
     const readyPromise = handshake.promise;
@@ -293,7 +322,7 @@ export async function createGrinderNode(
             }
         },
         setPatch(patch: Record<string, unknown>) {
-            node.port.postMessage({ type: 'patch', patch });
+            postNeuralPatch(patch);
         },
         setBypass(state: boolean) {
             postFallbackControl(

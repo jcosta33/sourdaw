@@ -125,7 +125,7 @@ describe('createGrinderNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'init-sab', sab: expect.anything(), byteOffset: 64 });
     });
 
-    it('should forward setPatch and compile setBypass as a typed fallback control', async () => {
+    it('compiles a neural patch only for an initialized target and shares its sequence with fallback controls', async () => {
         const node = await createGrinderNode(makeCtx(), undefined, undefined, {
             trackId: 'track-1',
             deviceId: 'grinder-1',
@@ -150,8 +150,19 @@ describe('createGrinderNode', () => {
         expect(Object.isFrozen((initialization as { target: unknown }).target)).toBe(true);
         postMessage.mockClear();
 
-        node.setPatch({ drive: 0.5 });
-        expect(postMessage).toHaveBeenCalledWith({ type: 'patch', patch: { drive: 0.5 } });
+        node.setPatch({ neuralModelMode: 'builtin' });
+        const patch = postMessage.mock.calls.find(
+            (call) => (call[0] as { command?: string }).command === 'apply-grinder-neural-patch'
+        )?.[0];
+        expect(patch).toEqual({
+            schemaVersion: 1,
+            command: 'apply-grinder-neural-patch',
+            target: { trackId: 'track-1', deviceId: 'grinder-1', deviceType: 'grinder' },
+            patch: { neuralModelMode: 'builtin' },
+            correlation: { workletGeneration: expect.any(Number), controlSequence: 1 },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        });
+        expect(Object.isFrozen(patch)).toBe(true);
 
         node.setBypass(true);
         expect(postMessage).toHaveBeenCalledWith(
@@ -167,7 +178,7 @@ describe('createGrinderNode', () => {
                 value: 1,
                 correlation: {
                     workletGeneration: expect.any(Number),
-                    controlSequence: 1,
+                    controlSequence: 2,
                 },
             })
         );
@@ -179,7 +190,7 @@ describe('createGrinderNode', () => {
                 command: 'set-fallback-param',
                 target: expect.objectContaining({ parameterId: 'bypass' }),
                 value: 0,
-                correlation: expect.objectContaining({ controlSequence: 2 }),
+                correlation: expect.objectContaining({ controlSequence: 3 }),
             })
         );
     });
@@ -247,6 +258,15 @@ describe('createGrinderNode', () => {
         expect(postMessage).not.toHaveBeenCalled();
     });
 
+    it('drops an unbound neural patch instead of posting the legacy raw port message', async () => {
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setPatch({ neuralModelMode: 'builtin' });
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
     it('rejects a scheduled fallback control when telemetry capacity cannot acknowledge a latency change', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue(null);
@@ -286,22 +306,26 @@ describe('createGrinderNode', () => {
             isSettled: () => true,
         });
 
-        const node = await createGrinderNode(makeCtx());
+        const onRuntimeFailure = vi.fn();
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, undefined, onRuntimeFailure);
 
         node.workletNode.port.onmessage?.({ data: { type: 'ping' } } as MessageEvent);
         expect(logger.warn).not.toHaveBeenCalled();
+        expect(onRuntimeFailure).not.toHaveBeenCalled();
 
         node.workletNode.port.onmessage?.({ data: { type: 'error' } } as MessageEvent);
         expect(logger.warn).toHaveBeenCalledWith(
             'GrinderNode runtime fault (WASM panic — processor faulted):',
             'Unknown error'
         );
+        expect(onRuntimeFailure).toHaveBeenCalledWith('Unknown error');
 
         node.workletNode.port.onmessage?.({ data: { type: 'error', message: 'panic' } } as MessageEvent);
         expect(logger.warn).toHaveBeenCalledWith(
             'GrinderNode runtime fault (WASM panic — processor faulted):',
             'panic'
         );
+        expect(onRuntimeFailure).toHaveBeenCalledWith('panic');
     });
 
     it('should schedule a meter poll only once a telemetry slot is available, defaulting missing fields to 0', async () => {

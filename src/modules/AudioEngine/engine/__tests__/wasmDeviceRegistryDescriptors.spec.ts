@@ -933,12 +933,18 @@ describe('wasmDeviceRegistry descriptors', () => {
             });
 
             const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
-            expect(factoryMocks.createGrinderNode).toHaveBeenCalledWith(deps.context, undefined, deps.signal, {
-                trackId: 'track-1',
-                deviceId: 'grind-1',
-                deviceType: 'grinder',
-                parameterIds,
-            });
+            expect(factoryMocks.createGrinderNode).toHaveBeenCalledWith(
+                deps.context,
+                undefined,
+                deps.signal,
+                {
+                    trackId: 'track-1',
+                    deviceId: 'grind-1',
+                    deviceType: 'grinder',
+                    parameterIds,
+                },
+                expect.any(Function)
+            );
             expect(placeholder.controller).toBeDefined();
             placeholder.controller?.setParam('drive', 0.2);
             placeholder.controller?.setParam('drive', 0.7);
@@ -999,6 +1005,50 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(result.setParam).not.toHaveBeenCalled();
             expect(result.onLatencyChanged).not.toHaveBeenCalled();
             expect(result.onMeterData).not.toHaveBeenCalled();
+        });
+
+        it('reconciles a post-ready neural-patch processor fault through the owning runtime callback', async () => {
+            const result: GrinderNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setPatch: vi.fn(),
+                setBypass: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+            factoryMocks.createGrinderNode.mockResolvedValue(result);
+            const onRuntimeFailure = vi.fn(() => true);
+            const onRuntimeRecovery = vi.fn();
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'grinder',
+                deviceId: 'grind-fault',
+                onRuntimeFailure,
+                onRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(externalLatencyRegistry.has('grind-fault')).toBe(true);
+            const reportRuntimeFailure = factoryMocks.createGrinderNode.mock.calls[0]?.[4];
+            if (typeof reportRuntimeFailure !== 'function') {
+                throw new TypeError('expected GrinderNode to receive a post-ready runtime failure callback');
+            }
+
+            loaded.controller?.setPatch?.({ neuralModelMode: 'builtin' });
+            expect(result.setPatch).toHaveBeenCalledWith({ neuralModelMode: 'builtin' });
+            reportRuntimeFailure('neural patch set_param trapped after partial mutation');
+
+            expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(loaded.controller?.ready).toBe(false);
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(externalLatencyRegistry.has('grind-fault')).toBe(false);
+            expect(onRuntimeRecovery).toHaveBeenCalledWith(placeholder);
         });
 
         it('forwards worklet telemetry frames to the grinder sink', async () => {
