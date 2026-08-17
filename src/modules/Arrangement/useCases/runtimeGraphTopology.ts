@@ -10,6 +10,7 @@ export type RuntimeGraphTopologyNode = Readonly<{
     devices: readonly Readonly<{
         id: string;
         type: string;
+        externalInstanceId?: string;
         parameterIds: readonly string[];
     }>[];
 }>;
@@ -22,6 +23,7 @@ function createRuntimeGraphTopologyNode(track: Track): RuntimeGraphTopologyNode 
         devices: track.devices.map((device) => ({
             id: device.id,
             type: device.type,
+            ...(device.externalInstanceId !== undefined ? { externalInstanceId: device.externalInstanceId } : {}),
             parameterIds: Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right)),
         })),
     };

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
     return {
         getTrackById: vi.fn(),
         updateTrack: vi.fn<(trackId: string, updater: (track: Track) => Track) => void>(),
+        applyDeviceChainRuntimeDelta: vi.fn(),
     };
 });
 
@@ -18,22 +19,34 @@ vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,
 }));
 
+vi.mock('../applyDeviceChainRuntimeDelta', () => ({
+    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
+}));
+
 describe('reorderDevices', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getTrackById.mockReturnValue({
+            id: 't1',
+            kind: 'audio',
+            devices: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
+        });
+    });
 
     it('reorders devices within a track', () => {
         reorderDevices('t1', 0, 1);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'reorder-device' })
+        );
         const updaterCall = mocks.updateTrack.mock.calls[0];
         if (!updaterCall) {
             throw new Error('expected updateTrack to have been called');
         }
         const updater = updaterCall[1];
 
-        const mockTrack = {
-            devices: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
-        };
+        const mockTrack = { devices: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }] };
 
         const result = updater(mockTrack);
         expect(result.devices[0]?.id).toBe('d2');
@@ -55,13 +68,7 @@ describe('reorderDevices', () => {
 
         reorderDevices('t1', 5, 0);
 
-        const updater = mocks.updateTrack.mock.calls[0]?.[1];
-        if (!updater) {
-            throw new Error('expected updateTrack to have been called');
-        }
-        const mockTrack = { devices: [{ id: 'd1' }, { id: 'd2' }] };
-        // splice(5,1) returns [] -> moved is undefined -> no reinsertion.
-        const result = updater(mockTrack);
-        expect(result.devices.map((device) => device.id)).toEqual(['d1', 'd2']);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
     });
 });

@@ -226,6 +226,10 @@ export type DeviceController = {
 export type BuiltinDeviceNode = {
     deviceId: string;
     type: string;
+    /** Native-host instance identity, retained so the runtime can reject ABA replacement. */
+    externalInstanceId?: string;
+    /** Immutable project-declared control schema captured with a topology delta. */
+    parameterIds?: readonly string[];
     nodes: AudioNode[];
     inputNode: AudioNode;
     outputNode: AudioNode;
@@ -502,7 +506,8 @@ export type AudioEngine = {
         deviceId: string,
         deviceType: string,
         externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[]
+        precedingDeviceIds?: readonly string[],
+        parameterIds?: readonly string[]
     ): void;
     removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;

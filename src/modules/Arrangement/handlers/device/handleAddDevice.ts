@@ -1,8 +1,10 @@
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { abortAddedDeviceRuntime } from '../../useCases/device/abortAddedDeviceRuntime';
+import { type Device } from '../../stores/trackStore';
 import { addDevice } from '../../useCases/device/addDevice';
+import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
@@ -82,7 +84,9 @@ export const handleAddDevice = createHandler<'addDevice'>({
             return { status: 'conflict' };
         }
         const deviceId = ensureDeviceId(action);
-        let addedDevice;
+        const beforeTrack = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId);
+        const before = beforeTrack ? structuredClone(beforeTrack) : null;
+        let addedDevice: Device | null;
         if (context?.executionMode === 'isolated-preview') {
             addedDevice = addDevice(
                 action.payload.trackId,
@@ -99,15 +103,52 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 action.payload.deviceType,
                 undefined,
                 deviceId,
-                resolution.deviceIndex
+                resolution.deviceIndex,
+                undefined,
+                { projectOnly: true }
             );
         } else {
-            addedDevice = addDevice(action.payload.trackId, action.payload.deviceType, undefined, deviceId);
+            addedDevice = addDevice(
+                action.payload.trackId,
+                action.payload.deviceType,
+                undefined,
+                deviceId,
+                undefined,
+                undefined,
+                { projectOnly: true }
+            );
         }
         if (addedDevice !== null) {
             finalizeBareChain(action);
         }
-        return toHandlerExecutionResult(addedDevice !== null);
+        if (addedDevice === null || context?.executionMode === 'isolated-preview' || !before) {
+            return toHandlerExecutionResult(addedDevice !== null);
+        }
+        const committedDevice = addedDevice;
+        const committedBefore = before;
+        const insertionIndex = resolution.deviceIndex ?? committedBefore.devices.length;
+        const after = {
+            ...committedBefore,
+            devices: [
+                ...committedBefore.devices.slice(0, insertionIndex),
+                committedDevice,
+                ...committedBefore.devices.slice(insertionIndex),
+            ],
+        };
+        function applyRuntimeEffect(): void {
+            const result = applyDeviceChainRuntimeDelta({ before: committedBefore, after, operation: 'add-device' });
+            if (result.acceptance === 'rejected' || result.application === 'needs-reconcile') {
+                return;
+            }
+            for (const [parameterId, value] of Object.entries(committedDevice.parameterValues)) {
+                updateDeviceParam(after.id, committedDevice.id, parameterId, value);
+            }
+        }
+        return {
+            status: 'written' as const,
+            afterCommit: applyRuntimeEffect,
+            afterAmbiguousCommit: applyRuntimeEffect,
+        };
     },
     describe: (action) => {
         const deviceId = ensureDeviceId(action);
@@ -145,12 +186,6 @@ export const handleAddDevice = createHandler<'addDevice'>({
         return {
             label: `Add ${action.payload.deviceType}`,
             inverseAction: { type: 'removeDevice', payload: inversePayload },
-        };
-    },
-    prepareAbort: (action) => {
-        const deviceId = ensureDeviceId(action);
-        return () => {
-            abortAddedDeviceRuntime({ trackId: action.payload.trackId, deviceId });
         };
     },
     previewExecution: 'isolated-project',

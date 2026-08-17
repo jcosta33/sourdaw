@@ -3,17 +3,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleAddDevice } from '../handleAddDevice';
 
 const mocks = vi.hoisted(() => ({
-    abortAddedDeviceRuntime: vi.fn(),
     addDevice: vi.fn(),
+    applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
+    updateDeviceParam: vi.fn(),
     getTrackStoreState: vi.fn(),
-}));
-
-vi.mock('../../../useCases/device/abortAddedDeviceRuntime', () => ({
-    abortAddedDeviceRuntime: mocks.abortAddedDeviceRuntime,
 }));
 
 vi.mock('../../../useCases/device/addDevice', () => ({
     addDevice: mocks.addDevice,
+}));
+
+vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
+    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: mocks.updateDeviceParam,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -34,11 +39,11 @@ describe('handleAddDevice', () => {
         });
         const action = { type: 'addDevice', payload: { trackId: 't1', deviceType: 'builtin-eq' } };
         const desc = handleAddDevice.describe(action as never);
-        mocks.addDevice.mockReturnValue({ id: 'device-new' });
+        mocks.addDevice.mockReturnValue({ id: 'device-new', parameterValues: {} });
 
         const result = handleAddDevice.execute(action as never);
 
-        expect(result).toEqual({ status: 'written' });
+        expect(result).toMatchObject({ status: 'written' });
         const inverse = desc?.inverseAction;
         if (!inverse || inverse.type !== 'removeDevice') {
             throw new Error('Expected a removeDevice inverse');
@@ -49,14 +54,23 @@ describe('handleAddDevice', () => {
     });
 
     it('executes addDevice with the provided payload', () => {
-        mocks.addDevice.mockReturnValue({ id: 'device-1' });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: {} });
         const result = handleAddDevice.execute({
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'EQ' },
         });
 
-        expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'EQ', undefined, expect.stringMatching(/^device-/));
-        expect(result).toEqual({ status: 'written' });
+        expect(mocks.addDevice).toHaveBeenCalledWith(
+            't1',
+            'EQ',
+            undefined,
+            expect.stringMatching(/^device-/),
+            undefined,
+            undefined,
+            { projectOnly: true }
+        );
+        expect(result).toMatchObject({ status: 'written' });
     });
 
     it('returns no-write when addDevice rejects the target track', () => {
@@ -100,15 +114,25 @@ describe('handleAddDevice', () => {
         expect(handleAddDevice.undoable).toBe(true);
     });
 
-    it('makes captured exact runtime cleanup the sole abort owner', async () => {
+    it('defers the compiled runtime delta until the project commit succeeds', () => {
         const action = {
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
         } as const;
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
 
-        await handleAddDevice.prepareAbort?.(action)();
+        const result = handleAddDevice.execute(action);
+        if (!result || result instanceof Promise || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Expected a deferred runtime effect');
+        }
 
-        expect(mocks.abortAddedDeviceRuntime).toHaveBeenCalledWith({ trackId: 't1', deviceId: 'device-1' });
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        result.afterCommit();
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'add-device' })
+        );
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'device-1', 'threshold', -12);
         expect(handleAddDevice.requiresAbortCompensation).toBe(false);
     });
 });

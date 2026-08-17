@@ -3,11 +3,13 @@
  *
  * The compiler owns the runtime form: callers may supply a structured-cloneable
  * value, but AudioEngine applies only its frozen compiled representation at the
- * main-thread graph boundary. This command deliberately covers one output edge;
- * device construction and worklet controls keep their existing owners until they
- * have equivalent contracts.
+ * main-thread graph boundary. Output and one-device topology transitions use
+ * discriminated commands; worklet controls keep their existing owner until they
+ * have an equivalent contract.
  */
-export type RuntimeGraphDelta = Readonly<{
+export type RuntimeGraphDelta = RuntimeGraphOutputDelta | RuntimeGraphDeviceChainDelta;
+
+export type RuntimeGraphOutputDelta = Readonly<{
     schemaVersion: 1;
     command: 'set-track-output';
     correlation: Readonly<{
@@ -23,6 +25,28 @@ export type RuntimeGraphDelta = Readonly<{
     parameters: readonly [];
 }>;
 
+/**
+ * One complete, ordered device-chain transition for a single project-owned
+ * track. `before` guards the live graph; `after` guards the current CRDT
+ * projection. Values and worklet messages deliberately remain outside this
+ * topology-only protocol.
+ */
+export type RuntimeGraphDeviceChainDelta = Readonly<{
+    schemaVersion: 1;
+    command: 'replace-track-device-chain';
+    correlation: Readonly<{
+        /** Expected live-engine revision immediately before this command applies. */
+        appRevision: number;
+        /** CRDT project revision that produced the post-operation graph view. */
+        projectRevision: string;
+    }>;
+    operation: 'add-device' | 'remove-device' | 'reorder-device';
+    before: RuntimeGraphDeltaNode;
+    after: RuntimeGraphDeltaNode;
+    /** Device topology changes never carry continuous values or worklet messages. */
+    parameters: readonly [];
+}>;
+
 export type RuntimeGraphDeltaNode = Readonly<{
     id: string;
     kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
@@ -34,6 +58,8 @@ export type RuntimeGraphDeltaDevice = Readonly<{
     id: string;
     /** Device-factory type required by the live graph node. */
     type: string;
+    /** Stable native-host instance identity for an external-plugin device. */
+    externalInstanceId?: string;
     /** Sorted, stable parameter IDs; values are intentionally not transported by this topology command. */
     parameterIds: readonly string[];
 }>;

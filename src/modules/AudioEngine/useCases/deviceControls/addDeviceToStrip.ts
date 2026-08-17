@@ -5,7 +5,8 @@ export function addDeviceToStrip(
     deviceId: string,
     deviceType: string,
     externalInstanceId?: string,
-    precedingDeviceIds?: readonly string[]
+    precedingDeviceIds?: readonly string[],
+    parameterIds?: readonly string[]
 ): void {
-    audioEngine.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId, precedingDeviceIds);
+    audioEngine.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId, precedingDeviceIds, parameterIds);
 }

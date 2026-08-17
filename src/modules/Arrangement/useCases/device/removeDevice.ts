@@ -1,11 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
-import { clearReportedLatency, removeDeviceFromStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
+import { clearReportedLatency, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
+
+import { applyDeviceChainRuntimeDelta } from './applyDeviceChainRuntimeDelta';
 
 import type { Device, Track } from '../../models/Track';
 
@@ -52,7 +54,9 @@ export function removeDevice(
         return 'conflict';
     }
 
+    const beforeTrack = structuredClone(track);
     const remainingDevices = track.devices.filter((candidate) => candidate.id !== deviceId);
+    const afterTrack = { ...track, devices: remainingDevices };
     const trackEligibility = getTrackEligibility(track.kind);
     const wasLive = shouldCreateLiveTrackStrip(track);
     const remainsLive =
@@ -92,9 +96,18 @@ export function removeDevice(
 
     function finalizeRuntimeRemovalBestEffort(): void {
         try {
-            removeDeviceFromStrip(track.id, deviceId);
+            const result = applyDeviceChainRuntimeDelta({
+                before: beforeTrack,
+                after: afterTrack,
+                operation: 'remove-device',
+            });
+            if (result.acceptance === 'rejected' || result.application === 'needs-reconcile') {
+                logger.warn(`Runtime graph removal was not applied for device ${deviceId} on track ${track.id}`);
+                return;
+            }
         } catch (error) {
             logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
+            return;
         }
 
         // Drop reported-latency entries (PH-4) only when the graph removal becomes
@@ -143,7 +156,17 @@ export function removeDevice(
     function finalizeRuntimeRemovalStrict(): void {
         if (!deviceRemovalFinalized) {
             try {
-                removeDeviceFromStrip(track.id, deviceId);
+                const result = applyDeviceChainRuntimeDelta({
+                    before: beforeTrack,
+                    after: afterTrack,
+                    operation: 'remove-device',
+                });
+                if (result.acceptance === 'rejected') {
+                    throw new Error(result.reason);
+                }
+                if (result.application === 'needs-reconcile') {
+                    throw new Error(result.reason);
+                }
                 deviceRemovalFinalized = true;
             } catch (error) {
                 throw manualRepairFailure(

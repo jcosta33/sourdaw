@@ -84,7 +84,8 @@ export function projectTrackToLiveStrip({
             instanceId = device.externalInstanceId;
         }
         const precedingDeviceIds = audioDevices.slice(0, deviceIndex).map((candidate) => candidate.id);
-        addDeviceToStrip(target.trackId, target.deviceId, device.type, instanceId, precedingDeviceIds);
+        const parameterIds = Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right));
+        addDeviceToStrip(target.trackId, target.deviceId, device.type, instanceId, precedingDeviceIds, parameterIds);
         const pluginId = device.externalPluginId;
         if (instanceId && pluginId) {
             // Idempotent load + state restore; skips if the instance is already live,

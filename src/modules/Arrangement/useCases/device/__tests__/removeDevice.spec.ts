@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTrack } from '../../../models/Track';
 import { removeDevice } from '../removeDevice';
 
-import type { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
 import type { unloadPlugin } from '#/modules/PluginHost/useCases';
 import type { Device, Track } from '../../../models/Track';
 import type { getTrackState } from '../../../repositories/track/getTrackState';
@@ -14,7 +13,7 @@ const mocks = vi.hoisted(() => ({
     logger: { warn: vi.fn() },
     getTrackState: vi.fn<typeof getTrackState>(),
     mapAllTracks: vi.fn<typeof mapAllTracks>(),
-    removeDeviceFromStrip: vi.fn<typeof removeDeviceFromStrip>(),
+    applyDeviceChainRuntimeDelta: vi.fn(),
     removeTrackStrip: vi.fn(),
     clearReportedLatency: vi.fn<(deviceId: string) => void>(),
     unloadPlugin: vi.fn<typeof unloadPlugin>(),
@@ -39,9 +38,12 @@ vi.mock('../../../repositories/track/mapAllTracks', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    removeDeviceFromStrip: mocks.removeDeviceFromStrip,
     removeTrackStrip: mocks.removeTrackStrip,
     clearReportedLatency: mocks.clearReportedLatency,
+}));
+
+vi.mock('../applyDeviceChainRuntimeDelta', () => ({
+    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -67,6 +69,10 @@ function createExternalDevice(id = 'external-1', instanceId = 'instance-1'): Dev
 describe('removeDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
         mocks.unloadPlugin.mockResolvedValue(undefined);
     });
 
@@ -79,9 +85,11 @@ describe('removeDevice', () => {
         expect(removeDevice('d1')).toBe('written');
 
         expect(mocks.mapAllTracks.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.removeDeviceFromStrip.mock.invocationCallOrder[0]!
+            mocks.applyDeviceChainRuntimeDelta.mock.invocationCallOrder[0]!
         );
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('t1', 'd1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'remove-device' })
+        );
         expect(mocks.mapAllTracks).toHaveBeenCalled();
         const updater = mocks.mapAllTracks.mock.calls[0]![0] as (track: Partial<Track>) => Partial<Track>;
         expect(updater({ id: 't1', devices: [{ id: 'd1' }, { id: 'd2' }] as unknown as Device[] })).toEqual({
@@ -125,10 +133,12 @@ describe('removeDevice', () => {
         }
 
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
-        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
         await result.afterCommit();
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('t1', 'd1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'remove-device' })
+        );
         expect(mocks.clearReportedLatency).toHaveBeenCalledWith('d1');
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
     });
@@ -140,11 +150,11 @@ describe('removeDevice', () => {
             devices: [createExternalDevice('d1', 'inst1')],
         } as unknown as Track;
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
-        mocks.removeDeviceFromStrip
+        mocks.applyDeviceChainRuntimeDelta
             .mockImplementationOnce(() => {
                 throw new Error('graph teardown failed');
             })
-            .mockImplementationOnce(() => undefined);
+            .mockReturnValueOnce({ acceptance: 'accepted', application: 'applied' });
 
         const result = removeDevice('d1', { deferRuntimeEffects: true });
         if (typeof result === 'string') {
@@ -154,7 +164,7 @@ describe('removeDevice', () => {
 
         await expect(result.afterCommit()).rejects.toThrow('graph teardown failed');
         await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledTimes(2);
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledTimes(2);
         expect(mocks.clearReportedLatency).toHaveBeenCalledOnce();
         expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
     });
@@ -176,7 +186,7 @@ describe('removeDevice', () => {
 
         await expect(result.afterCommit()).rejects.toThrow('host teardown failed');
         await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledOnce();
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
     });
 
@@ -198,7 +208,7 @@ describe('removeDevice', () => {
 
         await expect(result.afterCommit()).rejects.toThrow('strip teardown failed');
         await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledOnce();
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(mocks.removeTrackStrip).toHaveBeenCalledTimes(2);
     });
 
@@ -233,9 +243,11 @@ describe('removeDevice', () => {
 
         removeDevice('toaster-1');
 
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('folder-1', 'toaster-1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'remove-device' })
+        );
         expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
-        expect(mocks.removeDeviceFromStrip.mock.invocationCallOrder[0]).toBeLessThan(
+        expect(mocks.applyDeviceChainRuntimeDelta.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.removeTrackStrip.mock.invocationCallOrder[0]!
         );
         expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
@@ -287,7 +299,9 @@ describe('removeDevice', () => {
         removeDevice('external-1');
 
         expect(mocks.mapAllTracks).toHaveBeenCalled();
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('folder-1', 'external-1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'remove-device' })
+        );
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
@@ -302,7 +316,9 @@ describe('removeDevice', () => {
 
         removeDevice('toaster-1');
 
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('folder-1', 'toaster-1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'remove-device' })
+        );
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
     });
 
@@ -316,7 +332,9 @@ describe('removeDevice', () => {
 
         removeDevice('external-1');
 
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('folder-1', 'external-1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'remove-device' })
+        );
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
@@ -332,7 +350,7 @@ describe('removeDevice', () => {
         expect(removeDevice('duplicate')).toBe('conflict');
 
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
-        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
@@ -342,7 +360,7 @@ describe('removeDevice', () => {
 
         expect(removeDevice('missing')).toBe('missing');
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
-        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
     });
 
     it('returns missing when the track store itself is absent', () => {
@@ -350,7 +368,7 @@ describe('removeDevice', () => {
 
         expect(removeDevice('d1')).toBe('missing');
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
-        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
     });
 
     it('fails closed when a single track owns its id more than once in project truth', () => {
@@ -363,7 +381,7 @@ describe('removeDevice', () => {
 
         expect(removeDevice('d1')).toBe('conflict');
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
-        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
     });
 
     it('passes unrelated tracks through the map untouched while editing the owner', () => {
@@ -401,29 +419,26 @@ describe('removeDevice', () => {
         expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
     });
 
-    it('commits truth before independently reporting device, strip, and host cleanup failures', async () => {
+    it('commits truth while preserving the strip when the compiled removal fails', async () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [
             createExternalDevice(),
             { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
         ];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
-        mocks.removeDeviceFromStrip.mockImplementationOnce(() => {
+        mocks.applyDeviceChainRuntimeDelta.mockImplementationOnce(() => {
             throw new Error('device teardown failed');
-        });
-        mocks.removeTrackStrip.mockImplementationOnce(() => {
-            throw new Error('strip teardown failed');
         });
         mocks.unloadPlugin.mockRejectedValueOnce(new Error('host teardown failed'));
 
         expect(() => removeDevice('toaster-1')).not.toThrow();
 
         expect(mocks.mapAllTracks.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.removeDeviceFromStrip.mock.invocationCallOrder[0]!
+            mocks.applyDeviceChainRuntimeDelta.mock.invocationCallOrder[0]!
         );
-        expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
+        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
-        await vi.waitFor(() => expect(mocks.logger.warn).toHaveBeenCalledTimes(3));
+        await vi.waitFor(() => expect(mocks.logger.warn).toHaveBeenCalledTimes(2));
     });
 
     it('permits dormant VCA device and plugin cleanup', () => {
@@ -434,7 +449,9 @@ describe('removeDevice', () => {
 
         removeDevice('d1');
 
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('vca-1', 'd1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'remove-device' })
+        );
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
         expect(mocks.mapAllTracks).toHaveBeenCalled();

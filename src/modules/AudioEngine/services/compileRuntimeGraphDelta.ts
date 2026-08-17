@@ -1,7 +1,9 @@
 import {
     type RuntimeGraphDelta,
+    type RuntimeGraphDeviceChainDelta,
     type RuntimeGraphDeltaDevice,
     type RuntimeGraphDeltaNode,
+    type RuntimeGraphOutputDelta,
 } from '../models/RuntimeGraphDelta';
 
 const MAX_CORRELATION_REVISION_LENGTH = 256;
@@ -41,7 +43,11 @@ function isStrictlySortedUniqueIds(values: readonly string[]): boolean {
 }
 
 function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
-    if (!isRecord(value) || !hasOnlyKeys(value, ['id', 'type', 'parameterIds'])) {
+    if (
+        !isRecord(value) ||
+        !['id', 'type', 'parameterIds'].every((key) => key in value) ||
+        !Object.keys(value).every((key) => ['id', 'type', 'externalInstanceId', 'parameterIds'].includes(key))
+    ) {
         return 'Runtime graph device has an unsupported shape';
     }
     if (!isBoundedId(value.id) || !isBoundedId(value.type)) {
@@ -53,7 +59,15 @@ function compileDevice(value: unknown): RuntimeGraphDeltaDevice | string {
     if (!value.parameterIds.every(isBoundedId) || !isStrictlySortedUniqueIds(value.parameterIds)) {
         return 'Runtime graph device parameter ids must be sorted, unique identifiers';
     }
-    return Object.freeze({ id: value.id, type: value.type, parameterIds: Object.freeze([...value.parameterIds]) });
+    if (value.externalInstanceId !== undefined && !isBoundedId(value.externalInstanceId)) {
+        return 'Runtime graph device external instance id is invalid';
+    }
+    return Object.freeze({
+        id: value.id,
+        type: value.type,
+        ...(value.externalInstanceId !== undefined ? { externalInstanceId: value.externalInstanceId } : {}),
+        parameterIds: Object.freeze([...value.parameterIds]),
+    });
 }
 
 function compileNode(value: unknown): RuntimeGraphDeltaNode | string {
@@ -92,35 +106,99 @@ function compileNode(value: unknown): RuntimeGraphDeltaNode | string {
     return Object.freeze({ id: value.id, kind: value.kind, devices: Object.freeze(devices) });
 }
 
-/**
- * Validates and freezes the one-output graph-delta protocol before the live
- * engine touches an AudioNode. The command runs on the main/control thread;
- * worklet process paths never parse or allocate for it.
- */
-export function compileRuntimeGraphDelta(input: unknown): RuntimeGraphDeltaCompilation {
-    if (
-        !isRecord(input) ||
-        !hasOnlyKeys(input, ['schemaVersion', 'command', 'correlation', 'nodes', 'edges', 'parameters'])
-    ) {
-        return invalid('Runtime graph delta has an unsupported schema');
+function compileCorrelation(value: unknown): RuntimeGraphDelta['correlation'] | string {
+    if (!isRecord(value) || !hasOnlyKeys(value, ['appRevision', 'projectRevision'])) {
+        return 'Runtime graph delta correlation has an unsupported schema';
     }
-    if (input.schemaVersion !== 1 || input.command !== 'set-track-output') {
-        return invalid('Runtime graph delta schema version or command is unsupported');
-    }
-    if (!isRecord(input.correlation) || !hasOnlyKeys(input.correlation, ['appRevision', 'projectRevision'])) {
-        return invalid('Runtime graph delta correlation has an unsupported schema');
-    }
-    const appRevision = input.correlation.appRevision;
+    const appRevision = value.appRevision;
     if (typeof appRevision !== 'number' || !Number.isSafeInteger(appRevision) || appRevision < 0) {
-        return invalid('Runtime graph delta app revision is invalid');
+        return 'Runtime graph delta app revision is invalid';
     }
-    const projectRevision = input.correlation.projectRevision;
+    const projectRevision = value.projectRevision;
     if (
         typeof projectRevision !== 'string' ||
         projectRevision.length === 0 ||
         projectRevision.length > MAX_CORRELATION_REVISION_LENGTH
     ) {
-        return invalid('Runtime graph delta project revision is invalid');
+        return 'Runtime graph delta project revision is invalid';
+    }
+    return Object.freeze({ appRevision, projectRevision });
+}
+
+function isSameDevice(left: RuntimeGraphDeltaDevice, right: RuntimeGraphDeltaDevice): boolean {
+    return (
+        left.id === right.id &&
+        left.type === right.type &&
+        left.externalInstanceId === right.externalInstanceId &&
+        left.parameterIds.length === right.parameterIds.length &&
+        left.parameterIds.every((parameterId, index) => parameterId === right.parameterIds[index])
+    );
+}
+
+function hasSingleDeviceAddition(
+    before: readonly RuntimeGraphDeltaDevice[],
+    after: readonly RuntimeGraphDeltaDevice[]
+): boolean {
+    if (after.length !== before.length + 1) {
+        return false;
+    }
+    let beforeIndex = 0;
+    let inserted = false;
+    for (const candidate of after) {
+        const expected = before[beforeIndex];
+        if (expected && isSameDevice(candidate, expected)) {
+            beforeIndex++;
+            continue;
+        }
+        if (inserted || before.some((device) => device.id === candidate.id)) {
+            return false;
+        }
+        inserted = true;
+    }
+    return inserted && beforeIndex === before.length;
+}
+
+function hasSingleDeviceRemoval(
+    before: readonly RuntimeGraphDeltaDevice[],
+    after: readonly RuntimeGraphDeltaDevice[]
+): boolean {
+    return hasSingleDeviceAddition(after, before);
+}
+
+function hasSingleDeviceMove(
+    before: readonly RuntimeGraphDeltaDevice[],
+    after: readonly RuntimeGraphDeltaDevice[]
+): boolean {
+    if (before.length !== after.length || before.every((device, index) => isSameDevice(device, after[index]!))) {
+        return false;
+    }
+    if (before.some((device) => !after.some((candidate) => isSameDevice(device, candidate)))) {
+        return false;
+    }
+    for (let fromIndex = 0; fromIndex < before.length; fromIndex++) {
+        const moved = before[fromIndex];
+        if (!moved) {
+            continue;
+        }
+        const withoutMoved = before.filter((_, index) => index !== fromIndex);
+        for (let toIndex = 0; toIndex <= withoutMoved.length; toIndex++) {
+            const candidate = [...withoutMoved];
+            candidate.splice(toIndex, 0, moved);
+            if (candidate.every((device, index) => isSameDevice(device, after[index]!))) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function compileOutputDelta(input: UnknownRecord): RuntimeGraphDeltaCompilation {
+    if (!hasOnlyKeys(input, ['schemaVersion', 'command', 'correlation', 'nodes', 'edges', 'parameters'])) {
+        return invalid('Runtime graph delta has an unsupported schema');
+    }
+    const correlation = compileCorrelation(input.correlation);
+    if (typeof correlation === 'string') {
+        return invalid(correlation);
     }
     if (!isUnknownArray(input.nodes) || input.nodes.length === 0 || input.nodes.length > MAX_NODE_COUNT) {
         return invalid('Runtime graph delta node count is unsupported');
@@ -164,20 +242,82 @@ export function compileRuntimeGraphDelta(input: unknown): RuntimeGraphDeltaCompi
         return invalid('Runtime graph output edge has a missing or unordered endpoint');
     }
 
-    const edges: RuntimeGraphDelta['edges'] = Object.freeze([
-        Object.freeze({ kind: 'output', sourceId: edge.sourceId, targetId: edge.targetId }),
-    ]);
-    const parameters: RuntimeGraphDelta['parameters'] = Object.freeze([]);
-    const delta: RuntimeGraphDelta = Object.freeze({
+    const delta: RuntimeGraphOutputDelta = Object.freeze({
         schemaVersion: 1,
         command: 'set-track-output',
-        correlation: Object.freeze({
-            appRevision,
-            projectRevision,
-        }),
+        correlation,
         nodes: Object.freeze(nodes),
-        edges,
-        parameters,
+        edges: Object.freeze([
+            Object.freeze({ kind: 'output', sourceId: edge.sourceId, targetId: edge.targetId }),
+        ] as const),
+        parameters: Object.freeze([] as const),
     });
     return { status: 'compiled', delta };
+}
+
+function compileDeviceChainDelta(input: UnknownRecord): RuntimeGraphDeltaCompilation {
+    if (
+        !hasOnlyKeys(input, ['schemaVersion', 'command', 'correlation', 'operation', 'before', 'after', 'parameters'])
+    ) {
+        return invalid('Runtime device-chain delta has an unsupported schema');
+    }
+    const correlation = compileCorrelation(input.correlation);
+    if (typeof correlation === 'string') {
+        return invalid(correlation);
+    }
+    if (!isUnknownArray(input.parameters) || input.parameters.length > 0) {
+        return invalid('Runtime device-chain deltas cannot carry parameter controls');
+    }
+    const before = compileNode(input.before);
+    const after = compileNode(input.after);
+    if (typeof before === 'string') {
+        return invalid(before);
+    }
+    if (typeof after === 'string') {
+        return invalid(after);
+    }
+    if (before.id !== after.id || before.kind !== after.kind) {
+        return invalid('Runtime device-chain delta must retain one track identity and kind');
+    }
+    let operation: RuntimeGraphDeviceChainDelta['operation'];
+    if (input.operation === 'add-device' && hasSingleDeviceAddition(before.devices, after.devices)) {
+        operation = input.operation;
+    } else if (input.operation === 'remove-device' && hasSingleDeviceRemoval(before.devices, after.devices)) {
+        operation = input.operation;
+    } else if (input.operation === 'reorder-device' && hasSingleDeviceMove(before.devices, after.devices)) {
+        operation = input.operation;
+    } else {
+        return invalid('Runtime device-chain delta operation does not match its ordered before/after topology');
+    }
+    const delta: RuntimeGraphDeviceChainDelta = Object.freeze({
+        schemaVersion: 1,
+        command: 'replace-track-device-chain',
+        correlation,
+        operation,
+        before,
+        after,
+        parameters: Object.freeze([] as const),
+    });
+    return { status: 'compiled', delta };
+}
+
+/**
+ * Validates and freezes the one-output graph-delta protocol before the live
+ * engine touches an AudioNode. The command runs on the main/control thread;
+ * worklet process paths never parse or allocate for it.
+ */
+export function compileRuntimeGraphDelta(input: unknown): RuntimeGraphDeltaCompilation {
+    if (!isRecord(input)) {
+        return invalid('Runtime graph delta has an unsupported schema');
+    }
+    if (input.schemaVersion !== 1) {
+        return invalid('Runtime graph delta schema version or command is unsupported');
+    }
+    if (input.command === 'set-track-output') {
+        return compileOutputDelta(input);
+    }
+    if (input.command === 'replace-track-device-chain') {
+        return compileDeviceChainDelta(input);
+    }
+    return invalid('Runtime graph delta schema version or command is unsupported');
 }

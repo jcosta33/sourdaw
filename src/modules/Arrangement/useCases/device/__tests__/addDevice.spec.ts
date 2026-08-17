@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
     updateTrack: vi.fn(),
     getPlatformPlugins: vi.fn(),
     addDeviceToStrip: vi.fn(),
+    applyDeviceChainRuntimeDelta: vi.fn(() => ({
+        acceptance: 'accepted',
+        application: 'applied',
+    })),
     updateDeviceParam: vi.fn(),
     compileFaustDSP: vi.fn(),
     loadPlugin: vi.fn(),
@@ -40,6 +44,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     addDeviceToStrip: mocks.addDeviceToStrip,
     updateDeviceParam: mocks.updateDeviceParam,
+}));
+
+vi.mock('../applyDeviceChainRuntimeDelta', () => ({
+    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
@@ -148,7 +156,9 @@ describe('addDevice', () => {
             type: 'p1',
             parameterValues: { wet: 0.5 },
         });
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('t1', result?.id, 'p1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'add-device' })
+        );
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', result?.id, 'wet', 0.5);
     });
 
@@ -192,7 +202,9 @@ describe('addDevice', () => {
         const result = addDevice('t1', 'p1', undefined, 'reserved-device');
 
         expect(result?.id).toBe('reserved-device');
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('t1', 'reserved-device', 'p1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'add-device' })
+        );
     });
 
     it('rejects a caller-reserved device ID that already exists anywhere in the project', () => {
@@ -317,8 +329,9 @@ describe('addDevice', () => {
 
         const result = addDevice('folder-1', 'Reverb');
 
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledTimes(1);
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('folder-1', result?.id, 'p1');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'add-device' })
+        );
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('folder-1', result?.id, 'wet', 0.5);
     });
 

@@ -5,7 +5,10 @@ import { addExternalDevice } from '../addExternalDevice';
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     updateTrack: vi.fn(),
-    addDeviceToStrip: vi.fn(),
+    applyDeviceChainRuntimeDelta: vi.fn(() => ({
+        acceptance: 'accepted',
+        application: 'applied',
+    })),
     activateExternalPlugin: vi.fn(),
     reportLatency: vi.fn(),
     findSupportedPlugin: vi.fn(),
@@ -30,9 +33,10 @@ vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    addDeviceToStrip: mocks.addDeviceToStrip,
-    reportLatency: mocks.reportLatency,
+vi.mock('#/modules/AudioEngine/useCases', () => ({ reportLatency: mocks.reportLatency }));
+
+vi.mock('../applyDeviceChainRuntimeDelta', () => ({
+    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -54,7 +58,7 @@ describe('addExternalDevice', () => {
 
         expect(device).toMatchObject({ type: 'external-plugin' });
         expect(mocks.updateTrack).toHaveBeenCalledWith('folder-1', expect.any(Function));
-        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
@@ -65,12 +69,8 @@ describe('addExternalDevice', () => {
 
         const device = addExternalDevice('folder-1', 'plugin-1', 'Plugin');
 
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledTimes(1);
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(
-            'folder-1',
-            device?.id,
-            'external-plugin',
-            device?.externalInstanceId
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'add-device' })
         );
         expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -89,11 +89,8 @@ describe('addExternalDevice', () => {
             externalPluginId: 'plugin-1',
         });
         expect(mocks.updateTrack).toHaveBeenCalledWith('audio-1', expect.any(Function));
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(
-            'audio-1',
-            device?.id,
-            'external-plugin',
-            device?.externalInstanceId
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
+            expect.objectContaining({ operation: 'add-device' })
         );
         expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -134,7 +131,7 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('duplicate', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
@@ -143,7 +140,7 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('vca-1', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
@@ -152,7 +149,7 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('audio-1', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
@@ -161,7 +158,7 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('audio-1', 'unsupported-vst', 'Unsupported VST')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 });

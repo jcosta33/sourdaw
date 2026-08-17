@@ -15,6 +15,7 @@ import type {
     DeviceReadinessToken,
 } from './deviceReadinessDiagnostics';
 import type { TrackChannelStrip, BuiltinDeviceNode, DeviceController, SendNode } from '../models/AudioEngineState';
+import type { RuntimeGraphDeviceChainDelta } from '../models/RuntimeGraphDelta';
 
 /**
  * Minimum a-rate ramp span, in seconds, for a compensation-aligned automation
@@ -87,7 +88,9 @@ export class RuntimeGraphMutationRejected extends Error {
 
 type PendingDeviceLoad = {
     abortController: AbortController;
+    externalInstanceId?: string;
     bypassed?: boolean;
+    parameterIds: readonly string[];
     parameterWrites: Array<[string, number]>;
     loadPromise?: Promise<unknown>;
     placeholder?: BuiltinDeviceNode;
@@ -706,6 +709,8 @@ export class TrackNode {
         let deviceLoadNotificationStarted = false;
         let promotionPublished = false;
         try {
+            finalDn.parameterIds = pendingLoad.parameterIds;
+            finalDn.externalInstanceId = pendingLoad.externalInstanceId;
             for (const [name, value] of pendingLoad.parameterWrites) {
                 finalDn.controller?.setParam(name, value);
             }
@@ -900,7 +905,8 @@ export class TrackNode {
         deviceId: string,
         deviceType: string,
         externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[]
+        precedingDeviceIds?: readonly string[],
+        parameterIds: readonly string[] = []
     ): boolean {
         if (this._disposed) {
             return false;
@@ -962,6 +968,8 @@ export class TrackNode {
             }
             const pendingLoad: PendingDeviceLoad = {
                 abortController: new AbortController(),
+                ...(externalInstanceId !== undefined ? { externalInstanceId } : {}),
+                parameterIds: Object.freeze([...parameterIds]),
                 parameterWrites: [],
                 readinessToken,
                 resolved: false,
@@ -1049,6 +1057,7 @@ export class TrackNode {
                 }
                 const pendingLoad: PendingDeviceLoad = {
                     abortController: new AbortController(),
+                    parameterIds: Object.freeze([...parameterIds]),
                     parameterWrites: [],
                     readinessToken,
                     resolved: false,
@@ -1088,6 +1097,8 @@ export class TrackNode {
             }
         }
 
+        dn.parameterIds = Object.freeze([...parameterIds]);
+        dn.externalInstanceId = externalInstanceId;
         let targetIndex = this.strip.deviceNodes.length;
         if (precedingDeviceIds !== undefined) {
             const precedingIds = new Set(precedingDeviceIds);
@@ -1159,6 +1170,67 @@ export class TrackNode {
                     application: 'needs-reconcile',
                     reason: `Device ${deviceId} was removed before its live graph rebuild failed`,
                 }),
+                error
+            );
+        }
+        return true;
+    }
+
+    /** Applies one compiler-validated, ordered device-chain transition. */
+    public applyDeviceChain(delta: RuntimeGraphDeviceChainDelta): boolean {
+        const beforeIds = new Set(delta.before.devices.map((device) => device.id));
+        const afterIds = new Set(delta.after.devices.map((device) => device.id));
+        if (delta.operation === 'add-device') {
+            const added = delta.after.devices.find((device) => !beforeIds.has(device.id));
+            if (!added) {
+                throw new RuntimeGraphMutationRejected('Compiled device add has no inserted device', delta);
+            }
+            const insertionIndex = delta.after.devices.findIndex((device) => device.id === added.id);
+            return this.addDevice(
+                added.id,
+                added.type,
+                added.externalInstanceId,
+                delta.after.devices.slice(0, insertionIndex).map((device) => device.id),
+                added.parameterIds
+            );
+        }
+        if (delta.operation === 'remove-device') {
+            const removed = delta.before.devices.find((device) => !afterIds.has(device.id));
+            if (!removed) {
+                throw new RuntimeGraphMutationRejected('Compiled device removal has no removed device', delta);
+            }
+            return this.removeDevice(removed.id);
+        }
+
+        const currentNodes = [...this.strip.deviceNodes];
+        const nodesById = new Map(currentNodes.map((device) => [device.deviceId, device]));
+        const orderedNodes: BuiltinDeviceNode[] = [];
+        for (const device of delta.after.devices) {
+            const liveDevice = nodesById.get(device.id);
+            if (!liveDevice) {
+                throw new RuntimeGraphMutationRejected('Compiled device reorder has no live device', delta);
+            }
+            orderedNodes.push(liveDevice);
+        }
+        this.strip.deviceNodes = orderedNodes;
+        try {
+            this.rebuildChain();
+        } catch (error) {
+            this.strip.deviceNodes = currentNodes;
+            try {
+                this.rebuildChain();
+            } catch (rollbackError) {
+                throw new RuntimeGraphMutationFailure(
+                    Object.freeze({
+                        application: 'needs-reconcile',
+                        reason: `Device-chain reorder on track ${this.trackId} changed before graph restoration failed`,
+                    }),
+                    error,
+                    rollbackError
+                );
+            }
+            throw new RuntimeGraphMutationRejected(
+                `Device-chain reorder on track ${this.trackId} was restored after a live graph failure`,
                 error
             );
         }

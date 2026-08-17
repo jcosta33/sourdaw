@@ -1,10 +1,12 @@
-import { addDeviceToStrip, reportLatency } from '#/modules/AudioEngine/useCases';
+import { reportLatency } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
+
+import { applyDeviceChainRuntimeDelta } from './applyDeviceChainRuntimeDelta';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -41,10 +43,15 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
     };
 
     const hadLiveStrip = shouldCreateLiveTrackStrip(track);
-    updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
+    const before = structuredClone(track);
+    const after = { ...track, devices: [...track.devices, device] };
+    updateTrack(trackId, () => after);
 
     if (hadLiveStrip) {
-        addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
+        const result = applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' });
+        if (result.acceptance === 'rejected' || result.application === 'needs-reconcile') {
+            return device;
+        }
         activateExternalPlugin({
             pluginId,
             instanceId,

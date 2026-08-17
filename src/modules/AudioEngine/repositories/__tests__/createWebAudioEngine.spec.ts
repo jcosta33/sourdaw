@@ -5,7 +5,11 @@ import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../..
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
-import type { RuntimeGraphDelta } from '../../models/RuntimeGraphDelta';
+import type {
+    RuntimeGraphDelta,
+    RuntimeGraphDeviceChainDelta,
+    RuntimeGraphOutputDelta,
+} from '../../models/RuntimeGraphDelta';
 
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
 // nodes that AudioEngineImpl reads directly (preFaderTap / analyserNode for
@@ -83,7 +87,13 @@ vi.mock('../../engine/TrackNode', () => {
             return changed;
         });
         addDevice = vi.fn(
-            (deviceId: string, type: string, _externalInstanceId?: string, precedingDeviceIds?: readonly string[]) => {
+            (
+                deviceId: string,
+                type: string,
+                _externalInstanceId?: string,
+                precedingDeviceIds?: readonly string[],
+                parameterIds: readonly string[] = []
+            ) => {
                 if (
                     this.strip.deviceNodes.some(
                         (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
@@ -95,7 +105,7 @@ vi.mock('../../engine/TrackNode', () => {
                     this.shouldFailNextAddDevicePrecondition = false;
                     throw new Error('mock device addition precondition failed');
                 }
-                const device = { deviceId, type, dispose: vi.fn() };
+                const device = { deviceId, type, parameterIds, dispose: vi.fn() };
                 let targetIndex = this.strip.deviceNodes.length;
                 if (precedingDeviceIds !== undefined) {
                     const precedingIds = new Set(precedingDeviceIds);
@@ -155,6 +165,39 @@ vi.mock('../../engine/TrackNode', () => {
                     error
                 );
             }
+            return true;
+        });
+        applyDeviceChain = vi.fn((delta: Extract<RuntimeGraphDelta, { command: 'replace-track-device-chain' }>) => {
+            if (delta.operation === 'add-device') {
+                const added = delta.after.devices.find(
+                    (device) => !delta.before.devices.some((before) => before.id === device.id)
+                );
+                if (!added) {
+                    return false;
+                }
+                const index = delta.after.devices.findIndex((device) => device.id === added.id);
+                return this.addDevice(
+                    added.id,
+                    added.type,
+                    added.externalInstanceId,
+                    delta.after.devices.slice(0, index).map((device) => device.id),
+                    added.parameterIds
+                );
+            }
+            if (delta.operation === 'remove-device') {
+                const removed = delta.before.devices.find(
+                    (device) => !delta.after.devices.some((after) => after.id === device.id)
+                );
+                return removed ? this.removeDevice(removed.id) : false;
+            }
+            const ordered = delta.after.devices.map((device) =>
+                this.strip.deviceNodes.find((candidate) => (candidate as { deviceId?: string }).deviceId === device.id)
+            );
+            if (ordered.some((device) => !device)) {
+                return false;
+            }
+            this.strip.deviceNodes = ordered;
+            this.rebuildChain();
             return true;
         });
         updateBypass = vi.fn((deviceId: string, bypassed: boolean) => {
@@ -338,7 +381,7 @@ function getToasterPadRoutes(engine: AudioEngine): Map<string, unknown> {
     return (engine as unknown as { toasterPadRoutes: Map<string, unknown> }).toasterPadRoutes;
 }
 
-function createRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+function createRuntimeOutputDelta(appRevision: number): RuntimeGraphOutputDelta {
     return {
         schemaVersion: 1,
         command: 'set-track-output',
@@ -352,7 +395,7 @@ function createRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
     };
 }
 
-function createMasterRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+function createMasterRuntimeOutputDelta(appRevision: number): RuntimeGraphOutputDelta {
     return {
         schemaVersion: 1,
         command: 'set-track-output',
@@ -363,7 +406,7 @@ function createMasterRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta 
     };
 }
 
-function createDeviceRuntimeOutputDelta(appRevision: number): RuntimeGraphDelta {
+function createDeviceRuntimeOutputDelta(appRevision: number): RuntimeGraphOutputDelta {
     return {
         schemaVersion: 1,
         command: 'set-track-output',
@@ -385,7 +428,7 @@ function createRuntimeOutputDeltaWithDevices(
     appRevision: number,
     sourceDevices: ReadonlyArray<{ id: string; type: string }>,
     targetDevices: ReadonlyArray<{ id: string; type: string }> = []
-): RuntimeGraphDelta {
+): RuntimeGraphOutputDelta {
     return {
         schemaVersion: 1,
         command: 'set-track-output',
@@ -403,6 +446,25 @@ function createRuntimeOutputDeltaWithDevices(
             },
         ],
         edges: [{ kind: 'output', sourceId: 'source', targetId: 'target' }],
+        parameters: [] as const,
+    };
+}
+
+function createRuntimeDeviceDelta(
+    appRevision: number,
+    operation: 'add-device' | 'remove-device' | 'reorder-device',
+    beforeDevices: ReadonlyArray<{ id: string; type: string; parameterIds?: readonly string[] }>,
+    afterDevices: ReadonlyArray<{ id: string; type: string; parameterIds?: readonly string[] }>
+): RuntimeGraphDeviceChainDelta {
+    const toRuntimeDevices = (devices: ReadonlyArray<{ id: string; type: string; parameterIds?: readonly string[] }>) =>
+        devices.map((device) => ({ ...device, parameterIds: device.parameterIds ?? [] }));
+    return {
+        schemaVersion: 1,
+        command: 'replace-track-device-chain',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        operation,
+        before: { id: 'aba-track', kind: 'audio', devices: toRuntimeDevices(beforeDevices) },
+        after: { id: 'aba-track', kind: 'audio', devices: toRuntimeDevices(afterDevices) },
         parameters: [] as const,
     };
 }
@@ -835,7 +897,7 @@ describe('AudioEngine', () => {
         const source = engine.ensureTrackStrip('source');
         engine.ensureTrackStrip('target');
         currentProjectRevision = 'project-revision-A';
-        const delta: RuntimeGraphDelta = {
+        const delta: RuntimeGraphOutputDelta = {
             ...createRuntimeOutputDelta(engine.getRuntimeGraphRevision()),
             correlation: { appRevision: engine.getRuntimeGraphRevision(), projectRevision: currentProjectRevision },
         };
@@ -858,7 +920,7 @@ describe('AudioEngine', () => {
         engine.ensureTrackStrip('target');
         source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
         const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
-        const wrongType: RuntimeGraphDelta = {
+        const wrongType: RuntimeGraphOutputDelta = {
             ...delta,
             nodes: [
                 {
@@ -879,25 +941,25 @@ describe('AudioEngine', () => {
     it.each([
         [
             'different supported node kind',
-            (delta: RuntimeGraphDelta) => ({ ...delta.nodes[0]!, kind: 'midi' as const }),
+            (delta: RuntimeGraphOutputDelta) => ({ ...delta.nodes[0]!, kind: 'midi' as const }),
         ],
         [
             'stale parameter ids',
-            (delta: RuntimeGraphDelta) => ({
+            (delta: RuntimeGraphOutputDelta) => ({
                 ...delta.nodes[0]!,
                 devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'release'] }],
             }),
         ],
         [
             'missing parameter ids',
-            (delta: RuntimeGraphDelta) => ({
+            (delta: RuntimeGraphOutputDelta) => ({
                 ...delta.nodes[0]!,
                 devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack'] }],
             }),
         ],
         [
             'extra parameter ids',
-            (delta: RuntimeGraphDelta) => ({
+            (delta: RuntimeGraphOutputDelta) => ({
                 ...delta.nodes[0]!,
                 devices: [
                     { id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio', 'threshold'] },
@@ -910,7 +972,7 @@ describe('AudioEngine', () => {
         source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
         const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
         engine.setRuntimeGraphTopologyValidator((nodes) => JSON.stringify(nodes) === JSON.stringify(delta.nodes));
-        const mismatch: RuntimeGraphDelta = {
+        const mismatch: RuntimeGraphOutputDelta = {
             ...delta,
             nodes: [mutateSource(delta), delta.nodes[1]!],
         };
@@ -926,7 +988,7 @@ describe('AudioEngine', () => {
         const source = engine.ensureTrackStrip('source');
         engine.ensureTrackStrip('target');
         const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
-        const duplicateParameterIds: RuntimeGraphDelta = {
+        const duplicateParameterIds: RuntimeGraphOutputDelta = {
             ...delta,
             nodes: [
                 {
@@ -2498,5 +2560,35 @@ describe('AudioEngine', () => {
         it('setTrackOutput is a no-op when the track has no strip', () => {
             expect(() => engine.setTrackOutput('ghost-track', 'hw_out')).not.toThrow();
         });
+    });
+
+    it('rejects a stale device removal after an ABA recreation', () => {
+        engine.ensureTrackStrip('aba-track');
+        const firstAdd = createRuntimeDeviceDelta(1, 'add-device', [], [{ id: 'device-1', type: 'eq' }]);
+        const firstRemoval = createRuntimeDeviceDelta(2, 'remove-device', [{ id: 'device-1', type: 'eq' }], []);
+        expect(engine.applyRuntimeGraphDelta(firstAdd)).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+        expect(engine.applyRuntimeGraphDelta(firstRemoval)).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+        expect(
+            engine.applyRuntimeGraphDelta(
+                createRuntimeDeviceDelta(3, 'add-device', [], [{ id: 'device-1', type: 'eq' }])
+            )
+        ).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
+
+        expect(engine.applyRuntimeGraphDelta(firstRemoval)).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+        });
+        expect(getMockTrackNode(engine, 'aba-track').strip.deviceNodes).toEqual([
+            expect.objectContaining({ deviceId: 'device-1', type: 'eq' }),
+        ]);
     });
 });

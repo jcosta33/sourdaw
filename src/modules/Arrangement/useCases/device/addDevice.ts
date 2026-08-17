@@ -1,4 +1,5 @@
-import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -9,6 +10,8 @@ import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/tr
 import { type Device } from '../../stores/trackStore';
 import { getPlatformPlugins } from '../getPlatformPlugins';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
+
+import { applyDeviceChainRuntimeDelta } from './applyDeviceChainRuntimeDelta';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -92,11 +95,12 @@ export function addDevice(
 
     const hadLiveStrip = shouldCreateLiveTrackStrip(track);
     const activatesFolderStrip = !hadLiveStrip && track.kind === 'folder' && device.type === 'toaster';
-    const precedingDeviceIds = track.devices.slice(0, insertionIndex).map((candidate) => candidate.id);
-    updateTrack(trackId, (time) => ({
-        ...time,
-        devices: [...time.devices.slice(0, insertionIndex), device, ...time.devices.slice(insertionIndex)],
-    }));
+    const beforeTrack = structuredClone(track);
+    const afterTrack = {
+        ...track,
+        devices: [...track.devices.slice(0, insertionIndex), device, ...track.devices.slice(insertionIndex)],
+    };
+    updateTrack(trackId, () => afterTrack);
 
     if (options.projectOnly) {
         return device;
@@ -124,12 +128,20 @@ export function addDevice(
                     // Faust compilation is best-effort — device falls back to passthrough
                 });
         }
-        const stripArguments: [string, string, string, undefined?, string[]?] = [trackId, device.id, plugin.id];
-        if (deviceIndex !== undefined) {
-            stripArguments[3] = undefined;
-            stripArguments[4] = precedingDeviceIds;
+        const result = applyDeviceChainRuntimeDelta({
+            before: beforeTrack,
+            after: afterTrack,
+            operation: 'add-device',
+        });
+        if (result.acceptance === 'rejected') {
+            logger.warn(`[addDevice] Rejected runtime device delta for ${trackId}/${device.id}: ${result.reason}`);
+            return device;
         }
-        addDeviceToStrip(...stripArguments);
+        if (result.application === 'needs-reconcile') {
+            logger.warn(
+                `[addDevice] Runtime device delta needs reconciliation for ${trackId}/${device.id}: ${result.reason}`
+            );
+        }
         for (const [paramId, value] of Object.entries(device.parameterValues)) {
             updateDeviceParam(trackId, device.id, paramId, value);
         }

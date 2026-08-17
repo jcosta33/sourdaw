@@ -20,6 +20,7 @@ import {
 } from '../engine/TrackNode';
 import {
     type RuntimeGraphDelta,
+    type RuntimeGraphDeviceChainDelta,
     type RuntimeGraphDeltaNode,
     type RuntimeGraphDeltaResult,
     type RuntimeGraphProjectRevisionValidator,
@@ -473,6 +474,26 @@ class AudioEngineImpl implements AudioEngine {
         );
     }
 
+    private matchesRuntimeDeviceChain(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
+        return (
+            node.trackId === expected.id &&
+            node.strip.deviceNodes.length === expected.devices.length &&
+            node.strip.deviceNodes.every((device, index) => {
+                const expectedDevice = expected.devices[index];
+                const parameterIds = device.parameterIds ?? [];
+                return (
+                    device.deviceId === expectedDevice?.id &&
+                    device.type === expectedDevice.type &&
+                    device.externalInstanceId === expectedDevice.externalInstanceId &&
+                    parameterIds.length === expectedDevice.parameterIds.length &&
+                    parameterIds.every(
+                        (parameterId, parameterIndex) => parameterId === expectedDevice.parameterIds[parameterIndex]
+                    )
+                );
+            })
+        );
+    }
+
     private needsRuntimeGraphReconciliation(
         delta: RuntimeGraphDelta,
         reason: string,
@@ -486,6 +507,118 @@ class AudioEngineImpl implements AudioEngine {
             correlation: delta.correlation,
             reason,
             runtimeRevision,
+        });
+    }
+
+    private applyRuntimeDeviceChainDelta(delta: RuntimeGraphDeviceChainDelta): RuntimeGraphDeltaResult {
+        if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta is stale for the live engine revision',
+            });
+        }
+        if (!this.runtimeGraphProjectRevisionValidator) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta cannot validate its project revision',
+            });
+        }
+        let isCurrentProjectRevision: boolean;
+        try {
+            isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+        } catch (error) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
+            });
+        }
+        if (!isCurrentProjectRevision) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta is stale for the current project revision',
+            });
+        }
+        if (!this.runtimeGraphTopologyValidator) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta cannot validate its project topology',
+            });
+        }
+        let isCurrentProjectTopology: boolean;
+        try {
+            isCurrentProjectTopology = this.runtimeGraphTopologyValidator([delta.after]);
+        } catch (error) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: `Runtime graph delta topology validation failed: ${String(error)}`,
+            });
+        }
+        if (!isCurrentProjectTopology) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta does not match the current project topology',
+            });
+        }
+
+        const source = this.trackNodes.get(delta.before.id);
+        if (!source || !this.matchesRuntimeDeviceChain(source, delta.before)) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Live source strip does not match the compiled device-chain delta',
+            });
+        }
+
+        const deviceMutation = this.mutateRuntimeGraph<
+            | { status: 'applied' }
+            | { status: 'rejected'; error: RuntimeGraphMutationRejected }
+            | { status: 'needs-reconcile'; reason: string; compensation: 'not-attempted' | 'failed' }
+        >(() => {
+            try {
+                return { value: { status: 'applied' as const }, changed: source.applyDeviceChain(delta) };
+            } catch (error) {
+                if (error instanceof RuntimeGraphMutationRejected) {
+                    return { value: { status: 'rejected' as const, error }, changed: false };
+                }
+                const typedFailure = error instanceof RuntimeGraphMutationFailure ? error : undefined;
+                return {
+                    value: {
+                        status: 'needs-reconcile' as const,
+                        reason:
+                            typedFailure?.mutation.reason ?? `Live device-chain application threw: ${String(error)}`,
+                        compensation: typedFailure?.rollbackError ? 'failed' : 'not-attempted',
+                    },
+                    changed: true,
+                };
+            }
+        });
+        if (deviceMutation.value.status === 'rejected') {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: deviceMutation.value.error.rejection.reason,
+            });
+        }
+        if (deviceMutation.value.status === 'needs-reconcile') {
+            return this.needsRuntimeGraphReconciliation(
+                delta,
+                deviceMutation.value.reason,
+                deviceMutation.runtimeRevision,
+                deviceMutation.value.compensation
+            );
+        }
+        return Object.freeze({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: delta.correlation,
+            runtimeRevision: deviceMutation.runtimeRevision,
         });
     }
 
@@ -865,6 +998,9 @@ class AudioEngineImpl implements AudioEngine {
         }
 
         const { delta } = compilation;
+        if (delta.command === 'replace-track-device-chain') {
+            return this.applyRuntimeDeviceChainDelta(delta);
+        }
         if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
@@ -1517,7 +1653,8 @@ class AudioEngineImpl implements AudioEngine {
         deviceId: string,
         deviceType: string,
         externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[]
+        precedingDeviceIds?: readonly string[],
+        parameterIds?: readonly string[]
     ): void {
         if (this.fallbackMode) {
             return;
@@ -1530,7 +1667,8 @@ class AudioEngineImpl implements AudioEngine {
                 const deviceAdded =
                     this.trackNodes
                         .get(trackId)
-                        ?.addDevice(deviceId, deviceType, externalInstanceId, precedingDeviceIds) ?? false;
+                        ?.addDevice(deviceId, deviceType, externalInstanceId, precedingDeviceIds, parameterIds) ??
+                    false;
                 return { value: undefined, changed: stripChanged || deviceAdded };
             });
         } catch (error) {
