@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { addDevice } from '../addDevice';
+import { writeDeviceToProject as addDevice } from '../addDevice';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
@@ -60,7 +60,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
 
-describe('addDevice', () => {
+describe('writeDeviceToProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
@@ -141,7 +141,7 @@ describe('addDevice', () => {
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
     });
 
-    it('adds a registered plugin and notifies engine', () => {
+    it('adds a registered plugin without touching the live engine', () => {
         const mockPlugin = {
             id: 'p1',
             name: 'Reverb',
@@ -156,13 +156,11 @@ describe('addDevice', () => {
             type: 'p1',
             parameterValues: { wet: 0.5 },
         });
-        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
-            expect.objectContaining({ operation: 'add-device' })
-        );
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', result?.id, 'wet', 0.5);
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('persists and publishes internal parameters for newly added devices', () => {
+    it('persists internal parameters without publishing runtime parameter effects', () => {
         mocks.getPlatformPlugins.mockReturnValue([
             {
                 id: 'dutch-oven',
@@ -175,8 +173,7 @@ describe('addDevice', () => {
         const result = addDevice('t1', 'dutch-oven');
 
         expect(result?.parameterValues).toEqual({ fdn_damping_version: 2, damping: 0.3 });
-        expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(1, 't1', result?.id, 'fdn_damping_version', 2);
-        expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(2, 't1', result?.id, 'damping', 0.3);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
     it('uses an explicit empty internal parameter set for an unversioned saved device', () => {
@@ -192,19 +189,16 @@ describe('addDevice', () => {
         const result = addDevice('t1', 'dutch-oven', undefined, undefined, undefined, {});
 
         expect(result?.parameterValues).toEqual({ damping: 0.3 });
-        expect(mocks.updateDeviceParam).toHaveBeenCalledOnce();
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', result?.id, 'damping', 0.3);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('uses a caller-reserved device ID for project and runtime identity', () => {
+    it('uses a caller-reserved device ID for project identity', () => {
         mocks.getPlatformPlugins.mockReturnValue([{ id: 'p1', name: 'Reverb', parameters: [] }]);
 
         const result = addDevice('t1', 'p1', undefined, 'reserved-device');
 
         expect(result?.id).toBe('reserved-device');
-        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
-            expect.objectContaining({ operation: 'add-device' })
-        );
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
     });
 
     it('rejects a caller-reserved device ID that already exists anywhere in the project', () => {
@@ -276,7 +270,7 @@ describe('addDevice', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('reprojects child stems when restoring the last Toaster to a folder', () => {
+    it('writes a Toaster to a folder without projecting a live strip', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
                 {
@@ -304,22 +298,14 @@ describe('addDevice', () => {
         const result = addDevice('folder-1', 'Toaster');
 
         expect(result).toMatchObject({ type: 'toaster' });
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(1, {
-            trackId: 'folder-1',
-            activateDormantExternalPlugins: true,
-        });
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(2, {
-            trackId: 'stem-1',
-            activateDormantExternalPlugins: true,
-        });
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(2);
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.compileFaustDSP).not.toHaveBeenCalled();
         expect(mocks.loadPlugin).not.toHaveBeenCalled();
     });
 
-    it('adds a supported device to an already-live Toaster folder', () => {
+    it('adds a supported device to an already-live Toaster folder without runtime effects', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 'folder-1', kind: 'folder', devices: [{ id: 'toaster-1', type: 'toaster' }] }],
         });
@@ -329,13 +315,12 @@ describe('addDevice', () => {
 
         const result = addDevice('folder-1', 'Reverb');
 
-        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
-            expect.objectContaining({ operation: 'add-device' })
-        );
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('folder-1', result?.id, 'wet', 0.5);
+        expect(result).toMatchObject({ type: 'p1' });
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('compiles Faust DSP if it starts with faust-', async () => {
+    it('does not compile Faust DSP before the post-commit runtime effect', () => {
         const mockPlugin = {
             id: 'faust-synth',
             name: 'Faust Synth',
@@ -345,9 +330,7 @@ describe('addDevice', () => {
 
         addDevice('t1', 'faust-synth');
 
-        await vi.waitFor(() => {
-            expect(mocks.compileFaustDSP).toHaveBeenCalledWith('faust-synth');
-        });
+        expect(mocks.compileFaustDSP).not.toHaveBeenCalled();
     });
 
     it('rejects duplicate track identity before truth or runtime work', () => {

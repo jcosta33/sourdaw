@@ -133,7 +133,7 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 
 // ── Device ────────────────────────────────────────────────────────────────────
 
-export { addDevice } from './device/addDevice';
+export { compileAddDeviceAction } from './device/compileAddDeviceAction';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
 export { bypassMidiFx } from './device/bypassMidiFx';

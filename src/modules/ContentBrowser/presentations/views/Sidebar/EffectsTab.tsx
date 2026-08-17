@@ -3,8 +3,14 @@ import { type ReactElement } from 'react';
 import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar, Bug, GitBranch } from 'lucide-react';
 
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
-import { addDevice, getFactoryPresets, createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases';
+import {
+    compileAddDeviceAction,
+    getFactoryPresets,
+    createTrackFromPreset,
+    loadPresetToTrack,
+} from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
@@ -75,6 +81,18 @@ export const EffectsTab = ({
         }
     };
 
+    const addDeviceThroughAction = (deviceType: string, afterApplied?: (deviceId: string | null) => void): void => {
+        if (!selectedTrackId) {
+            return;
+        }
+        const action = compileAddDeviceAction(selectedTrackId, deviceType);
+        if (!action) {
+            afterApplied?.(null);
+            return;
+        }
+        void executeAppAction(action).then(() => afterApplied?.(action.payload.deviceId ?? null));
+    };
+
     const groupedEffects = new Map<string, EffectPlugin[]>();
     const uncategorized: EffectPlugin[] = [];
 
@@ -106,10 +124,7 @@ export const EffectsTab = ({
                         badge="Mastering"
                         description="EQ · Multiband Dynamics · Imager"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                const device = addDevice(selectedTrackId, 'Proof');
-                                panelActions?.showProof(device?.id ?? null);
-                            }
+                            addDeviceThroughAction('Proof', (deviceId) => panelActions?.showProof(deviceId));
                         }}
                         theme={PROOF_THEME}
                     />
@@ -122,10 +137,7 @@ export const EffectsTab = ({
                         badge="Dynamics"
                         description="Bus compressor · SSL-style"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                const device = addDevice(selectedTrackId, 'gluten');
-                                panelActions?.showGluten(device?.id ?? null);
-                            }
+                            addDeviceThroughAction('gluten', (deviceId) => panelActions?.showGluten(deviceId));
                         }}
                         theme={GLUTEN_THEME}
                     />
@@ -138,10 +150,7 @@ export const EffectsTab = ({
                         badge="Limiter"
                         description="Mastering-grade limiter · 5-level"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                const device = addDevice(selectedTrackId, 'crust');
-                                panelActions?.showCrust(device?.id ?? null);
-                            }
+                            addDeviceThroughAction('crust', (deviceId) => panelActions?.showCrust(deviceId));
                         }}
                         theme={CRUST_THEME}
                     />
@@ -154,10 +163,7 @@ export const EffectsTab = ({
                         badge="Reverb"
                         description="Dattorro plate · FDN · Convolution"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                const device = addDevice(selectedTrackId, 'dutch-oven');
-                                panelActions?.showDutchOven(device?.id ?? null);
-                            }
+                            addDeviceThroughAction('dutch-oven', (deviceId) => panelActions?.showDutchOven(deviceId));
                         }}
                         theme={DUTCH_OVEN_THEME}
                     />
@@ -170,10 +176,7 @@ export const EffectsTab = ({
                         badge="Tuner"
                         description="Peterson-grade strobe · Polyphonic"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                const device = addDevice(selectedTrackId, 'native-scoring');
-                                panelActions?.showScoring(device?.id ?? null);
-                            }
+                            addDeviceThroughAction('native-scoring', (deviceId) => panelActions?.showScoring(deviceId));
                         }}
                         theme={SCORING_THEME}
                     />
@@ -186,10 +189,9 @@ export const EffectsTab = ({
                         badge="Amp Sim"
                         description="Tube amp · Cabinet · Pedalboard · Neural capture"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                const device = addDevice(selectedTrackId, 'grinder');
-                                panelActions?.showDevice('grinder', device?.id ?? null);
-                            }
+                            addDeviceThroughAction('grinder', (deviceId) =>
+                                panelActions?.showDevice('grinder', deviceId)
+                            );
                         }}
                         theme={GRINDER_THEME}
                     />
@@ -202,10 +204,7 @@ export const EffectsTab = ({
                         badge="Creative FX"
                         description="Multi-band mangler · Distortion · Granular · Spectral"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                const device = addDevice(selectedTrackId, 'bacteria');
-                                panelActions?.showBacteria(device?.id ?? null);
-                            }
+                            addDeviceThroughAction('bacteria', (deviceId) => panelActions?.showBacteria(deviceId));
                         }}
                         theme={BACTERIA_THEME}
                     />
@@ -218,10 +217,7 @@ export const EffectsTab = ({
                         badge="MIDI FX"
                         description="Arpeggiator · Chord Generator · Scale Filter"
                         onClick={() => {
-                            if (selectedTrackId) {
-                                addDevice(selectedTrackId, 'Yeast');
-                                panelActions?.showYeast(null);
-                            }
+                            addDeviceThroughAction('Yeast', () => panelActions?.showYeast(null));
                         }}
                         theme={YEAST_THEME}
                     />

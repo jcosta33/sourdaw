@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { useStore } from '#/infra/store/useStore';
-import { addDevice } from '#/modules/Arrangement/useCases';
+import { compileAddDeviceAction } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { type KneadClipState, type NoteBlob } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
@@ -12,6 +13,11 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useTracks } from '../../../hooks/useTracks';
 import { KneadEditor } from '../KneadEditor';
+
+const actionMocks = vi.hoisted(() => ({
+    compileAddDeviceAction: vi.fn(),
+    executeAppAction: vi.fn(),
+}));
 
 vi.mock('#/components/ui/button', () => ({
     Button: ({
@@ -100,7 +106,11 @@ vi.mock('../../../hooks/useTracks', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    addDevice: vi.fn(),
+    compileAddDeviceAction: actionMocks.compileAddDeviceAction,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: actionMocks.executeAppAction,
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
@@ -118,6 +128,11 @@ describe('KneadEditor', () => {
         const emit = vi.fn().mockResolvedValue(undefined);
         injectDependencies(notifyUser, { eventBus: { emit } });
         vi.clearAllMocks();
+        actionMocks.compileAddDeviceAction.mockReturnValue({
+            type: 'addDevice',
+            payload: { trackId: 'track-1', deviceType: 'Knead', deviceId: 'device-knead', expectedDeviceIds: [] },
+        });
+        actionMocks.executeAppAction.mockResolvedValue(undefined);
     });
 
     it('should render without crashing', () => {
@@ -130,7 +145,11 @@ describe('KneadEditor', () => {
         expect(screen.getByText('Enable Pitch Editor')).toBeInTheDocument();
 
         fireEvent.click(screen.getByText('Enable Pitch Editor'));
-        expect(addDevice).toHaveBeenCalledWith('track-1', 'Knead');
+        expect(compileAddDeviceAction).toHaveBeenCalledWith('track-1', 'Knead');
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'addDevice',
+            payload: { trackId: 'track-1', deviceType: 'Knead', deviceId: 'device-knead', expectedDeviceIds: [] },
+        });
     });
 
     it('should render canvas element', () => {

@@ -14,7 +14,7 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
-import { addDevice } from '../device/addDevice';
+import { writeDeviceToProject } from '../device/addDevice';
 import { setDeviceParameter } from '../device/setDeviceParameter/setDeviceParameter';
 
 const INSTRUMENT_TYPES = new Set([
@@ -54,7 +54,7 @@ function attachEffectDevice(trackId: string, dp: DevicePreset): void {
             isInternalDeviceParameter({ deviceType: dp.type, paramId })
         )
     );
-    const added = addDevice(trackId, dp.type, dp.name, undefined, undefined, internalParameterValues);
+    const added = writeDeviceToProject(trackId, dp.type, dp.name, undefined, undefined, internalParameterValues);
     if (!added) {
         return;
     }

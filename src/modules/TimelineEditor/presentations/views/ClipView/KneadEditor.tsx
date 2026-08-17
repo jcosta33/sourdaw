@@ -7,7 +7,8 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { addDevice } from '#/modules/Arrangement/useCases';
+import { compileAddDeviceAction } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { kneadStore } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { projectStore } from '#/modules/Project/stores';
@@ -583,7 +584,16 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     <p className="text-xs text-muted-foreground mb-4 max-w-xs text-center">
                         Enable Knead on this track to analyze and edit the pitch of this audio clip in real-time.
                     </p>
-                    <Button onClick={() => addDevice(trackId, 'Knead')} variant="default" size="sm">
+                    <Button
+                        onClick={() => {
+                            const action = compileAddDeviceAction(trackId, 'Knead');
+                            if (action) {
+                                void executeAppAction(action);
+                            }
+                        }}
+                        variant="default"
+                        size="sm"
+                    >
                         Enable Pitch Editor
                     </Button>
                 </div>

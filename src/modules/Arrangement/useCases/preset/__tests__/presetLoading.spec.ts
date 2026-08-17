@@ -6,7 +6,7 @@ import { type SoundPreset } from '../../../models/SoundPreset';
 import { normalizeTrack, type Track } from '../../../models/Track';
 import { getTrackById } from '../../../repositories/track/getTrackById';
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { addDevice } from '../../device/addDevice';
+import { writeDeviceToProject as addDevice } from '../../device/addDevice';
 import { setDeviceParameter } from '../../device/setDeviceParameter/setDeviceParameter';
 import { loadPresetToTrack } from '../presetLoading';
 
@@ -29,7 +29,7 @@ vi.mock('../../../repositories/track/updateTrack', () => ({
 }));
 
 vi.mock('../../device/addDevice', () => ({
-    addDevice: vi.fn(),
+    writeDeviceToProject: vi.fn(),
 }));
 
 vi.mock('../../device/setDeviceParameter/setDeviceParameter', () => ({

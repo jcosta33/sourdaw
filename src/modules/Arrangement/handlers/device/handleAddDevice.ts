@@ -3,7 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type Device } from '../../stores/trackStore';
-import { addDevice } from '../../useCases/device/addDevice';
+import { writeDeviceToProject } from '../../useCases/device/addDevice';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
@@ -119,34 +119,31 @@ export const handleAddDevice = createHandler<'addDevice'>({
         const before = beforeTrack ? structuredClone(beforeTrack) : null;
         let addedDevice: Device | null;
         if (context?.executionMode === 'isolated-preview') {
-            addedDevice = addDevice(
+            addedDevice = writeDeviceToProject(
                 action.payload.trackId,
                 action.payload.deviceType,
                 undefined,
                 deviceId,
                 resolution.deviceIndex,
-                undefined,
-                { projectOnly: true }
+                undefined
             );
         } else if (resolution.deviceIndex !== undefined) {
-            addedDevice = addDevice(
+            addedDevice = writeDeviceToProject(
                 action.payload.trackId,
                 action.payload.deviceType,
                 undefined,
                 deviceId,
                 resolution.deviceIndex,
-                undefined,
-                { projectOnly: true }
+                undefined
             );
         } else {
-            addedDevice = addDevice(
+            addedDevice = writeDeviceToProject(
                 action.payload.trackId,
                 action.payload.deviceType,
                 undefined,
                 deviceId,
                 undefined,
-                undefined,
-                { projectOnly: true }
+                undefined
             );
         }
         if (addedDevice !== null) {

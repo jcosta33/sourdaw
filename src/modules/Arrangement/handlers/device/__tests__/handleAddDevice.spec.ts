@@ -7,14 +7,14 @@ import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#
 import { handleAddDevice } from '../handleAddDevice';
 
 const mocks = vi.hoisted(() => ({
-    addDevice: vi.fn(),
+    writeDeviceToProject: vi.fn(),
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     updateDeviceParam: vi.fn(),
     getTrackStoreState: vi.fn(),
 }));
 
 vi.mock('../../../useCases/device/addDevice', () => ({
-    addDevice: mocks.addDevice,
+    writeDeviceToProject: mocks.writeDeviceToProject,
 }));
 
 vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
@@ -46,7 +46,7 @@ describe('handleAddDevice', () => {
         });
         const action = { type: 'addDevice', payload: { trackId: 't1', deviceType: 'builtin-eq' } };
         const desc = handleAddDevice.describe(action as never);
-        mocks.addDevice.mockReturnValue({ id: 'device-new', parameterValues: {} });
+        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-new', parameterValues: {} });
 
         const result = handleAddDevice.execute(action as never);
 
@@ -60,28 +60,27 @@ describe('handleAddDevice', () => {
         expect(inverse.payload.expectedDeviceIds).toEqual(['device-existing']);
     });
 
-    it('executes addDevice with the provided payload', () => {
+    it('executes the internal project writer with the provided payload', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
-        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: {} });
+        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: {} });
         const result = handleAddDevice.execute({
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'EQ' },
         });
 
-        expect(mocks.addDevice).toHaveBeenCalledWith(
+        expect(mocks.writeDeviceToProject).toHaveBeenCalledWith(
             't1',
             'EQ',
             undefined,
             expect.stringMatching(/^device-/),
             undefined,
-            undefined,
-            { projectOnly: true }
+            undefined
         );
         expect(result).toMatchObject({ status: 'written' });
     });
 
-    it('returns no-write when addDevice rejects the target track', () => {
-        mocks.addDevice.mockReturnValue(null);
+    it('returns no-write when the project writer rejects the target track', () => {
+        mocks.writeDeviceToProject.mockReturnValue(null);
         const result = handleAddDevice.execute({
             type: 'addDevice',
             payload: { trackId: 'vca-1', deviceType: 'EQ' },
@@ -127,7 +126,7 @@ describe('handleAddDevice', () => {
             payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
         } as const;
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
-        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
+        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
 
         const result = handleAddDevice.execute(action);
         if (!result || result instanceof Promise || result.status !== 'written' || !result.afterCommit) {
@@ -163,7 +162,7 @@ describe('handleAddDevice', () => {
         ],
     ])('does not report clean command success after %s', async (_label, runtimeResult, remediation) => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
-        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: {} });
+        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: {} });
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue(runtimeResult);
         registerHandlerMap({ addDevice: handleAddDevice });
 
@@ -201,7 +200,7 @@ describe('handleAddDevice', () => {
 
     it('reports clean command success only after an applied runtime delta', async () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
-        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
+        mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
         registerHandlerMap({ addDevice: handleAddDevice });
 
