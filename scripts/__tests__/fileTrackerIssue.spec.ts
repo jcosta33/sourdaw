@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
     composeIssueTitle,
     parseIssueForm,
+    ghIssueCreateArgs,
     readFields,
     renderIssueSubmission,
     resolveTemplatePath,
@@ -128,5 +129,55 @@ describe('readFields', () => {
         const path = join(dir, 'fields.json');
         writeFileSync(path, '{"scope":"security"}');
         expect(readFields(path)).toEqual({ scope: 'security' });
+    });
+});
+
+describe('renderIssueSubmission title', () => {
+    it('rejects a blank title', () => {
+        expect(() =>
+            renderIssueSubmission(parseIssueForm(load('spec.yml')), {
+                title: '   ',
+                fields: { scope: 'arrangement', priority: 'P2', intent: 'i', requirements: 'r' },
+            })
+        ).toThrow(/title is empty/);
+    });
+
+    it('rejects an invalid dropdown value', () => {
+        expect(() =>
+            renderIssueSubmission(parseIssueForm(load('spec.yml')), {
+                title: 'mixer',
+                fields: { scope: 'arrangement', priority: 'P9', intent: 'i', requirements: 'r' },
+            })
+        ).toThrow(/invalid priority/);
+    });
+});
+
+describe('research options field', () => {
+    it('does not treat Options comparison as a dropdown', () => {
+        const field = parseIssueForm(load('research.yml')).fields.find((entry) => entry.id === 'options');
+        expect(field?.type).toBe('textarea');
+        expect(field?.options).toBeUndefined();
+    });
+});
+
+describe('ghIssueCreateArgs', () => {
+    it('passes title, body, and each label', () => {
+        const submission = {
+            title: 'spec(scope): mixer',
+            body: '### Intent\n\nDone.\n',
+            labels: ['status:tracking', 'priority:P1'],
+        };
+        expect(ghIssueCreateArgs(submission)).toEqual([
+            'issue',
+            'create',
+            '--title',
+            'spec(scope): mixer',
+            '--body',
+            submission.body,
+            '--label',
+            'status:tracking',
+            '--label',
+            'priority:P1',
+        ]);
     });
 });

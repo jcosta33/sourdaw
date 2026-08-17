@@ -87,6 +87,9 @@ export function renderIssueSubmission(
     form: IssueForm,
     input: { title: string; fields: Record<string, string> }
 ): IssueSubmission {
+    if (input.title.trim() === '') {
+        fail('title is empty');
+    }
     const sections: string[] = [];
     const labels = [...form.labels];
     for (const field of form.fields) {
@@ -284,12 +287,16 @@ function fieldString(key: string, value: unknown): string {
     return fail(`field ${key} must be a string`);
 }
 
-function createIssue(submission: IssueSubmission): { url: string; number: number } {
+export function ghIssueCreateArgs(submission: IssueSubmission): string[] {
     const args = ['issue', 'create', '--title', submission.title, '--body', submission.body];
     for (const label of submission.labels) {
         args.push('--label', label);
     }
-    const result = spawnSync('gh', args, { encoding: 'utf8' });
+    return args;
+}
+
+function createIssue(submission: IssueSubmission): { url: string; number: number } {
+    const result = spawnSync('gh', ghIssueCreateArgs(submission), { encoding: 'utf8' });
     if (result.status !== 0) {
         fail(result.stderr.trim() || 'gh issue create failed');
     }
