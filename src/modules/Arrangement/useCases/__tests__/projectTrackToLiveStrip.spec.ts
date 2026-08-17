@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
+
 import { trackStore } from '../../stores/trackStore';
 import { createTrack } from '../createTrack';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
@@ -7,7 +9,7 @@ import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
 const mocks = vi.hoisted(() => ({
     getRuntimeGraphRevision: vi.fn(() => 0),
-    initializeTrackStripFromSnapshot: vi.fn(() => ({
+    initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
         acceptance: 'accepted' as const,
         application: 'applied' as const,
         correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
@@ -69,6 +71,18 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
         },
     },
 }));
+
+const initializationFailureResults = [
+    { acceptance: 'rejected', application: 'not-applied', reason: 'runtime revision is stale' },
+    {
+        acceptance: 'accepted',
+        application: 'needs-reconcile',
+        compensation: 'failed',
+        correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+        reason: 'strip publication needs repair',
+        runtimeRevision: 1,
+    },
+] satisfies readonly ReturnType<typeof initializeTrackStripFromSnapshot>[];
 
 describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
@@ -318,6 +332,25 @@ describe('projectTrackToLiveStrip', () => {
             })
         );
     });
+
+    it.each(initializationFailureResults)(
+        'returns the exact initialization outcome and stops later projection effects',
+        (initializationResult) => {
+            const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+            track.devices = [
+                { id: 'delay-1', name: 'Delay', type: 'delay', bypassed: false, parameterValues: { mix: 0.4 } },
+            ];
+            trackStore.set({ tracks: [track], selectedTrackId: null });
+            mocks.initializeTrackStripFromSnapshot.mockReturnValue(initializationResult);
+
+            const result = projectTrackToLiveStrip({ trackId: track.id });
+
+            expect(result).toBe(initializationResult);
+            expect(mocks.setTrackGain).not.toHaveBeenCalled();
+            expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+            expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+        }
+    );
 
     it('projects Toaster pad ownership independently from the audible output', () => {
         const toaster = createTrack({ id: 'toaster', name: 'Toaster', kind: 'folder' });

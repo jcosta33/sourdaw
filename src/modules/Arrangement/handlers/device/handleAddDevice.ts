@@ -18,6 +18,11 @@ type RuntimeDeviceDeltaFailure = Exclude<
     RuntimeDeviceDeltaResult,
     Readonly<{ acceptance: 'accepted'; application: 'applied' }>
 >;
+type RuntimeTrackStripInitializationResult = Exclude<ReturnType<typeof projectTrackToLiveStrip>, undefined>;
+type RuntimeTrackStripInitializationFailure = Exclude<
+    RuntimeTrackStripInitializationResult,
+    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
+>;
 
 class RuntimeDeviceDeltaPostCommitError extends Error {
     public readonly outcome: RuntimeDeviceDeltaFailure;
@@ -43,6 +48,39 @@ function getRuntimeDeviceDeltaPostCommitFailure(
         return undefined;
     }
     return new RuntimeDeviceDeltaPostCommitError(result);
+}
+
+class RuntimeTrackStripInitializationPostCommitError extends Error {
+    public readonly outcome: RuntimeTrackStripInitializationFailure;
+    public readonly remediation: 'retry' | 'repair';
+
+    constructor(outcome: RuntimeTrackStripInitializationFailure) {
+        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
+        super(
+            outcome.acceptance === 'rejected'
+                ? `Track strip initialization was rejected after project commit and requires ${remediation}: ${outcome.reason}`
+                : `Track strip initialization requires ${remediation} after project commit: ${outcome.reason}`
+        );
+        this.name = 'RuntimeTrackStripInitializationPostCommitError';
+        this.outcome = outcome;
+        this.remediation = remediation;
+    }
+}
+
+function getRuntimeTrackStripInitializationPostCommitFailure(
+    result: ReturnType<typeof projectTrackToLiveStrip>,
+    trackId: string
+): RuntimeTrackStripInitializationPostCommitError | undefined {
+    if (result?.acceptance === 'accepted' && result.application === 'applied') {
+        return undefined;
+    }
+    return new RuntimeTrackStripInitializationPostCommitError(
+        result ?? {
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: `Track strip initialization did not produce a runtime outcome for ${trackId}`,
+        }
+    );
 }
 
 function ensureDeviceId(action: AddDeviceAction): string {
@@ -165,7 +203,8 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 ...committedBefore.devices.slice(insertionIndex),
             ],
         };
-        let postCommitFailure: RuntimeDeviceDeltaPostCommitError | undefined;
+        let postCommitFailure:
+            RuntimeDeviceDeltaPostCommitError | RuntimeTrackStripInitializationPostCommitError | undefined;
         function applyRuntimeEffect(): void {
             if (postCommitFailure) {
                 throw postCommitFailure;
@@ -174,10 +213,20 @@ export const handleAddDevice = createHandler<'addDevice'>({
             const activatesFolderStrip = !wasLive && after.kind === 'folder' && shouldCreateLiveTrackStrip(after);
             if (!wasLive) {
                 if (activatesFolderStrip) {
-                    projectTrackToLiveStrip({ trackId: after.id, activateDormantExternalPlugins: true });
-                    for (const child of getTrackStoreState()?.tracks ?? []) {
-                        if (child.parentId === after.id && shouldCreateLiveTrackStrip(child)) {
-                            projectTrackToLiveStrip({ trackId: child.id, activateDormantExternalPlugins: true });
+                    const promotedTrackIds = [
+                        after.id,
+                        ...(getTrackStoreState()?.tracks ?? []).flatMap((child) =>
+                            child.parentId === after.id && shouldCreateLiveTrackStrip(child) ? [child.id] : []
+                        ),
+                    ];
+                    for (const trackId of promotedTrackIds) {
+                        const initializationFailure = getRuntimeTrackStripInitializationPostCommitFailure(
+                            projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true }),
+                            trackId
+                        );
+                        if (initializationFailure) {
+                            postCommitFailure = initializationFailure;
+                            throw postCommitFailure;
                         }
                     }
                 }

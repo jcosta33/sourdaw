@@ -48,33 +48,33 @@ export function projectTrackToLiveStrip({
     trackId,
     deferSidechainWiring = false,
     activateDormantExternalPlugins = false,
-}: ProjectTrackToLiveStripInput): void {
+}: ProjectTrackToLiveStripInput): ReturnType<typeof initializeTrackStripFromSnapshot> | undefined {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
-        return;
+        return undefined;
     }
     const track = findUniqueTrack(tracks, trackId);
     if (!track || !shouldCreateLiveTrackStrip(track)) {
-        return;
+        return undefined;
     }
 
     const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
     for (const device of audioDevices) {
         const target = resolveEligibleDeviceWriteTarget(device.id);
         if (target.status !== 'eligible' || target.trackId !== track.id || target.deviceId !== device.id) {
-            return;
+            return undefined;
         }
     }
     if (!acceptsRoutingEndpoint(tracks, track.outputId)) {
-        return;
+        return undefined;
     }
     const snapshot = compileTrackStripInitializationSnapshot(track, tracks);
     if (!snapshot) {
-        return;
+        return undefined;
     }
     const initialization = initializeTrackStripFromSnapshot(snapshot);
     if (initialization.acceptance === 'rejected' || initialization.application === 'needs-reconcile') {
-        return;
+        return initialization;
     }
 
     setTrackGain(track.id, track.gain);
@@ -113,4 +113,5 @@ export function projectTrackToLiveStrip({
     if (!deferSidechainWiring) {
         wireSidechainRoutes();
     }
+    return initialization;
 }

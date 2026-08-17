@@ -181,6 +181,12 @@ describe('handleAddDevice', () => {
             type: 'toaster',
             parameterValues: { masterGain: 1.2 },
         });
+        mocks.projectTrackToLiveStrip.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 1, projectRevision: 'project-1' },
+            runtimeRevision: 2,
+        });
         registerHandlerMap({ addDevice: handleAddDevice });
 
         await expect(
@@ -202,6 +208,106 @@ describe('handleAddDevice', () => {
             activateDormantExternalPlugins: true,
         });
     });
+
+    it.each([
+        [
+            'a rejected folder-strip initialization',
+            { acceptance: 'rejected', application: 'not-applied', reason: 'runtime revision is stale' },
+            'retry',
+            0,
+            1,
+        ],
+        [
+            'a folder-strip initialization that needs reconciliation',
+            {
+                acceptance: 'accepted',
+                application: 'needs-reconcile',
+                compensation: 'failed',
+                correlation: { appRevision: 3, projectRevision: 'project-3' },
+                reason: 'child strip failed after partial publication',
+                runtimeRevision: 4,
+            },
+            'repair',
+            0,
+            1,
+        ],
+        [
+            'a rejected child-strip initialization',
+            { acceptance: 'rejected', application: 'not-applied', reason: 'runtime revision is stale' },
+            'retry',
+            1,
+            2,
+        ],
+        [
+            'a child-strip initialization that needs reconciliation',
+            {
+                acceptance: 'accepted',
+                application: 'needs-reconcile',
+                compensation: 'failed',
+                correlation: { appRevision: 3, projectRevision: 'project-3' },
+                reason: 'child strip failed after partial publication',
+                runtimeRevision: 4,
+            },
+            'repair',
+            1,
+            2,
+        ],
+    ])(
+        'does not report clean command success after %s',
+        async (_label, initializationResult, remediation, appliedInitializations, expectedProjectionCalls) => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    { id: 'folder-1', kind: 'folder', devices: [] },
+                    { id: 'child-1', kind: 'audio', parentId: 'folder-1', devices: [] },
+                ],
+            });
+            mocks.writeDeviceToProject.mockReturnValue({
+                id: 'toaster-1',
+                type: 'toaster',
+                parameterValues: {},
+            });
+            for (let index = 0; index < appliedInitializations; index += 1) {
+                mocks.projectTrackToLiveStrip.mockReturnValueOnce({
+                    acceptance: 'accepted',
+                    application: 'applied',
+                    correlation: { appRevision: 1, projectRevision: 'project-1' },
+                    runtimeRevision: 2,
+                });
+            }
+            mocks.projectTrackToLiveStrip.mockReturnValueOnce(initializationResult);
+            registerHandlerMap({ addDevice: handleAddDevice });
+
+            const committedError = await executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 'folder-1', deviceType: 'toaster', deviceId: 'toaster-1' },
+            }).then(
+                () => {
+                    throw new Error('Expected committed runtime initialization failure');
+                },
+                (error: unknown) => error
+            );
+
+            expect(isAppActionCommittedError(committedError)).toBe(true);
+            if (
+                !(committedError instanceof Error) ||
+                !isAppActionCommittedError(committedError) ||
+                !(committedError.cause instanceof AggregateError)
+            ) {
+                throw new Error('Expected the Command post-commit receipt to retain the initialization failure');
+            }
+            expect(committedError.cause.errors).toHaveLength(2);
+            for (const runtimeFailure of committedError.cause.errors) {
+                expect(runtimeFailure).toMatchObject({
+                    name: 'RuntimeTrackStripInitializationPostCommitError',
+                    outcome: initializationResult,
+                    remediation,
+                });
+            }
+
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(expectedProjectionCalls);
+        }
+    );
 
     it.each([
         [
