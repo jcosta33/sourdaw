@@ -81,6 +81,31 @@ describe('stopRecording', () => {
         expect(newState.tracks[0]!.clips[0]!.endBeat).toBe(8);
     });
 
+    // Mid-playback the store's playheadPosition is still the beat playback
+    // started at, which would close the take at (or before) its own start. The
+    // caller names the end beat instead.
+    it('closes clips and takes at an explicit beat, not the store playhead', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [{ id: 'c1', type: 'audio', startBeat: 4, endBeat: 4 }],
+                },
+            ],
+        } as unknown as TrackState);
+        mocks.transportStoreValue = { playheadPosition: 4 } as unknown as TransportState;
+        mocks.takeLaneStoreValue.value = {
+            lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 4, endBeat: 4 }] }],
+        } as unknown as TakeLaneStoreState;
+
+        stopRecording(12);
+
+        const trackState = mocks.setTrackState.mock.calls[0]![0];
+        expect(trackState.tracks[0]!.clips[0]!.endBeat).toBe(12);
+        const laneState = mocks.takeLaneStoreSet.mock.calls[0]![0] as TakeLaneStoreState;
+        expect(laneState.lanes[0]!.takes[0]!.endBeat).toBe(12);
+    });
+
     it('enforces minimum 1 beat for MIDI clips', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }],

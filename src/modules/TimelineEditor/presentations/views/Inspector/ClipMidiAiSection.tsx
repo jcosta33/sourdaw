@@ -19,7 +19,6 @@ import {
     renderDiffSingerPhrase,
     downloadModel,
     KOKORO_MODEL_ENTRY,
-    NSF_HIFIGAN_VOCODER,
 } from '#/modules/BrowserAi/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore } from '#/modules/Transport/stores';
@@ -186,15 +185,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         });
     };
 
-    const handleDownloadVocoder = (): void => {
-        void downloadModel({
-            modelId: NSF_HIFIGAN_VOCODER.id,
-            family: NSF_HIFIGAN_VOCODER.family,
-            url: NSF_HIFIGAN_VOCODER.url,
-            sizeBytes: NSF_HIFIGAN_VOCODER.sizeBytes,
-        });
-    };
-
     const handlePreviewVoice = async (): Promise<void> => {
         if (!ttsText.trim()) {
             notifyUser('Enter some text to preview', 'error');
@@ -310,6 +300,14 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             const voiceName = activeVoicebank?.name ?? selectedVoicebankId;
             const lyrics = diffSingerLyrics.trim() || 'la la la';
             const lyricsPreview = lyrics.slice(0, 20) + (lyrics.length > 20 ? '…' : '');
+            const tempo = tempoMapStore.value?.changes[0]?.tempo ?? 120;
+            const secondsPerBeat = 60 / tempo;
+            const timedNotes = notes.map((note) => ({
+                pitch: note.pitch,
+                velocity: note.velocity,
+                startSec: note.startBeat * secondsPerBeat,
+                durationSec: note.duration * secondsPerBeat,
+            }));
             // Sequential — the ONNX worker is single-threaded so parallel
             // calls would serialize anyway, just with noisier logs.
             const results: RenderResult[] = [];
@@ -318,7 +316,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     phraseId: `${clip.id}-svs-${VARIANT_LABELS[index]}`,
                     voicebankId: selectedVoicebankId,
                     lyrics,
-                    notes,
+                    notes: timedNotes,
                     renderQuality: svsRenderQuality,
                     seed: SVS_SEED_VARIANTS[index],
                 });
@@ -571,20 +569,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                                     ? 'Download failed — check your connection and try again.'
                                                     : 'A singing engine is also required to render audio.'}
                                             </p>
-                                            <Button
-                                                variant="secondary"
-                                                size="xs"
-                                                className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                                onClick={handleDownloadVocoder}
-                                            >
-                                                <Download className="size-3 mr-1" aria-hidden="true" />
-                                                {vocoderStatus === 'error'
-                                                    ? 'Retry Download'
-                                                    : 'Download Singing Engine'}
-                                                <DawMicroBadge tone="muted" className="ml-1.5">
-                                                    ~52 MB
-                                                </DawMicroBadge>
-                                            </Button>
+                                            <DawMicroBadge tone="muted">Unavailable</DawMicroBadge>
                                         </div>
                                     );
                                 } else {
@@ -717,14 +702,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         </button>
                         <button
                             type="button"
-                            onClick={() => setVocalMode('sung')}
-                            className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
-                                vocalMode === 'sung'
-                                    ? 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]'
-                                    : 'bg-surface-overlay/50 text-muted-foreground/60 hover:text-muted-foreground'
-                            }`}
+                            disabled
+                            className="flex-1 h-5 text-[9px] font-medium rounded bg-surface-overlay/30 text-muted-foreground/40"
+                            title="Singing synthesis requires an admitted vocoder"
                         >
-                            Sung
+                            Sung unavailable
                         </button>
                     </div>
                     {/* ── Spoken mode (Kokoro TTS) ── */}

@@ -22,10 +22,9 @@ export { searchPresets } from './aiRuntimeQueries/searchPresets';
 export { getAvailablePresets } from './aiRuntimeQueries/getAvailablePresets';
 export { resolvePresetActions } from './aiRuntimeQueries/resolvePresetActions';
 
-export { configureCloudApi } from './cloudApiManagement/configureCloudApi';
 export { configureCloudProvider } from './cloudApiManagement/configureCloudProvider';
 export { getConfiguredCloudProvider } from './cloudApiManagement/getConfiguredCloudProvider';
-export { removeCloudApi } from './cloudApiManagement/removeCloudApi';
+export { removeCloudProvider } from './cloudApiManagement/removeCloudProvider';
 export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
 export { getProjectContext } from './getProjectContext';

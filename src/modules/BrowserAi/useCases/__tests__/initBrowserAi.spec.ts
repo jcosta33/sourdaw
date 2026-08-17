@@ -123,15 +123,14 @@ describe('initBrowserAi', () => {
             'error',
         ]);
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('not-downloaded');
-        expect(modelRegistryStore.value?.vocoder?.status).toBe('not-downloaded');
+        expect(modelRegistryStore.value?.vocoder).toBeNull();
     });
 
     it('should preserve cache-probe failures as model error state', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
         const check_model_cached = vi
             .fn<CheckModelCached>()
-            .mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'))
-            .mockResolvedValueOnce(false);
+            .mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
@@ -142,7 +141,7 @@ describe('initBrowserAi', () => {
         await initBrowserAi();
 
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('error');
-        expect(modelRegistryStore.value?.vocoder?.status).toBe('not-downloaded');
+        expect(modelRegistryStore.value?.vocoder).toBeNull();
     });
 
     it('should record a capability detection failure as a non-fatal error and continue initializing', async () => {

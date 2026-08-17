@@ -7,6 +7,7 @@ use crate::midi::diagnostics::{
 use crate::scheduler::{
     AudioScheduler, GraphCommand, RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
 };
+use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -166,13 +167,21 @@ fn reclaim_retired<T>(retired: T) {
 /// which owns both ends and retries with the device default period.
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
     let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
+    let (timeline_diagnostics_tx, _timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (engine_event_tx, _engine_event_rx) = engine_event_channel();
-    spawn_audio_thread_with_diagnostics(command_rx, diagnostics_tx, engine_event_tx, false)
+    spawn_audio_thread_with_diagnostics(
+        command_rx,
+        diagnostics_tx,
+        timeline_diagnostics_tx,
+        engine_event_tx,
+        false,
+    )
 }
 
 pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
 ) -> Result<AudioThreadHandle, String> {
@@ -184,6 +193,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             command_rx,
             retired_tx,
             midi_rt_diagnostics_tx,
+            timeline_rt_diagnostics_tx,
             engine_event_tx,
             force_default_buffer,
         ) {
@@ -294,6 +304,7 @@ fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
     retired_tx: rtrb::Producer<RetiredGraphObjects>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
 ) -> Result<cpal::Stream, String> {
@@ -312,11 +323,12 @@ fn build_audio_stream(
     }
 
     let sample_rate = config.sample_rate() as f32;
-    let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
+    let mut scheduler = AudioScheduler::with_rt_diagnostics(
         command_rx,
         retired_tx,
         sample_rate,
         midi_rt_diagnostics_tx,
+        timeline_rt_diagnostics_tx,
     );
 
     // Ask the device for a period the callback and the plugin bridge can carry,
@@ -370,18 +382,23 @@ fn build_audio_stream(
                             left.fill(0.0);
                             right.fill(0.0);
 
-                            // Silent input — native chain only processes bridged plugins above.
-                            // Standalone native rendering (without Web Audio) would inject
-                            // timeline audio here. process_block always renders a stereo
-                            // pair regardless of the device's channel layout.
+                            // The timeline renders here, into scratch the
+                            // callback owns: clips, track device chains, sends,
+                            // buses and the master sum, then the master insert
+                            // chain and the master fader. An engine with no
+                            // tracks renders silence, exactly as before the
+                            // timeline existed. process_block always renders a
+                            // stereo pair regardless of the device's channel
+                            // layout.
                             scheduler.process_block(left, right, frames);
 
                             // Adapt the rendered stereo pair to the device's actual
-                            // channel count (silent unless standalone mode).
+                            // channel count.
                             write_interleaved(chunk, left, right, channels, frames);
                         }
 
                         scheduler.publish_midi_rt_diagnostics();
+                        scheduler.publish_timeline_rt_diagnostics();
                     },
                     err_fn,
                     None,

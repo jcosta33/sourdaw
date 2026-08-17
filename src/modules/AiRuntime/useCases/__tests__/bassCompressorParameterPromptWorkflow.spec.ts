@@ -234,7 +234,7 @@ function createGuardedActions(ratioExpectedValue = 2) {
 }
 
 describe('Bass DI compressor parameter prompt workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.failedRuntimeWrites.clear();
@@ -261,12 +261,12 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Bass DI compressor parameter workflow test');
@@ -301,7 +301,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -310,7 +310,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         resetAiWorkflowCommandPreflightFixture();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
-        cloudSession.clear();
+        await cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
     });

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
+    isStemSeparationAvailable: vi.fn(),
     separateStems: vi.fn(),
     audioBufferToWav: vi.fn(),
     getTrackStoreState: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    isStemSeparationAvailable: mocks.isStemSeparationAvailable,
     separateStems: mocks.separateStems,
 }));
 
@@ -47,7 +49,19 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 describe('handleStemSeparate', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.isStemSeparationAvailable.mockReturnValue(true);
         mocks.getTrackStoreState.mockReturnValue(null);
+    });
+
+    it('rejects before processing when no model is admitted', async () => {
+        mocks.isStemSeparationAvailable.mockReturnValue(false);
+
+        await expect(
+            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'legacy-clip' } })
+        ).rejects.toThrow('Stem separation is unavailable until a compatible model is admitted.');
+
+        expect(mocks.getTrackStoreState).not.toHaveBeenCalled();
+        expect(mocks.separateStems).not.toHaveBeenCalled();
     });
 
     it('bails if clip cannot be found', async () => {

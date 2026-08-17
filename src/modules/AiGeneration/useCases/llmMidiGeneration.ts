@@ -53,7 +53,7 @@ export async function generateMidiViaLlm(
 
     if (backend === 'none') {
         notifyUser(
-            'No AI backend is configured — using a built-in pattern instead. Add a cloud API key in Settings → AI, or use Chrome with WebGPU to enable the browser AI engine.',
+            'No AI backend is configured — using a built-in pattern instead. Configure a hosted provider in the desktop app or use Chrome with WebGPU.',
             'warning'
         );
         return fallbackToPatternMatch(prompt).slice(0, requestedNoteLimit);

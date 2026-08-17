@@ -198,7 +198,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
 
         if (chain.length === 0) {
             throw createAiRuntimeError(
-                'No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.'
+                'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
             );
         }
 

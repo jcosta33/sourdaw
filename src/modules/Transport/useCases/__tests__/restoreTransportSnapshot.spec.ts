@@ -75,10 +75,33 @@ describe('restoreTransportSnapshot', () => {
         expect(setMasterGainValue).toHaveBeenCalledWith(0.95);
     });
 
-    it('sanitizes malformed durable snapshots to the default transport state', () => {
+    it('sanitizes a fully malformed durable snapshot to the default transport state', () => {
         restoreTransportSnapshot({ tempo: 19 });
 
         expect(transportStore.value).toEqual(defaultTransportState);
+        expect(setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
+    });
+
+    it('resets only the invalid field and preserves the other valid durable field (per-field contract, not the retired full-state collapse)', () => {
+        restoreTransportSnapshot({ tempo: 19, masterGain: 90 });
+
+        expect(transportStore.value).toEqual({
+            ...defaultTransportState,
+            tempo: defaultTransportState.tempo,
+            masterGain: 90,
+        });
+        expect(setMasterGainValue).toHaveBeenCalledWith(0.9);
+    });
+
+    it('resets the full loop trio for a fabricated region instead of only the rejected member', () => {
+        restoreTransportSnapshot({ isLooping: true, loopStart: -1, loopEnd: 16 });
+
+        expect(transportStore.value).toEqual({
+            ...defaultTransportState,
+            isLooping: defaultTransportState.isLooping,
+            loopStart: defaultTransportState.loopStart,
+            loopEnd: defaultTransportState.loopEnd,
+        });
         expect(setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
     });
 });

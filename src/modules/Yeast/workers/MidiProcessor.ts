@@ -12,12 +12,74 @@ import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 
 export type MidiProcessorParams = Readonly<Record<string, number>>;
 
+/**
+ * Block-window fallback for a processor that EMITS into the window (every
+ * generator: arp steps, euclidean steps, markov steps, CC ramps). One audio
+ * render quantum. A wide fallback would make a direct `processMidi` call
+ * generate far past the caller's intent.
+ */
+export const EMIT_FALLBACK_BLOCK_SPAN_SAMPLES = 128;
+
+/**
+ * Block-window fallback for a processor that only DRAINS its own internal
+ * queue into the window (repeater echoes, strummed chord tones). A narrow
+ * fallback would strand already-scheduled events indefinitely.
+ */
+export const DRAIN_FALLBACK_BLOCK_SPAN_SAMPLES = 8192;
+
+/**
+ * First sample of the block being processed.
+ *
+ * `MidiRack` always sets `blockStartSamples`; the input/zero fallbacks serve
+ * isolated unit specs that drive a processor directly.
+ */
+export function resolveBlockStartSamples(transport: TransportInfo, input: readonly MidiEvent[]): number {
+    return transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
+}
+
+/**
+ * Exclusive sample boundary of the block being processed.
+ *
+ * `MidiRack` always sets `blockEndSamples`. `fallbackSpanSamples` applies only
+ * when it is absent — pass `EMIT_FALLBACK_BLOCK_SPAN_SAMPLES` when the window
+ * bounds generation and `DRAIN_FALLBACK_BLOCK_SPAN_SAMPLES` when it only
+ * bounds an internal-queue drain.
+ */
+export function resolveBlockEndSamples(
+    transport: TransportInfo,
+    blockStartSamples: number,
+    fallbackSpanSamples: number
+): number {
+    return transport.blockEndSamples ?? blockStartSamples + fallbackSpanSamples;
+}
+
 export type MidiProcessor = {
     readonly id: string;
     readonly name: string;
     readonly providesPreviewDecisions?: boolean;
 
-    /** Process a block of MIDI events. Append output events to `output`. */
+    /**
+     * Process one block of MIDI events. Append output events to `output`.
+     *
+     * A block is the half-open sample window
+     * `[transport.blockStartSamples, transport.blockEndSamples)`. Where a
+     * processor controls its own timing it should stay inside that window: a
+     * generator steps to the block containing its step, and a processor that
+     * wants to place an event later holds it in its own `ScheduledEventQueue`
+     * rather than emitting it ahead of time.
+     *
+     * The rack rejects nothing. It routes the chain's output by time, once:
+     * an event at or beyond `blockEndSamples` is deferred and released in the
+     * block that contains it; an event before `blockStartSamples` is released
+     * immediately, in the block that produced it. The lower bound is a release
+     * rather than a rejection because timing processors emit below the window
+     * by design — Humanizer's rushed preset carries a negative timing mean and
+     * GrooveModule applies negative template offsets.
+     *
+     * What the rack does enforce is direction. A deferred event rejoins the
+     * chain's OUTPUT, never its input, so a generator can never ingest its own
+     * output as a fresh held note and no event traverses the chain twice.
+     */
     processMidi(
         input: readonly MidiEvent[],
         output: MidiEvent[],
@@ -74,18 +136,12 @@ export class ScheduledEventQueue {
         this.events.push(event);
     }
 
-    /** Drain all events whose time falls within [start, end). Returns sorted. */
-    drainRange(startSamples: number, endSamples: number, trackId?: string): MidiEvent[] {
-        const drained: MidiEvent[] = [];
-        this.drainRangeInto(startSamples, endSamples, drained, trackId);
-        return drained;
-    }
-
     /**
      * Drain all events whose time falls within [start, end) into `out` (which
      * must be empty on entry), sorting the result in place. Partitions
-     * `this.events` in place to avoid the `remaining` array allocation in the
-     * original `drainRange` (§149.1).
+     * `this.events` in place, and the caller owns `out`, so a processor
+     * draining once per block reuses one buffer and allocates nothing
+     * (§149.1).
      */
     drainRangeInto(startSamples: number, endSamples: number, out: MidiEvent[], trackId?: string): MidiEvent[] {
         const src = this.events;

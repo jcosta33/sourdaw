@@ -103,7 +103,7 @@ describe('offline render composes the VCA multiplier the way live does', () => {
 
         const strip = await createOfflineTrackStrip(
             makeOfflineCtx(),
-            { name: 'Kick', gain: 0.5, muted: false, pan: 0, devices: [] },
+            { id: 'track-1', name: 'Kick', gain: 0.5, muted: false, pan: 0, devices: [] },
             { vcaMultiplier: offlineVcaMultiplier('track-1') }
         );
 
@@ -152,7 +152,7 @@ describe('offline render composes the VCA multiplier the way live does', () => {
 
         const strip = await createOfflineTrackStrip(
             makeOfflineCtx(),
-            { name: 'Kick', gain: 0.8, muted: false, pan: 0, devices: [] },
+            { id: 'track-1', name: 'Kick', gain: 0.8, muted: false, pan: 0, devices: [] },
             { vcaMultiplier: offlineVcaMultiplier('track-1') }
         );
 
@@ -169,7 +169,7 @@ describe('offline render composes the VCA multiplier the way live does', () => {
 
         const strip = await createOfflineTrackStrip(
             makeOfflineCtx(),
-            { name: 'Kick', gain: 0.5, muted: false, pan: 0, devices: [] },
+            { id: 'track-1', name: 'Kick', gain: 0.5, muted: false, pan: 0, devices: [] },
             { vcaMultiplier: offlineVcaMultiplier('track-1') }
         );
 

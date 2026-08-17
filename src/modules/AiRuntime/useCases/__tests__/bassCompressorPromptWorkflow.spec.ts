@@ -168,7 +168,7 @@ function getHostedRequestBody(): string {
 }
 
 describe('bass compressor prompt workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.removeDeviceFromStrip.mockReset();
@@ -192,12 +192,12 @@ describe('bass compressor prompt workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('bass compressor prompt workflow test');
@@ -235,7 +235,7 @@ describe('bass compressor prompt workflow', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -244,7 +244,7 @@ describe('bass compressor prompt workflow', () => {
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
-        cloudSession.clear();
+        await cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
     });

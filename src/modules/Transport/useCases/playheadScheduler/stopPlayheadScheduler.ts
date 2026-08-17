@@ -8,6 +8,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { stopAutomationRecording } from '#/modules/Automation/useCases';
 
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
 import { schedulerSession, stopActiveSources } from './schedulerSession';
@@ -24,7 +25,13 @@ export function stopPlayheadScheduler(): void {
         Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
             logger.error(new Error('Scheduler recording teardown failed', { cause: error }));
         });
-        stopRecording();
+        // Close the punched take at the live playhead. Every caller reaches this
+        // before it rewrites the position: `pausePlayback` has already copied the
+        // ref into the store (so the two agree), while `stopPlayback` and
+        // `executePlayheadSeek` only assign the new position *after* this call —
+        // so the store still holds the beat playback started at, and the ref is
+        // the one value that is correct on all three paths.
+        stopRecording(playheadPositionRef.current);
         schedulerSession.punchRecordingActive = false;
     }
     schedulerSession.lastTickTime = 0;
