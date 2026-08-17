@@ -37,4 +37,31 @@ describe('setMasterGain', () => {
         expect(setMasterGainValue).not.toHaveBeenCalled();
         expect(updateTransportState).not.toHaveBeenCalled();
     });
+
+    it('should clamp a negative value to 0', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        setMasterGain(-10);
+
+        expect(updateTransportState).toHaveBeenCalledWith({ masterGain: 0 });
+        expect(setMasterGainValue).toHaveBeenCalledWith(0);
+    });
+
+    it('should clamp NaN to 0', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        setMasterGain(Number.NaN);
+
+        expect(updateTransportState).toHaveBeenCalledWith({ masterGain: 0 });
+        expect(setMasterGainValue).toHaveBeenCalledWith(0);
+    });
+
+    it('should clamp a value above the contract maximum down to 100', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        setMasterGain(500);
+
+        expect(updateTransportState).toHaveBeenCalledWith({ masterGain: 100 });
+        expect(setMasterGainValue).toHaveBeenCalledWith(1);
+    });
 });

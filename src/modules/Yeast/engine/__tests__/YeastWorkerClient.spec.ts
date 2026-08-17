@@ -1217,6 +1217,51 @@ describe('createYeastWorker — projection protocol', () => {
         ]);
     });
 
+    it('does not let a throwing note-off observer block sibling delivery', async () => {
+        const node = await createYeastWorker(makeContext());
+        const firstObserver = vi.fn(() => {
+            throw new Error('observer failed');
+        });
+        const secondObserver = vi.fn();
+        node.onNotesOff(firstObserver);
+        node.onNotesOff(secondObserver);
+        const events = [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastWorker(), 0, events);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(firstObserver).toHaveBeenCalledTimes(1);
+        expect(secondObserver).toHaveBeenCalledTimes(1);
+    });
+
+    it('snapshots note-off observers so a self-unsubscribing handler cannot skip a sibling or admit a reentrant one', async () => {
+        const node = await createYeastWorker(makeContext());
+        const lateObserver = vi.fn();
+        let unsubscribeFirst = (): void => {};
+        const firstObserver = vi.fn(() => {
+            unsubscribeFirst();
+            node.onNotesOff(lateObserver);
+        });
+        const secondObserver = vi.fn();
+        unsubscribeFirst = node.onNotesOff(firstObserver);
+        node.onNotesOff(secondObserver);
+        const events = [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastWorker(), 0, events);
+        await expect(result).resolves.toBeUndefined();
+
+        expect(firstObserver).toHaveBeenCalledTimes(1);
+        expect(secondObserver).toHaveBeenCalledTimes(1);
+        expect(lateObserver).not.toHaveBeenCalled();
+
+        const second = node.setProjection([]);
+        replyProjectionAck(lastWorker(), 1, events);
+        await expect(second).resolves.toBeUndefined();
+        expect(lateObserver).toHaveBeenCalledTimes(1);
+    });
+
     it('falls silent on wrong, late, or lost projection acknowledgements', async () => {
         const node = await createYeastWorker(makeContext());
         const onNotesOff = vi.fn();
