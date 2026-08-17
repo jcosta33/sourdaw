@@ -1,0 +1,32 @@
+electron/__tests__/pluginGui.spec.ts
+  s_d91dcbe5f07151::t_cf5b39b1b9a9c3 18
+  s_d91dcbe5f07151::t_2c9b4b36cfcd7a 263-266,268-279,282-295,297-315
+  s_d91dcbe5f07151::t_0fcc169401440b 243-246
+  s_d91dcbe5f07151::t_d9200dc5bebdff 27
+  s_d91dcbe5f07151::t_823155defd2f04 48
+  s_d91dcbe5f07151::t_2044bc8270de7a 186-202
+electron/__tests__/commands.spec.ts
+  s_d91dcbe5f07151::t_cb492fa31add73 133-145
+electron/pluginGui.ts
+  s_d91dcbe5f07151::t_f78f73df24b289 60
+  s_d91dcbe5f07151::t_b38157588259fe 173-176
+crates/sourdaw-native/src/addon/windows.rs
+  s_d91dcbe5f07151::t_37fb59c8dcf127 134
+  s_d91dcbe5f07151::t_d48f12e22dac72 159-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c1cfc412facd2689dd59ed6745059535445dc23d",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
