@@ -48,21 +48,29 @@ struct Character {
     high_frequency_ratio: f32,
 }
 
+// These are measurements, not targets. The two FDN rows were re-measured when
+// the tank's delay tuning was repaired: `size = 0.0`, which is what this file
+// renders at, used to hand the eight-line FDN two *pairs* of identical delay
+// lines, and identical lines ring identical modes. Removing the collision is
+// audible mostly in `high_frequency_ratio`, which more than halved at 48 kHz —
+// that ratio was largely the coincident short-period comb, and it is the noise
+// the prime tuning exists to prevent. Peak and RMS moved with it. Spring and
+// Reverse share no tuning with the FDN and are unchanged.
 const EXPECTED: [[Character; 4]; 2] = [
     [
         Character {
-            peak: 0.283_370_8,
-            rms: 0.033_512_4,
+            peak: 0.355_920_911,
+            rms: 0.036_786_821,
             active_span_ms: 3_984.467,
-            late_energy_ratio: 0.053_320_955,
-            high_frequency_ratio: 0.152_888_6,
+            late_energy_ratio: 0.051_378_369,
+            high_frequency_ratio: 0.187_111_273,
         },
         Character {
-            peak: 0.409_014_6,
-            rms: 0.028_448_26,
+            peak: 0.343_176_007,
+            rms: 0.042_337_045,
             active_span_ms: 3_984.467,
-            late_energy_ratio: 0.049_054_224,
-            high_frequency_ratio: 0.210_988_37,
+            late_energy_ratio: 0.053_829_677,
+            high_frequency_ratio: 0.128_171_325,
         },
         Character {
             peak: 0.481_467_52,
@@ -81,18 +89,18 @@ const EXPECTED: [[Character; 4]; 2] = [
     ],
     [
         Character {
-            peak: 0.248_097_55,
-            rms: 0.022_751_864,
+            peak: 0.293_714_762,
+            rms: 0.037_104_450,
             active_span_ms: 3_984.458,
-            late_energy_ratio: 0.042_935_554,
-            high_frequency_ratio: 0.207_538_01,
+            late_energy_ratio: 0.050_845_221,
+            high_frequency_ratio: 0.085_059_196,
         },
         Character {
-            peak: 0.368_210_26,
-            rms: 0.029_996_041,
-            active_span_ms: 3_983.625,
-            late_energy_ratio: 0.040_598_83,
-            high_frequency_ratio: 0.186_744_06,
+            peak: 0.370_771_289,
+            rms: 0.040_721_010,
+            active_span_ms: 3_984.458,
+            late_energy_ratio: 0.055_192_590,
+            high_frequency_ratio: 0.092_838_548,
         },
         Character {
             peak: 0.509_640_22,

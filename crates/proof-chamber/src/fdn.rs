@@ -2,7 +2,7 @@
 ///
 /// Configurable 8 or 16 channel FDN with:
 /// - Hadamard (N≥8) or Householder (N=4) mixing matrix
-/// - Mutually-prime delay lengths via prime-power method
+/// - Mutually coprime delay lengths, sized by a `size`-driven window
 /// - Per-delay-line absorptive filters for frequency-dependent decay (Jot formula)
 /// - Tapped delay line early reflections
 /// - Multiple incommensurate-frequency LFOs for modulation
@@ -61,28 +61,116 @@ fn householder_transform(data: &mut [f32], n: usize) {
 }
 
 // ---------------------------------------------------------------------------
-// Prime-power delay length generator
+// Coprime delay length generator
 // ---------------------------------------------------------------------------
 
-const PRIMES: [usize; 16] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];
+/// Trial division. Bounded by `sqrt(n)`, so a few dozen `%` for the lengths in
+/// play here, and allocation-free — this runs on the audio thread whenever
+/// `size` is written.
+fn is_prime(n: usize) -> bool {
+    if n < 2 {
+        return false;
+    }
+    if n % 2 == 0 {
+        return n == 2;
+    }
+    let mut divisor = 3;
+    while divisor * divisor <= n {
+        if n % divisor == 0 {
+            return false;
+        }
+        divisor += 2;
+    }
+    true
+}
 
-/// Generate N mutually-prime delay lengths in the range [min_samples, max_samples]
-/// using Smith's prime-power method: M_i = p_i^k_i where p_i is the i-th prime.
-fn generate_prime_power_delays(n: usize, min_samples: usize, max_samples: usize) -> Vec<usize> {
-    let target_mid = ((min_samples + max_samples) / 2) as f64;
-    let mut delays = Vec::with_capacity(n);
-
-    for i in 0..n.min(PRIMES.len()) {
-        let p = PRIMES[i] as f64;
-        // k = round(log(target) / log(p))
-        let k = (target_mid.ln() / p.ln()).round() as u32;
-        let delay = p.powi(k as i32) as usize;
-        delays.push(delay.clamp(min_samples, max_samples));
+/// The prime nearest `target` that no earlier line has taken, searching
+/// outwards and preferring the longer side on a tie.
+fn nearest_unused_prime(target: usize, taken: &[usize], ceiling: usize) -> usize {
+    let target = target.clamp(2, ceiling);
+    for offset in 0..=target {
+        let up = target + offset;
+        if up <= ceiling && is_prime(up) && !taken.contains(&up) {
+            return up;
+        }
+        if offset > 0 {
+            let down = target - offset;
+            if down >= 2 && is_prime(down) && !taken.contains(&down) {
+                return down;
+            }
+        }
     }
 
-    // Ensure all delays are within range and spread out
-    delays.sort();
-    delays
+    // Unreachable at any sample rate a host can run: the shortest window this
+    // is ever asked for is 10 ms, which is 441 samples at 44.1 kHz and holds 85
+    // primes against at most 16 lines. The arm exists because this is
+    // audio-thread code, and audio-thread code returns rather than looping or
+    // panicking. Distinctness is preserved even here; coprimality is not.
+    let mut fallback = 2;
+    while taken.contains(&fallback) {
+        fallback += 1;
+    }
+    fallback
+}
+
+/// Fill `out` with mutually coprime delay lengths spanning
+/// `[min_samples, max_samples]`, never exceeding `ceiling`.
+///
+/// Targets are spread geometrically across the window, so the set keeps its
+/// ratios as `size` slides the window rather than bunching at one end; each
+/// target is then snapped to the nearest prime no other line holds. Distinct
+/// primes are pairwise coprime, which is the property the tuning exists for: no
+/// two lines share a modal series, so the tank has no coincident modes to ring
+/// on.
+///
+/// Smith's prime-power form (`M_i = p_i^k_i`) stood here before. It delivers
+/// coprimality in principle and not in practice at these lengths, because the
+/// powers of a small prime are a factor of `p` apart — `2^k` offers 1024, 2048,
+/// 4096 and nothing between. Most lines therefore landed outside the requested
+/// window and were clamped onto its boundary, which is both how they collapsed
+/// onto one another (five of eight lines shared two values at 44.1 kHz) and why
+/// the length of a line barely moved when the window did.
+///
+/// Allocation-free by contract: it writes into the caller's slice and finds
+/// primes by trial division, because `size` is automatable and this is reached
+/// from the audio thread.
+fn fill_coprime_delays(out: &mut [usize], min_samples: usize, max_samples: usize, ceiling: usize) {
+    let lines = out.len();
+    if lines == 0 {
+        return;
+    }
+
+    let low = min_samples.clamp(2, ceiling) as f64;
+    let high = max_samples.clamp(min_samples + 1, ceiling) as f64;
+    let span = high / low;
+
+    for index in 0..lines {
+        let position = if lines > 1 {
+            index as f64 / (lines - 1) as f64
+        } else {
+            0.5
+        };
+        let target = (low * span.powf(position)).round() as usize;
+        let (taken, rest) = out.split_at_mut(index);
+        rest[0] = nearest_unused_prime(target, taken, ceiling);
+    }
+}
+
+/// Tune `out` for `size` at `sample_rate`, through the size-to-window mapping
+/// documented beside `MIN_DELAY_MS_AT_SIZE_0`.
+///
+/// The single place the mapping is applied, so the constructor and every later
+/// `size` write cannot disagree about what a given size means.
+fn fill_delay_lengths(out: &mut [usize], size: f32, sample_rate: f32) {
+    let size = size.clamp(0.0, 1.0);
+    let min_ms = MIN_DELAY_MS_AT_SIZE_0 + size * (MIN_DELAY_MS_AT_SIZE_1 - MIN_DELAY_MS_AT_SIZE_0);
+    let max_ms = MAX_DELAY_MS_AT_SIZE_0 + size * (MAX_DELAY_MS - MAX_DELAY_MS_AT_SIZE_0);
+    fill_coprime_delays(
+        out,
+        ms_to_samples(min_ms, sample_rate),
+        ms_to_samples(max_ms, sample_rate),
+        delay_ceiling(sample_rate),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +282,52 @@ impl AbsorptiveFilter {
 const MAX_FDN_CHANNELS: usize = 16;
 const SHIPPED_DAMPING: f32 = 0.3;
 
+/// Default `size`, matching the `dutch-oven` descriptor.
+const DEFAULT_SIZE: f32 = 0.5;
+
+// `size` maps onto a *window* of delay lengths, not a single scalar. The
+// shortest line is the tank's first late arrival — the room's mean free path,
+// which is what a listener hears as size — and the longest sets the modal
+// spacing. Both edges travel with the control, so the window moves as well as
+// widens and no two settings produce the same set:
+//
+//   size 0.0 → 10 ms … 30 ms   small, dense, fast-repeating
+//   size 1.0 → 30 ms … 80 ms   large hall, sparse early modes
+//
+// The four constants below are the whole mapping. `MAX_DELAY_MS` is also the
+// allocation size: buffers are built once for the longest line `size` can ever
+// ask for, so a size write only retunes read spans inside a fixed capacity.
+const MIN_DELAY_MS_AT_SIZE_0: f32 = 10.0;
+const MIN_DELAY_MS_AT_SIZE_1: f32 = 30.0;
+const MAX_DELAY_MS_AT_SIZE_0: f32 = 30.0;
+const MAX_DELAY_MS: f32 = 80.0;
+
+/// Furthest the LFO can push a read past a line's base delay. `mod_offset` is
+/// `lfo * mod_depth * 8` with both factors bounded by 1.
+const MODULATION_HEADROOM: usize = 8;
+
+/// Slack above the longest requested delay, so the prime snapping in
+/// `fill_coprime_delays` has room to land above its target. Comfortably wider
+/// than the largest prime gap below the lengths in play.
+const PRIME_HEADROOM: usize = 64;
+
+fn ms_to_samples(ms: f32, sample_rate: f32) -> usize {
+    (ms / 1000.0 * sample_rate) as usize
+}
+
+/// Longest base delay any line may hold, at any `size`. The generator is capped
+/// here rather than at the size-dependent window, so the topmost line can snap
+/// upwards to a prime without being clamped back onto its neighbour.
+fn delay_ceiling(sample_rate: f32) -> usize {
+    ms_to_samples(MAX_DELAY_MS, sample_rate) + PRIME_HEADROOM
+}
+
+/// One delay line's allocation, sized so `delay_ceiling` plus full modulation
+/// still indexes inside it.
+fn delay_buffer_len(sample_rate: f32) -> usize {
+    delay_ceiling(sample_rate) + MODULATION_HEADROOM + 1
+}
+
 fn normalized_hf_rt60_ratio(damping: f32) -> f32 {
     2.0_f32.powf(-damping.clamp(0.0, 0.999) / SHIPPED_DAMPING)
 }
@@ -266,15 +400,19 @@ impl FdnReverb {
     pub fn new(sample_rate: f32, num_channels: usize) -> Self {
         let n = num_channels.min(MAX_FDN_CHANNELS);
 
-        // Generate delay lengths based on default room size
-        let min_samples = (sample_rate * 0.020) as usize; // 20ms
-        let max_samples = (sample_rate * 0.060) as usize; // 60ms
-        let delay_lengths = generate_prime_power_delays(n, min_samples, max_samples);
+        // Delay lengths for the default room size, through the same mapping a
+        // later `size` write uses. Derived rather than written out again: the
+        // constructor used to carry its own 20–60 ms window, so a bare instance
+        // and one told `size = 0.5` were tuned differently.
+        let mut delay_lengths = vec![0_usize; n];
+        fill_delay_lengths(&mut delay_lengths, DEFAULT_SIZE, sample_rate);
 
-        let buffers: Vec<Vec<f32>> = delay_lengths
-            .iter()
-            .map(|&len| vec![0.0; len.max(1) + 64]) // +64 for modulation headroom
-            .collect();
+        // Every line is allocated for the longest delay `size` can ever reach,
+        // once, here. This is the RT contract: `set_param("size", …)` is
+        // automatable and therefore audio-thread work, and it must retune
+        // inside this capacity rather than reallocate.
+        let buffer_len = delay_buffer_len(sample_rate);
+        let buffers: Vec<Vec<f32>> = (0..n).map(|_| vec![0.0; buffer_len]).collect();
 
         let write_positions = vec![0; n];
 
@@ -324,8 +462,8 @@ impl FdnReverb {
             lfo_phases,
             lfo_freqs,
             mod_depth: 0.3,
-            early_reflections_l: EarlyReflections::new(sample_rate, 0.5),
-            early_reflections_r: EarlyReflections::new(sample_rate, 0.5),
+            early_reflections_l: EarlyReflections::new(sample_rate, DEFAULT_SIZE),
+            early_reflections_r: EarlyReflections::new(sample_rate, DEFAULT_SIZE),
             rt60: 2.0,
             rt60_hf: 0.8,
             // Bare and unversioned saved instances retain the historical curve.
@@ -333,7 +471,7 @@ impl FdnReverb {
             // the private `fdn_damping_version` wire parameter.
             damping: 0.2,
             normalized_damping: false,
-            size: 0.5,
+            size: DEFAULT_SIZE,
             mix: 0.3,
             early_late_balance: 0.4,
             use_hadamard: true,
@@ -467,18 +605,17 @@ impl FdnReverb {
         }
     }
 
+    /// Retune the tank for the current `size`.
+    ///
+    /// Allocation-free, and it has to be: `size` is an automatable parameter,
+    /// so this is reached from the audio thread on every envelope point. It
+    /// used to build a fresh `Vec` per write, and then clamp each new length
+    /// down to the buffer that line was given at construction — a ceiling
+    /// derived from the *default* size, which is why everything above roughly
+    /// 0.75 rendered identically. `fdn_size_automation_rt.rs` guards the first
+    /// half of that and `fdn_size_tuning.rs` the second.
     fn update_delay_lengths(&mut self) {
-        let min_ms = 10.0 + self.size * 20.0; // 10-30ms
-        let max_ms = 30.0 + self.size * 50.0; // 30-80ms
-        let min_samples = (min_ms / 1000.0 * self.sample_rate) as usize;
-        let max_samples = (max_ms / 1000.0 * self.sample_rate) as usize;
-        let new_delays = generate_prime_power_delays(self.num_channels, min_samples, max_samples);
-
-        for (i, &new_len) in new_delays.iter().enumerate() {
-            if i < self.delay_lengths.len() {
-                self.delay_lengths[i] = new_len.min(self.buffers[i].len() - 64);
-            }
-        }
+        fill_delay_lengths(&mut self.delay_lengths, self.size, self.sample_rate);
         self.update_absorptive_filters();
     }
 
@@ -601,8 +738,9 @@ impl FdnReverb {
 #[cfg(test)]
 mod tests {
     use super::{
-        decay_to_rt60_seconds, normalized_hf_rt60_ratio, FdnReverb, MAX_RT60_SECONDS,
-        MIN_RT60_SECONDS,
+        decay_to_rt60_seconds, delay_buffer_len, normalized_hf_rt60_ratio, FdnReverb, MAX_DELAY_MS,
+        MAX_DELAY_MS_AT_SIZE_0, MAX_FDN_CHANNELS, MAX_RT60_SECONDS, MIN_DELAY_MS_AT_SIZE_0,
+        MIN_DELAY_MS_AT_SIZE_1, MIN_RT60_SECONDS, MODULATION_HEADROOM,
     };
 
     #[test]
@@ -628,6 +766,175 @@ mod tests {
                 "line {index} was left with a flat unity loop gain of {worst}, so its Decay EQ \
                  has been told the tail never decays"
             );
+        }
+    }
+
+    /// Coincident modes are the whole reason the delay lengths are tuned at
+    /// all: two lines of equal length ring the same series of frequencies, and
+    /// an FDN with a repeated length sounds metallic in a way no amount of
+    /// modulation hides.
+    ///
+    /// Asserted over sample rate *and* size because the collapse was a
+    /// quantisation artefact of both — the tuning generator produced values
+    /// that fell outside the requested window and every one of them saturated
+    /// on the same boundary. A single-rate, single-size check would have been
+    /// green at the shipped default while the top of the control ran three
+    /// lines at one length.
+    #[test]
+    fn delay_lengths_stay_mutually_distinct_across_size_and_sample_rate() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            for channels in [8_usize, 16] {
+                for step in 0..=20 {
+                    let size = step as f32 / 20.0;
+                    let mut reverb = FdnReverb::new(sample_rate, channels);
+                    reverb.set_param("size", size);
+
+                    let lengths = &reverb.delay_lengths;
+                    for (i, a) in lengths.iter().enumerate() {
+                        for (j, b) in lengths.iter().enumerate().skip(i + 1) {
+                            assert_ne!(
+                                a, b,
+                                "lines {i} and {j} collapsed onto {a} samples at \
+                                 {sample_rate} Hz, {channels} lines, size {size}: \
+                                 {lengths:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Both edges of the delay window travel with `size`, over the whole
+    /// declared range and not just its lower three quarters.
+    ///
+    /// The render-level consequence is in `tests/fdn_size_tuning.rs`; this is
+    /// the mapping itself, where the failure was visible as a table that stopped
+    /// changing. Every line used to be clamped to the buffer it was allocated at
+    /// construction, and that buffer was sized for the *default* size, so above
+    /// roughly 0.75 the longest lines were already pinned and the set was
+    /// frozen.
+    #[test]
+    fn both_edges_of_the_delay_window_travel_with_size() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut shortest_before = 0_usize;
+            let mut longest_before = 0_usize;
+            for step in 0..=20 {
+                let size = step as f32 / 20.0;
+                let mut reverb = FdnReverb::new(sample_rate, 8);
+                reverb.set_param("size", size);
+
+                let shortest = *reverb.delay_lengths.iter().min().expect("lines exist");
+                let longest = *reverb.delay_lengths.iter().max().expect("lines exist");
+                assert!(
+                    shortest > shortest_before,
+                    "the shortest line must grow with size: {size} gave {shortest} \
+                     samples after {shortest_before} at {sample_rate} Hz"
+                );
+                assert!(
+                    longest > longest_before,
+                    "the longest line must grow with size: {size} gave {longest} \
+                     samples after {longest_before} at {sample_rate} Hz"
+                );
+                shortest_before = shortest;
+                longest_before = longest;
+            }
+        }
+    }
+
+    /// The declared window endpoints, so the mapping comment above
+    /// `MIN_DELAY_MS_AT_SIZE_0` stays a contract rather than a wish. The
+    /// tolerance is the prime snapping, which moves a target by at most a prime
+    /// gap.
+    #[test]
+    fn the_size_window_reaches_the_documented_millisecond_bounds() {
+        let sample_rate = 48_000.0_f32;
+        for (size, expected_min_ms, expected_max_ms) in [
+            (0.0_f32, MIN_DELAY_MS_AT_SIZE_0, MAX_DELAY_MS_AT_SIZE_0),
+            (1.0, MIN_DELAY_MS_AT_SIZE_1, MAX_DELAY_MS),
+        ] {
+            let mut reverb = FdnReverb::new(sample_rate, 8);
+            reverb.set_param("size", size);
+
+            let shortest_ms = *reverb.delay_lengths.iter().min().expect("lines exist") as f32
+                / sample_rate
+                * 1000.0;
+            let longest_ms = *reverb.delay_lengths.iter().max().expect("lines exist") as f32
+                / sample_rate
+                * 1000.0;
+            assert!(
+                (shortest_ms - expected_min_ms).abs() < 1.0,
+                "size {size} must put its shortest line near {expected_min_ms} ms, got {shortest_ms}"
+            );
+            assert!(
+                (longest_ms - expected_max_ms).abs() < 1.0,
+                "size {size} must put its longest line near {expected_max_ms} ms, got {longest_ms}"
+            );
+        }
+    }
+
+    /// Every line stays inside the buffer it was allocated, at every size and
+    /// with the modulation pushed to its limit. The read in `process` clamps, so
+    /// a length past the end degrades to a wrong delay rather than a panic —
+    /// which is precisely the kind of failure that would go unnoticed.
+    #[test]
+    fn no_tuning_can_ask_for_a_delay_the_buffer_cannot_hold() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let capacity = delay_buffer_len(sample_rate);
+            for step in 0..=20 {
+                let size = step as f32 / 20.0;
+                let mut reverb = FdnReverb::new(sample_rate, MAX_FDN_CHANNELS);
+                reverb.set_param("size", size);
+                reverb.set_param("mod_depth", 1.0);
+
+                for (index, &length) in reverb.delay_lengths.iter().enumerate() {
+                    assert!(
+                        length + MODULATION_HEADROOM < capacity,
+                        "line {index} asks for {length} samples plus modulation \
+                         against a {capacity}-sample buffer at {sample_rate} Hz, \
+                         size {size}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Distinct is necessary and not sufficient: two lines differing by one
+    /// sample still share nearly every mode. The prime-power/coprime tuning
+    /// exists to make the shared modes rare, so the lengths must also be
+    /// pairwise coprime.
+    #[test]
+    fn delay_lengths_stay_pairwise_coprime_across_size_and_sample_rate() {
+        fn gcd(mut a: usize, mut b: usize) -> usize {
+            while b != 0 {
+                let t = a % b;
+                a = b;
+                b = t;
+            }
+            a
+        }
+
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            for channels in [8_usize, 16] {
+                for step in 0..=20 {
+                    let size = step as f32 / 20.0;
+                    let mut reverb = FdnReverb::new(sample_rate, channels);
+                    reverb.set_param("size", size);
+
+                    let lengths = &reverb.delay_lengths;
+                    for (i, &a) in lengths.iter().enumerate() {
+                        for (j, &b) in lengths.iter().enumerate().skip(i + 1) {
+                            let common = gcd(a, b);
+                            assert_eq!(
+                                common, 1,
+                                "lines {i} ({a}) and {j} ({b}) share a factor of \
+                                 {common} at {sample_rate} Hz, {channels} lines, \
+                                 size {size}: {lengths:?}"
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 
