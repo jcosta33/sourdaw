@@ -1,0 +1,58 @@
+name: 💡 Feature or Improvement Request
+description: Propose a new capability, architectural refactor, or optimization.
+title: "feat(scope): "
+labels: ["enhancement", "status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please outline the proposed capability and its architectural boundary. Titles must follow `feat(scope): description` or `refactor(scope): description`.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem Scope
+      description: What subsystem or bounded context will own this capability?
+      options:
+        - audio-engine (Realtime scheduling, offline render, backends)
+        - daw-dsp (Synthesizers, modular DSP, audio effects)
+        - electron (Desktop shell, IPC, window management)
+        - native (Rust native addons, platform audio device layers)
+        - plugin-host (CLAP/VST3 hosting, scanning, isolation)
+        - midi (MPE, MIDI 2.0, controller mapping)
+        - arrangement (Timeline, clips, automation, composition)
+        - yeast / bacteria / knead / levain / crumbs (Instruments & processors)
+        - ai / airuntime (AI agentic workflows & tooling)
+        - workspace-shell / ui (Presentation components, mixer, meters)
+        - build (Tooling, build scripts, packaging)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - "priority:P2 (Medium: valuable enhancement or cleanup)"
+        - "priority:P1 (High: key architectural milestone or blocker)"
+        - "priority:P3 (Low: nice-to-have / exploratory)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution / Contract
+      description: Detailed description of the feature, proposed API/contract, and design decisions.
+      placeholder: "Describe the behavior, data flow, and public interface."
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Acceptance Criteria / Verification Plan
+      description: How will this feature be verified (unit tests, null tests, e2e, manual)?
+      placeholder: "- [ ] Unit test proving...\n- [ ] Parity assertion between..."
+    validations:
+      required: true
