@@ -42,17 +42,19 @@ describe('GrinderProcessor fallback-control protocol', () => {
     it('drops legacy and malformed messages without mutating WASM or faulting the processor', async () => {
         const processor = await createReadyGrinderProcessor();
         initializeControlGeneration(processor);
+        vi.mocked(processor.port.postMessage).mockClear();
 
         processor.port.onmessage?.({ data: { type: 'param', name: 'sag', value: 0.5 } });
         processor.port.onmessage?.({ data: { schemaVersion: 1, command: 'set-fallback-param' } });
 
         expect(grinderSetParamCalls).toEqual([]);
-        expect(processor.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+        expect(processor.port.postMessage).not.toHaveBeenCalled();
     });
 
     it('applies one current control and drops generation-mismatched, expired, duplicate, and out-of-order controls', async () => {
         const processor = await createReadyGrinderProcessor();
         initializeControlGeneration(processor);
+        vi.mocked(processor.port.postMessage).mockClear();
 
         processor.port.onmessage?.({ data: fallbackControl() });
         processor.port.onmessage?.({
@@ -70,6 +72,6 @@ describe('GrinderProcessor fallback-control protocol', () => {
         });
 
         expect(grinderSetParamCalls).toEqual([{ name: 'sag', value: 0.5 }]);
-        expect(processor.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+        expect(processor.port.postMessage).not.toHaveBeenCalled();
     });
 });
