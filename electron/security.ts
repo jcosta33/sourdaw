@@ -19,11 +19,19 @@ import type { Session, WebContents } from 'electron';
  *
  * Derived by walking the renderer for the Web APIs that raise a Chromium
  * permission, not from a list written ahead of the code — the first version of
- * this file was written that way and denied two capabilities the product uses,
- * one of them silently. Each entry below names the API that triggers it, which
- * is what makes the entry checkable; the search that produced them was over
- * `navigator.mediaDevices`, `navigator.requestMIDIAccess`, `setSinkId`,
- * `navigator.clipboard`, `navigator.storage` and `navigator.permissions`.
+ * this file was written that way and denied capabilities the product uses,
+ * silently. Each entry below names the API that triggers it, which is what
+ * makes the entry checkable.
+ *
+ * Re-running that derivation means sweeping two namespaces, not one. On
+ * `navigator`: `mediaDevices`, `requestMIDIAccess`, `clipboard`, `storage`,
+ * `permissions` — plus `setSinkId`, which hangs off `AudioContext`. On `window`
+ * itself: `showSaveFilePicker`, `showOpenFilePicker`, `showDirectoryPicker`.
+ * The File System Access API is a window-level API that Electron brokers
+ * through this same handler, so a sweep restricted to `navigator.*` cannot see
+ * it — and did not, which is how `fileSystem` was missed the first time. Any
+ * later sweep that reports "nothing new" while looking only at `navigator` has
+ * observed nothing.
  *
  * - `media` — `navigator.mediaDevices.getUserMedia`: audio input, recording and
  *   input monitoring.
@@ -39,6 +47,9 @@ import type { Session, WebContents } from 'electron';
  *   but it leaves downloaded models and origin-private project data evictable
  *   under memory pressure, which is a worse guarantee than the browser build's.
  *
+ * `fileSystem` is deliberately absent: it is allowed, but not by name alone.
+ * See `FILE_SYSTEM_PERMISSION` below.
+ *
  * Adding to this list is a security decision: it must name the API that needs
  * it, and that API must exist in the renderer.
  */
@@ -50,6 +61,61 @@ export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
     'clipboard-sanitized-write',
     'persistent-storage',
 ]);
+
+/**
+ * The File System Access API, brokered through this handler since
+ * electron#41419 under this permission string.
+ *
+ * Not a seventh member of the set above, because the string is not the whole
+ * request: `details` carries `filePath`, `isDirectory` and `fileAccessType`,
+ * and the renderer needs only some of those combinations. Granting the string
+ * would hand a user-picked *directory tree* write access to buy a single file
+ * write, which is the widest reach anything in this file grants.
+ */
+export const FILE_SYSTEM_PERMISSION = 'fileSystem';
+
+/** The `fileSystem` fields of an Electron permission request or check. */
+export type FileSystemAccess = {
+    readonly isDirectory?: boolean;
+    readonly fileAccessType?: 'writable' | 'readable';
+};
+
+/**
+ * The scope of the `fileSystem` grant: files read or written, directories read
+ * only — nothing writes into a user-picked directory.
+ *
+ * Why each half exists, by the call site that needs it:
+ *
+ * - file + `writable` — `window.showSaveFilePicker()` then
+ *   `handle.createWritable()`, in `downloadProjectFile.ts`,
+ *   `handleExportDawProject.ts` and `ExportDialog.tsx`. The first two catch a
+ *   refusal and fall back to an anchor download, so denial costs the user the
+ *   chosen location. The export dialog has no such fallback on the handle
+ *   branch: its catch only sets error text, so a denial there discards a
+ *   completed offline stem render *after* the user picked a destination — all
+ *   of the cost, none of the result.
+ * - file + `readable` — the read grant Chromium pairs with every picked file
+ *   handle. Electron consults this policy for the *status* of a grant it has
+ *   already auto-granted internally (`GetStatus` delegates wholesale once a
+ *   permission check handler is installed), so denying the read half of a
+ *   handle whose write half is allowed produces a handle no call site can use.
+ * - directory + `readable` — `window.showDirectoryPicker({ mode: 'read' })` in
+ *   `connectFolder.ts`, and the `{ mode: 'read' }` query/request that
+ *   re-establishes a persisted library root on restart. Denied, the sample
+ *   library cannot connect a folder at all.
+ * - directory + `writable` — denied. Nothing asks for it: the shell's own
+ *   writes go to OPFS, which is origin-private and never brokered here.
+ *
+ * An absent or unrecognised `fileAccessType` is denied. Electron sets it on
+ * every `fileSystem` request it raises, so a missing one is a request this
+ * policy has not reasoned about, and the safe answer to that is no.
+ */
+export const isFileSystemAccessAllowed = (access: FileSystemAccess): boolean => {
+    if (access.isDirectory === true) {
+        return access.fileAccessType === 'readable';
+    }
+    return access.fileAccessType === 'readable' || access.fileAccessType === 'writable';
+};
 
 export type PermissionPolicy = {
     /** Origins allowed to hold the permissions above — the app, plus the dev server when running unpackaged. */
@@ -86,22 +152,50 @@ export const normalizeOrigin = (url: string | undefined): string | undefined => 
 export const isPermissionAllowed = (
     policy: PermissionPolicy,
     permission: string,
-    requestingUrl: string | undefined
+    requestingUrl: string | undefined,
+    access: FileSystemAccess = {}
 ): boolean => {
-    if (!ALLOWED_PERMISSIONS.has(permission)) {
+    const origin = normalizeOrigin(requestingUrl);
+    const isAppOrigin =
+        origin !== undefined && policy.allowedOrigins.some((allowed) => normalizeOrigin(allowed) === origin);
+    if (!isAppOrigin) {
         return false;
     }
-    const origin = normalizeOrigin(requestingUrl);
-    return origin !== undefined && policy.allowedOrigins.some((allowed) => normalizeOrigin(allowed) === origin);
+    if (permission === FILE_SYSTEM_PERMISSION) {
+        return isFileSystemAccessAllowed(access);
+    }
+    return ALLOWED_PERMISSIONS.has(permission);
 };
 
-export const applyPermissionPolicy = (session: Session, policy: PermissionPolicy): void => {
+/**
+ * The slice of `Session` this policy installs into. Narrower than `Session` so
+ * that the wiring can be exercised against the two handlers it actually sets,
+ * rather than against a fabricated whole session.
+ */
+export type PermissionSession = Pick<Session, 'setPermissionRequestHandler' | 'setPermissionCheckHandler'>;
+
+export const applyPermissionPolicy = (session: PermissionSession, policy: PermissionPolicy): void => {
     session.setPermissionRequestHandler((webContents: WebContents | null, permission, callback, details) => {
         const requestingUrl = details.requestingUrl !== '' ? details.requestingUrl : webContents?.getURL();
-        callback(isPermissionAllowed(policy, permission, requestingUrl));
+        // `in` rather than a cast: `details` is a union, and only its
+        // filesystem member carries these. A request that is not a `fileSystem`
+        // request therefore yields an empty access shape, which is denied — the
+        // same answer the permission string alone would have given.
+        const access: FileSystemAccess = {
+            isDirectory: 'isDirectory' in details ? details.isDirectory : undefined,
+            fileAccessType: 'fileAccessType' in details ? details.fileAccessType : undefined,
+        };
+        callback(isPermissionAllowed(policy, permission, requestingUrl, access));
     });
 
-    session.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
-        isPermissionAllowed(policy, permission, requestingOrigin)
+    // The check handler carries the same three fields, and must reach the same
+    // verdict: Electron asks it for the *status* of a filesystem grant on every
+    // read and write, so a check that disagrees with the request would grant a
+    // handle and then refuse to use it.
+    session.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) =>
+        isPermissionAllowed(policy, permission, requestingOrigin, {
+            isDirectory: details.isDirectory,
+            fileAccessType: details.fileAccessType,
+        })
     );
 };
