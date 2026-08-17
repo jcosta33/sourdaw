@@ -1,0 +1,32 @@
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  s_ab5443e65c7fba::t_8245938ea91250 167,180-183,199,202
+  s_ab5443e65c7fba::t_c843287f27c1d0 11,147-166,168-179,184-198,200-201,203-205,1242-1305
+src/modules/Yeast/workers/MidiProcessor.ts
+  s_ab5443e65c7fba::t_dab2fb11c24aee 65-67,69,71-81
+src/modules/Yeast/workers/MidiRack.ts
+  s_ab5443e65c7fba::t_d76efad4002b6a 231-242,246,296-301
+src/modules/Yeast/workers/processors/CCGenerator.ts
+  s_ab5443e65c7fba::t_ec3b675de429fe 106-111
+src/modules/Yeast/workers/processors/MutationEngine.ts
+  s_ab5443e65c7fba::t_4e9ecf4e3d7773 103-108
+src/modules/Yeast/workers/processors/__tests__/CCGenerator.spec.ts
+  s_ab5443e65c7fba::t_8543eadf1b6260 231-280
+src/modules/Yeast/workers/processors/__tests__/MutationEngine.spec.ts
+  s_ab5443e65c7fba::t_4656dd212a5208 48-56,254-300
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6195f5034512aeec1c7ad1cfa2566a59dfa7e91a",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
