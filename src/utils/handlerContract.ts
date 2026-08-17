@@ -862,6 +862,31 @@ export type AppAction =
           };
       }
     | {
+          /**
+           * Application-compiled device-chain move. The provider and presentation layers
+           * supply only device identities; the Arrangement compiler owns this exact
+           * project/topology binding and the handler retains it for undo/redo.
+           */
+          type: 'reorderDevices';
+          payload: {
+              trackId: string;
+              deviceId: string;
+              targetIndex: number;
+              expectedBefore: {
+                  id: string;
+                  kind: TrackKind;
+                  devices: readonly {
+                      id: string;
+                      type: string;
+                      externalInstanceId?: string;
+                      parameterIds: readonly string[];
+                  }[];
+              };
+              /** Present on the initial application-issued command; replay uses topology guards. */
+              expectedProjectRevision?: string;
+          };
+      }
+    | {
           type: 'setDeviceParameter';
           payload: {
               deviceId: string;

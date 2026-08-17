@@ -50,8 +50,16 @@ function doesRuntimeGraphDeltaMatchCurrentProjectTopology(nodes: readonly Runtim
     });
 }
 
+function doesTrackMatchRuntimeGraphTopologyNode(track: Track, node: RuntimeGraphTopologyNode): boolean {
+    return (
+        createRuntimeGraphTopologyFingerprint(createRuntimeGraphTopologyNode(track)) ===
+        createRuntimeGraphTopologyFingerprint(node)
+    );
+}
+
 /** One Arrangement-owned topology contract shared by graph compilation and bootstrap validation. */
 export const runtimeGraphTopology = Object.freeze({
     createNode: createRuntimeGraphTopologyNode,
+    matchesNode: doesTrackMatchRuntimeGraphTopologyNode,
     matchesCurrentProject: doesRuntimeGraphDeltaMatchCurrentProjectTopology,
 });

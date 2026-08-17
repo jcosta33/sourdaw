@@ -11,7 +11,7 @@ import { useStore } from '#/infra/store/useStore';
 import {
     getPlatformPlugins,
     getPluginById,
-    reorderDevices,
+    compileReorderDevicesAction,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -254,7 +254,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
             />
             {track.devices.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                    {track.devices.map((device, deviceIndex) => (
+                    {track.devices.map((device) => (
                         <ChoiceCard
                             key={device.id}
                             data-testid={`device-card-${device.id}`}
@@ -273,7 +273,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             }}
                             draggable
                             onDragStart={(event) => {
-                                event.dataTransfer.setData('text/plain', String(deviceIndex));
+                                event.dataTransfer.setData('text/plain', device.id);
                                 event.dataTransfer.effectAllowed = 'move';
                             }}
                             onDragOver={(event) => {
@@ -282,9 +282,10 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             }}
                             onDrop={(event) => {
                                 event.preventDefault();
-                                const fromIndex = parseInt(event.dataTransfer.getData('text/plain'), 10);
-                                if (!isNaN(fromIndex) && fromIndex !== deviceIndex) {
-                                    reorderDevices(track.id, fromIndex, deviceIndex);
+                                const draggedDeviceId = event.dataTransfer.getData('text/plain');
+                                const action = compileReorderDevicesAction(track.id, draggedDeviceId, device.id);
+                                if (action) {
+                                    void executeAppAction(action);
                                 }
                             }}
                         >

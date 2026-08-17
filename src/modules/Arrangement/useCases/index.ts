@@ -140,7 +140,7 @@ export { bypassMidiFx } from './device/bypassMidiFx';
 export { updateMidiFxParam } from './device/updateMidiFxParam';
 export { bypassDevice } from './device/bypassDevice';
 export { removeDevice } from './device/removeDevice';
-export { reorderDevices } from './device/reorderDevices';
+export { compileReorderDevicesAction } from './device/compileReorderDevicesAction';
 export { setSend } from './device/sendManagement/setSend';
 export { removeSend } from './device/sendManagement/removeSend';
 export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
