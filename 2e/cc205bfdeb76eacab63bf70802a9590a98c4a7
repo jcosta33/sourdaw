@@ -1,0 +1,27 @@
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ab5443e65c7fba::t_5848fb23249e6c 120-126
+  s_ab5443e65c7fba::t_f93f110e60976f 62-67
+src/modules/AudioAnalysis/useCases/audioToMidi.ts
+  s_ab5443e65c7fba::t_253b9f277603bf 103-106,111-117,119-123,125-127,129,131-133,135-137,139-142,144-145,147-153,155-157,159-163,166-173,175-176,178,181
+  s_ab5443e65c7fba::t_790780786af093 179-180
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_ab5443e65c7fba::t_c70fb01b43ddbf 163-222
+src/modules/TimelineEditor/presentations/views/Inspector/MasterVisualizationsSection.tsx
+  s_ab5443e65c7fba::t_0477ce0a4a288f 43-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2ecc205bfdeb76eacab63bf70802a9590a98c4a7",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
