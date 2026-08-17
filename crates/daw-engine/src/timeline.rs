@@ -133,6 +133,11 @@ pub struct TimelineRtDiagnosticsSnapshot {
     /// An exponential ramp requested through or across zero, run as a linear
     /// ramp instead.
     pub exponential_ramp_fallbacks: u64,
+    /// A send that rendered with no live bus to land on, because the bus was
+    /// removed or never added. Counted once each time a send goes dead rather
+    /// than once per block, so the number is a count of events an engineer can
+    /// act on and not of callbacks.
+    pub unresolved_send_buses: u64,
 }
 
 pub(crate) struct TimelineRtDiagnosticsReader {
@@ -169,6 +174,7 @@ impl TimelineRtDiagnostics {
                 routing_cycles_refused: 0,
                 invalid_bus_routings: 0,
                 exponential_ramp_fallbacks: 0,
+                unresolved_send_buses: 0,
             },
         }
     }
@@ -206,6 +212,10 @@ impl TimelineRtDiagnostics {
     fn record_exponential_ramp_fallback(&mut self) {
         self.snapshot.exponential_ramp_fallbacks =
             self.snapshot.exponential_ramp_fallbacks.saturating_add(1);
+    }
+
+    fn record_unresolved_send_bus(&mut self) {
+        self.snapshot.unresolved_send_buses = self.snapshot.unresolved_send_buses.saturating_add(1);
     }
 }
 
@@ -533,11 +543,17 @@ impl TimelineClip {
 }
 
 /// One send from a track to a bus.
+///
+/// The bus id is accepted whether or not that bus is live yet, so the order of
+/// `AddSend` and `AddBus` in a command batch cannot matter. Whether the send
+/// actually found its bus is therefore a render-time fact, latched here so a
+/// dead send is diagnosed once rather than once per callback.
 #[derive(Clone, Copy, Debug)]
 pub struct TrackSend {
     bus_id: usize,
     tap: SendTap,
     level: RampedParam,
+    bus_missing: bool,
 }
 
 /// One track: an input sum, clips, a device chain, sends, a fader, a mute, a
@@ -950,6 +966,7 @@ impl TimelineGraph {
             bus_id,
             tap,
             level: RampedParam::new(level),
+            bus_missing: false,
         });
     }
 
@@ -1358,8 +1375,17 @@ fn run_sends(
             continue;
         }
         let Some(bus) = buses.iter_mut().find(|bus| bus.id == send.bus_id) else {
+            // A send is the one command whose target is resolved at render
+            // time, so a bus that was removed or never added can only be
+            // reported from here. Latching it counts the send going dead once
+            // instead of once every callback for as long as it stays dead.
+            if !send.bus_missing {
+                send.bus_missing = true;
+                diagnostics.record_unresolved_send_bus();
+            }
             continue;
         };
+        send.bus_missing = false;
 
         if let Some(level) = send.level.block_constant(block_start, frames) {
             if level == 0.0 {
@@ -1472,6 +1498,21 @@ fn pan_frame(gains: (f32, f32, f32, f32), left: f32, right: f32) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A graph with no devices to run, for the render paths that are about
+    /// routing rather than about what a chain does to the signal.
+    struct NoDevices;
+
+    impl DeviceChain for NoDevices {
+        fn run_device(
+            &mut self,
+            _effect_id: usize,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _frames: usize,
+        ) {
+        }
+    }
 
     fn placement(start_frame: u64, source_offset_frames: u64, length_frames: u64) -> ClipPlacement {
         ClipPlacement {
@@ -1734,5 +1775,57 @@ mod tests {
         // Freed by the track that holds it, the effect is available again.
         assert!(graph.remove_track_device(1, 7));
         assert!(graph.insert_track_device(2, 7, 0));
+    }
+
+    #[test]
+    fn a_send_whose_bus_is_gone_is_counted_once_and_leaves_the_track_alone() {
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        assert!(graph
+            .add_clip(
+                1,
+                TimelineClip::new(9, vec![1.0; 8], Vec::new(), placement(0, 0, 8), 1.0)
+            )
+            .is_none());
+        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![2.0; 4], "the track's output plus its send");
+        assert_eq!(graph.diagnostics().unresolved_send_buses, 0);
+
+        // The send now names a bus that is gone. Every other command in this
+        // file diagnoses a target it cannot resolve; a send resolves its
+        // target at render time, so this is the only place it can be seen.
+        drop(graph.remove_bus(50));
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4], "the track itself is unaffected");
+        assert_eq!(graph.diagnostics().unresolved_send_buses, 1);
+
+        // A send that stays dead is one event, not one per callback.
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(4, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4]);
+        assert_eq!(graph.diagnostics().unresolved_send_buses, 1);
+
+        // Restoring the bus makes the send live again, and losing it a second
+        // time is a second event.
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![2.0; 4]);
+        assert_eq!(graph.diagnostics().unresolved_send_buses, 1);
+
+        drop(graph.remove_bus(50));
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(graph.diagnostics().unresolved_send_buses, 2);
     }
 }
