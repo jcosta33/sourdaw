@@ -2,7 +2,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
+import { notifyAiChange } from '#/modules/AiRuntime/useCases';
+import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipAudioAiSection } from '../ClipAudioAiSection';
 
@@ -243,6 +246,32 @@ describe('ClipAudioAiSection', () => {
     it('should render MIDI (Basic) button', () => {
         render(<ClipAudioAiSection {...defaultProps} />);
         expect(screen.getByText('MIDI (Basic)')).toBeInTheDocument();
+    });
+
+    it('notifies success only when audioToMidi actually produced a clip', () => {
+        vi.mocked(audioToMidi).mockReturnValue(true);
+
+        render(<ClipAudioAiSection {...defaultProps} />);
+        fireEvent.click(screen.getByText('MIDI (Basic)'));
+
+        expect(audioToMidi).toHaveBeenCalledWith({ clipId: 'clip-1', trackId: 'track-1' });
+        expect(notifyAiChange).toHaveBeenCalledWith('Audio converted to MIDI', [
+            'New MIDI clip created from detected onsets',
+        ]);
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does not report success when audioToMidi silently finds nothing to convert', () => {
+        // audioToMidi returns `false` (never throws) when the clip, buffer, onsets, or
+        // MIDI-track resolution come up empty. Without gating on that result, this click
+        // would always show "Audio converted to MIDI" regardless of outcome.
+        vi.mocked(audioToMidi).mockReturnValue(false);
+
+        render(<ClipAudioAiSection {...defaultProps} />);
+        fireEvent.click(screen.getByText('MIDI (Basic)'));
+
+        expect(notifyAiChange).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith('Audio to MIDI conversion failed', 'error');
     });
 
     it('should render Polyphonic MIDI section', () => {

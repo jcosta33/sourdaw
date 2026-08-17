@@ -3,9 +3,15 @@ import { type ReactElement, type ChangeEvent } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { quantiseDeviceParameterValue, setDeviceParameter } from '#/modules/Arrangement/useCases';
-import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
+import {
+    automationStore,
+    modulationStore,
+    modulationRuntimeStore,
+    type ModulationStoreState,
+} from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
@@ -47,6 +53,83 @@ function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, Dev
     return map;
 }
 
+type ParameterMapping = { modulatorId: string; amount: number };
+
+const NO_PARAMETER_MAPPINGS: ParameterMapping[] = [];
+
+/**
+ * Pull the mappings that target this exact (trackId, deviceId, paramId) triple out of
+ * every enabled modulator. Kept separate from the runtime-value lookup below so the two
+ * can subscribe to their stores independently: mappings change on user edits (rare),
+ * runtime values tick at modulation rate (constant) — collapsing them into one selector
+ * would make the mapping scan run at runtime-tick rate for no reason.
+ */
+function selectParameterMappings(
+    state: ModulationStoreState | null,
+    trackId: string,
+    deviceId: string,
+    paramId: string
+): ParameterMapping[] {
+    let mappings: ParameterMapping[] | undefined;
+    for (const mod of state?.modulators ?? []) {
+        if (!mod.enabled) {
+            continue;
+        }
+        for (const mapping of mod.mappings) {
+            if (
+                mapping.targetTrackId === trackId &&
+                mapping.targetDeviceId === deviceId &&
+                mapping.targetParamId === paramId
+            ) {
+                mappings ??= [];
+                mappings.push({ modulatorId: mod.id, amount: mapping.amount });
+            }
+        }
+    }
+    return mappings ?? NO_PARAMETER_MAPPINGS;
+}
+
+function parameterMappingsEqual(a: ParameterMapping[], b: ParameterMapping[]): boolean {
+    if (a === b) {
+        return true;
+    }
+    if (a.length !== b.length) {
+        return false;
+    }
+    return a.every(
+        (mapping, index) => mapping.modulatorId === b[index]!.modulatorId && mapping.amount === b[index]!.amount
+    );
+}
+
+function selectModulationTotal(
+    runtimeState: { runtimeValues: Record<string, number> } | null,
+    mappings: ParameterMapping[]
+): number {
+    let total = 0;
+    for (const mapping of mappings) {
+        total += (runtimeState?.runtimeValues[mapping.modulatorId] ?? 0) * mapping.amount;
+    }
+    return Math.max(-1, Math.min(1, total));
+}
+
+/**
+ * Narrow subscription for one device parameter's aggregated modulation amount (audit
+ * m5/M5). `useStore(modulationRuntimeStore, ...)` re-renders every control in the
+ * inspector on every runtime tick, whether or not a modulator targets it. Selecting down
+ * to just this parameter's mappings — and their runtime values — means
+ * `useSyncExternalStore`'s `Object.is` check absorbs runtime ticks for every parameter an
+ * idle control isn't wired to; only a tick that changes *this* total causes a re-render.
+ */
+function useDeviceParameterModulation(trackId: string, deviceId: string, paramId: string): number {
+    const mappings = useStoreSelector(
+        modulationStore,
+        (state) => selectParameterMappings(state, trackId, deviceId, paramId),
+        parameterMappingsEqual
+    );
+
+    return useStoreSelector(modulationRuntimeStore, (state) => selectModulationTotal(state, mappings), Object.is);
+}
+
 /** Compute a sensible step from the parameter range and type. */
 function deriveStep(param: DeviceParameter): number {
     if (param.type === 'int') {
@@ -86,29 +169,11 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
     const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
-    const modState = useStore(modulationStore, { modulators: [] });
-    const modRtState = useStore(modulationRuntimeStore, { runtimeValues: {} });
 
-    // Aggregated modulation amount for this parameter
-    const modulation = (() => {
-        let total = 0;
-        for (const mod of modState.modulators) {
-            if (!mod.enabled) {
-                continue;
-            }
-            const val = modRtState.runtimeValues[mod.id] ?? 0;
-            for (const mapping of mod.mappings) {
-                if (
-                    mapping.targetTrackId === trackId &&
-                    mapping.targetDeviceId === device.id &&
-                    mapping.targetParamId === param.id
-                ) {
-                    total += val * mapping.amount;
-                }
-            }
-        }
-        return Math.max(-1, Math.min(1, total));
-    })();
+    // Aggregated modulation amount for this parameter — narrow subscription (audit M5) so
+    // a runtime tick that doesn't move this parameter's mapped modulators does not re-render
+    // this control. See useDeviceParameterModulation above.
+    const modulation = useDeviceParameterModulation(trackId, device.id, param.id);
 
     const laneLookup = buildLaneLookup(autoState.lanes);
     const targetId = createDeviceAutomationTargetId(device.id, param.id);

@@ -96,20 +96,27 @@ function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targ
     });
 }
 
-export function audioToMidi(options: AudioToMidiOptions): void {
+/**
+ * Detect onsets in `options.clipId`'s cached audio and write them as MIDI notes on a
+ * (possibly newly-created) MIDI track. Returns whether a MIDI clip was actually produced,
+ * so callers can distinguish a real conversion from a silent no-op (clip/buffer missing, no
+ * onsets detected, or MIDI track resolution failed) instead of assuming success whenever the
+ * call completes without throwing — this function never throws.
+ */
+export function audioToMidi(options: AudioToMidiOptions): boolean {
     const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
 
     const clip = getAllTracks()
         .flatMap((time) => time.clips)
         .find((context) => context.id === clipId);
     if (!clip) {
-        return;
+        return false;
     }
 
     const bufferId = clip.audioBufferId ?? clipId;
     const buffer = getCachedAudioBuffer({ bufferId });
     if (!buffer) {
-        return;
+        return false;
     }
 
     const tempo = getTransportState()?.tempo ?? 120;
@@ -123,12 +130,12 @@ export function audioToMidi(options: AudioToMidiOptions): void {
     }
 
     if (onsets.length === 0) {
-        return;
+        return false;
     }
 
     const midiTrackId = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
     if (!midiTrackId) {
-        return;
+        return false;
     }
 
     const clipStartBeat = clip.startBeat;
@@ -143,7 +150,7 @@ export function audioToMidi(options: AudioToMidiOptions): void {
     });
 
     if (!midiClip) {
-        return;
+        return false;
     }
 
     let maxAmplitude = 1e-8;
@@ -163,4 +170,6 @@ export function audioToMidi(options: AudioToMidiOptions): void {
 
         addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
     }
+
+    return true;
 }
