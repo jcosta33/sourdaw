@@ -1,5 +1,5 @@
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { clearClipPitchContour } from '#/modules/Knead/useCases';
+import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -50,6 +50,6 @@ export function reverseClip(clipId: string): boolean {
         return false;
     }
 
-    clearClipPitchContour(target.clipId);
+    clearClipPitchAnalysis(target.clipId);
     return true;
 }
