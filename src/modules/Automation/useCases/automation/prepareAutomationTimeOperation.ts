@@ -25,6 +25,19 @@ type AutomationOwnerSnapshot = {
 type PrepareAutomationTimeOperationInput = {
     operation: AutomationTimeOperation;
     owners: readonly AutomationOwnerSnapshot[];
+    /**
+     * Clip ids the caller's own transaction retires — either deleted outright or
+     * re-identified. Their clip-scoped lanes are dropped in the same transaction
+     * so the shifted store never keeps a lane pointing at a clip id that no
+     * longer exists; such a lane makes every later preparation reject.
+     */
+    removedClipIds?: readonly string[];
+    /**
+     * Clip ids the caller's own transaction re-keys: the clip survives the edit
+     * under a new id. Its clip-scoped lanes move with it — destroying them would
+     * lose deterministic automation the user never asked to delete.
+     */
+    clipIdMigrations?: readonly { sourceClipId: string; targetClipId: string }[];
 };
 
 type IndexedAutomationOwner = {
@@ -155,9 +168,68 @@ function createOwnerIndex(owners: unknown): ReadonlyMap<string, IndexedAutomatio
     return ownersByTrackId;
 }
 
+function createRemovedClipIdSet(value: unknown): ReadonlySet<string> | null {
+    if (value === undefined) {
+        return new Set<string>();
+    }
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const removedClipIds = new Set<string>();
+    for (const clipId of value) {
+        if (typeof clipId !== 'string' || clipId.trim().length === 0) {
+            return null;
+        }
+        removedClipIds.add(clipId);
+    }
+    return removedClipIds;
+}
+
+function createClipIdMigrationMap(
+    value: unknown,
+    removedClipIds: ReadonlySet<string>
+): ReadonlyMap<string, string> | null {
+    if (value === undefined) {
+        return new Map<string, string>();
+    }
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const migrations = new Map<string, string>();
+    const targets = new Set<string>();
+    for (const migration of value) {
+        if (!isPlainObject(migration)) {
+            return null;
+        }
+        const sourceClipId = migration.sourceClipId;
+        const targetClipId = migration.targetClipId;
+        if (typeof sourceClipId !== 'string' || sourceClipId.trim().length === 0) {
+            return null;
+        }
+        if (typeof targetClipId !== 'string' || targetClipId.trim().length === 0) {
+            return null;
+        }
+        // A clip id cannot both go away and survive, a source cannot re-key
+        // twice, and two sources cannot collapse onto one target.
+        if (removedClipIds.has(sourceClipId) || removedClipIds.has(targetClipId)) {
+            return null;
+        }
+        if (migrations.has(sourceClipId) || targets.has(targetClipId) || sourceClipId === targetClipId) {
+            return null;
+        }
+        migrations.set(sourceClipId, targetClipId);
+        targets.add(targetClipId);
+    }
+    return migrations;
+}
+
 function validateInput(input: unknown): {
     operation: AutomationTimeOperation;
     ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>;
+    removedClipIds: ReadonlySet<string>;
+    clipIdMigrations: ReadonlyMap<string, string>;
 } | null {
     if (!isPlainObject(input)) {
         return null;
@@ -173,9 +245,21 @@ function validateInput(input: unknown): {
         return null;
     }
 
+    const removedClipIds = createRemovedClipIdSet(input.removedClipIds);
+    if (!removedClipIds) {
+        return null;
+    }
+
+    const clipIdMigrations = createClipIdMigrationMap(input.clipIdMigrations, removedClipIds);
+    if (!clipIdMigrations) {
+        return null;
+    }
+
     return {
         operation,
         ownersByTrackId,
+        removedClipIds,
+        clipIdMigrations,
     };
 }
 
@@ -260,7 +344,9 @@ function prepareLanePoints(lane: AutomationLane, operation: AutomationTimeOperat
 function prepareNextState(
     preparedState: AutomationStoreState | null,
     operation: AutomationTimeOperation,
-    ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>
+    ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>,
+    removedClipIds: ReadonlySet<string>,
+    clipIdMigrations: ReadonlyMap<string, string>
 ): PreparedAutomationState {
     if (!preparedState) {
         return {
@@ -281,6 +367,13 @@ function prepareNextState(
                 nextState: preparedState,
             };
         }
+        if (lane.clipId !== undefined && removedClipIds.has(lane.clipId)) {
+            // The caller's transaction retires this clip id in the same commit.
+            // Shifting the lane's points would leave it orphaned and reject
+            // every later time operation, so the lane goes with the clip.
+            hasChanges = true;
+            continue;
+        }
         if (lane.clipId !== undefined && !owner.clipIds.has(lane.clipId)) {
             return {
                 status: 'rejected',
@@ -288,7 +381,16 @@ function prepareNextState(
                 nextState: preparedState,
             };
         }
+        const targetClipId = lane.clipId === undefined ? undefined : clipIdMigrations.get(lane.clipId);
         if (!owner.eligible) {
+            if (targetClipId !== undefined) {
+                // Only a track whose clips the caller rewrites can re-key one.
+                return {
+                    status: 'rejected',
+                    hasChanges: false,
+                    nextState: preparedState,
+                };
+            }
             lanes.push(lane);
             continue;
         }
@@ -301,16 +403,22 @@ function prepareNextState(
                 nextState: preparedState,
             };
         }
-        if (!preparedPoints.hasChanges) {
+        if (!preparedPoints.hasChanges && targetClipId === undefined) {
             lanes.push(lane);
             continue;
         }
 
         hasChanges = true;
-        lanes.push({
+        const nextLane: AutomationLane = {
             ...lane,
             points: preparedPoints.points,
-        });
+        };
+        if (targetClipId !== undefined) {
+            // Assigned rather than spread so a track-wide lane never gains an
+            // own `clipId` key holding `undefined`.
+            nextLane.clipId = targetClipId;
+        }
+        lanes.push(nextLane);
     }
 
     if (!hasChanges) {
@@ -353,7 +461,13 @@ export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOpera
             nextState: preparedState,
         };
     } else {
-        preparedOperation = prepareNextState(preparedState, validatedInput.operation, validatedInput.ownersByTrackId);
+        preparedOperation = prepareNextState(
+            preparedState,
+            validatedInput.operation,
+            validatedInput.ownersByTrackId,
+            validatedInput.removedClipIds,
+            validatedInput.clipIdMigrations
+        );
     }
     let inversePlan: AutomationTimeStateRestorePlan | null = null;
     if (

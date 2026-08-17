@@ -12,6 +12,7 @@ const inversePlan = {
     automation: null,
     midi: null,
     timelineMap: null,
+    clipSatellites: null,
 };
 
 describe('executeUndoableDuplicateTimeRange', () => {
