@@ -29,7 +29,7 @@ type WorkerState = {
     initialized: boolean;
 };
 
-// Module-level state following the §152.1 coalesce pattern from browserStemSeparation.ts
+// One state object coalesces worker initialization and request ownership.
 const workerState: {
     onnx: WorkerState;
     tfjs: WorkerState;

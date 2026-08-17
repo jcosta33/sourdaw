@@ -16,17 +16,6 @@ import { type DdspInstrument } from './BrowserModel';
 const DDSP_BASE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp';
 
 /**
- * NSF-HiFiGAN vocoder — 2024.02 logE variant, required for modern DiffSinger v2 models.
- * Distributed as an OpenUTAU dependency package (.oudep = ZIP).
- * The download manager extracts the inner .onnx automatically.
- * Inner filename: nsf_hifigan_44.1k_hop512_128bin_2024.02.onnx
- */
-export const NSF_HIFIGAN_URL =
-    'https://huggingface.co/jcosta33/vocoder-models/resolve/main/nsf-hifigan-44k/nsf_hifigan_44.1k_hop512_128bin_2024.02.onnx';
-
-export const NSF_HIFIGAN_SIZE_BYTES = 52_000_000;
-
-/**
  * Kokoro TTS model — q8f16 quantized (int8 weights, float16 activations), 86 MB.
  * Path: onnx/model_q8f16.onnx inside onnx-community/Kokoro-82M-v1.0-ONNX.
  * The model_q8.onnx file does not exist in the repo; q8f16 is the closest equivalent.

@@ -18,23 +18,12 @@ vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {
         removeTask: removeTaskMock,
         toggleAiPanel: vi.fn(),
         handleGenerateMidiPrompt: vi.fn(),
-        handleStemSeparationPreview: vi.fn(),
     };
 });
 
 vi.mock('#/modules/AiGeneration/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AiGeneration/stores')>()),
     aiStore: { name: 'aiStore' },
-}));
-
-vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/stores')>()),
-    workspaceStore: { name: 'workspaceStore' },
-}));
-
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: { name: 'trackStore' },
 }));
 
 type MockAiTask = {
@@ -89,18 +78,10 @@ type MockAiTaskState = {
 };
 
 const mockAiState: { isPanelOpen: boolean; tasks: MockAiTaskState[] } = { isPanelOpen: true, tasks: [] };
-const mockWorkspaceState = { selectedClipId: null };
-const mockTrackState = { tracks: [] };
 
 vi.mocked(useStore).mockImplementation((store: any) => {
     if (store?.name === 'aiStore') {
         return mockAiState;
-    }
-    if (store?.name === 'workspaceStore') {
-        return mockWorkspaceState;
-    }
-    if (store?.name === 'trackStore') {
-        return mockTrackState;
     }
     return {};
 });
@@ -110,8 +91,6 @@ describe('GenerativeAiPanel', () => {
         vi.clearAllMocks();
         mockAiState.isPanelOpen = true;
         mockAiState.tasks = [];
-        mockWorkspaceState.selectedClipId = null;
-        mockTrackState.tracks = [];
     });
 
     it('should render without crashing when panel is open', () => {
@@ -139,19 +118,12 @@ describe('GenerativeAiPanel', () => {
         expect(screen.getByText('Generate')).toBeInTheDocument();
     });
 
-    it('should render tab buttons', () => {
+    it('renders only the MIDI generation modes', () => {
         render(<GenerativeAiPanel />);
-        expect(screen.getByText('MIDI')).toBeInTheDocument();
-        expect(screen.queryByText('Audio')).not.toBeInTheDocument();
-        expect(screen.getByText('Stems')).toBeInTheDocument();
-    });
-
-    it('should switch between tabs when clicked', () => {
-        render(<GenerativeAiPanel />);
-
-        const stemsTab = screen.getByText('Stems');
-        fireEvent.click(stemsTab);
-        expect(screen.getAllByText(/Select an audio clip on the timeline/i).length).toBeGreaterThan(0);
+        expect(screen.getByText('Patterns')).toBeInTheDocument();
+        expect(screen.getByText('AI')).toBeInTheDocument();
+        expect(screen.queryByText('Stems')).not.toBeInTheDocument();
+        expect(screen.queryByText('Extract Stems')).not.toBeInTheDocument();
     });
 
     it('should render PatternBrowser by default in MIDI tab', () => {

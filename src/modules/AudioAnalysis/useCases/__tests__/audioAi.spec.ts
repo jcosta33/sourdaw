@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    isStemSeparationAvailable: vi.fn(() => true),
+    isStemSeparationAvailable: vi.fn(() => false),
     isAudioAiServerRunning: vi.fn().mockResolvedValue(true),
     separateStems: vi.fn().mockResolvedValue({}),
 }));
@@ -28,7 +28,7 @@ describe('audioAi delegates', () => {
     });
 
     it('forwards each query/command to the repository', async () => {
-        expect(isStemSeparationAvailable()).toBe(true);
+        expect(isStemSeparationAvailable()).toBe(false);
         await expect(isAudioAiServerRunning()).resolves.toBe(true);
         await separateStems(new ArrayBuffer(0), ['drums']);
 

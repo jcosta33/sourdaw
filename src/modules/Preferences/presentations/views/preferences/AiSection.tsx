@@ -350,8 +350,8 @@ export const AiSection = (): ReactElement => {
             <Separator />
             <FieldGroup label="Browser AI">
                 <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
-                    Instrument synthesis (DDSP), vocal previews (Kokoro TTS), and singing voice synthesis (DiffSinger) —
-                    all running in the browser via WebGPU on Chrome. No server required.
+                    Instrument synthesis (DDSP) and vocal previews (Kokoro TTS) run in the browser via WebGPU on Chrome.
+                    No server required.
                 </p>
                 <div className="border border-border/30 rounded overflow-hidden">
                     <CapabilityReportPanel />

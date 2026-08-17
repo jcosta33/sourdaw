@@ -5,7 +5,6 @@ commands.allow = [
     "provider_gateway_request",
     "cancel_provider_gateway_request",
     "denoise_audio",
-    "separate_stems",
     "ensure_whisper_ready",
     "start_dictation",
     "stop_dictation",

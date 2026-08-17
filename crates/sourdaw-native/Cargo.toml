@@ -41,8 +41,6 @@ whisper-rs = { version = "0.16", features = ["metal"] }
 cpal = "0.18"
 rubato = "4"
 audioadapter-buffers = "4"
-ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
-ndarray = "0.17"
 sha2 = "0.11"
 rtrb = "0.3"
 hound = "3.5"
