@@ -84,8 +84,10 @@ export type TimeOperationDependencies = {
     prepareAutomationTimeOperation: (input: {
         operation: InsertTimeOperation | DeleteTimeOperation;
         owners: readonly AutomationOwnerSnapshot[];
-        /** Clip ids this operation retires; their clip-scoped lanes go with them. */
+        /** Clip ids this operation removes; their clip-scoped lanes go with them. */
         removedClipIds: readonly string[];
+        /** Clip ids this operation re-keys; their clip-scoped lanes follow. */
+        clipIdMigrations?: readonly { sourceClipId: string; targetClipId: string }[];
     }) => PreparedTimeOperationWithInversePlan;
     prepareAutomationTimeStateRestore: (plan: unknown) => PreparedTimeOperation;
     prepareMidiGlobalTimeTransaction: (input: {

@@ -199,13 +199,11 @@ function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan
         return null;
     }
 
-    if (properties.scope === 'selected-range') {
-        if (properties.automation !== null || properties.timelineMap !== null) {
-            return null;
-        }
-        if (properties.clipSatellites !== null) {
-            return null;
-        }
+    // A selected-range deletion never moves the timeline map: it edits clips on
+    // chosen tracks, not project time. It does retire the satellites of the
+    // clips it removes, so those two slots may carry a plan.
+    if (properties.scope === 'selected-range' && properties.timelineMap !== null) {
+        return null;
     }
 
     const automation = validateOwnerPlan(properties.automation);
@@ -675,6 +673,12 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
     if (plan.scope === 'selected-range') {
         if (midi) {
             handles.push(midi);
+        }
+        if (automation) {
+            handles.push(automation);
+        }
+        if (clipSatellites) {
+            handles.push(clipSatellites);
         }
         if (localHandle.hasChanges) {
             handles.push(localHandle);

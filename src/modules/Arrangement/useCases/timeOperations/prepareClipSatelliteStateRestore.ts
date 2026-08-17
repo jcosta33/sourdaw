@@ -8,7 +8,7 @@ import {
 
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 
-import type { WarpState } from '../../models/WarpMarker';
+import type { WarpMarker, WarpMarkerOrigin, WarpState } from '../../models/WarpMarker';
 import type { ClipGainEnvelope, GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
 
 /**
@@ -34,8 +34,16 @@ const GAIN_ENVELOPE_KEYS = ['clipId', 'points', 'enabled'] as const;
 const GAIN_ENVELOPE_POINT_KEYS = ['id', 'beatOffset', 'gainDb'] as const;
 const WARP_STATE_KEYS = ['enabled', 'markers', 'stretchMode', 'originalTempo'] as const;
 const WARP_MARKER_KEYS = ['id', 'originalBeat', 'warpedBeat', 'origin', 'confidence', 'locked'];
-const WARP_MARKER_ORIGINS = ['user', 'transient-auto', 'grid-snap'];
-const STRETCH_MODES = ['repitch', 'complex', 'texture', 'beats'];
+const WARP_MARKER_ORIGINS: readonly string[] = ['user', 'transient-auto', 'grid-snap'];
+const STRETCH_MODES: readonly string[] = ['repitch', 'complex', 'texture', 'beats'];
+
+function isWarpMarkerOrigin(value: string): value is WarpMarkerOrigin {
+    return WARP_MARKER_ORIGINS.includes(value);
+}
+
+function isStretchMode(value: string): value is WarpState['stretchMode'] {
+    return STRETCH_MODES.includes(value);
+}
 
 function readDataObject(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -109,33 +117,55 @@ function validateGainEnvelope(value: unknown, clipId: string): ClipGainEnvelope 
     return { clipId, enabled: properties.enabled, points };
 }
 
-function validateWarpMarker(value: unknown): boolean {
+/**
+ * Rebuild a marker from validated fields rather than passing the input through.
+ * An optional key whose value is `undefined` — which `createWarpMarker` writes
+ * for `confidence` on every hand-placed marker — would otherwise survive into
+ * the restore plan and break its canonical JSON round trip.
+ */
+function validateWarpMarker(value: unknown): WarpMarker | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        return false;
+        return null;
     }
     const prototype: unknown = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
-        return false;
+        return null;
     }
 
     for (const key of Reflect.ownKeys(value)) {
         if (typeof key !== 'string' || !WARP_MARKER_KEYS.includes(key)) {
-            return false;
+            return null;
         }
     }
     const marker = value as Record<string, unknown>;
     if (!isNonEmptyString(marker.id) || !isFiniteNumber(marker.originalBeat) || !isFiniteNumber(marker.warpedBeat)) {
-        return false;
+        return null;
     }
+
+    const validated: WarpMarker = {
+        id: marker.id,
+        originalBeat: marker.originalBeat,
+        warpedBeat: marker.warpedBeat,
+    };
     if (marker.origin !== undefined) {
-        if (typeof marker.origin !== 'string' || !WARP_MARKER_ORIGINS.includes(marker.origin)) {
-            return false;
+        if (typeof marker.origin !== 'string' || !isWarpMarkerOrigin(marker.origin)) {
+            return null;
         }
+        validated.origin = marker.origin;
     }
-    if (marker.confidence !== undefined && !isFiniteNumber(marker.confidence)) {
-        return false;
+    if (marker.confidence !== undefined) {
+        if (!isFiniteNumber(marker.confidence)) {
+            return null;
+        }
+        validated.confidence = marker.confidence;
     }
-    return marker.locked === undefined || typeof marker.locked === 'boolean';
+    if (marker.locked !== undefined) {
+        if (typeof marker.locked !== 'boolean') {
+            return null;
+        }
+        validated.locked = marker.locked;
+    }
+    return validated;
 }
 
 function validateWarpState(value: unknown): WarpState | null | false {
@@ -147,16 +177,31 @@ function validateWarpState(value: unknown): WarpState | null | false {
     if (!properties || typeof properties.enabled !== 'boolean') {
         return false;
     }
-    if (typeof properties.stretchMode !== 'string' || !STRETCH_MODES.includes(properties.stretchMode)) {
+    if (typeof properties.stretchMode !== 'string' || !isStretchMode(properties.stretchMode)) {
         return false;
     }
-    if (properties.originalTempo !== null && !isFiniteNumber(properties.originalTempo)) {
+    const originalTempo: unknown = properties.originalTempo;
+    if (originalTempo !== null && !isFiniteNumber(originalTempo)) {
         return false;
     }
-    if (!Array.isArray(properties.markers) || !properties.markers.every(validateWarpMarker)) {
+    if (!Array.isArray(properties.markers)) {
         return false;
     }
-    return value as WarpState;
+
+    const markers: WarpMarker[] = [];
+    for (const candidate of properties.markers) {
+        const marker = validateWarpMarker(candidate);
+        if (!marker) {
+            return false;
+        }
+        markers.push(marker);
+    }
+    return {
+        enabled: properties.enabled,
+        markers,
+        stretchMode: properties.stretchMode,
+        originalTempo,
+    };
 }
 
 function validateSnapshot(value: unknown): ClipSatelliteSnapshot | null {

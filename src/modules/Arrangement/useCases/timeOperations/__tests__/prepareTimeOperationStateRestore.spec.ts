@@ -68,6 +68,7 @@ vi.mock('../../../stores/markerStore', async (importOriginal) => {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { __resetGainEnvelopesForTest, getEnvelope } from '../../../stores/gainEnvelopeStore';
 import {
     prepareTimeOperationStateRestore,
     UnrecoveredTimeOperationStateError,
@@ -347,10 +348,12 @@ describe('prepareTimeOperationStateRestore', () => {
         mocks.events.length = 0;
         mocks.trackWriteEffect = null;
         mocks.markerWriteEffect = null;
+        __resetGainEnvelopesForTest();
         setTimeOperationDependencies(null);
     });
 
     afterEach(() => {
+        __resetGainEnvelopesForTest();
         setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
@@ -518,7 +521,7 @@ describe('prepareTimeOperationStateRestore', () => {
                     expected: { trackState: valid.local.expected.trackState },
                 },
             },
-            { ...selected, automation: OWNER_PLAN },
+            { ...selected, timelineMap: OWNER_PLAN },
             {
                 ...selected,
                 local: {
@@ -737,6 +740,44 @@ describe('prepareTimeOperationStateRestore', () => {
             expect(mocks.writeDepths).toEqual([]);
         }
     );
+
+    it('restores the automation and satellites a selected-range deletion retires', () => {
+        const expectedTrackState = createTrackState(2);
+        const replacementTrackState = createTrackState(1);
+        const markerState = createMarkerState(8);
+        setCurrentState(expectedTrackState, markerState);
+        const dependencies = installDependencies();
+        const transaction = prepareTimeOperationStateRestore(
+            createPlan({
+                scope: 'selected-range',
+                expectedTrackState,
+                replacementTrackState,
+                automation: OWNER_PLAN,
+                clipSatellites: {
+                    version: 1,
+                    expected: { version: 1, entries: [{ clipId: 'clip-1', gainEnvelope: null, warpState: null }] },
+                    replacement: {
+                        version: 1,
+                        entries: [
+                            {
+                                clipId: 'clip-1',
+                                gainEnvelope: { clipId: 'clip-1', points: [], enabled: true },
+                                warpState: null,
+                            },
+                        ],
+                    },
+                },
+            })
+        );
+
+        expect(transaction.status).toBe('ready');
+        expect(transaction.apply()).toBe(true);
+        expect(mocks.events).toContain('apply:automation');
+        expect(getEnvelope('clip-1')).toEqual({ clipId: 'clip-1', points: [], enabled: true });
+        // Deleting a selected range never moves project time, so the timeline
+        // map stays out of the transaction.
+        expect(dependencies.prepareTimelineMap).not.toHaveBeenCalled();
+    });
 
     it('detaches the accepted plan before caller mutation', () => {
         const expectedTrackState = createTrackState(2);

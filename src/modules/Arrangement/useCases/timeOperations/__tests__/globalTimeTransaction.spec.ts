@@ -295,6 +295,7 @@ describe('executeGlobalTimeOperation', () => {
                 },
             ],
             removedClipIds: [],
+            clipIdMigrations: [],
         });
         expect(dependencies.prepareMidiGlobalTimeTransaction).toHaveBeenCalledWith({
             operation: { type: 'insert', atBeat: 4, durationBeats: 2 },

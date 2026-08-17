@@ -3,7 +3,11 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { createClipSatelliteRemovalPlan } from '../../stores/clipSatelliteState';
+import {
+    type ClipSatelliteMigration,
+    type ClipSatelliteTransition,
+    createClipSatelliteTransitionPlan,
+} from '../../stores/clipSatelliteState';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
@@ -612,20 +616,31 @@ function createClipIdentityRequests(
 }
 
 /**
- * Clip ids this operation takes out of the arrangement — deleted outright, or
- * re-identified because the surviving fragment starts inside the deleted range
- * and is re-keyed. Mirrors `prepareDeletedTracks` branch for branch; the caller
- * cross-checks the result against the prepared track state before publishing.
+ * How this operation changes clip identity: which ids leave the arrangement for
+ * good, and which survive the edit under a new id. Mirrors `prepareDeletedTracks`
+ * branch for branch; the caller cross-checks the result against the prepared
+ * track state before publishing.
+ *
+ * The distinction decides what happens to a clip's satellite data. A removed
+ * clip's automation lane, gain envelope and warp state are retired with it; a
+ * re-keyed clip keeps all three, because the audio is still in the arrangement
+ * and non-destructive editing must not silently discard it.
  *
  * Insert never touches identity. Duplicate only mints new ids, so neither
- * retires one.
+ * removes nor re-keys one.
  */
-function collectRetiredClipIds(owners: readonly NormalizedOwner[], operation: GlobalTimeOperation): readonly string[] {
+function collectClipIdentityTransition(
+    owners: readonly NormalizedOwner[],
+    operation: GlobalTimeOperation,
+    identities: readonly ClipReplayIdentity[]
+): ClipSatelliteTransition | null {
     if (operation.type !== 'delete') {
-        return [];
+        return { removedClipIds: [], migrations: [] };
     }
 
-    const retiredClipIds: string[] = [];
+    const identityIndex = indexClipIdentities(identities);
+    const removedClipIds: string[] = [];
+    const migrations: ClipSatelliteMigration[] = [];
     for (const owner of owners) {
         if (!owner.acceptsClipUpdate) {
             continue;
@@ -637,7 +652,7 @@ function collectRetiredClipIds(owners: readonly NormalizedOwner[], operation: Gl
             }
             if (clip.startBeat >= operation.startBeat && clip.endBeat <= operation.endBeat) {
                 // Fully inside the deleted range: the clip goes away.
-                retiredClipIds.push(clip.id);
+                removedClipIds.push(clip.id);
                 continue;
             }
             if (clip.startBeat < operation.startBeat) {
@@ -645,10 +660,18 @@ function collectRetiredClipIds(owners: readonly NormalizedOwner[], operation: Gl
                 continue;
             }
             // Starts inside the range and outlives it: survives under a new id.
-            retiredClipIds.push(clip.id);
+            const identity = identityIndex.get(`delete-right:${owner.id}:${clip.id}`);
+            if (!identity) {
+                return null;
+            }
+            migrations.push({ sourceClipId: clip.id, targetClipId: identity.targetClipId });
         }
     }
-    return retiredClipIds;
+    return { removedClipIds, migrations };
+}
+
+function collectRetiredClipIds(transition: ClipSatelliteTransition): readonly string[] {
+    return [...transition.removedClipIds, ...transition.migrations.map((migration) => migration.sourceClipId)];
 }
 
 function collectTrackStateClipIds(state: TrackState): ReadonlySet<string> {
@@ -662,16 +685,19 @@ function collectTrackStateClipIds(state: TrackState): ReadonlySet<string> {
 }
 
 /**
- * The retired set has to be exactly the ids the prepared track state drops.
- * A miss in either direction would either strand satellite data or delete a
- * live clip's automation, so the operation refuses rather than guessing.
+ * The retired set has to be exactly the ids the prepared track state drops, and
+ * every migration target has to be an id that state newly carries. A miss in
+ * either direction would strand satellite data, destroy a live clip's
+ * automation, or move a record onto an id nothing owns, so the operation
+ * refuses rather than guessing.
  */
-function retiredClipIdsMatchPreparedState(
-    retiredClipIds: readonly string[],
+function clipIdentityTransitionMatchesPreparedState(
+    transition: ClipSatelliteTransition,
     existingClipIds: ReadonlySet<string>,
     nextTrackState: TrackState
 ): boolean {
     const survivingClipIds = collectTrackStateClipIds(nextTrackState);
+    const retiredClipIds = collectRetiredClipIds(transition);
     const retired = new Set(retiredClipIds);
     if (retired.size !== retiredClipIds.length) {
         return false;
@@ -683,6 +709,11 @@ function retiredClipIdsMatchPreparedState(
     }
     for (const clipId of retired) {
         if (!existingClipIds.has(clipId)) {
+            return false;
+        }
+    }
+    for (const migration of transition.migrations) {
+        if (existingClipIds.has(migration.targetClipId) || !survivingClipIds.has(migration.targetClipId)) {
             return false;
         }
     }
@@ -1435,15 +1466,6 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     }
 
     const ownerOperation = toOwnerTimeOperation(validatedInput.operation);
-    const retiredClipIds = collectRetiredClipIds(owners, validatedInput.operation);
-    const automationPreparation = deps.prepareAutomationTimeOperation({
-        operation: ownerOperation,
-        owners: createAutomationOwners(owners),
-        removedClipIds: retiredClipIds,
-    });
-    if (automationPreparation.status !== 'ready') {
-        return rejectResult();
-    }
     const transportPreparation = deps.prepareTimelineMapTimeOperation({
         operation: ownerOperation,
     });
@@ -1477,11 +1499,30 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     }
 
     const local = prepareLocalState(trackState, markerState, owners, validatedInput.operation, clipIdentities);
-    if (!retiredClipIdsMatchPreparedState(retiredClipIds, existingClipIds, local.trackState)) {
+    const clipIdentityTransition = collectClipIdentityTransition(owners, validatedInput.operation, clipIdentities);
+    if (
+        !clipIdentityTransition ||
+        !clipIdentityTransitionMatchesPreparedState(clipIdentityTransition, existingClipIds, local.trackState)
+    ) {
         return rejectResult();
     }
-    const clipSatelliteRemovalPlan = createClipSatelliteRemovalPlan(retiredClipIds);
-    const clipSatellitePreparation = prepareClipSatelliteStateRestore(clipSatelliteRemovalPlan);
+    const retiredClipIds = collectRetiredClipIds(clipIdentityTransition);
+
+    const automationPreparation = deps.prepareAutomationTimeOperation({
+        operation: ownerOperation,
+        owners: createAutomationOwners(owners),
+        removedClipIds: clipIdentityTransition.removedClipIds,
+        clipIdMigrations: clipIdentityTransition.migrations,
+    });
+    if (automationPreparation.status !== 'ready') {
+        return rejectResult();
+    }
+
+    const clipSatellitePlan = createClipSatelliteTransitionPlan(clipIdentityTransition);
+    if (!clipSatellitePlan) {
+        return rejectResult();
+    }
+    const clipSatellitePreparation = prepareClipSatelliteStateRestore(clipSatellitePlan);
     if (clipSatellitePreparation.status !== 'ready') {
         return rejectResult();
     }
@@ -1559,8 +1600,8 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
             inversePlan: clipSatellitePreparation.hasChanges
                 ? {
                       version: 1,
-                      expected: clipSatelliteRemovalPlan.replacement,
-                      replacement: clipSatelliteRemovalPlan.expected,
+                      expected: clipSatellitePlan.replacement,
+                      replacement: clipSatellitePlan.expected,
                   }
                 : null,
         },

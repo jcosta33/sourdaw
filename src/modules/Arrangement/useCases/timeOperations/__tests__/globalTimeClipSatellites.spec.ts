@@ -59,7 +59,7 @@ vi.mock('../../../stores/markerStore', async (importOriginal) => {
 });
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { defaultWarpState, type WarpState } from '../../../models/WarpMarker';
+import { createWarpMarker, defaultWarpState, type WarpState } from '../../../models/WarpMarker';
 import {
     __resetGainEnvelopesForTest,
     type ClipGainEnvelope,
@@ -218,7 +218,7 @@ describe('global time operations retire per-clip satellite data', () => {
         expect(warpStates.get('keeper')).toEqual(createWarpState());
     });
 
-    it('retires the satellites of a clip the delete re-identifies', () => {
+    it('migrates the satellites of a clip the delete re-identifies onto its new id', () => {
         setTracks([createClip({ id: 'straddler', startBeat: 4, endBeat: 12 })]);
         restoreAutomationSnapshot({
             lanes: [
@@ -230,14 +230,74 @@ describe('global time operations retire per-clip satellite data', () => {
         setWarpState('straddler', createWarpState());
         registerRealAutomationDependencies();
 
-        const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 0, endBeat: 8 } });
+        const initialResult = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 0, endBeat: 8 } });
 
-        expect(result.status).toBe('applied');
+        expect(initialResult.status).toBe('applied');
+        if (initialResult.status !== 'applied') {
+            throw new Error('Expected an applied delete');
+        }
         const survivingTracks = mocks.trackState.value as { tracks: Array<{ clips: Array<{ id: string }> }> };
-        expect(survivingTracks.tracks[0]?.clips[0]?.id).not.toBe('straddler');
-        expect(laneIds()).toEqual(['lane-track']);
+        const survivingClipId = survivingTracks.tracks[0]?.clips[0]?.id;
+        expect(survivingClipId).toBeDefined();
+        expect(survivingClipId).not.toBe('straddler');
+        if (survivingClipId === undefined) {
+            throw new Error('Expected the trimmed clip to survive under a new id');
+        }
+
+        // The clip is still in the arrangement, only re-keyed. Destroying its
+        // automation, envelope and warp would be a silent, unasked-for edit.
+        expect(laneIds()).toEqual(['lane-clip', 'lane-track']);
+        expect(getAutomationLanes()[0]?.clipId).toBe(survivingClipId);
+        expect(getAutomationLanes()[0]?.points[0]?.beat).toBe(2);
         expect(getEnvelope('straddler')).toBeUndefined();
+        expect(getEnvelope(survivingClipId)).toEqual({ ...createGainEnvelope('straddler'), clipId: survivingClipId });
         expect(warpStates.has('straddler')).toBe(false);
+        expect(warpStates.get(survivingClipId)).toEqual(createWarpState());
+
+        createUndoableGlobalTimeOperation({ initialResult }).undo();
+
+        expect(getAutomationLanes()[0]?.clipId).toBe('straddler');
+        expect(getAutomationLanes()[0]?.points[0]?.beat).toBe(10);
+        expect(getEnvelope(survivingClipId)).toBeUndefined();
+        expect(getEnvelope('straddler')).toEqual(createGainEnvelope('straddler'));
+        expect(warpStates.has(survivingClipId)).toBe(false);
+        expect(warpStates.get('straddler')).toEqual(createWarpState());
+    });
+
+    it('undoes and redoes a delete over a clip carrying a hand-placed warp marker', () => {
+        setTracks([
+            createClip({ id: 'warped', startBeat: 0, endBeat: 4 }),
+            createClip({ id: 'keeper', startBeat: 8, endBeat: 12 }),
+        ]);
+        // `createWarpMarker` writes `confidence: options?.confidence`, so every
+        // production marker owns a `confidence` key holding `undefined`. That key
+        // survives a structured clone but not the canonical JSON round trip the
+        // inverse-plan encoder verifies, which used to push the satellite plan
+        // onto the opaque path and corrupt the reversed redo plan.
+        const warpState: WarpState = {
+            ...defaultWarpState,
+            enabled: true,
+            markers: [createWarpMarker(0, 0.5, { origin: 'user' })],
+        };
+        expect(Object.hasOwn(warpState.markers[0] ?? {}, 'confidence')).toBe(true);
+        setWarpState('warped', warpState);
+        restoreAutomationSnapshot({ lanes: [createLane({ id: 'lane-track', beat: 10 })] });
+        registerRealAutomationDependencies();
+
+        const initialResult = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 0, endBeat: 4 } });
+        expect(initialResult.status).toBe('applied');
+        if (initialResult.status !== 'applied') {
+            throw new Error('Expected an applied delete');
+        }
+        const transaction = createUndoableGlobalTimeOperation({ initialResult });
+
+        expect(warpStates.has('warped')).toBe(false);
+
+        transaction.undo();
+        expect(warpStates.get('warped')).toEqual(warpState);
+
+        transaction.redo();
+        expect(warpStates.has('warped')).toBe(false);
     });
 
     it('restores every retired satellite on undo and retires them again on redo', () => {

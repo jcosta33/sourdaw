@@ -3,12 +3,17 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
+import { createClipSatelliteTransitionPlan } from '../../stores/clipSatelliteState';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
+import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
 
 type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
 type MidiReplayPlan = MidiPreparation['replayPlan'];
+type AutomationPreparation = ReturnType<TimeOperationDependencies['prepareAutomationTimeOperation']>;
+type ClipSatellitePreparation = ReturnType<typeof prepareClipSatelliteStateRestore>;
 
 type SelectedTimeRangeOperation = {
     type: 'delete-selected-time-range';
@@ -890,6 +895,51 @@ function asMidiHandle(preparation: MidiPreparation): PreparedHandle {
     };
 }
 
+function asOwnerHandle(name: string, preparation: AutomationPreparation | ClipSatellitePreparation): PreparedHandle {
+    return {
+        name,
+        hasChanges: preparation.hasChanges,
+        apply: preparation.apply,
+        revert: preparation.revert,
+        restoreApplied: () => false,
+    };
+}
+
+/**
+ * Automation's view of the tracks this deletion touches.
+ *
+ * Every track is listed — a lane whose track is missing makes the preparation
+ * reject — but none is `eligible`, because deleting a selected time range does
+ * not ripple automation points today. The call is here for the one thing it
+ * still has to do inside this transaction: retire the clip-scoped lanes of the
+ * clips the deletion removes. Leaving such a lane behind pins it to a clip id
+ * nothing owns, and every later time operation rejects on it.
+ */
+function createAutomationOwners(normalized: NormalizedStore) {
+    return normalized.tracks.map((owner) => ({
+        trackId: owner.id,
+        eligible: false,
+        clipIds: owner.clips.map((clip) => clip.id),
+    }));
+}
+
+function cloneOwnerInversePlan(preparation: {
+    hasChanges: boolean;
+    inversePlan: Record<string, unknown> | null;
+}): Record<string, unknown> | null | false {
+    if (!preparation.hasChanges) {
+        return preparation.inversePlan === null ? null : false;
+    }
+    if (preparation.inversePlan === null) {
+        return false;
+    }
+    const cloned = timeOperationStateCodec.cloneJsonPlan(preparation.inversePlan);
+    if (cloned) {
+        return cloned;
+    }
+    return timeOperationStateCodec.encodeOpaqueJsonPlan(preparation.inversePlan) ?? false;
+}
+
 function compensateAppliedHandles(applied: readonly PreparedHandle[]): unknown[] {
     const failures: unknown[] = [];
     for (let index = applied.length - 1; index >= 0; index--) {
@@ -912,7 +962,7 @@ function compensateAppliedHandles(applied: readonly PreparedHandle[]): unknown[]
     return failures;
 }
 
-function publishHandles(handles: readonly PreparedHandle[]): boolean {
+function publishHandles(handles: readonly PreparedHandle[], removedClipIds: readonly string[]): boolean {
     return batchStoreUpdates(() => {
         const applied: PreparedHandle[] = [];
         for (const handle of handles) {
@@ -945,6 +995,13 @@ function publishHandles(handles: readonly PreparedHandle[]): boolean {
             }
             applied.push(handle);
         }
+
+        // Undoable satellites (clip-scoped automation lanes, gain envelopes,
+        // warp states) were retired by the handles above; this sweep clears the
+        // rest of the per-clip records — clipboard entries and the ephemeral
+        // drag-preview and active-recording refs, none of which participate in
+        // undo. Every removal is a no-op for an id already dropped.
+        removeClipSatelliteData(removedClipIds);
         return true;
     });
 }
@@ -1012,6 +1069,8 @@ function createCombinedInversePlan(input: {
     expectedTrackState: TrackState;
     replacementTrackState: TrackState;
     midiPreparation: MidiPreparation;
+    automationPreparation: AutomationPreparation;
+    clipSatellitePreparation: { hasChanges: boolean; inversePlan: Record<string, unknown> | null };
 }): Record<string, unknown> | null {
     const expectedTrackState = timeOperationStateCodec.encodeTrackState(input.expectedTrackState);
     const replacementTrackState = timeOperationStateCodec.encodeTrackState(input.replacementTrackState);
@@ -1019,19 +1078,10 @@ function createCombinedInversePlan(input: {
         return null;
     }
 
-    let midi: Record<string, unknown> | null = null;
-    if (input.midiPreparation.hasChanges) {
-        if (input.midiPreparation.inversePlan === null) {
-            return null;
-        }
-        midi = timeOperationStateCodec.cloneJsonPlan(input.midiPreparation.inversePlan);
-        if (!midi) {
-            midi = timeOperationStateCodec.encodeOpaqueJsonPlan(input.midiPreparation.inversePlan);
-        }
-        if (!midi) {
-            return null;
-        }
-    } else if (input.midiPreparation.inversePlan !== null) {
+    const midi = cloneOwnerInversePlan(input.midiPreparation);
+    const automation = cloneOwnerInversePlan(input.automationPreparation);
+    const clipSatellites = cloneOwnerInversePlan(input.clipSatellitePreparation);
+    if (midi === false || automation === false || clipSatellites === false) {
         return null;
     }
 
@@ -1049,10 +1099,10 @@ function createCombinedInversePlan(input: {
                 markerState: null,
             },
         },
-        automation: null,
+        automation,
         midi,
         timelineMap: null,
-        clipSatellites: null,
+        clipSatellites,
     };
 }
 
@@ -1142,6 +1192,26 @@ export function executeSelectedTimeRangeDeletion(
         return rejectResult();
     }
 
+    // The clips this deletion removes take their satellites with them, inside
+    // the same transaction, so undo restores every one of them.
+    const removedClipIds = local.midiOperation.removeClipIds;
+    const automationPreparation = deps.prepareAutomationTimeOperation({
+        operation: { type: 'delete', startBeat: validated.operation.startBeat, endBeat: validated.operation.endBeat },
+        owners: createAutomationOwners(normalized),
+        removedClipIds,
+    });
+    if (automationPreparation.status !== 'ready') {
+        return rejectResult();
+    }
+    const clipSatellitePlan = createClipSatelliteTransitionPlan({ removedClipIds, migrations: [] });
+    if (!clipSatellitePlan) {
+        return rejectResult();
+    }
+    const clipSatellitePreparation = prepareClipSatelliteStateRestore(clipSatellitePlan);
+    if (clipSatellitePreparation.status !== 'ready') {
+        return rejectResult();
+    }
+
     let replayPlan: SelectedTimeRangeDeletionReplayPlan;
     if (suppliedReplayPlan) {
         if (midiPreparation.replayPlan !== suppliedReplayPlan.midi) {
@@ -1162,9 +1232,17 @@ export function executeSelectedTimeRangeDeletion(
         nextState: local.trackState,
     });
     const midiHandle = asMidiHandle(midiPreparation);
+    const automationHandle = asOwnerHandle('Automation', automationPreparation);
+    const clipSatelliteHandle = asOwnerHandle('Clip satellites', clipSatellitePreparation);
     const handles: PreparedHandle[] = [];
     if (midiHandle.hasChanges) {
         handles.push(midiHandle);
+    }
+    if (automationHandle.hasChanges) {
+        handles.push(automationHandle);
+    }
+    if (clipSatelliteHandle.hasChanges) {
+        handles.push(clipSatelliteHandle);
     }
     if (localHandle.hasChanges) {
         handles.push(localHandle);
@@ -1182,12 +1260,23 @@ export function executeSelectedTimeRangeDeletion(
         expectedTrackState: local.trackState,
         replacementTrackState: trackState,
         midiPreparation,
+        automationPreparation,
+        clipSatellitePreparation: {
+            hasChanges: clipSatellitePreparation.hasChanges,
+            inversePlan: clipSatellitePreparation.hasChanges
+                ? {
+                      version: 1,
+                      expected: clipSatellitePlan.replacement,
+                      replacement: clipSatellitePlan.expected,
+                  }
+                : null,
+        },
     });
     if (!inversePlan) {
         return rejectResult();
     }
 
-    const applied = publishHandles(handles);
+    const applied = publishHandles(handles, removedClipIds);
     if (!applied) {
         return rejectResult();
     }

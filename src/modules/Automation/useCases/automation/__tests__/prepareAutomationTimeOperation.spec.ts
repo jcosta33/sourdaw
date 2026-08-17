@@ -181,6 +181,66 @@ describe('prepareAutomationTimeOperation', () => {
         expect(mocks.state.value).toBe(preparedState);
     });
 
+    it('moves a clip-scoped lane onto the id its clip is re-keyed to', () => {
+        const movedLane = lane({ id: 'lane-moved', clipId: 'clip-source', points: [point(6, 0.4)] });
+        const trackLane = lane({ id: 'lane-track', points: [point(6, 0.4)] });
+        delete trackLane.clipId;
+        const preparedState: AutomationStoreState = { lanes: [movedLane, trackLane] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareAutomationTimeOperation({
+            operation: { type: 'delete', startBeat: 0, endBeat: 2 },
+            owners: [owner('track-1', true, ['clip-source'])],
+            removedClipIds: [],
+            clipIdMigrations: [{ sourceClipId: 'clip-source', targetClipId: 'clip-target' }],
+        });
+
+        expect(transaction).toHaveProperty('status', 'ready');
+        expect(transaction.apply()).toBe(true);
+        const appliedLanes = mocks.state.value?.lanes ?? [];
+        expect(appliedLanes.map((entry) => entry.id)).toEqual(['lane-moved', 'lane-track']);
+        // The clip survives, so its automation survives with it — re-keyed and
+        // shifted by the same amount as the clip.
+        expect(appliedLanes[0]?.clipId).toBe('clip-target');
+        expect(appliedLanes[0]?.points.map(({ beat }) => beat)).toEqual([4]);
+        // A track-wide lane must not pick up an own `clipId` key on the way.
+        expect(Object.hasOwn(appliedLanes[1] ?? {}, 'clipId')).toBe(false);
+
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.state.value).toBe(preparedState);
+    });
+
+    it.each([
+        { label: 'a non-array list', clipIdMigrations: 'clip-1' },
+        { label: 'a missing target', clipIdMigrations: [{ sourceClipId: 'clip-1' }] },
+        { label: 'a blank source', clipIdMigrations: [{ sourceClipId: ' ', targetClipId: 'clip-2' }] },
+        {
+            label: 'a source that is also removed',
+            clipIdMigrations: [{ sourceClipId: 'clip-removed', targetClipId: 'clip-2' }],
+        },
+        {
+            label: 'two sources collapsing onto one target',
+            clipIdMigrations: [
+                { sourceClipId: 'clip-1', targetClipId: 'clip-2' },
+                { sourceClipId: 'clip-3', targetClipId: 'clip-2' },
+            ],
+        },
+    ])('rejects $label in the migration list before touching state', ({ clipIdMigrations }) => {
+        const preparedState: AutomationStoreState = { lanes: [lane({ points: [point(3, 0.2)] })] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareRuntimeInput({
+            operation: { type: 'delete', startBeat: 0, endBeat: 2 },
+            owners: [owner('track-1', true, ['clip-1'])],
+            removedClipIds: ['clip-removed'],
+            clipIdMigrations,
+        });
+
+        expect(transaction.status).toBe('rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
     it('rejects a malformed retired clip id list before touching state', () => {
         const preparedState: AutomationStoreState = { lanes: [lane({ points: [point(3, 0.2)] })] };
         mocks.state.value = preparedState;

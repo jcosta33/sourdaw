@@ -32,6 +32,12 @@ type PrepareAutomationTimeOperationInput = {
      * longer exists; such a lane makes every later preparation reject.
      */
     removedClipIds?: readonly string[];
+    /**
+     * Clip ids the caller's own transaction re-keys: the clip survives the edit
+     * under a new id. Its clip-scoped lanes move with it — destroying them would
+     * lose deterministic automation the user never asked to delete.
+     */
+    clipIdMigrations?: readonly { sourceClipId: string; targetClipId: string }[];
 };
 
 type IndexedAutomationOwner = {
@@ -180,10 +186,50 @@ function createRemovedClipIdSet(value: unknown): ReadonlySet<string> | null {
     return removedClipIds;
 }
 
+function createClipIdMigrationMap(
+    value: unknown,
+    removedClipIds: ReadonlySet<string>
+): ReadonlyMap<string, string> | null {
+    if (value === undefined) {
+        return new Map<string, string>();
+    }
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const migrations = new Map<string, string>();
+    const targets = new Set<string>();
+    for (const migration of value) {
+        if (!isPlainObject(migration)) {
+            return null;
+        }
+        const sourceClipId = migration.sourceClipId;
+        const targetClipId = migration.targetClipId;
+        if (typeof sourceClipId !== 'string' || sourceClipId.trim().length === 0) {
+            return null;
+        }
+        if (typeof targetClipId !== 'string' || targetClipId.trim().length === 0) {
+            return null;
+        }
+        // A clip id cannot both go away and survive, a source cannot re-key
+        // twice, and two sources cannot collapse onto one target.
+        if (removedClipIds.has(sourceClipId) || removedClipIds.has(targetClipId)) {
+            return null;
+        }
+        if (migrations.has(sourceClipId) || targets.has(targetClipId) || sourceClipId === targetClipId) {
+            return null;
+        }
+        migrations.set(sourceClipId, targetClipId);
+        targets.add(targetClipId);
+    }
+    return migrations;
+}
+
 function validateInput(input: unknown): {
     operation: AutomationTimeOperation;
     ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>;
     removedClipIds: ReadonlySet<string>;
+    clipIdMigrations: ReadonlyMap<string, string>;
 } | null {
     if (!isPlainObject(input)) {
         return null;
@@ -204,10 +250,16 @@ function validateInput(input: unknown): {
         return null;
     }
 
+    const clipIdMigrations = createClipIdMigrationMap(input.clipIdMigrations, removedClipIds);
+    if (!clipIdMigrations) {
+        return null;
+    }
+
     return {
         operation,
         ownersByTrackId,
         removedClipIds,
+        clipIdMigrations,
     };
 }
 
@@ -293,7 +345,8 @@ function prepareNextState(
     preparedState: AutomationStoreState | null,
     operation: AutomationTimeOperation,
     ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>,
-    removedClipIds: ReadonlySet<string>
+    removedClipIds: ReadonlySet<string>,
+    clipIdMigrations: ReadonlyMap<string, string>
 ): PreparedAutomationState {
     if (!preparedState) {
         return {
@@ -328,7 +381,16 @@ function prepareNextState(
                 nextState: preparedState,
             };
         }
+        const targetClipId = lane.clipId === undefined ? undefined : clipIdMigrations.get(lane.clipId);
         if (!owner.eligible) {
+            if (targetClipId !== undefined) {
+                // Only a track whose clips the caller rewrites can re-key one.
+                return {
+                    status: 'rejected',
+                    hasChanges: false,
+                    nextState: preparedState,
+                };
+            }
             lanes.push(lane);
             continue;
         }
@@ -341,16 +403,22 @@ function prepareNextState(
                 nextState: preparedState,
             };
         }
-        if (!preparedPoints.hasChanges) {
+        if (!preparedPoints.hasChanges && targetClipId === undefined) {
             lanes.push(lane);
             continue;
         }
 
         hasChanges = true;
-        lanes.push({
+        const nextLane: AutomationLane = {
             ...lane,
             points: preparedPoints.points,
-        });
+        };
+        if (targetClipId !== undefined) {
+            // Assigned rather than spread so a track-wide lane never gains an
+            // own `clipId` key holding `undefined`.
+            nextLane.clipId = targetClipId;
+        }
+        lanes.push(nextLane);
     }
 
     if (!hasChanges) {
@@ -397,7 +465,8 @@ export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOpera
             preparedState,
             validatedInput.operation,
             validatedInput.ownersByTrackId,
-            validatedInput.removedClipIds
+            validatedInput.removedClipIds,
+            validatedInput.clipIdMigrations
         );
     }
     let inversePlan: AutomationTimeStateRestorePlan | null = null;
