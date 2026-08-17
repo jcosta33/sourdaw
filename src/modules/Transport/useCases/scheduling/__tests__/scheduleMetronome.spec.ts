@@ -176,11 +176,51 @@ describe('scheduleMetronome', () => {
             timeSignatureDenominator: 8,
         });
 
-        const accentedBeats = mockScheduleClick.mock.calls
-            .map((call, index) => ({ beat: index, accent: call[1] }))
-            .filter((entry) => entry.accent)
-            .map((entry) => entry.beat);
+        // The pulse is the eighth, so clicks land every 0.5 quarter notes. At the
+        // default 120 BPM with an empty tempo map a quarter note is 0.5 s, so a
+        // click's time in seconds is its beat halved.
+        const accentedBeats = mockScheduleClick.mock.calls.filter((call) => call[1]).map((call) => call[0] * 2);
         expect(accentedBeats).toEqual([0, 3, 6, 9]);
+    });
+
+    it('clicks the meter beat in 6/8, at the same rate its own count-in pulses', () => {
+        // toggleRecording sizes a count-in beat as (60 / tempo) * (4 / denominator):
+        // 0.25 s in 6/8 at 120 BPM. The running click has to keep that pulse — a
+        // whole-quarter step halved the rate the instant recording began.
+        const countInBeatSeconds = (60 / 120) * (4 / 8);
+        expect(countInBeatSeconds).toBe(0.25);
+
+        mockGetCurrentTime.mockReturnValue(0);
+        resetMetronomeBeat(0);
+
+        scheduleMetronome(-0.0001, 3, 0, {
+            ...metronomeOn,
+            timeSignatureNumerator: 6,
+            timeSignatureDenominator: 8,
+        });
+
+        const times = mockScheduleClick.mock.calls.map((call) => call[0]);
+        expect(times).toHaveLength(7); // beats 0, 0.5, 1, 1.5, 2, 2.5, 3
+        for (let index = 1; index < times.length; index++) {
+            expect(times[index]! - times[index - 1]!).toBeCloseTo(countInBeatSeconds, 9);
+        }
+    });
+
+    it('accents every 7/8 bar, not every other one', () => {
+        // A 7/8 bar is 3.5 quarter notes. Stepping whole quarters never lands on
+        // 3.5 or 10.5, so those bar lines went by unaccented and the click fell
+        // off the beat entirely — the same failure in 5/8 and 5/16.
+        mockGetCurrentTime.mockReturnValue(0);
+        resetMetronomeBeat(0);
+
+        scheduleMetronome(-0.0001, 11, 0, {
+            ...metronomeOn,
+            timeSignatureNumerator: 7,
+            timeSignatureDenominator: 8,
+        });
+
+        const accentedBeats = mockScheduleClick.mock.calls.filter((call) => call[1]).map((call) => call[0] * 2);
+        expect(accentedBeats).toEqual([0, 3.5, 7, 10.5]);
     });
 
     it('schedules clicks when the time-sig and tempo stores are null (fallback paths)', () => {

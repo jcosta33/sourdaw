@@ -494,6 +494,38 @@ describe('scheduleAudioClips', () => {
         expect(offset).toBeCloseTo(2, 6);
     });
 
+    it('moves the start across a tempo change while leaving the buffer content offset alone', () => {
+        // The two conversions in this path answer different questions and must not
+        // be unified. `when` is a timeline position, so it integrates the map. The
+        // buffer offset is a seek into recorded audio, which was rendered at one
+        // fixed rate and knows nothing about the project's later tempo changes —
+        // integrating the map there would seek to the wrong sample.
+        // 120 from the origin, 60 at beat 4 — before the clip, so it moves the
+        // start — and 30 at beat 9, inside the two offset beats, so the flat rate
+        // and the integral genuinely disagree about the offset.
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 4, tempo: 60, curve: 'instant' },
+                { id: 'c', beat: 9, tempo: 30, curve: 'instant' },
+            ],
+        };
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ audioOffsetBeats: 2 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const [when, offset] = fakeSource.start.mock.calls[0]!;
+        // 4 beats at 120 (2 s) + 4 at 60 (4 s). A flat rate placed it at 4 s.
+        expect(when).toBeCloseTo(6, 9);
+        // 2 offset beats at the clip's own rate of 60 BPM = 2 s. Integrating the
+        // map over beats 8..10 would give 1 s + 2 s and seek a second too deep.
+        expect(offset).toBeCloseTo(2, 9);
+    });
+
     // ── Loop iterations ─────────────────────────────────────────────────────
 
     it('schedules one source per loop iteration, advancing the start time by loopLength', () => {
@@ -604,6 +636,34 @@ describe('scheduleAudioClips', () => {
         expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 5);
         // progressRatio 0 at effectiveStart(4) → starts at 0.
         expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, 4);
+    });
+
+    it('stretches a fade-in that spans a tempo change by integrating the map', () => {
+        // A fade is a length in beats, so a tempo change inside it changes how long
+        // it lasts. 120 BPM halving to 60 at beat 9, with the fade running 8..10:
+        // 0.5 s for the first beat plus 1 s for the second. Dividing 2 beats by the
+        // flat rate gave 1 s, so the ramp finished half a second early and the fade
+        // audibly outran the audio it was shaping.
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 9, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ fadeInBeats: 2 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        // Nothing before beat 8 changes, so iterStartTime is still 4 — which is what
+        // isolates the fade length as the failing quantity. fadeInEnd = 4 + 1.5.
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, 4);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 5.5);
     });
 
     it('jumps the fade gain to 1 when the effective start is already past the fade-in end', () => {

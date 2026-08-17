@@ -1,7 +1,7 @@
 import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases';
 
 import { secondsBetweenBeats } from '../../models/TempoMap';
-import { getBarBeatAtPosition } from '../../models/TimeSignatureMap';
+import { getBarBeatAtPosition, getMetricalBeatsBetween } from '../../models/TimeSignatureMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
@@ -33,8 +33,6 @@ export function scheduleMetronome(
         return;
     }
 
-    const startBeatInt = Math.ceil(fromBeat);
-    const endBeatInt = Math.floor(toBeat);
     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
     const tempoChanges = tempoMapStore.value?.changes ?? [];
 
@@ -48,7 +46,19 @@ export function scheduleMetronome(
         }
     }
 
-    for (let beat = startBeatInt; beat <= endBeatInt; beat++) {
+    // Step the meter's beat, not the quarter note. A whole-quarter step handed a
+    // 6/8 project a quarter-note click while its own count-in pulsed eighths, and
+    // never landed on the odd bar lines of a meter whose bar is a fractional
+    // number of quarters (7/8 is 3.5), so the accent fired every other bar.
+    const clickBeats = getMetricalBeatsBetween(
+        tsChanges,
+        fromBeat,
+        toBeat,
+        transport.timeSignatureNumerator,
+        transport.timeSignatureDenominator
+    );
+
+    for (const beat of clickBeats) {
         if (beat <= metronomeSchedulingState.lastBeat) {
             continue;
         }
