@@ -1,0 +1,79 @@
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_ab5443e65c7fba::t_3e172404326b41 495,497
+  s_ab5443e65c7fba::t_21df9173913a4d 712
+  s_ab5443e65c7fba::t_ed9f1e6c7fc630 30
+  s_ab5443e65c7fba::t_ea2646bb9dd449 279-283
+  s_ab5443e65c7fba::t_cced84637a8b5c 698-704
+  s_ab5443e65c7fba::t_02317b17ebe854 535-540,554,569,584
+  s_ab5443e65c7fba::t_6589b6de86ee83 142,156,159
+  s_ab5443e65c7fba::t_fdce2e9af69188 377,380-382
+  s_ab5443e65c7fba::t_b3a800231afe4b 127-132
+  s_ab5443e65c7fba::t_c90cf11771a718 54
+  s_ab5443e65c7fba::t_b08286afafa7b4 7
+  s_ab5443e65c7fba::t_f2964efa280220 492
+  s_ab5443e65c7fba::t_08c48879431e3d 902-909,916,918,925-928,930-931,941-942,945
+  s_ab5443e65c7fba::t_84c13bb1c317aa 894
+  s_ab5443e65c7fba::t_8b33c1bc743bf3 780
+  s_ab5443e65c7fba::t_fac235d21b90b6 483,496,526,541,545,556,560,571,575,586
+src/modules/Yeast/presentations/YeastPreviewTypes.ts
+  s_ab5443e65c7fba::t_f344bb88cd63f8 45-50
+src/modules/Yeast/presentations/createYeastPreviewPresenter.ts
+  s_ab5443e65c7fba::t_de8451a045a63d 161
+  s_ab5443e65c7fba::t_d982538de2d217 174-190
+  s_ab5443e65c7fba::t_556f94904870e1 237
+  s_ab5443e65c7fba::t_6e4c97d412e698 173
+src/modules/Yeast/presentations/__tests__/YeastPreviewGeometry.spec.tsx
+  s_ab5443e65c7fba::t_fbbd9f1b83150c 119-158
+src/modules/Yeast/presentations/components/KeyboardSplit.tsx
+  s_ab5443e65c7fba::t_3304ee031e5c38 9,11
+src/modules/Yeast/presentations/components/ProcessorParams.tsx
+  s_ab5443e65c7fba::t_30518d14394cfc 146,150,157,162,169,173,180,184,192,200,207,211
+  s_ab5443e65c7fba::t_bfc80a4acf69e1 791,795,802,806,813,817,824,828,835,839,846,850,857,861,874,878,885,889,896,900,914,918,925,929
+  s_ab5443e65c7fba::t_762ea30d356507 744,748,755,759,766,770
+  s_ab5443e65c7fba::t_60ea7f252c513e 388,393
+  s_ab5443e65c7fba::t_d553de3ab1ea1b 354,359
+  s_ab5443e65c7fba::t_925955acf68e60 434,438,445,449,456,460,467,471,478,483
+  s_ab5443e65c7fba::t_f607e6900f9228 9
+  s_ab5443e65c7fba::t_d6eba8500bf307 39,50-51,66
+  s_ab5443e65c7fba::t_a3608ea325c823 589,593,600,604,611,615,622,626
+  s_ab5443e65c7fba::t_d628cb393fc0fa 647,652,659,663,670,675
+  s_ab5443e65c7fba::t_e5c5b9be6505a8 712
+  s_ab5443e65c7fba::t_d8c87d9d512051 504,508,515,519
+  s_ab5443e65c7fba::t_1cc548c6765fd4 408,413
+  s_ab5443e65c7fba::t_b4ce63aab1ee83 725,729
+  s_ab5443e65c7fba::t_5f31e064955a10 548,553,560,564,571,576
+  s_ab5443e65c7fba::t_344f90a54227a9 261,266
+  s_ab5443e65c7fba::t_7784d354cbc818 139,219,246,254,274,295,316,339,347,373,381,401,421,497,527,541,634,737,778
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_ab5443e65c7fba::t_9e32b3242b9d8f 149-237
+src/modules/Yeast/models/ProcessorCatalog.ts
+  s_ab5443e65c7fba::t_40da6f55aacc0d 26-134
+src/modules/Yeast/presentations/__tests__/YeastPreviewPerformance.spec.tsx
+  s_ab5443e65c7fba::t_2029dd67acb33c 217
+src/modules/Yeast/presentations/views/YeastPreviewSurface.tsx
+  s_ab5443e65c7fba::t_ce5c82844e3335 189-192
+  s_ab5443e65c7fba::t_539db12c7e36c0 160,164-166
+  s_ab5443e65c7fba::t_010f2963f55301 153
+  s_ab5443e65c7fba::t_aa202ba6e60bc7 66
+  s_ab5443e65c7fba::t_dd2de7af21a438 39-40
+  s_ab5443e65c7fba::t_d23bb8f719ca1d 167
+src/modules/Yeast/presentations/__tests__/YeastRackFeedback.spec.tsx
+  s_ab5443e65c7fba::t_c95ddf9cca2050 162,164-186
+  s_ab5443e65c7fba::t_a04ef5b37064ee 163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a9298157c7556c7efd797a604c47a3f4a11d5209",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
