@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
     COALESCED_EVENTS,
+    coalescingKey,
     createCommandStream,
     createEventForwarder,
     MAX_COALESCED_KEYS,
@@ -226,5 +227,31 @@ describe('a bounded command stream', () => {
         expect(() => subject.emit({ sequence: 0 })).not.toThrow();
         expect(subject.failure()).toMatch(/could not be delivered/u);
         expect(subject.queued()).toBe(0);
+    });
+});
+
+describe('the coalescing key', () => {
+    it('separates pairs that a plain join would collide', () => {
+        // Both halves are producer-supplied. Joining them with any character
+        // they may themselves contain makes two distinct pairs share one key,
+        // and the later analysis silently overwrites the earlier one's
+        // progress. Only one coalesced event exists today, so this is the check
+        // that keeps the property true when the second one is added.
+        expect(coalescingKey('a', 'bc')).not.toBe(coalescingKey('ab', 'c'));
+        expect(coalescingKey('progress', ':x')).not.toBe(coalescingKey('progress:', 'x'));
+        expect(coalescingKey('', 'x')).not.toBe(coalescingKey('x', ''));
+    });
+
+    it('gives one pair one key', () => {
+        expect(coalescingKey('pitch-analysis-progress', 'run-1')).toBe(
+            coalescingKey('pitch-analysis-progress', 'run-1')
+        );
+    });
+
+    it('stays plain text, so the source file keeps a reviewable diff', () => {
+        // A control character read as a delimiter here once made git treat the
+        // whole file as binary, which cost every reviewer and every future
+        // `git blame` the line history of the event path.
+        expect(coalescingKey('pitch-analysis-progress', 'run-1')).toMatch(/^[\x20-\x7E]+$/u);
     });
 });
