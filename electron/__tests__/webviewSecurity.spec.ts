@@ -19,7 +19,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { APP_ORIGIN, ISOLATION_HEADERS, PRODUCTION_CSP } from '../protocol.js';
 import { withTrustedSender, type SenderFrameCarrier } from '../router.js';
-import { ALLOWED_PERMISSIONS, decideWindowOpen, FILE_SYSTEM_PERMISSION, isNavigationAllowed } from '../security.js';
+import {
+    ALLOWED_PERMISSIONS,
+    decideWindowOpen,
+    FILE_SYSTEM_PERMISSION,
+    isNavigationAllowed,
+    trustedFrameGuard,
+} from '../security.js';
 
 // `protocol.ts` imports Electron's `app`, `net` and `protocol` at load time.
 // `vi.mock` is hoisted above the imports, so the real module is never reached.
@@ -103,7 +109,11 @@ describe('the sender-origin check every handler runs', () => {
     const frame = (url: string | undefined): SenderFrameCarrier => ({
         senderFrame: url === undefined ? null : { url },
     });
-    const guard = (url: string | undefined): boolean => url !== undefined && isNavigationAllowed(origins, url);
+    // The export the shell installs, not a re-statement of it. Composing the
+    // check here instead would leave the one line that actually guards every
+    // handler unreachable by any spec, and these assertions would be observing
+    // a copy of it.
+    const guard = trustedFrameGuard(() => origins);
     const handler = withTrustedSender('test_command', guard, () => 'ran');
 
     it('runs a request from the app itself', () => {
@@ -139,6 +149,17 @@ describe('the sender-origin check every handler runs', () => {
                 },
             })
         ).toThrow(/not the application/u);
+    });
+
+    it('re-reads the allow-list on every call, so the dev origin is not baked in', () => {
+        // The guard is built before the dev server URL is known. Capturing the
+        // origins once would refuse the dev renderer for the whole session.
+        const growing: string[] = [];
+        const late = trustedFrameGuard(() => growing);
+
+        expect(late(`${DEV_SERVER}/index.html`)).toBe(false);
+        growing.push(DEV_SERVER);
+        expect(late(`${DEV_SERVER}/index.html`)).toBe(true);
     });
 
     it('refuses before it runs anything', () => {

@@ -78,16 +78,33 @@ export type MessageDialogOptions = {
  *
  * Bytes always travel as the **last** argument, which is true of every
  * byte-taking command in the surface. `invoke` refuses to carry them so that a
- * caller cannot accidentally take the JSON path with a buffer in hand;
- * `invokeBinary` is the path that does, and `invokeBinaryResponse` is the one
- * that guarantees bytes coming back rather than a JSON number array.
+ * caller cannot accidentally take the JSON path with a buffer in hand.
+ *
+ * Which of the other two to use is decided by the *result*, not the arguments:
+ *
+ * - `invokeBinary` — bytes go out. Its result is whatever the command answers
+ *   with, forwarded unread, so a command that takes bytes and answers with
+ *   bytes is served by this one path.
+ * - `invokeBinaryResponse` — bytes come back, guaranteed as a `Uint8Array`
+ *   rather than the JSON number array a wire-shape change would produce.
+ *
+ * The overlap is deliberate: `process_plugin_audio` runs once per render
+ * quantum with a buffer in and a buffer out, and a bridge where that shape had
+ * to be assembled from two calls, or where one of them silently dropped the
+ * answer, would show up as a plugin rendering silence rather than as an error.
  */
 export type SourdawBridge = {
     /** Invoke a command whose arguments and result are JSON. */
     invoke: (command: string, args?: readonly unknown[]) => Promise<unknown>;
-    /** Invoke a command whose final argument is a byte payload. */
-    invokeBinary: (command: string, meta: readonly unknown[], bytes: Uint8Array) => Promise<void>;
-    /** Invoke a command that answers with bytes. */
+    /**
+     * Invoke a command whose final argument is a byte payload.
+     *
+     * Resolves with the command's own result, unread. Use
+     * `invokeBinaryResponse` when that result is itself bytes and the caller
+     * needs it typed.
+     */
+    invokeBinary: (command: string, meta: readonly unknown[], bytes: Uint8Array) => Promise<unknown>;
+    /** Invoke a command that answers with bytes. Its arguments may include bytes. */
     invokeBinaryResponse: (command: string, args?: readonly unknown[]) => Promise<Uint8Array>;
     /** Subscribe to a pushed event. Returns the unsubscribe function. */
     listen: (event: string, callback: (payload: unknown) => void) => () => void;

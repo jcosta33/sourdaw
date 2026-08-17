@@ -25,7 +25,7 @@ import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type Na
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
-import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed } from './security.js';
+import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 
@@ -64,15 +64,7 @@ const allowedOrigins = (): readonly string[] => {
 
 const isAllowedNavigation = (url: string): boolean => isNavigationAllowed(allowedOrigins(), url);
 
-/**
- * The origin check every IPC handler runs before it does anything (REQ-004).
- *
- * The same allow-list navigation uses, taking `undefined` because a sender
- * frame that has already gone has no URL — and a request from a frame that no
- * longer exists is refused rather than trusted, since the sender cannot be
- * shown to be the app.
- */
-const isAllowedFrameUrl = (url: string | undefined): boolean => url !== undefined && isAllowedNavigation(url);
+const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
 
 let mainWindow: BrowserWindow | undefined;
 
@@ -255,6 +247,7 @@ const rendererTarget = (): BrowserWindow['webContents'] | undefined =>
     mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined;
 
 let nativeHost: NativeHost | undefined;
+let scanSupervisor: ScanSupervisor | undefined;
 
 /**
  * The plugin-scan supervisor, over a real `utilityProcess`.
@@ -330,11 +323,8 @@ const startNativeSurface = (): void => {
         commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_COMMAND),
     });
 
-    registerScanCommand({
-        ipcMain,
-        isTrustedFrameUrl: isAllowedFrameUrl,
-        supervisor: createUtilityScanSupervisor(addonPath),
-    });
+    scanSupervisor = createUtilityScanSupervisor(addonPath);
+    registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
 };
 
 void app.whenReady().then(() => {
@@ -368,6 +358,12 @@ app.on(
     'before-quit',
     createQuitHandler(
         async (): Promise<ShutdownOutcome> => {
+            // The scan worker first. It holds its own addon instance and its
+            // own tree of per-plugin child processes, and it is the one part of
+            // the shell that a hostile plugin can already have wedged — waiting
+            // on the host's cascade with a scan still running would spend the
+            // deadline on a process that only needs killing.
+            scanSupervisor?.dispose();
             const host = nativeHost;
             if (host === undefined) {
                 return { status: 'completed', report: undefined };

@@ -67,7 +67,25 @@ const asBytes = (command: string, payload: unknown): Uint8Array => {
  * subscription instead would grow with every hook mount and trip Node's
  * max-listener warning during ordinary use.
  */
-export const createSourdawBridge = (ipc: RendererIpc): SourdawBridge => {
+/**
+ * A value unique to this preload instance, prefixed onto every stream id.
+ *
+ * A counter alone is not enough. Main's in-flight `CommandStream`s outlive a
+ * renderer crash — the router re-resolves the live window deliberately, so a
+ * queued response drains into the *recreated* one — while the new preload's
+ * counter starts at zero again. Without an epoch the pre-crash request's
+ * remaining chunks land on the new request's correlation and interleave two
+ * response bodies, which is the corruption the bounded queue exists to prevent.
+ *
+ * `globalThis.crypto` rather than `node:crypto`: the preload is bundled for
+ * Electron's sandbox, where only `electron`, `events`, `timers` and `url`
+ * resolve. The `app://sourdaw` scheme is registered `secure`, so Web Crypto is
+ * available; a missing `randomUUID` throws here at boot rather than producing
+ * colliding ids in the dark.
+ */
+const bootEpoch = (): string => globalThis.crypto.randomUUID();
+
+export const createSourdawBridge = (ipc: RendererIpc, epoch: string = bootEpoch()): SourdawBridge => {
     const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
     const streamListeners = new Map<string, (payload: unknown) => void>();
     let nextStreamId = 0;
@@ -114,7 +132,11 @@ export const createSourdawBridge = (ipc: RendererIpc): SourdawBridge => {
             if (meta.some(isBytes)) {
                 throw new TypeError(`${command} may carry only one byte payload, as its last argument`);
             }
-            await ipc.invoke(commandChannel(command), [...meta, bytes]);
+            // Returned, not discarded. `process_plugin_audio` takes a buffer
+            // and answers with one, once per render quantum; dropping the
+            // answer here would reach the call site as the legitimate "no
+            // output yet" value and render silence with nothing logged.
+            return ipc.invoke(commandChannel(command), [...meta, bytes]);
         },
 
         invokeBinaryResponse: async (command, args = []) => {
@@ -136,7 +158,7 @@ export const createSourdawBridge = (ipc: RendererIpc): SourdawBridge => {
 
         stream: async (command, args, onEvent) => {
             rejectUnknownCommand(command);
-            const streamId = `${String(nextStreamId)}`;
+            const streamId = `${epoch}:${String(nextStreamId)}`;
             nextStreamId += 1;
             streamListeners.set(streamId, onEvent);
             try {

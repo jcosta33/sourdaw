@@ -243,4 +243,17 @@ describe('disposal on the quit path', () => {
 
         expect(() => supervisor.dispose()).not.toThrow();
     });
+
+    it('is safe to call twice, since quit can re-enter', () => {
+        // `app.exit()` re-enters `before-quit`, and the quit handler's guard is
+        // the only thing between that and a second cascade.
+        const worker = fakeProcess();
+        const { supervisor } = supervisorOver([worker]);
+
+        void supervisor.scan({ paths: [] }).catch(() => undefined);
+        supervisor.dispose();
+        supervisor.dispose();
+
+        expect(worker.killed()).toBe(1);
+    });
 });

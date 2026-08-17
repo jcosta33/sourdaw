@@ -156,6 +156,27 @@ describe('byte payloads', () => {
         await expect(bridge.invokeBinaryResponse('read_file_bytes', ['/tmp/x'])).resolves.toBe(bytes);
     });
 
+    it('carries bytes both ways in one call, for the render-quantum shape', async () => {
+        // `process_plugin_audio(instance_id, audio_bytes) -> Buffer` runs once
+        // per quantum. A bridge that discarded the answer here would hand the
+        // call site `undefined`, which it reads as the legitimate "no output
+        // yet" case — every external plugin rendering silence, with nothing
+        // logged anywhere. The round trip has to be byte-identical, so a
+        // truncation or a re-encode fails as well as a dropped result.
+        const rendered = new Uint8Array([9, 8, 7, 6]);
+        const fake = fakeIpc((_channel, args) => (Array.isArray(args[0]) ? rendered : undefined));
+        const bridge = createSourdawBridge(fake.ipc);
+        const block = new Uint8Array([1, 2, 3, 4]);
+
+        const answer = await bridge.invokeBinary('process_plugin_audio', ['instance-1'], block);
+
+        expect(fake.invoke).toHaveBeenCalledWith(commandChannel('process_plugin_audio'), ['instance-1', block]);
+        expect(answer).toBe(rendered);
+        expect([...(await bridge.invokeBinaryResponse('process_plugin_audio', ['instance-1', block]))]).toEqual([
+            9, 8, 7, 6,
+        ]);
+    });
+
     it('wraps a bare ArrayBuffer rather than refusing it', async () => {
         const bridge = createSourdawBridge(fakeIpc(() => new Uint8Array([4, 5, 6]).buffer).ipc);
 
@@ -262,6 +283,48 @@ describe('streaming commands', () => {
             ['req-1'],
             expect.any(String)
         );
+    });
+
+    it('does not reuse an id a previous preload instance handed out', async () => {
+        // Main's in-flight streams survive a renderer crash and drain into the
+        // recreated window, while the new preload's counter restarts at zero.
+        // With a per-boot counter alone the pre-crash request's remaining chunks
+        // land on the new request's correlation — two response bodies
+        // interleaved into one, which is the corruption the bounded queue exists
+        // to prevent, and pre-crash content surfacing after it.
+        const beforeCrash = fakeIpc();
+        const afterCrash = fakeIpc();
+        void createSourdawBridge(beforeCrash.ipc).stream('provider_gateway_request', [], () => undefined);
+        void createSourdawBridge(afterCrash.ipc).stream('provider_gateway_request', [], () => undefined);
+
+        const [, , idBefore] = beforeCrash.invoke.mock.calls[0] ?? [];
+        const [, , idAfter] = afterCrash.invoke.mock.calls[0] ?? [];
+
+        expect(idBefore).not.toBe(idAfter);
+    });
+
+    it('ignores an event addressed to another preload instance', async () => {
+        // The receiving half of the same property: a surviving stream draining
+        // into the recreated window must not find a listener here.
+        const fake = fakeIpc();
+        const bridge = createSourdawBridge(fake.ipc, 'epoch-new');
+        const received: unknown[] = [];
+
+        const call = bridge.stream('provider_gateway_request', [], (payload) => received.push(payload));
+        fake.push(STREAM_CHANNEL, 'epoch-old:0', { fromPreviousBoot: true });
+        await call;
+
+        expect(received).toEqual([]);
+    });
+
+    it('prefixes every id with the boot epoch, so ids are unique per instance', async () => {
+        const fake = fakeIpc();
+        const bridge = createSourdawBridge(fake.ipc, 'epoch-1');
+
+        await bridge.stream('provider_gateway_request', [], () => undefined);
+        await bridge.stream('provider_gateway_request', [], () => undefined);
+
+        expect(fake.invoke.mock.calls.map((call) => call[2])).toEqual(['epoch-1:0', 'epoch-1:1']);
     });
 
     it('releases the correlation on both the resolved and the rejected path', async () => {

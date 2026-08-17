@@ -66,9 +66,16 @@ export const SCAN_TIMEOUT_MS = 120_000;
 
 export type ScanSupervisor = {
     readonly scan: (request: ScanRequest) => Promise<unknown>;
-    /** Whether a worker is currently alive. Read by the specs and by shutdown. */
+    /** Whether a worker is currently alive. */
     readonly isRunning: () => boolean;
-    /** End any live worker. Called on the quit path. */
+    /**
+     * End any live worker.
+     *
+     * Called first on the quit path, before the native cascade. A scan is the
+     * one part of the shell a hostile plugin can already have wedged, and its
+     * worker holds a tree of per-plugin child processes; killing it costs
+     * nothing and stops the shutdown deadline being spent on it.
+     */
     readonly dispose: () => void;
 };
 
