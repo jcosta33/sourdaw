@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Architecture & Decisions
+    url: https://github.com/jcosta33/sourdaw/tree/main/.agents/decisions
+    about: Read accepted Architecture Decision Records (ADRs) and design contracts.

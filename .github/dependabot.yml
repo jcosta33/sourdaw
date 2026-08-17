@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Maintain dependencies for npm / pnpm packages
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+    labels:
+      - "build"
+      - "priority:P3"
+
+  # Maintain dependencies for Cargo / Rust workspace
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      crates:
+        patterns:
+          - "*"
+    labels:
+      - "build"
+      - "priority:P3"

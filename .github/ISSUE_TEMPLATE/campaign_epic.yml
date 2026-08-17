@@ -1,0 +1,35 @@
+name: 🚩 Campaign / Epic Ledger
+description: Multi-issue program, major architecture milestone, or audit sweep ledger.
+title: "feat(campaign): "
+labels: ["epic", "status:active", "priority:P1"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for high-level tracking epics that coordinate multiple sub-issues across workstreams.
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective & Program Scope
+      description: What is the high-level goal and scope of this campaign?
+    validations:
+      required: true
+
+  - type: textarea
+    id: workstreams
+    attributes:
+      label: Workstreams & Sub-issues
+      description: List of tracks, deliverables, and linked sub-issues.
+      placeholder: "- [ ] **Stream E (Electron)**: #...\n- [ ] **Stream D (DSP)**: #...\n- [ ] **Stream R (Research/ADR)**: #..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: exit_criteria
+    attributes:
+      label: Exit Predicates & Acceptance Criteria
+      description: Specific conditions required to close the campaign.
+      placeholder: "1. All streams merged.\n2. Null-test oracle green across all suites.\n3. Clean packaging build."
+    validations:
+      required: true
