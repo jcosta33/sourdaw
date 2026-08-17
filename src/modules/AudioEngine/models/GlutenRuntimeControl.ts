@@ -4,6 +4,7 @@ const GLUTEN_RUNTIME_PARAMETER_IDS = [
     'ratio',
     'attack',
     'release',
+    'knee',
     'makeup',
     'mix',
     'topology',

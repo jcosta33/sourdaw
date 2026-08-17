@@ -248,6 +248,15 @@ describe('GlutenProcessor message handling', () => {
         expect(paramCalls).toEqual([]);
     });
 
+    it('accepts the GlutenPanel knee wire control', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        resetRecording();
+        initializeControl(proc);
+        send(proc, control('knee', 6, 1));
+        expect(paramCalls).toEqual([{ name: 'knee', value: 6 }]);
+    });
+
     it('ignores param messages before init (no instance)', async () => {
         const proc = await loadProcessor();
         initializeControl(proc);
