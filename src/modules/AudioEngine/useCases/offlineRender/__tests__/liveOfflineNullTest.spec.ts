@@ -122,17 +122,24 @@
  * known to be sharp, rather than by one written after the fact to fit whatever
  * the new backend happens to produce.
  *
- * Backend B does not exist yet. The leg therefore runs backend A against a
- * stand-in that reaches the same renderer through the seam a real backend B
- * will occupy, and its teeth are the perturbed half: the stand-in is handed
- * divergences of the exact magnitudes the sharpness probes below already prove
- * visible, and the leg is required to go **red**. A comparison harness that
- * cannot fail is decoration. Both states are asserted — perturbed reds, and the
- * same fixture through an agreeing backend B nulls.
+ * Two occupants sit in the backend B slot, and they answer different questions.
  *
- * Read the green half honestly: while backend B is a stand-in for backend A it
- * is not an independent implementation, so an agreeing null there pins the
- * seam's plumbing and backend A's determinism, not cross-backend parity. The
+ * A **stand-in** reaches the same renderer through the seam, and its teeth are
+ * the perturbed half: it is handed divergences of the exact magnitudes the
+ * sharpness probes below already prove visible, and the leg is required to go
+ * **red**. A comparison harness that cannot fail is decoration. Both states are
+ * asserted — perturbed reds, and the same fixture through an agreeing stand-in
+ * nulls.
+ *
+ * The **contract-backed backend** is the offline renderer behind
+ * `AudioGraphBackend`, the seam the native engine will implement. It is not an
+ * independent renderer either — the contract's implementation is the export's
+ * own code, moved rather than rewritten — so read its green half as being about
+ * the *translation*: project truth in, commands, the same graph out. Every law
+ * the contract restates is a law that could be restated wrongly, and the
+ * perturbed half is aimed at it too.
+ *
+ * Neither occupant makes a cross-backend claim, and neither is asked to. The
  * seam is shown to carry two genuinely different implementations by driving it
  * with the live and offline builders — the pair leg one already cross-checks —
  * which is what makes a native backend a drop-in for the same slot.
@@ -158,6 +165,8 @@ const RENDER_FRAMES = 24_000;
 const RESIDUAL_BUDGET_DBFS = -90;
 /** Above this a residual is audible. AC-1 calls it a defect, not tolerance. */
 const RESIDUAL_DEFECT_DBFS = -60;
+/** The one track every leg builds. */
+const FIXTURE_TRACK_ID = 'track-1';
 
 const harness = createNullTestRenderHarness();
 harness.installWorkletGlobals({ sampleRate: SAMPLE_RATE });
@@ -173,6 +182,7 @@ await import('../../../services/meteringProcessor');
 const { TrackNode } = await import('../../../engine/TrackNode');
 const { createDeviceReadinessDiagnostics } = await import('../../../engine/deviceReadinessDiagnostics');
 const { createOfflineTrackStrip } = await import('../createOfflineTrackStrip');
+const { createWebAudioOfflineBackend } = await import('../createWebAudioOfflineBackend');
 
 type TrackFixture = {
     name: string;
@@ -283,7 +293,7 @@ async function renderLive(fixture: TrackFixture, options: RenderOptions = {}): P
     master.gain.value = 1;
     master.connect(context.destination);
 
-    const trackNode = new TrackNode('track-1', {
+    const trackNode = new TrackNode(FIXTURE_TRACK_ID, {
         context: context as unknown as AudioContext,
         masterGainNode: master as unknown as GainNode,
         getBusGainNode: () => undefined,
@@ -339,6 +349,7 @@ async function renderOffline(fixture: TrackFixture, options: RenderOptions = {})
     const strip = await createOfflineTrackStrip(
         context as unknown as OfflineAudioContext,
         {
+            id: FIXTURE_TRACK_ID,
             name: fixture.name,
             gain: fixture.gain,
             muted: fixture.muted,
@@ -586,6 +597,7 @@ describe('live/offline null test — the instrument can fail', () => {
         master.gain.value = 1;
         master.connect(context.destination);
         const strip = await brokenOfflineStrip(context as unknown as OfflineAudioContext, {
+            id: FIXTURE_TRACK_ID,
             name: fixture.name,
             gain: fixture.gain,
             muted: fixture.muted,
@@ -892,6 +904,115 @@ function standInBackendB(input: { name: string; misread: FixtureMisread }): Rend
 const AGREEING_BACKEND_B = standInBackendB({ name: 'agrees', misread: (fixture) => fixture });
 
 /**
+ * Backend B, for real: the offline Web Audio renderer behind the
+ * `AudioGraphBackend` contract.
+ *
+ * This is the seam's first non-stand-in occupant, and what it proves is narrower
+ * than "two backends agree" — say the narrow thing rather than the flattering
+ * one. The nodes underneath are the same nodes `renderOffline` builds, because
+ * the contract's implementation is that code moved rather than rewritten, so a
+ * null here cannot be evidence about *rendering*. What it is evidence about is
+ * the **translation**: a fixture goes in as project truth, is expressed as
+ * commands, and has to come back out as the same graph. Every place the
+ * contract restates a law — the fader clamp, the pan scale, the mute gate's
+ * position, which node a solo gate closes, what a device chain report contains —
+ * is a place a second, wrong law could live, and this is what refuses one.
+ *
+ * The strip parameters go in **twice, deliberately**: once in the creating
+ * command's `state`, and again as `write-parameter` steps carrying the same
+ * project-truth values. The second pass is idempotent by construction — it
+ * writes the value the strip already holds — and that is exactly what makes it
+ * a probe rather than noise. `write-parameter` is the surface a lane, a mixer
+ * move and the native engine's `AutomateParam` all arrive through, and it can
+ * only be idempotent if it applies the same laws strip construction did. The
+ * `faderAboveCeiling` fixture stores 1.8 and the `pannedStrip` fixture stores
+ * −31: a write path that forgot `clampFaderGain` or the −50…50 pan scale reds
+ * those two, loudly, instead of shipping a second level law nothing compares.
+ */
+
+async function renderThroughContract(fixture: TrackFixture, options: RenderOptions = {}): Promise<LegRender> {
+    const context = newContext();
+    const master = context.createGain() as { gain: { value: number }; connect: (to: unknown) => unknown };
+    master.gain.value = 1;
+    master.connect(context.destination);
+
+    const backend = createWebAudioOfflineBackend({
+        context: context as unknown as OfflineAudioContext,
+        masterNode: master as unknown as AudioNode,
+        // Same reason as `renderOffline`'s: a degraded device would otherwise
+        // let this leg null against another graph that also lacks it.
+        onWarning: (message: string) => {
+            throw new Error(`contract backend degraded a fixtured device instead of building it: ${message}`);
+        },
+    });
+
+    const result = await backend.apply({
+        schemaVersion: 1,
+        commands: [
+            {
+                kind: 'create-track-strip',
+                trackId: FIXTURE_TRACK_ID,
+                name: fixture.name,
+                state: {
+                    gain: fixture.gain,
+                    pan: fixture.pan,
+                    muted: fixture.muted,
+                    soloGated: false,
+                    vcaMultiplier: 1,
+                },
+                devices: fixture.devices,
+                honorMuted: true,
+                contributesAudio: true,
+            },
+            { kind: 'set-track-output', trackId: FIXTURE_TRACK_ID, target: { kind: 'master' } },
+            {
+                kind: 'write-parameter',
+                target: { kind: 'track-fader', trackId: FIXTURE_TRACK_ID },
+                write: { shape: 'step', value: fixture.gain, time: 0 },
+            },
+            {
+                kind: 'write-parameter',
+                target: { kind: 'track-pan', trackId: FIXTURE_TRACK_ID },
+                write: { shape: 'step', value: fixture.pan, time: 0 },
+            },
+            {
+                kind: 'write-parameter',
+                target: { kind: 'track-mute-gate', trackId: FIXTURE_TRACK_ID },
+                write: { shape: 'step', value: fixture.muted ? 0 : 1, time: 0 },
+            },
+            {
+                kind: 'write-parameter',
+                target: { kind: 'track-solo-gate', trackId: FIXTURE_TRACK_ID },
+                write: { shape: 'step', value: 1, time: 0 },
+            },
+        ],
+    });
+
+    if (result.application !== 'applied') {
+        throw new Error(`contract backend refused the fixture batch: ${JSON.stringify(result)}`);
+    }
+    const report = result.reports.find((entry) => entry.id === FIXTURE_TRACK_ID);
+    if (!report) {
+        throw new Error('contract backend applied a strip command and reported no strip');
+    }
+    const strip = backend.getTrackStrip(FIXTURE_TRACK_ID);
+    if (!strip) {
+        throw new Error('contract backend reported a strip it does not hold');
+    }
+
+    const source = context.createSignalSource(fixtureSignal(options.signalScale ?? 1));
+    source.connect(strip.inputNode);
+    const buffer = await context.startRendering();
+    return { buffer, builtDeviceIds: [...report.deviceIds] };
+}
+
+/** Backend B: the same render path, reached through the contract seam. */
+const BACKEND_B_CONTRACT: RenderBackend = {
+    id: 'audio-graph-backend/web-audio-offline',
+    render: renderThroughContract,
+};
+
+/**
  * Every device the fixture asks for, in the ids the backend reported.
  *
  * Bypassed devices are excluded because the two runtimes already disagree about
@@ -1010,6 +1131,77 @@ describe('live/offline null test — the backend axis', () => {
     });
 
     /**
+     * The same sweep against the contract-backed backend.
+     *
+     * Same population, same budget, same seam — including the device pin, which
+     * `nullTestBackends` applies to both legs from the ids each backend reports.
+     * A contract implementation that built the chain and forgot to report it, or
+     * reported a device it degraded away, is refused here rather than nulling
+     * silently against a backend that dropped the same device.
+     */
+    it.each(BACKEND_FIXTURES)('nulls %s through the contract-backed backend', async (_name, fixture) => {
+        expectNull(await nullTestBackends({ a: BACKEND_A, b: BACKEND_B_CONTRACT, fixture }));
+    });
+
+    /**
+     * The contract carries a live builder's output too.
+     *
+     * Leg one's four-device chain, subtracted between the live strip and the
+     * contract-backed one. `renderLive` never touches the contract, so this is
+     * the pairing where a law the contract restated wrongly cannot be cancelled
+     * out by both sides restating it the same way.
+     */
+    it('nulls the live builder against the contract-backed backend', async () => {
+        expectNull(
+            await nullTestBackends({
+                a: BACKEND_A_LIVE,
+                b: BACKEND_B_CONTRACT,
+                fixture: SHARED_FIXTURES.chainInProjectOrder,
+            })
+        );
+    });
+
+    /**
+     * The contract refuses what it cannot do, rather than accepting it.
+     *
+     * An `OfflineAudioContext` has no rack to splice into and no playhead to
+     * move, and the failure mode worth guarding is not the refusal — it is the
+     * *silent* alternative, where a backend accepts `set-transport`, does
+     * nothing, and the caller learns from a wrong file. The refusal also has to
+     * take the whole batch: the strip command ahead of it must not have been
+     * applied, or a caller retrying against a different backend builds it twice.
+     */
+    it('refuses a batch carrying a command an offline render cannot answer', async () => {
+        const context = newContext();
+        const master = context.createGain() as { gain: { value: number }; connect: (to: unknown) => unknown };
+        master.connect(context.destination);
+        const backend = createWebAudioOfflineBackend({
+            context: context as unknown as OfflineAudioContext,
+            masterNode: master as unknown as AudioNode,
+        });
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: FIXTURE_TRACK_ID,
+                    name: 'Fixture',
+                    state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                    devices: [],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                { kind: 'set-transport', playing: true, positionSeconds: 0 },
+            ],
+        });
+
+        expect(result.acceptance).toBe('rejected');
+        expect(result.application).toBe('not-applied');
+        expect(backend.getTrackStrip(FIXTURE_TRACK_ID)).toBeUndefined();
+    });
+
+    /**
      * The seam is driven by two genuinely different implementations.
      *
      * Be precise about what this does and does not carry, because the two are
@@ -1096,5 +1288,36 @@ describe('live/offline null test — the backend axis', () => {
         });
 
         expectNull(agreeing);
+    });
+
+    /**
+     * The same red half, aimed at the contract-backed backend.
+     *
+     * Without this the leg above is a green file and nothing more: a
+     * `renderThroughContract` that quietly rendered a bare strip, dropped the
+     * device chain, or ignored the parameter writes would null perfectly
+     * against backend A on most of the fixture table. Handing the *contract*
+     * backend the three divergences this file already proves visible is what
+     * makes its green half a measurement — and the same two claims are asserted,
+     * so a red for a gross reason cannot be read as a red for the injected one.
+     */
+    it.each(BACKEND_B_DIVERGENCES)('reds when the contract-backed backend renders $name', async (divergence) => {
+        const perturbed = await nullTestBackends({
+            a: BACKEND_A,
+            b: {
+                id: `audio-graph-backend/${divergence.name}`,
+                render: (fixture, options) => renderThroughContract(divergence.misread(fixture), options),
+            },
+            fixture: divergence.fixture,
+        });
+
+        expect(perturbed.signalPeakDbfs).toBeGreaterThan(-40);
+        expect(
+            perturbed.residualPeakDbfs,
+            `perturbed contract backend nulled at ${perturbed.residualPeakDbfs.toFixed(2)} dBFS — the leg is blind`
+        ).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+        expect(perturbed.residualPeakDbfs).toBeLessThan(RESIDUAL_DEFECT_DBFS);
+
+        expectNull(await nullTestBackends({ a: BACKEND_A, b: BACKEND_B_CONTRACT, fixture: divergence.fixture }));
     });
 });

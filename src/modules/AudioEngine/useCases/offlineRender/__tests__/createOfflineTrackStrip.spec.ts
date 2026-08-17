@@ -33,6 +33,7 @@ describe('createOfflineTrackStrip', () => {
         const strip = await createOfflineTrackStrip(
             makeOfflineCtx(),
             {
+                id: 'stem-track',
                 name: 'Stem track',
                 gain: 0.8,
                 muted: true,
@@ -47,6 +48,7 @@ describe('createOfflineTrackStrip', () => {
 
     it('bakes mute into the strip on the mixdown path (default)', async () => {
         const strip = await createOfflineTrackStrip(makeOfflineCtx(), {
+            id: 'mixdown-track',
             name: 'Mixdown track',
             gain: 0.8,
             muted: true,
@@ -67,7 +69,7 @@ describe('createOfflineTrackStrip', () => {
 
         await createOfflineTrackStrip(
             makeOfflineCtx(),
-            { name: 'Lead Vox', gain: 0.8, muted: false, pan: 0, devices: [] },
+            { id: 'lead-vox', name: 'Lead Vox', gain: 0.8, muted: false, pan: 0, devices: [] },
             { onWarning }
         );
 
@@ -82,7 +84,7 @@ describe('createOfflineTrackStrip', () => {
     it('tells the chain build when the track contributes no audio to the render', async () => {
         await createOfflineTrackStrip(
             makeOfflineCtx(),
-            { name: 'Muted', gain: 0.8, muted: true, pan: 0, devices: [] },
+            { id: 'muted', name: 'Muted', gain: 0.8, muted: true, pan: 0, devices: [] },
             { contributesAudio: false }
         );
 
@@ -91,6 +93,7 @@ describe('createOfflineTrackStrip', () => {
 
     it('keeps the strip audible for an unmuted track', async () => {
         const strip = await createOfflineTrackStrip(makeOfflineCtx(), {
+            id: 'unmuted-track',
             name: 'Unmuted track',
             gain: 0.8,
             muted: false,
