@@ -7,7 +7,7 @@ describe('updateTask', () => {
     beforeEach(() => {
         aiStore.set({
             tasks: [
-                { id: 't1', type: 'audio-generation', status: 'processing', timestamp: 1 },
+                { id: 't1', type: 'denoise', status: 'processing', timestamp: 1 },
                 { id: 't2', type: 'midi-generation', status: 'processing', timestamp: 2 },
             ],
             isPanelOpen: false,
@@ -23,7 +23,7 @@ describe('updateTask', () => {
 
         expect(aiStore.value!.tasks[0]).toEqual({
             id: 't1',
-            type: 'audio-generation',
+            type: 'denoise',
             status: 'success',
             timestamp: 1,
             data: { some: 'data' },
@@ -34,14 +34,14 @@ describe('updateTask', () => {
 
     it('preserves an unrelated current task when a stale snapshot is observed', () => {
         vi.spyOn(aiStore, 'value', 'get').mockReturnValueOnce({
-            tasks: [{ id: 't1', type: 'audio-generation', status: 'processing', timestamp: 1 }],
+            tasks: [{ id: 't1', type: 'denoise', status: 'processing', timestamp: 1 }],
             isPanelOpen: false,
         });
 
         updateTask('t1', { status: 'success' });
 
         expect(aiStore.getSnapshot()!.tasks).toEqual([
-            { id: 't1', type: 'audio-generation', status: 'success', timestamp: 1 },
+            { id: 't1', type: 'denoise', status: 'success', timestamp: 1 },
             { id: 't2', type: 'midi-generation', status: 'processing', timestamp: 2 },
         ]);
     });
@@ -53,7 +53,7 @@ describe('updateTask', () => {
         });
         vi.spyOn(aiStore, 'value', 'get').mockReturnValueOnce({
             tasks: [
-                { id: 't1', type: 'audio-generation', status: 'processing', timestamp: 1 },
+                { id: 't1', type: 'denoise', status: 'processing', timestamp: 1 },
                 { id: 't2', type: 'midi-generation', status: 'processing', timestamp: 2 },
             ],
             isPanelOpen: false,

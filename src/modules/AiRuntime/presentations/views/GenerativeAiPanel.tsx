@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
-import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Info, Upload, Loader2 } from 'lucide-react';
+import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Upload, Loader2 } from 'lucide-react';
 
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
@@ -16,14 +16,11 @@ import { aiStore } from '#/modules/AiGeneration/stores';
 import {
     toggleAiPanel,
     handleGenerateMidiPrompt,
-    handleGenerateAudioFallback,
     handleStemSeparationPreview,
     cancelProcessingTask,
     removeTask,
 } from '#/modules/AiGeneration/useCases';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
-import { isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
-import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
@@ -43,7 +40,7 @@ type GenerativePanelTrackState = {
     }>;
 };
 
-type GenerativeTaskType = 'midi-generation' | 'audio-generation' | 'stem-separation' | 'denoise';
+type GenerativeTaskType = 'midi-generation' | 'stem-separation' | 'denoise';
 
 type GenerativeTaskStatus = 'idle' | 'processing' | 'success' | 'error';
 
@@ -63,15 +60,6 @@ type GenerativeAiState = {
     tasks: GenerativeTaskResult[];
 };
 
-const DesktopOnlyNotice = ({ feature }: { feature: string }): ReactElement => (
-    <DawUtilityNotice icon={<Info className="size-3.5 text-[var(--color-accent-amber)]" />}>
-        <div>
-            <span className="font-medium text-foreground/80">{feature}</span> requires the Sourdaw desktop app. It uses
-            on-device AI models that need GPU access not available in browsers.
-        </div>
-    </DawUtilityNotice>
-);
-
 export const GenerativeAiPanel = (): ReactElement | null => {
     // §187.1 — All hooks MUST run in the same order on every render. The
     // previous implementation placed two \`useStore\` calls (selection reads
@@ -81,18 +69,12 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const state = useStore<GenerativeAiState>(aiStore, { isPanelOpen: false, tasks: [] });
     const clipSelection = useStore<GenerativePanelWorkspaceState | null>(clipSelectionStore, null);
     const trackState = useStore<GenerativePanelTrackState | null>(trackStore, null);
-    const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
+    const [activeTab, setActiveTab] = useState<'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
-    // Genre / mood / instrument are tracked independently per tab so switching tabs
-    // doesn't clobber the user's selections for the other context.
     const [midiGenre, setMidiGenre] = useState('');
     const [midiMood, setMidiMood] = useState('');
     const [midiInstrument, setMidiInstrument] = useState('');
-    const [audioGenre, setAudioGenre] = useState('');
-    const [audioMood, setAudioMood] = useState('');
-    const [audioInstrument, setAudioInstrument] = useState('');
-    const [audioDuration, setAudioDuration] = useState(4);
     const [midiNotes, setMidiNotes] = useState(32);
     const [creativity, setCreativity] = useState(65);
 
@@ -100,36 +82,21 @@ export const GenerativeAiPanel = (): ReactElement | null => {
         return null;
     }
 
-    const isAudioGenerationEnabled = isAudioGenerationAvailable();
-
     // In-flight detection — disable the Generate button while a task of the matching
     // type is already processing. This prevents double-submits and gives clear feedback.
     const midiIsProcessing = state.tasks.some(
         (time) => time.type === 'midi-generation' && time.status === 'processing'
     );
-    const audioIsProcessing = state.tasks.some(
-        (time) => time.type === 'audio-generation' && time.status === 'processing'
-    );
-
-    const handleCancelAudio = (): void => {
-        cancelProcessingTask('audio-generation');
-        notifyUser('Audio generation cancelled — result may still appear if the request was already in flight', 'info');
-    };
-
     const handleCancelMidi = (): void => {
         cancelProcessingTask('midi-generation');
         notifyUser('MIDI generation cancelled — result may still appear if the request was already in flight', 'info');
     };
 
     const handleGenerate = () => {
-        const genre = activeTab === 'midi' ? midiGenre : audioGenre;
-        const mood = activeTab === 'midi' ? midiMood : audioMood;
-        const instrument = activeTab === 'midi' ? midiInstrument : audioInstrument;
-
         const metadata = [
-            genre && `Genre: ${genre}`,
-            instrument && `Instrument: ${instrument}`,
-            mood && `Mood: ${mood}`,
+            midiGenre && `Genre: ${midiGenre}`,
+            midiInstrument && `Instrument: ${midiInstrument}`,
+            midiMood && `Mood: ${midiMood}`,
         ]
             .filter(Boolean)
             .join(', ');
@@ -139,15 +106,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
             return;
         }
 
-        if (activeTab === 'audio') {
-            const bpm = transportStore.value?.tempo ?? 120;
-            void handleGenerateAudioFallback(
-                `${String(Math.round(bpm))} BPM, ${finalPrompt}`,
-                audioDuration.toString()
-            );
-        } else if (activeTab === 'midi') {
-            void handleGenerateMidiPrompt(finalPrompt, midiNotes, creativity / 100);
-        }
+        void handleGenerateMidiPrompt(finalPrompt, midiNotes, creativity / 100);
         setPrompt('');
     };
 
@@ -190,15 +149,6 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     onClick={() => setActiveTab('midi')}
                 >
                     <Music className="size-3" /> MIDI
-                </Button>
-                <Button
-                    variant={activeTab === 'audio' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="flex-1"
-                    data-testid="generate-tab-audio"
-                    onClick={() => setActiveTab('audio')}
-                >
-                    <AudioWaveform className="size-3" /> Audio
                 </Button>
                 <Button
                     variant={activeTab === 'stems' ? 'secondary' : 'ghost'}
@@ -287,96 +237,6 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
                             First run downloads the model (~235 MB). Runs locally on your device.
                         </DawInlineHint>
-                    </div>
-                ) : null}
-
-                {activeTab === 'audio' ? (
-                    <div className="p-3 space-y-4">
-                        {!isAudioGenerationEnabled ? (
-                            <DesktopOnlyNotice feature="Audio generation" />
-                        ) : (
-                            <div className="space-y-3">
-                                <div className="space-y-1.5">
-                                    <DawEyebrowLabel size="sm" className="block text-foreground/80">
-                                        Describe the Sound
-                                    </DawEyebrowLabel>
-                                    <DawCompactTextarea
-                                        value={prompt}
-                                        onChange={(event) => setPrompt(event.target.value)}
-                                        placeholder="e.g. warm vinyl crackle loop, 85 BPM"
-                                        className="h-12 border-border/60 bg-surface-base p-2 resize-none"
-                                    />
-                                </div>
-
-                                <div className="space-y-4 pt-1 pb-2">
-                                    <ParamSection label="Genre" value={audioGenre} onClear={() => setAudioGenre('')}>
-                                        <GenreGrid value={audioGenre} onChange={setAudioGenre} />
-                                    </ParamSection>
-                                    <ParamSection label="Mood" value={audioMood} onClear={() => setAudioMood('')}>
-                                        <MoodGrid value={audioMood} onChange={setAudioMood} />
-                                    </ParamSection>
-                                    <ParamSection
-                                        label="Instrument"
-                                        value={audioInstrument}
-                                        onClear={() => setAudioInstrument('')}
-                                    >
-                                        <InstrumentGrid value={audioInstrument} onChange={setAudioInstrument} />
-                                    </ParamSection>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <DawEyebrowLabel size="sm" className="text-foreground/80">
-                                            Duration
-                                        </DawEyebrowLabel>
-                                        <span className="text-[10px] text-muted-foreground">{audioDuration}s</span>
-                                    </div>
-                                    <Slider
-                                        value={[audioDuration]}
-                                        onValueChange={([value]) => setAudioDuration(value!)}
-                                        min={1}
-                                        max={11}
-                                        step={1}
-                                        className="pt-1"
-                                    />
-                                    <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
-                                        Max 11s per generation (Stable Audio Open)
-                                    </DawInlineHint>
-                                </div>
-
-                                {audioIsProcessing ? (
-                                    <div className="flex gap-2">
-                                        <Button
-                                            className="flex-1 h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white opacity-60"
-                                            disabled
-                                        >
-                                            <Loader2 className="size-3.5 mr-2 animate-spin" /> Generating…
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                            onClick={handleCancelAudio}
-                                            title="Force-stop — the background request may still complete"
-                                            aria-label="Stop audio generation (background request may still complete)"
-                                        >
-                                            Stop
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <Button
-                                        className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white"
-                                        onClick={handleGenerate}
-                                        disabled={!prompt.trim() && !audioGenre && !audioInstrument && !audioMood}
-                                    >
-                                        <Sparkles className="size-3.5 mr-2" /> Generate Audio
-                                    </Button>
-                                )}
-                                <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
-                                    First run downloads the model (~1.7 GB). Runs locally on your device.
-                                </DawInlineHint>
-                            </div>
-                        )}
                     </div>
                 ) : null}
 

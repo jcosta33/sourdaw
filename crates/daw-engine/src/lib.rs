@@ -5,6 +5,7 @@ pub mod midi;
 pub mod midi_fx;
 pub mod plugin_slot;
 pub mod scheduler;
+pub mod timeline;
 
 use audio_thread::{spawn_audio_thread_with_diagnostics, AudioThreadHandle};
 use engine_events::{engine_event_channel, EngineEvent};
@@ -15,6 +16,11 @@ use midi::diagnostics::{
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, RingBuffer};
 use scheduler::GraphCommand;
+use timeline::{
+    timeline_rt_diagnostics_channel, AutomationEvent, AutomationTarget, ClipPlacement, DeviceParam,
+    RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineRtDiagnosticsReader,
+    TimelineRtDiagnosticsSnapshot, TimelineTrack,
+};
 
 /// Run a start attempt, and on failure run it once more with the negotiated
 /// buffer period dropped, reporting both failures when neither attempt worked.
@@ -46,6 +52,7 @@ pub struct EngineHandle {
     _audio_thread: AudioThreadHandle,
     next_plugin_id: usize,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
+    timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     engine_events: Consumer<EngineEvent>,
 }
 
@@ -71,10 +78,13 @@ impl EngineHandle {
     fn spawn(force_default_buffer: bool) -> Result<Self, String> {
         let (tx, rx) = RingBuffer::new(256);
         let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let (timeline_diagnostics_tx, timeline_diagnostics_reader) =
+            timeline_rt_diagnostics_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let thread_handle = spawn_audio_thread_with_diagnostics(
             rx,
             diagnostics_tx,
+            timeline_diagnostics_tx,
             engine_event_tx,
             force_default_buffer,
         )?;
@@ -84,6 +94,7 @@ impl EngineHandle {
             _audio_thread: thread_handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             midi_rt_diagnostics: diagnostics_reader,
+            timeline_rt_diagnostics: timeline_diagnostics_reader,
             engine_events: engine_event_rx,
         })
     }
@@ -91,6 +102,13 @@ impl EngineHandle {
     /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
     pub fn midi_rt_diagnostics_snapshot(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
         self.midi_rt_diagnostics.snapshot()
+    }
+
+    /// Read the latest fixed numeric timeline diagnostics outside the audio
+    /// callback. Every counter is a timeline command the graph refused, and a
+    /// refusal is the alternative to allocating inside the audio deadline.
+    pub fn timeline_rt_diagnostics_snapshot(&mut self) -> TimelineRtDiagnosticsSnapshot {
+        self.timeline_rt_diagnostics.snapshot()
     }
 
     /// Take every engine event published since the last drain.
@@ -191,6 +209,162 @@ impl EngineHandle {
             .push(GraphCommand::SetTransport(state))
             .map_err(|_| "Audio command queue full".to_string())
     }
+
+    /// Add a timeline track.
+    ///
+    /// The track is built here, on the control thread, with every buffer it
+    /// will ever need already sized, because the audio thread that installs it
+    /// may not allocate.
+    pub fn add_track(&mut self, id: usize) -> Result<(), String> {
+        self.push(GraphCommand::AddTrack(TimelineTrack::new(id)))
+    }
+
+    /// Remove a track. It leaves the audio thread over the retirement channel
+    /// with every clip it owns; its devices stay loaded but stop processing
+    /// until they are placed on another track or removed.
+    pub fn remove_track(&mut self, id: usize) -> Result<(), String> {
+        self.push(GraphCommand::RemoveTrack(id))
+    }
+
+    /// Route a track's output at the master, a bus, or another track.
+    pub fn set_track_output(&mut self, id: usize, target: RouteTarget) -> Result<(), String> {
+        self.push(GraphCommand::SetTrackOutput(id, target))
+    }
+
+    /// Mute a track. The mute sits after the fader and before the panner, so a
+    /// pre-fader send keeps feeding its bus — the behaviour a cue or monitor
+    /// mix depends on.
+    pub fn set_track_mute(&mut self, id: usize, muted: bool) -> Result<(), String> {
+        self.push(GraphCommand::SetTrackMute(id, muted))
+    }
+
+    /// Splice an already registered effect into a track's device chain.
+    pub fn insert_track_device(
+        &mut self,
+        track_id: usize,
+        effect_id: usize,
+        index: usize,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::InsertTrackDevice {
+            track_id,
+            effect_id,
+            index,
+        })
+    }
+
+    /// Take an effect out of a track's chain, returning it to the master
+    /// insert chain without unloading it.
+    pub fn remove_track_device(&mut self, track_id: usize, effect_id: usize) -> Result<(), String> {
+        self.push(GraphCommand::RemoveTrackDevice {
+            track_id,
+            effect_id,
+        })
+    }
+
+    /// Add a send from a track to a bus at the given tap.
+    pub fn add_send(
+        &mut self,
+        track_id: usize,
+        bus_id: usize,
+        tap: SendTap,
+        level: f32,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::AddSend {
+            track_id,
+            bus_id,
+            tap,
+            level,
+        })
+    }
+
+    pub fn remove_send(&mut self, track_id: usize, bus_id: usize) -> Result<(), String> {
+        self.push(GraphCommand::RemoveSend { track_id, bus_id })
+    }
+
+    /// Add a bus. A bus may feed the master or another bus; buses are summed
+    /// after every track, so a bus cannot feed a track.
+    pub fn add_bus(&mut self, id: usize) -> Result<(), String> {
+        self.push(GraphCommand::AddBus(TimelineBus::new(id)))
+    }
+
+    pub fn remove_bus(&mut self, id: usize) -> Result<(), String> {
+        self.push(GraphCommand::RemoveBus(id))
+    }
+
+    pub fn set_bus_output(&mut self, id: usize, target: RouteTarget) -> Result<(), String> {
+        self.push(GraphCommand::SetBusOutput(id, target))
+    }
+
+    /// Place a clip on a track. `right` may be empty for mono material, which
+    /// plays to both outputs. The vectors are the clip's source material and
+    /// are never written to again: an edit moves the placement instead.
+    pub fn add_clip(
+        &mut self,
+        track_id: usize,
+        clip_id: usize,
+        left: Vec<f32>,
+        right: Vec<f32>,
+        placement: ClipPlacement,
+        gain: f32,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(clip_id, left, right, placement, gain),
+        ))
+    }
+
+    pub fn remove_clip(&mut self, track_id: usize, clip_id: usize) -> Result<(), String> {
+        self.push(GraphCommand::RemoveClip(track_id, clip_id))
+    }
+
+    /// Move or trim a clip without touching its source material.
+    pub fn set_clip_placement(
+        &mut self,
+        track_id: usize,
+        clip_id: usize,
+        placement: ClipPlacement,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::SetClipPlacement(track_id, clip_id, placement))
+    }
+
+    /// Place the playhead at an absolute timeline frame.
+    pub fn seek_frames(&mut self, frame: u64) -> Result<(), String> {
+        self.push(GraphCommand::SeekFrames(frame))
+    }
+
+    /// Schedule a mixer parameter change at an absolute timeline frame. The
+    /// stamp is authoritative, so the same command stream renders the same
+    /// automation however the blocks fall.
+    pub fn automate_param(
+        &mut self,
+        target: AutomationTarget,
+        event: AutomationEvent,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::AutomateParam { target, event })
+    }
+
+    /// Schedule a built-in device parameter change at an absolute timeline
+    /// frame.
+    pub fn automate_device_param(
+        &mut self,
+        effect_id: usize,
+        param: DeviceParam,
+        value: f32,
+        at_frame: u64,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::AutomateDeviceParam {
+            effect_id,
+            param,
+            value,
+            at_frame,
+        })
+    }
+
+    fn push(&mut self, command: GraphCommand) -> Result<(), String> {
+        self.command_tx
+            .push(command)
+            .map_err(|_| "Audio command queue full".to_string())
+    }
 }
 
 /// Build a handle whose commands land in the returned consumer.
@@ -203,6 +377,7 @@ impl EngineHandle {
 fn engine_handle_for_command_capture(capacity: usize) -> (EngineHandle, Consumer<GraphCommand>) {
     let (command_tx, command_rx) = RingBuffer::new(capacity);
     let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+    let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
 
     (
@@ -211,6 +386,7 @@ fn engine_handle_for_command_capture(capacity: usize) -> (EngineHandle, Consumer
             _audio_thread: audio_thread::detached_audio_thread_handle(),
             next_plugin_id: 1000,
             midi_rt_diagnostics: diagnostics_reader,
+            timeline_rt_diagnostics: timeline_diagnostics_reader,
             engine_events: engine_event_rx,
         },
         command_rx,

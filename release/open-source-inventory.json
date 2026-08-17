@@ -1,0 +1,1242 @@
+{
+    "schemaVersion": 1,
+    "surfaces": [
+        {
+            "id": "project-source",
+            "kind": "source",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source"],
+            "paths": [
+                ".agents/**",
+                ".cargo/**",
+                ".claude/**",
+                ".gemini/**",
+                ".githooks/**",
+                ".github/**",
+                "crates/**",
+                "docs/**",
+                "release/open-source-inventory.json",
+                "scripts/**",
+                "server/**",
+                "src/**",
+                "src-tauri/AGENTS.md",
+                "src-tauri/CLAUDE.md",
+                "src-tauri/GEMINI.md",
+                "src-tauri/src/**",
+                "src-tauri/tests/**",
+                "tests/**",
+                ".dependency-cruiser-known-violations-reachability.json",
+                ".dependency-cruiser-known-violations-tests.json",
+                ".dependency-cruiser-known-violations-types.json",
+                ".dependency-cruiser-known-violations.json",
+                ".dependency-cruiser.cjs",
+                ".dependency-cruiser.reachability.cjs",
+                ".dependency-cruiser.shared.cjs",
+                ".dependency-cruiser.tests.cjs",
+                ".dependency-cruiser.types.cjs",
+                ".editorconfig",
+                ".gitignore",
+                ".node-version",
+                ".oxlintrc.json",
+                ".prettierignore",
+                ".prettierrc",
+                "AGENTS.md",
+                "CLAUDE.md",
+                "Cargo.lock",
+                "Cargo.toml",
+                "GEMINI.md",
+                "README.md",
+                "components.json",
+                "eslint.config.mjs",
+                "index.html",
+                "knip.json",
+                "package.json",
+                "playwright.config.ts",
+                "pnpm-lock.yaml",
+                "pnpm-workspace.yaml",
+                "rust-toolchain.toml",
+                "tsconfig.app.json",
+                "tsconfig.e2e.json",
+                "tsconfig.eslint.json",
+                "tsconfig.json",
+                "tsconfig.scripts.json",
+                "tsconfig.test.json",
+                "vercel.json",
+                "vite-env.d.ts",
+                "vite.config.ts"
+            ],
+            "sources": ["git:github.com/jcosta33/sourdaw", "package.json", "server/package.json", "Cargo.toml"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553", "pnpm-lock.yaml", "Cargo.lock"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "licenses": ["pending:OS-10"],
+            "productSurfaces": ["repository source"],
+            "evidence": ["Git history and the dependency manifests named in paths."],
+            "obligations": ["Apply Apache-2.0 metadata without erasing third-party notices."]
+        },
+        {
+            "id": "desktop-shell",
+            "kind": "distribution",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "desktop"],
+            "paths": [
+                "electron/**",
+                "src-tauri/.cargo/**",
+                "src-tauri/Cargo.toml",
+                "src-tauri/Entitlements.plist",
+                "src-tauri/Info.plist",
+                "src-tauri/build.rs",
+                "src-tauri/capabilities/**",
+                "src-tauri/gen/**",
+                "src-tauri/icons/**",
+                "src-tauri/permissions/**",
+                "src-tauri/tauri.conf.json"
+            ],
+            "sources": [
+                "https://github.com/electron/electron",
+                "https://github.com/tauri-apps/tauri",
+                "package.json",
+                "src-tauri/Cargo.toml"
+            ],
+            "revisions": ["pnpm-lock.yaml", "Cargo.lock"],
+            "digests": ["pending:OS-07-final-desktop-package"],
+            "licenses": ["pending:OS-07"],
+            "productSurfaces": ["Electron shell", "Tauri shell"],
+            "evidence": ["package.json", "src-tauri/Cargo.toml"],
+            "obligations": [
+                "Reconcile both desktop shells and every bundled runtime notice after campaign 2037 settles."
+            ]
+        },
+        {
+            "id": "javascript-dependencies",
+            "kind": "dependency-graph",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "package.json",
+                "server/package.json",
+                "server/package-lock.json",
+                "pnpm-lock.yaml",
+                "pnpm-workspace.yaml"
+            ],
+            "sources": ["package.json", "server/package.json", "server/package-lock.json", "pnpm-lock.yaml"],
+            "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
+            "digests": [
+                "sha256:419dc35165521cd97f925fcb7ed27ca86300c5f77f7065e71d0c65c7a8772378",
+                "sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
+            ],
+            "licenses": ["individual dependency terms pending OS-10 notice assembly"],
+            "productSurfaces": ["browser application", "desktop application", "collaboration server"],
+            "evidence": [
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
+            ],
+            "obligations": ["Reconcile every distributed dependency license and notice before release."]
+        },
+        {
+            "id": "rust-dependencies",
+            "kind": "dependency-graph",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["Cargo.toml", "Cargo.lock", "crates/**", "src-tauri/Cargo.toml"],
+            "sources": ["Cargo.toml", "src-tauri/Cargo.toml", "Cargo.lock"],
+            "revisions": ["exact Cargo lock graph"],
+            "digests": ["sha256:e3b3d4ad90a892b92acf9a72c701a99d5ef4f1f9ecc04254cd19283d81f7c88a"],
+            "licenses": ["individual dependency terms pending OS-10 notice assembly"],
+            "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
+            "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
+            "obligations": ["Reconcile every distributed dependency license and notice before release."]
+        },
+        {
+            "id": "mp3-encoder",
+            "kind": "runtime-library",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "package.json",
+                "pnpm-lock.yaml",
+                "src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts"
+            ],
+            "sources": ["https://github.com/shijinyu/lamejs", "node_modules/@breezystack/lamejs/package.json"],
+            "revisions": ["@breezystack/lamejs@1.2.7"],
+            "digests": [
+                "pnpm-integrity:sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA=="
+            ],
+            "licenses": ["LGPL-3.0"],
+            "productSurfaces": ["MP3 export"],
+            "evidence": ["Installed package metadata declares LGPL-3.0."],
+            "obligations": ["Preserve LGPL notices and satisfy distribution obligations."]
+        },
+        {
+            "id": "demucs-mansfieldplumbing",
+            "kind": "model-stack",
+            "retention": "remove-proven-incompatible",
+            "owner": "OS-02",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                ".agents/specs/audio-generation-browser/spec.md",
+                ".agents/specs/audio-generation/spec.md",
+                ".agents/specs/workflow-ui/spec.md",
+                "crates/sourdaw-native/src/commands/ai_audio.rs",
+                "docs/architecture/09-ai-stack.md",
+                "src-tauri/build.rs",
+                "src-tauri/gen/schemas/**",
+                "src-tauri/permissions/autogenerated/separate_stems.toml",
+                "src-tauri/permissions/sourdaw-commands.toml",
+                "src-tauri/src/commands/ai_audio.rs",
+                "src-tauri/src/lib.rs",
+                "src/modules/AiGeneration/handlers/aiMidi/__tests__/handleStemSeparate.spec.ts",
+                "src/modules/AiGeneration/handlers/aiMidi/handleStemSeparate.ts",
+                "src/modules/AiGeneration/useCases/__tests__/getAiMidiHandlers.spec.ts",
+                "src/modules/AiGeneration/useCases/actions/__tests__/handleStemSeparationPreview.spec.ts",
+                "src/modules/AiGeneration/useCases/actions/handleStemSeparationPreview.ts",
+                "src/modules/AiGeneration/useCases/getAiMidiHandlers.ts",
+                "src/modules/AiRuntime/models/RuntimeAction.ts",
+                "src/modules/AiRuntime/models/Tools/GenerationAndView.ts",
+                "src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx",
+                "src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx",
+                "src/modules/AiRuntime/useCases/validateActionPayload.ts",
+                "src/modules/Arrangement/presentations/views/ClipContextMenu.tsx",
+                "src/modules/AudioAnalysis/repositories/__tests__/isStemSeparationAvailable.spec.ts",
+                "src/modules/AudioAnalysis/repositories/__tests__/separateStems.spec.ts",
+                "src/modules/AudioAnalysis/repositories/browserStemSeparation.ts",
+                "src/modules/AudioAnalysis/repositories/isStemSeparationAvailable.ts",
+                "src/modules/AudioAnalysis/repositories/separateStems.ts",
+                "src/modules/AudioAnalysis/useCases/__tests__/audioAi.spec.ts",
+                "src/modules/AudioAnalysis/useCases/audioAi/__tests__/isStemSeparationAvailable.spec.ts",
+                "src/modules/AudioAnalysis/useCases/audioAi/isStemSeparationAvailable.ts",
+                "src/modules/AudioAnalysis/useCases/audioAi/separateStems.ts",
+                "src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx",
+                "src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx",
+                "src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx",
+                "src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.analyzeStall.spec.tsx",
+                "src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.spec.tsx",
+                "src/utils/handlerContract.ts"
+            ],
+            "sources": ["https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT"],
+            "revisions": ["125b3e0aa9b553f625e92a6c2a1cf5d214be2ec0", "mutable main reference"],
+            "digests": ["unrecorded; removal required"],
+            "licenses": ["CC-BY-NC-4.0", "Meta Research License"],
+            "productSurfaces": ["browser stem separation", "desktop stem separation"],
+            "evidence": ["MansfieldPlumbing Demucs declares CC-BY-NC-4.0 and a research license."],
+            "obligations": ["Remove only this model's download and invocation surfaces."]
+        },
+        {
+            "id": "nsf-hifigan-openvpi",
+            "kind": "model-stack",
+            "retention": "remove-proven-incompatible",
+            "owner": "OS-02",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                ".agents/specs/audio-generation-browser/research.md",
+                ".agents/specs/audio-generation/research.md",
+                ".agents/specs/audio-generation/spec.md",
+                ".agents/specs/browser-diffsinger-svs/spec.md",
+                "scripts/upload-vocoder-to-hf.sh",
+                "src/modules/BrowserAi/models/BrowserModel.ts",
+                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx",
+                "src/modules/BrowserAi/repositories/__tests__/checkModelCached.spec.ts",
+                "src/modules/BrowserAi/repositories/__tests__/deleteModel.spec.ts",
+                "src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts",
+                "src/modules/BrowserAi/useCases/__tests__/renderDiffSingerPhrase.cachedSessions.spec.ts",
+                "src/modules/BrowserAi/useCases/initBrowserAi.ts",
+                "src/modules/BrowserAi/useCases/renderDiffSingerPhrase.ts",
+                "src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx",
+                "src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx",
+                "tests/e2e/modelManagerRemoveRetryTestId.spec.ts"
+            ],
+            "sources": [
+                "https://github.com/openvpi/vocoders/releases/tag/nsf-hifigan-44.1k-hop512-128bin-2024.02",
+                "https://huggingface.co/jcosta33/vocoder-models"
+            ],
+            "revisions": ["nsf-hifigan-44.1k-hop512-128bin-2024.02", "mutable main reference"],
+            "digests": ["unrecorded; removal required"],
+            "licenses": ["CC-BY-NC-SA-4.0"],
+            "productSurfaces": ["browser singing-synthesis vocoder", "model mirror"],
+            "evidence": ["OpenVPI publishes the selected vocoder under CC-BY-NC-SA-4.0."],
+            "obligations": ["Remove the mirror, download, catalog entry, and dependent capability reachability."]
+        },
+        {
+            "id": "webllm-qwen-artifacts",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": [
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+                "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts"
+            ],
+            "sources": [
+                "https://huggingface.co/mlc-ai",
+                "https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs-bin"
+            ],
+            "revisions": [
+                "Qwen3-1.7B 80b3abcec6c3b3f5355dc0cc99cc4fb578f192bc",
+                "Qwen3-4B a5c9fab855e3ccbdfed2e7e69683d75f30332161",
+                "Qwen3-8B b3d55c289eae58f77095f5b68c895eeea358ee09",
+                "WASM 025bcaf3780fa8254f5e5efd3bfea0a5397248f4"
+            ],
+            "digests": [
+                "sha256:932ad158daa0d6814a50c5fb6aa85f88c3d3892a58a0dc20d47ff0b9e6e0b255",
+                "sha256:2438f2a6b58372e12ca0aa949443a49ca7b6060ad3e7971aed0d56b49a35195f",
+                "sha256:7e7da9410d3b7cdeea46c0c2f417e560e54a2c736e8474e04b85e466e41022bb"
+            ],
+            "licenses": ["pending:OS-04-exact-quantized-artifacts"],
+            "productSurfaces": ["browser-local language model"],
+            "evidence": [
+                "The manifest pins artifacts but does not prove the exact quantized repositories' license chain."
+            ],
+            "obligations": ["Admit exact artifacts and notices or remove their product surface."]
+        },
+        {
+            "id": "whisper-model",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["desktop"],
+            "paths": ["crates/sourdaw-native/src/commands/speech.rs", "src-tauri/src/commands/speech.rs"],
+            "sources": ["https://huggingface.co/ggerganov/whisper.cpp"],
+            "revisions": ["5359861c739e955e79d9a303bcbc70fb988958b1"],
+            "digests": ["sha256:a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"],
+            "licenses": ["pending:OS-04-complete-stack"],
+            "productSurfaces": ["desktop speech transcription"],
+            "evidence": ["The current URL pins one whisper.cpp artifact revision."],
+            "obligations": ["Record the complete artifact, runtime, license, hash, and notice chain before admission."]
+        },
+        {
+            "id": "kokoro-model",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": [
+                "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+                "src/modules/BrowserAi/useCases/renderKokoroTts.ts"
+            ],
+            "sources": ["https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX"],
+            "revisions": ["mutable main reference"],
+            "digests": ["pending:OS-04-model-and-voice-hashes"],
+            "licenses": ["pending:OS-04-complete-stack"],
+            "productSurfaces": ["browser text-to-speech", "desktop text-to-speech"],
+            "evidence": [
+                "The current model and voice URLs use mutable main references without complete artifact notices."
+            ],
+            "obligations": ["Pin and hash every model and voice artifact, then record its complete license chain."]
+        },
+        {
+            "id": "ddsp-models",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["src/modules/BrowserAi/models/DdspInstrumentCatalog.ts"],
+            "sources": ["https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"],
+            "revisions": ["mutable checkpoint directories"],
+            "digests": ["pending:OS-04-checkpoint-hashes"],
+            "licenses": ["Apache-2.0 claim pending exact-artifact verification"],
+            "productSurfaces": ["browser DDSP instruments", "desktop DDSP instruments"],
+            "evidence": ["The catalog claims Apache-2.0 but uses mutable unverified checkpoint directories."],
+            "obligations": ["Pin, hash, and verify each exact checkpoint and transitive runtime before admission."]
+        },
+        {
+            "id": "rave-models",
+            "kind": "model-stack",
+            "retention": "defer-behind-admission",
+            "owner": "OS-04",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                ".agents/decisions/0011-ddd-module-boundary-redraw.md",
+                ".agents/decisions/0016-ultracode-session-scope-and-standard.md",
+                ".agents/decisions/open-decision-docket.md",
+                ".agents/specs/audio-generation-browser/research.md",
+                ".agents/specs/audio-generation/research.md",
+                ".agents/specs/rave-timbre-transfer/spec.md",
+                "docs/architecture/09-ai-stack.md",
+                "src/app/__tests__/bootstrap.spec.ts",
+                "src/app/bootstrap.ts",
+                "src/app/getProductionCommandHandlerMaps.ts",
+                "src/modules/AiRuntime/models/RuntimeAction.ts",
+                "src/modules/AiRuntime/useCases/validateActionPayload.ts",
+                "src/modules/BrowserAi/handlers/rave/**",
+                "src/modules/BrowserAi/stores/__tests__/rave.spec.ts",
+                "src/modules/BrowserAi/stores/rave.ts",
+                "src/modules/BrowserAi/useCases/__tests__/getRaveHandlers.spec.ts",
+                "src/modules/BrowserAi/useCases/__tests__/initRaveModels.spec.ts",
+                "src/modules/BrowserAi/useCases/getRaveHandlers.ts",
+                "src/modules/BrowserAi/useCases/index.ts",
+                "src/modules/BrowserAi/useCases/initRaveModels.ts",
+                "src/modules/BrowserAi/useCases/rave/**",
+                "src/modules/Command/useCases/actionLabels.ts",
+                "src/modules/CommandInterface/presentations/views/CommandPalette.tsx",
+                "src/modules/CommandInterface/presentations/views/__tests__/commandRegistry.spec.ts",
+                "src/modules/CommandInterface/presentations/views/commandRegistry.ts",
+                "src/modules/CommandInterface/useCases/commands/AiCommands.ts",
+                "src/modules/CommandInterface/useCases/commands/__tests__/AiCommands.spec.ts",
+                "src/modules/CommandInterface/useCases/searchCommandRegistry.ts",
+                "src/utils/handlerContract.ts"
+            ],
+            "sources": ["src/modules/BrowserAi/stores/rave.ts", ".agents/specs/rave-timbre-transfer/spec.md"],
+            "revisions": ["five local catalog entries without admitted artifacts"],
+            "digests": ["none:no-model-artifacts-admitted"],
+            "licenses": ["unverified:no-model-source-or-license-recorded"],
+            "productSurfaces": ["fail-closed runtime handlers", "presence-gated command palette"],
+            "evidence": [
+                "The catalog names five models but records no weights, source, digest, license, or download path."
+            ],
+            "obligations": [
+                "Keep the capability unavailable until a complete model and runtime stack passes admission."
+            ]
+        },
+        {
+            "id": "basic-pitch-model",
+            "kind": "bundled-model-stack",
+            "retention": "keep-with-obligations",
+            "owner": "OS-04",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["package.json", "pnpm-lock.yaml", "src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts"],
+            "sources": ["https://www.npmjs.com/package/@spotify/basic-pitch"],
+            "revisions": ["@spotify/basic-pitch 1.0.1"],
+            "digests": [
+                "sha512:SAxiFi9ZnyhGdhWEOS9YVhdunZiKzI3I5zOccZzDzQRr4s00Ii9lphqlPMMfby3iYa7TSupB2g8yuu1kJ6gL+Q=="
+            ],
+            "licenses": ["Apache-2.0"],
+            "productSurfaces": ["polyphonic audio-to-MIDI"],
+            "evidence": ["The production dependency bundles the browser model and lockfile integrity."],
+            "obligations": ["Carry Apache-2.0 attribution and verify the bundled model follows the package grant."]
+        },
+        {
+            "id": "cloud-ai-providers",
+            "kind": "external-service",
+            "retention": "keep-with-obligations",
+            "owner": "OS-03",
+            "releaseModes": ["desktop"],
+            "paths": [
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts",
+                "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
+                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
+                "src-tauri/src/commands/provider_gateway.rs"
+            ],
+            "sources": [
+                "https://api.anthropic.com/v1/messages",
+                "https://api.openai.com/v1",
+                "user-supplied OpenAI-compatible endpoint"
+            ],
+            "revisions": [
+                "Anthropic API 2023-06-01",
+                "OpenAI chat completions v1",
+                "adapter builtin.openai-compatible.chat-completions.v1"
+            ],
+            "digests": ["not-applicable:remote-service"],
+            "licenses": ["provider API terms"],
+            "productSurfaces": ["desktop hosted inference", "desktop custom provider"],
+            "evidence": ["Production code targets the public Anthropic and OpenAI API origins."],
+            "obligations": ["Keep credentials and transport native; expose no secret-bearing web surface."]
+        },
+        {
+            "id": "collaboration-stun",
+            "kind": "external-service",
+            "retention": "keep",
+            "owner": "OS-01",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["src/modules/Collaboration/repositories/peerConnection.ts"],
+            "sources": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"],
+            "revisions": ["live STUN endpoints"],
+            "digests": ["not-applicable:external-service"],
+            "licenses": ["not-applicable:network-service"],
+            "productSurfaces": ["peer-to-peer collaboration discovery"],
+            "evidence": ["Production WebRTC configuration names two Google STUN endpoints and no TURN relay."],
+            "obligations": [
+                "Keep the endpoints accurate and disclose the network dependency where release documentation requires it."
+            ]
+        },
+        {
+            "id": "collaboration-server",
+            "kind": "network-runtime",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": ["source", "server"],
+            "paths": ["server/collab-server.ts", "server/package.json", "server/package-lock.json"],
+            "sources": ["server/collab-server.ts", "server/package-lock.json"],
+            "revisions": ["exact collaboration-server npm lock graph"],
+            "digests": ["sha256:485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"],
+            "licenses": ["project grant and dependency notices pending OS-10"],
+            "productSurfaces": ["self-hosted collaboration WebSocket server"],
+            "evidence": ["The server binds a configurable host and port with authenticated WebSocket sessions."],
+            "obligations": ["Publish accurate deployment, authentication, dependency, and notice requirements."]
+        },
+        {
+            "id": "grand-boule",
+            "kind": "patent-directed-component",
+            "retention": "defer-behind-admission",
+            "owner": "OS-05",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["crates/daw-dsp/src/grand_boule/**"],
+            "sources": ["crates/daw-dsp/src/grand_boule/", "active patent sources recorded in the readiness audit"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:crates/daw-dsp/src/grand_boule"],
+            "licenses": ["pending:OS-05-patent-and-parameter-source-review"],
+            "productSurfaces": ["Grand Boule piano engine", "piano controls and presets"],
+            "evidence": ["Current research follows an active patent without a complete claim-to-code map."],
+            "obligations": [
+                "Prove independence, design around mapped overlap, or keep the component unreleased without deleting it."
+            ]
+        },
+        {
+            "id": "levain-sample-bank",
+            "kind": "sample-bank",
+            "retention": "keep-with-obligations",
+            "owner": "OS-06",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "public/samples/levain/**",
+                "scripts/download-levain-samples-direct.ts",
+                "scripts/download-levain-samples.ts"
+            ],
+            "sources": ["https://github.com/sgossner/VSCO-2-CE"],
+            "revisions": ["mutable master reference"],
+            "digests": ["pending:OS-06-file-level-reconciliation"],
+            "licenses": ["CC0-1.0 claim pending complete bank reconciliation"],
+            "productSurfaces": ["bundled Levain orchestral sample bank"],
+            "evidence": ["One file matches CC0 VSCO-2-CE; the full bank lacks immutable file-level reconciliation."],
+            "obligations": [
+                "Pin one upstream revision and map every retained file by source path, hash, and license without relocating the bank."
+            ]
+        },
+        {
+            "id": "faust-runtime",
+            "kind": "bundled-binary",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["public/faust/**"],
+            "sources": ["https://www.npmjs.com/package/@grame/faustwasm", "public/faust/"],
+            "revisions": ["checked files match @grame/faustwasm 0.15.7; package lock selects 0.16.5"],
+            "digests": ["pending:OS-07-version-matched-package-proof"],
+            "licenses": ["LGPL-3.0"],
+            "productSurfaces": ["browser Faust compiler", "desktop Faust compiler"],
+            "evidence": ["Checked Faust binaries match an older LGPL dependency version and lack a source route."],
+            "obligations": [
+                "Supply version-matched source, LGPL text, attribution, and modification notice or replace the component."
+            ]
+        },
+        {
+            "id": "project-wasm",
+            "kind": "generated-binary",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["public/wasm/**"],
+            "sources": ["crates/daw-dsp/", "crates/daw-wasm-decoder/", "crates/proof-chamber/", "crates/scoring/"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["public/wasm/manifest.json"],
+            "licenses": ["pending:OS-10-project-grant", "dependency terms from Cargo.lock"],
+            "productSurfaces": ["browser DSP", "desktop webview DSP"],
+            "evidence": ["WASM packages map to workspace Rust sources and carry generated manifests."],
+            "obligations": ["Keep generated hashes, package metadata, project grant, and third-party notices aligned."]
+        },
+        {
+            "id": "generated-audio-worklets",
+            "kind": "generated-binary",
+            "retention": "keep-with-obligations",
+            "owner": "OS-07",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": ["public/audio/worklets/**"],
+            "sources": ["tracked project worklet sources and generators"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["pending:OS-07-source-to-output-map"],
+            "licenses": ["pending:OS-10-project-grant"],
+            "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
+            "evidence": ["Tracked worklet processors are shipped from the public release tree."],
+            "obligations": [
+                "Map every generated processor to its source and carry the project and dependency notices into distributions."
+            ]
+        },
+        {
+            "id": "online-sample-sources",
+            "kind": "external-content",
+            "retention": "keep-with-obligations",
+            "owner": "OS-08",
+            "releaseModes": ["web", "desktop"],
+            "paths": ["src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx"],
+            "sources": [
+                "https://github.com/LMMS/assets/tree/master/Samples",
+                "https://github.com/sgossner/VCSL",
+                "https://github.com/sfzinstruments",
+                "https://theremin.music.uiowa.edu/MIS.html",
+                "https://philharmonia.co.uk/resources/sound-samples/",
+                "https://archive.org/",
+                "https://dig.ccmixter.org/",
+                "https://opengameart.org/"
+            ],
+            "revisions": ["live per-item sources"],
+            "digests": ["not-applicable:linked-external-content"],
+            "licenses": ["per-item terms pending:OS-08"],
+            "productSurfaces": ["online sample browser"],
+            "evidence": ["Current collection-level labels overstate item-level reuse rights."],
+            "obligations": ["Resolve and display the exact selected item's current terms before claiming reuse rights."]
+        },
+        {
+            "id": "owner-visual-assets",
+            "kind": "asset",
+            "retention": "keep-with-obligations",
+            "owner": "OS-08",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "public/favicon.ico",
+                "public/icon-192.png",
+                "public/icon-transparent.png",
+                "public/icon.png",
+                "public/logo-parts/**",
+                "sourdaw.png",
+                "src-tauri/icons/**"
+            ],
+            "sources": ["unknown pending OS-08 owner attestation"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553:public/logo-parts"],
+            "licenses": ["pending:OS-08-owner-attestation"],
+            "productSurfaces": ["application icons", "brand logo", "release screenshots"],
+            "evidence": ["Repository history proves custody but no external provenance record."],
+            "obligations": ["Record owner attestation or replace any asset whose origin cannot be established."]
+        },
+        {
+            "id": "third-party-marks",
+            "kind": "product-name-candidates",
+            "retention": "keep-with-obligations",
+            "owner": "OS-08",
+            "releaseModes": ["source", "web", "desktop"],
+            "paths": [
+                "docs/manual/devices/11-grinder.md",
+                "public/faust/libfaust-wasm.js",
+                "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
+                "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
+                "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
+                "src/modules/Arrangement/models/DeviceParameter.ts",
+                "src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts",
+                "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
+                "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
+                "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
+                "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+                "src/modules/FactorySynthesis/useCases/bass.ts",
+                "src/modules/FactorySynthesis/useCases/keys.ts",
+                "src/modules/Fermenter/models/FermenterPatch.ts",
+                "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+                "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Gluten/models/GlutenPatch.ts",
+                "src/modules/Gluten/models/GlutenTopologyGating.ts",
+                "src/modules/GrandBoule/models/GrandBouleConfig.ts",
+                "src/modules/GrandBoule/models/GrandBouleMorphState.ts",
+                "src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts",
+                "src/modules/Grinder/models/GrinderPatch.ts",
+                "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
+                "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+                "src/modules/Grinder/useCases/grinderParamBridge/helpers.ts",
+                "src/modules/Grinder/useCases/grinderPresets.ts",
+                "src/modules/MIDI/models/BuiltinGrooveTemplates.ts",
+                "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts",
+                "src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/lofi.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/rockBand.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts",
+                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts",
+                "src/modules/Synth/useCases/proSynthInstruments.ts",
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
+                "src/modules/Toaster/repositories/toasterPresets.ts"
+            ],
+            "sources": ["curated candidate values and exact current text paths"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": ["git:4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "licenses": ["trademark disposition pending:OS-08"],
+            "productSurfaces": ["presets", "model selectors", "public screenshots"],
+            "evidence": [
+                "The candidate map is deliberately conservative; OS-08 decides which occurrences are actual marks."
+            ],
+            "obligations": [
+                "Classify each candidate, then keep defensible descriptive use or rename, replace, or remove it."
+            ]
+        },
+        {
+            "id": "community-links",
+            "kind": "external-service",
+            "retention": "keep",
+            "owner": "OS-11",
+            "releaseModes": ["web", "desktop"],
+            "paths": [
+                "crates/daw-plugin-host/src/clap_host.rs",
+                "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
+                "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+                "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx"
+            ],
+            "sources": ["https://discord.gg/bJHmmfY4", "https://sourdaw.app"],
+            "revisions": ["live project origins"],
+            "digests": ["not-applicable:external-service"],
+            "licenses": ["not-applicable:community-link"],
+            "productSurfaces": ["alpha notice", "CLAP host metadata", "mobile gate", "status bar help"],
+            "evidence": ["Product surfaces link to the project site and Discord invite."],
+            "obligations": ["Keep public project links accurate and intentional."]
+        },
+        {
+            "id": "current-product-documents",
+            "kind": "documentation",
+            "retention": "keep-with-obligations",
+            "owner": "OS-09",
+            "releaseModes": ["source"],
+            "paths": [".agents/specs/**", "docs/**", "README.md"],
+            "sources": ["git:github.com/jcosta33/sourdaw"],
+            "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
+            "digests": [
+                "git:4b6012ef4560c78df09405515a0ad9365a41a553:.agents/specs",
+                "git:4b6012ef4560c78df09405515a0ad9365a41a553:docs"
+            ],
+            "licenses": ["pending:OS-10-project-grant"],
+            "productSurfaces": ["current specifications", "architecture documentation", "public README"],
+            "evidence": [
+                "Current documents contain rejected model choices and release claims that require reconciliation."
+            ],
+            "obligations": ["State shipping truth and keep useful future intent only behind explicit admission gates."]
+        }
+    ],
+    "snapshots": [
+        {
+            "path": "package.json",
+            "sha256": "63cc44243e32c48981327c5d5075fa929e4122ff9032c54bff6fbb3c5cbc46e4"
+        },
+        {
+            "path": "server/package.json",
+            "sha256": "ef552b98b85918dff58d7af933b26cc97eea053a84ee638fd2741d3ee9a5402e"
+        },
+        {
+            "path": "server/package-lock.json",
+            "sha256": "485a7047591e92dda102843d81370d4fe40955a650dede5b7eabfb91911e7bbe"
+        },
+        {
+            "path": "pnpm-lock.yaml",
+            "sha256": "45a404bf4f58bf405d9b4acb35a025da3075aa6aa62ef204837c75378763d51f"
+        },
+        {
+            "path": "Cargo.toml",
+            "sha256": "5180c54656c229953fc8ee2712ef121341e6af3ab014a7f71ea9d17fccd6e60f"
+        },
+        {
+            "path": "src-tauri/Cargo.toml",
+            "sha256": "21576c616a29366b930f8f81de8543f02846306314f9d28e18908f4f8d49b154"
+        },
+        {
+            "path": "Cargo.lock",
+            "sha256": "9e4bd9a6ce3aabb2b81c4ec2138776c6485a2061bfa621a6f0bbfc191e0d96f7"
+        },
+        {
+            "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+            "sha256": "1a12000d7702bea0375d0991a5381c457be00c621fffac7ebc2bb29ed91eec08"
+        },
+        {
+            "path": "public/wasm/manifest.json",
+            "sha256": "6c8edbf1a39e780641b1324b58350b4741aa25cbed3f9ee0478d5529b642958a"
+        }
+    ],
+    "externalReferences": [
+        {
+            "surface": "community-links",
+            "file": "crates/daw-plugin-host/src/clap_host.rs",
+            "value": "https://sourdaw.app"
+        },
+        {
+            "surface": "faust-runtime",
+            "file": "public/faust/libfaust-wasm.js",
+            "value": "runtime:WebSocketServer"
+        },
+        {
+            "surface": "collaboration-server",
+            "file": "server/collab-server.ts",
+            "value": "runtime:WebSocketServer"
+        },
+        {
+            "surface": "collaboration-server",
+            "file": "server/collab-server.ts",
+            "value": "ws://${slot}:${slot}",
+            "templateSha256": "1c0fbdf88919ea6414cc31e89cec3e153c8f4084e39ded6cf32addbd40f91f1f"
+        },
+        {
+            "surface": "levain-sample-bank",
+            "file": "scripts/download-levain-samples-direct.ts",
+            "value": "https://github.com/sgossner/VSCO-2-CE/tree/master/${slot}",
+            "templateSha256": "bb9f3d79c590a354d37c6e61662d04001e531eb3a197a0bbd247737e6a0bafc4"
+        },
+        {
+            "surface": "levain-sample-bank",
+            "file": "scripts/download-levain-samples-direct.ts",
+            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master"
+        },
+        {
+            "surface": "levain-sample-bank",
+            "file": "scripts/download-levain-samples.ts",
+            "value": "https://api.github.com/repos/sgossner/VSCO-2-CE/contents/${slot}",
+            "templateSha256": "df50520b0bf9a8ca498d5d68931d9545f8e2dcce0ddf9cb3a08440d6847ef4d2"
+        },
+        {
+            "surface": "levain-sample-bank",
+            "file": "scripts/download-levain-samples.ts",
+            "value": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master"
+        },
+        {
+            "surface": "nsf-hifigan-openvpi",
+            "file": "scripts/upload-vocoder-to-hf.sh",
+            "value": "https://github.com/openvpi/vocoders/releases/download/nsf-hifigan-44.1k-hop512-128bin-2024.02/nsf_hifigan_44.1k_hop512_128bin_2024.02_logE.oudep"
+        },
+        {
+            "surface": "nsf-hifigan-openvpi",
+            "file": "scripts/upload-vocoder-to-hf.sh",
+            "value": "https://huggingface.co/${slot}/resolve/main/nsf-hifigan-44k/${slot}",
+            "templateSha256": "d8994a339cb35cec6c00519e6cdae5de656d2dd56230f346433c043255f1ab7b"
+        },
+        {
+            "surface": "demucs-mansfieldplumbing",
+            "file": "crates/sourdaw-native/src/commands/ai_audio.rs",
+            "value": "https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/125b3e0aa9b553f625e92a6c2a1cf5d214be2ec0/demucsv4.onnx"
+        },
+        {
+            "surface": "whisper-model",
+            "file": "crates/sourdaw-native/src/commands/speech.rs",
+            "value": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin"
+        },
+        {
+            "surface": "cloud-ai-providers",
+            "file": "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
+            "value": "https://api.anthropic.com/v1/messages"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
+            "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+            "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
+            "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "cloud-ai-providers",
+            "file": "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
+            "value": "https://api.openai.com/v1"
+        },
+        {
+            "surface": "demucs-mansfieldplumbing",
+            "file": "src/modules/AudioAnalysis/repositories/browserStemSeparation.ts",
+            "value": "https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/main/demucsv4.onnx"
+        },
+        {
+            "surface": "nsf-hifigan-openvpi",
+            "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+            "value": "https://huggingface.co/jcosta33/vocoder-models/resolve/main/nsf-hifigan-44k/nsf_hifigan_44.1k_hop512_128bin_2024.02.onnx"
+        },
+        {
+            "surface": "kokoro-model",
+            "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+            "value": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
+        },
+        {
+            "surface": "kokoro-model",
+            "file": "src/modules/BrowserAi/useCases/renderKokoroTts.ts",
+            "value": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices"
+        },
+        {
+            "surface": "collaboration-stun",
+            "file": "src/modules/Collaboration/repositories/peerConnection.ts",
+            "value": "stun:stun.l.google.com:19302"
+        },
+        {
+            "surface": "collaboration-stun",
+            "file": "src/modules/Collaboration/repositories/peerConnection.ts",
+            "value": "stun:stun1.l.google.com:19302"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://archive.org/details/netlabels"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://archive.org/details/olpc-sound-samples-v2.7z"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://dig.ccmixter.org/"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://dig.ccmixter.org/tags/vocals"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/LMMS/assets/tree/master/Samples"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/sfzinstruments"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/sfzinstruments/BlackAndBlueBasses"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/sfzinstruments/Discord-SFZ-GM-Bank"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/sfzinstruments/Ergo-EUB"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/sfzinstruments/SplendidGrandPiano"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/sgossner/VCSL"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://github.com/sgossner/VCSL/releases/tag/v1.2.2-RC"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://opengameart.org/art-search-advanced?keys=&type=music"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://philharmonia.co.uk/resources/sound-samples/"
+        },
+        {
+            "surface": "online-sample-sources",
+            "file": "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+            "value": "https://theremin.music.uiowa.edu/MIS.html"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
+            "value": "https://discord.gg/bJHmmfY4"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
+            "value": "https://discord.gg/bJHmmfY4"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+            "value": "https://discord.gg/bJHmmfY4"
+        }
+    ],
+    "marks": [
+        {
+            "value": "Roland",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
+        },
+        {
+            "value": "TR-808",
+            "paths": [
+                "src/modules/MIDI/models/BuiltinGrooveTemplates.ts",
+                "src/modules/Toaster/repositories/toasterPresets.ts"
+            ]
+        },
+        {
+            "value": "TR-909",
+            "paths": [
+                "src/modules/MIDI/models/BuiltinGrooveTemplates.ts",
+                "src/modules/Toaster/repositories/toasterPresets.ts"
+            ]
+        },
+        {
+            "value": "TB-303",
+            "paths": [
+                "src/modules/FactorySynthesis/useCases/bass.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
+        },
+        {
+            "value": "Steinway",
+            "paths": [
+                "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/GrandBoule/models/GrandBouleConfig.ts",
+                "src/modules/GrandBoule/models/GrandBouleMorphState.ts",
+                "src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts"
+            ]
+        },
+        {
+            "value": "Hammond",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx"
+            ]
+        },
+        {
+            "value": "Rhodes",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
+                "src/modules/FactorySynthesis/useCases/keys.ts",
+                "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/lofi.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
+                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts",
+                "src/modules/Synth/useCases/proSynthInstruments.ts"
+            ]
+        },
+        {
+            "value": "Moog",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/Fermenter/models/FermenterPatch.ts",
+                "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+                "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts"
+            ]
+        },
+        {
+            "value": "1176",
+            "paths": [
+                "src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts",
+                "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx"
+            ]
+        },
+        {
+            "value": "LA-2A",
+            "paths": ["src/modules/Gluten/models/GlutenTopologyGating.ts"]
+        },
+        {
+            "value": "AC30",
+            "paths": [
+                "docs/manual/devices/11-grinder.md",
+                "src/modules/Grinder/models/GrinderPatch.ts",
+                "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
+                "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+                "src/modules/Grinder/useCases/grinderParamBridge/helpers.ts",
+                "src/modules/Grinder/useCases/grinderPresets.ts"
+            ]
+        },
+        {
+            "value": "Clavinet",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
+        },
+        {
+            "value": "CS-80",
+            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+        },
+        {
+            "value": "DX7",
+            "paths": [
+                "public/faust/libfaust-wasm.js",
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
+        },
+        {
+            "value": "Fender",
+            "paths": [
+                "docs/manual/devices/11-grinder.md",
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/Grinder/models/GrinderPatch.ts",
+                "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
+                "src/modules/Grinder/useCases/grinderParamBridge/helpers.ts",
+                "src/modules/Grinder/useCases/grinderPresets.ts"
+            ]
+        },
+        {
+            "value": "JCM",
+            "paths": [
+                "docs/manual/devices/11-grinder.md",
+                "src/modules/Grinder/models/GrinderPatch.ts",
+                "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
+                "src/modules/Grinder/presentations/views/GrinderPanel.tsx",
+                "src/modules/Grinder/useCases/grinderParamBridge/helpers.ts",
+                "src/modules/Grinder/useCases/grinderPresets.ts"
+            ]
+        },
+        {
+            "value": "Juno",
+            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+        },
+        {
+            "value": "Leslie",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx"
+            ]
+        },
+        {
+            "value": "Marshall",
+            "paths": [
+                "docs/manual/devices/11-grinder.md",
+                "src/modules/Grinder/models/GrinderPatch.ts",
+                "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
+                "src/modules/Grinder/useCases/grinderParamBridge/helpers.ts",
+                "src/modules/Grinder/useCases/grinderPresets.ts"
+            ]
+        },
+        {
+            "value": "Mellotron",
+            "paths": [
+                "src/modules/Arrangement/models/DeviceParameter.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx"
+            ]
+        },
+        {
+            "value": "Minimoog",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts"
+            ]
+        },
+        {
+            "value": "MPC-60",
+            "paths": [
+                "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
+                "src/modules/MIDI/models/BuiltinGrooveTemplates.ts",
+                "src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/lofi.ts"
+            ]
+        },
+        {
+            "value": "MS-20",
+            "paths": [
+                "src/modules/Fermenter/models/FermenterPatch.ts",
+                "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
+        },
+        {
+            "value": "Oberheim",
+            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+        },
+        {
+            "value": "OB-X",
+            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+        },
+        {
+            "value": "Prophet",
+            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+        },
+        {
+            "value": "SEM",
+            "paths": [
+                "src/modules/Fermenter/models/FermenterPatch.ts",
+                "src/modules/Fermenter/presentations/components/FilterSection.tsx",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts"
+            ]
+        },
+        {
+            "value": "SH-101",
+            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+        },
+        {
+            "value": "Vox",
+            "paths": [
+                "docs/manual/devices/11-grinder.md",
+                "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
+                "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
+                "src/modules/Grinder/models/GrinderPatch.ts",
+                "src/modules/Grinder/models/GrinderProjectParameterMap.ts",
+                "src/modules/Grinder/useCases/grinderParamBridge/helpers.ts",
+                "src/modules/Grinder/useCases/grinderPresets.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/rockBand.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts",
+                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts"
+            ]
+        },
+        {
+            "value": "Wurlitzer",
+            "paths": [
+                "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
+        },
+        {
+            "value": "Yamaha",
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts",
+                "src/modules/GrandBoule/models/GrandBouleMorphState.ts"
+            ]
+        },
+        {
+            "value": "SSL",
+            "paths": [
+                "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
+                "src/modules/Gluten/models/GlutenPatch.ts"
+            ]
+        }
+    ]
+}

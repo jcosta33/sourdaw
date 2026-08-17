@@ -109,7 +109,6 @@ const EXTERNAL_EFFECT_OPERATIONS = new Set<AppAction['type']>([
     'exportDawProject',
     'exportMidi',
     'exportProject',
-    'generateAudio',
     'stemSeparate',
     'audioToMidi',
 ]);

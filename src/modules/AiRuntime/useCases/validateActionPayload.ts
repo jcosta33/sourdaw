@@ -890,7 +890,6 @@ const validators = {
     generateChordProgression: 'unchecked',
     generateBassline: 'unchecked',
     generateFill: 'unchecked',
-    generateAudio: 'unchecked',
     generateAllTransitions: 'unchecked',
     variationMidi: 'unchecked',
     completeMidi: 'unchecked',

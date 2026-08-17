@@ -26,8 +26,6 @@ Automatic language-model selection uses browser WebLLM only and fails closed wit
 
 **Native (ONNX via `ort`):** DeepFilterNet denoise and Demucs stem separation (`ai_audio.rs`), plus audio post-processing (rubato/hound resampling in `audio_postprocess.rs`).
 
-**Sidecar:** Stable Audio Open generation runs as a Python sidecar (`src-tauri/sidecar/audio_gen.py`) driven by `audio_gen.rs` (start/generate/stop) — the only Python in the shipping stack.
-
 **In-browser (BrowserAi):** Kokoro TTS, DiffSinger singing-voice synthesis, and RAVE timbre transfer, executed through ONNX Runtime Web in a dedicated worker (`workers/onnxInferenceWorker.ts`) with a model download registry (`initBrowserAi.ts`). BrowserAi initializes non-blocking at bootstrap.
 
 **Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via Spotify's basic-pitch, browser-side stem separation preview, mix-vs-reference comparison.

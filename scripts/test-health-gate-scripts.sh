@@ -30,6 +30,9 @@ printf '%s\n' \
     'if [ "${1:-}" = "test:command-schema" ]; then' \
     '    exit "${FAKE_COMMAND_SCHEMA_STATUS:-0}"' \
     'fi' \
+    'if [ "${1:-}" = "test:release-inventory" ]; then' \
+    '    exit "${FAKE_RELEASE_INVENTORY_STATUS:-0}"' \
+    'fi' \
     'if [ "${1:-}" = "test:barrel-mocks" ]; then' \
     '    exit "${FAKE_BARREL_MOCKS_STATUS:-0}"' \
     'fi' \
@@ -99,6 +102,7 @@ printf '%s\n' \
     'pnpm typecheck:e2e' \
     'pnpm lint:full' \
     'pnpm test:command-schema' \
+    'pnpm test:release-inventory' \
     'pnpm test:collection-scope' \
     'pnpm test:barrel-mocks' \
     'pnpm test:full' \
@@ -126,6 +130,27 @@ printf '%s\n' \
     > "$temp_root/expected-command-schema-failure.log"
 diff -u "$temp_root/expected-command-schema-failure.log" "$temp_root/command-schema-failure.log"
 
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/release-inventory-failure.log" \
+    FAKE_RELEASE_INVENTORY_STATUS=1 \
+    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
+release_inventory_status=$?
+set -e
+test "$release_inventory_status" -eq 1
+printf '%s\n' \
+    'pnpm wasm:verify' \
+    'pnpm deps:validate' \
+    'pnpm typecheck' \
+    'pnpm typecheck:test' \
+    'pnpm typecheck:scripts' \
+    'pnpm typecheck:e2e' \
+    'pnpm lint:full' \
+    'pnpm test:command-schema' \
+    'pnpm test:release-inventory' \
+    > "$temp_root/expected-release-inventory-failure.log"
+diff -u "$temp_root/expected-release-inventory-failure.log" "$temp_root/release-inventory-failure.log"
+
 # A drifting vitest collection scope must fail the gate with the check's own exit
 # code, and must stop before the suite runs — running the suite over an unknown
 # file set is the outcome the check exists to prevent.
@@ -146,6 +171,7 @@ printf '%s\n' \
     'pnpm typecheck:e2e' \
     'pnpm lint:full' \
     'pnpm test:command-schema' \
+    'pnpm test:release-inventory' \
     'pnpm test:collection-scope' \
     > "$temp_root/expected-collection-scope-failure.log"
 diff -u "$temp_root/expected-collection-scope-failure.log" "$temp_root/collection-scope-failure.log"
@@ -170,6 +196,7 @@ printf '%s\n' \
     'pnpm typecheck:e2e' \
     'pnpm lint:full' \
     'pnpm test:command-schema' \
+    'pnpm test:release-inventory' \
     'pnpm test:collection-scope' \
     'pnpm test:barrel-mocks' \
     > "$temp_root/expected-barrel-mocks-failure.log"
@@ -267,6 +294,7 @@ test "$cargo_test_status" -eq 134
 printf '%s\n' \
     "lint failure exit: $lint_status" \
     'lint failure stops the web gate: PASS' \
+    "release inventory failure exit: $release_inventory_status" \
     "collection scope failure exit: $collection_scope_status" \
     'collection scope failure stops before the suite: PASS' \
     "missing server dependencies exit: $server_status" \

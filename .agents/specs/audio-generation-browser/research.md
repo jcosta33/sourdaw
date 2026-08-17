@@ -150,9 +150,8 @@ restored here verbatim from the original capability matrix:
 | 9   | **Piper TTS**               | TTS (multilingual) | 15–65M          | 15–100MB        | MIT                 | ✅ Native ONNX         | Partial (espeak blocker) | **6**                |
 | 10  | **Matcha-TTS**              | TTS (fast)         | ~20M            | 50–100MB        | MIT                 | ✅ Built-in ONNX       | Via sherpa-onnx WASM     | **6**                |
 | 12  | **Chatterbox-Turbo**        | Voice cloning      | 350M            | ~700MB          | Apache 2.0          | ✅ Resemble ONNX       | No                       | **5**                |
-| 13  | **Stable Audio Open Small** | Audio generation   | ~200M           | 400–800MB       | Stability Community | Arm INT8 exists        | No                       | **4**                |
-| 14  | **So-VITS-SVC**             | Singing conversion | ~110M (+HuBERT) | 400MB+          | AGPL-3.0            | ✅ Export script       | No                       | **4**                |
-| 15  | **ACE-Step**                | Music + vocals     | ~500M+          | 2GB+            | Apache 2.0          | No                     | No                       | **2**                |
+| 13  | **So-VITS-SVC**             | Singing conversion | ~110M (+HuBERT) | 400MB+          | AGPL-3.0            | ✅ Export script       | No                       | **4**                |
+| 14  | **ACE-Step**                | Music + vocals     | ~500M+          | 2GB+            | Apache 2.0          | No                     | No                       | **2**                |
 
 Also dropped from the original §7 prose: **LFM2.5-Audio** (Liquid AI) — a **1.5B-parameter**
 multimodal audio model run in-browser via quantized ONNX + WebGPU, cited as the largest audio
