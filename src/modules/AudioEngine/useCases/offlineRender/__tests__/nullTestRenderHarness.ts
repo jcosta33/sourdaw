@@ -34,6 +34,11 @@
  *   - `WaveShaperNode`         the spec's curve lookup with linear interpolation.
  *   - `AnalyserNode`           pass-through, which is what it is.
  *   - `AudioWorkletNode`       runs the real registered processor's `process()`.
+ *   - `AudioBufferSourceNode`  starts when it was told to, reads from the offset
+ *                              it was given, stops after the destination-timeline
+ *                              duration it was handed, and interpolates between
+ *                              frames at a non-unity rate. Only on a `scheduled`
+ *                              context — see the automation sections below.
  *
  * A node type nothing here models throws on construction rather than degrading
  * to a pass-through. That is deliberate: a silently-inert node turns this from a
@@ -79,6 +84,27 @@
  * collapses to the value live actually wrote, so a live target that differs from
  * the offline assignment still reds. Automation *during* a render is a different
  * property with its own specs (`automationScheduling`, `offlineVcaGainParity`).
+ *
+ * **The settle is where a cancel-and-replace sequence comes to rest**, which is
+ * what makes it an instrument for `ramp-to` and `hold` rather than a blind spot:
+ * `cancelScheduledValues(t)` drops the events at or after `t` exactly as the
+ * spec has it, so a backend that appends instead of replacing rests on a stale
+ * target and a backend that ignores a `hold` rests on the ramp the hold was
+ * supposed to drop. What settling cannot see is the *path* between two writes.
+ *
+ * ── Opt-in: automation the render actually walks ──────────────────────────
+ *
+ * A clip fade is a shape, not a resting value: a `fadeGain` that settled would
+ * hold the fade-out's final `0` for the whole render and the clip would be
+ * silent. A context constructed with `{ automation: 'scheduled' }` therefore
+ * skips the settle and evaluates each param's timeline at render time —
+ * per sample for a gain, once per quantum elsewhere.
+ *
+ * It is opt-in, and must stay opt-in, for the reason the settle exists: the live
+ * writers glide, so a globally-scheduled harness would put a ~100 ms exponential
+ * at the head of every existing null. Both legs of any one subtraction run in
+ * the same mode, so the choice cancels out of the measurement exactly as the
+ * rest of the model does.
  */
 
 import { vi } from 'vitest';
@@ -86,38 +112,83 @@ import { vi } from 'vitest';
 /** The Web Audio render quantum. */
 const QUANTUM_FRAMES = 128;
 
-type ScheduledWrite = { time: number; target: number };
+/**
+ * How a context resolves its parameters. See the two automation sections in the
+ * module header.
+ */
+export type HarnessAutomationMode = 'settled' | 'scheduled';
+
+type ScheduledWriteKind = 'step' | 'linear' | 'exponential' | 'target';
+
+type ScheduledWrite = {
+    kind: ScheduledWriteKind;
+    time: number;
+    target: number;
+    /** τ, for `setTargetAtTime`. Ignored by every other kind. */
+    timeConstant: number;
+    /** Insertion order, so two writes at one time resolve to the later one. */
+    sequence: number;
+};
+
+/** The exponential approach `setTargetAtTime` leaves running until the next event. */
+type ActiveApproach = { from: number; target: number; timeConstant: number; startTime: number };
 
 /**
- * Records what was written and reports where the graph comes to rest. See the
- * automation note in the module header for why rest, and not the glide, is the
- * state this harness renders.
+ * Records what was written, reports where the graph comes to rest, and — when
+ * the context asked for it — reports where the graph *is* at a given time.
+ *
+ * See the automation notes in the module header for why rest is the default
+ * state this harness renders and why walking the timeline is opt-in.
  */
 class HarnessAudioParam {
     private readonly writes: ScheduledWrite[] = [];
     private settled = false;
+    private sortedWrites: ScheduledWrite[] | null = null;
+    private sequence = 0;
 
-    constructor(public value: number) {}
+    constructor(
+        public value: number,
+        private readonly mode: HarnessAutomationMode = 'settled'
+    ) {}
 
     setValueAtTime(target: number, time: number): void {
-        this.record(target, time);
+        this.record('step', target, time, 0);
     }
     linearRampToValueAtTime(target: number, time: number): void {
-        this.record(target, time);
+        this.record('linear', target, time, 0);
     }
     exponentialRampToValueAtTime(target: number, time: number): void {
-        this.record(target, time);
+        this.record('exponential', target, time, 0);
     }
-    setTargetAtTime(target: number, time: number, _timeConstant: number): void {
-        this.record(target, time);
+    setTargetAtTime(target: number, time: number, timeConstant: number): void {
+        this.record('target', target, time, timeConstant);
     }
-    cancelScheduledValues(_time: number): void {
-        this.writes.length = 0;
+
+    /**
+     * Drop every event at or after `time`, per Web Audio §1.6.3 — **not** every
+     * event.
+     *
+     * The difference is the whole content of the contract's cancel-and-replace
+     * write: `applyParameterWrite` re-anchors with `setValueAtTime(param.value,
+     * startTime)` immediately after cancelling, and a cancel that wiped the past
+     * as well would make that anchor the only surviving history of the
+     * parameter. Modelling it as "clear everything" happens to produce the same
+     * resting value for a well-behaved backend, which is exactly why it has to
+     * be right: the fixture would be green either way and blind to the law.
+     */
+    cancelScheduledValues(time: number): void {
+        for (let index = this.writes.length - 1; index >= 0; index--) {
+            if (this.writes[index]!.time >= time) {
+                this.writes.splice(index, 1);
+            }
+        }
+        this.sortedWrites = null;
     }
+
     setValueCurveAtTime(curve: Float32Array, time: number, _duration: number): void {
         const last = curve.at(-1);
         if (last !== undefined) {
-            this.record(last, time);
+            this.record('step', last, time, 0);
         }
     }
 
@@ -138,8 +209,85 @@ class HarnessAudioParam {
         }
     }
 
-    private record(target: number, time: number): void {
-        this.writes.push({ time, target });
+    /**
+     * The parameter's value at `time`.
+     *
+     * In `settled` mode this is `value` by construction — the settle already
+     * collapsed the timeline — so every existing fixture reads exactly what it
+     * read before. In `scheduled` mode it walks the events.
+     */
+    sample(time: number): number {
+        if (this.mode === 'settled' || this.writes.length === 0) {
+            return this.value;
+        }
+
+        let current = this.value;
+        let cursor = 0;
+        let approach: ActiveApproach | null = null;
+
+        function valueAt(at: number): number {
+            if (!approach) {
+                return current;
+            }
+            if (approach.timeConstant <= 0) {
+                return approach.target;
+            }
+            return (
+                approach.target +
+                (approach.from - approach.target) * Math.exp(-(at - approach.startTime) / approach.timeConstant)
+            );
+        }
+
+        for (const event of this.sorted()) {
+            if (event.time > time) {
+                // The segment that contains `time` ends at this event. A ramp is
+                // the only kind whose value depends on where in the segment we
+                // are; anything else holds what the previous event left.
+                if (event.kind === 'linear' || event.kind === 'exponential') {
+                    const span = event.time - cursor;
+                    const fraction = span > 0 ? Math.min(1, Math.max(0, (time - cursor) / span)) : 1;
+                    const from = valueAt(cursor);
+                    if (event.kind === 'linear') {
+                        return from + (event.target - from) * fraction;
+                    }
+                    // Web Audio §1.6.3 refuses an exponential ramp through zero;
+                    // a from-value of zero degrades to the linear reading rather
+                    // than producing a NaN the render would carry everywhere.
+                    if (from === 0 || event.target === 0 || from * event.target < 0) {
+                        return from + (event.target - from) * fraction;
+                    }
+                    return from * (event.target / from) ** fraction;
+                }
+                return valueAt(time);
+            }
+
+            const at = valueAt(event.time);
+            if (event.kind === 'target') {
+                approach = {
+                    from: at,
+                    target: event.target,
+                    timeConstant: event.timeConstant,
+                    startTime: event.time,
+                };
+            } else {
+                approach = null;
+                current = event.target;
+            }
+            cursor = event.time;
+        }
+        return valueAt(time);
+    }
+
+    private sorted(): ScheduledWrite[] {
+        this.sortedWrites ??= [...this.writes].sort(
+            (left, right) => left.time - right.time || left.sequence - right.sequence
+        );
+        return this.sortedWrites;
+    }
+
+    private record(kind: ScheduledWriteKind, target: number, time: number, timeConstant: number): void {
+        this.writes.push({ kind, time, target, timeConstant, sequence: this.sequence++ });
+        this.sortedWrites = null;
     }
 }
 
@@ -156,7 +304,8 @@ class HarnessAudioNode {
         left: new Float32Array(QUANTUM_FRAMES),
         right: new Float32Array(QUANTUM_FRAMES),
     };
-    private renderedQuantum = -1;
+    /** The quantum `out` currently holds, and the one `transform()` is shaping. */
+    protected renderedQuantum = -1;
 
     /**
      * One argument, one kind of destination — anything else throws.
@@ -240,17 +389,29 @@ function removeFirst(list: HarnessAudioNode[], entry: HarnessAudioNode): void {
     }
 }
 
+/**
+ * The one node evaluated at a-rate.
+ *
+ * Everything a fade, a ramp or a mixer move writes lands on a gain, and a fade
+ * read once per quantum would quantise a 3 ms anti-click micro-fade to a single
+ * step. In `settled` mode `sample()` returns the resting value for every frame,
+ * so this loop is the same multiply it always was.
+ */
 class HarnessGainNode extends HarnessAudioNode {
-    constructor(readonly gain: HarnessAudioParam) {
+    constructor(
+        readonly gain: HarnessAudioParam,
+        private readonly sampleRate: number
+    ) {
         super();
     }
 
     protected override transform(): void {
-        const level = this.gain.value;
-        if (level === 1) {
-            return;
-        }
+        const startFrame = this.renderedQuantum * QUANTUM_FRAMES;
         for (let index = 0; index < QUANTUM_FRAMES; index++) {
+            const level = this.gain.sample((startFrame + index) / this.sampleRate);
+            if (level === 1) {
+                continue;
+            }
             this.out.left[index] = this.out.left[index]! * level;
             this.out.right[index] = this.out.right[index]! * level;
         }
@@ -259,12 +420,21 @@ class HarnessGainNode extends HarnessAudioNode {
 
 /** Web Audio §1.14.1, the stereo-input branch. */
 class HarnessStereoPannerNode extends HarnessAudioNode {
-    constructor(readonly pan: HarnessAudioParam) {
+    constructor(
+        readonly pan: HarnessAudioParam,
+        private readonly sampleRate: number
+    ) {
         super();
     }
 
     protected override transform(): void {
-        const position = Math.max(-1, Math.min(1, this.pan.value));
+        // Block-rate, which is what the module header says this model is. A pan
+        // lane that moves inside a quantum is not a property any fixture here
+        // measures, and no production writer aims one at a panner.
+        const position = Math.max(
+            -1,
+            Math.min(1, this.pan.sample((this.renderedQuantum * QUANTUM_FRAMES) / this.sampleRate))
+        );
         const x = position <= 0 ? position + 1 : position;
         const gainLeft = Math.cos((x * Math.PI) / 2);
         const gainRight = Math.sin((x * Math.PI) / 2);
@@ -367,11 +537,15 @@ class HarnessBiquadFilterNode extends HarnessAudioNode {
     }
 
     protected override transform(): void {
+        // Coefficients are computed once, from the parameters as they stand at
+        // the head of the render. A filter whose cutoff is automated mid-render
+        // is out of scope for this model either way; see the module header.
+        const at = (this.renderedQuantum * QUANTUM_FRAMES) / this.sampleRate;
         this.coefficients ??= biquadCoefficients({
             type: this.type,
-            frequency: this.frequency.value * 2 ** (this.detune.value / 1200),
-            q: this.Q.value,
-            gainDb: this.gain.value,
+            frequency: this.frequency.sample(at) * 2 ** (this.detune.sample(at) / 1200),
+            q: this.Q.sample(at),
+            gainDb: this.gain.sample(at),
             sampleRate: this.sampleRate,
         });
         const { b0, b1, b2, a1, a2 } = this.coefficients;
@@ -457,6 +631,11 @@ function createPortPair(): { outer: HarnessPort; inner: HarnessPort } {
     return { outer, inner };
 }
 
+export type HarnessContextOptions = {
+    /** Defaults to `settled`. See the two automation sections in the header. */
+    automation?: HarnessAutomationMode;
+};
+
 export type NullTestRenderHarness = {
     /**
      * Install the `AudioWorkletGlobalScope` globals a processor module reads at
@@ -464,7 +643,12 @@ export type NullTestRenderHarness = {
      */
     installWorkletGlobals: (input: { sampleRate: number }) => void;
     /** Stub as the global `OfflineAudioContext`. */
-    OfflineAudioContext: new (numberOfChannels: number, length: number, sampleRate: number) => HarnessRenderContext;
+    OfflineAudioContext: new (
+        numberOfChannels: number,
+        length: number,
+        sampleRate: number,
+        options?: HarnessContextOptions
+    ) => HarnessRenderContext;
     /** Stub as the global `AudioWorkletNode`. */
     AudioWorkletNode: new (context: unknown, processorName: string, options?: AudioWorkletNodeOptions) => unknown;
     registeredProcessorNames: () => string[];
@@ -480,9 +664,25 @@ export type HarnessRenderContext = {
     createBiquadFilter: () => unknown;
     createWaveShaper: () => unknown;
     createAnalyser: () => unknown;
+    createBufferSource: () => unknown;
     /** A fixed, pre-computed stereo signal. Not part of Web Audio; see `createSignalSource`. */
     createSignalSource: (samples: { left: Float32Array; right: Float32Array }) => HarnessAudioNode;
     startRendering: () => Promise<RenderedBuffer>;
+};
+
+/**
+ * The shape `scheduleOfflineClipSource` reads off an `AudioBuffer`.
+ *
+ * Structural rather than the DOM type because jsdom has no `AudioBuffer` to
+ * construct, and the four members below are the whole of what the clip path
+ * touches. `createFixtureAudioBuffer` builds one.
+ */
+export type HarnessAudioBuffer = {
+    sampleRate: number;
+    length: number;
+    duration: number;
+    numberOfChannels: number;
+    getChannelData: (channel: number) => Float32Array;
 };
 
 export type RenderedBuffer = {
@@ -563,30 +763,104 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
         }
     }
 
+    /**
+     * A real `AudioBufferSourceNode`: it starts when it was told to, reads from
+     * the offset it was given, and stops after the destination-timeline duration
+     * it was handed.
+     *
+     * Those three numbers are the whole content of a clip command, so a model
+     * that ignored any of them would let a backend schedule a clip at the wrong
+     * place and still null. `start()` is refused twice, as Web Audio refuses it,
+     * because a second start on one node is a graph the product cannot build.
+     */
+    class HarnessAudioBufferSourceNode extends HarnessAudioNode {
+        override numberOfInputs = 0;
+        buffer: HarnessAudioBuffer | null = null;
+        readonly playbackRate: HarnessAudioParam;
+        private startFrame: number | null = null;
+        private offsetFrames = 0;
+        private durationFrames = Infinity;
+
+        constructor(
+            playbackRate: HarnessAudioParam,
+            private readonly sampleRate: number
+        ) {
+            super();
+            this.playbackRate = playbackRate;
+        }
+
+        start(when = 0, offset = 0, duration?: number): void {
+            if (this.startFrame !== null) {
+                throw new Error('nullTestRenderHarness: AudioBufferSourceNode.start() called twice');
+            }
+            this.startFrame = Math.round(when * this.sampleRate);
+            this.offsetFrames = offset * this.sampleRate;
+            this.durationFrames = duration === undefined ? Infinity : duration * this.sampleRate;
+        }
+
+        stop(when = 0): void {
+            const startFrame = this.startFrame ?? 0;
+            this.durationFrames = Math.min(this.durationFrames, Math.max(0, when * this.sampleRate - startFrame));
+        }
+
+        protected override transform(): void {
+            const { buffer, startFrame } = this;
+            if (!buffer || startFrame === null) {
+                return;
+            }
+            const rate = this.playbackRate.value;
+            const left = buffer.getChannelData(0);
+            const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+            const blockStart = this.renderedQuantum * QUANTUM_FRAMES;
+            for (let index = 0; index < QUANTUM_FRAMES; index++) {
+                const elapsed = blockStart + index - startFrame;
+                if (elapsed < 0 || elapsed >= this.durationFrames) {
+                    continue;
+                }
+                // Linear interpolation, because a non-unity rate lands between
+                // frames. At rate 1 with an integral start the position is
+                // integral and this reads the sample itself.
+                const position = this.offsetFrames + elapsed * rate;
+                const lower = Math.floor(position);
+                if (lower < 0 || lower >= buffer.length) {
+                    continue;
+                }
+                const upper = Math.min(buffer.length - 1, lower + 1);
+                const fraction = position - lower;
+                this.out.left[index] = left[lower]! + fraction * (left[upper]! - left[lower]!);
+                this.out.right[index] = right[lower]! + fraction * (right[upper]! - right[lower]!);
+            }
+        }
+    }
+
     class HarnessOfflineAudioContext implements HarnessRenderContext {
         readonly destination = new HarnessAudioNode();
         readonly audioWorklet = { addModule: (): Promise<void> => Promise.resolve() };
         currentTime = 0;
         state = 'suspended';
         private readonly params: HarnessAudioParam[] = [];
+        private readonly automation: HarnessAutomationMode;
 
         constructor(
             readonly numberOfChannels: number,
             readonly length: number,
-            readonly sampleRate: number
-        ) {}
+            readonly sampleRate: number,
+            options: HarnessContextOptions = {}
+        ) {
+            this.automation = options.automation ?? 'settled';
+        }
 
         private param(value: number): HarnessAudioParam {
-            const param = new HarnessAudioParam(value);
+            const param = new HarnessAudioParam(value, this.automation);
             this.params.push(param);
             return param;
         }
 
         createGain(): HarnessGainNode {
-            return new HarnessGainNode(this.param(1));
+            return new HarnessGainNode(this.param(1), this.sampleRate);
         }
         createStereoPanner(): HarnessStereoPannerNode {
-            return new HarnessStereoPannerNode(this.param(0));
+            return new HarnessStereoPannerNode(this.param(0), this.sampleRate);
         }
         createBiquadFilter(): HarnessBiquadFilterNode {
             return new HarnessBiquadFilterNode(
@@ -596,6 +870,23 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
                 this.param(0),
                 this.sampleRate
             );
+        }
+        /**
+         * Refused outside `scheduled` mode, and the refusal is the point.
+         *
+         * A clip's `fadeGain` is driven entirely by scheduled writes, and a
+         * settled param collapses them to the fade-out's final `0` — so a clip
+         * fixture on a settled context renders silence, nulls against another
+         * silence, and reports a green that means nothing.
+         */
+        createBufferSource(): HarnessAudioBufferSourceNode {
+            if (this.automation !== 'scheduled') {
+                throw new Error(
+                    'nullTestRenderHarness: an AudioBufferSourceNode needs a context constructed with ' +
+                        "{ automation: 'scheduled' }; a settled context collapses its fade envelope to silence"
+                );
+            }
+            return new HarnessAudioBufferSourceNode(this.param(1), this.sampleRate);
         }
         createWaveShaper(): HarnessWaveShaperNode {
             return new HarnessWaveShaperNode();
@@ -628,15 +919,12 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
                 'nullTestRenderHarness models no OscillatorNode — implement one before fixturing a device that needs it'
             );
         }
-        createBufferSource(): never {
-            throw new Error(
-                'nullTestRenderHarness models no AudioBufferSourceNode — use createSignalSource for the fixture signal'
-            );
-        }
 
         async startRendering(): Promise<RenderedBuffer> {
-            for (const param of this.params) {
-                param.settle();
+            if (this.automation === 'settled') {
+                for (const param of this.params) {
+                    param.settle();
+                }
             }
             const left = new Float32Array(this.length);
             const right = new Float32Array(this.length);
@@ -765,4 +1053,24 @@ export function createFixtureSignal(input: { frames: number; sampleRate: number 
         right[frame] = 0.25 * Math.sin(2 * Math.PI * 330 * time + 0.7) + 0.1 * noise;
     }
     return { left, right };
+}
+
+/**
+ * The fixture signal as clip material.
+ *
+ * The same generator as {@link createFixtureSignal}, so a clip fixture carries
+ * the broadband, channel-asymmetric content the rest of the file relies on, and
+ * so the material two legs read is identical sample for sample rather than
+ * merely statistically alike.
+ */
+export function createFixtureAudioBuffer(input: { frames: number; sampleRate: number }): HarnessAudioBuffer {
+    const { left, right } = createFixtureSignal(input);
+    const channels = [left, right];
+    return {
+        sampleRate: input.sampleRate,
+        length: input.frames,
+        duration: input.frames / input.sampleRate,
+        numberOfChannels: 2,
+        getChannelData: (channel: number) => channels[channel] ?? left,
+    };
 }
