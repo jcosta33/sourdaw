@@ -61,7 +61,6 @@
         "wasm:verify": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node --experimental-strip-types scripts/verify-wasm-artifacts.ts"
     },
     "dependencies": {
-        "@anthropic-ai/sdk": "^0.112.3",
         "@automerge/automerge": "^3.3.2",
         "@breezystack/lamejs": "^1.2.7",
         "@grame/faustwasm": "^0.16.5",

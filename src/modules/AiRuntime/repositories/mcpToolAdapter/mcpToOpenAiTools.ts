@@ -4,7 +4,7 @@ import { getMcpTools } from './helpers';
 
 /**
  * Convert MCP tools to OpenAI/Claude function calling format.
- * Used for cloud API backends that accept a `tools` parameter.
+ * Used for hosted backends that accept a `tools` parameter.
  */
 export function mcpToOpenAiTools(): Array<{
     type: 'function';

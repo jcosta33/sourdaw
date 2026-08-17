@@ -1,6 +1,6 @@
 # AI Stack Architecture
 
-Sourdaw is AI-native in three distinct senses: it runs language models (browser and hosted runtimes), it runs generative and analytical audio ML (cloud and in-browser), and — the part that makes it a DAW feature rather than a chatbot — model output can _act on the project_ through the same write path humans use. This document maps that stack.
+Sourdaw runs language models, audio ML, and model-driven project actions.
 
 It complements:
 
@@ -12,15 +12,19 @@ It complements:
 
 ## 1. Language model runtimes
 
-Browser and hosted runtimes behind one panel (AiRuntime):
+AiRuntime owns two explicit runtime classes:
 
-| Runtime                                                                                                    | Where               | Use                                                                 |
-| ---------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------- |
-| Anthropic cloud                                                                                            | `@anthropic-ai/sdk` | Default chat completion, streaming (`streamCloudChatCompletion.ts`) |
-| WebLLM                                                                                                     | `@mlc-ai/web-llm`   | In-browser inference, no API key (`generateWebLlmCompletion.ts`)    |
-| Voice input runs through whisper-rs dictation (`speech.rs`: load model, start/stop dictation, ASR status). |
+| Runtime          | Boundary                             | Use                                                                                   |
+| ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| WebLLM           | Browser worker via `@mlc-ai/web-llm` | Local inference without credentials                                                   |
+| Hosted providers | Desktop native gateway               | Anthropic, OpenAI, and OpenAI-compatible inference through opaque credential sessions |
 
-Automatic language-model selection uses browser WebLLM only and fails closed without WebGPU. Hosted providers require explicit selection, preserving the remote-data disclosure boundary.
+Voice input runs through whisper-rs dictation in `speech.rs`.
+
+Automatic selection uses WebLLM only and fails closed without WebGPU. Hosted providers require the
+desktop app and explicit selection. Native code reads fixed `SOURDAW_*_API_KEY` environment
+variables; the renderer receives only an opaque session ID. Web builds expose no hosted credential
+surface. Unauthenticated loopback OpenAI-compatible endpoints carry no credential and remain local.
 
 ## 2. Audio ML
 
@@ -60,10 +64,13 @@ The operational rules for building on this bridge (registry discipline, plan/exe
 | BrowserAi     | in-browser ML models (TTS and timbre transfer), model registry, inference workers             |
 | AudioAnalysis | musical analysis and audio→MIDI                                                               |
 
-External dependency ownership is deliberate: `@anthropic-ai/sdk` and `@mlc-ai/web-llm` appear only in AiRuntime; `onnxruntime-web` only in BrowserAi and AudioAnalysis; `@spotify/basic-pitch`/`meyda`/`pitchy` only in AudioAnalysis.
+External dependency ownership is deliberate: `@mlc-ai/web-llm` appears only in AiRuntime;
+`onnxruntime-web` only in BrowserAi and AudioAnalysis; `@spotify/basic-pitch`, `meyda`, and `pitchy`
+only in AudioAnalysis. Hosted provider transport lives in `sourdaw-native`.
 
 ## References
 
 - `.agents/skills/llm-action-bridge/SKILL.md` — rules for model-driven actions
+- `.agents/decisions/0028-native-provider-credential-sessions.md` — hosted credential boundary
 - `src-tauri/AGENTS.md` — desktop-shell command inventory
 - `docs/architecture/06-crdt-collaboration.md` — the write path actions enter

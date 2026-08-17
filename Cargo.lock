@@ -4733,6 +4733,7 @@ dependencies = [
  "tokio",
  "uuid",
  "whisper-rs",
+ "zeroize",
 ]
 
 [[package]]

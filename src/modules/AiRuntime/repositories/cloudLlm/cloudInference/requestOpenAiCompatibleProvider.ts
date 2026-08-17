@@ -29,7 +29,7 @@ function addBoundedResponseBytes(current: number, chunk: Uint8Array): number {
 
 async function ensureAdapterCapabilities(
     adapter: CompiledProviderAdapter,
-    apiKey: string,
+    sessionId: string,
     signal: AbortSignal
 ): Promise<void> {
     if (verifiedAdapters.has(adapter)) {
@@ -40,9 +40,8 @@ async function ensureAdapterCapabilities(
     let status: number | null = null;
     await runProviderGatewayRequest({
         requestId: crypto.randomUUID(),
-        adapter,
+        sessionId,
         operation: 'probe',
-        apiKey,
         body: null,
         signal,
         onResponseStart: (response) => {
@@ -83,15 +82,17 @@ export async function requestOpenAiCompatibleProvider({
         throw new Error('Hosted provider request exceeds its 1 MiB limit');
     }
     if (runtime.adapter) {
-        await ensureAdapterCapabilities(runtime.adapter, runtime.api_key, signal);
+        if (runtime.session_id === null) {
+            throw new Error('Hosted provider credential session is unavailable');
+        }
+        await ensureAdapterCapabilities(runtime.adapter, runtime.session_id, signal);
         let responseStatus = 0;
         let responseContentType: string | null = null;
         const bufferedChunks: Uint8Array[] = [];
         await runProviderGatewayRequest({
             requestId: crypto.randomUUID(),
-            adapter: runtime.adapter,
+            sessionId: runtime.session_id,
             operation: 'request',
-            apiKey: runtime.api_key,
             body,
             signal,
             onResponseStart: (value) => {
@@ -117,14 +118,10 @@ export async function requestOpenAiCompatibleProvider({
         return { status: responseStatus, contentType: responseContentType };
     }
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (runtime.api_key) {
-        headers.Authorization = `Bearer ${runtime.api_key}`;
-    }
     const response = await fetch(`${runtime.base_url}/chat/completions`, {
         method: 'POST',
         signal,
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body,
     });
     if (!response.ok) {

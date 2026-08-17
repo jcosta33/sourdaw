@@ -5,7 +5,7 @@ import { streamOpenAiCompatibleChatCompletion } from '../streamOpenAiCompatibleC
 
 const runtime: OpenAiCompatibleCloudRuntime = {
     provider: 'openai-compatible',
-    api_key: 'local-key',
+    session_id: null,
     model: 'local-model',
     base_url: 'http://localhost:1234/v1',
 };
@@ -273,7 +273,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
     });
 
     it('omits authorization for an auth-free compatible endpoint', async () => {
-        const authFreeRuntime = { ...runtime, api_key: '' };
+        const authFreeRuntime = runtime;
         const sse = ['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n', 'data: [DONE]\n\n'].join('');
         const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(sse, { status: 200 }));
         vi.stubGlobal('fetch', fetchMock);

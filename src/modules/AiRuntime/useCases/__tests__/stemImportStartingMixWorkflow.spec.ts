@@ -285,18 +285,18 @@ function useHostedFixture(): void {
 }
 
 describe('stem import and starting mix workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         mocks.backend.value = 'webllm';
         mocks.executeBatchError.value = null;
         mocks.transformPlan.value = (plan) => plan;
         vi.stubGlobal('fetch', mocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('stem import workflow test');
@@ -363,9 +363,9 @@ describe('stem import and starting mix workflow', () => {
         );
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         clearPendingActionConfirmations();
-        cloudSession.clear();
+        await cloudSession.clear();
         clearAiHistory();
         clearUndoHistory();
         resetActionReplayAuthority();

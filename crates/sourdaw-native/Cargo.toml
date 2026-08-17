@@ -45,6 +45,7 @@ sha2 = "0.11"
 rtrb = "0.3"
 hound = "3.5"
 uuid = { version = "1.23.0", features = ["v4"] }
+zeroize = "1.8"
 daw-core = { path = "../daw-core" }
 daw-collab = { path = "../daw-collab" }
 daw-engine = { path = "../daw-engine" }

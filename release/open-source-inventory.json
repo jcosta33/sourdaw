@@ -326,6 +326,15 @@
             "owner": "OS-03",
             "releaseModes": ["desktop"],
             "paths": [
+                "crates/sourdaw-native/src/commands/provider_gateway.rs",
+                "src/modules/AiRuntime/repositories/closeProviderGatewaySession.ts",
+                "src/modules/AiRuntime/repositories/openProviderGatewaySession.ts",
+                "src/modules/AiRuntime/repositories/providerGateway.ts",
+                "src/modules/AiRuntime/repositories/providerGatewayDependencies.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudSession.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicProvider.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts",
                 "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
@@ -340,12 +349,17 @@
             "revisions": [
                 "Anthropic API 2023-06-01",
                 "OpenAI chat completions v1",
-                "adapter builtin.openai-compatible.chat-completions.v1"
+                "adapter builtin.anthropic.messages.v1",
+                "adapter builtin.openai-compatible.chat-completions.v1",
+                "opaque native credential session v1"
             ],
             "digests": ["not-applicable:remote-service"],
             "licenses": ["provider API terms"],
             "productSurfaces": ["desktop hosted inference", "desktop custom provider"],
-            "evidence": ["Production code targets the public Anthropic and OpenAI API origins."],
+            "evidence": [
+                "Native code loads fixed environment credentials, binds first-party keys to first-party origins, and exposes only opaque session IDs to the renderer.",
+                "Web preferences expose no hosted-provider credential control."
+            ],
             "obligations": ["Keep credentials and transport native; expose no secret-bearing web surface."]
         },
         {
@@ -620,7 +634,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "63cc44243e32c48981327c5d5075fa929e4122ff9032c54bff6fbb3c5cbc46e4"
+            "sha256": "612714cab773a1e49f5e961b0deb82e28b44d28deca5cb259d26306b8a600b54"
         },
         {
             "path": "server/package.json",
@@ -632,7 +646,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "45a404bf4f58bf405d9b4acb35a025da3075aa6aa62ef204837c75378763d51f"
+            "sha256": "1d1ad26954efd783f3953a648c2224bf96ecc0e3f1104bb23376ba317fb1fec8"
         },
         {
             "path": "Cargo.toml",
@@ -644,7 +658,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "042de479400d8e5778aeb969ffc5b2613fc42a8799a9f7248e3a48c14f99b7ce"
+            "sha256": "54b56397362b96c342dd3426929b16e1481555f5eb8510c8e42817ee3af4fa06"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -706,8 +720,18 @@
         },
         {
             "surface": "cloud-ai-providers",
-            "file": "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
-            "value": "https://api.anthropic.com/v1/messages"
+            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
+            "value": "https://api.anthropic.com"
+        },
+        {
+            "surface": "cloud-ai-providers",
+            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
+            "value": "https://api.openai.com"
+        },
+        {
+            "surface": "cloud-ai-providers",
+            "file": "src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts",
+            "value": "https://api.anthropic.com"
         },
         {
             "surface": "webllm-qwen-artifacts",

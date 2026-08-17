@@ -1,19 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { clearCloudApiKey } from '../clearCloudApiKey';
+import { clearCloudProviderConfig } from '../clearCloudProviderConfig';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
 describe('unregisterCloudStreamController', () => {
-    beforeEach(() => {
-        clearCloudApiKey();
+    beforeEach(async () => {
+        await clearCloudProviderConfig();
     });
 
-    it('should prevent a settled stream controller from being aborted on revocation', () => {
+    it('should prevent a settled stream controller from being aborted on revocation', async () => {
         const controller = registerCloudStreamController(new AbortController());
 
         unregisterCloudStreamController(controller);
-        clearCloudApiKey();
+        await clearCloudProviderConfig();
 
         expect(controller.signal.aborted).toBe(false);
     });
