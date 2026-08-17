@@ -1,6 +1,8 @@
 import { resolveResource } from '@tauri-apps/api/path';
 
 import { logger } from '#/infra/logger/appLogger';
+import { desktopSamplesBaseUrl } from '#/utils/tauriBridge';
+import { isSourdawRuntime } from '#/utils/tauriRuntime';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -20,6 +22,16 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
  */
 export async function resolveSampleBasePath(instrumentId: string): Promise<string> {
     const webBase = `/samples/levain/${instrumentId}`;
+    if (isSourdawRuntime()) {
+        try {
+            // The Electron main process serves the bundled samples at one base
+            // URL; the per-instrument layout below it matches the web tree.
+            return `${await desktopSamplesBaseUrl()}/levain/${instrumentId}`;
+        } catch (error) {
+            logger.warn('[Levain] Failed to resolve Sourdaw samples base URL:', error);
+            return webBase;
+        }
+    }
     if (!isTauri) {
         return webBase;
     }

@@ -1,4 +1,4 @@
-import { isTauri } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isTauri } from '#/utils/tauriBridge';
 
 import type { DialogFilter } from './helpers';
 
@@ -9,8 +9,7 @@ type SaveFileOptions = {
 
 async function saveViaTauri(options: SaveFileOptions): Promise<string | null> {
     try {
-        const { save } = await import(/* @vite-ignore */ '@tauri-apps/plugin-dialog');
-        const result = await save({
+        const result = await desktopSaveDialog({
             defaultPath: options.defaultPath,
             filters: options.filters,
         });

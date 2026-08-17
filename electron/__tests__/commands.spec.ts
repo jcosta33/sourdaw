@@ -19,6 +19,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { SOURDAW_COMMAND_ARGUMENTS } from '#/utils/sourdawCommandArguments';
+
 import { addonMethodName, commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS, isExposedCommand } from '../commands.js';
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8');
@@ -306,6 +308,15 @@ describe('positional argument contract', () => {
             'api_key',
             'body',
         ]);
+    });
+
+    it('matches the renderer seam table, so the seam orders arguments by the same contract', () => {
+        // The renderer cannot import `electron/**`, so the seam keeps its own
+        // copy of this table; this equality is what keeps the copy honest.
+        const bySortedName = (entries: ReadonlyMap<string, readonly string[]>): [string, readonly string[]][] =>
+            [...entries.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+        expect(bySortedName(SOURDAW_COMMAND_ARGUMENTS)).toEqual(bySortedName(COMMAND_ARGUMENTS));
     });
 
     it('reserves the trailing emitter for exactly the streaming commands', () => {

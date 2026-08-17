@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from '#/utils/tauriBridge';
 
 type TauriDirectoryEntry = {
     name: string;
@@ -33,7 +33,7 @@ function parseNativeDirectoryEntry(rawEntry: unknown): TauriDirectoryEntry {
 }
 
 export async function readTauriDirectory({ path }: ReadTauriDirectoryInput): ReadTauriDirectoryOutput {
-    const entries: unknown = await invoke('list_directory', { path });
+    const entries: unknown = await tauriInvoke('list_directory', { path });
 
     if (!Array.isArray(entries)) {
         throw new TypeError('list_directory returned a non-array payload');

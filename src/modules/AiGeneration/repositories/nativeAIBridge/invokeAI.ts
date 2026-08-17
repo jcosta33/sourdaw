@@ -5,6 +5,6 @@ export async function invokeAI(cmd: string, args?: Record<string, unknown>): Pro
         throw new Error('Native AI features require Tauri desktop environment');
     }
 
-    const { invoke } = await import('@tauri-apps/api/core');
-    return invoke(cmd, args);
+    const { tauriInvoke } = await import('#/utils/tauriBridge');
+    return tauriInvoke(cmd, args);
 }

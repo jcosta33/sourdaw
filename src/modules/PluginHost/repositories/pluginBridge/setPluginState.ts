@@ -27,5 +27,6 @@ export async function setPluginState(instanceId: string, state: Uint8Array): Pro
         command: 'set_plugin_state_bytes',
         bytes: state,
         headers: { [PLUGIN_INSTANCE_HEADER]: encodeURIComponent(instanceId) },
+        positionalMeta: [instanceId],
     });
 }

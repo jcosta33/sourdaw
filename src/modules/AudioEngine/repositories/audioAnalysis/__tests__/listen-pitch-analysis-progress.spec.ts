@@ -1,17 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { listen } from '@tauri-apps/api/event';
-
-import { isTauri } from '#/utils/tauriBridge';
+import { isTauri, tauriListen } from '#/utils/tauriBridge';
 
 import { listenPitchAnalysisProgress } from '../listen-pitch-analysis-progress';
 
-vi.mock('@tauri-apps/api/event', () => ({
-    listen: vi.fn(),
-}));
-
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => true),
+    tauriListen: vi.fn(),
 }));
 
 describe('listenPitchAnalysisProgress', () => {
@@ -21,13 +16,11 @@ describe('listenPitchAnalysisProgress', () => {
     });
 
     it('should listen for native progress events and forward progress values', async () => {
-        type ProgressCallback = Parameters<typeof listen<{ analysisId: string; progress: number }>>[1];
-
         const onProgress = vi.fn();
         const unlisten = vi.fn();
-        const callbackHolder: { current: ProgressCallback | null } = { current: null };
+        const callbackHolder: { current: ((payload: unknown) => void) | null } = { current: null };
 
-        vi.mocked(listen).mockImplementation((_event, callback) => {
+        vi.mocked(tauriListen).mockImplementation((_event, callback) => {
             callbackHolder.current = callback;
             return Promise.resolve(unlisten);
         });
@@ -52,19 +45,19 @@ describe('listenPitchAnalysisProgress', () => {
         }
         result();
 
-        expect(listen).toHaveBeenCalledWith('pitch-analysis-progress', expect.any(Function));
+        expect(tauriListen).toHaveBeenCalledWith('pitch-analysis-progress', expect.any(Function));
         expect(onProgress).toHaveBeenCalledExactlyOnceWith(0.42);
         expect(unlisten).toHaveBeenCalledTimes(1);
     });
 
-    it('should return null without subscribing outside Tauri', async () => {
+    it('should return null without subscribing outside the desktop runtime', async () => {
         vi.mocked(isTauri).mockReturnValue(false);
         const onProgress = vi.fn();
 
         const result = await listenPitchAnalysisProgress({ analysisId: 'analysis-1', onProgress });
 
         expect(result).toBeNull();
-        expect(listen).not.toHaveBeenCalled();
+        expect(tauriListen).not.toHaveBeenCalled();
         expect(onProgress).not.toHaveBeenCalled();
     });
 });
