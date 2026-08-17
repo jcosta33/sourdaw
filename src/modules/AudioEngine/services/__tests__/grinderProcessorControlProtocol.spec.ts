@@ -15,7 +15,7 @@ function initializeControlGeneration(processor: Awaited<ReturnType<typeof create
                 trackId: 'track-1',
                 deviceId: 'grinder-1',
                 deviceType: 'grinder',
-                parameterIds: ['sag'],
+                parameterIds: ['sag', 'bypass'],
             },
             correlation: { workletGeneration: 7 },
         },
@@ -51,6 +51,7 @@ describe('GrinderProcessor fallback-control protocol', () => {
         vi.mocked(processor.port.postMessage).mockClear();
 
         processor.port.onmessage?.({ data: { type: 'param', name: 'sag', value: 0.5 } });
+        processor.port.onmessage?.({ data: { type: 'param', name: 'bypass', value: 1 } });
         processor.port.onmessage?.({ data: { schemaVersion: 1, command: 'set-fallback-param' } });
 
         expect(grinderSetParamCalls).toEqual([]);
@@ -85,6 +86,27 @@ describe('GrinderProcessor fallback-control protocol', () => {
         });
 
         expect(grinderSetParamCalls).toEqual([]);
+        expect(processor.port.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('applies typed v1 bypass controls only after the initialized schema allows bypass', async () => {
+        const processor = await createReadyGrinderProcessor();
+        initializeControlGeneration(processor);
+        vi.mocked(processor.port.postMessage).mockClear();
+
+        processor.port.onmessage?.({
+            data: fallbackControl({
+                target: {
+                    trackId: 'track-1',
+                    deviceId: 'grinder-1',
+                    deviceType: 'grinder',
+                    parameterId: 'bypass',
+                },
+                value: 1,
+            }),
+        });
+
+        expect(grinderSetParamCalls).toEqual([{ name: 'bypass', value: 1 }]);
         expect(processor.port.postMessage).not.toHaveBeenCalled();
     });
 

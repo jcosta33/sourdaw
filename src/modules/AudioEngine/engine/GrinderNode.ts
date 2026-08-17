@@ -149,10 +149,18 @@ export async function createGrinderNode(
     let paramFlushRafId: number | null = null;
     const canCoalesce = typeof requestAnimationFrame === 'function';
     const workletGeneration = allocateWorkletControlGeneration();
+    const fallbackControlTarget = controlTarget
+        ? Object.freeze({
+              trackId: controlTarget.trackId,
+              deviceId: controlTarget.deviceId,
+              deviceType: controlTarget.deviceType,
+              parameterIds: Object.freeze([...new Set([...controlTarget.parameterIds, 'bypass'])]),
+          })
+        : undefined;
     let nextControlSequence = 1;
 
     const postFallbackControl = (name: string, pending: PendingParamPost): void => {
-        if (!controlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
+        if (!fallbackControlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
             return;
         }
         const result = compileRuntimeDeviceControl(
@@ -160,9 +168,9 @@ export async function createGrinderNode(
                 schemaVersion: 1,
                 command: 'set-fallback-param',
                 target: {
-                    trackId: controlTarget.trackId,
-                    deviceId: controlTarget.deviceId,
-                    deviceType: controlTarget.deviceType,
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
                     parameterId: name,
                 },
                 value: pending.value,
@@ -175,7 +183,7 @@ export async function createGrinderNode(
                     deadlineFrame: pending.deadlineFrame,
                 },
             },
-            controlTarget.parameterIds
+            fallbackControlTarget.parameterIds
         );
         if (result.status !== 'compiled') {
             return;
@@ -228,16 +236,16 @@ export async function createGrinderNode(
     };
     const readyPromise = handshake.promise;
 
-    if (controlTarget) {
+    if (fallbackControlTarget) {
         node.port.postMessage(
             Object.freeze({
                 schemaVersion: 1,
                 command: 'initialize-fallback-control',
                 target: Object.freeze({
-                    trackId: controlTarget.trackId,
-                    deviceId: controlTarget.deviceId,
-                    deviceType: controlTarget.deviceType,
-                    parameterIds: Object.freeze([...controlTarget.parameterIds]),
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
+                    parameterIds: fallbackControlTarget.parameterIds,
                 }),
                 correlation: Object.freeze({ workletGeneration }),
             })
@@ -265,7 +273,10 @@ export async function createGrinderNode(
             node.port.postMessage({ type: 'patch', patch });
         },
         setBypass(state: boolean) {
-            node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
+            postFallbackControl(
+                'bypass',
+                Object.freeze({ value: state ? 1 : 0, targetFrame: null, deadlineFrame: null })
+            );
         },
         onMeterData(cb: (data: GrinderMeterData) => void) {
             if (meterRafId !== null) {

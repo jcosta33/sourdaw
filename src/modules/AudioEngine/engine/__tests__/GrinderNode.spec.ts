@@ -125,7 +125,7 @@ describe('createGrinderNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'init-sab', sab: expect.anything(), byteOffset: 64 });
     });
 
-    it('should forward setPatch and setBypass messages', async () => {
+    it('should forward setPatch and compile setBypass as a typed fallback control', async () => {
         const node = await createGrinderNode(makeCtx(), undefined, undefined, {
             trackId: 'track-1',
             deviceId: 'grinder-1',
@@ -142,7 +142,7 @@ describe('createGrinderNode', () => {
                 trackId: 'track-1',
                 deviceId: 'grinder-1',
                 deviceType: 'grinder',
-                parameterIds: ['unmapped-param'],
+                parameterIds: ['unmapped-param', 'bypass'],
             },
             correlation: { workletGeneration: expect.any(Number) },
         });
@@ -154,10 +154,34 @@ describe('createGrinderNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'patch', patch: { drive: 0.5 } });
 
         node.setBypass(true);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 1 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: 'track-1',
+                    deviceId: 'grinder-1',
+                    deviceType: 'grinder',
+                    parameterId: 'bypass',
+                },
+                value: 1,
+                correlation: {
+                    workletGeneration: expect.any(Number),
+                    controlSequence: 1,
+                },
+            })
+        );
 
         node.setBypass(false);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 0 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'bypass' }),
+                value: 0,
+                correlation: expect.objectContaining({ controlSequence: 2 }),
+            })
+        );
     });
 
     it('ramps a named AudioParam directly when the worklet exposes it', async () => {
