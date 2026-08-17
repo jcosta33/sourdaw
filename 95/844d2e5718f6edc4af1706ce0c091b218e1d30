@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_b50e95c832b806 70-71,536-537,591,606,655-656,715-716,753,755-756,805
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "95844d2e5718f6edc4af1706ce0c091b218e1d30",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
