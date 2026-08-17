@@ -38,6 +38,8 @@ src-tauri/gen/schemas/desktop-schema.json
   s_d91dcbe5f07151::t_36aff0421543d9 2-12,15-18,22-28,30-53,55,58,60-78,80-105,107-126,128-199,202-312,314-322,326-347,351-352,354-3497,3500
 src-tauri/gen/schemas/macOS-schema.json
   s_d91dcbe5f07151::t_d8cf382204c139 2-12,15-18,22-28,30-53,55,58,60-78,80-105,107-126,128-199,202-312,314-322,326-347,351-352,354-3497,3500
+crates/sourdaw-native/src/addon/mod.rs
+  s_0a3429e31e555d::t_996f045e6d5592 129-130
 ---
 {
   "schema_version": "authorship/3.0.0",
