@@ -70,11 +70,49 @@ const mocks = vi.hoisted(() => ({
     scheduleTrackClips: vi.fn<(input: ScheduleTrackClipsInput) => Promise<void>>(() => Promise.resolve()),
     schedulePendingSuspends: vi.fn(),
     renderWithTimeout: vi.fn(),
+    /**
+     * Which command kind, if any, makes the backend refuse the batch carrying
+     * it. `null` leaves the real backend entirely alone.
+     *
+     * The refusals the contract defines — a schema mismatch, a stale
+     * correlation, an unimplemented command — are all unreachable through
+     * `renderOffline` today, because it issues a literal `schemaVersion`, no
+     * correlation, and only supported commands. That makes them exactly the
+     * kind of guard that rots: the code assuming a batch always applies sits
+     * three lines from the code that guarantees it. This injects the refusal
+     * the seam already models so the assumption is tested rather than trusted.
+     */
+    refusedCommandKind: null as string | null,
 }));
 
 vi.mock('#/modules/Routing/stores', () => ({
     sidechainStore: mocks.sidechainStore,
 }));
+vi.mock('../offlineRender/createWebAudioOfflineBackend', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../offlineRender/createWebAudioOfflineBackend')>();
+    return {
+        ...original,
+        createWebAudioOfflineBackend: (
+            deps: Parameters<typeof original.createWebAudioOfflineBackend>[0]
+        ): ReturnType<typeof original.createWebAudioOfflineBackend> => {
+            const backend = original.createWebAudioOfflineBackend(deps);
+            return {
+                ...backend,
+                apply: (batch) => {
+                    const refused = mocks.refusedCommandKind;
+                    if (refused && batch.commands.some((command) => command.kind === refused)) {
+                        return Promise.resolve({
+                            acceptance: 'rejected',
+                            application: 'not-applied',
+                            reason: `injected refusal of "${refused}"`,
+                        });
+                    }
+                    return backend.apply(batch);
+                },
+            };
+        },
+    };
+});
 vi.mock('../offlineRender/resolveRenderContext', () => ({
     resolveRenderContext: mocks.resolveRenderContext,
 }));
@@ -142,9 +180,10 @@ class FakeOfflineAudioContext {
     }
 }
 
-function makeStrip(): OfflineTrackStrip {
+function makeStrip(trackId = 'track-1'): OfflineTrackStrip {
     const makeNode = () => ({ connect: vi.fn(), gain: { value: 1 } });
     return {
+        trackId,
         inputNode: makeNode() as unknown as GainNode,
         preFaderTap: makeNode() as unknown as GainNode,
         faderNode: makeNode() as unknown as GainNode,
@@ -190,9 +229,12 @@ describe('renderOffline — graph construction and lifecycle', () => {
         createdContexts.length = 0;
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
         mocks.sidechainStore.value.routes = [];
+        mocks.refusedCommandKind = null;
         mocks.addWorkletModule.mockResolvedValue();
         mocks.resolveRenderContext.mockReturnValue(makeContext());
-        mocks.createOfflineTrackStrip.mockImplementation(() => Promise.resolve(makeStrip()));
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: { id: string }) =>
+            Promise.resolve(makeStrip(track.id))
+        );
         mocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
     });
 
@@ -260,7 +302,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         );
         const stripsByTrack = new Map<string, OfflineTrackStrip>();
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             stripsByTrack.set(track.id, strip);
             return Promise.resolve(strip);
         });
@@ -294,7 +336,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
             makeContext({ tracks: { tracks: [parent, child] } as unknown as TrackStoreState })
         );
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             if (track.id === parent.id) {
                 const audioNode = {} as AudioNode;
                 const node: DeviceNodeEntry['node'] = {
@@ -355,7 +397,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
             makeContext({ tracks: { tracks: [kick, bass] } as unknown as TrackStoreState })
         );
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             if (track.id === bass.id) {
                 const node: DeviceNodeEntry['node'] = {
                     inputNode: sidechainInput,
@@ -416,7 +458,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
             makeContext({ tracks: { tracks: [kick, bass] } as unknown as TrackStoreState })
         );
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             if (track.id === bass.id) {
                 const node: DeviceNodeEntry['node'] = {
                     inputNode: sidechainInput,
@@ -515,7 +557,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         );
         const stripsByTrack = new Map<string, OfflineTrackStrip>();
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             stripsByTrack.set(track.id, strip);
             return Promise.resolve(strip);
         });
@@ -558,6 +600,33 @@ describe('renderOffline — graph construction and lifecycle', () => {
         const scheduledTrack = mocks.scheduleTrackClips.mock.calls[0]![0].track;
         expect(scheduledTrack.id).toBe('t-live');
         expect(mocks.schedulePendingSuspends).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails the export when the backend refuses to build a strip, rather than dropping the track', async () => {
+        const track = TrackDummy.create({ id: 't-a' });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [track] } as unknown as TrackStoreState })
+        );
+        mocks.refusedCommandKind = 'create-track-strip';
+
+        // The alternative is what this guards against: no strip, `continue`,
+        // and a file silently missing a track the user can hear is gone only
+        // by listening to it.
+        await expect(renderOffline(4)).rejects.toThrow(/refused to build the strip/);
+        expect(mocks.renderWithTimeout).not.toHaveBeenCalled();
+    });
+
+    it('fails the export when the backend refuses to route a strip, rather than rendering it silent', async () => {
+        const track = TrackDummy.create({ id: 't-a' });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [track] } as unknown as TrackStoreState })
+        );
+        mocks.refusedCommandKind = 'set-track-output';
+
+        // Worse than a missing strip: the strip exists and nothing reaches it,
+        // so every downstream check still sees a well-formed graph.
+        await expect(renderOffline(4)).rejects.toThrow(/refused to route the output and sends/);
+        expect(mocks.renderWithTimeout).not.toHaveBeenCalled();
     });
 
     it('reports scheduling progress up to 50% and completion at 100%', async () => {

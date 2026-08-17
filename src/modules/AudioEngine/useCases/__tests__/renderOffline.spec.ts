@@ -244,16 +244,18 @@ describe('renderOffline effective audibility (OE-4)', () => {
     });
 
     function primeRender(): void {
-        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
-            Promise.resolve({
-                inputNode: { connect: vi.fn() },
-                preFaderTap: { connect: vi.fn() },
-                faderNode: { connect: vi.fn() },
-                postFaderGain: { connect: vi.fn() },
-                panNode: { connect: vi.fn() },
-                outputNode: { connect: vi.fn() },
-                deviceEntries: [],
-            })
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+            (_ctx: OfflineAudioContext, track: { id: string }) =>
+                Promise.resolve({
+                    trackId: track.id,
+                    inputNode: { connect: vi.fn() },
+                    preFaderTap: { connect: vi.fn() },
+                    faderNode: { connect: vi.fn() },
+                    postFaderGain: { connect: vi.fn() },
+                    panNode: { connect: vi.fn() },
+                    outputNode: { connect: vi.fn() },
+                    deviceEntries: [],
+                })
         );
         offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
         class TestOfflineAudioContext {
@@ -583,16 +585,18 @@ describe('renderOffline residual branches', () => {
         // Force prepareOfflineSidechainCompressor to throw a non-Error value.
         offlineRenderMocks.prepareOfflineSidechainCompressor.mockRejectedValueOnce('wasm compile failed');
 
-        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
-            Promise.resolve({
-                inputNode: { connect: vi.fn() },
-                preFaderTap: { connect: vi.fn() },
-                faderNode: { connect: vi.fn() },
-                postFaderGain: { connect: vi.fn() },
-                panNode: { connect: vi.fn() },
-                outputNode: { connect: vi.fn() },
-                deviceEntries: [],
-            })
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+            (_ctx: OfflineAudioContext, track: { id: string }) =>
+                Promise.resolve({
+                    trackId: track.id,
+                    inputNode: { connect: vi.fn() },
+                    preFaderTap: { connect: vi.fn() },
+                    faderNode: { connect: vi.fn() },
+                    postFaderGain: { connect: vi.fn() },
+                    panNode: { connect: vi.fn() },
+                    outputNode: { connect: vi.fn() },
+                    deviceEntries: [],
+                })
         );
         offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
         stubOfflineCtx();
@@ -666,16 +670,18 @@ describe('renderOffline residual branches', () => {
             ...fullProjections(),
         });
         offlineRenderMocks.prepareOfflineSidechainCompressor.mockResolvedValue(undefined);
-        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
-            Promise.resolve({
-                inputNode: { connect: vi.fn() },
-                preFaderTap: { connect: vi.fn() },
-                faderNode: { connect: vi.fn() },
-                postFaderGain: { connect: vi.fn() },
-                panNode: { connect: vi.fn() },
-                outputNode: { connect: vi.fn() },
-                deviceEntries: [],
-            })
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+            (_ctx: OfflineAudioContext, track: { id: string }) =>
+                Promise.resolve({
+                    trackId: track.id,
+                    inputNode: { connect: vi.fn() },
+                    preFaderTap: { connect: vi.fn() },
+                    faderNode: { connect: vi.fn() },
+                    postFaderGain: { connect: vi.fn() },
+                    panNode: { connect: vi.fn() },
+                    outputNode: { connect: vi.fn() },
+                    deviceEntries: [],
+                })
         );
         offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
         stubOfflineCtx();
