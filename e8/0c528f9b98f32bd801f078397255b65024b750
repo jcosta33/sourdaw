@@ -1,0 +1,20 @@
+crates/sourdaw-native/src/commands/ai_audio.rs
+  s_ab5443e65c7fba::t_9d435686286ab6 18,20-26,28-36,40,42,45-58,68-229
+  s_ab5443e65c7fba::t_c964accdfddd8f 230-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e80c528f9b98f32bd801f078397255b65024b750",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
