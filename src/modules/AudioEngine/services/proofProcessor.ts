@@ -234,7 +234,12 @@ class ProofProcessor extends AudioWorkletProcessor {
                 return;
             }
             this._lastFallbackControlSequence = msg.correlation.controlSequence;
+            const oldLatency = inst.get_latency_samples();
             inst.set_param(msg.target.parameterId, msg.value);
+            const newLatency = inst.get_latency_samples();
+            if (newLatency !== oldLatency) {
+                this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+            }
             return;
         }
 
