@@ -1,0 +1,31 @@
+electron/__tests__/commands.spec.ts
+  s_d91dcbe5f07151::t_7b518b3ce7a90e 231
+  s_d91dcbe5f07151::t_5ada77374e5773 307
+  s_d91dcbe5f07151::t_c76e138ffddccf 267
+  s_d91dcbe5f07151::t_8c994d440a92d9 271
+src/utils/sourdawCommandArguments.ts
+  s_d91dcbe5f07151::t_bb1863bcf94a22 67
+  s_d91dcbe5f07151::t_5a367206b01b15 63
+  s_d91dcbe5f07151::t_a82417d3c591e9 27
+src/utils/__tests__/tauriBridge.spec.ts
+  s_d91dcbe5f07151::t_02eb04e3ec98f1 494,503
+electron/commands.ts
+  s_d91dcbe5f07151::t_7580926fe98f33 79
+  s_d91dcbe5f07151::t_98f5892f573f00 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "610ab2823d4e99928a5307ec610ef6d1ce06fd1c",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
