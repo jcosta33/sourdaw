@@ -65,33 +65,40 @@ use tauri::{App, WebviewWindow, WebviewWindowBuilder};
 
 /// A 12-tone equal temperament scale in cents, the shape almost every real
 /// `.scl` file has.
-const TWELVE_TONE_SCL: &str = "! 12tet.scl\n\
-!\n\
-12-tone equal temperament\n\
- 12\n\
-!\n\
- 100.000\n\
- 200.000\n\
- 300.000\n\
- 400.000\n\
- 500.000\n\
- 600.000\n\
- 700.000\n\
- 800.000\n\
- 900.000\n\
- 1000.000\n\
- 1100.000\n\
- 2/1\n";
+///
+/// Raw string, flush left, on purpose. Written with `\`-newline continuations
+/// the literal loses the leading space on every continued line, and the leading
+/// space is the point: Scala files in the wild indent the tone count and the
+/// tone list, so an unindented fixture never exercises the parser's trimming.
+const TWELVE_TONE_SCL: &str = r"! 12tet.scl
+!
+12-tone equal temperament
+ 12
+!
+ 100.000
+ 200.000
+ 300.000
+ 400.000
+ 500.000
+ 600.000
+ 700.000
+ 800.000
+ 900.000
+ 1000.000
+ 1100.000
+ 2/1
+";
 
 /// A one-tone octave scale. Every table entry is the root times an integral
 /// power of two, so this fixture is bit-exact on any machine — the 12-tone one
 /// above goes through `powf` per entry and is only exact per host libm.
-const OCTAVE_SCL: &str = "! octave.scl\n\
-!\n\
-Single octave period\n\
- 1\n\
-!\n\
- 2/1\n";
+const OCTAVE_SCL: &str = r"! octave.scl
+!
+Single octave period
+ 1
+!
+ 2/1
+";
 
 struct Case {
     command: &'static str,

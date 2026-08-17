@@ -1,6 +1,6 @@
 {
     "args": {
-        "content": "! octave.scl\n!\nSingle octave period\n1\n!\n2/1\n",
+        "content": "! octave.scl\n!\nSingle octave period\n 1\n!\n 2/1\n",
         "rootFreq": 256.0,
         "rootNote": 60
     },
