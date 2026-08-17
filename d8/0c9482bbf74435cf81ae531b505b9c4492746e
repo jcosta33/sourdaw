@@ -1,0 +1,35 @@
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_d91dcbe5f07151::t_e155ca65557c91 187
+  s_d91dcbe5f07151::t_7300357235e99c 1-2
+src/modules/Project/useCases/projectTemplates/templateDefinitions/getTemplates.ts
+  s_d91dcbe5f07151::t_9f13127f9118e6 8
+  s_d91dcbe5f07151::t_294730440622f9 1-2
+src/modules/SampleLibrary/useCases/connectFolder/connectFolder.ts
+  s_d91dcbe5f07151::t_3cf0800ecb5a0f 83
+  s_d91dcbe5f07151::t_24b63662793127 2
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/nativeCrdtPersistence.spec.ts
+  s_d91dcbe5f07151::t_b27837fd3674fc 22
+src/modules/Arrangement/useCases/soundPresetLibrary.ts
+  s_d91dcbe5f07151::t_e737a1b2961936 2
+  s_d91dcbe5f07151::t_9cb7897d82d5b9 22
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/nativeApplyChange.ts
+  s_d91dcbe5f07151::t_85629e250b4941 1-2,6-10
+src/modules/Project/repositories/nativeProjectFiles/helpers.ts
+  s_d91dcbe5f07151::t_e8e30aece11740 1-2,4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d80c9482bbf74435cf81ae531b505b9c4492746e",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
