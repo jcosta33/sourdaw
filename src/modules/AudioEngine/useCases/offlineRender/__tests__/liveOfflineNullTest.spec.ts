@@ -111,6 +111,31 @@
  * because they are exempt, but because the harness models no node for them and
  * refuses to build one rather than silently rendering them as pass-throughs.
  * Extending this to them means extending the harness first.
+ *
+ * ── The backend axis ──────────────────────────────────────────────────────
+ *
+ * The two legs above vary *which construction path* built the graph, with one
+ * renderer underneath. The third leg varies the renderer: it nulls backend A
+ * against backend B over the same fixture table, so that when the Rust engine
+ * becomes the desktop backend the question "does the native render sound like
+ * the web render?" is asked by an instrument that already exists and is already
+ * known to be sharp, rather than by one written after the fact to fit whatever
+ * the new backend happens to produce.
+ *
+ * Backend B does not exist yet. The leg therefore runs backend A against a
+ * stand-in that reaches the same renderer through the seam a real backend B
+ * will occupy, and its teeth are the perturbed half: the stand-in is handed
+ * divergences of the exact magnitudes the sharpness probes below already prove
+ * visible, and the leg is required to go **red**. A comparison harness that
+ * cannot fail is decoration. Both states are asserted — perturbed reds, and the
+ * same fixture through an agreeing backend B nulls.
+ *
+ * Read the green half honestly: while backend B is a stand-in for backend A it
+ * is not an independent implementation, so an agreeing null there pins the
+ * seam's plumbing and backend A's determinism, not cross-backend parity. The
+ * seam is shown to carry two genuinely different implementations by driving it
+ * with the live and offline builders — the pair leg one already cross-checks —
+ * which is what makes a native backend a drop-in for the same slot.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -788,5 +813,234 @@ describe('live/offline null test — determinism', () => {
 
         expect(repeat.signalPeakDbfs).toBeGreaterThan(-40);
         expect(repeat.residualPeakDbfs).toBe(-Infinity);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// The backend axis
+// ---------------------------------------------------------------------------
+
+/**
+ * The seam a real backend B occupies.
+ *
+ * One function: hand it a fixture, get back a render and the device ids that
+ * render actually contained. Both existing legs already satisfy it —
+ * `renderLive` and `renderOffline` are assignable as written — which is the
+ * point. A backend is anything that can turn a track configuration into
+ * samples, and the native engine will be swapped in by writing one more object
+ * of this type. Nothing below reaches past it, so the swap touches this file in
+ * exactly one place.
+ *
+ * `LegRender` rather than a bare buffer because the presence pin has to survive
+ * the abstraction: a backend that silently rendered without a fixtured device
+ * nulls perfectly against another backend that did the same, and
+ * `assertDevicesBuilt` inside each renderer is what refuses that. A seam typed
+ * as `=> Promise<RenderedBuffer>` would quietly drop it.
+ */
+type RenderBackend = {
+    id: string;
+    render: (fixture: TrackFixture, options?: RenderOptions) => Promise<LegRender>;
+};
+
+/** Backend A: the Web Audio render path as an export builds it, today. */
+const BACKEND_A: RenderBackend = { id: 'web-audio/offline', render: renderOffline };
+
+/** The same renderer through the live builder — used to prove the seam is real. */
+const BACKEND_A_LIVE: RenderBackend = { id: 'web-audio/live', render: renderLive };
+
+/**
+ * How a stand-in backend B misreads the fixture it is handed.
+ *
+ * A backend that renders a project differently is observationally identical to
+ * a backend that renders a slightly different project, so a perturbation of the
+ * configuration is a faithful stand-in for a divergence in the renderer — and,
+ * unlike a hand-injected offset in the output samples, it is the shape the real
+ * divergences take. A native backend gets a fader wrong by converting dB to
+ * linear with a different rounding, a cutoff wrong by marshalling it through an
+ * `f32`, a pan position wrong by normalising −100…100 with a different law.
+ * Those are the three below.
+ */
+type FixtureMisread = (fixture: TrackFixture) => TrackFixture;
+
+function standInBackendB(input: { name: string; misread: FixtureMisread }): RenderBackend {
+    return {
+        id: `stand-in/${input.name}`,
+        render: (fixture, options) => renderOffline(input.misread(fixture), options),
+    };
+}
+
+/** The un-perturbed stand-in. The green half of the experiment. */
+const AGREEING_BACKEND_B = standInBackendB({ name: 'agrees', misread: (fixture) => fixture });
+
+async function nullTestBackends(input: {
+    a: RenderBackend;
+    b: RenderBackend;
+    fixture: TrackFixture;
+}): Promise<NullTestResult> {
+    const a = await input.a.render(input.fixture);
+    const b = await input.b.render(input.fixture);
+    return nullTest({ a: a.buffer, b: b.buffer });
+}
+
+/**
+ * The fixture set the backend leg sweeps: every device in the shared table,
+ * plus the strip states leg one pins. Same population, same budget, one axis
+ * changed — which is the only way a residual here can be attributed to the
+ * backend rather than to a fixture the other legs never render.
+ */
+const BACKEND_FIXTURES: Array<[string, TrackFixture]> = [
+    ['a bare strip at unity', { ...BASE_TRACK, gain: 1 }],
+    ['a fader off unity', { ...BASE_TRACK, gain: 0.37 }],
+    ['a stored gain above the fader ceiling', { ...BASE_TRACK, gain: 1.8 }],
+    ['a panned strip', { ...BASE_TRACK, pan: -31 }],
+    ...FIXTURE_DEVICE_ENTRIES.map(([name, entry]): [string, TrackFixture] => [
+        `the ${name} device on its own`,
+        { ...BASE_TRACK, devices: [entry] },
+    ]),
+    [
+        'a multi-device chain in project order',
+        {
+            ...BASE_TRACK,
+            gain: 0.62,
+            pan: 18,
+            devices: [FIXTURE_DEVICES.gain, FIXTURE_DEVICES.filter, FIXTURE_DEVICES.distortion, FIXTURE_DEVICES.eq],
+        },
+    ],
+    [
+        'a chain with a bypassed device in the middle',
+        {
+            ...BASE_TRACK,
+            devices: [FIXTURE_DEVICES.gain, { ...FIXTURE_DEVICES.filter, bypassed: true }, FIXTURE_DEVICES.gainTrim],
+        },
+    ],
+];
+
+type BackendDivergence = {
+    /** What backend B got wrong. */
+    name: string;
+    /** The configuration both backends are asked for. */
+    fixture: TrackFixture;
+    /** What backend B rendered instead. */
+    misread: FixtureMisread;
+};
+
+/**
+ * The three divergences the sharpness probes above already measured, re-aimed
+ * at the backend seam.
+ *
+ * The magnitudes are not re-derived and not chosen to be comfortably large:
+ * they are one part in five hundred of a fader, 1 Hz in 2400 of a cutoff, and
+ * one fifty-thousandth of full scale of a pan position — the exact quantities
+ * this file already proves the −90 dBFS budget can see. Reusing them is what
+ * makes the red half a statement about the *instrument's resolution at the
+ * backend seam* rather than a statement that subtraction works.
+ */
+const BACKEND_B_DIVERGENCES: BackendDivergence[] = [
+    {
+        // Measured −69.12 dBFS against a −15.14 dBFS signal.
+        name: 'a fader that arrives one part in five hundred hot',
+        fixture: { ...BASE_TRACK, gain: 0.5 },
+        misread: (fixture) => ({ ...fixture, gain: 0.501 }),
+    },
+    {
+        // Measured −78.11 dBFS against a −15.18 dBFS signal.
+        name: 'a filter cutoff that arrives 1 Hz off in 2400',
+        fixture: { ...BASE_TRACK, devices: [FIXTURE_DEVICES.filter] },
+        misread: (fixture) => ({
+            ...fixture,
+            devices: fixture.devices.map((entry) =>
+                entry.id === FIXTURE_DEVICES.filter.id
+                    ? { ...entry, parameterValues: { ...entry.parameterValues, 'filter-cutoff': 2401 } }
+                    : entry
+            ),
+        }),
+    },
+    {
+        // Measured −82.96 dBFS against a −7.09 dBFS signal.
+        name: 'a pan position that arrives one fifty-thousandth of full scale off',
+        fixture: { ...BASE_TRACK, pan: 20 },
+        misread: (fixture) => ({ ...fixture, pan: 20.01 }),
+    },
+];
+
+describe('backend A / backend B null test', () => {
+    /**
+     * The green half. Every fixture measures `-Infinity` today, because the
+     * stand-in reaches the same renderer, and the assertion is deliberately the
+     * −90 dBFS budget rather than that measurement.
+     *
+     * Pinning `-Infinity` would look stronger and would be a trap: two genuinely
+     * independent backends cannot be bit-identical, so the first real backend B
+     * would force this assertion to be *loosened* — and a budget that gets
+     * loosened to admit the thing it was measuring is the exact failure the file
+     * header refuses. −90 dBFS is the number backend B has to meet, so −90 dBFS
+     * is the number asserted, from the day the seam exists. Nondeterminism in
+     * backend A is caught by the determinism leg above, which does pin
+     * `-Infinity` and is entitled to.
+     */
+    it.each(BACKEND_FIXTURES)('nulls %s across the backend seam', async (_name, fixture) => {
+        expectNull(await nullTestBackends({ a: BACKEND_A, b: AGREEING_BACKEND_B, fixture }));
+    });
+
+    /**
+     * The seam carries two genuinely different implementations.
+     *
+     * While backend B is a stand-in for backend A, every null above is backend
+     * A against itself, and that alone would leave the seam's shape unproven —
+     * a seam that only ever receives one renderer can be wrong in ways nothing
+     * notices until the day a second one arrives. Driving it with the live
+     * builder and the offline builder, which are separately-written node graphs
+     * with different node counts and independently-written level, pan and clamp
+     * laws, shows the slot accepts an implementation it was not written around.
+     * That is the property a native backend needs from it.
+     *
+     * Measured `-Infinity` on this four-device chain: the two builders agree to
+     * the bit, which is leg one's result restated through the seam.
+     */
+    it('accepts two independently-written implementations in the same slot', async () => {
+        const fixture: TrackFixture = {
+            ...BASE_TRACK,
+            gain: 0.62,
+            pan: 18,
+            devices: [FIXTURE_DEVICES.gain, FIXTURE_DEVICES.filter, FIXTURE_DEVICES.distortion, FIXTURE_DEVICES.eq],
+        };
+
+        expectNull(await nullTestBackends({ a: BACKEND_A_LIVE, b: BACKEND_A, fixture }));
+    });
+
+    /**
+     * The red half. Both claims are asserted per divergence:
+     *
+     *   1. the perturbed backend B breaks the budget — the leg is an instrument;
+     *   2. it breaks it by an amount **below** the audible line — the residual
+     *      is the injected divergence and not a backend that dropped a device,
+     *      went silent or lost a whole chain. A gross failure would clear
+     *      −60 dBFS and this assertion would refuse it, which is what keeps a
+     *      red for the wrong reason from being read as a red for the right one.
+     *
+     * The controlled half runs immediately after, on the same fixture through
+     * the agreeing backend B, so a red cannot be attributed to the fixture.
+     */
+    it.each(BACKEND_B_DIVERGENCES)('reds when backend B renders $name', async (divergence) => {
+        const perturbed = await nullTestBackends({
+            a: BACKEND_A,
+            b: standInBackendB({ name: divergence.name, misread: divergence.misread }),
+            fixture: divergence.fixture,
+        });
+
+        expect(perturbed.signalPeakDbfs).toBeGreaterThan(-40);
+        expect(
+            perturbed.residualPeakDbfs,
+            `perturbed backend B nulled at ${perturbed.residualPeakDbfs.toFixed(2)} dBFS — the leg is blind`
+        ).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+        expect(perturbed.residualPeakDbfs).toBeLessThan(RESIDUAL_DEFECT_DBFS);
+
+        const agreeing = await nullTestBackends({
+            a: BACKEND_A,
+            b: AGREEING_BACKEND_B,
+            fixture: divergence.fixture,
+        });
+
+        expectNull(agreeing);
     });
 });
