@@ -1,6 +1,5 @@
 export { handleAiDenoiseClip } from './actions/handleAiDenoiseClip';
 export { handleGenerateMidiPrompt } from './actions/handleGenerateMidiPrompt';
-export { handleStemSeparationPreview } from './actions/handleStemSeparationPreview';
 export { removeTask } from './actions/removeTask';
 export { cancelProcessingTask } from './actions/cancelProcessingTask';
 export { toggleAiPanel } from './actions/toggleAiPanel';
