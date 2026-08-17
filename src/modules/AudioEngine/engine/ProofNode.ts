@@ -19,12 +19,17 @@ import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, PROOF_IDX } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+const MAX_RUNTIME_ID_LENGTH = 128;
 let nextWorkletControlGeneration = 1;
 
 function allocateWorkletControlGeneration(): number {
     const generation = nextWorkletControlGeneration;
     nextWorkletControlGeneration = generation >= Number.MAX_SAFE_INTEGER ? 1 : generation + 1;
     return generation;
+}
+
+function isBoundedRuntimeId(value: string): boolean {
+    return value.length > 0 && value.length <= MAX_RUNTIME_ID_LENGTH;
 }
 
 export type ProofMeterData = {
@@ -132,22 +137,30 @@ export async function createProofNode(
     let sabSlot = telemetryAllocator.allocateSlot();
     let pollInterval: ReturnType<typeof setInterval> | null = null;
     const workletGeneration = allocateWorkletControlGeneration();
-    const target = controlTarget
-        ? Object.freeze({
-              trackId: controlTarget.trackId,
-              deviceId: controlTarget.deviceId,
-              deviceType: 'proof',
-              parameterIds: createProofRuntimeParameterIds(),
-          })
-        : null;
+    const hasLiveControl = controlTarget !== undefined;
+    const target =
+        controlTarget &&
+        isBoundedRuntimeId(controlTarget.trackId) &&
+        isBoundedRuntimeId(controlTarget.deviceId) &&
+        isBoundedRuntimeId(controlTarget.deviceType)
+            ? Object.freeze({
+                  trackId: controlTarget.trackId,
+                  deviceId: controlTarget.deviceId,
+                  deviceType: 'proof',
+                  parameterIds: createProofRuntimeParameterIds(),
+              })
+            : null;
     let nextControlSequence = 1;
     let destroyed = false;
     const postControl = (name: string, value: number): void => {
         if (!Number.isFinite(value)) {
             return;
         }
-        if (!target) {
+        if (!hasLiveControl) {
             node.port.postMessage({ type: 'param', name, value });
+            return;
+        }
+        if (!target) {
             return;
         }
         const compilation = compileRuntimeDeviceControl(
@@ -241,8 +254,11 @@ export async function createProofNode(
             postControl('bypass', state ? 1 : 0);
         },
         reorderModules(order: [number, number, number, number, number]) {
-            if (!target) {
+            if (!hasLiveControl) {
                 node.port.postMessage({ type: 'reorder', order });
+                return;
+            }
+            if (!target) {
                 return;
             }
             if (
@@ -267,8 +283,11 @@ export async function createProofNode(
             );
         },
         resetIntegrated() {
-            if (!target) {
+            if (!hasLiveControl) {
                 node.port.postMessage({ type: 'reset_integrated' });
+                return;
+            }
+            if (!target) {
                 return;
             }
             node.port.postMessage(

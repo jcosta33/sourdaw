@@ -23,6 +23,7 @@ type ProofMsg =
     | { type: 'reorder'; order: [number, number, number, number, number] }
     | { type: 'reset_integrated' };
 type UnknownRecord = Record<string, unknown>;
+const MAX_RUNTIME_ID_LENGTH = 128;
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -32,6 +33,9 @@ function only(value: UnknownRecord, keys: readonly string[]): boolean {
 }
 function positive(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+function boundedId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_RUNTIME_ID_LENGTH;
 }
 
 class ProofProcessor extends AudioWorkletProcessor {
@@ -116,8 +120,8 @@ class ProofProcessor extends AudioWorkletProcessor {
             msg.command !== 'initialize-fallback-control' ||
             !isRecord(msg.target) ||
             !only(msg.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
-            typeof msg.target.trackId !== 'string' ||
-            typeof msg.target.deviceId !== 'string' ||
+            !boundedId(msg.target.trackId) ||
+            !boundedId(msg.target.deviceId) ||
             msg.target.deviceType !== 'proof' ||
             !Array.isArray(msg.target.parameterIds) ||
             msg.target.parameterIds.length !== PROOF_RUNTIME_PARAMETER_COUNT ||
@@ -152,6 +156,8 @@ class ProofProcessor extends AudioWorkletProcessor {
                 !!target &&
                 isRecord(msg.target) &&
                 only(msg.target, ['trackId', 'deviceId', 'deviceType']) &&
+                boundedId(msg.target.trackId) &&
+                boundedId(msg.target.deviceId) &&
                 isRecord(msg.correlation) &&
                 only(msg.correlation, ['workletGeneration', 'controlSequence']) &&
                 isRecord(msg.scheduling) &&

@@ -202,6 +202,21 @@ describe('createProofNode', () => {
         ]);
     });
 
+    it.each(['', 'x'.repeat(129)])('does not downgrade an invalid live %j target to raw controls', async (trackId) => {
+        const node = await createProofNode(makeContext(), undefined, undefined, {
+            trackId,
+            deviceId: 'proof-1',
+            deviceType: 'proof',
+            parameterIds: [],
+        });
+        const { port } = lastWorklet();
+        port.postMessage.mockClear();
+        node.setParam('lim_ceiling', -1);
+        node.reorderModules([0, 1, 2, 3, 4]);
+        node.resetIntegrated();
+        expect(port.postMessage).not.toHaveBeenCalled();
+    });
+
     it('initializes SAB telemetry on ready and polls torn-free meter snapshots into the callback', async () => {
         const slot = makeSlot();
         mocks.allocateSlot.mockReturnValue(slot);

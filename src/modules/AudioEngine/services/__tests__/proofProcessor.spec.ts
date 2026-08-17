@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createProofRuntimeParameterIds } from '../../models/ProofRuntimeControl';
+
 // --- Worklet global scope shims -------------------------------------------
 const registry = new Map<string, new (...args: unknown[]) => ProofProcessorLike>();
 
@@ -142,6 +144,32 @@ function send(proc: ProofProcessorLike, data: unknown): void {
     proc.port.onmessage?.({ data });
 }
 
+function initializeLiveProof(proc: ProofProcessorLike, trackId: string): void {
+    send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+    send(proc, {
+        schemaVersion: 1,
+        command: 'initialize-fallback-control',
+        target: { trackId, deviceId: 'proof-1', deviceType: 'proof', parameterIds: createProofRuntimeParameterIds() },
+        correlation: { workletGeneration: 1 },
+    });
+}
+
+function liveControl(
+    command: string,
+    trackId: string,
+    sequence: number,
+    extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+    return {
+        schemaVersion: 1,
+        command,
+        target: { trackId, deviceId: 'proof-1', deviceType: 'proof' },
+        correlation: { workletGeneration: 1, controlSequence: sequence },
+        scheduling: { targetFrame: null, deadlineFrame: null },
+        ...extra,
+    };
+}
+
 function runMeterBlock(proc: ProofProcessorLike): void {
     // Proof writes telemetry every 8th process() call (_meterCounter >= 8).
     const input = [new Float32Array(128), new Float32Array(128)];
@@ -265,6 +293,26 @@ describe('ProofProcessor message handling & process guards', () => {
         expect(proofReorderCalls).toEqual([[3, 1, 2, 0, 4]]);
         expect(proofResetCalls).toBe(1);
     });
+
+    it.each(['', 'x'.repeat(129)])(
+        'rejects %j target identity at live initialization and before scalar/reorder/reset mutation',
+        async (trackId) => {
+            const proc = await loadProcessor();
+            initializeLiveProof(proc, trackId);
+            send(
+                proc,
+                liveControl('set-fallback-param', trackId, 1, {
+                    value: -1,
+                    target: { trackId, deviceId: 'proof-1', deviceType: 'proof', parameterId: 'lim_ceiling' },
+                })
+            );
+            send(proc, liveControl('reorder-modules', trackId, 2, { order: [0, 1, 2, 3, 4] }));
+            send(proc, liveControl('reset-integrated', trackId, 3));
+            expect(proofParamCalls).toEqual([]);
+            expect(proofReorderCalls).toEqual([]);
+            expect(proofResetCalls).toBe(0);
+        }
+    );
 
     it('reports a latency-changed event when a message shifts the reported latency', async () => {
         const proc = await loadProcessor();
