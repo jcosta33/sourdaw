@@ -5,7 +5,7 @@ import { KeyboardSplit } from '../KeyboardSplit';
 
 describe('KeyboardSplit', () => {
     it('should render', () => {
-        const { container } = render(<KeyboardSplit width={400} height={40} splitPoint={60} />);
+        const { container } = render(<KeyboardSplit width={400} height={40} />);
         expect(container.querySelector('div')).toBeTruthy();
     });
 });

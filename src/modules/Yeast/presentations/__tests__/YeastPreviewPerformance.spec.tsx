@@ -214,6 +214,7 @@ describe('Yeast preview performance', () => {
             droppedVisualEvents: 0,
             processorActivity: [],
             summary: '0 upcoming events',
+            soundingPitches: [],
         });
     });
 });

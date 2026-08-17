@@ -27,21 +27,6 @@ describe('KeyboardSplit — octave labels', () => {
     });
 });
 
-describe('KeyboardSplit — split zone overlay', () => {
-    it('renders split zone overlay when splitPoint is provided', () => {
-        const { container } = renderKb({ splitPoint: 60 });
-        // The split zone is a div with opacity-10 and var(--color-accent-cyan) background
-        const splitZone = container.querySelector('[style*="--color-accent-cyan"]');
-        expect(splitZone).not.toBeNull();
-    });
-
-    it('does not render split zone overlay when splitPoint is undefined', () => {
-        const { container } = renderKb({ splitPoint: undefined });
-        const splitZone = container.querySelector('[style*="--color-accent-cyan"]');
-        expect(splitZone).toBeNull();
-    });
-});
-
 describe('KeyboardSplit — key rendering', () => {
     it('renders white and black keys as absolutely positioned divs', () => {
         const { container } = renderKb();
