@@ -44,13 +44,67 @@ impl Default for DictationState {
     }
 }
 
-/// Releases `session_active` when a spawned dictation session ends, on every
-/// exit path including a panic unwind on the `spawn_blocking` thread.
-struct DictationSessionGuard(Arc<AtomicBool>);
+/// Releases `session_active` when a spawned dictation session ends, and
+/// guarantees the "every finished session resolves to an event" contract
+/// even when the session never gets to run its own emit.
+///
+/// Constructed by `start_dictation` immediately after the compare-exchange
+/// that claims `session_active`, then moved whole into the `spawn_blocking`
+/// closure — never built as the closure's first statement. A closure that
+/// captures an already-built guard drops that guard's fields when the
+/// closure itself is dropped, whether or not the closure body ever ran; a
+/// guard built *inside* the closure only exists once the closure starts
+/// executing, so a task the blocking pool never picks up (runtime shutdown,
+/// a rejected spawn) would leave `session_active` wedged `true` forever with
+/// no `stop_dictation` able to clear it.
+struct DictationSessionGuard {
+    session_active: Arc<AtomicBool>,
+    events: Arc<dyn EventSink>,
+    /// Set by `emit_result`/`emit_error` once the session has told the
+    /// frontend what happened, so `Drop`'s fallback below does not also
+    /// double-emit for a path that already resolved normally.
+    emitted: bool,
+}
+
+impl DictationSessionGuard {
+    fn new(session_active: Arc<AtomicBool>, events: Arc<dyn EventSink>) -> Self {
+        Self {
+            session_active,
+            events,
+            emitted: false,
+        }
+    }
+
+    /// Emit the session's `dictation-result` and mark it resolved.
+    fn emit_result(&mut self, result: DictationResult) {
+        self.emitted = true;
+        self.events.emit("dictation-result", result);
+    }
+
+    /// Emit the session's `dictation-error` and mark it resolved.
+    fn emit_error(&mut self, message: String) {
+        self.emitted = true;
+        self.events
+            .emit("dictation-error", DictationErrorPayload { message });
+    }
+}
 
 impl Drop for DictationSessionGuard {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        self.session_active.store(false, Ordering::SeqCst);
+        // Every ordinary exit path calls `emit_result`/`emit_error` before
+        // returning. A path that did not — a panic unwinding out of
+        // `transcribe` (whisper FFI included), or the closure never running
+        // at all — still owes the frontend a resolution, or it sits waiting
+        // on the defensive timeout instead of the real event contract.
+        if !self.emitted {
+            self.events.emit(
+                "dictation-error",
+                DictationErrorPayload {
+                    message: "Dictation session ended unexpectedly.".to_string(),
+                },
+            );
+        }
     }
 }
 
@@ -242,12 +296,15 @@ pub async fn start_dictation(
     // Reset stop flag
     state.stop_flag.store(false, Ordering::SeqCst);
     let stop = state.stop_flag.clone();
-    let session_active = state.session_active.clone();
     let ctx = loaded.ctx;
 
-    tokio::task::spawn_blocking(move || {
-        let _session_guard = DictationSessionGuard(session_active);
+    // Built here, right after the compare-exchange above, and moved whole
+    // into the closure below — see `DictationSessionGuard` for why building
+    // it as the closure's first statement would leave a gap where a spawn
+    // that never runs wedges `session_active` forever.
+    let mut session_guard = DictationSessionGuard::new(state.session_active.clone(), events);
 
+    tokio::task::spawn_blocking(move || {
         let record_result = record_mic(&stop);
         match record_result {
             Ok((samples, sample_rate, channels)) => {
@@ -265,12 +322,8 @@ pub async fn start_dictation(
                     match resample_to_16k(&mono, sample_rate) {
                         Ok(resampled) => resampled,
                         Err(e) => {
-                            events.emit(
-                                "dictation-error",
-                                DictationErrorPayload {
-                                    message: format!("Resampling the recording failed: {e}"),
-                                },
-                            );
+                            session_guard
+                                .emit_error(format!("Resampling the recording failed: {e}"));
                             return;
                         }
                     }
@@ -284,38 +337,27 @@ pub async fn start_dictation(
                         let duration_ms = start.elapsed().as_millis() as u64;
                         match resolve_dictation_emission(text, duration_ms) {
                             DictationEmission::Result(result) => {
-                                events.emit("dictation-result", result);
+                                session_guard.emit_result(result);
                             }
                             DictationEmission::TooLong => {
-                                events.emit(
-                                    "dictation-error",
-                                    DictationErrorPayload {
-                                        message: "The transcription was too long to deliver."
-                                            .to_string(),
-                                    },
+                                session_guard.emit_error(
+                                    "The transcription was too long to deliver.".to_string(),
                                 );
                             }
                         }
                     }
                     Err(e) => {
-                        events.emit(
-                            "dictation-error",
-                            DictationErrorPayload {
-                                message: format!("Transcription failed: {e}"),
-                            },
-                        );
+                        session_guard.emit_error(format!("Transcription failed: {e}"));
                     }
                 }
             }
             Err(e) => {
-                events.emit(
-                    "dictation-error",
-                    DictationErrorPayload {
-                        message: format!("Recording failed: {e}"),
-                    },
-                );
+                session_guard.emit_error(format!("Recording failed: {e}"));
             }
         }
+        // `session_guard` drops here: `session_active` is released and, on
+        // every path above, `emitted` is already `true` so Drop's fallback
+        // stays silent.
     });
 
     Ok(())
@@ -544,13 +586,95 @@ mod tests {
         assert!(try_begin_dictation_session(&session_active).is_ok());
     }
 
+    /// Collects every event a mock `EventSink` receives, so a test can assert
+    /// exactly what a `DictationSessionGuard` emitted.
+    struct RecordingEventSink {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl RecordingEventSink {
+        fn new() -> Self {
+            Self {
+                events: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn events(&self) -> Vec<(String, serde_json::Value)> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    impl EventSink for RecordingEventSink {
+        fn emit_json(&self, event: &str, payload: serde_json::Value) {
+            self.events
+                .lock()
+                .unwrap()
+                .push((event.to_string(), payload));
+        }
+    }
+
     #[test]
-    fn dictation_session_guard_releases_the_flag_on_drop() {
+    fn emit_result_releases_the_flag_and_marks_the_session_resolved() {
         let session_active = Arc::new(AtomicBool::new(true));
+        let sink = Arc::new(RecordingEventSink::new());
         {
-            let _guard = DictationSessionGuard(session_active.clone());
+            let mut guard = DictationSessionGuard::new(session_active.clone(), sink.clone());
+            guard.emit_result(DictationResult {
+                text: "hi".to_string(),
+                duration_ms: 10,
+            });
             assert!(session_active.load(Ordering::SeqCst));
         }
         assert!(!session_active.load(Ordering::SeqCst));
+
+        // Drop's fallback must not also fire once the session already
+        // resolved through `emit_result`.
+        let events = sink.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "dictation-result");
+    }
+
+    /// Regression: a panic unwinding out of the spawned session (whisper FFI
+    /// included) used to release `session_active` via `Drop` but emit
+    /// nothing, leaving the frontend to fall back on the 45s timeout instead
+    /// of the "every finished session resolves to an event" contract.
+    #[test]
+    fn a_panic_inside_the_session_still_yields_exactly_one_dictation_error() {
+        let session_active = Arc::new(AtomicBool::new(true));
+        let sink = Arc::new(RecordingEventSink::new());
+
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = DictationSessionGuard::new(session_active.clone(), sink.clone());
+            panic!("simulated whisper FFI panic");
+        }));
+        assert!(outcome.is_err());
+
+        assert!(!session_active.load(Ordering::SeqCst));
+        let events = sink.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "dictation-error");
+    }
+
+    /// Regression: the guard used to be built as the closure's first
+    /// statement, so a spawned task the blocking pool never ran (a rejected
+    /// spawn, or a shutdown racing the spawn) left `session_active` wedged
+    /// `true` forever with nothing able to clear it. Building the guard
+    /// right after the compare-exchange and moving it whole into the
+    /// closure means even a closure that is dropped without ever running
+    /// still releases the flag, because dropping the closure drops its
+    /// already-captured guard.
+    #[test]
+    fn a_guard_that_is_never_run_still_clears_the_flag() {
+        let session_active = Arc::new(AtomicBool::new(true));
+        let sink = Arc::new(RecordingEventSink::new());
+
+        let guard = DictationSessionGuard::new(session_active.clone(), sink.clone());
+        // Simulates a closure that captured the guard but was dropped
+        // before its body ever executed.
+        drop(guard);
+
+        assert!(!session_active.load(Ordering::SeqCst));
+        assert_eq!(sink.events().len(), 1);
+        assert_eq!(sink.events()[0].0, "dictation-error");
     }
 }

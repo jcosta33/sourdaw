@@ -26,13 +26,17 @@ pub struct PostProcessRequest {
 /// which input drove it.
 const MAX_TARGET_DURATION_SECONDS: f32 = 3600.0;
 
-/// Upper bound on the resulting sample count per channel, checked again at
-/// the point of allocation. `total_seconds` alone bounds `target_bpm` and
-/// `target_bars`, but the sample rate itself comes from the input WAV's own
-/// header, so this is the backstop against a corrupt or extreme header
-/// value multiplying back up to an unbounded allocation. Sized for one hour
-/// at a generous professional sample rate (192 kHz).
-const MAX_TARGET_SAMPLES: usize = 192_000 * 3600;
+/// Upper bound on the resulting sample count *summed across every channel*
+/// (~2.75 GB of `f32` storage), checked again at the point of allocation.
+/// `total_seconds` alone bounds `target_bpm` and `target_bars`, but the
+/// sample rate itself comes from the input WAV's own header, so this is the
+/// backstop against a corrupt or extreme header value multiplying back up to
+/// an unbounded allocation. Sized for one hour at a generous professional
+/// sample rate (192 kHz) *total*, not per channel — `Vec::resize` runs once
+/// per channel below, so a per-channel-only bound would still let a
+/// multi-channel file multiply past it one `resize` at a time, which is
+/// exactly the multi-gigabyte allocation this bound exists to prevent.
+const MAX_TARGET_SAMPLES_TOTAL: usize = 192_000 * 3600;
 
 /// Validate a post-process request before any I/O or allocation happens.
 /// Returns the resolved target duration in seconds so the caller does not
@@ -72,6 +76,43 @@ fn validate_post_process_request(request: &PostProcessRequest) -> Result<f32, St
     Ok(total_seconds)
 }
 
+/// Resolve the per-channel target sample count for a request whose duration
+/// has already been validated, and check the result against
+/// `MAX_TARGET_SAMPLES_TOTAL`. Separated from `post_process_audio` so the
+/// bound — including the "per channel × channel count" multiplication —
+/// is testable without a real WAV file on disk.
+///
+/// `sample_rate` comes from the input WAV's own header, not from
+/// `validate_post_process_request`, so it is checked again here rather than
+/// trusted blindly.
+fn resolve_target_samples(
+    total_seconds: f32,
+    sample_rate: u32,
+    channels: u16,
+) -> Result<usize, String> {
+    let target_samples_f64 = f64::from(total_seconds) * f64::from(sample_rate);
+    if !target_samples_f64.is_finite() || target_samples_f64 < 0.0 {
+        return Err(format!(
+            "resulting sample count ({target_samples_f64}) is not a valid size"
+        ));
+    }
+    let target_samples = target_samples_f64 as usize;
+
+    // The budget covers every channel combined — `Vec::resize` runs once per
+    // channel below, so bounding only the per-channel count would still let
+    // a multi-channel file multiply past it one `resize` at a time.
+    target_samples
+        .checked_mul(channels as usize)
+        .filter(|&total_samples| total_samples <= MAX_TARGET_SAMPLES_TOTAL)
+        .ok_or_else(|| {
+            format!(
+                "resulting sample count ({target_samples} per channel × {channels} channels) exceeds the {MAX_TARGET_SAMPLES_TOTAL}-sample total budget"
+            )
+        })?;
+
+    Ok(target_samples)
+}
+
 /// Post-process a generated WAV: trim/pad to exact bar length,
 /// normalize, and apply loop-friendly fades.
 pub fn post_process_audio(request: PostProcessRequest) -> Result<String, String> {
@@ -83,19 +124,8 @@ pub fn post_process_audio(request: PostProcessRequest) -> Result<String, String>
     // 1. Read input WAV
     let (mut audio, sample_rate, channels) = read_wav(&input)?;
 
-    // 2. Calculate target length in samples. `total_seconds` is already
-    // bounded and finite; `sample_rate` comes from the input WAV's own
-    // header and is checked again here rather than trusted blindly.
-    let target_samples_f64 = f64::from(total_seconds) * f64::from(sample_rate);
-    if !target_samples_f64.is_finite()
-        || target_samples_f64 < 0.0
-        || target_samples_f64 > MAX_TARGET_SAMPLES as f64
-    {
-        return Err(format!(
-            "resulting sample count ({target_samples_f64}) exceeds the {MAX_TARGET_SAMPLES}-sample bound"
-        ));
-    }
-    let target_samples = target_samples_f64 as usize;
+    // 2. Calculate target length in samples
+    let target_samples = resolve_target_samples(total_seconds, sample_rate, channels)?;
 
     // 3. Trim or pad to exact bar length
     for ch in audio.iter_mut() {
@@ -117,6 +147,26 @@ pub fn post_process_audio(request: PostProcessRequest) -> Result<String, String>
 
 // ── WAV I/O ──────────────────────────────────────────────────────────────
 
+/// Validate an integer-format WAV's `bits_per_sample` before it drives a bit
+/// shift.
+///
+/// hound 3.5.1 overwrites `WavSpec.bits_per_sample` with the format chunk's
+/// `wValidBitsPerSample` when the file is `WAVEFORMATEXTENSIBLE`, *after* its
+/// own header checks — so a crafted file can carry an out-of-range value
+/// (e.g. 200) straight past hound and into `1i64 << (bits_per_sample - 1)`,
+/// which panics on shift overflow in debug and silently wraps to the wrong
+/// scale in release. `bits_per_sample == 0` panics on unsigned subtraction
+/// underflow even in debug alone. 8..=32 covers every bit depth hound's own
+/// writer or a real capture device produces.
+fn validate_int_bits_per_sample(bits_per_sample: u16) -> Result<u16, String> {
+    if !(8..=32).contains(&bits_per_sample) {
+        return Err(format!(
+            "unsupported WAV bits_per_sample for integer samples: {bits_per_sample} (must be 8..=32)"
+        ));
+    }
+    Ok(bits_per_sample)
+}
+
 fn read_wav(path: &Path) -> Result<(Vec<Vec<f32>>, u32, u16), String> {
     let reader = WavReader::open(path).map_err(|e| format!("WAV read error: {e}"))?;
     let spec = reader.spec();
@@ -129,7 +179,8 @@ fn read_wav(path: &Path) -> Result<(Vec<Vec<f32>>, u32, u16), String> {
             .map(|s| s.unwrap_or(0.0))
             .collect(),
         SampleFormat::Int => {
-            let max_val = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            let bits_per_sample = validate_int_bits_per_sample(spec.bits_per_sample)?;
+            let max_val = (1i64 << (bits_per_sample - 1)) as f32;
             reader
                 .into_samples::<i32>()
                 .map(|s| s.unwrap_or(0) as f32 / max_val)
@@ -275,5 +326,58 @@ mod tests {
     fn post_process_audio_returns_an_error_instead_of_panicking_on_malicious_input() {
         let result = post_process_audio(request(f32::NAN, u32::MAX, None));
         assert!(result.is_err());
+    }
+
+    /// Regression: the original bound checked the per-channel sample count
+    /// alone (192_000 * 3600), so a stereo file just under it still passed —
+    /// `Vec::resize` then ran twice, once per channel, allocating roughly
+    /// double the budget the bound claimed to enforce. The bound is now a
+    /// TOTAL across channels, so the identical per-channel count must be
+    /// rejected once `channels` is 2.
+    #[test]
+    fn rejects_a_stereo_request_just_under_the_old_per_channel_bound_but_over_the_total_budget() {
+        let sample_rate = 192_000u32;
+        let total_seconds = 3599.99f32; // per channel: just under 691_200_000
+        let channels = 2u16;
+
+        let per_channel_only = resolve_target_samples(total_seconds, sample_rate, 1).unwrap();
+        assert!(per_channel_only <= MAX_TARGET_SAMPLES_TOTAL);
+
+        let result = resolve_target_samples(total_seconds, sample_rate, channels);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn accepts_a_mono_request_exactly_at_the_total_budget() {
+        let target_samples = resolve_target_samples(3600.0, 192_000, 1).unwrap();
+        assert_eq!(target_samples, MAX_TARGET_SAMPLES_TOTAL);
+    }
+
+    #[test]
+    fn rejects_a_multi_channel_request_that_multiplies_past_the_total_budget() {
+        // A 4-channel file at a modest duration/rate that a per-channel-only
+        // bound would pass comfortably, but that exceeds the total budget
+        // once every channel's `resize` is counted.
+        let result = resolve_target_samples(3600.0, 192_000, 4);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_bits_per_sample_outside_8_to_32() {
+        assert!(validate_int_bits_per_sample(0).is_err());
+        assert!(validate_int_bits_per_sample(7).is_err());
+        // The value hound's own header checks can be bypassed for via a
+        // crafted WAVEFORMATEXTENSIBLE `wValidBitsPerSample` field, per the
+        // hound 3.5.1 quirk documented on `validate_int_bits_per_sample`.
+        assert!(validate_int_bits_per_sample(200).is_err());
+        assert!(validate_int_bits_per_sample(u16::MAX).is_err());
+    }
+
+    #[test]
+    fn accepts_bits_per_sample_within_8_to_32() {
+        assert!(validate_int_bits_per_sample(8).is_ok());
+        assert!(validate_int_bits_per_sample(16).is_ok());
+        assert!(validate_int_bits_per_sample(24).is_ok());
+        assert!(validate_int_bits_per_sample(32).is_ok());
     }
 }

@@ -118,9 +118,22 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const dictationResultUnlistenRef = useRef<(() => void) | null>(null);
     const dictationErrorUnlistenRef = useRef<(() => void) | null>(null);
     const dictationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const dictationErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const modeRef = useRef<VoiceInputMode>(null);
     const isListeningRef = useRef(false);
     const isMountedRef = useRef(true);
+    // Incremented once per attempted Whisper session. Every async handler
+    // and ref-write registered during a session captures the generation it
+    // started with and checks it against the current value before acting,
+    // so a stale session — superseded by a newer start, or unmounted — can
+    // never clobber state a later session owns.
+    const dictationGenerationRef = useRef(0);
+    // Synchronous re-entrancy guard for startWhisperRecording. `isListening`
+    // state lags behind a rapid double-tap by at least one render, so a
+    // second tap can read the stale `false` and start a second session
+    // before the first finishes registering its listeners. A ref is read
+    // and written immediately, closing that window.
+    const whisperStartInFlightRef = useRef(false);
 
     // Keep ref in sync with state
     useEffect(() => {
@@ -167,16 +180,35 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     };
 
     const showDictationError = (message: string): void => {
+        if (dictationErrorTimeoutRef.current !== null) {
+            clearTimeout(dictationErrorTimeoutRef.current);
+        }
         setErrorText(message);
-        setTimeout(() => {
+        dictationErrorTimeoutRef.current = setTimeout(() => {
+            dictationErrorTimeoutRef.current = null;
             setErrorText('');
         }, 3000);
     };
 
     const startWhisperRecording = async (): Promise<void> => {
+        // Double-tap guard: a second call while the first is still awaiting
+        // model load / listener registration / `startDictation` bails out
+        // immediately instead of racing it into a second set of listeners.
+        if (whisperStartInFlightRef.current) {
+            return;
+        }
+        whisperStartInFlightRef.current = true;
+        const generation = ++dictationGenerationRef.current;
+        const isCurrentSession = (): boolean => {
+            return isMountedRef.current && generation === dictationGenerationRef.current;
+        };
+
         try {
             // Auto-download and load model on first use
             await ensureWhisperLoaded();
+            if (!isCurrentSession()) {
+                return;
+            }
 
             // A prior session may still be live if recording restarts before a
             // result arrived — tear it down so listeners and timers do not
@@ -187,6 +219,9 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             // empty transcription, so this is the only path that needs to
             // clear "transcribing" on the happy path.
             const resultUnlisten = await onDictationResult((result) => {
+                if (generation !== dictationGenerationRef.current) {
+                    return;
+                }
                 const text = result.text?.trim() ?? '';
                 if (text) {
                     setFinalText(text);
@@ -195,9 +230,10 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 syncVoiceStatus({ isListening: false, transcribing: false });
                 cleanupWhisperRecording();
             });
-            // If the component unmounted while we awaited the listener
-            // registration, release it immediately instead of leaking it.
-            if (!isMountedRef.current) {
+            // If the component unmounted, or a newer session superseded this
+            // one, while we awaited the listener registration, release it
+            // immediately instead of leaking it or double-registering.
+            if (!isCurrentSession()) {
                 resultUnlisten();
                 return;
             }
@@ -207,12 +243,15 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             // resample, or transcription — so the UI never sits stuck in
             // "transcribing" waiting for an event that will never arrive.
             const errorUnlisten = await onDictationError((error) => {
+                if (generation !== dictationGenerationRef.current) {
+                    return;
+                }
                 logger.warn(`Native dictation failed: ${error.message}`);
                 syncVoiceStatus({ isListening: false, transcribing: false });
                 showDictationError(error.message);
                 cleanupWhisperRecording();
             });
-            if (!isMountedRef.current) {
+            if (!isCurrentSession()) {
                 errorUnlisten();
                 return;
             }
@@ -220,6 +259,9 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
             // Start native recording via cpal + whisper inference
             await startDictation();
+            if (!isCurrentSession()) {
+                return;
+            }
 
             modeRef.current = 'whisper';
             setVoiceMode('whisper');
@@ -230,14 +272,22 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             // Defensive backstop: if neither event above ever arrives, do not
             // strand the UI in "transcribing" forever.
             dictationTimeoutRef.current = setTimeout(() => {
+                if (generation !== dictationGenerationRef.current) {
+                    return;
+                }
                 logger.warn('Native dictation timed out waiting for a result');
                 syncVoiceStatus({ isListening: false, transcribing: false });
                 showDictationError('Voice dictation timed out. Please try again.');
                 cleanupWhisperRecording();
             }, DICTATION_TIMEOUT_MS);
         } catch (error: unknown) {
-            logger.warn(`Whisper recording failed: ${String(error)}`);
-            setListening(false);
+            const message = error instanceof Error ? error.message : String(error);
+            logger.warn(`Whisper recording failed: ${message}`);
+            cleanupWhisperRecording();
+            syncVoiceStatus({ isListening: false, transcribing: false });
+            showDictationError(message);
+        } finally {
+            whisperStartInFlightRef.current = false;
         }
     };
 
@@ -412,6 +462,10 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 recognitionRef.current.abort();
             }
             cleanupWhisperRecording();
+            if (dictationErrorTimeoutRef.current !== null) {
+                clearTimeout(dictationErrorTimeoutRef.current);
+                dictationErrorTimeoutRef.current = null;
+            }
         };
     }, []);
 

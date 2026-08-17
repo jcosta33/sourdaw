@@ -588,4 +588,50 @@ describe('useVoiceRecording', () => {
 
         expect(unlisten).toHaveBeenCalledTimes(1);
     });
+
+    it('shows an error and clears listening/transcribing state when startDictation rejects', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+        mocks.startDictation.mockRejectedValueOnce(new Error('native start failed'));
+        const resultUnlisten = vi.fn<() => void>();
+        const errorUnlisten = vi.fn<() => void>();
+        mocks.onDictationResult.mockResolvedValueOnce(resultUnlisten);
+        mocks.onDictationError.mockResolvedValueOnce(errorUnlisten);
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        expect(result.current.errorText).toBe('native start failed');
+        expect(result.current.isListening).toBe(false);
+        expect(result.current.transcribing).toBe(false);
+        expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
+        // The listeners registered before the rejection must not be left
+        // dangling — the catch path tears the session down.
+        expect(resultUnlisten).toHaveBeenCalledTimes(1);
+        expect(errorUnlisten).toHaveBeenCalledTimes(1);
+    });
+
+    it('registers native listeners exactly once for a rapid double-tap', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // Two taps issued in the same tick, before the first async start has
+        // finished registering listeners — the in-flight guard must block
+        // the second one rather than racing it into a duplicate session.
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+            result.current.toggleListening();
+        });
+
+        expect(mocks.onDictationResult).toHaveBeenCalledTimes(1);
+        expect(mocks.onDictationError).toHaveBeenCalledTimes(1);
+        expect(mocks.startDictation).toHaveBeenCalledTimes(1);
+        expect(result.current.isListening).toBe(true);
+        expect(result.current.voiceMode).toBe('whisper');
+    });
 });
