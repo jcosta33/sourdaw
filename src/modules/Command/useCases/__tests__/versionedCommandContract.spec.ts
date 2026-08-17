@@ -935,6 +935,20 @@ describe('versioned command contract', () => {
     });
 
     it('rejects execution after an application-owned device contract changes', async () => {
+        const execute = vi.fn(() => ({ status: 'written' as const }));
+        registerHandlerMap({
+            addDevice: {
+                execute,
+                describe: () => ({
+                    label: 'Add compressor',
+                    inverseAction: {
+                        type: 'removeDevice',
+                        payload: { trackId: 'track-1', deviceId: 'device-command-1' },
+                    },
+                }),
+                undoable: true,
+            },
+        });
         const command = createExecutionCommandEnvelope({
             action: {
                 type: 'addDevice',
@@ -970,5 +984,6 @@ describe('versioned command contract', () => {
             status: 'conflicted',
             reason: 'Command batch base revision does not match current project state',
         });
+        expect(execute).not.toHaveBeenCalled();
     });
 });

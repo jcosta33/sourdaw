@@ -220,6 +220,45 @@ describe('handleLoadPreset', () => {
         );
     });
 
+    it('initializes a newly created Toaster folder from its committed after-state, not its empty before-state', async () => {
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }],
+        });
+        const toasterDevice: DeviceSnapshot = {
+            id: 'toaster-device',
+            name: 'Toaster',
+            type: 'toaster',
+            bypassed: false,
+            parameterValues: { masterGain: 1.2 },
+        };
+        const toasterAction = action({
+            trackId: 'toaster-folder',
+            expectedProjectRevision: undefined,
+            expectedBefore: { id: 'toaster-folder', kind: 'folder', devices: [] },
+            devices: [toasterDevice],
+        });
+
+        const result = await handleLoadPreset.execute(toasterAction);
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Toaster preset load did not schedule its post-commit runtime effect');
+        }
+        await result.afterCommit();
+
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({
+                        id: 'toaster-folder',
+                        kind: 'folder',
+                        devices: [{ id: 'toaster-device', type: 'toaster', parameterIds: ['masterGain'] }],
+                    }),
+                ],
+            })
+        );
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('toaster-folder', 'toaster-device', 'masterGain', 1.2);
+    });
+
     it('rejects a stale collaborator revision before the project write or runtime effect', async () => {
         mocks.captureProjectRevision.mockReturnValue('project-2');
 

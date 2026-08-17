@@ -139,7 +139,7 @@ function createPostCommitRuntimeEffect(before: Track, after: Track): () => void 
         if (failure) {
             throw failure;
         }
-        if (!shouldCreateLiveTrackStrip(before)) {
+        if (!shouldCreateLiveTrackStrip(after)) {
             return;
         }
         const result = getTrackStrip(after.id)

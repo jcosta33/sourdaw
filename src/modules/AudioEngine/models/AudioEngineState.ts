@@ -503,15 +503,6 @@ export type AudioEngine = {
      *  implementation for why "unavailable" must not collapse into `0`. */
     getMasterPeakLevel(): number | null;
     getBusPeakLevel(busId: string): number;
-    addDeviceToStrip(
-        trackId: string,
-        deviceId: string,
-        deviceType: string,
-        externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[],
-        parameterIds?: readonly string[]
-    ): void;
-    removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;

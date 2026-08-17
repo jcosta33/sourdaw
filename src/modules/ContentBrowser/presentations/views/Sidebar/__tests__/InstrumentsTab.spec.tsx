@@ -18,12 +18,13 @@ type FactoryPresetMock = {
     isFactory: boolean;
 };
 
-// The Levain card must resolve the track it just created and forward the new
-// device's id to showLevain — mirror Fermenter/Toaster. Mock the create + lookup
-// so the handler has a concrete device id to pass on.
 const arrangementMocks = vi.hoisted(() => ({
     compileLoadPresetActions: vi.fn(),
     getFactoryPresets: vi.fn<() => FactoryPresetMock[]>(() => []),
+}));
+
+const toasterMocks = vi.hoisted(() => ({
+    compileToasterTrackStackActions: vi.fn(),
 }));
 
 const commandMocks = vi.hoisted(() => ({
@@ -38,12 +39,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     saveCurrentAsPreset: vi.fn(),
     deleteUserPreset: vi.fn(),
     compileLoadPresetActions: arrangementMocks.compileLoadPresetActions,
-    getAllTracks: vi.fn(() => [
-        {
-            id: 'levain-track-1',
-            devices: [{ id: 'levain-device-9', type: 'levain', name: 'Levain', parameterValues: {} }],
-        },
-    ]),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -51,8 +46,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppActionBatch: commandMocks.executeAppActionBatch,
 }));
 
-vi.mock('#/modules/GrandBoule/useCases', () => ({ createGrandBouleTrack: vi.fn(() => 'grand-boule-1') }));
-vi.mock('#/modules/Toaster/useCases', () => ({ createDrumTrackStack: vi.fn(() => 'toaster-1') }));
+vi.mock('#/modules/Toaster/useCases', () => ({
+    compileToasterTrackStackActions: toasterMocks.compileToasterTrackStackActions,
+}));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
@@ -120,6 +116,7 @@ describe('InstrumentsTab', () => {
         vi.clearAllMocks();
         arrangementMocks.getFactoryPresets.mockReturnValue([]);
         commandMocks.executeAppAction.mockResolvedValue(undefined);
+        commandMocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
     });
 
     it('should render without crashing', () => {
@@ -243,5 +240,77 @@ describe('InstrumentsTab', () => {
         // unmounted — the card created a track but never opened its panel, unlike
         // every other instrument card.
         await waitFor(() => expect(showLevain).toHaveBeenCalledWith('levain-device-9'));
+    });
+
+    it('creates Toaster through one compiled action batch before opening its panel', async () => {
+        const showToaster = vi.fn();
+        const actions = [
+            { type: 'addTrack', payload: { id: 'toaster-parent', name: 'Toaster Kit', kind: 'folder' } },
+            { type: 'loadPreset', payload: { presetId: 'toaster-default', trackId: 'toaster-parent' } },
+        ] as const;
+        toasterMocks.compileToasterTrackStackActions.mockReturnValue({
+            actions,
+            deviceIds: ['toaster-device-1'],
+            groupLabel: 'Create Toaster Kit',
+            trackId: 'toaster-parent',
+        });
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview as any}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions({ showToaster })}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /^Toaster/ }));
+
+        await waitFor(() =>
+            expect(commandMocks.executeAppActionBatch).toHaveBeenCalledWith(
+                actions,
+                expect.objectContaining({ groupLabel: 'Create Toaster Kit' })
+            )
+        );
+        expect(showToaster).toHaveBeenCalledWith('toaster-device-1');
+    });
+
+    it('creates Grand Boule through the catalog action before opening its panel', async () => {
+        const showGrandBoule = vi.fn();
+        const action = {
+            type: 'loadPreset',
+            payload: { presetId: 'grand-boule-default', trackId: 'grand-track' },
+        } as const;
+        arrangementMocks.compileLoadPresetActions.mockReturnValue({
+            actions: [action],
+            deviceIds: ['grand-device-1'],
+            groupLabel: 'Load preset',
+            trackId: 'grand-track',
+        });
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview as any}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions({ showGrandBoule })}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /^Grand Boule/ }));
+
+        await waitFor(() =>
+            expect(arrangementMocks.compileLoadPresetActions).toHaveBeenCalledWith({ presetId: 'grand-boule-default' })
+        );
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
+        expect(showGrandBoule).toHaveBeenCalledWith('grand-device-1');
     });
 });

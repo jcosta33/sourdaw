@@ -14,10 +14,8 @@ import {
     saveCurrentAsPreset,
     deleteUserPreset,
     compileLoadPresetActions,
-    getAllTracks,
 } from '#/modules/Arrangement/useCases';
-import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases';
-import { createDrumTrackStack } from '#/modules/Toaster/useCases';
+import { compileToasterTrackStackActions } from '#/modules/Toaster/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
@@ -200,17 +198,20 @@ export const InstrumentsTab = ({
     };
 
     const handleAddToasterTrack = () => {
-        const trackId = createDrumTrackStack();
-        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
-        const device = track?.devices.find((data) => data.type === 'toaster');
-        panelActions?.showToaster(device?.id ?? null);
+        const plan = compileToasterTrackStackActions();
+        if (!plan) {
+            notifyUser('Toaster Kit cannot be created in the current project.', 'error');
+            return;
+        }
+        void executePresetLoad(plan)
+            .then(() => panelActions?.showToaster(plan.deviceIds[0] ?? null))
+            .catch(() => notifyUser('Toaster Kit project changes require runtime retry or repair.', 'error'));
     };
 
     const handleAddGrandBouleTrack = () => {
-        const trackId = createGrandBouleTrack();
-        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
-        const device = track?.devices.find((data) => data.type === 'grand-boule');
-        panelActions?.showGrandBoule(device?.id ?? null);
+        void executeCatalogPreset('grand-boule-default').then((plan) => {
+            panelActions?.showGrandBoule(plan?.deviceIds[0] ?? null);
+        });
     };
 
     const handleAddLevainTrack = () => {

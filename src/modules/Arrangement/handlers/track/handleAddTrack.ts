@@ -12,8 +12,11 @@ type AddTrackAction = {
         initialAlternativeId?: string;
         initialDeviceId?: string;
         name: string;
-        kind: string;
+        kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+        parentId?: string;
+        outputId?: string;
         select?: boolean;
+        withoutDefaultDevice?: boolean;
     };
 };
 

@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
-import { createAudioEngine } from '../createWebAudioEngine';
+import {
+    createAudioEngineTopologyTestHarness as createAudioEngine,
+    type AudioEngineTopologyTestHarness,
+} from './createAudioEngineTopologyTestHarness';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
 import type {
@@ -491,7 +494,7 @@ function createTrackStripInitialization(
 }
 
 describe('AudioEngine', () => {
-    let engine: AudioEngine;
+    let engine: AudioEngineTopologyTestHarness;
     let mockCtx: MockAudioContext;
     let currentProjectRevision: string;
 
@@ -1926,7 +1929,7 @@ describe('AudioEngine', () => {
     // no-opping like the already-guarded methods. They must short-circuit on
     // `if (this.fallbackMode) return` so no graph work happens on the shim.
     describe('fallbackMode device-method guards', () => {
-        let fbEngine: AudioEngine;
+        let fbEngine: AudioEngineTopologyTestHarness;
 
         beforeEach(() => {
             // Force the constructor's AudioContext path to throw → fallbackMode.

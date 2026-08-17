@@ -1847,7 +1847,8 @@ class AudioEngineImpl implements AudioEngine {
         return this.busNodes.get(busId)?.getPeakLevel() ?? 0;
     }
 
-    public addDeviceToStrip(
+    /** Internal primitive exposed only by the repository-test harness below. */
+    protected addDeviceToStrip(
         trackId: string,
         deviceId: string,
         deviceType: string,
@@ -1880,7 +1881,8 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    public removeDeviceFromStrip(trackId: string, deviceId: string): void {
+    /** Internal primitive exposed only by the repository-test harness below. */
+    protected removeDeviceFromStrip(trackId: string, deviceId: string): void {
         if (this.fallbackMode) {
             return;
         }
@@ -2555,8 +2557,49 @@ class AudioEngineImpl implements AudioEngine {
     }
 }
 
-export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
-    return new AudioEngineImpl(providedContext);
+/** Test-only shape for low-level rollback fixtures; only the test-only factory overload returns it. */
+export type AudioEngineTopologyTestHarness = AudioEngine & {
+    addDeviceToStrip(
+        trackId: string,
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string,
+        precedingDeviceIds?: readonly string[],
+        parameterIds?: readonly string[]
+    ): void;
+    removeDeviceFromStrip(trackId: string, deviceId: string): void;
+};
+
+class AudioEngineTopologyTestHarnessImpl extends AudioEngineImpl implements AudioEngineTopologyTestHarness {
+    public override addDeviceToStrip(
+        trackId: string,
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string,
+        precedingDeviceIds?: readonly string[],
+        parameterIds?: readonly string[]
+    ): void {
+        super.addDeviceToStrip(trackId, deviceId, deviceType, externalInstanceId, precedingDeviceIds, parameterIds);
+    }
+
+    public override removeDeviceFromStrip(trackId: string, deviceId: string): void {
+        super.removeDeviceFromStrip(trackId, deviceId);
+    }
+}
+
+export function createAudioEngine(providedContext?: AudioContext): AudioEngine;
+/** @internal Repository tests only; production receives the narrower AudioEngine contract. */
+export function createAudioEngine(
+    providedContext: AudioContext | undefined,
+    options: Readonly<{ topologyTestHarness: true }>
+): AudioEngineTopologyTestHarness;
+export function createAudioEngine(
+    providedContext?: AudioContext,
+    options?: Readonly<{ topologyTestHarness: true }>
+): AudioEngine | AudioEngineTopologyTestHarness {
+    return options?.topologyTestHarness
+        ? new AudioEngineTopologyTestHarnessImpl(providedContext)
+        : new AudioEngineImpl(providedContext);
 }
 
 export const audioEngine = createAudioEngine();

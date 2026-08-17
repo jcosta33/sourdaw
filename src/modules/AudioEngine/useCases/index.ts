@@ -50,8 +50,6 @@ export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 export { decodeAudioFile } from './decodeAudioFile';
 export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
 
-export { addDeviceToStrip } from './deviceControls/addDeviceToStrip';
-export { removeDeviceFromStrip } from './deviceControls/removeDeviceFromStrip';
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';

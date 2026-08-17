@@ -625,6 +625,12 @@ export type AppAction =
               initialAlternativeId?: string;
               /** Internal replay metadata; provider payloads cannot set this field. */
               initialDeviceId?: string;
+              /** Internal arrangement composition metadata; provider payloads cannot set this field. */
+              parentId?: string;
+              /** Internal arrangement composition metadata; provider payloads cannot set this field. */
+              outputId?: string;
+              /** Internal arrangement composition metadata; provider payloads cannot set this field. */
+              withoutDefaultDevice?: boolean;
           };
       }
     | {

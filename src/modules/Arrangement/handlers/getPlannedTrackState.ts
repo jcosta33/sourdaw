@@ -11,6 +11,9 @@ function createPlannedTrack(input: {
     kind: 'audio' | 'midi' | 'bus' | 'folder';
     gain: number;
     initialDeviceId?: string;
+    parentId?: string;
+    outputId?: string;
+    withoutDefaultDevice?: boolean;
 }): Track {
     const alternativeId = `planned-alternative-${input.id}`;
     return createTrack({
@@ -21,6 +24,9 @@ function createPlannedTrack(input: {
         color: '#000000',
         initialAlternativeId: alternativeId,
         initialDeviceId: input.initialDeviceId,
+        parentId: input.parentId,
+        outputId: input.outputId,
+        withoutDefaultDevice: input.withoutDefaultDevice,
     });
 }
 
@@ -38,6 +44,9 @@ export function getPlannedTrackState(context: HandlerValidationContext, trackId:
                     kind: action.payload.kind,
                     gain: 0.8,
                     initialDeviceId: action.payload.initialDeviceId,
+                    parentId: action.payload.parentId,
+                    outputId: action.payload.outputId,
+                    withoutDefaultDevice: action.payload.withoutDefaultDevice,
                 }),
                 context
             );
