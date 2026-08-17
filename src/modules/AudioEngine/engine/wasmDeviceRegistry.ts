@@ -1027,15 +1027,9 @@ const grinderDescriptor: WasmDeviceDescriptor = {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
-        let publishedResult: GrinderNodeResult | null = null;
         let runtimeFailureHandled = false;
         const applyRuntimeFailure = (): void => {
-            if (
-                runtimeFailureHandled ||
-                runtimeFailureMessage === null ||
-                publishedNode === null ||
-                publishedResult === null
-            ) {
+            if (runtimeFailureHandled || runtimeFailureMessage === null || publishedNode === null) {
                 return;
             }
             runtimeFailureHandled = true;
@@ -1047,7 +1041,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
             pendingBypass = false;
             const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
             try {
-                publishedResult.destroy();
+                publishedNode.controller?.destroy?.();
             } catch (error) {
                 logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
             }
@@ -1142,8 +1136,11 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                         setPatch: result.setPatch,
                         setBypass: result.setBypass,
                         destroy: () => {
-                            result.destroy();
-                            clearReportedLatency(deviceId);
+                            try {
+                                result.destroy();
+                            } finally {
+                                clearReportedLatency(deviceId);
+                            }
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
@@ -1154,7 +1151,6 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     return;
                 }
                 publishedNode = loadedNode;
-                publishedResult = result;
                 applyRuntimeFailure();
                 return;
             })

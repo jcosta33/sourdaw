@@ -1018,7 +1018,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),
-                ready: Promise.resolve({ latency: 0 }),
+                ready: Promise.resolve({ latency: 128 }),
             };
             factoryMocks.createGrinderNode.mockResolvedValue(result);
             const onRuntimeFailure = vi.fn(() => true);
@@ -1034,6 +1034,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
             await loadPromise;
             const loaded = lastLoadedNode(deps.onLoaded);
+            expect(externalLatencyRegistry.has('grind-fault')).toBe(true);
             const reportRuntimeFailure = factoryMocks.createGrinderNode.mock.calls[0]?.[4];
             if (typeof reportRuntimeFailure !== 'function') {
                 throw new TypeError('expected GrinderNode to receive a post-ready runtime failure callback');
@@ -1046,6 +1047,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
             expect(loaded.controller?.ready).toBe(false);
             expect(result.destroy).toHaveBeenCalledOnce();
+            expect(externalLatencyRegistry.has('grind-fault')).toBe(false);
             expect(onRuntimeRecovery).toHaveBeenCalledWith(placeholder);
         });
 
