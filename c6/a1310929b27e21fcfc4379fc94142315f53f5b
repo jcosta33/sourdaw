@@ -1,0 +1,71 @@
+crates/daw-dsp/src/bacteria/engine.rs
+  s_ab5443e65c7fba::t_51b7250115946e 781-782,785,788-797
+  s_ab5443e65c7fba::t_7ca2d14263024a 827,829
+  s_ab5443e65c7fba::t_dfb2d168c53081 406-409,414-439
+  s_ab5443e65c7fba::t_d3b2ee81edbf73 1105-1109,1116-1123
+  s_ab5443e65c7fba::t_871fe4f90cdbac 1435-1436
+  s_ab5443e65c7fba::t_a2e01329216da3 182
+  s_ab5443e65c7fba::t_fa6394b73e87cb 25-45,80-87,94-96,99,102-107,109
+  s_ab5443e65c7fba::t_82e3486aef7e61 108,110
+  s_ab5443e65c7fba::t_1c2cae686e3c91 213-216,227-229
+  s_ab5443e65c7fba::t_c7a08fce7324ba 779
+  s_ab5443e65c7fba::t_78aeeb562d43e6 703-720
+  s_ab5443e65c7fba::t_45b727058cb0f1 205,207
+  s_ab5443e65c7fba::t_ef684a50bb4445 46-79
+  s_ab5443e65c7fba::t_58df5a55a3dc7e 896-901
+  s_ab5443e65c7fba::t_c23b59d18429f2 135-138,143-144,146-147,149
+  s_ab5443e65c7fba::t_921a8d1ab3c4db 319
+  s_ab5443e65c7fba::t_f9050ba6b9740a 934,936-949,951-952,958-959,961-963,970-984,987,989-993,995,999-1001,1064
+  s_ab5443e65c7fba::t_624a4461f20d0b 916-917
+  s_ab5443e65c7fba::t_2ab492d0d1292a 800
+  s_ab5443e65c7fba::t_e1f17cc33b703a 578
+  s_ab5443e65c7fba::t_bf67bef7a4708c 994,996-998,1002-1004,1049-1063
+  s_ab5443e65c7fba::t_bdb47ecf9a6132 2067-2621
+  s_ab5443e65c7fba::t_3ddbdd1d0824ca 931
+  s_ab5443e65c7fba::t_a78b0733580562 480-485,487-490
+  s_ab5443e65c7fba::t_6d948945aa4ddd 1005-1048
+  s_ab5443e65c7fba::t_ff6fb427484ab0 1160-1204,1206-1211,1213
+  s_ab5443e65c7fba::t_806a7e27e468ca 1314-1315,1317
+  s_ab5443e65c7fba::t_c2ad8b11bfa00b 1482-1485,1487-1495
+  s_ab5443e65c7fba::t_04c7620e33c2f8 1214,1216-1225,1229-1233,1241-1246,1254-1268
+  s_ab5443e65c7fba::t_11feda43bd012e 1499
+  s_ab5443e65c7fba::t_7610bcd5a4622d 1458-1462
+  s_ab5443e65c7fba::t_7f085c89e4f3a4 1331,1348-1380
+  s_ab5443e65c7fba::t_860024aaccc321 533-565
+  s_ab5443e65c7fba::t_d709427d3223a0 334-353,1381
+  s_ab5443e65c7fba::t_c8b580dd39f2cf 1286
+  s_ab5443e65c7fba::t_a9d677fb1b4a76 798
+crates/daw-dsp/src/bacteria/stft.rs
+  s_ab5443e65c7fba::t_ff592fe27d181d 486,581-650
+  s_ab5443e65c7fba::t_1c0bd1403e9a20 483-485
+  s_ab5443e65c7fba::t_cd03bbe54ef32d 197
+  s_ab5443e65c7fba::t_d3efb4d96db6a9 154-155
+  s_ab5443e65c7fba::t_b6c26464cea9af 241-255
+  s_ab5443e65c7fba::t_5718d720ce1956 20-23
+  s_ab5443e65c7fba::t_8dee52e8cfe541 364-365
+  s_ab5443e65c7fba::t_bdc57a05086c95 256,366,492,651
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_c45cbaf4183d51 1,836-891,893-895,914-961
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_0f358135ab8c4e 1,5-60,62-64,83-130
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_60ade0e2c37ba8 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ab5443e65c7fba::t_f66c69cf146884 1,836-891,893-895,914-961
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c6a1310929b27e21fcfc4379fc94142315f53f5b",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
