@@ -10,12 +10,22 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
+import { createProofRuntimeParameterIds } from '../models/ProofRuntimeControl';
+import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, PROOF_IDX } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+let nextWorkletControlGeneration = 1;
+
+function allocateWorkletControlGeneration(): number {
+    const generation = nextWorkletControlGeneration;
+    nextWorkletControlGeneration = generation >= Number.MAX_SAFE_INTEGER ? 1 : generation + 1;
+    return generation;
+}
 
 export type ProofMeterData = {
     inputLufs: number;
@@ -81,7 +91,9 @@ function projectProofMeter(view: Float32Array): ProofMeterData {
 export async function createProofNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    controlTarget?: RuntimeDeviceControlTarget,
+    onRuntimeFailure?: (message: string) => void
 ): Promise<ProofNodeResult> {
     // Proof's mastering telemetry (LUFS, true-peak, limiter GR) is SAB-backed.
     // Without SAB the UI would show flat curves and no GR indicator; the DSP
@@ -119,15 +131,59 @@ export async function createProofNode(
     let latencyCallback: ((latency: number) => void) | null = null;
     let sabSlot = telemetryAllocator.allocateSlot();
     let pollInterval: ReturnType<typeof setInterval> | null = null;
+    const workletGeneration = allocateWorkletControlGeneration();
+    const target = controlTarget
+        ? Object.freeze({
+              trackId: controlTarget.trackId,
+              deviceId: controlTarget.deviceId,
+              deviceType: 'proof',
+              parameterIds: createProofRuntimeParameterIds(),
+          })
+        : null;
+    let nextControlSequence = 1;
+    let destroyed = false;
+    const postControl = (name: string, value: number): void => {
+        if (!Number.isFinite(value)) {
+            return;
+        }
+        if (!target) {
+            node.port.postMessage({ type: 'param', name, value });
+            return;
+        }
+        const compilation = compileRuntimeDeviceControl(
+            {
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: target.trackId,
+                    deviceId: target.deviceId,
+                    deviceType: target.deviceType,
+                    parameterId: name,
+                },
+                value,
+                correlation: { workletGeneration, controlSequence: nextControlSequence },
+                scheduling: { targetFrame: null, deadlineFrame: null },
+            },
+            target.parameterIds
+        );
+        if (compilation.status === 'compiled') {
+            nextControlSequence++;
+            node.port.postMessage(compilation.control);
+        }
+    };
 
     const handshake = createReadyHandshake({ pluginName: 'ProofNode' });
     node.port.onmessage = (event: MessageEvent) => {
+        const data = event.data as Record<string, unknown> | null;
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
-            const data = event.data as Record<string, unknown>;
             if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
                 latencyCallback?.(data.latency);
             }
+            return;
+        }
+        if (outcome === 'late' && data?.type === 'error' && !destroyed) {
+            onRuntimeFailure?.(typeof data.message === 'string' ? data.message : 'Unknown error');
             return;
         }
         if (outcome !== 'ready') {
@@ -148,6 +204,16 @@ export async function createProofNode(
     };
     const readyPromise = handshake.promise;
 
+    if (target) {
+        node.port.postMessage(
+            Object.freeze({
+                schemaVersion: 1,
+                command: 'initialize-fallback-control',
+                target,
+                correlation: Object.freeze({ workletGeneration }),
+            })
+        );
+    }
     node.port.postMessage({ type: 'init' });
 
     return {
@@ -169,18 +235,55 @@ export async function createProofNode(
          * this is also what every other device in `engine/` already does.
          */
         setParam(name: string, value: number) {
-            if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
-            }
+            postControl(name, value);
         },
         setBypass(state: boolean) {
-            node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
+            postControl('bypass', state ? 1 : 0);
         },
         reorderModules(order: [number, number, number, number, number]) {
-            node.port.postMessage({ type: 'reorder', order });
+            if (!target) {
+                node.port.postMessage({ type: 'reorder', order });
+                return;
+            }
+            if (
+                new Set(order).size !== 5 ||
+                order.some((value) => !Number.isInteger(value) || value < 0 || value > 4)
+            ) {
+                return;
+            }
+            node.port.postMessage(
+                Object.freeze({
+                    schemaVersion: 1,
+                    command: 'reorder-modules',
+                    target: Object.freeze({
+                        trackId: target.trackId,
+                        deviceId: target.deviceId,
+                        deviceType: target.deviceType,
+                    }),
+                    order: Object.freeze([...order]),
+                    correlation: Object.freeze({ workletGeneration, controlSequence: nextControlSequence++ }),
+                    scheduling: Object.freeze({ targetFrame: null, deadlineFrame: null }),
+                })
+            );
         },
         resetIntegrated() {
-            node.port.postMessage({ type: 'reset_integrated' });
+            if (!target) {
+                node.port.postMessage({ type: 'reset_integrated' });
+                return;
+            }
+            node.port.postMessage(
+                Object.freeze({
+                    schemaVersion: 1,
+                    command: 'reset-integrated',
+                    target: Object.freeze({
+                        trackId: target.trackId,
+                        deviceId: target.deviceId,
+                        deviceType: target.deviceType,
+                    }),
+                    correlation: Object.freeze({ workletGeneration, controlSequence: nextControlSequence++ }),
+                    scheduling: Object.freeze({ targetFrame: null, deadlineFrame: null }),
+                })
+            );
         },
         onMeterData(cb: (data: ProofMeterData) => void) {
             meterCallback = cb;
@@ -199,6 +302,7 @@ export async function createProofNode(
             }
         },
         destroy() {
+            destroyed = true;
             if (pollInterval !== null) {
                 clearInterval(pollInterval);
                 pollInterval = null;
