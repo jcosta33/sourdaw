@@ -1,0 +1,34 @@
+docs/architecture/10-desktop-packaging.md
+  s_d91dcbe5f07151::t_450f60d6148195 47-51
+  s_d91dcbe5f07151::t_7f399c3bd53ec7 78-82
+scripts/flipElectronFuses.ts
+  s_d91dcbe5f07151::t_5b22a334407ebc 24-32
+  s_d91dcbe5f07151::t_c58b5d9bd3ce7f 80-82
+  s_d91dcbe5f07151::t_d99c6ee792d1cc 134-136
+  s_d91dcbe5f07151::t_8d8d74d6b83980 38-40
+build/entitlements.mac.plist
+  s_d91dcbe5f07151::t_498aa8d4fbd8d6 28-32
+electron-builder.yml
+  s_d91dcbe5f07151::t_b89af681c48177 33-37
+  s_d91dcbe5f07151::t_c64edf81560b82 63
+  s_d91dcbe5f07151::t_06a97c9110f5b7 64-67
+electron/tsconfig.build.json
+  s_d91dcbe5f07151::t_3f5bfba4f84869 18
+  s_d91dcbe5f07151::t_1ee392cbb86d12 12-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3754f9898953910962737fa5de2588666a5a8798",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
