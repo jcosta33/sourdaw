@@ -11,6 +11,7 @@ import {
     samplesPerBeat,
 } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { EMIT_FALLBACK_BLOCK_SPAN_SAMPLES, resolveBlockEndSamples, resolveBlockStartSamples } from '../MidiProcessor';
 
 type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHold';
 
@@ -88,14 +89,29 @@ export class CCGenerator extends BaseMidiProcessor {
 
         // Emit CC at subdivision boundaries (every ~64 samples to avoid flooding)
         const emitInterval = 64;
-        const baseTime = transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
-        const blockSamples = Math.max(0, (transport.blockEndSamples ?? baseTime + 128) - baseTime);
+        const baseTime = resolveBlockStartSamples(transport, input);
+        const blockSamples = Math.max(
+            0,
+            resolveBlockEndSamples(transport, baseTime, EMIT_FALLBACK_BLOCK_SPAN_SAMPLES) - baseTime
+        );
+
+        // `min` and `max` are interchangeable ends of one output range, so read
+        // them in order. No UI reaches an inverted pair, but a stored project,
+        // a CRDT merge, or an AI-authored action can set one, which silently
+        // inverts the LFO against its own shape selection.
+        const low = Math.min(this.min, this.max);
+        const high = Math.max(this.min, this.max);
 
         for (let offset = 0; offset < blockSamples; offset += emitInterval) {
-            this.accumPhase += phasePerSample * emitInterval;
+            // Advance by the samples this pass actually covers. A final partial
+            // interval that advanced a whole `emitInterval` would run the LFO
+            // fast in proportion to how badly the block divides by 64 — and
+            // short sub-blocks are routine (tempo-change splits), so the error
+            // compounds every block rather than averaging out.
+            this.accumPhase += phasePerSample * Math.min(emitInterval, blockSamples - offset);
             const currentPhase = (this.accumPhase + this.phase) % 1.0;
             const normalized = evalShape(this.shape, currentPhase, this.rng);
-            const ccValue = Math.round(this.min + normalized * (this.max - this.min));
+            const ccValue = Math.round(low + normalized * (high - low));
 
             if (Math.abs(ccValue - this.lastEmittedValue) >= this.changeThreshold) {
                 this.lastEmittedValue = ccValue;

@@ -145,7 +145,12 @@ export const NotePropertyLane = ({
     }, [notes, selectedNoteIds, beatWidth, contentWidth, clipColor, selectedColor, getValue, label]);
 
     const hitNoteAtX = (mx: number): (typeof notes)[0] | null => {
-        for (const note of notes) {
+        // Walk in reverse paint order: the render loop above draws `notes` in
+        // array order, so the last one painted — the topmost when notes
+        // overlap — is the highest index here. Forward iteration returned the
+        // first (bottommost) overlap instead of the one the user can see.
+        for (let index = notes.length - 1; index >= 0; index--) {
+            const note = notes[index]!;
             const nx = note.startBeat * beatWidth;
             const barW = Math.max(3, note.duration * beatWidth - 2);
             if (mx >= nx + 1 && mx <= nx + 1 + barW) {

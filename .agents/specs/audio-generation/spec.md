@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-audio-generation
 title: Native singing synthesis
-status: in-progress
+status: draft
 owner: The Sourdaw team
 sources:
   - research.md
@@ -12,9 +12,11 @@ sources:
 
 ## Intent
 
+Blocked until a complete native model chain passes admission.
+
 Generate singing-voice audio from MIDI notes plus lyrics using a DiffSinger ONNX pipeline
 that runs natively in Rust (phonemize → variance → acoustic → vocoder), with optional RVC
-voice conversion through the existing Python sidecar. Output is a 44.1 kHz WAV clip the
+voice conversion through a separately admitted Python sidecar. Output is a 44.1 kHz WAV clip the
 audio engine plays back like any other clip. A new `SingingVoice` frontend module owns the
 voice registry, render queue, and progress state.
 
@@ -45,8 +47,9 @@ Verify with: `pnpm cargo:test -- -p daw-engine rt_safety`
 
 ### AC-003 — Model router dispatches by declared runtime
 
-The router must send `onnx-native` models to in-process `ort` and `python-sidecar` models to
-the stdin-JSON sidecar, selected from each model's `runtime` field.
+The router must send `onnx-native` models to in-process `ort`. It may send `python-sidecar`
+models to a sidecar only after the complete model stack passes admission, selected from each
+model's `runtime` field.
 
 Verify with: `pnpm cargo:test -- -p src-tauri model_router`
 
@@ -240,9 +243,9 @@ Verify with: `pnpm test:run -- executeDsoEdit`
 - [ ] (non-blocking) (restored detail — rejected design alternatives) The chosen architecture
   rejected, with reasons worth preserving: candle / Rust-native ML (DiffSinger is trained in
   PyTorch and exported to ONNX — reimplementing in candle is high-effort with no quality gain;
-  `ort` is the standard path and already integrated for Demucs); a single vocoder (the
+  `ort` is the standard path and already integrated for native inference); a single vocoder (the
   quality/speed gap is real — Vocos ~6,700× RT for preview, BigVGAN v2 ~45–135× RT for final);
-  community NSF-HiFiGAN (CC-BY-NC-SA 4.0, blocks commercial use); a DDSP vocoder (monophonic,
+  reference community vocoder (CC-BY-NC-SA 4.0, blocks commercial use); a DDSP vocoder (monophonic,
   needs per-instrument training); a pure-Python sidecar for DiffSinger (~2.6 GB packaging +
   2–5 s startup, loses in-process latency); and an external ComfyUI-style service (two separate
   installs, worst UX). GPU detection at first-run uses `system_profiler` (macOS) / `nvidia-smi`
@@ -295,7 +298,7 @@ Verify with: `pnpm test:run -- executeDsoEdit`
   `list_voice_models`, `download_voice_model`, `remove_voice_model`, `get_gpu_capabilities`,
   `apply_rvc_conversion`)
 - `src-tauri/src/commands/model_download.rs` (registry extension)
-- `src-tauri/sidecar/audio_gen.py` (RVC backend: `rvc_load`, `rvc_convert`)
+- `src-tauri/sidecar/rvc.py` after complete RVC stack admission (`rvc_load`, `rvc_convert`)
 - reuses `crates/daw-io/src/audio_decode.rs` and `audio_postprocess.rs` for playback/crossfade
 
 ## Dropped from sources

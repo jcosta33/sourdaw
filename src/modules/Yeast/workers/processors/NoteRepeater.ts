@@ -11,7 +11,12 @@ import {
     samplesPerBeat,
 } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
-import { ScheduledEventQueue } from '../MidiProcessor';
+import {
+    DRAIN_FALLBACK_BLOCK_SPAN_SAMPLES,
+    resolveBlockEndSamples,
+    resolveBlockStartSamples,
+    ScheduledEventQueue,
+} from '../MidiProcessor';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -26,6 +31,8 @@ export class NoteRepeater extends BaseMidiProcessor {
     private gate = 0.5; // note length as fraction of interval
     private pitchStep = 0; // semitones per repeat
     private scheduled = new ScheduledEventQueue();
+    // Reused across blocks so the per-block scheduled drain allocates nothing.
+    private readonly drainScratch: MidiEvent[] = [];
     private readonly scheduledLineageEvent: Array<MidiEvent | undefined> = Array.from(
         { length: SCHEDULED_LINEAGE_CAPACITY },
         () => undefined
@@ -105,11 +112,11 @@ export class NoteRepeater extends BaseMidiProcessor {
         // exponentially until the rack's voice-capacity throw. Draining
         // exactly this block keeps each echo inside the block that contains
         // it, so it leaves the rack as final output and never re-enters.
-        // (The 8192 fallback only serves direct processMidi callers whose
-        // transport carries no block window, e.g. isolated unit specs.)
-        const now = transport.blockStartSamples ?? (input.length > 0 ? input[0]!.timeSamples : 0);
-        const blockEnd = transport.blockEndSamples ?? now + 8192;
-        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        const now = resolveBlockStartSamples(transport, input);
+        const blockEnd = resolveBlockEndSamples(transport, now, DRAIN_FALLBACK_BLOCK_SPAN_SAMPLES);
+        const drained = this.drainScratch;
+        drained.length = 0;
+        this.scheduled.drainRangeInto(0, blockEnd, drained, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
             const lineageIndex = this.findScheduledLineage(event1);
@@ -125,6 +132,7 @@ export class NoteRepeater extends BaseMidiProcessor {
                 preview?.restoreDecisionLineage(-1, event1, noteLenSamples);
             }
         }
+        drained.length = 0;
     }
 
     reset(): void {

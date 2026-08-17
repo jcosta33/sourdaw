@@ -1597,10 +1597,6 @@ export type AppAction =
     | { type: 'generateBassline'; payload: { clipId: string; style?: string; trackId?: string } }
     | { type: 'replayGeneratedMidi'; payload: { operation: GeneratedMidiReplayOperation } }
     | {
-          type: 'generateAudio';
-          payload: { prompt: string; durationSeconds?: number; trackId?: string };
-      }
-    | {
           type: 'stemSeparate';
           payload: { clipId: string; stems?: string[] };
       }

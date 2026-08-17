@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { generateMidiVariations } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import { modelRegistryStore } from '#/modules/BrowserAi/stores';
-import { renderDiffSingerPhrase, renderKokoroTts } from '#/modules/BrowserAi/useCases';
+import { renderKokoroTts } from '#/modules/BrowserAi/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
@@ -73,7 +73,6 @@ vi.mock('#/modules/BrowserAi/useCases', async (importOriginal) => {
     return {
         ...actual,
         renderKokoroTts: vi.fn(),
-        renderDiffSingerPhrase: vi.fn(),
     };
 });
 
@@ -172,6 +171,11 @@ describe('ClipMidiAiSection', () => {
         expect(button).not.toBeDisabled();
         expect(button.textContent).toContain('Generate');
     });
+
+    it('keeps singing synthesis unavailable without an admitted vocoder', () => {
+        render(<ClipMidiAiSection {...defaultProps} />);
+        expect(screen.getByRole('button', { name: 'Sung unavailable' })).toBeDisabled();
+    });
 });
 
 describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () => {
@@ -214,37 +218,6 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         });
     };
 
-    const setSvsReadyRegistry = (): void => {
-        modelRegistryStore.set({
-            ddspInstruments: [],
-            kokoroModel: null,
-            diffSingerVoicebanks: [
-                {
-                    id: 'vb-1',
-                    name: 'Test Voice',
-                    language: 'en' as const,
-                    license: 'Apache-2.0' as const,
-                    attribution: 'test',
-                    totalSizeBytes: 5000,
-                    status: 'ready' as const,
-                    downloadProgress: 1,
-                    models: {
-                        linguistic: {
-                            ...makeReadySubModel('vb-1-linguistic'),
-                            family: 'diffsinger-linguistic' as const,
-                        },
-                        dur: { ...makeReadySubModel('vb-1-dur'), family: 'diffsinger-dur' as const },
-                        pitch: { ...makeReadySubModel('vb-1-pitch'), family: 'diffsinger-pitch' as const },
-                        variance: { ...makeReadySubModel('vb-1-variance'), family: 'diffsinger-variance' as const },
-                        acoustic: makeReadySubModel('vb-1-acoustic'),
-                    },
-                },
-            ],
-            vocoder: { ...makeReadySubModel('nsf-hifigan'), family: 'diffsinger/vocoder' as const },
-            storageUsedBytes: 0,
-        });
-    };
-
     // A job is held open until the test decides how it ends, so a clip switch or a second
     // launch can be interleaved between the launch and the resolution — the window M-250
     // describes. Gates are keyed by call ordinal rather than by clip, because two launches for
@@ -264,7 +237,6 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
     const newCallLog = (): CallLog => ({ calls: 0, held: new Map<number, Gate>() });
 
     let ttsCalls = newCallLog();
-    let svsCalls = newCallLog();
     let variationCalls = newCallLog();
     const variationTokenSinks: Array<(token: string) => void> = [];
 
@@ -311,13 +283,6 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         });
     };
 
-    const installSvsMock = (): void => {
-        vi.mocked(renderDiffSingerPhrase).mockImplementation(async () => {
-            await awaitTurn(svsCalls);
-            return makeRenderOutput();
-        });
-    };
-
     const installVariationsMock = (): void => {
         vi.mocked(generateMidiVariations).mockImplementation(
             async (_clipId: string, options?: { onToken?: (token: string) => void }) => {
@@ -342,26 +307,10 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         fireEvent.click(screen.getByRole('button', { name: /Render 3 Alternatives/ }));
     };
 
-    /** Switch to Sung mode and press Render — the user's launch gesture. */
-    const launchSvsRender = (): void => {
-        fireEvent.click(screen.getByRole('button', { name: 'Sung' }));
-        fireEvent.click(screen.getByRole('button', { name: /Render 3 Alternatives/ }));
-    };
-
-    const setSvsNotesForBothClips = (): void => {
-        midiStoreMock.state = {
-            notesByClipId: {
-                'clip-a': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-                'clip-b': [{ id: 'n2', pitch: 64, startBeat: 0, duration: 1, velocity: 100 }],
-            },
-        };
-    };
-
     beforeEach(() => {
         vi.clearAllMocks();
         midiStoreMock.state = null;
         ttsCalls = newCallLog();
-        svsCalls = newCallLog();
         variationCalls = newCallLog();
         variationTokenSinks.length = 0;
     });
@@ -371,7 +320,6 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         // clearMocks/mockReset in vite.config.ts nor any global reset in setupTests.ts. Without
         // this, an implementation installed by one test leaks into every later test in the file.
         vi.mocked(renderKokoroTts).mockReset();
-        vi.mocked(renderDiffSingerPhrase).mockReset();
         vi.mocked(generateMidiVariations).mockReset();
         modelRegistryStore.set({
             ddspInstruments: [],
@@ -436,50 +384,6 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(renderKokoroTts)).toHaveBeenCalledTimes(3);
     });
 
-    it('discards an SVS render that resolves after a clip switch (audit M-250)', async () => {
-        setSvsReadyRegistry();
-        installSvsMock();
-        setSvsNotesForBothClips();
-        const abandoned = hold(svsCalls, 1);
-        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
-        launchSvsRender();
-        expect(vi.mocked(renderDiffSingerPhrase)).toHaveBeenNthCalledWith(
-            1,
-            expect.objectContaining({ phraseId: 'clip-a-svs-A', voicebankId: 'vb-1' })
-        );
-
-        rerender(<ClipMidiAiSection clip={clipB} />);
-        await settleJobs(() => abandoned.open());
-
-        // Mutation that reds this test: delete the `if (!stillOwnsPanel(…)) return;` after the
-        // await in handleRenderSinging — clip A's singing then paints onto clip B's panel.
-        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
-        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
-        expect(vi.mocked(renderDiffSingerPhrase)).toHaveBeenCalledTimes(1);
-    });
-
-    it('applies an SVS render to the panel when the clip did not change (presence pin)', async () => {
-        setSvsReadyRegistry();
-        installSvsMock();
-        setSvsNotesForBothClips();
-        const gate = hold(svsCalls, 1);
-        render(<ClipMidiAiSection clip={clipA} />);
-        launchSvsRender();
-        await settleJobs(() => gate.open());
-
-        // Mutation that reds this test: make the ownership check unconditional (`return;` after
-        // the await) — the guard can fail in the "keep" direction too.
-        expect(screen.getAllByTestId('ai-render-preview').map((row) => row.textContent)).toEqual([
-            'A: Test Voice · la la la',
-            'B: Test Voice · la la la',
-            'C: Test Voice · la la la',
-        ]);
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Singing render complete', [
-            '3 alternatives rendered — drag one onto an audio track',
-        ]);
-        expect(vi.mocked(renderDiffSingerPhrase)).toHaveBeenCalledTimes(3);
-    });
-
     it('does not report a TTS failure that arrives after a clip switch (audit M-250)', async () => {
         setKokoroReadyRegistry();
         installTtsMock();
@@ -509,37 +413,6 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(notifyUser)).toHaveBeenCalledWith('ONNX session crashed', 'error');
     });
 
-    it('does not report an SVS failure that arrives after a clip switch (audit M-250)', async () => {
-        setSvsReadyRegistry();
-        installSvsMock();
-        setSvsNotesForBothClips();
-        const abandoned = hold(svsCalls, 1);
-        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
-        launchSvsRender();
-
-        rerender(<ClipMidiAiSection clip={clipB} />);
-        await settleJobs(() => abandoned.fail(new Error('Vocoder session crashed')));
-
-        // Mutation that reds this test: delete the ownership check from the catch in
-        // handleRenderSinging — clip B gets an error toast about clip A's render.
-        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
-    });
-
-    it('reports an SVS failure that arrives while the clip is still selected (presence pin)', async () => {
-        setSvsReadyRegistry();
-        installSvsMock();
-        setSvsNotesForBothClips();
-        const gate = hold(svsCalls, 1);
-        render(<ClipMidiAiSection clip={clipA} />);
-        launchSvsRender();
-
-        await settleJobs(() => gate.fail(new Error('Vocoder session crashed')));
-
-        // Mutation that reds this test: make the catch check unconditional (`return;` before
-        // notifyUser) — genuine failures on the current clip would then be swallowed.
-        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith('Vocoder session crashed', 'error');
-    });
-
     it("keeps the new clip's TTS spinner running when the abandoned render settles (audit M-250)", async () => {
         setKokoroReadyRegistry();
         installTtsMock();
@@ -563,31 +436,7 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(renderButton().textContent).toContain('Rendering…');
     });
 
-    it("keeps the new clip's SVS spinner running when the abandoned render settles (audit M-250)", async () => {
-        setSvsReadyRegistry();
-        installSvsMock();
-        setSvsNotesForBothClips();
-        const abandoned = hold(svsCalls, 1);
-        hold(svsCalls, 2);
-        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
-        launchSvsRender();
-
-        rerender(<ClipMidiAiSection clip={clipB} />);
-        launchSvsRender();
-        expect(vi.mocked(renderDiffSingerPhrase)).toHaveBeenNthCalledWith(
-            2,
-            expect.objectContaining({ phraseId: 'clip-b-svs-A' })
-        );
-
-        await settleJobs(() => abandoned.open());
-
-        // Mutation that reds this test: drop the ownership check around setIsRenderingSvs(false)
-        // in the finally — clip A's launch then returns clip B's button to "Render 3
-        // Alternatives" while clip B is still rendering.
-        expect(renderButton().textContent).toContain('Rendering…');
-    });
-
-    // Same-clip supersession. The clip-change reset clears isRenderingTts/isRenderingSvs, so an
+    // Same-clip supersession. The clip-change reset clears isRenderingTts, so an
     // A→B→A round trip re-enables the render button while the first job is still in flight —
     // `launchClipId` is identical for both launches and cannot separate them.
 
@@ -608,30 +457,6 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
 
         // Mutation that reds this test: drop `ttsLaunchRef.current?.abort()` from the launch in
         // handlePreviewVoice, or drop the `signal.aborted` branch from stillOwnsPanel — the
-        // first launch then paints its previews and stops the second launch's spinner.
-        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
-        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
-        expect(renderButton().textContent).toContain('Rendering…');
-    });
-
-    it('discards an SVS launch superseded by a newer launch on the same clip (audit M-250)', async () => {
-        setSvsReadyRegistry();
-        installSvsMock();
-        setSvsNotesForBothClips();
-        const superseded = hold(svsCalls, 1);
-        hold(svsCalls, 2);
-        const { rerender } = render(<ClipMidiAiSection clip={clipA} />);
-        launchSvsRender();
-
-        rerender(<ClipMidiAiSection clip={clipB} />);
-        rerender(<ClipMidiAiSection clip={clipA} />);
-        launchSvsRender();
-        expect(vi.mocked(renderDiffSingerPhrase)).toHaveBeenCalledTimes(2);
-
-        await settleJobs(() => superseded.open());
-
-        // Mutation that reds this test: drop `svsLaunchRef.current?.abort()` from the launch in
-        // handleRenderSinging, or drop the `signal.aborted` branch from stillOwnsPanel — the
         // first launch then paints its previews and stops the second launch's spinner.
         expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
         expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();

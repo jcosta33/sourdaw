@@ -191,6 +191,93 @@ describe('CCGenerator', () => {
         });
     });
 
+    describe('inverted min / max', () => {
+        // Same 1-second sweep the shape specs use.
+        function emittedValues(gen: CCGenerator): number[] {
+            const output: MidiEvent[] = [];
+            gen.processMidi([], output, { ...transport, blockStartSamples: 0, blockEndSamples: 44_100 });
+            return output
+                .filter((event) => event.kind.type === 'cc')
+                .map((event) => (event.kind.type === 'cc' ? event.kind.value : -1));
+        }
+
+        it('reads an inverted output range as the same range instead of inverting the LFO', () => {
+            // No UI reaches this pair; a stored project, a CRDT merge, or an
+            // AI-authored action can. Applied in the stored order the span
+            // `max - min` goes negative, so a sawUp ramps DOWN — the shape the
+            // user selected plays backwards.
+            const inverted = new CCGenerator('cc-inverted');
+            const ordered = new CCGenerator('cc-ordered');
+            for (const gen of [inverted, ordered]) {
+                gen.setParam('shape', 3); // sawUp
+                gen.setParam('sync', 0);
+                gen.setParam('free_rate_hz', 0.5); // half a cycle — no wrap in the window
+            }
+            inverted.setParam('min', 100);
+            inverted.setParam('max', 20);
+            ordered.setParam('min', 20);
+            ordered.setParam('max', 100);
+
+            const values = emittedValues(inverted);
+            expect(values).toEqual(emittedValues(ordered));
+            expect(Math.min(...values)).toBeGreaterThanOrEqual(20);
+            expect(Math.max(...values)).toBeLessThanOrEqual(100);
+            // sawUp still ramps UP. Applied in the stored order the negative
+            // span would run the same shape backwards.
+            expect(values.at(-1)!).toBeGreaterThan(values[0]!);
+        });
+    });
+
+    describe('LFO phase advances with the block span, not the interval count', () => {
+        function runSpan(gen: CCGenerator, totalSamples: number, blockSizeSamples: number): void {
+            for (let start = 0; start < totalSamples; start += blockSizeSamples) {
+                gen.processMidi([], [], {
+                    ...transport,
+                    blockStartSamples: start,
+                    blockEndSamples: Math.min(start + blockSizeSamples, totalSamples),
+                });
+            }
+        }
+
+        /** One 64-sample probe block — exactly one emit interval. */
+        function probe(gen: CCGenerator, startSamples: number): number[] {
+            const output: MidiEvent[] = [];
+            gen.processMidi([], output, {
+                ...transport,
+                blockStartSamples: startSamples,
+                blockEndSamples: startSamples + 64,
+            });
+            return output
+                .filter((event) => event.kind.type === 'cc')
+                .map((event) => (event.kind.type === 'cc' ? event.kind.value : -1));
+        }
+
+        it('lands on the same phase whether a span arrives as one block or many odd-sized ones', () => {
+            // The emit loop steps in 64-sample intervals. Advancing a full
+            // interval on the final partial pass runs the LFO fast in
+            // proportion to how badly the block divides by 64 — a 100-sample
+            // block advanced 128 samples of phase, and short sub-blocks are
+            // routine (tempo-change splits), so the error compounds. Both
+            // generators cover the identical 44100-sample span and must
+            // therefore reach the identical phase.
+            const oneBlock = new CCGenerator('phase-one');
+            const oddBlocks = new CCGenerator('phase-odd');
+            for (const gen of [oneBlock, oddBlocks]) {
+                gen.setParam('shape', 3); // sawUp — value maps straight to phase
+                gen.setParam('sync', 0);
+                gen.setParam('free_rate_hz', 20); // clears the change threshold every interval
+            }
+
+            runSpan(oneBlock, 44_100, 44_100);
+            runSpan(oddBlocks, 44_100, 100); // 441 blocks that do not divide by 64
+
+            const fromOneBlock = probe(oneBlock, 44_100);
+            const fromOddBlocks = probe(oddBlocks, 44_100);
+            expect(fromOneBlock).not.toEqual([]); // the probe actually emitted
+            expect(fromOddBlocks).toEqual(fromOneBlock);
+        });
+    });
+
     describe('transport stopped', () => {
         it('emits no CC while transport.isPlaying is false', () => {
             const gen = new CCGenerator('stopped');

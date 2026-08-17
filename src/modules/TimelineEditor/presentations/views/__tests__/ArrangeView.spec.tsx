@@ -2,7 +2,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { setScrollX } from '#/modules/Arrangement/stores';
-import { addTrack, addClip, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
+import {
+    addTrack,
+    addClip,
+    importMidiFile,
+    setTimelineHorizontalScrollbarScrollX,
+} from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -371,6 +376,57 @@ describe('ArrangeView', () => {
             expect.objectContaining({ trackId: 'track-1', audioBufferId: 'buf-1', type: 'audio' })
         );
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed MIDI import instead of silently dropping every remaining file', async () => {
+        // Regression: an unguarded `await importMidiFile(...)` inside the drop
+        // loop meant one bad .mid threw past every remaining file in the same
+        // drop — the audio branch already had this catch, MIDI did not.
+        vi.mocked(importMidiFile).mockRejectedValueOnce(new Error('bad midi'));
+        vi.mocked(decodeAudioFile).mockResolvedValueOnce({
+            id: 'buf-1',
+            buffer: { duration: 2 } as AudioBuffer,
+        });
+        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-1' } as ReturnType<typeof addTrack>);
+
+        render(<ArrangeView />);
+        const badMidi = new File([new Uint8Array([1, 2, 3])], 'broken.mid', { type: 'audio/midi' });
+        const goodAudio = new File([new Uint8Array([1, 2, 3])], 'kick.wav', { type: 'audio/wav' });
+        dropFiles([badMidi, goodAudio]);
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('broken.mid'), 'error');
+        });
+        // The file dropped alongside the bad one must still import.
+        expect(addTrack).toHaveBeenCalledWith({ name: 'kick', kind: 'audio' });
+        expect(addClip).toHaveBeenCalled();
+    });
+
+    it('imports every well-formed MIDI file in a drop without touching notifyUser', async () => {
+        vi.mocked(importMidiFile).mockResolvedValueOnce('completed');
+
+        render(<ArrangeView />);
+        const goodMidi = new File([new Uint8Array([1, 2, 3])], 'melody.mid', { type: 'audio/midi' });
+        dropFiles([goodMidi]);
+
+        await waitFor(() => {
+            expect(importMidiFile).toHaveBeenCalledWith(goodMidi);
+        });
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('computes the horizontal scrollbar width without blowing the call stack on a very large clip count', () => {
+        // Regression: `Math.max(256, ...allEndBeats)` spreads every clip end
+        // beat as a call argument — past V8's argument-count ceiling it throws
+        // `RangeError: Maximum call stack size exceeded` instead of a width.
+        const manyClips = Array.from({ length: 200_000 }, (_, index) => makeClip({ endBeat: index }));
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...makeTrack({ clipEndBeat: 0 }), clips: manyClips }],
+            selectedTrackId: 'track-1',
+        });
+
+        expect(() => render(<ArrangeView />)).not.toThrow();
+        expect(document.querySelector('.daw-scrollbar-thumb')).toBeInTheDocument();
     });
 
     it('should coalesce horizontal scrollbar drag writes through the Arrangement use case', () => {

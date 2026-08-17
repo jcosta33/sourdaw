@@ -13,7 +13,7 @@ import { Button } from '#/components/ui/button';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
 import {
     replaceClipAudioBuffer,
@@ -560,32 +560,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                             })}
                         >
                             <span>AI Denoise</span>
-                            <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
-                                {isTauri() ? 'Desktop' : 'Web'}
-                            </span>
-                        </button>
-                    </DisabledFeatureWrapper>
-                    <DisabledFeatureWrapper
-                        disabled={!isTauri()}
-                        reason="AI Stem Separation requires the Tauri Desktop version of Sourdaw."
-                        className="w-full flex"
-                    >
-                        <button
-                            type="button"
-                            className={cn(
-                                menuBtnClass,
-                                'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
-                            )}
-                            role="menuitem"
-                            onClick={waveAct(() => {
-                                if (!audioBufferId) {
-                                    notifyUser('Stem separation unavailable — clip has no audio buffer', 'error');
-                                    return;
-                                }
-                                void handleStemSeparationPreview(audioBufferId);
-                            })}
-                        >
-                            <span>AI Stem Separation</span>
                             <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
                                 {isTauri() ? 'Desktop' : 'Web'}
                             </span>

@@ -48,7 +48,7 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.resolveBackend.mockReturnValue('cloud');
 
         await expect(sendChatMessage('summarize this', { mode: 'explain' })).rejects.toThrow(
-            'Cloud AI not configured. Set API key in settings.'
+            'Hosted AI is not configured.'
         );
     });
 
