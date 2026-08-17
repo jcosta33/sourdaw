@@ -22,20 +22,92 @@ use crate::primitives::oversample::OversamplingChain;
 const MAX_BANDS: usize = 6;
 const MAX_MOD_ASSIGNMENTS: usize = 64;
 
+/// Ceiling on stored macro mappings.
+///
+/// `add_macro_mapping` is a wasm export reached from the worklet — the audio
+/// thread — and used to push onto an uncapped `Vec`. Every call past the
+/// current capacity reallocated on that thread, and nothing ever removed an
+/// entry, so a UI that re-sent its mapping table grew the per-sample
+/// modulation pass without bound. Matched to [`MAX_MOD_ASSIGNMENTS`] because
+/// the two tables are the same kind of thing and are walked by the same loop.
+const MAX_MACRO_MAPPINGS: usize = 64;
+
+/// Number of addressable modulation target slots.
+///
+/// `target_param` is a `u16` at the wasm boundary, so it spans far more than
+/// this; ids at or above it are rejected by the setters rather than clamped,
+/// since a clamp would silently retarget a mapping onto a parameter the caller
+/// did not name.
+const PARAM_OFFSET_COUNT: usize = 1024;
+
+/// Distinct target slots the modulation pass can have to clear in one sample.
+const MAX_MODULATED_TARGETS: usize = MAX_MOD_ASSIGNMENTS + MAX_MACRO_MAPPINGS;
+
+/// Modulation sources the matrix can read from, and macro controls.
+///
+/// `source_id` and `macro_index` both arrive as `u8` from the wasm boundary,
+/// which spans sixteen times the sources and thirty-two times the macros that
+/// exist. Indexing either array with an unchecked one panics, and a panic in a
+/// wasm build aborts — on the audio thread that is the AudioWorklet, so the
+/// track goes silent and stays silent until the graph is rebuilt. The setters
+/// reject out-of-range ids instead.
+const MOD_SOURCE_COUNT: usize = 16;
+const MACRO_COUNT: usize = 8;
+
+/// Where the macros appear in `mod_values`, mirroring the source-id table
+/// `BacteriaInstance::add_mod_assignment` documents.
+const MACRO_SOURCE_BASE: usize = 6;
+
+/// Centre position of a macro control.
+const DEFAULT_MACRO: f32 = 0.5;
+
+/// `mod_values` before a single sample has been processed.
+///
+/// The macros are copied into their source slots at control rate rather than
+/// once per sample, so the resting state has to already agree with the resting
+/// macro values or the first block reads a modulation depth of zero from
+/// controls that are sitting at centre.
+const MOD_VALUES_AT_REST: [f32; MOD_SOURCE_COUNT] = {
+    let mut values = [0.0; MOD_SOURCE_COUNT];
+    let mut index = 0;
+    while index < MACRO_COUNT {
+        values[MACRO_SOURCE_BASE + index] = DEFAULT_MACRO;
+        index += 1;
+    }
+    values
+};
+
+/// Lowest and highest frequency a crossover corner may be placed at.
+///
+/// Mirrors the descriptor's declared 20 Hz–20 kHz range and the clamp
+/// `CrossoverEngine::set_bands` applies on the way into the biquads, so the
+/// stored corner and the running filter cannot disagree.
+const MIN_CROSSOVER_HZ: f32 = 20.0;
+const MAX_CROSSOVER_HZ: f32 = 20_000.0;
+
 /// Ring size for the per-band alignment delay.
 ///
 /// It has to cover the largest deficit any band can be asked to make up, which
 /// is the whole latency of the slowest band measured against a band with none.
 /// The oversampler contributes at most 11.375 base-rate samples (8x); Smudge's
 /// overlap-add window contributes 2048 more at 1x, and less as the factor
-/// divides it; the lo-fi codec's frame adds 256. 2316 is the worst case; 4096
-/// is the next power of two, so the wrap still compiles to a mask.
+/// divides it; the lo-fi codec's frame adds 256, and the spectral blur/freeze
+/// window another 2048. 4363 is the worst case; 8192 is the next power of two,
+/// so the wrap still compiles to a mask.
 ///
 /// Heap-backed rather than a `[f32; ALIGNMENT_RING_LEN]` inside `BandChain`:
-/// at this length the inline arrays would put ~200 kB of `BacteriaEngine`
+/// at this length the inline arrays would put ~400 kB of `BacteriaEngine`
 /// through a by-value return on the worklet thread's stack. Sized once in
 /// `new`, never resized, so changing the compensation still never allocates.
-const ALIGNMENT_RING_LEN: usize = 4096;
+const ALIGNMENT_RING_LEN: usize = 8192;
+
+/// Ring size for the dry mix tap.
+///
+/// The dry tap waits for the whole wet path, and under `Serial` routing that
+/// path is every band's delay in succession rather than the longest one — up
+/// to `MAX_BANDS` times a single band's worst case. 32768 is the next power of
+/// two over 6 × 4363.
+const DRY_ALIGNMENT_RING_LEN: usize = 32_768;
 
 /// Whole-sample delay used to line one band's output up with the slowest one.
 ///
@@ -60,15 +132,21 @@ struct AlignmentDelay {
     left: Vec<f32>,
     right: Vec<f32>,
     write: usize,
+    /// `len - 1`. The length is per-instance — bands and the dry tap need
+    /// different reaches — so the wrap is a stored mask rather than a `%`
+    /// against a constant, which would otherwise become a real division.
+    mask: usize,
     delay: usize,
 }
 
 impl AlignmentDelay {
-    fn new() -> Self {
+    fn new(len: usize) -> Self {
+        debug_assert!(len.is_power_of_two(), "the wrap below is a mask");
         Self {
-            left: vec![0.0; ALIGNMENT_RING_LEN],
-            right: vec![0.0; ALIGNMENT_RING_LEN],
+            left: vec![0.0; len],
+            right: vec![0.0; len],
             write: 0,
+            mask: len - 1,
             delay: 0,
         }
     }
@@ -101,7 +179,7 @@ impl AlignmentDelay {
     /// this branch's subject. Recorded honestly rather than left reading as
     /// sub-millisecond.
     fn set_delay(&mut self, delay: usize) {
-        self.delay = delay.min(ALIGNMENT_RING_LEN - 1);
+        self.delay = delay.min(self.mask);
     }
 
     /// Drop everything in flight.
@@ -124,14 +202,18 @@ impl AlignmentDelay {
     fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
         self.left[self.write] = left;
         self.right[self.write] = right;
-        let read = (self.write + ALIGNMENT_RING_LEN - self.delay) % ALIGNMENT_RING_LEN;
+        let read = (self.write + self.left.len() - self.delay) & self.mask;
         let output = (self.left[read], self.right[read]);
-        self.write = (self.write + 1) % ALIGNMENT_RING_LEN;
+        self.write = (self.write + 1) & self.mask;
         output
     }
 }
 
 /// Modulation assignment: source → target with amount.
+///
+/// `source_id` and `target_param` are validated by
+/// [`BacteriaEngine::add_mod_assignment`] before an entry is ever built, so
+/// the per-sample pass can index with them. Nothing else constructs one.
 #[derive(Clone)]
 #[allow(dead_code)]
 struct ModAssignment {
@@ -142,6 +224,9 @@ struct ModAssignment {
 }
 
 /// Macro mapping entry.
+///
+/// `macro_index` and `target_param` carry the same guarantee as
+/// [`ModAssignment`], established by [`BacteriaEngine::add_macro_mapping`].
 #[derive(Clone)]
 #[allow(dead_code)]
 struct MacroMapping {
@@ -231,7 +316,7 @@ impl BandChain {
             mute: false,
             enabled: true,
             oversampling_factor: 1,
-            alignment: AlignmentDelay::new(),
+            alignment: AlignmentDelay::new(ALIGNMENT_RING_LEN),
             peak_level: 0.0,
             meter_decay: (-1.0 / (0.1 * sample_rate)).exp(),
         }
@@ -246,7 +331,26 @@ impl BandChain {
             "distortionEnabled" => self.distortion_enabled = value > 0.5,
             "filterEnabled" => self.filter_enabled = value > 0.5,
             "granularEnabled" => self.granular_enabled = value > 0.5,
-            "spectralEnabled" => self.spectral_enabled = value > 0.5,
+            "spectralEnabled" => {
+                let next = value > 0.5;
+                // Switching the stage off strands up to a whole analysis
+                // window in the overlap-add buffer, which flushes out over
+                // whatever the band is playing the moment the stage comes
+                // back. Same argument, and the same treatment, as leaving the
+                // Smudge distortion mode in `DistortionProcessor::set_param`.
+                //
+                // Drained here at control rate rather than by clocking silence
+                // through on the audio thread the way the frequency shifter is:
+                // this stage runs an FFT every hop, so feeding a switched-off
+                // one would cost a transform per hop to keep an empty buffer
+                // empty. The shifter has no such choice — its all-pass network
+                // is recursive and never drains on its own.
+                if next != self.spectral_enabled && !next {
+                    self.stft_l.reset();
+                    self.stft_r.reset();
+                }
+                self.spectral_enabled = next;
+            }
             "freqShiftEnabled" => self.freq_shift_enabled = value > 0.5,
             "chorusEnabled" => self.chorus_enabled = value > 0.5,
             "phaserEnabled" => self.phaser_enabled = value > 0.5,
@@ -299,10 +403,40 @@ impl BandChain {
     /// outside the oversampled loop, so its frame is base-rate samples already,
     /// and it is gated on `codecArtifact` rather than on `lofiEnabled` for the
     /// same reason the distortion stage reads its mode and not its enable flag.
+    ///
+    /// The spectral blur/freeze window is the fourth, and it is the one
+    /// contributor that does follow an enable flag — see
+    /// [`Self::spectral_latency_samples`] for why it has to.
     fn latency_samples(&self) -> f32 {
         self.oversampler_l.latency_samples()
             + self.distortion_latency_samples()
             + self.lofi.latency_samples()
+            + self.spectral_latency_samples()
+    }
+
+    /// The spectral blur/freeze stage's group delay, in base-rate samples.
+    ///
+    /// A whole `StftProcessor` window — exact rather than estimated, and now
+    /// the delay the stage really delivers at every `spectralMix` value since
+    /// the processor holds its dry tap back to match (see
+    /// `StftProcessor::process_sample`). It sits outside the oversampled loop,
+    /// so its window is already base-rate samples.
+    ///
+    /// Read from `spectralEnabled`, unlike the distortion stage's own window,
+    /// which is deliberately read from the configured mode so the report
+    /// survives a performance toggle. The stage has no configured-but-idle
+    /// state to read instead: `spectralEnabled` is its only gate, and the
+    /// alternative — reporting the window unconditionally — would hand every
+    /// Bacteria instance 2048 samples of host latency in its shipped default
+    /// state, where the stage is switched off and delays nothing. The lo-fi
+    /// codec already sets this precedent from the other direction: it is gated
+    /// on `codecArtifact`, and `reported_latency_includes_the_lofi_codec_frame`
+    /// pins the renegotiation that gating causes.
+    fn spectral_latency_samples(&self) -> f32 {
+        if self.spectral_enabled {
+            return self.stft_l.latency_samples() as f32;
+        }
+        0.0
     }
 
     /// The distortion stage's group delay, converted to base-rate samples.
@@ -343,13 +477,17 @@ impl BandChain {
     /// distortion mode — so it is gated the same way.
     ///
     /// The lo-fi codec is an independent stage with its own enable flag, so it
-    /// is added on its own condition rather than under the distortion one.
+    /// is added on its own condition rather than under the distortion one. The
+    /// spectral window is the same shape, and because
+    /// [`Self::spectral_latency_samples`] already follows `spectralEnabled`
+    /// the two figures agree on it — that band's deficit for the spectral term
+    /// is always zero, which is exactly what makes the flag-gated report
+    /// honest.
     fn engaged_latency_samples(&self) -> f32 {
-        let mut engaged = if self.lofi_enabled {
-            self.lofi.latency_samples()
-        } else {
-            0.0
-        };
+        let mut engaged = self.spectral_latency_samples();
+        if self.lofi_enabled {
+            engaged += self.lofi.latency_samples();
+        }
 
         if !self.distortion_enabled {
             return engaged;
@@ -362,20 +500,39 @@ impl BandChain {
         engaged
     }
 
-    /// Delay this band's output until it presents `target` base-rate samples.
+    /// Delay this band's output until it presents `target` base-rate samples,
+    /// and answer with the delay it will now actually present.
     ///
     /// Called whenever a parameter could have moved any band's latency. The
     /// deficit rounds to whole samples, leaving the irreducible fractional
     /// skew described on [`AlignmentDelay`] — worst case 0.75 samples,
     /// between a band on 4x (9.75, padded to 11.75) and one on 1x (padded to
     /// 11.0), when some band holds the 8x target of 11.375.
-    fn set_alignment_target(&mut self, target: f32) {
-        let deficit = target - self.engaged_latency_samples();
+    ///
+    /// `contributing` is what makes the deficit the right subtrahend. A band
+    /// the routing skips this sample runs none of its stages — it only clocks
+    /// the ring, through [`Self::pass_through_sample`] or [`Self::skip_sample`]
+    /// — so its engaged delay is not in the path and subtracting it would leave
+    /// the band delivering `target - engaged` while every consumer of the
+    /// number believes `target`. Under `Serial` that consumer is the next link
+    /// in the chain and the host's own compensation.
+    ///
+    /// The answer is the delay *after* rounding and after `set_delay`'s clamp
+    /// to the ring, not the float target, so a caller summing these gets what
+    /// the cascade delivers rather than what it was asked for.
+    fn set_alignment_target(&mut self, target: f32, contributing: bool) -> f32 {
+        let engaged = if contributing {
+            self.engaged_latency_samples()
+        } else {
+            0.0
+        };
+        let deficit = target - engaged;
         if deficit <= 0.0 {
             self.alignment.set_delay(0);
-            return;
+            return engaged;
         }
         self.alignment.set_delay(deficit.round() as usize);
+        engaged + self.alignment.delay as f32
     }
 
     /// Advance the alignment ring by one silent frame for a band that
@@ -392,6 +549,46 @@ impl BandChain {
         self.alignment.process(0.0, 0.0);
         self.hilbert_l.bypass();
         self.hilbert_r.bypass();
+        self.decay_meter();
+    }
+
+    /// Clock the band's delay line with audio that is passing *around* its
+    /// processing rather than through it.
+    ///
+    /// `Serial` routing chains the bands, so a band the caller skips cannot
+    /// simply contribute nothing the way it does under a sum — the signal has
+    /// to reach the next link. Running it through the alignment ring anyway is
+    /// what keeps the chain's total delay, and therefore the number the host
+    /// was given, from moving when a band is soloed or muted mid-performance.
+    ///
+    /// The ring alone only carries that whole delay because
+    /// [`Self::set_alignment_target`] is told this band is not contributing and
+    /// programs it to the full target rather than to a deficit against stages
+    /// that are not running. Programmed as a deficit, muting a band holding a
+    /// spectral window would have shortened the chain by that window while the
+    /// report stood still.
+    fn pass_through_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
+        self.hilbert_l.bypass();
+        self.hilbert_r.bypass();
+        self.decay_meter();
+        self.alignment.process(left, right)
+    }
+
+    /// Whether this band contributes its own processing this sample.
+    fn contributes(&self, any_solo: bool) -> bool {
+        self.enabled && !self.mute && (!any_solo || self.solo)
+    }
+
+    /// Let the peak meter fall for a sample this band did not produce.
+    ///
+    /// The band's true level while it is skipped is zero, and the meter has to
+    /// say so or the UI leaves a bar standing at whatever the band was doing
+    /// when it was soloed away, muted, or dropped by `bandCount`. Released
+    /// through the same one-pole ballistic `process_sample` uses on the way
+    /// down, so a skipped band's meter falls at the rate every other meter
+    /// falls instead of snapping.
+    fn decay_meter(&mut self) {
+        self.peak_level *= self.meter_decay;
     }
 
     /// Drop the band's in-flight alignment audio.
@@ -404,6 +601,7 @@ impl BandChain {
         self.alignment.reset();
         self.hilbert_l.reset();
         self.hilbert_r.reset();
+        self.peak_level = 0.0;
     }
 
     fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
@@ -528,7 +726,24 @@ impl BandChain {
     }
 }
 
-/// Routing mode.
+/// Routing mode — how the band chains are wired to each other.
+///
+/// `Parallel` and `MidSide` split first and combine after, so the chains never
+/// see each other's output. `Serial` chains them instead: the whole signal
+/// enters band 0's chain and each band's output is the next band's input, the
+/// device output being the last band's. That is what a Serial/Parallel switch
+/// means wherever a host offers one over a rack of effect lanes — Ableton's
+/// Effect Rack chains, Bitwig's FX Chain against its FX Layer, which is the
+/// convention `NodeGraphEditor.tsx` names as this panel's model — and the
+/// panel promises nothing narrower than "choose how the bands behave".
+///
+/// The crossover therefore has nothing to do under `Serial`: a chain carries
+/// one signal, not a set of slices, so `crossoverFreq*` shapes nothing while
+/// this mode is selected. `bandCount` still decides how many chains are in the
+/// cascade. This is the mode's definition rather than a gap in it — the
+/// alternative, injecting each band's slice at its own stage, would need every
+/// slice delayed by the chain built ahead of it, which is six more delay lines
+/// as long as the whole cascade.
 #[derive(Clone, Copy, PartialEq)]
 enum RoutingMode {
     Serial,
@@ -587,16 +802,28 @@ pub struct BacteriaEngine {
     step_seq: StepSequencer,
 
     // Modulation state (current values from sources)
-    mod_values: [f32; 16],
+    mod_values: [f32; MOD_SOURCE_COUNT],
 
-    // Modulation assignments
+    // Modulation assignments. Capacity is reserved in `new`; the setters never
+    // push past it, so the audio thread never sees a reallocation.
     mod_assignments: Vec<ModAssignment>,
 
-    // Macro mapping
+    // Macro mapping, on the same terms.
     macro_mappings: Vec<MacroMapping>,
 
+    /// Distinct `param_offsets` slots the tables above target, rebuilt at
+    /// control rate whenever either table changes.
+    ///
+    /// The per-sample pass used to clear the whole 4 kB offset array — 1024
+    /// stores per sample, ~49 M/s at 48 kHz — to make room for at most a
+    /// handful of live modulations, and did it even with no modulation
+    /// configured at all, which is every shipped preset. Only the slots
+    /// something writes need clearing, and this is that set.
+    modulated_targets: [u16; MAX_MODULATED_TARGETS],
+    modulated_target_count: usize,
+
     // Macros
-    macros: [f32; 8],
+    macros: [f32; MACRO_COUNT],
 
     // XY morph
     morph_x: f32,
@@ -623,9 +850,20 @@ pub struct BacteriaEngine {
     /// present its reported latency at every mix value, not only fully wet.
     dry_alignment: AlignmentDelay,
 
-    // Computed parameter offsets per-block from modulations.
+    /// What the device actually delays by, accumulated in `realign_bands` from
+    /// each band's programmed delay.
+    ///
+    /// Cached rather than recomputed on demand because the two derivations have
+    /// to agree exactly: the host reads this and the dry tap is set from it, and
+    /// a second pass over the float targets would round differently from the
+    /// per-band deficits that were actually programmed. `set_param` re-runs
+    /// `realign_bands` unconditionally, so there is no path that moves a band's
+    /// delay without moving this.
+    reported_latency: u32,
+
+    // Computed parameter offsets from modulations.
     // Convention: [0] = global mix; [1..=6] = per-band gain offsets (linear scale, bands 0-5).
-    param_offsets: [f32; 1024],
+    param_offsets: [f32; PARAM_OFFSET_COUNT],
 }
 
 /// Simple step sequencer modulation source.
@@ -676,7 +914,7 @@ impl BacteriaEngine {
             .map(|_| BandChain::new(sample_rate))
             .collect();
 
-        Self {
+        let mut engine = Self {
             sample_rate,
             crossover: CrossoverEngine::new(sample_rate),
             band_count: 1,
@@ -692,10 +930,12 @@ impl BacteriaEngine {
             env_follower: EnvelopeFollower::new(sample_rate),
             lorenz: LorenzAttractor::new(sample_rate),
             step_seq: StepSequencer::new(sample_rate),
-            mod_values: [0.0; 16],
-            mod_assignments: Vec::new(),
-            macro_mappings: Vec::new(),
-            macros: [0.5; 8],
+            mod_values: MOD_VALUES_AT_REST,
+            mod_assignments: Vec::with_capacity(MAX_MOD_ASSIGNMENTS),
+            macro_mappings: Vec::with_capacity(MAX_MACRO_MAPPINGS),
+            modulated_targets: [0; MAX_MODULATED_TARGETS],
+            modulated_target_count: 0,
+            macros: [DEFAULT_MACRO; MACRO_COUNT],
             morph_x: 0.5,
             morph_y: 0.5,
             snapshots: [
@@ -710,9 +950,17 @@ impl BacteriaEngine {
             band_levels: [0.0; MAX_BANDS],
             bands_l: [0.0; MAX_BANDS],
             bands_r: [0.0; MAX_BANDS],
-            dry_alignment: AlignmentDelay::new(),
-            param_offsets: [0.0; 1024],
-        }
+            dry_alignment: AlignmentDelay::new(DRY_ALIGNMENT_RING_LEN),
+            reported_latency: 0,
+            param_offsets: [0.0; PARAM_OFFSET_COUNT],
+        };
+
+        // The report is only ever written by `realign_bands`, so a fresh
+        // instance has to run one before anything can read it. A default
+        // Bacteria delays nothing, but that is a fact about the defaults and
+        // not one to hardcode here.
+        engine.realign_bands();
+        engine
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -725,37 +973,150 @@ impl BacteriaEngine {
         // `set_param` is a control-rate call and this pass is allocation-free
         // over at most six bands.
         self.realign_bands();
+        self.clear_inactive_band_levels();
     }
 
-    /// Equalize the group delay of every band feeding the sum.
+    /// Give every band the group delay the routing needs it to present.
     ///
-    /// The target is the worst case over active bands derived from their
-    /// configured factors — the same number [`Self::latency_samples`] reports
-    /// to the host — so the report stays exactly what the device delivers.
+    /// Under a sum — `Parallel` and `MidSide` — every band has to present the
+    /// same delay or they comb at their shared crossover, so the target is the
+    /// worst case over active bands derived from their configured factors.
+    ///
+    /// Under `Serial` nothing is summed, so there is nothing to equalize;
+    /// each band is padded out to its *own* configured delay instead. That is
+    /// not padding for its own sake: it holds the band's contribution steady
+    /// across `distortionEnabled` and `lofiEnabled`, which is what lets the
+    /// cascade's total — and so [`Self::latency_samples`] — stay put while
+    /// stages are switched during a performance.
+    ///
+    /// A band the routing is currently skipping is padded to the full target
+    /// rather than to a deficit, because none of its stages are in the path to
+    /// make up the difference — see [`BandChain::set_alignment_target`].
+    ///
+    /// Either way the delay each band is left presenting is exactly the term it
+    /// contributes to the reported figure, so the report is what the device
+    /// delivers. That is why the figure is accumulated here from what each band
+    /// answers rather than derived a second time from the float targets: the
+    /// per-band deficit rounds to a whole sample, and six of those roundings in
+    /// a chain diverge from the float sum by samples, which is a comb across
+    /// the dry blend and an under-report to the host.
     fn realign_bands(&mut self) {
-        let target = self
+        let serial = self.routing == RoutingMode::Serial;
+        let any_solo = self.bands[..self.band_count].iter().any(|b| b.solo);
+        let summed_target = self
             .bands
             .iter()
             .take(self.band_count)
             .map(BandChain::latency_samples)
             .fold(0.0_f32, f32::max);
+
+        let mut device_delay = 0.0_f32;
         for (index, band) in self.bands.iter_mut().enumerate() {
-            // Bands past `bandCount` contribute nothing to the sum and must
-            // not hold a stale delay into a later band-count change.
-            if index < self.band_count {
-                band.set_alignment_target(target);
-            } else {
-                band.set_alignment_target(0.0);
+            // Bands past `bandCount` contribute nothing and must not hold a
+            // stale delay into a later band-count change.
+            if index >= self.band_count {
+                band.set_alignment_target(0.0, false);
                 // Nothing advances a band past `bandCount` — not even
                 // `skip_sample` — so its ring has to be emptied here or it
                 // replays pre-shrink audio when the count grows back.
                 // Idempotent, and this only ever runs at control rate.
                 band.clear_alignment();
+                continue;
+            }
+
+            let target = if serial {
+                band.latency_samples()
+            } else {
+                summed_target
+            };
+            let delivered = band.set_alignment_target(target, band.contributes(any_solo));
+
+            // Chained delays add; summed ones do not.
+            if serial {
+                device_delay += delivered;
+            } else {
+                device_delay = device_delay.max(delivered);
             }
         }
+
         // The dry mix tap bypasses the bands entirely, so it needs the whole
-        // target rather than a deficit against something it already spent.
-        self.dry_alignment.set_delay(target.round() as usize);
+        // device delay rather than a deficit against something it already
+        // spent. Same figure the host is handed, from the same accumulation.
+        self.reported_latency = device_delay.round() as u32;
+        self.dry_alignment.set_delay(self.reported_latency as usize);
+    }
+
+    /// Zero the meter of every band past `bandCount`.
+    ///
+    /// Those bands are never advanced, so nothing else would move their
+    /// published level off whatever it held when the count shrank — and with
+    /// the transport stopped no block runs to do it either.
+    fn clear_inactive_band_levels(&mut self) {
+        for level in self.band_levels.iter_mut().skip(self.band_count) {
+            *level = 0.0;
+        }
+    }
+
+    /// Resolve the modulation matrix into `param_offsets` for this sample.
+    ///
+    /// Stays per-sample because its sources are audio-rate — an LFO or the
+    /// envelope follower on a band gain has to arrive sample by sample or it
+    /// steps — but it no longer *costs* per sample what it used to. The pass
+    /// cleared all 1024 offset slots on the way in, 4 kB of stores per sample,
+    /// to make room for at most a handful of live modulations; it did that with
+    /// no modulation configured at all, which is the state every shipped preset
+    /// is in, because the clear came before the check that there was anything
+    /// to write. Only the slots something targets need clearing, and
+    /// `modulated_targets` is that set, gathered when the tables grow.
+    ///
+    /// The bounds test each write used to carry is gone with it: both setters
+    /// reject an out-of-range target before an entry exists, so a stored one
+    /// addresses a slot that is there.
+    fn evaluate_modulation(&mut self) {
+        if self.modulated_target_count == 0 {
+            return;
+        }
+
+        for index in 0..self.modulated_target_count {
+            self.param_offsets[self.modulated_targets[index] as usize] = 0.0;
+        }
+
+        for index in 0..self.mod_assignments.len() {
+            let assignment = &self.mod_assignments[index];
+            if !assignment.active {
+                continue;
+            }
+            let source = self.mod_values[assignment.source_id as usize];
+            self.param_offsets[assignment.target_param as usize] += source * assignment.amount;
+        }
+
+        for index in 0..self.macro_mappings.len() {
+            let mapping = &self.macro_mappings[index];
+            if !mapping.active {
+                continue;
+            }
+            let source = self.macros[mapping.macro_index as usize];
+            let mapped = mapping.min_value + source * (mapping.max_value - mapping.min_value);
+            self.param_offsets[mapping.target_param as usize] += mapped;
+        }
+    }
+
+    /// Copy every band's meter out to the array the UI reads.
+    ///
+    /// Every active band, on every path — including the bands a solo, a mute,
+    /// mid/side routing or bypass skipped. Publishing only the bands that were
+    /// processed is what left their bars standing: a skipped band kept the
+    /// level it last produced, so soloing one band froze the others' meters at
+    /// whatever they were playing at that instant instead of letting them fall.
+    /// The meters themselves are released in `BandChain::decay_meter`.
+    fn publish_band_levels(&mut self) {
+        for (index, level) in self.band_levels.iter_mut().enumerate() {
+            *level = if index < self.band_count {
+                self.bands[index].peak_level
+            } else {
+                0.0
+            };
+        }
     }
 
     fn apply_param(&mut self, name: &str, value: f32) {
@@ -796,45 +1157,25 @@ impl BacteriaEngine {
                 self.crossover
                     .set_bands(self.band_count, &self.crossover_freqs);
             }
-            "crossoverFreq1" => {
-                self.crossover_freqs[0] = value;
-                self.crossover
-                    .set_bands(self.band_count, &self.crossover_freqs);
-            }
-            "crossoverFreq2" => {
-                self.crossover_freqs[1] = value;
-                self.crossover
-                    .set_bands(self.band_count, &self.crossover_freqs);
-            }
-            "crossoverFreq3" => {
-                self.crossover_freqs[2] = value;
-                self.crossover
-                    .set_bands(self.band_count, &self.crossover_freqs);
-            }
-            "crossoverFreq4" => {
-                self.crossover_freqs[3] = value;
-                self.crossover
-                    .set_bands(self.band_count, &self.crossover_freqs);
-            }
-            "crossoverFreq5" => {
-                self.crossover_freqs[4] = value;
-                self.crossover
-                    .set_bands(self.band_count, &self.crossover_freqs);
-            }
+            "crossoverFreq1" => self.set_crossover(0, value),
+            "crossoverFreq2" => self.set_crossover(1, value),
+            "crossoverFreq3" => self.set_crossover(2, value),
+            "crossoverFreq4" => self.set_crossover(3, value),
+            "crossoverFreq5" => self.set_crossover(4, value),
             "crossoverSlope" | "crossoverMode" => {}
 
             // Routing
             "globalRouting" => self.routing = RoutingMode::from_index(value as u32),
 
             // Macros
-            "macro1" => self.macros[0] = value,
-            "macro2" => self.macros[1] = value,
-            "macro3" => self.macros[2] = value,
-            "macro4" => self.macros[3] = value,
-            "macro5" => self.macros[4] = value,
-            "macro6" => self.macros[5] = value,
-            "macro7" => self.macros[6] = value,
-            "macro8" => self.macros[7] = value,
+            "macro1" => self.set_macro(0, value),
+            "macro2" => self.set_macro(1, value),
+            "macro3" => self.set_macro(2, value),
+            "macro4" => self.set_macro(3, value),
+            "macro5" => self.set_macro(4, value),
+            "macro6" => self.set_macro(5, value),
+            "macro7" => self.set_macro(6, value),
+            "macro8" => self.set_macro(7, value),
 
             // XY morph
             "morphX" => self.morph_x = value,
@@ -871,19 +1212,80 @@ impl BacteriaEngine {
         }
     }
 
-    /// Add a modulation assignment.
-    pub fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
-        if self.mod_assignments.len() < MAX_MOD_ASSIGNMENTS {
-            self.mod_assignments.push(ModAssignment {
-                source_id,
-                target_param,
-                amount,
-                active: true,
-            });
+    /// Move one crossover corner, keeping the set of corners in ascending
+    /// order.
+    ///
+    /// The corners are consumed by `CrossoverEngine::set_bands` as a cascade —
+    /// corner `i` splits what corner `i-1` passed upward — so an inverted pair
+    /// does not produce an unusual split, it produces a broken one: the band
+    /// between them is a low-pass of a higher high-pass and carries nothing,
+    /// while its content stays folded into a neighbour. Nothing said so; the
+    /// band meter simply sat at zero.
+    ///
+    /// Ordering is restored by yielding the *neighbours*, not by clamping the
+    /// value that was just written. Clamping is what a fader does under a
+    /// mouse, and it is wrong here because this setter is also the path a
+    /// preset load and an automation lane take: corners arrive one at a time in
+    /// descriptor order, so moving a whole set downward would have every corner
+    /// blocked by the old one below it and silently land somewhere the caller
+    /// never asked for. Yielding neighbours honours the value written every
+    /// time and still leaves the array ascending, whatever order the writes
+    /// arrive in.
+    fn set_crossover(&mut self, index: usize, value: f32) {
+        self.crossover_freqs[index] = value.clamp(MIN_CROSSOVER_HZ, MAX_CROSSOVER_HZ);
+
+        for lower in (0..index).rev() {
+            self.crossover_freqs[lower] =
+                self.crossover_freqs[lower].min(self.crossover_freqs[lower + 1]);
         }
+        for higher in index + 1..self.crossover_freqs.len() {
+            self.crossover_freqs[higher] =
+                self.crossover_freqs[higher].max(self.crossover_freqs[higher - 1]);
+        }
+
+        self.crossover
+            .set_bands(self.band_count, &self.crossover_freqs);
+    }
+
+    /// Move one macro control, and its mirror in the modulation source table.
+    ///
+    /// The mirror used to be re-copied for all eight macros on every sample,
+    /// which is control-rate data being refreshed at audio rate. It can only
+    /// change here.
+    fn set_macro(&mut self, index: usize, value: f32) {
+        self.macros[index] = value;
+        self.mod_values[MACRO_SOURCE_BASE + index] = value;
+    }
+
+    /// Add a modulation assignment.
+    ///
+    /// Ignores an assignment naming a source or a target that does not exist,
+    /// and one arriving past [`MAX_MOD_ASSIGNMENTS`]. Both ids cross the wasm
+    /// boundary as raw integers wider than the tables they index, and the
+    /// per-sample pass indexes with them directly; a rejected call is a no-op
+    /// where an accepted bad one would abort the AudioWorklet.
+    pub fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
+        if source_id as usize >= MOD_SOURCE_COUNT || target_param as usize >= PARAM_OFFSET_COUNT {
+            return;
+        }
+        if self.mod_assignments.len() == MAX_MOD_ASSIGNMENTS {
+            return;
+        }
+        self.mod_assignments.push(ModAssignment {
+            source_id,
+            target_param,
+            amount,
+            active: true,
+        });
+        self.note_modulated_target(target_param);
     }
 
     /// Add a macro mapping.
+    ///
+    /// Carries the same rejections as [`Self::add_mod_assignment`], plus a
+    /// ceiling this call did not have at all: it pushed onto an uncapped `Vec`
+    /// from the audio thread, so a caller re-sending its mapping table both
+    /// reallocated there and grew the per-sample pass without bound.
     pub fn add_macro_mapping(
         &mut self,
         macro_index: u8,
@@ -891,6 +1293,12 @@ impl BacteriaEngine {
         min_value: f32,
         max_value: f32,
     ) {
+        if macro_index as usize >= MACRO_COUNT || target_param as usize >= PARAM_OFFSET_COUNT {
+            return;
+        }
+        if self.macro_mappings.len() == MAX_MACRO_MAPPINGS {
+            return;
+        }
         self.macro_mappings.push(MacroMapping {
             macro_index,
             target_param,
@@ -898,6 +1306,21 @@ impl BacteriaEngine {
             max_value,
             active: true,
         });
+        self.note_modulated_target(target_param);
+    }
+
+    /// Record that something now writes `target`, so the per-sample pass knows
+    /// to clear that slot and only that slot.
+    ///
+    /// Linear scan for the duplicate check: the list is bounded by
+    /// [`MAX_MODULATED_TARGETS`] and this only runs when a table grows, which
+    /// is control rate. Never removes, because neither table does.
+    fn note_modulated_target(&mut self, target: u16) {
+        if self.modulated_targets[..self.modulated_target_count].contains(&target) {
+            return;
+        }
+        self.modulated_targets[self.modulated_target_count] = target;
+        self.modulated_target_count += 1;
     }
 
     /// Process a stereo block in-place.
@@ -915,6 +1338,7 @@ impl BacteriaEngine {
                     band.skip_sample();
                 }
             }
+            self.publish_band_levels();
             return;
         }
 
@@ -942,35 +1366,10 @@ impl BacteriaEngine {
             self.mod_values[3] = lx;
             self.mod_values[4] = lz;
             self.mod_values[5] = self.step_seq.next();
-            // Macros as mod sources [6..13]
-            for m in 0..8 {
-                self.mod_values[6 + m] = self.macros[m];
-            }
+            // The macro source slots [6..14] are written by `set_macro`, which
+            // is the only thing that can move them.
 
-            // Evaluate modulation matrix to offsets
-            self.param_offsets.fill(0.0);
-            for i_mod in 0..self.mod_assignments.len() {
-                let assignment = &self.mod_assignments[i_mod];
-                if assignment.active {
-                    let source_val = self.mod_values[assignment.source_id as usize];
-                    let idx = assignment.target_param as usize;
-                    if idx < self.param_offsets.len() {
-                        self.param_offsets[idx] += source_val * assignment.amount;
-                    }
-                }
-            }
-            for i_mac in 0..self.macro_mappings.len() {
-                let mapping = &self.macro_mappings[i_mac];
-                if mapping.active {
-                    let source_val = self.macros[mapping.macro_index as usize];
-                    let idx = mapping.target_param as usize;
-                    if idx < self.param_offsets.len() {
-                        let mapped = mapping.min_value
-                            + source_val * (mapping.max_value - mapping.min_value);
-                        self.param_offsets[idx] += mapped;
-                    }
-                }
-            }
+            self.evaluate_modulation();
 
             // Split through crossover
             self.crossover
@@ -984,7 +1383,7 @@ impl BacteriaEngine {
             let mut sum_r = 0.0_f32;
 
             match self.routing {
-                RoutingMode::Parallel | RoutingMode::Serial => {
+                RoutingMode::Parallel => {
                     for b in 0..self.band_count {
                         if any_solo && !self.bands[b].solo {
                             self.bands[b].skip_sample();
@@ -999,8 +1398,41 @@ impl BacteriaEngine {
                         );
                         sum_l += bl;
                         sum_r += br;
-                        self.band_levels[b] = self.bands[b].peak_level;
                     }
+                }
+                RoutingMode::Serial => {
+                    // The chain carries the whole signal, not a slice of it:
+                    // band 0 processes the input, band 1 processes band 0's
+                    // output, and the device output is the last band's. This
+                    // arm used to be written alongside `Parallel` and summed
+                    // slices exactly like it, so selecting Serial — which is
+                    // the shipped patch default — changed nothing at all.
+                    //
+                    // The crossover still ran above and its slices are
+                    // deliberately left unread here rather than the split being
+                    // skipped: its biquads would otherwise sit frozen on
+                    // whatever was in flight and replay it the moment the mode
+                    // changed back, which is the same stale-state fault the
+                    // alignment rings are kept moving for.
+                    let mut chain_l = in_l;
+                    let mut chain_r = in_r;
+                    for b in 0..self.band_count {
+                        let (bl, br) = if self.bands[b].contributes(any_solo) {
+                            let gain_offset = self.param_offsets[1 + b];
+                            self.bands[b].process_sample(chain_l, chain_r, gain_offset)
+                        } else {
+                            // Bypassing a link in a chain passes the signal on;
+                            // it does not cut it. Still routed through the
+                            // band's alignment so the cascade's total delay —
+                            // the number the host was given — does not move
+                            // when a band is soloed or muted.
+                            self.bands[b].pass_through_sample(chain_l, chain_r)
+                        };
+                        chain_l = bl;
+                        chain_r = br;
+                    }
+                    sum_l = chain_l;
+                    sum_r = chain_r;
                 }
                 RoutingMode::MidSide => {
                     // Encode to M/S
@@ -1029,13 +1461,6 @@ impl BacteriaEngine {
                     for b in 2..self.band_count {
                         self.bands[b].skip_sample();
                     }
-
-                    if self.band_count > 0 {
-                        self.band_levels[0] = self.bands[0].peak_level;
-                    }
-                    if self.band_count > 1 {
-                        self.band_levels[1] = self.bands[1].peak_level;
-                    }
                 }
             }
 
@@ -1062,6 +1487,8 @@ impl BacteriaEngine {
                 self.output_peak *= self.meter_decay_global;
             }
         }
+
+        self.publish_band_levels();
     }
 
     pub fn current_input_db(&self) -> f32 {
@@ -1083,9 +1510,11 @@ impl BacteriaEngine {
     /// `OversamplingChain` costs 6.5 / 9.75 / 11.375 base samples at 2x / 4x /
     /// 8x, pinned against the impulse centroid in `oversample.rs`.
     ///
-    /// Bands are summed, so the device's delay is the longest **active** band.
-    /// All six `BandChain`s are allocated up front while only `band_count`
-    /// run, so a stale factor on an inactive band must not inflate the report.
+    /// Under a summing mode the device's delay is the longest **active** band;
+    /// under `Serial` the bands are chained, so their delays add and the
+    /// device's is their total. All six `BandChain`s are allocated up front
+    /// while only `band_count` run, so a stale factor on an inactive band must
+    /// not inflate the report either way.
     ///
     /// This is also the alignment target every band is padded out to (see
     /// `realign_bands`), and the dry mix tap with it, so every path through
@@ -1105,23 +1534,23 @@ impl BacteriaEngine {
     /// rather than estimated, so this is not the guessed number the omission
     /// note below used to be about.
     ///
-    /// **Still deliberately not included:** the same `StftProcessor` windowing
-    /// latency on the separate `spectralEnabled` blur/freeze path. That stage
-    /// is untouched here and its omission is unchanged; the accessor it needs
-    /// now exists, but folding it in moves audio this change did not otherwise
-    /// touch. It keeps its own finding.
+    /// The `spectralEnabled` blur/freeze path contributes its own
+    /// `StftProcessor` window on the same terms — see
+    /// [`BandChain::spectral_latency_samples`] for why that one term reads an
+    /// enable flag where the distortion window reads a configured mode.
+    ///
+    /// Read straight out of `realign_bands`'s accumulation rather than derived
+    /// here a second time. Deriving it from the float targets was the same
+    /// number only while nothing rounded: each band's compensation is programmed
+    /// as a whole-sample deficit, so a six-link chain delivered up to three
+    /// samples more than this said — under-reported to the host, and three
+    /// samples of skew against a dry tap set from the other derivation.
     pub fn latency_samples(&self) -> u32 {
-        let longest = self
-            .bands
-            .iter()
-            .take(self.band_count)
-            .map(BandChain::latency_samples)
-            .fold(0.0_f32, f32::max);
-        longest.round() as u32
+        self.reported_latency
     }
 
     /// Get current modulation source values (for UI visualization).
-    pub fn mod_source_values(&self) -> &[f32; 16] {
+    pub fn mod_source_values(&self) -> &[f32; MOD_SOURCE_COUNT] {
         &self.mod_values
     }
 }
@@ -1144,6 +1573,21 @@ mod tests {
 
     fn rms(samples: &[f32]) -> f32 {
         (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    /// Where an impulse response's energy actually sits, in samples.
+    ///
+    /// The abs-weighted centroid, which is how `oversample.rs` pins the
+    /// oversampling chain's own delay. A peak index would answer the same for a
+    /// pure delay and lie about every stage that smears, which is most of them.
+    fn impulse_centroid(response: &[f32]) -> f32 {
+        let mut numerator = 0.0_f32;
+        let mut denominator = 0.0_f32;
+        for (n, &sample) in response.iter().enumerate() {
+            numerator += n as f32 * sample.abs();
+            denominator += sample.abs();
+        }
+        numerator / denominator
     }
 
     /// The parameter id `BACTERIA_DESCRIPTOR` advertises for per-band gain.
@@ -1687,6 +2131,655 @@ mod tests {
             retained > 0.9,
             "at mix 0.5 the oversampled wet path combs against the dry tap: \
              {retained:.3}x of the 1x magnitude survives at {probe:.0} Hz"
+        );
+    }
+
+    /// `globalRouting` values, mirroring `ROUTING_MODE_INDEX` in
+    /// `bacteriaParamBridge/helpers.ts`. `serial` is the shipped patch default.
+    const ROUTING_SERIAL: f32 = 0.0;
+    const ROUTING_PARALLEL: f32 = 1.0;
+
+    // ---- wasm boundary --------------------------------------------------
+
+    /// `source_id` is a `u8` from the wasm boundary and `mod_values` holds
+    /// sixteen entries, so the per-sample matrix pass indexed an array of 16
+    /// with a number up to 255. In a wasm build the resulting panic aborts,
+    /// and the thread it aborts is the AudioWorklet's: the track goes silent
+    /// and stays silent until the graph is rebuilt.
+    ///
+    /// Rejected at the setter rather than clamped, so this also asserts the
+    /// call changed nothing — a clamp would have quietly modulated from
+    /// whichever source the clamp landed on.
+    #[test]
+    fn a_modulation_source_that_does_not_exist_is_a_safe_no_op() {
+        let mut seed = 91u32;
+        let input_l = noise_block(2048, &mut seed);
+        let input_r = noise_block(2048, &mut seed);
+
+        let mut reference = BacteriaEngine::new(SAMPLE_RATE);
+        let mut reference_l = input_l.clone();
+        let mut reference_r = input_r.clone();
+        reference.process_block(&mut reference_l, &mut reference_r);
+
+        let mut hostile = BacteriaEngine::new(SAMPLE_RATE);
+        for source_id in [MOD_SOURCE_COUNT as u8, 100, u8::MAX] {
+            hostile.add_mod_assignment(source_id, 1, 1.0);
+        }
+        hostile.add_mod_assignment(0, u16::MAX, 1.0);
+        assert_eq!(
+            hostile.mod_assignments.len(),
+            0,
+            "an assignment naming a source or target that does not exist was stored"
+        );
+
+        let mut hostile_l = input_l.clone();
+        let mut hostile_r = input_r.clone();
+        hostile.process_block(&mut hostile_l, &mut hostile_r);
+
+        assert_eq!(
+            hostile_l, reference_l,
+            "a rejected assignment still moved the output"
+        );
+    }
+
+    /// Same boundary, the other table: `macro_index` is a `u8` indexing eight
+    /// macros.
+    #[test]
+    fn a_macro_index_that_does_not_exist_is_a_safe_no_op() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        for macro_index in [MACRO_COUNT as u8, 40, u8::MAX] {
+            engine.add_macro_mapping(macro_index, 1, 0.0, 1.0);
+        }
+        engine.add_macro_mapping(0, u16::MAX, 0.0, 1.0);
+        assert_eq!(
+            engine.macro_mappings.len(),
+            0,
+            "a mapping naming a macro or target that does not exist was stored"
+        );
+
+        let mut seed = 5u32;
+        let mut left = noise_block(512, &mut seed);
+        let mut right = noise_block(512, &mut seed);
+        engine.process_block(&mut left, &mut right);
+    }
+
+    /// `add_macro_mapping` had no ceiling at all where `add_mod_assignment`
+    /// had one. It is a wasm export reached from the worklet, so every push
+    /// past capacity reallocated on the audio thread, and nothing ever removed
+    /// an entry — a caller re-sending its mapping table grew both the
+    /// allocation and the per-sample pass without bound.
+    ///
+    /// The capacity assertion is the allocation claim: `new` reserves the
+    /// ceiling, so a bounded table never reallocates.
+    #[test]
+    fn macro_mappings_stop_at_their_ceiling_without_reallocating() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        let reserved = engine.macro_mappings.capacity();
+        assert_eq!(reserved, MAX_MACRO_MAPPINGS);
+
+        for _ in 0..(MAX_MACRO_MAPPINGS * 8) {
+            engine.add_macro_mapping(0, 1, 0.0, 1.0);
+        }
+
+        assert_eq!(engine.macro_mappings.len(), MAX_MACRO_MAPPINGS);
+        assert_eq!(
+            engine.macro_mappings.capacity(),
+            reserved,
+            "the mapping table reallocated on the audio thread"
+        );
+    }
+
+    // ---- crossover ordering ---------------------------------------------
+
+    /// The corners feed a cascade — corner `i` splits what corner `i-1` passed
+    /// upward — so an inverted pair does not make an unusual split, it makes a
+    /// broken one: the band between them low-passes a higher high-pass and
+    /// carries nothing, while its content stays folded into a neighbour and
+    /// the panel goes on displaying the corners the user asked for.
+    ///
+    /// Every write order is checked, because this setter is the path a
+    /// preset load and an automation lane take as well as a knob drag.
+    #[test]
+    fn crossover_corners_stay_ordered_however_they_are_written() {
+        let writes = [
+            // A single corner dragged above the ones over it.
+            vec![("crossoverFreq1", 15_000.0_f32)],
+            // And below the ones under it.
+            vec![("crossoverFreq5", 30.0_f32)],
+            // A pair inverted against each other, both orders.
+            vec![("crossoverFreq2", 9_000.0), ("crossoverFreq3", 300.0)],
+            vec![("crossoverFreq3", 300.0), ("crossoverFreq2", 9_000.0)],
+            // The whole set written backwards.
+            vec![
+                ("crossoverFreq1", 12_000.0),
+                ("crossoverFreq2", 6_000.0),
+                ("crossoverFreq3", 2_500.0),
+                ("crossoverFreq4", 800.0),
+                ("crossoverFreq5", 200.0),
+            ],
+        ];
+
+        for sequence in writes {
+            let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+            engine.set_param("bandCount", 6.0);
+            for (name, value) in &sequence {
+                engine.set_param(name, *value);
+            }
+
+            let corners = engine.crossover_freqs;
+            assert!(
+                corners.windows(2).all(|pair| pair[0] <= pair[1]),
+                "{sequence:?} left the corners inverted: {corners:?}"
+            );
+
+            // The value written last is the one the caller most recently
+            // asked for, so it is the one that must survive intact.
+            let (last_name, last_value) = sequence.last().expect("sequence is not empty");
+            let index = last_name["crossoverFreq".len()..]
+                .parse::<usize>()
+                .expect("crossover name carries its index")
+                - 1;
+            assert_eq!(
+                corners[index], *last_value,
+                "{last_name} was written as {last_value} and stored as {}",
+                corners[index]
+            );
+        }
+    }
+
+    /// Ordering is restored by yielding the neighbours rather than clamping
+    /// the value just written, and this is why: corners reach the engine one
+    /// at a time in descriptor order, so a preset moving the whole set
+    /// *downward* would have every corner blocked by the old, higher one below
+    /// it and land nowhere near what it asked for.
+    #[test]
+    fn a_preset_lowering_every_corner_lands_on_the_values_it_asked_for() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 6.0);
+
+        let wanted = [80.0_f32, 300.0, 900.0, 2_000.0, 4_500.0];
+        for (index, value) in wanted.iter().enumerate() {
+            engine.set_param(&format!("crossoverFreq{}", index + 1), *value);
+        }
+
+        assert_eq!(
+            engine.crossover_freqs, wanted,
+            "an ascending write of a lower corner set was blocked by the old corners"
+        );
+    }
+
+    /// Corners are also held inside the range the descriptor declares, since
+    /// `CrossoverEngine::set_bands` clamps on the way into the biquads and a
+    /// stored corner outside it would disagree with the filter it configured.
+    #[test]
+    fn crossover_corners_are_held_inside_the_declared_range() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("crossoverFreq1", -5_000.0);
+        assert_eq!(engine.crossover_freqs[0], MIN_CROSSOVER_HZ);
+
+        engine.set_param("crossoverFreq5", 96_000.0);
+        assert_eq!(engine.crossover_freqs[4], MAX_CROSSOVER_HZ);
+    }
+
+    // ---- serial routing --------------------------------------------------
+
+    /// `Serial` shared an arm with `Parallel` and summed band slices exactly
+    /// like it, so the routing chip changed nothing — on the mode the shipped
+    /// patch selects by default.
+    ///
+    /// Probed where chaining is the whole difference: band 0 clips hard and
+    /// band 1 low-passes. Summed, the filter never sees the clipper's
+    /// harmonics because they are in another band's slice. Chained, it removes
+    /// them, and the two outputs cannot agree.
+    #[test]
+    fn serial_routing_chains_the_bands_instead_of_summing_them() {
+        const BLOCK: usize = 8_192;
+
+        let render = |routing: f32| -> Vec<f32> {
+            let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+            engine.set_param("bandCount", 2.0);
+            engine.set_param("crossoverFreq1", 1_000.0);
+            engine.set_param("mix", 1.0);
+
+            engine.set_param("band0_distortionEnabled", 1.0);
+            engine.set_param("band0_distortionMode", 1.0); // hard clip
+            engine.set_param("band0_drive", 12.0);
+
+            engine.set_param("band1_filterEnabled", 1.0);
+            engine.set_param("band1_filterMode", 0.0); // low pass
+            engine.set_param("band1_filterCutoff", 300.0);
+
+            engine.set_param("globalRouting", routing);
+
+            let mut seed = 23u32;
+            let mut left = noise_block(BLOCK, &mut seed);
+            let mut right = noise_block(BLOCK, &mut seed);
+            engine.process_block(&mut left, &mut right);
+            left
+        };
+
+        let serial = render(ROUTING_SERIAL);
+        let parallel = render(ROUTING_PARALLEL);
+
+        let tail = 2_048..BLOCK;
+        let difference: Vec<f32> = serial[tail.clone()]
+            .iter()
+            .zip(parallel[tail.clone()].iter())
+            .map(|(s, p)| s - p)
+            .collect();
+
+        let parallel_rms = rms(&parallel[tail]);
+        assert!(
+            parallel_rms > 1.0e-3,
+            "the parallel reference is silent ({parallel_rms}) — nothing to compare against"
+        );
+        let difference_rms = rms(&difference);
+        assert!(
+            difference_rms > 0.25 * parallel_rms,
+            "serial and parallel routing produced the same audio \
+             (difference {difference_rms:.5} against {parallel_rms:.5}) — the bands are \
+             still being summed rather than chained"
+        );
+    }
+
+    /// A chain's delays add where a sum's do not, so the number handed to host
+    /// PDC has to follow the routing. Reported as the longest band under a
+    /// sum, it would undercut a serial cascade by every band after the first.
+    #[test]
+    fn serial_routing_reports_the_whole_chains_delay() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("distortionEnabled", 1.0);
+        engine.set_param("oversampling", 8.0);
+
+        engine.set_param("globalRouting", ROUTING_PARALLEL);
+        let summed = engine.latency_samples();
+        assert_eq!(summed, 11, "two 8x bands summed present one band's delay");
+
+        engine.set_param("globalRouting", ROUTING_SERIAL);
+        assert_eq!(
+            engine.latency_samples(),
+            23,
+            "chained, the two 8x bands present 2 × 11.375 samples"
+        );
+    }
+
+    /// Soloing or muting a link in a chain bypasses it; it does not cut the
+    /// chain. The signal still has to reach the bands after it, and it still
+    /// has to carry the skipped band's alignment, or a monitoring gesture
+    /// would move the delay the host was told to expect.
+    #[test]
+    fn a_soloed_serial_chain_still_passes_signal_to_the_bands_after_it() {
+        const BLOCK: usize = 4_096;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 3.0);
+        engine.set_param("mix", 1.0);
+        engine.set_param("globalRouting", ROUTING_SERIAL);
+        // Solo the *first* link: bands 1 and 2 are bypassed, and a chain that
+        // cut at a bypass would emit nothing at all.
+        engine.set_param("band0_solo", 1.0);
+
+        let mut seed = 61u32;
+        let mut left = noise_block(BLOCK, &mut seed);
+        let mut right = noise_block(BLOCK, &mut seed);
+        let input_rms = rms(&left[1_024..]);
+        engine.process_block(&mut left, &mut right);
+
+        let output_rms = rms(&left[1_024..]);
+        assert!(
+            output_rms > 0.5 * input_rms,
+            "soloing the first link of a serial chain silenced the device \
+             ({output_rms:.5} out of {input_rms:.5})"
+        );
+    }
+
+    /// The chain has to *deliver* what it reports, not merely add its targets
+    /// up correctly.
+    ///
+    /// Each band's compensation is programmed as a whole-sample deficit while
+    /// the report was derived a second time from the float targets, so the two
+    /// only agreed while nothing rounded. Six 2x-class links round up by half a
+    /// sample each: this chain delivers 52 against a float sum of 50.375, and
+    /// the host was told 50 — under-reported, with the dry tap set from the
+    /// same wrong figure and combing against the wet path two samples ahead of
+    /// it.
+    ///
+    /// The bands carry unequal factors so the divergence cannot be an artefact
+    /// of one factor's rounding, and `distortionEnabled` stays off so nothing
+    /// but the alignment rings is in the path — the delay is then whole-sample
+    /// and the centroid is exact rather than approximate.
+    #[test]
+    fn a_serial_chain_delivers_the_delay_it_reports() {
+        const IMPULSE: f32 = 0.01;
+        const BLOCK: usize = 512;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 6.0);
+        engine.set_param("globalRouting", ROUTING_SERIAL);
+        engine.set_param("drive", 0.0);
+        for (index, factor) in [2.0_f32, 2.0, 2.0, 4.0, 4.0, 8.0].iter().enumerate() {
+            engine.set_param(&format!("band{index}_oversampling"), *factor);
+        }
+
+        let reported = engine.latency_samples();
+        assert_eq!(
+            reported, 52,
+            "three 2x, two 4x and one 8x link deliver 3x7 + 2x10 + 11 samples"
+        );
+
+        let mut left = vec![0.0_f32; BLOCK];
+        left[0] = IMPULSE;
+        let mut right = left.clone();
+        engine.process_block(&mut left, &mut right);
+
+        let centroid = impulse_centroid(&left);
+        assert!(
+            (centroid - reported as f32).abs() < 0.55,
+            "the chain reports {reported} samples and delivers a centroid of \
+             {centroid:.3} — the report is derived from the float targets \
+             rather than from the delays actually programmed"
+        );
+    }
+
+    /// Muting a link must not shorten the chain.
+    ///
+    /// A bypassed link runs none of its stages, so the alignment ring is the
+    /// only thing left to carry its share of the delay and has to be programmed
+    /// to the whole target rather than to a deficit against stages that are not
+    /// running. Programmed as a deficit, muting band 0 here dropped 2048
+    /// samples — 43 ms — out of the path while `latency_samples` went on
+    /// reporting them: host compensation wrong in the direction this file calls
+    /// unsafe, and a flam against the dry tap at any mix below 1.
+    ///
+    /// The spectral window is what makes the gap visible: it is the one stage
+    /// whose delay is engaged independently of `distortionEnabled`, so a muted
+    /// band holding one has a real deficit to get wrong. With the band muted
+    /// its transform is out of the path entirely, so what is left is a clean
+    /// whole-sample ring and the centroid is exact.
+    #[test]
+    fn muting_a_link_does_not_shorten_the_serial_chain() {
+        const IMPULSE: f32 = 0.01;
+        const BLOCK: usize = 8_192;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("globalRouting", ROUTING_SERIAL);
+        engine.set_param("band0_spectralEnabled", 1.0);
+        engine.set_param("band0_mute", 1.0);
+
+        let reported = engine.latency_samples();
+        assert_eq!(
+            reported, 2_048,
+            "the muted link still owes the chain its spectral window"
+        );
+
+        let mut left = vec![0.0_f32; BLOCK];
+        left[0] = IMPULSE;
+        let mut right = left.clone();
+        engine.process_block(&mut left, &mut right);
+
+        let centroid = impulse_centroid(&left);
+        assert!(
+            (centroid - reported as f32).abs() < 0.55,
+            "muting the spectral link left the chain reporting {reported} \
+             samples while delivering a centroid of {centroid:.3} — the \
+             bypassed band was padded to its deficit instead of its target"
+        );
+    }
+
+    // ---- band metering ---------------------------------------------------
+
+    /// A band the routing skips produced nothing, so its meter has to say so.
+    /// Only the bands that were processed had their level published, which
+    /// left every other bar standing at whatever the band was playing the
+    /// instant it was skipped — soloing one band froze the rest of the meters
+    /// rather than dropping them.
+    #[test]
+    fn the_meter_of_a_skipped_band_falls() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 3.0);
+        engine.set_param("crossoverFreq1", 500.0);
+        engine.set_param("crossoverFreq2", 4_000.0);
+
+        let mut seed = 17u32;
+        let mut left = noise_block(4_096, &mut seed);
+        let mut right = noise_block(4_096, &mut seed);
+        engine.process_block(&mut left, &mut right);
+
+        let loaded = engine.band_levels()[1];
+        assert!(
+            loaded > 1.0e-3,
+            "band 1 never registered a level to fall from ({loaded})"
+        );
+
+        // Solo band 0 and keep the same signal running: band 1 is skipped from
+        // here on, so its bar has to come down.
+        engine.set_param("band0_solo", 1.0);
+        for _ in 0..8 {
+            let mut solo_l = noise_block(4_096, &mut seed);
+            let mut solo_r = noise_block(4_096, &mut seed);
+            engine.process_block(&mut solo_l, &mut solo_r);
+        }
+
+        let skipped = engine.band_levels()[1];
+        assert!(
+            skipped < 0.01 * loaded,
+            "band 1's meter held {skipped} of its {loaded} after being soloed away"
+        );
+    }
+
+    /// The same for a band dropped below `bandCount`, which is not advanced at
+    /// all — with the transport stopped no block would ever run to clear it,
+    /// so the count change itself has to.
+    #[test]
+    fn dropping_a_band_below_the_count_clears_its_meter() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 3.0);
+        engine.set_param("crossoverFreq1", 500.0);
+
+        let mut seed = 29u32;
+        let mut left = noise_block(2_048, &mut seed);
+        let mut right = noise_block(2_048, &mut seed);
+        engine.process_block(&mut left, &mut right);
+        assert!(engine.band_levels()[2] > 1.0e-4);
+
+        engine.set_param("bandCount", 1.0);
+        assert_eq!(
+            engine.band_levels()[2],
+            0.0,
+            "band 2 kept its bar after dropping out of the band count"
+        );
+    }
+
+    // ---- modulation matrix ------------------------------------------------
+
+    /// The matrix pass cleared all 1024 offset slots on the way into every
+    /// sample — 4 kB of stores, ~49 M/s at 48 kHz — to make room for at most a
+    /// handful of live modulations, and did it before checking whether there
+    /// were any. Only the slots something targets are cleared now, so the
+    /// clearing has to actually reach them: an offset that is accumulated
+    /// without being cleared grows by its own value every sample.
+    ///
+    /// Read straight off the offset array, because a level assertion could not
+    /// tell an offset of 0.5 from one of 0.5 × block length once the gain
+    /// clamp and the smoother are in the way.
+    #[test]
+    fn a_modulation_offset_is_recomputed_each_sample_rather_than_accumulated() {
+        const OFFSET: f32 = 0.5;
+        const BAND_0_GAIN_TARGET: u16 = 1;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        // A macro mapping is a constant source, so the expected offset is
+        // exactly its mapped value on every sample.
+        engine.add_macro_mapping(0, BAND_0_GAIN_TARGET, OFFSET, OFFSET);
+
+        let mut seed = 11u32;
+        let mut left = noise_block(1_024, &mut seed);
+        let mut right = noise_block(1_024, &mut seed);
+        engine.process_block(&mut left, &mut right);
+
+        let offset = engine.param_offsets[BAND_0_GAIN_TARGET as usize];
+        assert!(
+            (offset - OFFSET).abs() < 1.0e-4,
+            "the band 0 gain offset reached {offset} against a constant {OFFSET} — \
+             the matrix is accumulating across samples instead of being recomputed"
+        );
+    }
+
+    /// With nothing assigned — the state every shipped preset is in — the pass
+    /// does no work at all, and the offsets it would have written stay zero so
+    /// the mix and the band gains are untouched.
+    #[test]
+    fn an_unmodulated_engine_leaves_every_offset_alone() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        let mut seed = 13u32;
+        let mut left = noise_block(512, &mut seed);
+        let mut right = noise_block(512, &mut seed);
+        engine.process_block(&mut left, &mut right);
+
+        assert_eq!(engine.modulated_target_count, 0);
+        assert!(engine.param_offsets.iter().all(|offset| *offset == 0.0));
+    }
+
+    /// The macros are mirrored into the modulation source table at control
+    /// rate now rather than being re-copied for all eight on every sample.
+    /// That mirror is what a macro-sourced assignment reads, so it has to be
+    /// current before the first sample of the block that follows the move —
+    /// and correct at rest, since the macros start centred rather than at zero.
+    #[test]
+    fn a_macro_reaches_the_matrix_as_a_modulation_source() {
+        const MACRO_1_SOURCE: u8 = MACRO_SOURCE_BASE as u8;
+        const MIX_TARGET: u16 = 0;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.add_mod_assignment(MACRO_1_SOURCE, MIX_TARGET, 1.0);
+
+        let mut seed = 3u32;
+        let mut left = noise_block(64, &mut seed);
+        let mut right = noise_block(64, &mut seed);
+        engine.process_block(&mut left, &mut right);
+        assert!(
+            (engine.param_offsets[MIX_TARGET as usize] - DEFAULT_MACRO).abs() < 1.0e-6,
+            "a macro at rest reached the matrix as {}",
+            engine.param_offsets[MIX_TARGET as usize]
+        );
+
+        engine.set_param("macro1", 0.25);
+        let mut moved_l = noise_block(64, &mut seed);
+        let mut moved_r = noise_block(64, &mut seed);
+        engine.process_block(&mut moved_l, &mut moved_r);
+        assert!(
+            (engine.param_offsets[MIX_TARGET as usize] - 0.25).abs() < 1.0e-6,
+            "moving macro1 did not reach the matrix: {}",
+            engine.param_offsets[MIX_TARGET as usize]
+        );
+    }
+
+    // ---- spectral path ---------------------------------------------------
+
+    /// The blur/freeze stage rendered the raw overlap-add reconstruction,
+    /// which for a Hann pair at a hop of N/4 carries a gain of exactly 3/2.
+    /// Switching `spectralEnabled` on therefore added +3.5 dB to the band on
+    /// top of whatever the blur did. The correction had landed on the Smudge
+    /// wrapper only.
+    ///
+    /// Measured through the one configuration where the transform is an
+    /// identity — `spectralBlur` 0 passes magnitudes and phases untouched — so
+    /// the only thing left between the two renders is the gain.
+    #[test]
+    fn the_spectral_stage_does_not_change_the_bands_level() {
+        const BLOCK: usize = 32_768;
+        // Past the stage's own 2048-sample window and the crossover warmup.
+        const TAIL: usize = 8_192;
+
+        let render = |spectral: f32| -> f32 {
+            let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+            engine.set_param("mix", 1.0);
+            engine.set_param("spectralBlur", 0.0);
+            engine.set_param("spectralMix", 1.0);
+            engine.set_param("spectralEnabled", spectral);
+
+            let mut seed = 77u32;
+            let mut left = noise_block(BLOCK, &mut seed);
+            let mut right = noise_block(BLOCK, &mut seed);
+            engine.process_block(&mut left, &mut right);
+            rms(&left[TAIL..])
+        };
+
+        let bypassed = render(0.0);
+        let engaged = render(1.0);
+        assert!(bypassed > 1.0e-3, "the reference render is silent");
+
+        let gain_db = 20.0 * (engaged / bypassed).log10();
+        assert!(
+            gain_db.abs() < 0.5,
+            "switching the spectral stage on moved the band {gain_db:+.2} dB; \
+             the overlap-add gain is not being divided back out"
+        );
+    }
+
+    /// The stage costs a whole analysis window and the host was never told.
+    /// The lo-fi codec's frame is folded in on exactly these terms — see
+    /// `reported_latency_includes_the_lofi_codec_frame` — and this is the same
+    /// omission on the other transform in the band.
+    #[test]
+    fn reported_latency_includes_the_spectral_window() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        let quiet = engine.latency_samples();
+
+        engine.set_param("spectralEnabled", 1.0);
+        assert_eq!(
+            engine.latency_samples(),
+            quiet + 2_048,
+            "engaging the spectral stage added delay the host was never told about"
+        );
+
+        engine.set_param("spectralEnabled", 0.0);
+        assert_eq!(
+            engine.latency_samples(),
+            quiet,
+            "the spectral stage kept reporting delay after being switched off"
+        );
+    }
+
+    /// And it has to deliver the delay it reports, not merely declare it:
+    /// the stage holds its own dry tap back to match, so the whole band
+    /// arrives one window late rather than half of it arriving on time.
+    ///
+    /// Measured as the abs-weighted centroid of the impulse response, the way
+    /// `device_delay_lands_on_the_configured_latency_target` measures the
+    /// oversampled path.
+    #[test]
+    fn the_spectral_band_delivers_the_delay_it_reports() {
+        const IMPULSE: f32 = 0.5;
+        const BLOCK: usize = 16_384;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("mix", 1.0);
+        engine.set_param("spectralBlur", 0.0);
+        engine.set_param("spectralMix", 0.5);
+        engine.set_param("spectralEnabled", 1.0);
+
+        let mut left = vec![0.0_f32; BLOCK];
+        left[0] = IMPULSE;
+        let mut right = left.clone();
+        engine.process_block(&mut left, &mut right);
+
+        let mut numerator = 0.0_f32;
+        let mut denominator = 0.0_f32;
+        for (index, sample) in left.iter().enumerate() {
+            numerator += index as f32 * sample.abs();
+            denominator += sample.abs();
+        }
+        assert!(denominator > 1.0e-4, "the impulse never came out");
+        let centroid = numerator / denominator;
+
+        let reported = engine.latency_samples() as f32;
+        assert!(
+            (centroid - reported).abs() < 8.0,
+            "the spectral band reports {reported} samples of delay and delivers a \
+             centroid of {centroid:.1} — half its output is arriving a window early"
         );
     }
 }
