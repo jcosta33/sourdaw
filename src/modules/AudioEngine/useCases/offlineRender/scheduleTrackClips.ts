@@ -191,7 +191,8 @@ export type ScheduleTrackClipsInput = {
     onWarning?: (message: string) => void;
     pendingWorkletEvents?: PendingWorkletEvent[];
     allTracks?: ReadonlyArray<Track>;
-    deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>;
+    /** Read-only: the backend that built these chains owns them and their teardown. */
+    deviceEntriesByTrack?: ReadonlyMap<string, DeviceNodeEntry[]>;
     /** Full mix honors child-track mute; isolated stem/bounce renders include it. */
     honorMuted?: boolean;
     regionStartBeat?: number;

@@ -38,6 +38,39 @@
  *   4. **Per-clip fades, the anti-click micro-fade, and playback rate**
  *      ({@link AudioGraphClipPlayback}).
  *
+ * ── Addressing: one strip id space ────────────────────────────────────────
+ *
+ * **Tracks and buses share a single id space, and every `trackId` in this file
+ * means {@link AudioGraphStripId} — the id of a strip, whatever kind it is.**
+ * This is contract law, not an implementation accident: project truth gives a
+ * bus and an audio track the same kind of id from the same pool, an output id
+ * names either without saying which, and a bus is a strip in every other
+ * respect ({@link AudioGraphCreateBusStripCommand}). A backend that kept two
+ * id spaces would have to be told which one an output id came from, and the
+ * caller does not know.
+ *
+ * The consequence is that there is no bus-addressed form of
+ * {@link AudioGraphSetTrackOutputCommand}, {@link AudioGraphParameterTarget},
+ * or the device-chain commands, and none is needed: a bus fader, a bus pan, a
+ * bus output and a bus chain edit are all addressed by putting the bus's strip
+ * id in `trackId`. `create-track-strip` and `create-bus-strip` are separate
+ * only because creation is where the two differ — a bus sums, a track does not.
+ *
+ * A native backend that splits the spaces internally — `daw-engine` does, with
+ * `SetTrackOutput`/`SetBusOutput` and `AutomationTarget::TrackGain`/`BusGain` —
+ * resolves the strip id against its own two registries at the boundary. That is
+ * a lookup, not a reinterpretation, and it is the backend's job precisely
+ * because only the backend knows which of its registries holds the strip.
+ *
+ * **Routing constraint.** This contract permits any strip to route to any of
+ * `master`, a bus, or a track, and does not carve out bus outputs. `daw-engine`
+ * today refuses `bus -> track` outright (`Timeline::set_bus_output` records
+ * `invalid_bus_routing` and drops the command). A backend that cannot honour a
+ * route must **refuse the batch** rather than drop the route, because a dropped
+ * route is a strip that silently stops reaching the mix. Closing that gap —
+ * either by supporting bus -> track natively or by narrowing this law — is a
+ * D3 obligation, and it is stated here so it is not discovered as a silence.
+ *
  * ── What is deliberately *not* here ───────────────────────────────────────
  *
  * **Device construction.** A backend routes strips, parameters, clips and
@@ -51,8 +84,17 @@
  * own graph to the rest of a runtime does so on its own type, beside this one.
  */
 
-import { type RuntimeGraphDelta } from './RuntimeGraphDelta';
+import { type RuntimeGraphCorrelation } from './RuntimeGraphDelta';
 import { type Device } from './TrackViewTypes';
+
+/**
+ * The id of a strip — a track or a bus, drawn from one space.
+ *
+ * Named rather than left as a bare `string` so that a field called `trackId`
+ * carrying a bus id reads as the law it is, not as a mistake. See the
+ * addressing section in this file's header.
+ */
+export type AudioGraphStripId = string;
 
 /**
  * Where a send taps the strip.
@@ -65,11 +107,18 @@ import { type Device } from './TrackViewTypes';
  */
 export type AudioGraphSendTap = 'pre-fader' | 'post-fader';
 
-/** Where a strip's output goes. */
+/**
+ * Where a strip's output goes.
+ *
+ * `bus` and `track` are the same id space (see the header): the distinction is
+ * what the caller *believes* the destination is, and a backend that finds the
+ * id in the other registry may honour it. A destination this backend cannot
+ * route to is refused, never dropped.
+ */
 export type AudioGraphRouteTarget =
     | Readonly<{ kind: 'master' }>
-    | Readonly<{ kind: 'bus'; busId: string }>
-    | Readonly<{ kind: 'track'; trackId: string }>;
+    | Readonly<{ kind: 'bus'; busId: AudioGraphStripId }>
+    | Readonly<{ kind: 'track'; trackId: AudioGraphStripId }>;
 
 /**
  * The mixer state a strip is built with.
@@ -119,28 +168,39 @@ export type AudioGraphDeviceChain = readonly Device[];
  * Every target names a **position on the strip**, never a node, so a backend
  * that realises the strip differently still answers the same command. The value
  * domain is stated per target and is always project truth; the backend applies
- * the law.
+ * the law. Every one of these accepts any {@link AudioGraphParameterWrite}.
  */
-export type AudioGraphParameterTarget =
+export type AudioGraphStripParameterTarget =
     /** Stored linear amplitude, pre-clamp and pre-VCA. */
-    | Readonly<{ kind: 'track-fader'; trackId: string }>
+    | Readonly<{ kind: 'track-fader'; trackId: AudioGraphStripId }>
     /** −50…50. */
-    | Readonly<{ kind: 'track-pan'; trackId: string }>
+    | Readonly<{ kind: 'track-pan'; trackId: AudioGraphStripId }>
     /** The post-fader gate: `0` silences, `1` opens. */
-    | Readonly<{ kind: 'track-mute-gate'; trackId: string }>
+    | Readonly<{ kind: 'track-mute-gate'; trackId: AudioGraphStripId }>
     /** The pre-fader gate: `0` silences, `1` opens. */
-    | Readonly<{ kind: 'track-solo-gate'; trackId: string }>
+    | Readonly<{ kind: 'track-solo-gate'; trackId: AudioGraphStripId }>
     /** Stored linear send level, clamped to `[0, 1]`. */
-    | Readonly<{ kind: 'track-send-level'; trackId: string; busId: string }>
-    /**
-     * A built-in device's own parameter, in the device's units.
-     *
-     * Addressed separately because it is not a strip position and, on a
-     * backend that owns its own per-device smoothing, it lands at the block
-     * boundary rather than at a sample offset. Only {@link AudioGraphStepWrite}
-     * is defined for it.
-     */
-    | Readonly<{ kind: 'device-parameter'; trackId: string; deviceId: string; parameterId: string }>;
+    | Readonly<{ kind: 'track-send-level'; trackId: AudioGraphStripId; busId: AudioGraphStripId }>;
+
+/**
+ * A built-in device's own parameter, in the device's units.
+ *
+ * Addressed by its own command ({@link AudioGraphWriteDeviceParameterCommand})
+ * rather than sharing `write-parameter`, because it is not a strip position and
+ * it does not accept the same writes: a backend that owns its per-device
+ * smoothing lands the value at a block boundary, not at a sample offset, so
+ * only {@link AudioGraphStepWrite} has a meaning here. Keeping the two apart at
+ * the command level makes a ramp aimed at a device parameter fail to compile
+ * rather than be accepted and quietly discarded.
+ */
+export type AudioGraphDeviceParameterTarget = Readonly<{
+    kind: 'device-parameter';
+    trackId: AudioGraphStripId;
+    deviceId: string;
+    parameterId: string;
+}>;
+
+export type AudioGraphParameterTarget = AudioGraphStripParameterTarget | AudioGraphDeviceParameterTarget;
 
 /**
  * Land `value` at `landTime`, replacing whatever was already scheduled.
@@ -201,26 +261,52 @@ export type AudioGraphParameterWrite =
     AudioGraphRampWrite | AudioGraphSmoothedWrite | AudioGraphStepWrite | AudioGraphHoldWrite;
 
 /**
+ * The material a playback reads from.
+ *
+ * `sourceId` is the identity and is what a backend addresses; `buffer` is the
+ * **web realisation** of that identity and is the one payload in this contract
+ * a native backend cannot receive — an `AudioBuffer` is a main-thread Web Audio
+ * handle, while `daw-engine`'s material is channel vectors owned control-side.
+ * The header's rule about node handles applies symmetrically to what is handed
+ * *in*: the identity crosses the seam, the realisation does not.
+ *
+ * A backend resolves `sourceId` against whatever pool it owns, and one that
+ * cannot — because it needs the buffer and did not get one — refuses the batch.
+ * It never plays silence, because a silent clip is indistinguishable from a
+ * correctly rendered rest.
+ */
+export type AudioGraphClipSource = Readonly<{
+    /** Stable identity of the decoded material, addressable by any backend. */
+    sourceId: string;
+    /** Decoded material, for a backend whose material *is* an `AudioBuffer`. */
+    buffer?: AudioBuffer;
+}>;
+
+/**
  * One playback of one piece of source material.
  *
  * Sample-accurate by construction: `startTime`, `sourceOffsetSeconds` and
  * `durationSeconds` are the three numbers that decide which frames are heard
  * and when, and they are given rather than derived so a loop iteration, a
  * region-start trim and a comped take are all the same command.
- *
- * `durationSeconds` is measured on the **destination** timeline, not in source
- * frames: a stretched clip that plays for two seconds plays for two seconds
- * whatever its rate.
  */
 export type AudioGraphClipPlayback = Readonly<{
-    trackId: string;
-    /** Decoded source material. */
-    buffer: AudioBuffer;
+    trackId: AudioGraphStripId;
+    /** What is played. */
+    source: AudioGraphClipSource;
     /** Absolute time on the backend's clock at which the first frame is heard. */
     startTime: number;
     /** Where playback enters the source material. */
     sourceOffsetSeconds: number;
-    /** How long the clip sounds, on the destination timeline. */
+    /**
+     * How long the clip sounds, on the **destination** timeline: a stretched
+     * clip that plays for two seconds plays for two seconds whatever its rate.
+     *
+     * Known deviation — the two web runtimes disagree about this today, and
+     * this contract states the law they should converge on rather than the
+     * disagreement. See jcosta33/sourdaw#2098, which must be resolved before a
+     * second backend implements a stretched clip against this field.
+     */
     durationSeconds: number;
     /**
      * Source frames consumed per destination frame. `1` is unmodified;
@@ -264,7 +350,7 @@ export type AudioGraphClipFade = Readonly<{
 
 export type AudioGraphCreateTrackStripCommand = Readonly<{
     kind: 'create-track-strip';
-    trackId: string;
+    trackId: AudioGraphStripId;
     /** Names the track in every device-failure message the chain build emits. */
     name: string;
     state: AudioGraphStripState;
@@ -290,12 +376,14 @@ export type AudioGraphCreateTrackStripCommand = Readonly<{
  * Identical in kind to a track strip, and that is the point — #2085 §2 records
  * the native bus as gain-plus-routing with nowhere to put an insert, which
  * makes a reverb bus unrepresentable. The command is separate from
- * {@link AudioGraphCreateTrackStripCommand} because a bus is addressed by
- * `busId` in every send and route, not because it is a lesser strip.
+ * {@link AudioGraphCreateTrackStripCommand} because **creation** differs — a
+ * bus sums its inputs — not because a bus is addressed differently afterwards.
+ * Once built, a bus is reached by putting `busId` in the `trackId` of every
+ * other command: one strip id space, stated as law in this file's header.
  */
 export type AudioGraphCreateBusStripCommand = Readonly<{
     kind: 'create-bus-strip';
-    busId: string;
+    busId: AudioGraphStripId;
     name: string;
     state: AudioGraphStripState;
     devices: AudioGraphDeviceChain;
@@ -303,16 +391,20 @@ export type AudioGraphCreateBusStripCommand = Readonly<{
     contributesAudio: boolean;
 }>;
 
+/**
+ * Point a strip's output somewhere. `trackId` is a strip id, so this is also
+ * how a bus's output is set — there is no `set-bus-output`.
+ */
 export type AudioGraphSetTrackOutputCommand = Readonly<{
     kind: 'set-track-output';
-    trackId: string;
+    trackId: AudioGraphStripId;
     target: AudioGraphRouteTarget;
 }>;
 
 export type AudioGraphAddSendCommand = Readonly<{
     kind: 'add-send';
-    trackId: string;
-    busId: string;
+    trackId: AudioGraphStripId;
+    busId: AudioGraphStripId;
     tap: AudioGraphSendTap;
     /** Stored linear level, clamped to `[0, 1]` by the backend. */
     level: number;
@@ -320,8 +412,8 @@ export type AudioGraphAddSendCommand = Readonly<{
 
 export type AudioGraphRemoveSendCommand = Readonly<{
     kind: 'remove-send';
-    trackId: string;
-    busId: string;
+    trackId: AudioGraphStripId;
+    busId: AudioGraphStripId;
 }>;
 
 /**
@@ -333,21 +425,35 @@ export type AudioGraphRemoveSendCommand = Readonly<{
  */
 export type AudioGraphInsertDeviceCommand = Readonly<{
     kind: 'insert-device';
-    trackId: string;
+    trackId: AudioGraphStripId;
     device: Device;
     index: number;
 }>;
 
 export type AudioGraphRemoveDeviceCommand = Readonly<{
     kind: 'remove-device';
-    trackId: string;
+    trackId: AudioGraphStripId;
     deviceId: string;
 }>;
 
+/** Write a position on the strip. Any write shape is defined for these. */
 export type AudioGraphWriteParameterCommand = Readonly<{
     kind: 'write-parameter';
-    target: AudioGraphParameterTarget;
+    target: AudioGraphStripParameterTarget;
     write: AudioGraphParameterWrite;
+}>;
+
+/**
+ * Write a device's own parameter.
+ *
+ * Its own command, carrying its own narrower write type, so that the one
+ * pairing a backend would have to silently discard — a ramp aimed at a
+ * parameter that only steps — cannot be constructed at all.
+ */
+export type AudioGraphWriteDeviceParameterCommand = Readonly<{
+    kind: 'write-device-parameter';
+    target: AudioGraphDeviceParameterTarget;
+    write: AudioGraphStepWrite;
 }>;
 
 export type AudioGraphScheduleClipCommand = Readonly<{
@@ -378,18 +484,21 @@ export type AudioGraphCommand =
     | AudioGraphInsertDeviceCommand
     | AudioGraphRemoveDeviceCommand
     | AudioGraphWriteParameterCommand
+    | AudioGraphWriteDeviceParameterCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphSetTransportCommand;
 
 /**
- * The correlation a live graph write carries, reused verbatim from
- * {@link RuntimeGraphDelta}.
+ * The correlation a graph write carries, shared with the live delta protocol
+ * through the type both name ({@link RuntimeGraphCorrelation}).
  *
- * Reused rather than restated: a second correlation vocabulary with the same
+ * Shared rather than restated: a second correlation vocabulary with the same
  * job and different words is how two revision checks end up disagreeing about
- * what "stale" means.
+ * what "stale" means. Bound to the *named* type rather than to
+ * `RuntimeGraphDelta['correlation']` so that a reshape of the delta protocol
+ * does not silently reshape this file's `schemaVersion` 1 batches.
  */
-export type AudioGraphCorrelation = RuntimeGraphDelta['correlation'];
+export type AudioGraphCorrelation = RuntimeGraphCorrelation;
 
 /**
  * One batch, applied whole.

@@ -3,10 +3,13 @@ import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { createExportError } from '../errors/ExportError';
-import { type AudioGraphCommand, type AudioGraphRouteTarget } from '../models/AudioGraphBackend';
+import {
+    type AudioGraphApplyResult,
+    type AudioGraphCommand,
+    type AudioGraphRouteTarget,
+} from '../models/AudioGraphBackend';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
-import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
@@ -38,6 +41,24 @@ type RenderOfflineFn = {
     (opts: OfflineRenderOptions): Promise<AudioBuffer>;
     (durationBeats: number, sampleRate?: number): Promise<AudioBuffer>;
 };
+
+/**
+ * Fail the export when a batch was not applied whole.
+ *
+ * Before the seam existed a strip could not fail to appear: `createOfflineTrackStrip`
+ * either returned one or threw, and a throw failed the export. A backend can
+ * instead *refuse* — a schema mismatch, a stale correlation, a command it does
+ * not implement — and a refusal read as "no strip" would drop the track out of
+ * the render and hand the user a file quietly missing it. A refused routing
+ * batch is worse still: the strip exists, nothing reaches it, and the mix is
+ * silently short one track.
+ */
+function assertBatchApplied(result: AudioGraphApplyResult, attempt: string): void {
+    if (result.application === 'applied') {
+        return;
+    }
+    throw createExportError(`The audio backend refused to ${attempt}: ${result.reason}`);
+}
 
 type ResolveOutputTargetInput = {
     outputId: string | null | undefined;
@@ -73,16 +94,18 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
     maybeSampleRate?: number
 ): Promise<AudioBuffer> {
     const releaseLock = acquireRenderLock();
-    // Declared outside the try so the teardown in `finally` can reach it on
-    // every exit. Every metered native device this render builds takes a slot
-    // from the shared 64-slot telemetry pool at construction, and `destroy()`
-    // is the only thing that returns one — a garbage-collected
-    // `OfflineAudioContext` returns nothing, so a leak here is permanent for
-    // the page session and kills every meter added afterwards.
-    const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
-    // Owns every device this render constructs once it exists, so teardown in
-    // the `finally` reaches them on every exit — including an exit taken before
-    // the context, and therefore the backend, could be created.
+    // Owns every device this render constructs, and is therefore also the one
+    // read model of them: `deviceEntriesByTrack` below is the backend's own map,
+    // never a parallel copy. A second map would be a set of devices the teardown
+    // root does not know about, and every metered native device holds a slot in
+    // the shared 64-slot telemetry pool that only `destroy()` returns — a
+    // garbage-collected `OfflineAudioContext` returns nothing, so a device that
+    // escapes teardown leaks for the whole page session and kills every meter
+    // added afterwards.
+    //
+    // Declared outside the try so the `finally` reaches it on every exit,
+    // including an exit taken before the context — and therefore the backend —
+    // could be created.
     let backend: WebAudioOfflineBackend | undefined;
 
     try {
@@ -140,6 +163,11 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // consumer; the native engine becomes the second by answering the same
         // commands (campaign D3).
         backend = createWebAudioOfflineBackend({ context: offlineCtx, masterNode: masterGain, onWarning });
+        // A live view of the backend's own map, not a copy: sidechain routing,
+        // Toaster routing, clip scheduling and the runtime-failure sweep all read
+        // exactly the set of devices `dispose()` will destroy, so the read model
+        // and the teardown root cannot diverge.
+        const deviceEntriesByTrack = backend.getDeviceEntriesByTrack();
 
         // Exclude muted, disabled, and structural (folder) tracks from the render.
         // We MUST include folder tracks if they contain a Toaster device, because
@@ -257,7 +285,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 soloGated: false,
                 vcaMultiplier,
             };
-            await backend.apply({
+            const stripResult = await backend.apply({
                 schemaVersion: 1,
                 commands: [
                     track.kind === 'bus'
@@ -281,12 +309,12 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                           },
                 ],
             });
+            assertBatchApplied(stripResult, `build the strip for track "${track.name}"`);
             const strip = backend.getTrackStrip(track.id);
             if (!strip) {
                 continue;
             }
             trackStripsById.set(track.id, strip);
-            deviceEntriesByTrack.set(track.id, strip.deviceEntries);
             const busStrip = backend.getBusStrip(track.id);
             if (busStrip) {
                 busStripsById.set(track.id, busStrip);
@@ -319,7 +347,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 trackStripsById,
             });
 
-            await backend.apply({
+            const routingResult = await backend.apply({
                 schemaVersion: 1,
                 commands: [
                     { kind: 'set-track-output', trackId: track.id, target: outputTarget },
@@ -332,6 +360,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                     })),
                 ],
             });
+            assertBatchApplied(routingResult, `route the output and sends of track "${track.name}"`);
             const sendAutomationParams = backend.getSendAutomationParams(track.id);
             if (sendAutomationParams) {
                 sendAutomationParamsByTrack.set(track.id, sendAutomationParams);

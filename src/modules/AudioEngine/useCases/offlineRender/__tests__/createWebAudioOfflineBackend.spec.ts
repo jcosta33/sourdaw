@@ -267,6 +267,93 @@ describe('createWebAudioOfflineBackend', () => {
         expect(backend.getTrackStrip('t1')).toBeUndefined();
     });
 
+    it('writes a device parameter through the device strategy that owns it', async () => {
+        const { backend } = backendUnderTest();
+
+        await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [{ id: 'a', name: 'a', type: 'builtin-gain', bypassed: false, parameterValues: {} }],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'write-device-parameter',
+                    target: { kind: 'device-parameter', trackId: 't1', deviceId: 'a', parameterId: 'gain' },
+                    write: { shape: 'step', value: 0.25, time: 0 },
+                },
+            ],
+        });
+
+        const entry = backend.getDeviceEntriesByTrack().get('t1')?.[0];
+        expect(entry?.strategy.setParam).toHaveBeenCalledWith('gain', 0.25);
+    });
+
+    it('cannot be handed a device-parameter write this backend would have to discard', async () => {
+        const { backend } = backendUnderTest();
+
+        // The guard is the type, not a branch: a device parameter lands at a
+        // block boundary rather than a sample offset, so a ramp aimed at one
+        // has no meaning and used to be accepted and dropped. `@ts-expect-error`
+        // is the assertion — it fails the typecheck the moment the pairing
+        // becomes representable again, which a runtime test cannot observe.
+        await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'write-device-parameter',
+                    target: { kind: 'device-parameter', trackId: 't1', deviceId: 'a', parameterId: 'gain' },
+                    // @ts-expect-error a device parameter accepts only a step write
+                    write: { shape: 'ramp-to', value: 0.25, startTime: 0, landTime: 1 },
+                },
+            ],
+        });
+    });
+
+    it('refuses a clip whose source names material this backend cannot resolve', async () => {
+        const { backend } = backendUnderTest();
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'schedule-clip',
+                    playback: {
+                        trackId: 't1',
+                        // A native backend resolves this against its own pool.
+                        // This one's material *is* an `AudioBuffer`, so it says
+                        // so rather than rendering a rest that reads as correct.
+                        source: { sourceId: 'take-4' },
+                        startTime: 0,
+                        sourceOffsetSeconds: 0,
+                        durationSeconds: 1,
+                        playbackRate: 1,
+                        gain: 1,
+                        fade: { microFadeSeconds: 0.005 },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+        expect(result.acceptance === 'rejected' && result.reason).toContain('take-4');
+        expect(backend.getTrackStrip('t1')).toBeUndefined();
+    });
+
     it('destroys every device strategy it built, once', async () => {
         const { backend } = backendUnderTest();
 

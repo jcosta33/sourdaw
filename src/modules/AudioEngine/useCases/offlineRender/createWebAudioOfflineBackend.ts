@@ -36,9 +36,11 @@ import {
     type AudioGraphCommand,
     type AudioGraphCommandBatch,
     type AudioGraphCorrelation,
-    type AudioGraphParameterTarget,
+    type AudioGraphDeviceParameterTarget,
     type AudioGraphParameterWrite,
     type AudioGraphRouteTarget,
+    type AudioGraphStepWrite,
+    type AudioGraphStripParameterTarget,
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
@@ -79,12 +81,31 @@ export type WebAudioOfflineBackend = AudioGraphBackend & {
     getDeviceEntriesByTrack: () => ReadonlyMap<string, DeviceNodeEntry[]>;
 };
 
-/** Commands an offline render cannot answer, with the reason a caller needs. */
+/** Command kinds an offline render cannot answer, with the reason a caller needs. */
 const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
     'insert-device': 'an offline render builds each device chain once, at strip creation',
     'remove-device': 'an offline render builds each device chain once, at strip creation',
     'set-transport': "an offline render's transport is fixed by the region it was created for",
 };
+
+/**
+ * Why this backend cannot apply `command`, or `null` when it can.
+ *
+ * Kind alone does not decide it: this backend's material *is* an `AudioBuffer`,
+ * so a playback carrying only a `sourceId` names material it has no pool to
+ * resolve against. Refusing says so; scheduling nothing would render a rest
+ * that reads as a correct file.
+ */
+function describeUnsupported(command: AudioGraphCommand): string | null {
+    const byKind = UNSUPPORTED_COMMAND_REASONS[command.kind];
+    if (byKind) {
+        return byKind;
+    }
+    if (command.kind === 'schedule-clip' && !command.playback.source.buffer) {
+        return `this backend resolves clip material from a decoded buffer, and source "${command.playback.source.sourceId}" carried none`;
+    }
+    return null;
+}
 
 export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): WebAudioOfflineBackend {
     const { context, masterNode, onWarning, acceptCorrelation } = deps;
@@ -114,11 +135,8 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
     }
 
     function resolveParameter(
-        target: AudioGraphParameterTarget
+        target: AudioGraphStripParameterTarget
     ): { param: AudioParam; toNodeValue: (value: number) => number } | null {
-        if (target.kind === 'device-parameter') {
-            return null;
-        }
         const strip = trackStrips.get(target.trackId);
         if (!strip) {
             return null;
@@ -184,13 +202,10 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
         }
     }
 
-    function writeDeviceParameter(
-        target: Extract<AudioGraphParameterTarget, { kind: 'device-parameter' }>,
-        write: AudioGraphParameterWrite
-    ): void {
-        if (write.shape !== 'step') {
-            return;
-        }
+    function writeDeviceParameter(target: AudioGraphDeviceParameterTarget, write: AudioGraphStepWrite): void {
+        // No shape guard: the contract pairs a device-parameter target with a
+        // step write and nothing else, so the discard this used to perform is
+        // now a compile error at the caller instead of a silent no-op here.
         const entry = deviceEntriesByTrack
             .get(target.trackId)
             ?.find((candidate) => candidate.deviceId === target.deviceId);
@@ -199,13 +214,17 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
 
     function scheduleClip(playback: AudioGraphClipPlayback): void {
         const strip = trackStrips.get(playback.trackId);
-        if (!strip) {
+        const buffer = playback.source.buffer;
+        if (!strip || !buffer) {
+            // A missing buffer is refused ahead of application and unreachable
+            // here. A missing strip is the same skip `add-send` performs for an
+            // unknown bus: nowhere to put the audio, and no graph to corrupt.
             return;
         }
         scheduleOfflineClipSource({
             context,
             destinationNode: strip.inputNode,
-            buffer: playback.buffer,
+            buffer,
             startSec: playback.startTime,
             bufferOffsetSec: playback.sourceOffsetSeconds,
             playDuration: playback.durationSeconds,
@@ -311,10 +330,6 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 return null;
             }
             case 'write-parameter': {
-                if (command.target.kind === 'device-parameter') {
-                    writeDeviceParameter(command.target, command.write);
-                    return null;
-                }
                 const resolved = resolveParameter(command.target);
                 if (!resolved) {
                     return null;
@@ -322,6 +337,9 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 applyParameterWrite(resolved.param, command.write, resolved.toNodeValue);
                 return null;
             }
+            case 'write-device-parameter':
+                writeDeviceParameter(command.target, command.write);
+                return null;
             case 'schedule-clip':
                 scheduleClip(command.playback);
                 return null;
@@ -366,7 +384,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             // one not applied at all, and the caller cannot tell the two apart
             // from a result that says only "rejected".
             for (const command of batch.commands) {
-                const reason = UNSUPPORTED_COMMAND_REASONS[command.kind];
+                const reason = describeUnsupported(command);
                 if (reason) {
                     return {
                         acceptance: 'rejected',
