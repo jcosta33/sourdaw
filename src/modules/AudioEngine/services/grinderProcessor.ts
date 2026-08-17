@@ -174,6 +174,7 @@ const GRINDER_AUTOMATION_BUFFER_SIZE =
 
 const MAX_PENDING_FALLBACK_CONTROLS = 32;
 const MAX_RUNTIME_CONTROL_ID_LENGTH = 128;
+const MAX_NEURAL_CONV_LAYERS = 10;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -191,18 +192,20 @@ type FallbackControlTarget = {
     parameterIds: readonly string[];
 };
 
-type GrinderNeuralProfilePatch = {
-    neuralModelMode?: unknown;
-    profile?: {
-        preferredTier?: unknown;
-        inputDrive?: unknown;
-        asymmetry?: unknown;
-        outputTrim?: unknown;
-        contourMix?: unknown;
-        recurrentBias?: unknown;
-        convWeights?: unknown;
-    };
-};
+type GrinderNeuralPatch =
+    | { neuralModelMode: 'builtin' }
+    | {
+          neuralModelMode: 'imported';
+          profile: {
+              preferredTier?: keyof typeof NEURAL_TIER_INDEX;
+              inputDrive?: number | null;
+              asymmetry?: number | null;
+              outputTrim?: number | null;
+              contourMix?: number | null;
+              recurrentBias?: number | null;
+              convWeights?: readonly (readonly [number, number, number])[];
+          };
+      };
 
 const NEURAL_TIER_INDEX: Record<string, number> = {
     standard: 0,
@@ -210,10 +213,6 @@ const NEURAL_TIER_INDEX: Record<string, number> = {
     nano: 2,
     recurrent: 3,
 };
-
-function to_finite_number(value: unknown): number | null {
-    return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
 
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -236,67 +235,104 @@ function isPositiveSafeInteger(value: unknown): value is number {
     return isNonNegativeSafeInteger(value) && value > 0;
 }
 
-function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unknown>): void {
-    const neural_patch = patch as GrinderNeuralProfilePatch;
-    if (neural_patch.neuralModelMode === 'builtin') {
+function applyNeuralPatch(instance: GrinderInstance, patch: GrinderNeuralPatch): void {
+    if (patch.neuralModelMode === 'builtin') {
         instance.set_param('neuralModelMode', 0);
         return;
     }
 
-    if (
-        neural_patch.neuralModelMode !== 'imported' ||
-        !neural_patch.profile ||
-        typeof neural_patch.profile !== 'object'
-    ) {
-        return;
+    instance.set_param('neuralCustomTier', NEURAL_TIER_INDEX[patch.profile.preferredTier ?? 'standard'] ?? 0);
+
+    if (patch.profile.inputDrive !== null && patch.profile.inputDrive !== undefined) {
+        instance.set_param('neuralCustomInputDrive', patch.profile.inputDrive);
     }
-
-    const profile = neural_patch.profile;
-    const conv_weights: unknown[] = Array.isArray(profile.convWeights) ? profile.convWeights : [];
-
-    const preferred_tier =
-        typeof profile.preferredTier === 'string' ? (NEURAL_TIER_INDEX[profile.preferredTier] ?? 0) : 0;
-    instance.set_param('neuralCustomTier', preferred_tier);
-
-    const input_drive = to_finite_number(profile.inputDrive);
-    if (input_drive !== null) {
-        instance.set_param('neuralCustomInputDrive', input_drive);
+    if (patch.profile.asymmetry !== null && patch.profile.asymmetry !== undefined) {
+        instance.set_param('neuralCustomAsymmetry', patch.profile.asymmetry);
     }
-
-    const asymmetry = to_finite_number(profile.asymmetry);
-    if (asymmetry !== null) {
-        instance.set_param('neuralCustomAsymmetry', asymmetry);
+    if (patch.profile.outputTrim !== null && patch.profile.outputTrim !== undefined) {
+        instance.set_param('neuralCustomOutputTrim', patch.profile.outputTrim);
     }
-
-    const output_trim = to_finite_number(profile.outputTrim);
-    if (output_trim !== null) {
-        instance.set_param('neuralCustomOutputTrim', output_trim);
+    if (patch.profile.contourMix !== null && patch.profile.contourMix !== undefined) {
+        instance.set_param('neuralCustomContourMix', patch.profile.contourMix);
     }
-
-    const contour_mix = to_finite_number(profile.contourMix);
-    if (contour_mix !== null) {
-        instance.set_param('neuralCustomContourMix', contour_mix);
+    if (patch.profile.recurrentBias !== null && patch.profile.recurrentBias !== undefined) {
+        instance.set_param('neuralCustomLstmBias', patch.profile.recurrentBias);
     }
-
-    const recurrent_bias = to_finite_number(profile.recurrentBias);
-    if (recurrent_bias !== null) {
-        instance.set_param('neuralCustomLstmBias', recurrent_bias);
-    }
-
-    for (let layer_index = 0; layer_index < conv_weights.length; layer_index++) {
-        const weights = conv_weights[layer_index];
-        if (!Array.isArray(weights) || weights.length < 3) {
-            continue;
-        }
+    const convWeights = patch.profile.convWeights ?? [];
+    for (let layer_index = 0; layer_index < convWeights.length; layer_index++) {
+        const weights = convWeights[layer_index]!;
         for (let weight_index = 0; weight_index < 3; weight_index++) {
-            const value = to_finite_number(weights[weight_index]);
-            if (value !== null) {
-                instance.set_param(`neuralCustomConvWeight${layer_index}_${weight_index}`, value);
-            }
+            instance.set_param(`neuralCustomConvWeight${layer_index}_${weight_index}`, weights[weight_index]!);
         }
     }
 
     instance.set_param('neuralModelMode', 1);
+}
+
+function isGrinderNeuralPatch(value: unknown): value is GrinderNeuralPatch {
+    if (!isRecord(value)) {
+        return false;
+    }
+    if (value.neuralModelMode === 'builtin') {
+        return Object.keys(value).length === 1;
+    }
+    if (
+        value.neuralModelMode !== 'imported' ||
+        !hasOnlyKeys(value, ['neuralModelMode', 'profile']) ||
+        !isRecord(value.profile)
+    ) {
+        return false;
+    }
+    const profile = value.profile;
+    if (
+        !Object.keys(profile).every((key) =>
+            [
+                'preferredTier',
+                'inputDrive',
+                'asymmetry',
+                'outputTrim',
+                'contourMix',
+                'recurrentBias',
+                'convWeights',
+            ].includes(key)
+        ) ||
+        (profile.preferredTier !== undefined &&
+            (typeof profile.preferredTier !== 'string' || !(profile.preferredTier in NEURAL_TIER_INDEX)))
+    ) {
+        return false;
+    }
+    for (const value of [
+        profile.inputDrive,
+        profile.asymmetry,
+        profile.outputTrim,
+        profile.contourMix,
+        profile.recurrentBias,
+    ]) {
+        if (value !== null && value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
+            return false;
+        }
+    }
+    if (
+        profile.convWeights !== undefined &&
+        (!Array.isArray(profile.convWeights) || profile.convWeights.length > MAX_NEURAL_CONV_LAYERS)
+    ) {
+        return false;
+    }
+    for (const layer of profile.convWeights ?? []) {
+        if (
+            !Array.isArray(layer) ||
+            layer.length !== 3 ||
+            typeof layer[0] !== 'number' ||
+            !Number.isFinite(layer[0]) ||
+            typeof layer[1] !== 'number' ||
+            !Number.isFinite(layer[1]) ||
+            typeof layer[2] !== 'number' ||
+            !Number.isFinite(layer[2])
+        ) {
+            return false;
+        }
+    }
+    return true;
 }
 
 class GrinderProcessor extends AudioWorkletProcessor {
@@ -355,14 +391,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     return;
                 } else if (this._handleFallbackControl(msg)) {
                     return;
-                } else if (msg.type === 'patch' && isRecord(msg.patch) && this._instance !== null && !this._faulted) {
-                    const oldLatency = this._instance.get_latency_samples();
-                    applyNeuralPatch(this._instance, msg.patch);
-                    const newLatency = this._instance.get_latency_samples();
-                    this._refreshWasmViewsIfMemoryChanged();
-                    if (newLatency !== oldLatency) {
-                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
-                    }
+                } else if (this._handleNeuralPatch(msg)) {
+                    return;
                 }
             } catch (error) {
                 // Same policy as the process() catch below. A throw at the wasm
@@ -472,6 +502,55 @@ class GrinderProcessor extends AudioWorkletProcessor {
             return true;
         }
         this._applyFallbackControl(message.target.parameterId, message.value, true);
+        return true;
+    }
+
+    _handleNeuralPatch(message: UnknownRecord): boolean {
+        if (message.command !== 'apply-grinder-neural-patch') {
+            return false;
+        }
+        if (
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'patch', 'correlation', 'scheduling']) ||
+            message.schemaVersion !== 1 ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            message.target.deviceType !== 'grinder' ||
+            !isGrinderNeuralPatch(message.patch) ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration', 'controlSequence']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration) ||
+            !isPositiveSafeInteger(message.correlation.controlSequence) ||
+            !isRecord(message.scheduling) ||
+            !hasOnlyKeys(message.scheduling, ['targetFrame', 'deadlineFrame']) ||
+            message.scheduling.targetFrame !== null ||
+            message.scheduling.deadlineFrame !== null
+        ) {
+            return true;
+        }
+        const controlTarget = this._fallbackControlTarget;
+        if (
+            this._fallbackControlGeneration === null ||
+            controlTarget === null ||
+            this._instance === null ||
+            this._faulted ||
+            message.correlation.workletGeneration !== this._fallbackControlGeneration ||
+            message.correlation.controlSequence <= this._lastFallbackControlSequence ||
+            message.target.trackId !== controlTarget.trackId ||
+            message.target.deviceId !== controlTarget.deviceId ||
+            message.target.deviceType !== controlTarget.deviceType
+        ) {
+            return true;
+        }
+        this._lastFallbackControlSequence = message.correlation.controlSequence;
+        const oldLatency = this._instance.get_latency_samples();
+        applyNeuralPatch(this._instance, message.patch);
+        const newLatency = this._instance.get_latency_samples();
+        this._refreshWasmViewsIfMemoryChanged();
+        if (newLatency !== oldLatency) {
+            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+        }
         return true;
     }
 

@@ -125,7 +125,7 @@ describe('createGrinderNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'init-sab', sab: expect.anything(), byteOffset: 64 });
     });
 
-    it('should forward setPatch and compile setBypass as a typed fallback control', async () => {
+    it('compiles a neural patch only for an initialized target and shares its sequence with fallback controls', async () => {
         const node = await createGrinderNode(makeCtx(), undefined, undefined, {
             trackId: 'track-1',
             deviceId: 'grinder-1',
@@ -150,8 +150,19 @@ describe('createGrinderNode', () => {
         expect(Object.isFrozen((initialization as { target: unknown }).target)).toBe(true);
         postMessage.mockClear();
 
-        node.setPatch({ drive: 0.5 });
-        expect(postMessage).toHaveBeenCalledWith({ type: 'patch', patch: { drive: 0.5 } });
+        node.setPatch({ neuralModelMode: 'builtin' });
+        const patch = postMessage.mock.calls.find(
+            (call) => (call[0] as { command?: string }).command === 'apply-grinder-neural-patch'
+        )?.[0];
+        expect(patch).toEqual({
+            schemaVersion: 1,
+            command: 'apply-grinder-neural-patch',
+            target: { trackId: 'track-1', deviceId: 'grinder-1', deviceType: 'grinder' },
+            patch: { neuralModelMode: 'builtin' },
+            correlation: { workletGeneration: expect.any(Number), controlSequence: 1 },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        });
+        expect(Object.isFrozen(patch)).toBe(true);
 
         node.setBypass(true);
         expect(postMessage).toHaveBeenCalledWith(
@@ -167,7 +178,7 @@ describe('createGrinderNode', () => {
                 value: 1,
                 correlation: {
                     workletGeneration: expect.any(Number),
-                    controlSequence: 1,
+                    controlSequence: 2,
                 },
             })
         );
@@ -179,7 +190,7 @@ describe('createGrinderNode', () => {
                 command: 'set-fallback-param',
                 target: expect.objectContaining({ parameterId: 'bypass' }),
                 value: 0,
-                correlation: expect.objectContaining({ controlSequence: 2 }),
+                correlation: expect.objectContaining({ controlSequence: 3 }),
             })
         );
     });
@@ -243,6 +254,15 @@ describe('createGrinderNode', () => {
         postMessage.mockClear();
 
         node.setParam('unknown-fallback-param', 0.5);
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('drops an unbound neural patch instead of posting the legacy raw port message', async () => {
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setPatch({ neuralModelMode: 'builtin' });
 
         expect(postMessage).not.toHaveBeenCalled();
     });
