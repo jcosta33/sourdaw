@@ -9,6 +9,8 @@ import {
     adjustYZoom,
     zoomToUsedRange,
     toggleAutomationVisibility,
+    removeAutomationLane,
+    restoreAutomationLanes,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
@@ -122,6 +124,8 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     addAutomationPoint: vi.fn(),
     removeAutomationPoint: vi.fn(),
     toggleAutomationVisibility: vi.fn(),
+    removeAutomationLane: vi.fn(),
+    restoreAutomationLanes: vi.fn(),
     insertAutomationShape: vi.fn(),
     deleteSelectedPoints: vi.fn(),
     adjustYZoom: vi.fn(),
@@ -199,7 +203,7 @@ describe('AutomationLaneRow', () => {
         expect(laneDiv).toHaveAttribute('tabIndex', '0');
     });
 
-    it('should wire the lane controls callbacks to the zoom, visibility, and close use cases', () => {
+    it('should wire the lane controls callbacks to the zoom, visibility, and removal use cases', () => {
         render(<AutomationLaneRow {...defaultProps} />);
 
         fireEvent.click(screen.getByText('zoom-used-range'));
@@ -208,8 +212,58 @@ describe('AutomationLaneRow', () => {
         fireEvent.click(screen.getByText('toggle-visibility'));
         expect(toggleAutomationVisibility).toHaveBeenCalledWith('lane-1');
 
+        // The X removes the lane (DAW convention: close = remove) — it is a
+        // distinct action from the eye, which only hides it. Before this fix
+        // both buttons called `toggleAutomationVisibility`.
         fireEvent.click(screen.getByText('close-lane'));
-        expect(toggleAutomationVisibility).toHaveBeenCalledTimes(2);
+        expect(removeAutomationLane).toHaveBeenCalledWith('lane-1');
+        expect(toggleAutomationVisibility).toHaveBeenCalledTimes(1);
+    });
+
+    it('closing a lane pushes an undo entry whose undo restores the lane with its points', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [
+                { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 4, value: 0.6, curve: 'linear', tension: 0 },
+            ],
+        };
+        render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+
+        fireEvent.click(screen.getByText('close-lane'));
+
+        expect(removeAutomationLane).toHaveBeenCalledWith('lane-1');
+        expect(pushUndoEntry).toHaveBeenCalledWith(
+            'Remove automation lane',
+            expect.any(Function),
+            expect.any(Function)
+        );
+
+        const [, undoFn, redoFn] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+
+        undoFn();
+        expect(restoreAutomationLanes).toHaveBeenCalledWith([lane]);
+
+        redoFn();
+        expect(removeAutomationLane).toHaveBeenCalledTimes(2);
+    });
+
+    it('cancels an in-flight drag when the row unmounts mid-gesture', () => {
+        const cancelDrag = vi.fn();
+        vi.mocked(onRubberBandStart).mockReturnValue(cancelDrag);
+
+        const { container, unmount } = render(<AutomationLaneRow {...defaultProps} />);
+        const svg = container.querySelector('svg')!;
+        fireEvent.mouseDown(svg, { button: 0 });
+
+        expect(cancelDrag).not.toHaveBeenCalled();
+        unmount();
+        expect(cancelDrag).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw on unmount when no drag was ever started', () => {
+        const { unmount } = render(<AutomationLaneRow {...defaultProps} />);
+        expect(() => unmount()).not.toThrow();
     });
 
     it('should render breakpoint nodes only for in-viewport points and show curve labels for non-linear curves', () => {

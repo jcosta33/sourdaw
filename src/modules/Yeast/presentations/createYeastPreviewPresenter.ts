@@ -158,6 +158,7 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
             droppedVisualEvents,
             processorActivity: [],
             summary: createYeastPreviewSummary([]),
+            soundingPitches: [],
         });
     }
 
@@ -167,6 +168,24 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
                 events.delete(eventId);
             }
         }
+    }
+
+    function isSounding(event: YeastPreviewEvent, playheadBeat: number): boolean {
+        return (
+            event.realized &&
+            event.beatTime <= playheadBeat &&
+            event.beatTime + Math.max(0, event.durationBeats) > playheadBeat
+        );
+    }
+
+    function currentSoundingPitches(playheadBeat: number): number[] {
+        const pitches: number[] = [];
+        for (const event of events.values()) {
+            if (isSounding(event, playheadBeat)) {
+                pitches.push(event.pitch);
+            }
+        }
+        return pitches;
     }
 
     function currentVisibleEvents(playheadBeat: number): YeastPreviewEvent[] {
@@ -215,6 +234,7 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
             droppedVisualEvents,
             processorActivity: effectiveProcessorActivity,
             summary: createYeastPreviewSummary(visibleEvents),
+            soundingPitches: currentSoundingPitches(playheadBeat),
         });
     }
 

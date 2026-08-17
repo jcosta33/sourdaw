@@ -18,7 +18,11 @@ import {
     setStretchMode,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
-import { decodeAudioFile, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
+import {
+    decodeAudioFile,
+    getCachedAudioBuffer,
+    getCachedAudioBufferWaveformPeaks,
+} from '#/modules/AudioEngine/useCases';
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -151,6 +155,7 @@ vi.mock('#/utils/UI/resolveToken', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: vi.fn(),
+    getCachedAudioBuffer: vi.fn(() => null),
     getCachedAudioBufferWaveformPeaks: vi.fn(() => new Float32Array([0.35, 0.15])),
     isTauri: vi.fn(() => false),
 }));
@@ -203,25 +208,39 @@ vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => ({
     audioToMidi: vi.fn(),
 }));
 
+// Every clip this spec renders carries an analysed pitch contour. Pitch editing
+// is Knead mode's job, and the waveform surface must be indifferent to it: the
+// retired waveform-mode pitch overlay turned "this clip has a contour" into
+// "this clip's waveform is dead". Serving a populated contour here is what makes
+// that regression reachable — an empty one exercises nothing.
 vi.mock('#/modules/Knead/stores', () => {
-    const defaultKneadState = {
+    const kneadStateWithContour = {
         activeClipId: null,
         clips: {},
-        contours: {},
+        contours: {
+            'clip-1': {
+                points: [
+                    { time_ms: 0, frequency_hz: 220, confidence: 0.9, voiced: true },
+                    { time_ms: 300, frequency_hz: 220, confidence: 0.9, voiced: true },
+                ],
+                sample_rate: 48000,
+                hop_size: 256,
+            },
+        },
         isAnalyzing: false,
         analysisProgress: 0,
     };
     return {
         kneadStore: {
             get value() {
-                return defaultKneadState;
+                return kneadStateWithContour;
             },
-            getSnapshot: () => defaultKneadState,
+            getSnapshot: () => kneadStateWithContour,
             subscribe: vi.fn(() => () => {}),
             subscribeReact: vi.fn(() => () => {}),
             set: vi.fn(),
         },
-        defaultKneadState,
+        defaultKneadState: kneadStateWithContour,
     };
 });
 
@@ -499,6 +518,74 @@ describe('WaveformEditor', () => {
         fireEvent.doubleClick(screen.getByLabelText('Waveform editor'), { clientX: 80 });
 
         expect(vi.mocked(addManualWarpMarker)).toHaveBeenCalledWith({ clipId: 'clip-1', beat: 2 });
+    });
+
+    // Regression: waveform mode used to mount a second pitch editor as a
+    // full-bleed `absolute inset-0 z-10` overlay whose canvas switched to
+    // `pointer-events-auto` as soon as a contour existed. Entering Knead mode
+    // once creates that contour and persists it through the CRDT, so from then
+    // on the clip's warp drags, double-clicks and whole context menu were dead
+    // in waveform mode — permanently, for that clip.
+    //
+    // jsdom dispatches an event straight at the element named in `fireEvent`, so
+    // it cannot reproduce the swallowing on its own: the structural assertions
+    // are the ones that discriminate. They fail with the overlay restored (a
+    // second canvas, carrying `pointer-events-auto`, layered over the waveform)
+    // and pass with pitch editing left to Knead mode where it belongs.
+    describe('waveform surface for a clip that already has a pitch contour', () => {
+        const getWaveformSurface = (): HTMLElement =>
+            screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+
+        it('layers nothing over the waveform that takes the pointer', () => {
+            render(<WaveformEditor {...defaultProps} />);
+            const surface = getWaveformSurface();
+
+            expect(surface.querySelectorAll('canvas')).toHaveLength(1);
+            expect(surface.querySelectorAll('.pointer-events-auto')).toHaveLength(0);
+        });
+
+        it('still drags a warp marker', () => {
+            vi.mocked(getWarpState).mockReturnValue({
+                enabled: true,
+                markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
+                stretchMode: 'complex',
+                originalTempo: null,
+            });
+            render(<WaveformEditor {...defaultProps} />);
+            const canvas = screen.getByLabelText('Waveform editor');
+            canvas.setPointerCapture = vi.fn();
+
+            fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+            fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+            fireEvent.pointerUp(canvas, { pointerId: 7 });
+
+            expect(vi.mocked(moveWarpMarker)).toHaveBeenCalledWith('clip-1', 'm1', 2.1);
+        });
+
+        it('still adds a warp marker on double click', () => {
+            vi.mocked(getWarpState).mockReturnValue({
+                enabled: true,
+                markers: [],
+                stretchMode: 'complex',
+                originalTempo: null,
+            });
+            render(<WaveformEditor {...defaultProps} />);
+
+            fireEvent.doubleClick(screen.getByLabelText('Waveform editor'), { clientX: 80 });
+
+            expect(vi.mocked(addManualWarpMarker)).toHaveBeenCalledWith({ clipId: 'clip-1', beat: 2 });
+        });
+
+        it('still opens the context menu and runs its actions', () => {
+            render(<WaveformEditor {...defaultProps} />);
+
+            fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+            expect(screen.getByRole('menu')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Normalize' }));
+
+            expect(vi.mocked(normalizeClip)).toHaveBeenCalledWith('clip-1');
+        });
     });
 
     it('should run a waveform context menu action and close the menu', () => {
@@ -899,34 +986,80 @@ describe('WaveformEditor', () => {
         expect(vi.mocked(removeWarpMarker)).not.toHaveBeenCalled();
     });
 
-    it('should render placeholder waveform bars when no real peak data exists', () => {
-        vi.mocked(getCachedAudioBufferWaveformPeaks).mockReturnValue(new Float32Array([0, 0, 0]));
-        const canvasContext = {
-            scale: vi.fn(),
-            fillRect: vi.fn(),
-            beginPath: vi.fn(),
-            moveTo: vi.fn(),
-            lineTo: vi.fn(),
-            stroke: vi.fn(),
-            closePath: vi.fn(),
-            fill: vi.fn(),
-            setLineDash: vi.fn(),
-            fillText: vi.fn(),
+    // An all-zero peak array is what the buffer cache returns for BOTH a cache
+    // miss and a digitally silent buffer, so peak amplitude alone cannot decide
+    // which one is on screen. Deciding on it painted the placeholder sine bars
+    // and "drop an audio file" over silent audio that had loaded perfectly well.
+    describe('empty-looking peaks', () => {
+        const installCanvasStub = (): { fillText: ReturnType<typeof vi.fn>; fill: ReturnType<typeof vi.fn> } => {
+            const canvasContext = {
+                scale: vi.fn(),
+                fillRect: vi.fn(),
+                beginPath: vi.fn(),
+                moveTo: vi.fn(),
+                lineTo: vi.fn(),
+                stroke: vi.fn(),
+                closePath: vi.fn(),
+                fill: vi.fn(),
+                setLineDash: vi.fn(),
+                fillText: vi.fn(),
+            };
+            Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+                configurable: true,
+                value: vi.fn((contextId: string) => (contextId === '2d' ? canvasContext : null)),
+            });
+            Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 127 });
+            Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 48 });
+            return canvasContext;
         };
-        Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
-            configurable: true,
-            value: vi.fn((contextId: string) => (contextId === '2d' ? canvasContext : null)),
+
+        // The file-level `beforeEach` is `vi.clearAllMocks()`, which clears calls
+        // but keeps implementations — so a `mockReturnValue` installed here would
+        // stay installed for every later test in the file. Put the module mock's
+        // own defaults back.
+        afterEach(() => {
+            vi.mocked(getCachedAudioBuffer).mockImplementation(() => null);
+            vi.mocked(getCachedAudioBufferWaveformPeaks).mockImplementation(() => new Float32Array([0.35, 0.15]));
         });
-        Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 127 });
-        Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 48 });
 
-        render(<WaveformEditor {...defaultProps} />);
+        it('should render placeholder waveform bars and the drop hint when no buffer is loaded', () => {
+            vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+            vi.mocked(getCachedAudioBufferWaveformPeaks).mockReturnValue(new Float32Array([0, 0, 0]));
+            const canvasContext = installCanvasStub();
 
-        expect(canvasContext.fillText).toHaveBeenCalledWith(
-            'Audio clip — drop an audio file to load waveform',
-            expect.any(Number),
-            expect.any(Number)
-        );
+            render(<WaveformEditor {...defaultProps} />);
+
+            expect(canvasContext.fillText).toHaveBeenCalledWith(
+                'Audio clip — drop an audio file to load waveform',
+                expect.any(Number),
+                expect.any(Number)
+            );
+        });
+
+        it('should draw a flat line and no drop hint for a loaded but silent buffer', () => {
+            vi.mocked(getCachedAudioBuffer).mockReturnValue({
+                numberOfChannels: 1,
+                length: 4,
+                sampleRate: 48_000,
+                duration: 4 / 48_000,
+                getChannelData: () => new Float32Array(4),
+                copyFromChannel: () => {},
+                copyToChannel: () => {},
+            });
+            vi.mocked(getCachedAudioBufferWaveformPeaks).mockReturnValue(new Float32Array([0, 0, 0]));
+            const canvasContext = installCanvasStub();
+
+            render(<WaveformEditor {...defaultProps} />);
+
+            // The clip holds audio; telling the user to drop a file would be a lie.
+            expect(canvasContext.fillText).not.toHaveBeenCalledWith(
+                'Audio clip — drop an audio file to load waveform',
+                expect.any(Number),
+                expect.any(Number)
+            );
+            // The peak path ran instead, which at zero amplitude is a flat line.
+            expect(canvasContext.fill).toHaveBeenCalled();
+        });
     });
 
     it('should not throw when the canvas cannot provide a 2d context', () => {

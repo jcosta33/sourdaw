@@ -308,6 +308,29 @@ export type PitchContourSnapshot = {
     hop_size: number;
     algorithm?: string;
 };
+/** An editable Knead pitch blob carried by `restoreClipFileId` so undoing a pitch
+ *  commit gives the user their edits back. Structural mirror of Knead's `NoteBlob`
+ *  — model isolation forbids importing the concrete model.
+ *
+ *  Deliberately NOT the reduced blob shape on `ClipActionSnapshot.kneadState`: that
+ *  one omits drift, vibrato, formant shift, gain and mute, and an undo restoring
+ *  from it would silently discard those edits. A restore snapshot has to be lossless.
+ *  `originalPitchCenterCents` stays optional because the persisted shape omits it. */
+export type KneadPitchBlobSnapshot = {
+    id: string;
+    startTime: number;
+    endTime: number;
+    pitchCenterCents: number;
+    originalPitchCenterCents?: number;
+    pitchCurveCents: number[];
+    voicedConfidence: number;
+    driftPercent: number;
+    vibratoDepthPercent: number;
+    vibratoRateHz: number;
+    formantShiftCents: number;
+    gainDb: number;
+    muted: boolean;
+};
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
@@ -1438,10 +1461,22 @@ export type AppAction =
           };
       }
     | {
-          /** Inverse of `commitPitchEdit`. Restores a clip's audio file pointer to the
-           *  pre-edit path. Emitted only by the `commitPitchEdit` handler's `describe()`. */
+          /** Inverse of `commitPitchEdit`. Restores everything the commit consumed:
+           *  the clip's file pointer, the buffer it plays from, and the pitch analysis
+           *  (contour plus the user's edited blobs) the commit dropped. Restoring the
+           *  pointers alone would leave the clip un-analysed and the user's blob edits
+           *  gone — a lossy undo. Emitted only by the `commitPitchEdit` handler's
+           *  `describe()`. Every field past `clipId` is optional: the commit skips the
+           *  buffer repoint on the native render path, and a clip can legitimately have
+           *  had no blobs or no contour. */
           type: 'restoreClipFileId';
-          payload: { clipId: string; fileId: string };
+          payload: {
+              clipId: string;
+              fileId: string;
+              audioBufferId?: string;
+              blobs?: KneadPitchBlobSnapshot[];
+              contour?: PitchContourSnapshot;
+          };
       }
     | { type: 'muteClip'; payload: { clipId: string; muted: boolean; expectedMuted?: boolean } }
     | { type: 'clearSolos'; payload?: undefined }

@@ -411,6 +411,31 @@ describe('useTempoEditorState', () => {
             expect(mockExecuteAppAction).not.toHaveBeenCalled();
             expect(result.current.editingTimeSig).toBe(false);
         });
+
+        it.each([
+            ['an empty numerator field', '', '4'],
+            ['non-numeric numerator text', 'nope', '4'],
+            ['an out-of-range numerator', '99', '4'],
+        ])('rejects %s without dispatching or closing the editor', (_label, num, den) => {
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.startTimeSigEdit();
+            });
+            act(() => {
+                result.current.setNumValue(num);
+                result.current.setDenValue(den);
+            });
+            act(() => {
+                result.current.commitTimeSig();
+            });
+
+            // `parseInt('', 10)` and `parseInt('nope', 10)` are both NaN, and
+            // `NaN < 1 || NaN > 32` is false for either bound — the pre-fix range
+            // check alone let this reach `executeAppAction`.
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
+            expect(result.current.editingTimeSig).toBe(true);
+        });
     });
 
     describe('adding a tempo change', () => {

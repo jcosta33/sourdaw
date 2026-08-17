@@ -1,3 +1,5 @@
+import { isTauri } from '#/utils/tauriRuntime';
+
 import { type PluginDescriptor } from './DeviceParameterTypes';
 import { BACTERIA_DESCRIPTOR } from './PluginDescriptors/BacteriaDescriptor';
 import { BUILTIN_EFFECT_DESCRIPTORS } from './PluginDescriptors/BuiltinEffectDescriptors';
@@ -182,7 +184,7 @@ export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean 
     if (platform === 'both') {
         return true;
     }
-    const isNativeRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    const isNativeRuntime = isTauri();
     if (isNativeRuntime) {
         return true;
     } // native can run both web and native plugins

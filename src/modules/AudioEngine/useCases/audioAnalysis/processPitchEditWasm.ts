@@ -13,7 +13,7 @@ export function processPitchEditWasm(
     originalBuffer: AudioBuffer,
     segments: PitchSegment[],
     contour: PitchContour,
-    outputAudioPath: string
+    outputAudioBufferId: string
 ): void {
     const channelData = originalBuffer.getChannelData(0);
     // The regenerated .d.ts types the return as generic Float32Array
@@ -36,5 +36,8 @@ export function processPitchEditWasm(
     });
     newBuffer.copyToChannel(newSamples, 0);
 
-    audioBufferCache.set(outputAudioPath, newBuffer);
+    // Cached under a buffer id, not a file path: the clip is repointed at this key
+    // on success, and playback, export and the analysis re-run all resolve a clip's
+    // audio through `audioBufferId`. Keyed by path, the render was unreachable.
+    audioBufferCache.set(outputAudioBufferId, newBuffer);
 }

@@ -1,6 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-
-import { isTauri } from '#/utils/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 type PitchEditSegment = {
     start_time_ms: number;
@@ -27,7 +25,7 @@ export async function commitNativePitchEdit<TContour>({
         return false;
     }
 
-    await invoke('commit_pitch_edit', {
+    await tauriInvoke('commit_pitch_edit', {
         request: {
             inputAudioPath,
             outputAudioPath,

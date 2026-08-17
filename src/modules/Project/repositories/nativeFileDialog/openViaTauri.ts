@@ -1,11 +1,12 @@
+import { desktopOpenDialog } from '#/utils/tauriBridge';
+
 import { openViaBrowser } from './helpers';
 
 import type { OpenFileOptions } from './helpers';
 
 export async function openViaTauri(options: OpenFileOptions): Promise<string[] | null> {
     try {
-        const { open } = await import(/* @vite-ignore */ '@tauri-apps/plugin-dialog');
-        const result = await open({
+        const result = await desktopOpenDialog({
             multiple: options.multiple ?? false,
             filters: options.filters,
         });
