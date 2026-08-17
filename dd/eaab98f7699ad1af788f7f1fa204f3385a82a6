@@ -1,0 +1,87 @@
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 16-17,19
+  s_a40848e8f8cca9::t_162eea98553360 15
+src/modules/Toaster/useCases/compileToasterTrackStackActions.ts
+  s_a40848e8f8cca9::t_6c317dad3e651b 1-2,6-11,13-15,17-57
+src/modules/Arrangement/handlers/getPlannedTrackState.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 14-16,27-29,47-49
+src/modules/AudioEngine/repositories/__tests__/createAudioEngineTopologyTestHarness.ts
+  s_a40848e8f8cca9::t_18db96338fdd23 1-8
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_a40848e8f8cca9::t_4b3d0cd0cc6283 223-261
+src/modules/AudioEngine/repositories/__tests__/kneadStateDuringDeviceLoad.spec.ts
+  s_a40848e8f8cca9::t_3ebf428974f5be 5-8,84
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_a40848e8f8cca9::t_54cee890410867 5,8-9,16,174,2320
+  s_a40848e8f8cca9::t_9a1d97a72e33f6 17
+src/modules/Arrangement/useCases/addTrack.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 18-19,22
+src/modules/AudioEngine/useCases/__tests__/publicDeviceTopologyBoundary.spec.ts
+  s_a40848e8f8cca9::t_006c7012fd65e0 5,12-13,18,20-21,23,25-26,31,38,40-42
+  s_a40848e8f8cca9::t_605db6c1d59d3a 2-3,7-9,19
+  s_a40848e8f8cca9::t_975ac424c403f6 1,10-11,14-17,24,27-30,33-37
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_a40848e8f8cca9::t_6c317dad3e651b 18,201-208,212-214
+src/modules/Toaster/useCases/__tests__/compileToasterTrackStackActions.spec.ts
+  s_a40848e8f8cca9::t_98a4260ce90732 1,3,5-6,10,13-22,25,27-44,48-49,51
+src/modules/Toaster/useCases/index.ts
+  s_a40848e8f8cca9::t_6c317dad3e651b 1
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_a40848e8f8cca9::t_1caa9dc21dfeac 26-29,49-51,119,244-312
+  s_a40848e8f8cca9::t_0f51f33503c849 313-315
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_a40848e8f8cca9::t_804cf695a5b127 502-504,507-510
+  s_a40848e8f8cca9::t_4f5e0f321d46b7 6
+  s_a40848e8f8cca9::t_3ebf428974f5be 7-10,146
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_a40848e8f8cca9::t_804cf695a5b127 606,672
+  s_a40848e8f8cca9::t_3ebf428974f5be 7-11,248
+src/modules/Arrangement/models/Track.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 235-236,241,276
+src/modules/ContentBrowser/models/SoundPresetViewTypes.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 24
+src/modules/Arrangement/handlers/preset/handleLoadPreset.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 142
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_a40848e8f8cca9::t_ce1fd1beaa907e 2560
+  s_a40848e8f8cca9::t_18db96338fdd23 2590,2592-2602
+  s_a40848e8f8cca9::t_ccbde8897fee17 1850-1851,1884-1885,2561-2587,2591
+  s_a40848e8f8cca9::t_79aa8f01b04170 2588-2589
+src/modules/Arrangement/models/SoundPreset.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 16
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_a40848e8f8cca9::t_3ebf428974f5be 5-8,497,1932
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_8c5081e4062f4f 938-951,987
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 628-632
+  s_a40848e8f8cca9::t_7929e18c40d6fd 633
+src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts
+  s_a40848e8f8cca9::t_dfc506309306ae 42-63
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_9905925e34be79::t_3b0dee6e6a1d6f 224-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ddeaab98f7699ad1af788f7f1fa204f3385a82a6",
+  "prompts": {},
+  "sessions": {
+    "s_9905925e34be79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00cff-2480-7280-b957-a9d6e48902eb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
