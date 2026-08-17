@@ -19,6 +19,7 @@ import {
     persistDevicePatch,
     quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
+    runtimeGraphTopology,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
@@ -45,6 +46,8 @@ import {
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureOfflineYeastMidiProcessing,
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -177,6 +180,10 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+configureRuntimeGraphProjectRevisionValidator(
+    (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
+);
+configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 agentProjectInspectionPort.setProvider(({ projectDocument, targetIds }) =>
     captureCommandBatchPreflightState({ assetReferences: [], projectDocument, targetIds })

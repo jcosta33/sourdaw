@@ -17,6 +17,7 @@ export { getDeviceTypesForCommandDeviceIds } from './getDeviceTypesForCommandDev
 export { duplicateTrack } from './duplicateTrack';
 export { updateTrack } from './updateTrack';
 export { getAllTracks } from './getAllTracks';
+export { runtimeGraphTopology } from './runtimeGraphTopology';
 export { getTrackById } from './getTrackById';
 export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
