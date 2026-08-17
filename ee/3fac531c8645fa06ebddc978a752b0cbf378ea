@@ -1,0 +1,98 @@
+src/modules/AudioRendering/repositories/audioExport/selectNativeAudioExportFile.ts
+  s_d91dcbe5f07151::t_9eba1806152f08 14
+  s_d91dcbe5f07151::t_1475f4c7548470 1-2
+src/modules/Project/repositories/nativeFileDialog/saveFileDialog.ts
+  s_d91dcbe5f07151::t_4cdf119e25b245 1,12
+src/modules/AudioEngine/repositories/audioAnalysis/__tests__/analyze-native-pitch.spec.ts
+  s_d91dcbe5f07151::t_f2f76de09aa68f 29,55
+  s_d91dcbe5f07151::t_59a8fdc4a839bc 3,9
+  s_d91dcbe5f07151::t_413d72d5a8a8b7 25,37
+src/modules/AudioEngine/repositories/audioAnalysis/__tests__/listen-pitch-analysis-progress.spec.ts
+  s_d91dcbe5f07151::t_0b57ee0f5b31e2 3,9,21,23,48,53,60
+src/utils/__tests__/tauriBridge.spec.ts
+  s_d91dcbe5f07151::t_500b1fd053502f 262-541,543-549
+  s_d91dcbe5f07151::t_eccf452967c661 10-16,25-48
+  s_d91dcbe5f07151::t_f153c6107ce29b 542
+src/modules/PluginHost/repositories/pluginBridge/setPluginState.ts
+  s_d91dcbe5f07151::t_e576262ba26481 30
+src/modules/Project/repositories/nativeProjectFiles/tauriInvoke.ts
+  s_d91dcbe5f07151::t_aa7810dd3b3894 1,9
+src/modules/DawInterchange/repositories/saveDawProjectFileDialog.ts
+  s_d91dcbe5f07151::t_e228f5ba884dfc 1-2
+  s_d91dcbe5f07151::t_dd1e7dc4b18fe6 12
+src/modules/AudioRendering/repositories/audioExport/selectNativeAudioExportDirectory.ts
+  s_d91dcbe5f07151::t_4ad7b2622f846f 1-2,6
+src/modules/SampleLibrary/repositories/readTauriDirectory.ts
+  s_d91dcbe5f07151::t_fe0b39db27d1f0 1
+  s_d91dcbe5f07151::t_071cc715a14ba3 36
+src/modules/Project/repositories/nativeTuning/parseScl.ts
+  s_d91dcbe5f07151::t_1c754a82674b7f 1
+  s_d91dcbe5f07151::t_799f1f6175e9f2 37
+src/modules/AudioEngine/repositories/audioAnalysis/analyze-native-pitch.ts
+  s_d91dcbe5f07151::t_23a0a695895246 1
+  s_d91dcbe5f07151::t_48ae9d41534afa 64
+electron/__tests__/commands.spec.ts
+  s_d91dcbe5f07151::t_3a4098fb2785a6 313-321
+  s_d91dcbe5f07151::t_ce7130a6831a9c 22-23
+src/modules/SampleLibrary/repositories/pickTauriSampleFolder.ts
+  s_d91dcbe5f07151::t_df7032f6df4de2 1-2,6
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  s_d91dcbe5f07151::t_c967aedd00166f 14
+  s_d91dcbe5f07151::t_b935b3dfc4fc05 67
+  s_d91dcbe5f07151::t_d306ae8e28a399 3
+src/types/sourdaw-desktop.d.ts
+  s_d91dcbe5f07151::t_4f867db7aa9797 1-55
+src/modules/AudioEngine/repositories/audioAnalysis/listen-pitch-analysis-progress.ts
+  s_d91dcbe5f07151::t_76e0d420221471 1
+  s_d91dcbe5f07151::t_bb93cdb8811274 23-25,29
+src/utils/sourdawCommandArguments.ts
+  s_d91dcbe5f07151::t_7f8f2c500a722d 1-81
+src/modules/AudioEngine/repositories/audioAnalysis/__tests__/commit-native-pitch-edit.spec.ts
+  s_d91dcbe5f07151::t_2a4e6a17436aa2 29,51
+  s_d91dcbe5f07151::t_082e0b9efacaea 3,9
+src/modules/AudioEngine/repositories/audioAnalysis/commit-native-pitch-edit.ts
+  s_d91dcbe5f07151::t_babb0de978b9f4 28
+  s_d91dcbe5f07151::t_218ac5f451cadb 1
+src/utils/tauriBridge.ts
+  s_d91dcbe5f07151::t_f3f1d492f955e3 78-80
+  s_d91dcbe5f07151::t_df42c50905e99c 2,4-8,10,12-19,25-36,38-41,44-77,81-115,118-120,125-129,132-136,144-150,173-175,181,185-190,204,206-210,221-226,287,294,305,335,337-342,352-360,365-425
+src/modules/Project/repositories/nativeFileDialog/openViaTauri.ts
+  s_d91dcbe5f07151::t_e542a2f156ff4b 1-2,9
+src/modules/AiGeneration/repositories/nativeAIBridge/invokeAI.ts
+  s_d91dcbe5f07151::t_e710954ea28895 8-9
+src/modules/Project/repositories/project/downloadProjectFile.ts
+  s_d91dcbe5f07151::t_b63070d5b9cfb6 2
+  s_d91dcbe5f07151::t_9e39f0166aa4d4 23
+src/modules/AudioRendering/repositories/audioExport/writeNativeAudioStemFile.ts
+  s_d91dcbe5f07151::t_28b7c94c844ec6 16
+  s_d91dcbe5f07151::t_de62d7fcf5d81a 1
+src/modules/Levain/repositories/sampleLoader/resolveSampleBasePath.ts
+  s_d91dcbe5f07151::t_42438e734ff36f 4-5
+  s_d91dcbe5f07151::t_33ceda589c1c4e 25-34
+src/utils/__tests__/sourdawDesktopBridge.spec.ts
+  s_d91dcbe5f07151::t_ad31394d351450 1-21
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/invokeCommand.ts
+  s_d91dcbe5f07151::t_fabcb174c96122 8-9
+src/utils/tauriRuntime.ts
+  s_d91dcbe5f07151::t_2ddb5eca5ee11f 2,5,7-24
+src/modules/Project/repositories/project/__tests__/downloadProjectFile.spec.ts
+  s_d91dcbe5f07151::t_13510a5e702683 10
+  s_d91dcbe5f07151::t_423b73a0d35116 43,47
+  s_d91dcbe5f07151::t_865361de405b7e 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ee3fac531c8645fa06ebddc978a752b0cbf378ea",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
