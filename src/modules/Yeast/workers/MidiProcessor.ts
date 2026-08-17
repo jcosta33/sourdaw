@@ -62,17 +62,23 @@ export type MidiProcessor = {
      * Process one block of MIDI events. Append output events to `output`.
      *
      * A block is the half-open sample window
-     * `[transport.blockStartSamples, transport.blockEndSamples)`. A processor
-     * must confine `output` to that window: an event belongs to the block that
-     * contains its `timeSamples`, never to an earlier one. A processor that
+     * `[transport.blockStartSamples, transport.blockEndSamples)`. Where a
+     * processor controls its own timing it should stay inside that window: a
+     * generator steps to the block containing its step, and a processor that
      * wants to place an event later holds it in its own `ScheduledEventQueue`
-     * and emits it when a later block contains it.
+     * rather than emitting it ahead of time.
      *
-     * The rack enforces the window rather than trusting it: anything a
-     * processor emits at or beyond `blockEndSamples` is deferred and released
-     * as OUTPUT in the block that contains it. Deferred events are never
-     * re-entered at the chain top, so a generator can never ingest its own
-     * output as fresh input, and no event is processed by the chain twice.
+     * The rack rejects nothing. It routes the chain's output by time, once:
+     * an event at or beyond `blockEndSamples` is deferred and released in the
+     * block that contains it; an event before `blockStartSamples` is released
+     * immediately, in the block that produced it. The lower bound is a release
+     * rather than a rejection because timing processors emit below the window
+     * by design — Humanizer's rushed preset carries a negative timing mean and
+     * GrooveModule applies negative template offsets.
+     *
+     * What the rack does enforce is direction. A deferred event rejoins the
+     * chain's OUTPUT, never its input, so a generator can never ingest its own
+     * output as a fresh held note and no event traverses the chain twice.
      */
     processMidi(
         input: readonly MidiEvent[],

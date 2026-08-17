@@ -45,7 +45,15 @@ function runBeats(
     beats: number,
     { sampleRate = 44_100, blockSizeSamples = 128, bpm = 120 } = {}
 ): void {
-    const totalSamples = Math.round(((sampleRate * 60) / bpm) * beats);
+    runSamples(engine, Math.round(((sampleRate * 60) / bpm) * beats), { sampleRate, blockSizeSamples, bpm });
+}
+
+/** Same, expressed as a raw sample span starting at 0. */
+function runSamples(
+    engine: MutationEngine,
+    totalSamples: number,
+    { sampleRate = 44_100, blockSizeSamples = 128, bpm = 120 } = {}
+): void {
     for (let start = 0; start < totalSamples; start += blockSizeSamples) {
         const blockEndSamples = Math.min(start + blockSizeSamples, totalSamples);
         engine.processMidi([], [], {
@@ -240,6 +248,53 @@ describe('MutationEngine', () => {
             runBeats(even, 6, { blockSizeSamples: 2205 });
 
             expect(ragged.getTargetValues()).toEqual(even.getTargetValues());
+        });
+    });
+
+    describe('catch-up bound', () => {
+        // At 44.1 kHz / 120 bpm a beat is 22050 samples; rate 10 puts a
+        // mutation every 2205. The catch-up loop is bounded at 64 steps.
+        const SAMPLES_PER_MUTATION = 2205;
+        const CAP = 64;
+
+        function cappedEngine(id: string): MutationEngine {
+            const engine = new MutationEngine(id);
+            engine.setParam('rate', 10);
+            engine.setParam('depth', 1);
+            return engine;
+        }
+
+        it('keeps the sub-step remainder when the loop ends at exactly the cap', () => {
+            // A block owing exactly 64 steps plus a 1000-sample remainder ends
+            // the loop on its condition, not on the bound — the remainder is
+            // legitimate and must carry. Discarding it whenever the step count
+            // happens to equal the cap silently drops that fraction of a beat.
+            const capped = cappedEngine('cap-exact');
+            runSamples(capped, CAP * SAMPLES_PER_MUTATION + 1000, {
+                blockSizeSamples: CAP * SAMPLES_PER_MUTATION + 1000,
+            });
+            runSamples(capped, SAMPLES_PER_MUTATION - 1000, { blockSizeSamples: SAMPLES_PER_MUTATION - 1000 });
+
+            // The same total span in ordinary blocks owes 65 steps.
+            const reference = cappedEngine('cap-exact');
+            runSamples(reference, (CAP + 1) * SAMPLES_PER_MUTATION);
+
+            expect(capped.getTargetValues()).toEqual(reference.getTargetValues());
+        });
+
+        it('drops the backlog when the bound actually cuts the loop short', () => {
+            // A single block owing far more than 64 steps takes 64 and discards
+            // the rest, rather than carrying a backlog that would keep the cap
+            // firing on every later block.
+            const overrun = cappedEngine('cap-overrun');
+            runSamples(overrun, 200 * SAMPLES_PER_MUTATION, { blockSizeSamples: 200 * SAMPLES_PER_MUTATION });
+            runSamples(overrun, SAMPLES_PER_MUTATION, { blockSizeSamples: SAMPLES_PER_MUTATION });
+
+            // 64 capped steps + 1 = the same walk as 65 uncapped steps.
+            const reference = cappedEngine('cap-overrun');
+            runSamples(reference, (CAP + 1) * SAMPLES_PER_MUTATION);
+
+            expect(overrun.getTargetValues()).toEqual(reference.getTargetValues());
         });
     });
 

@@ -100,7 +100,12 @@ export class MutationEngine extends BaseMidiProcessor {
             this.mutateStep();
             steps++;
         }
-        if (steps === MAX_MUTATIONS_PER_BLOCK) {
+        if (this.mutationPhaseSamples >= samplesPerMutation) {
+            // Only reachable when the catch-up bound cut the loop short. Drop
+            // the backlog so the cap does not keep firing on every later block.
+            // Testing `steps === MAX_MUTATIONS_PER_BLOCK` instead would also
+            // discard a legitimate sub-step remainder whenever the loop happened
+            // to end at exactly the cap.
             this.mutationPhaseSamples = 0;
         }
     }

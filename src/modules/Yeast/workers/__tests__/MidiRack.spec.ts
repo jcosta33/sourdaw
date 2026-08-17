@@ -8,6 +8,7 @@ import {
     YEAST_PREVIEW_FAILED_FLAG,
     YEAST_PREVIEW_OPEN_PHASE,
 } from '../../models/YeastPreviewSnapshot';
+import { ScheduledEventQueue } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
 import { createProcessor } from '../processorFactory';
 import { Arpeggiator } from '../processors/Arpeggiator';
@@ -138,6 +139,65 @@ class RecordingProcessor extends PassthroughProcessor {
     override processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
         for (const event of input) {
             this.seen.push(event);
+            output.push(event);
+        }
+    }
+}
+
+/**
+ * Emits one Note On far beyond its own block (so the rack defers it) and
+ * queues the matching Note Off internally, draining `[0, blockEnd)` exactly
+ * like ChordGenerator and NoteRepeater do.
+ */
+class FutureNoteProcessor extends PassthroughProcessor {
+    private readonly scheduled = new ScheduledEventQueue();
+    private emitted = false;
+
+    constructor(
+        id: string,
+        private readonly onTimeSamples: number,
+        private readonly offTimeSamples: number
+    ) {
+        super(id);
+    }
+
+    override processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
+        for (const event of input) {
+            output.push(event);
+        }
+        if (!this.emitted) {
+            this.emitted = true;
+            output.push({
+                timeSamples: this.onTimeSamples,
+                noteInstanceId: `${this.id}:future`,
+                kind: { type: 'noteOn', channel: 0, note: 72, velocity: 100 },
+            });
+            this.scheduled.push({
+                timeSamples: this.offTimeSamples,
+                noteInstanceId: `${this.id}:future`,
+                kind: { type: 'noteOff', channel: 0, note: 72 },
+            });
+        }
+        for (const event of this.scheduled.drainRangeInto(0, transport.blockEndSamples ?? 0, [], undefined)) {
+            output.push(event);
+        }
+    }
+
+    override reset(): void {
+        // Mirrors a real generator: the reset drops the queued Note Off.
+        this.scheduled.clear();
+    }
+}
+
+/** Pass-through that throws only once armed, so a fault can be timed. */
+class ArmableThrowingProcessor extends PassthroughProcessor {
+    armed = false;
+
+    override processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
+        if (this.armed) {
+            throw new Error('boom');
+        }
+        for (const event of input) {
             output.push(event);
         }
     }
@@ -1177,6 +1237,70 @@ describe('MidiRack', () => {
             // passes through non-note events, so a generated Note On re-fed as
             // chain input is swallowed outright — the note never sounds.
             expect(generatedOns).toEqual(['60@96000']);
+        });
+
+        it('drops deferred events with the generation when a processor throws mid-chain', () => {
+            // A deferred Note On is drained out of the scheduled queue at the
+            // top of processBlock. If a later processor then throws,
+            // settleGeneration discards the queue and resets every processor —
+            // killing the Note Off that generator had queued internally. The
+            // drained copy lives past the queue, so merging it downstream
+            // sounds a note whose release no longer exists: a hung note.
+            const rack = new MidiRack('rack-a');
+            const generator = new FutureNoteProcessor('future-1', 5000, 5600);
+            const faulty = new ArmableThrowingProcessor('faulty-1');
+            rack.addProcessor(generator);
+            rack.addProcessor(faulty);
+
+            // Block 0 emits the Note On at 5000 — deferred by the rack.
+            rack.processBlock([], 0, 128, transport, 'track-a');
+
+            // Arm the fault, then process the block that contains 5000.
+            faulty.armed = true;
+            const faultedOutput = rack.processBlock(
+                [],
+                4992,
+                5120,
+                { ...transport, ppqPosition: 4992 / 22050 },
+                'track-a'
+            );
+
+            // The failed generation sounds nothing.
+            expect(faultedOutput.filter(isNoteOn)).toEqual([]);
+            // And nothing is left hanging: a panic has no voice to release.
+            expect(rack.allNotesOff(5120).filter(isNoteOff)).toEqual([]);
+        });
+
+        it('releases a deferred event on the next processed block when its own window is skipped', () => {
+            // The host does not call processBlock for every window — the live
+            // scheduler only runs a rack whose track has an active carrier
+            // route, so a clip tail can skip the window a deferred event falls
+            // in. Draining from `blockStartSamples` strands that Note On
+            // forever while the Note Off the generator queued internally (it
+            // drains `[0, blockEnd)`) still fires: an orphan off, and a queue
+            // that only grows.
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new FutureNoteProcessor('future-1', 5000, 5600));
+
+            rack.processBlock([], 0, 128, transport, 'track-a');
+
+            // Skip every window between 128 and 10000, including the one that
+            // contains 5000, then process again.
+            const resumed = rack.processBlock(
+                [],
+                10_000,
+                10_128,
+                { ...transport, ppqPosition: 10_000 / 22050 },
+                'track-a'
+            );
+
+            // Both endpoints arrive together — no orphan off.
+            expect(resumed.filter(isNoteOn).map((event) => event.kind.note)).toEqual([72]);
+            expect(resumed.filter(isNoteOff).map((event) => event.kind.note)).toEqual([72]);
+            // The queue drained: a later empty block produces nothing.
+            expect(
+                rack.processBlock([], 10_128, 10_256, { ...transport, ppqPosition: 10_128 / 22050 }, 'track-a')
+            ).toEqual([]);
         });
 
         it('never re-enters a swung arp note as chain input', () => {

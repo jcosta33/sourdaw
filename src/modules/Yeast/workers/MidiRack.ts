@@ -228,10 +228,22 @@ export class MidiRack {
         // chain top would process it a second time and let a generator ingest
         // its own output as a fresh held note. Deferred events therefore
         // rejoin this block's OUTPUT, never its input.
+        //
+        // Drain from 0, not from `blockStartSamples`, matching every
+        // processor's own `[0, blockEnd)` drain. The host does not call
+        // processBlock for every window: the live scheduler only runs a rack
+        // whose track has an active carrier route, so the window containing a
+        // deferred event can be skipped entirely (a clip tail is enough). A
+        // lower bound at `blockStartSamples` strands that event in the queue
+        // permanently — while the Note Off its processor queued internally
+        // still fires on the next processed block, leaving an orphan off and
+        // an unbounded queue. Releasing late is correct and bounded; a
+        // backward jump cannot accumulate here because the discontinuity
+        // settle clears the queue.
         const deferred = this.deferredOutput;
         deferred.length = 0;
         const scheduledTrackId = preserveInputTrackIds ? undefined : trackId;
-        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, deferred, scheduledTrackId);
+        this.scheduled.drainRangeInto(0, blockEndSamples, deferred, scheduledTrackId);
 
         // 2. The chain's input is this block's own input events.
         const current0 = this.scratchA;
@@ -281,6 +293,12 @@ export class MidiRack {
                 // so failure recovery does not undo earlier processors in the chain.
                 preview?.cancelProcessorTransformation();
                 this.settleGeneration(lifecycleOutput, blockStartSamples);
+                // Drop the events already drained out of the scheduled queue
+                // for this block too. `settleGeneration` discards the queue
+                // itself, but these copies are past it — merging them at step
+                // 3b would emit a Note On whose Note Off died in the generator
+                // reset that just ran, leaving the note hung.
+                deferred.length = 0;
                 this.preview.beginBlock(
                     previewEnabled,
                     blockStartSamples,

@@ -103,7 +103,12 @@ export class CCGenerator extends BaseMidiProcessor {
         const high = Math.max(this.min, this.max);
 
         for (let offset = 0; offset < blockSamples; offset += emitInterval) {
-            this.accumPhase += phasePerSample * emitInterval;
+            // Advance by the samples this pass actually covers. A final partial
+            // interval that advanced a whole `emitInterval` would run the LFO
+            // fast in proportion to how badly the block divides by 64 — and
+            // short sub-blocks are routine (tempo-change splits), so the error
+            // compounds every block rather than averaging out.
+            this.accumPhase += phasePerSample * Math.min(emitInterval, blockSamples - offset);
             const currentPhase = (this.accumPhase + this.phase) % 1.0;
             const normalized = evalShape(this.shape, currentPhase, this.rng);
             const ccValue = Math.round(low + normalized * (high - low));
