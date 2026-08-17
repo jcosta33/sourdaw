@@ -80,7 +80,10 @@ export function parseIssueForm(yaml: string): IssueForm {
 }
 
 export function composeIssueTitle(prefix: string, title: string): string {
-    return title.startsWith(prefix) ? title : `${prefix}${title}`;
+    if (title.startsWith(prefix) || /^[a-z]+\([^)]+\): /.test(title)) {
+        return title;
+    }
+    return `${prefix}${title}`;
 }
 
 export function renderIssueSubmission(
@@ -156,7 +159,9 @@ export function parseCliArgs(args: string[]): {
 
 function resolveOption(value: string, options: string[], id: string): string {
     const trimmed = value.trim();
-    const match = options.find((option) => option === trimmed || option.startsWith(`${trimmed} (`));
+    const match = options.find(
+        (option) => option === trimmed || option.startsWith(`${trimmed} `) || option.startsWith(`${trimmed} (`)
+    );
     if (match === undefined) {
         fail(`invalid ${id}: ${trimmed}`);
     }

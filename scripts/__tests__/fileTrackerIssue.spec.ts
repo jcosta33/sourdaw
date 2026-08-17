@@ -93,6 +93,19 @@ describe('renderIssueSubmission', () => {
         expect(submission.labels).toEqual(['bug', 'status:ready', 'priority:P0']);
     });
 
+    it('accepts the Bug ai token against ai / airuntime', () => {
+        const submission = renderIssueSubmission(parseIssueForm(load('bug_report.yml')), {
+            title: 'ai: stream abort',
+            fields: {
+                scope: 'ai',
+                priority: 'P2',
+                description: 'stream abort drops the last token.',
+                reproduction: '1. Prompt\n2. Abort',
+            },
+        });
+        expect(submission.body).toContain('### Subsystem\n\nai / airuntime (AI agentic tools, proposals, streaming)');
+    });
+
     it('rejects a missing required field', () => {
         expect(() =>
             renderIssueSubmission(parseIssueForm(load('feature_request.yml')), {
@@ -106,6 +119,10 @@ describe('renderIssueSubmission', () => {
 describe('composeIssueTitle', () => {
     it('does not double the form prefix', () => {
         expect(composeIssueTitle('spec(scope): ', 'spec(scope): mixer: mute')).toBe('spec(scope): mixer: mute');
+    });
+
+    it('keeps an already conventional title', () => {
+        expect(composeIssueTitle('spec(scope): ', 'spec(arrangement): mixer')).toBe('spec(arrangement): mixer');
     });
 });
 
