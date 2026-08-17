@@ -29,20 +29,35 @@ pub const PLUGIN_WINDOW_LABEL_PREFIX: &str = "plugin-";
 /// Derived from the instance id rather than stored, so the same instance always
 /// addresses the same window and a label can be recomputed on any path. Dots
 /// and colons are escaped because window labels are restricted to a smaller
-/// alphabet than instance ids are.
+/// alphabet than instance ids are: Tauri labels accept only ASCII
+/// alphanumerics, `-`, `/`, `:` and `_`. Instance ids do not come from a
+/// controlled vocabulary — they are lossy-decoded (`CStr::to_string_lossy`)
+/// from a vendor-supplied CLAP descriptor id, so anything can appear: spaces,
+/// arbitrary punctuation, `U+FFFD` from invalid UTF-8. A character outside
+/// that charset reaching Tauri unescaped fails window creation outright
+/// ("Failed to create plugin window"), not just a label collision.
 ///
 /// The escaping is injective, which a flat character substitution is not: two
 /// instance ids that differ only in which of `.`, `:` or `-` they use — e.g.
 /// `"a.b"`, `"a:b"`, `"a-b"` — must not collapse onto the same label, or the
 /// second instance's editor either refuses to open ("already open") or is
 /// addressed through the first instance's window on close/destroy. `-` is the
-/// escape character: every literal `-` in the id is doubled to `--`, and `.`
-/// and `:` become the two-character sequences `-d` and `-c`. Because `-` never
-/// appears in the output on its own — only as the first character of one of
-/// these three fixed two-character sequences — the encoding can be scanned
-/// left to right and unambiguously decoded back into the original id. A
-/// function with a well-defined left inverse is injective, so distinct ids
-/// always produce distinct labels.
+/// escape character:
+///
+/// - a literal `-` is doubled to `--`
+/// - `.` becomes `-d`, `:` becomes `-c`
+/// - every other character outside `{ASCII alphanumeric, '/', '_'}` — the
+///   catch-all for anything a vendor descriptor id can contain — becomes the
+///   fixed-width unit `-x` followed by its Unicode scalar value as six lowercase
+///   hex digits (`-x000020` for a space, `-x01f4a9` for a four-byte code point)
+///
+/// Every escape unit starts with `-` and is a fixed length once its second
+/// character (`-`, `d`, `c`, or `x`) is known, so `-` never appears in the
+/// output except as the start of one of these four unambiguous units. The
+/// encoding can therefore be scanned left to right and unambiguously decoded
+/// back into the original id. A function with a well-defined left inverse is
+/// injective, so distinct ids always produce distinct labels — and every
+/// character in the output is one Tauri accepts.
 pub fn plugin_editor_window_label(instance_id: &str) -> String {
     let mut escaped = String::with_capacity(instance_id.len());
     for ch in instance_id.chars() {
@@ -50,10 +65,23 @@ pub fn plugin_editor_window_label(instance_id: &str) -> String {
             '-' => escaped.push_str("--"),
             '.' => escaped.push_str("-d"),
             ':' => escaped.push_str("-c"),
-            other => escaped.push(other),
+            other if other.is_ascii_alphanumeric() || other == '/' || other == '_' => {
+                escaped.push(other)
+            }
+            other => escaped.push_str(&format!("-x{:06x}", other as u32)),
         }
     }
     format!("{}{}", PLUGIN_WINDOW_LABEL_PREFIX, escaped)
+}
+
+/// Whether every character in a window label is one Tauri's label charset
+/// accepts (ASCII alphanumeric, `-`, `/`, `:`, `_`). Test-only: it is what a
+/// consumer of [`plugin_editor_window_label`] can rely on, not a runtime gate.
+#[cfg(test)]
+fn is_valid_tauri_label(label: &str) -> bool {
+    label
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '/' | ':' | '_'))
 }
 
 /// Whether a plugin editor window still needs `always_on_top`.
@@ -239,6 +267,29 @@ mod tests {
             plugin_editor_window_label(instance_id),
             plugin_editor_window_label(instance_id)
         );
+    }
+
+    /// Instance ids are lossy-decoded from a vendor CLAP descriptor id and are
+    /// not restricted to Tauri's label charset — a space, arbitrary
+    /// punctuation, or `U+FFFD` from invalid UTF-8 can all appear. Every one
+    /// of them must still produce a valid, distinct label rather than a
+    /// window-creation failure or a collision.
+    #[test]
+    fn ids_with_characters_outside_the_tauri_label_charset_still_get_valid_distinct_labels() {
+        let space = plugin_editor_window_label("vendor plugin 1");
+        let punctuation = plugin_editor_window_label("vendor!plugin#1");
+        let replacement_char = plugin_editor_window_label("vendor\u{FFFD}plugin1");
+        let non_ascii = plugin_editor_window_label("vendor\u{1F4A9}plugin1");
+
+        for label in [&space, &punctuation, &replacement_char, &non_ascii] {
+            assert!(is_valid_tauri_label(label), "invalid label: {label}");
+        }
+        assert_ne!(space, punctuation);
+        assert_ne!(space, replacement_char);
+        assert_ne!(space, non_ascii);
+        assert_ne!(punctuation, replacement_char);
+        assert_ne!(punctuation, non_ascii);
+        assert_ne!(replacement_char, non_ascii);
     }
 
     /// The editor window is owned by the DAW window on every platform the shell
