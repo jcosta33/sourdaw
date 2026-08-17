@@ -3,6 +3,7 @@ import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { createExportError } from '../errors/ExportError';
+import { type AudioGraphCommand, type AudioGraphRouteTarget } from '../models/AudioGraphBackend';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -13,10 +14,11 @@ import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
+import {
+    createWebAudioOfflineBackend,
+    type WebAudioOfflineBackend,
+} from './offlineRender/createWebAudioOfflineBackend';
 import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
-import { createOfflineBusStrip } from './offlineRender/createOfflineBusStrip';
-import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
-import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
@@ -37,6 +39,35 @@ type RenderOfflineFn = {
     (durationBeats: number, sampleRate?: number): Promise<AudioBuffer>;
 };
 
+type ResolveOutputTargetInput = {
+    outputId: string | null | undefined;
+    busStripsById: ReadonlyMap<string, OfflineBusStrip>;
+    trackStripsById: ReadonlyMap<string, OfflineTrackStrip>;
+};
+
+/**
+ * Which of the three destinations a track's stored output id names, decided
+ * from the strips this render actually built: a bus first, then a track, then
+ * master — including master as the fallback for an output id naming nothing
+ * this render created.
+ */
+function resolveOutputTarget({
+    outputId,
+    busStripsById,
+    trackStripsById,
+}: ResolveOutputTargetInput): AudioGraphRouteTarget {
+    if (outputId === 'hw_out' || !outputId) {
+        return { kind: 'master' };
+    }
+    if (busStripsById.has(outputId)) {
+        return { kind: 'bus', busId: outputId };
+    }
+    if (trackStripsById.has(outputId)) {
+        return { kind: 'track', trackId: outputId };
+    }
+    return { kind: 'master' };
+}
+
 export const renderOffline: RenderOfflineFn = async function renderOffline(
     optsOrBeats: OfflineRenderOptions | number,
     maybeSampleRate?: number
@@ -49,6 +80,10 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
     // `OfflineAudioContext` returns nothing, so a leak here is permanent for
     // the page session and kills every meter added afterwards.
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
+    // Owns every device this render constructs once it exists, so teardown in
+    // the `finally` reaches them on every exit — including an exit taken before
+    // the context, and therefore the backend, could be created.
+    let backend: WebAudioOfflineBackend | undefined;
 
     try {
         // Reset cancel token inside the try so it is never reset when acquireRenderLock throws.
@@ -100,6 +135,11 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // Use the project's master gain level (stored as 0-100) rather than a hardcoded value.
         masterGain.gain.value = Math.max(0, Math.min(1, (transport?.masterGain ?? 80) / 100));
         masterGain.connect(offlineCtx.destination);
+        // Every strip, route and send this render builds goes through the
+        // backend seam from here on. The bounce is the seam's first production
+        // consumer; the native engine becomes the second by answering the same
+        // commands (campaign D3).
+        backend = createWebAudioOfflineBackend({ context: offlineCtx, masterNode: masterGain, onWarning });
 
         // Exclude muted, disabled, and structural (folder) tracks from the render.
         // We MUST include folder tracks if they contain a Toaster device, because
@@ -163,7 +203,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // are applied before the bus output reaches master.
         const trackStripsById = new Map<string, OfflineTrackStrip>();
         const busStripsById = new Map<string, OfflineBusStrip>();
-        const sendAutomationParamsByTrack = new Map<string, Map<string, AudioParam>>();
+        const sendAutomationParamsByTrack = new Map<string, ReadonlyMap<string, AudioParam>>();
 
         // FX-8 — a muted track is silenced by its own `postFaderGain`, which sits
         // downstream of the pre-fader send tap. Live, that leaves its pre-fader
@@ -206,15 +246,50 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             // the strip so the strip builder stays a pure function of what it is
             // handed.
             const vcaMultiplier = deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups });
-            const strip = await createOfflineTrackStrip(offlineCtx, track, {
+            // The mixdown does not gate a soloed-off track's strip; it leaves it
+            // out of `scheduledTracks` instead. Passing `soloGated: false` keeps
+            // that, rather than silently taking on the pre-fader gate the
+            // contract now carries.
+            const state = {
+                gain: track.gain,
+                pan: track.pan,
+                muted: track.muted,
+                soloGated: false,
                 vcaMultiplier,
-                onWarning,
-                contributesAudio: scheduledTrackIds.has(track.id),
+            };
+            await backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    track.kind === 'bus'
+                        ? {
+                              kind: 'create-bus-strip',
+                              busId: track.id,
+                              name: track.name,
+                              state,
+                              devices: track.devices,
+                              honorMuted: true,
+                              contributesAudio: scheduledTrackIds.has(track.id),
+                          }
+                        : {
+                              kind: 'create-track-strip',
+                              trackId: track.id,
+                              name: track.name,
+                              state,
+                              devices: track.devices,
+                              honorMuted: true,
+                              contributesAudio: scheduledTrackIds.has(track.id),
+                          },
+                ],
             });
+            const strip = backend.getTrackStrip(track.id);
+            if (!strip) {
+                continue;
+            }
             trackStripsById.set(track.id, strip);
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
-            if (track.kind === 'bus') {
-                busStripsById.set(track.id, createOfflineBusStrip(strip));
+            const busStrip = backend.getBusStrip(track.id);
+            if (busStrip) {
+                busStripsById.set(track.id, busStrip);
             }
         }
 
@@ -235,36 +310,31 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 continue;
             }
 
-            if (track.outputId === 'hw_out' || !track.outputId) {
-                strip.outputNode.connect(masterGain);
-            } else {
-                const busStrip = busStripsById.get(track.outputId);
-                const targetTrackStrip = trackStripsById.get(track.outputId);
-                if (busStrip) {
-                    strip.outputNode.connect(busStrip.gainNode);
-                } else if (targetTrackStrip) {
-                    strip.outputNode.connect(targetTrackStrip.inputNode);
-                } else {
-                    strip.outputNode.connect(masterGain);
-                }
-            }
+            // Which of the three destinations an output id names is decided
+            // here, from the strips this render actually built, exactly as the
+            // inline routing decided it: a bus first, then a track, then master.
+            const outputTarget = resolveOutputTarget({
+                outputId: track.outputId,
+                busStripsById,
+                trackStripsById,
+            });
 
-            for (const send of track.sends) {
-                const busStrip = busStripsById.get(send.busId);
-                if (!busStrip) {
-                    continue;
-                }
-                const sendGain = offlineCtx.createGain();
-                sendGain.gain.value = Math.max(0, Math.min(1, send.level));
-                const tapNode = send.preFader ? strip.preFaderTap : strip.outputNode;
-                tapNode.connect(sendGain);
-                sendGain.connect(busStrip.gainNode);
-                let sendAutomationParams = sendAutomationParamsByTrack.get(track.id);
-                if (!sendAutomationParams) {
-                    sendAutomationParams = new Map<string, AudioParam>();
-                    sendAutomationParamsByTrack.set(track.id, sendAutomationParams);
-                }
-                sendAutomationParams.set(`send:${send.busId}`, sendGain.gain);
+            await backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    { kind: 'set-track-output', trackId: track.id, target: outputTarget },
+                    ...track.sends.map((send): AudioGraphCommand => ({
+                        kind: 'add-send',
+                        trackId: track.id,
+                        busId: send.busId,
+                        tap: send.preFader ? 'pre-fader' : 'post-fader',
+                        level: send.level,
+                    })),
+                ],
+            });
+            const sendAutomationParams = backend.getSendAutomationParams(track.id);
+            if (sendAutomationParams) {
+                sendAutomationParamsByTrack.set(track.id, sendAutomationParams);
             }
         }
 
@@ -346,7 +416,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         onProgress?.(1);
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
     } finally {
-        destroyOfflineDeviceStrategies(deviceEntriesByTrack);
+        backend?.dispose();
         releaseLock();
     }
 };

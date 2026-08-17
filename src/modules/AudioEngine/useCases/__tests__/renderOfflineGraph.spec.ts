@@ -142,9 +142,10 @@ class FakeOfflineAudioContext {
     }
 }
 
-function makeStrip(): OfflineTrackStrip {
+function makeStrip(trackId = 'track-1'): OfflineTrackStrip {
     const makeNode = () => ({ connect: vi.fn(), gain: { value: 1 } });
     return {
+        trackId,
         inputNode: makeNode() as unknown as GainNode,
         preFaderTap: makeNode() as unknown as GainNode,
         faderNode: makeNode() as unknown as GainNode,
@@ -192,7 +193,9 @@ describe('renderOffline — graph construction and lifecycle', () => {
         mocks.sidechainStore.value.routes = [];
         mocks.addWorkletModule.mockResolvedValue();
         mocks.resolveRenderContext.mockReturnValue(makeContext());
-        mocks.createOfflineTrackStrip.mockImplementation(() => Promise.resolve(makeStrip()));
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: { id: string }) =>
+            Promise.resolve(makeStrip(track.id))
+        );
         mocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
     });
 
@@ -260,7 +263,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         );
         const stripsByTrack = new Map<string, OfflineTrackStrip>();
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             stripsByTrack.set(track.id, strip);
             return Promise.resolve(strip);
         });
@@ -294,7 +297,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
             makeContext({ tracks: { tracks: [parent, child] } as unknown as TrackStoreState })
         );
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             if (track.id === parent.id) {
                 const audioNode = {} as AudioNode;
                 const node: DeviceNodeEntry['node'] = {
@@ -355,7 +358,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
             makeContext({ tracks: { tracks: [kick, bass] } as unknown as TrackStoreState })
         );
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             if (track.id === bass.id) {
                 const node: DeviceNodeEntry['node'] = {
                     inputNode: sidechainInput,
@@ -416,7 +419,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
             makeContext({ tracks: { tracks: [kick, bass] } as unknown as TrackStoreState })
         );
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             if (track.id === bass.id) {
                 const node: DeviceNodeEntry['node'] = {
                     inputNode: sidechainInput,
@@ -515,7 +518,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         );
         const stripsByTrack = new Map<string, OfflineTrackStrip>();
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
-            const strip = makeStrip();
+            const strip = makeStrip(track.id);
             stripsByTrack.set(track.id, strip);
             return Promise.resolve(strip);
         });

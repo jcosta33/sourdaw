@@ -37,6 +37,7 @@ import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRa
 import { checkCancel } from './checkCancel';
 import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
+import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
 import { type OfflineScheduleTally, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
@@ -901,55 +902,49 @@ export async function scheduleTrackClips({
                     continue;
                 }
 
-                const source = offlineCtx.createBufferSource();
-                source.buffer = buffer;
-                if (safeStretchRatio !== 1) {
-                    source.playbackRate.value = safeStretchRatio;
-                }
+                // `isFirstIter && trimBeforeSec === 0` is what makes a fade in
+                // present at all: a later loop iteration, or one entered
+                // part-way by the region trim, continues an unbroken sound and
+                // must not dip at the seam. `isLastIter` is the same question
+                // for the tail.
+                // Within a fade that is present, a zero-length user fade leaves
+                // `userEndSec`/`userStartSec` absent, which the scheduler reads
+                // as the anti-click micro-fade.
+                const fadeIn =
+                    isFirstIter && trimBeforeSec === 0
+                        ? {
+                              userEndSec:
+                                  clip.fadeInBeats > 0
+                                      ? projectBeatToSeconds(clip.startBeat + clip.fadeInBeats) +
+                                        compensationDelay -
+                                        regionStartSec
+                                      : undefined,
+                          }
+                        : undefined;
+                const fadeOut = isLastIter
+                    ? {
+                          userStartSec:
+                              clip.fadeOutBeats > 0
+                                  ? projectBeatToSeconds(clip.endBeat - clip.fadeOutBeats) +
+                                    compensationDelay -
+                                    regionStartSec
+                                  : undefined,
+                      }
+                    : undefined;
 
-                const endSec = startSec + playDuration;
-
-                const fadeGain = offlineCtx.createGain();
-                source.connect(fadeGain);
-                fadeGain.connect(trackInputNode);
-
-                fadeGain.gain.setValueAtTime(clipGainValue, startSec);
-
-                if (isFirstIter && trimBeforeSec === 0) {
-                    if (clip.fadeInBeats > 0) {
-                        const fadeInEndBeat = clip.startBeat + clip.fadeInBeats;
-                        const fadeInEndSec = projectBeatToSeconds(fadeInEndBeat) + compensationDelay - regionStartSec;
-                        const fadeInDuration = Math.min(
-                            Math.max(MICRO_FADE_SECONDS, fadeInEndSec - iterStartTime),
-                            playDuration * 0.5
-                        );
-                        fadeGain.gain.setValueAtTime(0, startSec);
-                        fadeGain.gain.linearRampToValueAtTime(clipGainValue, startSec + fadeInDuration);
-                    } else {
-                        fadeGain.gain.setValueAtTime(0, startSec);
-                        fadeGain.gain.linearRampToValueAtTime(clipGainValue, startSec + MICRO_FADE_SECONDS);
-                    }
-                }
-
-                if (isLastIter) {
-                    if (clip.fadeOutBeats > 0) {
-                        const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
-                        const fadeOutStartSec =
-                            projectBeatToSeconds(fadeOutStartBeat) + compensationDelay - regionStartSec;
-                        const fadeOutOffset = Math.max(
-                            startSec,
-                            Math.max(fadeOutStartSec, endSec - playDuration * 0.5)
-                        );
-                        fadeGain.gain.setValueAtTime(clipGainValue, fadeOutOffset);
-                        fadeGain.gain.linearRampToValueAtTime(0, endSec);
-                    } else {
-                        fadeGain.gain.setValueAtTime(clipGainValue, Math.max(startSec, endSec - MICRO_FADE_SECONDS));
-                        fadeGain.gain.linearRampToValueAtTime(0, endSec);
-                    }
-                }
-
-                // duration arg is destination-timeline seconds — NOT buffer-time scaled by playbackRate.
-                source.start(startSec, bufferOffsetSec, playDuration);
+                scheduleOfflineClipSource({
+                    context: offlineCtx,
+                    destinationNode: trackInputNode,
+                    buffer,
+                    startSec,
+                    bufferOffsetSec,
+                    playDuration,
+                    playbackRate: safeStretchRatio,
+                    clipGainValue,
+                    fadeIn,
+                    fadeOut,
+                    microFadeSeconds: MICRO_FADE_SECONDS,
+                });
                 if (rawIterEndSec > tallyStartSeconds) {
                     tally?.scheduledBuffers.push(buffer);
                 }
