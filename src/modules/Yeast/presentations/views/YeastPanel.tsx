@@ -26,13 +26,19 @@ import {
     getSupportedGrooveSubdivisions,
 } from '#/modules/MIDI/useCases';
 
-import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
+import {
+    type ArpStep,
+    clampArpPatternLength,
+    createDefaultPattern,
+    decodeArpPatternParams,
+} from '../../models/ArpPattern';
 import { PROCESSOR_PARAM_DEFAULTS, PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
 import { yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
 import { YEAST_GROOVE_OWNER_ID } from '../../useCases/getYeastGrooveAssignment';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
+import { setYeastArpPattern } from '../../useCases/setYeastArpPattern';
 import { setYeastGrooveTemplate } from '../../useCases/setYeastGrooveTemplate';
 import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
 import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';
@@ -270,6 +276,50 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
                 />
             ) : null}
         </>
+    );
+};
+
+/**
+ * Arp pattern editor bound to the stored pattern.
+ *
+ * Every deck that exposes a pattern surface renders THIS, so the Build and Lab
+ * decks edit one pattern instead of two private drafts that neither persisted
+ * nor reached the Worker. Standard arp convention is a single pattern with a
+ * length control — which the editor already carries — not one pattern per view.
+ */
+const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
+    const arp = state.processors.find((processor) => processor.type === 'arpeggiator');
+    if (!arp) {
+        return (
+            <div className="text-[8px] leading-3 text-muted-foreground/60">
+                Add an Arpeggiator to program a step pattern.
+            </div>
+        );
+    }
+
+    const steps = decodeArpPatternParams(arp.params);
+    const commitPattern = (next: readonly ArpStep[]): void => {
+        void setYeastArpPattern(arp.id, next).catch(() => undefined);
+    };
+
+    return (
+        <StepPatternEditor
+            steps={steps}
+            currentStep={0}
+            onStepChange={(index, step) => {
+                const next = [...steps];
+                next[index] = step;
+                commitPattern(next);
+            }}
+            onLengthChange={(length) => {
+                const nextLength = clampArpPatternLength(length);
+                commitPattern(
+                    nextLength > steps.length
+                        ? [...steps, ...createDefaultPattern(nextLength - steps.length)]
+                        : steps.slice(0, nextLength)
+                );
+            }}
+        />
     );
 };
 
@@ -593,22 +643,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
 
 const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [arpPattern, setArpPattern] = useState<ArpStep[]>(() => createDefaultPattern(8));
     const hasArpPattern = state.processors.some((param) => param.type === 'arpeggiator');
-
-    const handleStepChange = (index: number, step: ArpStep) => {
-        const next = [...arpPattern];
-        next[index] = step;
-        setArpPattern(next);
-    };
-
-    const handleLengthChange = (length: number) => {
-        if (length > arpPattern.length) {
-            setArpPattern([...arpPattern, ...createDefaultPattern(length - arpPattern.length)]);
-        } else {
-            setArpPattern(arpPattern.slice(0, length));
-        }
-    };
 
     return (
         <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
@@ -673,12 +708,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">
                         Arp Pattern
                     </span>
-                    <StepPatternEditor
-                        steps={arpPattern}
-                        currentStep={0}
-                        onStepChange={handleStepChange}
-                        onLengthChange={handleLengthChange}
-                    />
+                    <ArpPatternDeck state={state} />
                 </Stack>
             ) : null}
             {/* Add processor */}
@@ -779,7 +809,6 @@ const Level4Route = ({
 
 const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes: readonly number[] }): ReactElement => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [arpPattern, setArpPattern] = useState<ArpStep[]>(() => createDefaultPattern(16));
 
     return (
         <Row grow className="min-h-0 overflow-hidden">
@@ -873,22 +902,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
             {/* Right: Pattern editor + keyboard */}
             <Stack gap={2} className="w-[280px] shrink-0 border-l border-border/20 p-2 overflow-y-auto">
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest">Pattern Editor</span>
-                <StepPatternEditor
-                    steps={arpPattern}
-                    currentStep={0}
-                    onStepChange={(idx, step) => {
-                        const next = [...arpPattern];
-                        next[idx] = step;
-                        setArpPattern(next);
-                    }}
-                    onLengthChange={(len) => {
-                        if (len > arpPattern.length) {
-                            setArpPattern([...arpPattern, ...createDefaultPattern(len - arpPattern.length)]);
-                        } else {
-                            setArpPattern(arpPattern.slice(0, len));
-                        }
-                    }}
-                />
+                <ArpPatternDeck state={state} />
 
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest mt-2">Keyboard</span>
                 <KeyboardSplit width={260} height={28} soundingNotes={soundingNotes} />

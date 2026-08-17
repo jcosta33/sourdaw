@@ -92,11 +92,24 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             className={`flex flex-col items-center gap-0 cursor-pointer select-none ${isPlaying ? 'ring-1 ring-[var(--color-accent-peach)]' : ''}`}
                             style={{ width: STEP_WIDTH, opacity: step.active ? probOpacity : 0.2 }}
                         >
-                            {/* Velocity bar */}
+                            {/* Velocity bar. Pointer height sets velocity; the
+                                keyboard has no height, so Enter/Space performs the
+                                same on/off toggle the right-click gesture does. */}
                             <div
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Step ${index + 1}`}
+                                aria-pressed={step.active}
                                 className="relative bg-surface-inset rounded-sm overflow-hidden"
                                 style={{ width: STEP_WIDTH - 4, height: STEP_HEIGHT }}
                                 onClick={(event) => setVelocity(index, event)}
+                                onKeyDown={(event) => {
+                                    if (event.key !== 'Enter' && event.key !== ' ') {
+                                        return;
+                                    }
+                                    event.preventDefault();
+                                    toggleStep(index);
+                                }}
                                 onContextMenu={(event) => {
                                     event.preventDefault();
                                     toggleStep(index);

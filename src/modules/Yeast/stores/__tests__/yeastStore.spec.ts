@@ -6,6 +6,13 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
+import {
+    createDefaultPattern,
+    decodeArpPatternParams,
+    defaultStep,
+    DEFAULT_ARP_PATTERN_LENGTH,
+    withArpPatternParams,
+} from '../../models/ArpPattern';
 import { hydrateYeastState } from '../../useCases/hydrateYeastState';
 import { yeastStore } from '../yeastStore';
 
@@ -93,6 +100,63 @@ describe('yeastStore', () => {
             },
         });
         expect(document.yeast).not.toHaveProperty('uiLevel');
+    });
+
+    it('round-trips a custom arp pattern through the project CRDT document', () => {
+        const pattern = [
+            { ...defaultStep(), active: false, octaveOffset: -2 },
+            { ...defaultStep(), stepType: 'tie' as const, velocity: 33, velocityOverride: true },
+            { ...defaultStep(), gateMul: 0.4, ratchet: 3, probability: 0.5 },
+        ];
+        yeastStore.set({
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Arpeggiator',
+                    bypassed: false,
+                    params: withArpPatternParams({ mode: 7 }, pattern),
+                },
+            ],
+            uiLevel: 3,
+        });
+        flushAutomergeStorageWrites();
+
+        // Read the pattern back out of the document itself: the codec drops
+        // every param value that is not a finite number, so this is the
+        // assertion that the numeric encoding actually survives persistence.
+        const persisted = (
+            document.yeast as {
+                processors: Record<string, { value: { params?: Record<string, number> } }>;
+            }
+        ).processors['arp-1']!.value.params;
+        expect(persisted?.mode).toBe(7);
+        expect(decodeArpPatternParams(persisted)).toEqual(pattern);
+
+        yeastStore.hydrate();
+        expect(decodeArpPatternParams(yeastStore.value?.processors[0]?.params)).toEqual(pattern);
+    });
+
+    it('hydrates an arpeggiator saved without a pattern to the default pattern', () => {
+        document = change(document, (draft) => {
+            draft.yeast = {
+                processors: [
+                    {
+                        id: 'legacy-arp',
+                        type: 'arpeggiator',
+                        name: 'Arpeggiator',
+                        bypassed: false,
+                        params: { mode: 7, rate_denom: 16 },
+                    },
+                ],
+            };
+        });
+
+        yeastStore.hydrate();
+
+        const hydrated = yeastStore.value?.processors[0];
+        expect(hydrated?.params).toEqual({ mode: 7, rate_denom: 16 });
+        expect(decodeArpPatternParams(hydrated?.params)).toEqual(createDefaultPattern(DEFAULT_ARP_PATTERN_LENGTH));
     });
 
     it('hydrates persisted processor identity before a pending reset can replace it', () => {

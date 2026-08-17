@@ -6,7 +6,12 @@
  * octave expansion, velocity modes, latch, and multiple trigger modes.
  */
 
-import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
+import {
+    type ArpStep,
+    createDefaultPattern,
+    decodeArpPatternParams,
+    DEFAULT_ARP_PATTERN_LENGTH,
+} from '../../models/ArpPattern';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -19,6 +24,7 @@ import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { LCG_MAX, nextLcg } from '../lcgRandom';
 import {
     type ActiveNote,
+    type MidiProcessorParams,
     EMIT_FALLBACK_BLOCK_SPAN_SAMPLES,
     resolveBlockEndSamples,
     ScheduledEventQueue,
@@ -62,7 +68,7 @@ export class Arpeggiator extends BaseMidiProcessor {
     private fixedVelocity = 100;
     private latchEnabled = false;
     private restartMode: RestartMode = 'restartOnNote';
-    private pattern: ArpStep[] = createDefaultPattern(8);
+    private pattern: ArpStep[] = createDefaultPattern(DEFAULT_ARP_PATTERN_LENGTH);
     // State
     private held: HeldNote[] = [];
     private latched: HeldNote[] = [];
@@ -301,6 +307,21 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.fixedVelocity = 100;
         this.latchEnabled = false;
         this.restartMode = 'restartOnNote';
+        this.pattern = createDefaultPattern(DEFAULT_ARP_PATTERN_LENGTH);
+    }
+
+    /**
+     * The pattern is carried by the `pattern_`-prefixed params rather than by a
+     * single `setParam` name: one step spans eleven fields, so the value is a
+     * whole record, not a scalar. Decoding once here — after the base class has
+     * reset the params and applied every scalar — keeps a single decode path
+     * and leaves `setParam` a pure scalar switch. A projection whose params
+     * carry no `pattern_len` decodes to the default pattern, which is exactly
+     * what `resetParams` just installed.
+     */
+    replaceParams(params: MidiProcessorParams): void {
+        super.replaceParams(params);
+        this.setPattern(decodeArpPatternParams(params));
     }
 
     setParam(name: string, value: number): void {
