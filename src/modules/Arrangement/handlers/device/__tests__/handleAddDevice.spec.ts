@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     updateDeviceParam: vi.fn(),
     getTrackStoreState: vi.fn(),
+    projectTrackToLiveStrip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/device/addDevice', () => ({
@@ -27,6 +28,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
+    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
 
 describe('handleAddDevice', () => {
@@ -61,7 +66,7 @@ describe('handleAddDevice', () => {
     });
 
     it('executes the internal project writer with the provided payload', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
         mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: {} });
         const result = handleAddDevice.execute({
             type: 'addDevice',
@@ -125,7 +130,7 @@ describe('handleAddDevice', () => {
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
         } as const;
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
         mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
 
         const result = handleAddDevice.execute(action);
@@ -140,6 +145,62 @@ describe('handleAddDevice', () => {
         );
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'device-1', 'threshold', -12);
         expect(handleAddDevice.requiresAbortCompensation).toBe(false);
+    });
+
+    it('commits a normal folder device without a live-strip runtime delta', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'folder-1', kind: 'folder', devices: [] }] });
+        mocks.writeDeviceToProject.mockReturnValue({
+            id: 'device-1',
+            type: 'builtin-compressor',
+            parameterValues: { threshold: -12 },
+        });
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 'folder-1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
+            })
+        ).resolves.toBeUndefined();
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('initializes a folder toaster strip and its eligible children after the project commit', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 'folder-1', kind: 'folder', devices: [] },
+                { id: 'child-1', kind: 'audio', parentId: 'folder-1', devices: [] },
+            ],
+        });
+        mocks.writeDeviceToProject.mockReturnValue({
+            id: 'toaster-1',
+            type: 'toaster',
+            parameterValues: { masterGain: 1.2 },
+        });
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 'folder-1', deviceType: 'toaster', deviceId: 'toaster-1' },
+            })
+        ).resolves.toBeUndefined();
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(1, {
+            trackId: 'folder-1',
+            activateDormantExternalPlugins: true,
+        });
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(2, {
+            trackId: 'child-1',
+            activateDormantExternalPlugins: true,
+        });
     });
 
     it.each([
@@ -161,7 +222,7 @@ describe('handleAddDevice', () => {
             'repair',
         ],
     ])('does not report clean command success after %s', async (_label, runtimeResult, remediation) => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
         mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: {} });
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue(runtimeResult);
         registerHandlerMap({ addDevice: handleAddDevice });
@@ -199,7 +260,7 @@ describe('handleAddDevice', () => {
     });
 
     it('reports clean command success only after an applied runtime delta', async () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
         mocks.writeDeviceToProject.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
         registerHandlerMap({ addDevice: handleAddDevice });

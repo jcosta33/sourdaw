@@ -2,10 +2,12 @@ import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 import { writeDeviceToProject } from '../../useCases/device/addDevice';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -167,6 +169,19 @@ export const handleAddDevice = createHandler<'addDevice'>({
         function applyRuntimeEffect(): void {
             if (postCommitFailure) {
                 throw postCommitFailure;
+            }
+            const wasLive = shouldCreateLiveTrackStrip(committedBefore);
+            const activatesFolderStrip = !wasLive && after.kind === 'folder' && shouldCreateLiveTrackStrip(after);
+            if (!wasLive) {
+                if (activatesFolderStrip) {
+                    projectTrackToLiveStrip({ trackId: after.id, activateDormantExternalPlugins: true });
+                    for (const child of getTrackStoreState()?.tracks ?? []) {
+                        if (child.parentId === after.id && shouldCreateLiveTrackStrip(child)) {
+                            projectTrackToLiveStrip({ trackId: child.id, activateDormantExternalPlugins: true });
+                        }
+                    }
+                }
+                return;
             }
             const result = applyDeviceChainRuntimeDelta({ before: committedBefore, after, operation: 'add-device' });
             const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
