@@ -1,0 +1,257 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_0a3429e31e555d::t_4dc7ec9bacc31b 34
+  s_0a3429e31e555d::t_fe4f91db5389be 12,53-59
+src/modules/AiRuntime/useCases/index.ts
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 27
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 186,209-210,212,268,280
+  s_0a3429e31e555d::t_bcdcc8371fc19c 214
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_dfa22d128e9f88 335
+  s_0a3429e31e555d::t_0387f9135c3a13 734
+  s_0a3429e31e555d::t_98b8dfc48070b6 330-331,333-334,733
+  s_0a3429e31e555d::t_f526c3904701c4 637,649,661,724-732
+  s_0a3429e31e555d::t_6664ee0f90bf2c 329,332,336-337,352-354,359-362,723
+src/modules/AiRuntime/repositories/providerGatewayDependencies.ts
+  s_0a3429e31e555d::t_683f3640a8567c 1-13
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_0a3429e31e555d::t_56be6f1e3da735 35
+  s_0a3429e31e555d::t_09464ace74d133 73-82,84-85,87-89,91,93-95,97-99,101-142
+src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts
+  s_0a3429e31e555d::t_8a7d0c2e848a3e 3,18,38-46,54,60
+  s_0a3429e31e555d::t_469a9f95c2285c 27
+  s_0a3429e31e555d::t_4dc7ec9bacc31b 62
+  s_0a3429e31e555d::t_60dc1d22ca7ac5 6,11-14
+  s_0a3429e31e555d::t_4d7a9264c46513 21-23,47-49,55-56
+  s_d91dcbe5f07151::t_8c8397fd19aa49 15
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_0a3429e31e555d::t_e1688a4de45162 1-48,52-100
+  s_0a3429e31e555d::t_8683dcdde01036 49-51
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestAnthropicProvider.spec.ts
+  s_0a3429e31e555d::t_c8b744250a31b7 1,3,5,7,9-16,18,23-28,30-32,34-35,37-42,44-48
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestAnthropicStream.spec.ts
+  s_0a3429e31e555d::t_8683dcdde01036 74-75,77
+  s_0a3429e31e555d::t_76f5fa08badec2 1,5-7,9,11,17,22-24,26-32,34,36-40,43,45-50,52-53,56-62,65-72
+src/modules/AiRuntime/useCases/cloudApiManagement/__tests__/removeCloudProvider.spec.ts
+  s_0a3429e31e555d::t_fdd10606fc3918 1,3,8,14-15,27,33-35,38,41,46,49
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/registerCloudStreamController.spec.ts
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 3,8,15
+  s_0a3429e31e555d::t_b57f87ead419cd 7,11
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 171,195-196,198,238,247
+  s_0a3429e31e555d::t_bcdcc8371fc19c 200
+.agents/decisions/README.md
+  s_0a3429e31e555d::t_6664ee0f90bf2c 44
+src/modules/AiRuntime/repositories/__tests__/drumBusProviderPlanConformance.spec.ts
+  s_0a3429e31e555d::t_bcdcc8371fc19c 55,57
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_0a3429e31e555d::t_4dc7ec9bacc31b 51
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicProvider.ts
+  s_0a3429e31e555d::t_0891e90f10c9a5 1-32,38-40
+  s_0a3429e31e555d::t_c8b744250a31b7 33-37
+.agents/decisions/0028-native-provider-credential-sessions.md
+  s_0a3429e31e555d::t_6664ee0f90bf2c 1-50
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_0a3429e31e555d::t_4dc7ec9bacc31b 295-297,303
+src/modules/AiRuntime/repositories/cloudLlm/clearCloudProviderConfig.ts
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 3-4
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts
+  s_0a3429e31e555d::t_3794f388019d53 1-5,8,14,21-22,28-29,38,40,50-52,54-55,58,61-62,65,67-68,74,77,86,89,93-98,102-108,112-113
+  s_0a3429e31e555d::t_60dc1d22ca7ac5 53
+  s_0a3429e31e555d::t_8683dcdde01036 109-110
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 242,273-274,276,360,372
+  s_0a3429e31e555d::t_bcdcc8371fc19c 278
+crates/sourdaw-native/Cargo.toml
+  s_0a3429e31e555d::t_161e4e63ac6546 48
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/setCloudProviderConfig.spec.ts
+  s_0a3429e31e555d::t_8283693b0d1921 10-12,16-21,24,27-32,35-36,46-47,49,57-58,60,63-66,68-81,84,91-93,129-130,134
+  s_0a3429e31e555d::t_0042d9aad80e9b 67
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 4,25,131-133
+  s_0a3429e31e555d::t_91e00e338b03fb 96-107,110-128
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_0a3429e31e555d::t_cd3a8d25b6bb91 55,226,244,269,307,333,365,405
+  s_0a3429e31e555d::t_f370f94d66a26f 133-166
+  s_0a3429e31e555d::t_60dc1d22ca7ac5 8,10-11
+  s_0a3429e31e555d::t_d0b367761d3de2 3
+  s_0a3429e31e555d::t_5562d75945f9a6 167
+src-tauri/build.rs
+  s_0a3429e31e555d::t_b069ecdf099878 4-5
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 370,385-386,388,447,461
+  s_0a3429e31e555d::t_bcdcc8371fc19c 390
+src/modules/AiGeneration/useCases/llmMidiGeneration.ts
+  s_0a3429e31e555d::t_af0446ade8eb81 56
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_0a3429e31e555d::t_8683dcdde01036 104-115
+  s_0a3429e31e555d::t_27bf40d22e0e4b 3,5,7,9-26,28,30-35,37,39,42-46,48-62,65-75,78-88,91-101
+src-tauri/permissions/sourdaw-commands.toml
+  s_0a3429e31e555d::t_b069ecdf099878 5-6
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_0a3429e31e555d::t_7ca4b99e508e60 7-8,10,377
+  s_0a3429e31e555d::t_b6dbb4c5b013bf 105
+src/modules/AiGeneration/useCases/generateMidiVariations.ts
+  s_0a3429e31e555d::t_8eea2f20611b43 209
+src/modules/AiRuntime/repositories/closeProviderGatewaySession.ts
+  s_0a3429e31e555d::t_683f3640a8567c 1-8
+src/modules/AiRuntime/repositories/mcpToolAdapter/mcpToOpenAiTools.ts
+  s_0a3429e31e555d::t_af0446ade8eb81 7
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts
+  s_0a3429e31e555d::t_f55ca957cce426 32,43,85-88,94,124
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_0a3429e31e555d::t_bcdcc8371fc19c 464
+  s_0a3429e31e555d::t_412c10785e6a32 446,459-460,462,495,508
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_0a3429e31e555d::t_37e150a50a7b2f 10,47-50,56,87-94
+  s_0a3429e31e555d::t_3a539e38455a42 1,73,78-83
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 12,37
+  s_0a3429e31e555d::t_4ee57252d86f14 95
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 290,308-309,311,423,436
+  s_0a3429e31e555d::t_bcdcc8371fc19c 313
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 288,294-295,297,366,368
+  s_0a3429e31e555d::t_bcdcc8371fc19c 299
+src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts
+  s_0a3429e31e555d::t_8a7d0c2e848a3e 38,44
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_bcdcc8371fc19c 587
+  s_0a3429e31e555d::t_412c10785e6a32 559,582-583,585,625,638
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_bcdcc8371fc19c 214
+  s_0a3429e31e555d::t_412c10785e6a32 187,209-210,212,258,269
+src/modules/AiRuntime/repositories/cloudLlm/cloudSession.ts
+  s_0a3429e31e555d::t_1cce3590816ae9 29,66-67,76-77,81-86,88,111-116,119-123,125-141,146-147
+  s_0a3429e31e555d::t_8a7d0c2e848a3e 10,18,57,59,70,75,78-79,117-118,124
+  s_0a3429e31e555d::t_76ee63487fb2e0 142-145
+  s_0a3429e31e555d::t_60dc1d22ca7ac5 4
+  s_0a3429e31e555d::t_481d03d54cb09f 24
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/unregisterCloudStreamController.spec.ts
+  s_0a3429e31e555d::t_b57f87ead419cd 8,12
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 3,9,16
+src-tauri/src/lib.rs
+  s_0a3429e31e555d::t_b069ecdf099878 25-26
+src/modules/AiRuntime/useCases/cloudApiManagement/removeCloudProvider.ts
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 1,4-5
+src/modules/AiRuntime/repositories/openProviderGatewaySession.ts
+  s_0a3429e31e555d::t_683f3640a8567c 3,5-11,13-16
+  s_0a3429e31e555d::t_f5ec3cd26b6fb8 1,4
+crates/sourdaw-native/src/addon/mod.rs
+  s_0a3429e31e555d::t_a3e2dcf0b1e66b 157,163
+  s_0a3429e31e555d::t_b069ecdf099878 152-156,158-162,164-180,186,195
+src-tauri/src/commands/provider_gateway.rs
+  s_0a3429e31e555d::t_b069ecdf099878 22-25,27-28,30-39,52,60
+  s_0a3429e31e555d::t_a3e2dcf0b1e66b 26,29
+src/modules/AiRuntime/useCases/cloudApiManagement/__tests__/configureCloudProvider.spec.ts
+  s_0a3429e31e555d::t_4330e008b75ead 8
+  s_0a3429e31e555d::t_28358406933003 32-33,37,42-43,54-63,66,72,76,82-84
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/clearCloudProviderConfig.spec.ts
+  s_0a3429e31e555d::t_fdd10606fc3918 1,4,6,8-19,22-23,27,29-31
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiCompatibleChatCompletion.spec.ts
+  s_0a3429e31e555d::t_7ca4b99e508e60 8,276
+src/modules/AiRuntime/repositories/providerGateway.ts
+  s_0a3429e31e555d::t_8d45dd3ede7430 1
+  s_0a3429e31e555d::t_683f3640a8567c 106
+  s_0a3429e31e555d::t_c838024719870c 23,153
+docs/architecture/09-ai-stack.md
+  s_0a3429e31e555d::t_6664ee0f90bf2c 3,15,17-20,22-27,67-69,74
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 269,285-286,288
+  s_0a3429e31e555d::t_bcdcc8371fc19c 290
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  s_0a3429e31e555d::t_096e504132d096 502-510
+  s_0a3429e31e555d::t_9e59c93ac49435 724-725,727-742,748-750,773-774,776-782,784-790,792-794,819-821,849-850
+  s_0a3429e31e555d::t_e033b53f2d3edc 29,222,233,246,309,394-397
+  s_0a3429e31e555d::t_5a3fb46416688f 751-760,762,764-772
+  s_0a3429e31e555d::t_0ae2a5db74fd2c 15,88,128-135,139-142,355,570,675,822-827,832-848,851
+  s_0a3429e31e555d::t_f2d1789770e755 253-267,413-414,416-420,422-438,761,763
+  s_0a3429e31e555d::t_ebaff492cbd8f3 136-138,367-369,421,468,565-568,647,651,692,700,743-747,795-818,828-831
+  s_0a3429e31e555d::t_71589b254ba600 357-360,365-366,370
+  s_0a3429e31e555d::t_cc64d30d1e0e4e 673
+  s_0a3429e31e555d::t_800cbb79860971 92,98-99,105-125,351,354,356,726,775,783,791
+  s_0a3429e31e555d::t_161e4e63ac6546 10-11,13-14,16,23,33-39,43,82-87,89-90,93-97,100-104,126-127,348-350,352-353,372-374,376-393,400-401,403-412,461-467,852
+  s_0a3429e31e555d::t_69183bbb1b3274 91
+  s_0a3429e31e555d::t_b213171bc4bb90 439-440
+  s_0a3429e31e555d::t_5c6c5cbff0c580 511
+  s_0a3429e31e555d::t_75334a6ee4715d 569
+  s_0a3429e31e555d::t_5533c8333ae428 674
+  s_0a3429e31e555d::t_d7162fd0cc9adb 853
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_0a3429e31e555d::t_8280ea78cb0266 46
+  s_0a3429e31e555d::t_586335b40d7f32 1,5,8,14,20-22,26-27,29,31,36,38-39,41,44-45,49-50,52-61,64-67,69,71-72,74-78,80
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_bcdcc8371fc19c 260
+  s_0a3429e31e555d::t_412c10785e6a32 239,255-256,258
+src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/initEngine.ts
+  s_0a3429e31e555d::t_4dc7ec9bacc31b 27
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_bcdcc8371fc19c 268
+  s_0a3429e31e555d::t_412c10785e6a32 247,263-264,266
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_bcdcc8371fc19c 221
+  s_0a3429e31e555d::t_412c10785e6a32 209,216-217,219,260,270
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_0a3429e31e555d::t_4dc7ec9bacc31b 201
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_0a3429e31e555d::t_2c37842361a919 99-101
+  s_0a3429e31e555d::t_5d7d3ceafbf663 171,195-196,331-338
+  s_0a3429e31e555d::t_4f220920780ca4 3
+  s_0a3429e31e555d::t_4100ba018f1247 18,96-97,127-144,146-152
+  s_0a3429e31e555d::t_6ecfc9b6d1f711 13,145,197-201,203,205-211,215,217-219,221-256,258,260,263-265,267-272,274-280,282-288,290,293,295-299,301-330
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 318,334-335,337,414,423
+  s_0a3429e31e555d::t_bcdcc8371fc19c 339
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_0a3429e31e555d::t_412c10785e6a32 237,264-265,267,304,313
+  s_0a3429e31e555d::t_bcdcc8371fc19c 269
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_0a3429e31e555d::t_56be6f1e3da735 7,40,107,135,223,239,263,294,309
+  s_0a3429e31e555d::t_0a3148f1f6f085 13,55,86-93,98-104,115,160-163,165-167,177-185,187,189-196
+  s_0a3429e31e555d::t_c0d6127f6c38dd 325-328,339-343,352-356,364,372-376,384-389
+src-tauri/gen/schemas/acl-manifests.json
+  s_d91dcbe5f07151::t_ef65837e8c1b60 1
+src-tauri/gen/schemas/desktop-schema.json
+  s_d91dcbe5f07151::t_14a8f621fc28ba 215-220,485-490,689-694,959-964
+src-tauri/gen/schemas/macOS-schema.json
+  s_d91dcbe5f07151::t_fa0e6eed792969 215-220,485-490,689-694,959-964
+src-tauri/permissions/autogenerated/close_provider_gateway_session.toml
+  s_d91dcbe5f07151::t_0243a21373b4fb 1-11
+src-tauri/permissions/autogenerated/open_provider_gateway_session.toml
+  s_d91dcbe5f07151::t_2a86f300d56ddc 1-11
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestOpenAiCompatibleProvider.spec.ts
+  s_d91dcbe5f07151::t_85088de84afce8 24
+Cargo.lock
+  s_65dbaf5b2682ce::t_c94ce00c84ea63 4736
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b8e4a68499eb45d6e277a563a01c0bab4c969365",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_65dbaf5b2682ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae44291be97cb60ff",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
