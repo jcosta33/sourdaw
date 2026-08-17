@@ -75,9 +75,7 @@ const mainWebviewDeniedCommands = [
     'read_audio_file',
     'send_plugin_midi',
     'show_all_plugin_guis',
-    'start_audio_gen_sidecar',
     'start_native_engine',
-    'stop_audio_gen_sidecar',
     'update_plugin_transport',
     'write_audio_file',
 ] as const;

@@ -6,11 +6,15 @@
  * probability, note selection weights.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { gaussianLcg } from '../lcgRandom';
+import { EMIT_FALLBACK_BLOCK_SPAN_SAMPLES, resolveBlockEndSamples, resolveBlockStartSamples } from '../MidiProcessor';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
+/** Catch-up bound so a pathological block span cannot spin the random walk. */
+const MAX_MUTATIONS_PER_BLOCK = 64;
 
 type MutationTarget = {
     name: string;
@@ -34,8 +38,10 @@ export class MutationEngine extends BaseMidiProcessor {
 
     private depth = 0.5; // 0-1 master mutation amount
     private rngState = 0x1234;
-    private stepCounter = 0;
-    private stepsPerMutation = 4;
+    /** Mutations per beat. Musical cadence, independent of sample rate and block size. */
+    private rate = 1;
+    /** Transport samples elapsed since the last mutation step. */
+    private mutationPhaseSamples = 0;
 
     constructor(id?: string) {
         super(id ?? `mutation-${Date.now()}`);
@@ -44,16 +50,12 @@ export class MutationEngine extends BaseMidiProcessor {
     processMidi(
         input: readonly MidiEvent[],
         output: MidiEvent[],
-        _transport: TransportInfo,
+        transport: TransportInfo,
         preview?: YeastPreviewDecisionSink
     ): void {
         // Mutation doesn't transform events directly — it modifies its own target values
         // which other processors can read. For now, apply velocity mutation to passing notes.
-        this.stepCounter++;
-        if (this.stepCounter >= this.stepsPerMutation) {
-            this.stepCounter = 0;
-            this.mutateStep();
-        }
+        this.advanceMutationPhase(input, transport);
 
         const velOffset = this.targets[0]!.value * this.depth;
 
@@ -69,6 +71,42 @@ export class MutationEngine extends BaseMidiProcessor {
             } else {
                 output.push(event);
             }
+        }
+    }
+
+    /**
+     * Advance the walk by the block's musical duration.
+     *
+     * The cadence is `rate` mutations per beat, derived from the transport's
+     * tempo and sample rate. Counting processed blocks instead would make the
+     * musical rate a function of sample rate and render quantum — the same
+     * project would evolve at a different speed on a different audio device.
+     * The remainder carries across blocks so a mutation never drifts off the
+     * beat grid, and never lands twice because a block straddled its boundary.
+     */
+    private advanceMutationPhase(input: readonly MidiEvent[], transport: TransportInfo): void {
+        const blockStartSamples = resolveBlockStartSamples(transport, input);
+        const blockSpanSamples =
+            resolveBlockEndSamples(transport, blockStartSamples, EMIT_FALLBACK_BLOCK_SPAN_SAMPLES) - blockStartSamples;
+        const samplesPerMutation = samplesPerBeat(transport) / this.rate;
+        if (!(blockSpanSamples > 0) || !Number.isFinite(samplesPerMutation) || samplesPerMutation <= 0) {
+            return;
+        }
+
+        this.mutationPhaseSamples += blockSpanSamples;
+        let steps = 0;
+        while (this.mutationPhaseSamples >= samplesPerMutation && steps < MAX_MUTATIONS_PER_BLOCK) {
+            this.mutationPhaseSamples -= samplesPerMutation;
+            this.mutateStep();
+            steps++;
+        }
+        if (this.mutationPhaseSamples >= samplesPerMutation) {
+            // Only reachable when the catch-up bound cut the loop short. Drop
+            // the backlog so the cap does not keep firing on every later block.
+            // Testing `steps === MAX_MUTATIONS_PER_BLOCK` instead would also
+            // discard a legitimate sub-step remainder whenever the loop happened
+            // to end at exactly the cap.
+            this.mutationPhaseSamples = 0;
         }
     }
 
@@ -94,12 +132,12 @@ export class MutationEngine extends BaseMidiProcessor {
         for (const target of this.targets) {
             target.value = target.baseValue;
         }
-        this.stepCounter = 0;
+        this.mutationPhaseSamples = 0;
     }
 
     protected resetParams(): void {
         this.depth = 0.5;
-        this.stepsPerMutation = 4;
+        this.rate = 1;
     }
 
     setParam(name: string, value: number): void {
@@ -107,14 +145,9 @@ export class MutationEngine extends BaseMidiProcessor {
             case 'depth':
                 this.depth = Math.max(0, Math.min(1, value));
                 break;
-            case 'rate': {
-                // `rate` (mutations per beat) is only needed to derive the
-                // step cadence; the engine steps on stepCounter/stepsPerMutation,
-                // so keep it local rather than as a write-only field.
-                const rate = Math.max(0.1, Math.min(10, value));
-                this.stepsPerMutation = Math.max(1, Math.round(4 / rate));
+            case 'rate':
+                this.rate = Math.max(0.1, Math.min(10, value));
                 break;
-            }
         }
     }
 

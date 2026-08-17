@@ -29,7 +29,6 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 
 describe('AutomationLaneControls', () => {
     const defaultProps = {
-        laneId: 'lane-1',
         isVisible: true,
         selectedCount: 0,
         onZoomToUsedRange: vi.fn(),

@@ -40,6 +40,7 @@ export { resolveAutoMatchValue } from './automationRecording/resolveAutoMatchVal
 export { beginDrawSession } from './beginDrawSession';
 export { paintDrawPoint } from './paintDrawPoint';
 export { endDrawSession } from './endDrawSession';
+export { cancelDrawSession } from './cancelDrawSession';
 export { selectPointsInRange } from './automationSelection/selectPointsInRange';
 
 export { applyModulation } from './modulation/applyModulation';

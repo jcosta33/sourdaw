@@ -4,7 +4,7 @@ import { updateClipInStore } from '#/modules/Arrangement/stores';
 import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { clearClipPitchContour } from '../clearClipPitchContour';
+import { clearClipPitchAnalysis } from '../clearClipPitchAnalysis';
 
 import { findPitchEditClip } from './findPitchEditClip';
 import { getPitchEditDependencies } from './getPitchEditDependencies';
@@ -35,6 +35,11 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
 
     const originalFileId = targetClip.fileId;
     const outputAudioPath = originalFileId.replace('.wav', '_pitch.wav');
+    // Derived from the output path rather than randomly generated: this runs inside
+    // a replicated action, where a fresh uuid would differ per peer. The path gains
+    // a `_pitch` segment per commit, so successive commits get distinct ids and an
+    // undone commit's buffer is never overwritten by the next one.
+    const outputAudioBufferId = `audio-pitch:${outputAudioPath}`;
 
     // Audit CC-10 — both writes below happen after `await renderPitchEdit`, by
     // which point the action's storage transaction is no longer ambient.
@@ -45,24 +50,37 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
 
     try {
         const { commitPitchEdit: renderPitchEdit } = getPitchEditDependencies();
-        await renderPitchEdit({
+        const { renderedAudioBufferId } = await renderPitchEdit({
             inputAudioPath: originalFileId,
             outputAudioPath,
+            outputAudioBufferId,
             audioBufferId: targetClip.audioBufferId,
             segments,
             contour,
         });
 
         scope(() => {
-            updateClipInStore(clipId, (clip) => ({ ...clip, fileId: outputAudioPath }));
+            // Both pointers move together, on every platform. `fileId` is the pitch
+            // surface's own record of the source file; `audioBufferId` is what
+            // playback, export, project reload and the next pitch analysis all
+            // resolve — nothing resolves a clip's audio through a path. Leaving it on
+            // the pre-edit buffer made the commit inaudible and left the render
+            // referenced by nothing, so it was never even saved with the project.
+            updateClipInStore(clipId, (clip) => ({
+                ...clip,
+                fileId: outputAudioPath,
+                audioBufferId: renderedAudioBufferId,
+            }));
         });
 
-        // The rendered `_pitch.wav` replaces the clip's audio, so the pre-commit
-        // contour is stale. Drop it to re-open the PitchEditor gate (waveform
-        // interactions reachable, Analyze Pitch offered again). Only on success —
-        // the catch path rethrows before this point and keeps the contour editable.
+        // The rendered audio replaces the clip's audio, so the analysis that
+        // produced this edit no longer describes it — contour and blobs both go.
+        // The blobs especially: they are the live shift the Knead worklet applies,
+        // and left standing over freshly baked audio they would apply the same
+        // shift a second time. Only on success — the catch path rethrows before
+        // this point and keeps the edit intact and re-committable.
         scope(() => {
-            clearClipPitchContour(clipId);
+            clearClipPitchAnalysis(clipId);
         });
     } catch (error) {
         // Surface the failure so a failed pitch commit does not look like success:

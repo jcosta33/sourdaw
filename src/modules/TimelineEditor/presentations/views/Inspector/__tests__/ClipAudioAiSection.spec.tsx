@@ -235,9 +235,9 @@ describe('ClipAudioAiSection', () => {
         expect(handleAiDenoiseClip).toHaveBeenCalledWith('buffer-1', 0.7);
     });
 
-    it('should render separate stems button', () => {
+    it('does not advertise unavailable stem separation', () => {
         render(<ClipAudioAiSection {...defaultProps} />);
-        expect(screen.getByText('Separate Stems')).toBeInTheDocument();
+        expect(screen.queryByText('Separate Stems')).not.toBeInTheDocument();
     });
 
     it('should render MIDI (Basic) button', () => {

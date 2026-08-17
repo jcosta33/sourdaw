@@ -18,38 +18,12 @@ vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {
         removeTask: removeTaskMock,
         toggleAiPanel: vi.fn(),
         handleGenerateMidiPrompt: vi.fn(),
-        handleGenerateAudioFallback: vi.fn(),
-        handleStemSeparationPreview: vi.fn(),
-    };
-});
-
-vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>();
-
-    return {
-        ...actual,
-        isAudioGenerationAvailable: vi.fn(() => false),
     };
 });
 
 vi.mock('#/modules/AiGeneration/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AiGeneration/stores')>()),
     aiStore: { name: 'aiStore' },
-}));
-
-vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/stores')>()),
-    workspaceStore: { name: 'workspaceStore' },
-}));
-
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: { name: 'trackStore' },
-}));
-
-vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
-    transportStore: { value: { tempo: 120 } },
 }));
 
 type MockAiTask = {
@@ -95,29 +69,19 @@ vi.mock('#/modules/AiGeneration/presentations/views', async (importOriginal) => 
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis/useCases');
-
 // Mock store states
 type MockAiTaskState = {
     id: string;
-    type: 'audio-generation';
+    type: 'midi-generation';
     status: 'success';
     timestamp: number;
 };
 
 const mockAiState: { isPanelOpen: boolean; tasks: MockAiTaskState[] } = { isPanelOpen: true, tasks: [] };
-const mockWorkspaceState = { selectedClipId: null };
-const mockTrackState = { tracks: [] };
 
 vi.mocked(useStore).mockImplementation((store: any) => {
     if (store?.name === 'aiStore') {
         return mockAiState;
-    }
-    if (store?.name === 'workspaceStore') {
-        return mockWorkspaceState;
-    }
-    if (store?.name === 'trackStore') {
-        return mockTrackState;
     }
     return {};
 });
@@ -125,11 +89,8 @@ vi.mocked(useStore).mockImplementation((store: any) => {
 describe('GenerativeAiPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(isAudioGenerationAvailable).mockReturnValue(false);
         mockAiState.isPanelOpen = true;
         mockAiState.tasks = [];
-        mockWorkspaceState.selectedClipId = null;
-        mockTrackState.tracks = [];
     });
 
     it('should render without crashing when panel is open', () => {
@@ -138,7 +99,7 @@ describe('GenerativeAiPanel', () => {
     });
 
     it('should route task removal through the owning use case', () => {
-        mockAiState.tasks = [{ id: 'task-1', type: 'audio-generation', status: 'success', timestamp: 1 }];
+        mockAiState.tasks = [{ id: 'task-1', type: 'midi-generation', status: 'success', timestamp: 1 }];
         render(<GenerativeAiPanel />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Remove task task-1' }));
@@ -157,46 +118,12 @@ describe('GenerativeAiPanel', () => {
         expect(screen.getByText('Generate')).toBeInTheDocument();
     });
 
-    it('should render tab buttons', () => {
+    it('renders only the MIDI generation modes', () => {
         render(<GenerativeAiPanel />);
-        expect(screen.getByText('MIDI')).toBeInTheDocument();
-        expect(screen.getByText('Audio')).toBeInTheDocument();
-        expect(screen.getByText('Stems')).toBeInTheDocument();
-    });
-
-    it('should switch between tabs when clicked', () => {
-        render(<GenerativeAiPanel />);
-
-        const audioTab = screen.getByText('Audio');
-        fireEvent.click(audioTab);
-        expect(screen.getByText(/requires the Sourdaw desktop app/i)).toBeInTheDocument();
-
-        const stemsTab = screen.getByText('Stems');
-        fireEvent.click(stemsTab);
-        // Use getAllByText and check length
-        expect(screen.getAllByText(/Select an audio clip on the timeline/i).length).toBeGreaterThan(0);
-    });
-
-    it('should render desktop-only notice when audio generation is unavailable', () => {
-        render(<GenerativeAiPanel />);
-
-        fireEvent.click(screen.getByText('Audio'));
-
-        expect(screen.getByText(/requires the Sourdaw desktop app/i)).toBeInTheDocument();
-        expect(screen.queryByText('Describe the Sound')).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /generate audio/i })).not.toBeInTheDocument();
-    });
-
-    it('should render audio prompt controls when audio generation is available', () => {
-        vi.mocked(isAudioGenerationAvailable).mockReturnValue(true);
-
-        render(<GenerativeAiPanel />);
-
-        fireEvent.click(screen.getByText('Audio'));
-
-        expect(screen.queryByText(/requires the Sourdaw desktop app/i)).not.toBeInTheDocument();
-        expect(screen.getByText('Describe the Sound')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /generate audio/i })).toBeInTheDocument();
+        expect(screen.getByText('Patterns')).toBeInTheDocument();
+        expect(screen.getByText('AI')).toBeInTheDocument();
+        expect(screen.queryByText('Stems')).not.toBeInTheDocument();
+        expect(screen.queryByText('Extract Stems')).not.toBeInTheDocument();
     });
 
     it('should render PatternBrowser by default in MIDI tab', () => {

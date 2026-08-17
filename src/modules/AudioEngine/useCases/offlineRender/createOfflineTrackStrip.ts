@@ -6,6 +6,8 @@ import { buildDeviceChain } from '../buildDeviceChain';
 import { type OfflineTrackStrip } from './types';
 
 type CreateOfflineTrackStripTrackInput = {
+    /** The track this strip is built for; it names the strip it produces. */
+    id: string;
     /**
      * Names the track in every device-failure message and degraded-device
      * warning the chain build emits. It travels on the track rather than in the
@@ -99,6 +101,7 @@ export async function createOfflineTrackStrip(
     panNode.connect(outputNode);
 
     return {
+        trackId: track.id,
         inputNode,
         preFaderTap,
         faderNode,

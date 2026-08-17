@@ -4,7 +4,10 @@ import { updateTransportState } from '../repositories/transport/updateTransportS
 const VALID_DENOMINATORS = [2, 4, 8, 16] as const;
 
 export function setTimeSignature(numerator: number, denominator: number): void {
-    if (numerator < 1 || numerator > 32) {
+    // `numerator < 1 || numerator > 32` alone is false for NaN — both
+    // comparisons are false against NaN — so a bad `parseInt` upstream would
+    // otherwise reach the store and the undo inverse unrejected.
+    if (!Number.isInteger(numerator) || numerator < 1 || numerator > 32) {
         return;
     }
     if (!VALID_DENOMINATORS.includes(denominator as (typeof VALID_DENOMINATORS)[number])) {

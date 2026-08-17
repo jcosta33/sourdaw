@@ -169,6 +169,20 @@ describe('NotePropertyLane', () => {
             expect(liveSetValue).toHaveBeenLastCalledWith('clip-1', 'n1', 100);
         });
 
+        it('hit-tests the topmost (last-painted) note when notes overlap', () => {
+            // n1 and n2 share the same startBeat and fully overlap on screen.
+            // The paint loop draws array order, so n2 renders on top — the hit
+            // test must prefer it, not the first (bottommost) array match.
+            seedNotes([makeNote('n1', 0, 100), makeNote('n2', 0, 50)]);
+            render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
+            const canvas = getCanvas();
+
+            fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 10, clientY: 2 });
+
+            expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'n2', 127);
+            expect(liveSetValue).not.toHaveBeenCalledWith('clip-1', 'n1', expect.anything());
+        });
+
         it('drag-through paints the note currently under the cursor', () => {
             seedNotes([makeNote('n1', 0, 100), makeNote('n2', 2, 100)]);
             render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);

@@ -13,7 +13,7 @@ import { Button } from '#/components/ui/button';
 import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
 import {
     replaceClipAudioBuffer,
@@ -30,15 +30,17 @@ import {
     addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
-import { decodeAudioFile, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
+import {
+    decodeAudioFile,
+    getCachedAudioBuffer,
+    getCachedAudioBufferWaveformPeaks,
+} from '#/modules/AudioEngine/useCases';
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 import { isTauri } from '#/utils/tauriRuntime';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
 import { resolveToken } from '#/utils/UI/resolveToken';
-
-import { PitchEditor } from './PitchEditor';
 
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
 // Structurally compatible with the value returned by `getWarpState`.
@@ -100,9 +102,16 @@ const drawWaveform = ({ canvas, container, bufferId, zoom, warpState, beatWidth 
 
     const peaks = getCachedAudioBufferWaveformPeaks({ bufferId, numBins: Math.floor(width) });
 
-    const hasRealData = peaks.some((value) => value > 0);
+    // Peak amplitude cannot tell "no audio loaded" from "audio loaded, and silent":
+    // the cache answers a miss with a zero-filled array of exactly the requested
+    // length, which is also what a digitally silent buffer measures. Deciding on
+    // the peaks alone therefore painted the fake sine placeholder and the "drop an
+    // audio file" hint over a clip that really does hold audio — a silent take, a
+    // muted stem, a lead-in — telling the user their recording never loaded.
+    // Ask the cache who is there; let the peaks decide only what to draw.
+    const hasBuffer = getCachedAudioBuffer({ bufferId }) !== null;
 
-    if (hasRealData) {
+    if (hasBuffer && peaks.length > 0) {
         canvasContext.fillStyle = 'rgba(90, 150, 115, 0.5)';
         canvasContext.beginPath();
         canvasContext.moveTo(0, middleY);
@@ -506,8 +515,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         <span className="text-sm font-medium text-primary">Drop audio file here</span>
                     </div>
                 ) : null}
-
-                <PitchEditor clipId={clipId} />
             </div>
             {waveCtxMenu ? (
                 <div
@@ -553,32 +560,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                             })}
                         >
                             <span>AI Denoise</span>
-                            <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
-                                {isTauri() ? 'Desktop' : 'Web'}
-                            </span>
-                        </button>
-                    </DisabledFeatureWrapper>
-                    <DisabledFeatureWrapper
-                        disabled={!isTauri()}
-                        reason="AI Stem Separation requires the Tauri Desktop version of Sourdaw."
-                        className="w-full flex"
-                    >
-                        <button
-                            type="button"
-                            className={cn(
-                                menuBtnClass,
-                                'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
-                            )}
-                            role="menuitem"
-                            onClick={waveAct(() => {
-                                if (!audioBufferId) {
-                                    notifyUser('Stem separation unavailable — clip has no audio buffer', 'error');
-                                    return;
-                                }
-                                void handleStemSeparationPreview(audioBufferId);
-                            })}
-                        >
-                            <span>AI Stem Separation</span>
                             <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
                                 {isTauri() ? 'Desktop' : 'Web'}
                             </span>
