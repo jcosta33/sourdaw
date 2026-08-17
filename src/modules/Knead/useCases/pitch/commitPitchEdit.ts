@@ -60,15 +60,16 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
         });
 
         scope(() => {
-            // Both pointers move together. `fileId` is what persistence and a later
-            // reload resolve; `audioBufferId` is what playback, export and the next
-            // pitch analysis resolve — leaving it on the pre-edit buffer made the
-            // commit inaudible and left the render referenced by nothing, so it was
-            // never even saved with the project.
+            // Both pointers move together, on every platform. `fileId` is the pitch
+            // surface's own record of the source file; `audioBufferId` is what
+            // playback, export, project reload and the next pitch analysis all
+            // resolve — nothing resolves a clip's audio through a path. Leaving it on
+            // the pre-edit buffer made the commit inaudible and left the render
+            // referenced by nothing, so it was never even saved with the project.
             updateClipInStore(clipId, (clip) => ({
                 ...clip,
                 fileId: outputAudioPath,
-                ...(renderedAudioBufferId === null ? {} : { audioBufferId: renderedAudioBufferId }),
+                audioBufferId: renderedAudioBufferId,
             }));
         });
 

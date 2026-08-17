@@ -18,7 +18,7 @@ type CommitPitchEditInput = {
 /** The render reports which cache entry now holds the edited audio, so the commit
  *  can repoint the clip at it. Null when the render wrote a file without decoding
  *  it into this realm (the native path) — there is nothing to point at. */
-type CommitPitchEditResult = { renderedAudioBufferId: string | null };
+type CommitPitchEditResult = { renderedAudioBufferId: string };
 
 export type PitchEditDependencies = {
     commitPitchEdit: (input: CommitPitchEditInput) => Promise<CommitPitchEditResult>;

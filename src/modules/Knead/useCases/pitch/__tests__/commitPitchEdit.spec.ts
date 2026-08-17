@@ -252,18 +252,6 @@ describe('commitPitchEdit through action dispatch', () => {
         expect(getFirstClipFileId()).toBe('test_pitch.wav');
     });
 
-    // The native path writes a file and decodes nothing into this realm's cache, so
-    // there is no buffer to point at; repointing at an uncached key would silence the
-    // clip outright.
-    it('leaves the clip audio buffer alone when the render decoded nothing', async () => {
-        commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: null });
-
-        await executeAppAction(commitAction('c1'));
-
-        expect(getFirstClipAudioBufferId()).toBe('buffer-c1');
-        expect(getFirstClipFileId()).toBe('test_pitch.wav');
-    });
-
     it('clears the clip pitch contour after a successful commit so the editor gate re-opens', async () => {
         expect(kneadStore.value?.contours.c1).toEqual(storedContour);
 
