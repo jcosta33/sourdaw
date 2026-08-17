@@ -932,22 +932,74 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isBacteriaDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        isCurrent,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: BacteriaNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            pendingParams.length = 0;
+            placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            publishedResult.destroy();
+            clearReportedLatency(deviceId);
+            getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, {
+                inputDb: 0,
+                outputDb: 0,
+                bandLevels: [0, 0, 0, 0, 0, 0],
+                latency: 0,
+            });
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
             setBypass: () => {},
         };
-        const loadPromise = createBacteriaNode(context, undefined, signal)
+        const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
+        const loadPromise = createBacteriaNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: BacteriaNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
                     return;
                 }
                 if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
                     result.destroy();
                     return;
                 }
@@ -963,7 +1015,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, data);
                 });
-                onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -976,10 +1028,24 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             result.destroy();
                             clearReportedLatency(deviceId);
+                            getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, {
+                                inputDb: 0,
+                                outputDb: 0,
+                                bandLevels: [0, 0, 0, 0, 0, 0],
+                                latency: 0,
+                            });
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
+                if (accepted === false) {
+                    result.destroy();
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
                 return;
             })
             .catch((error) => {

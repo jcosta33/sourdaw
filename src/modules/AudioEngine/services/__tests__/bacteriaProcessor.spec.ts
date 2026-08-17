@@ -102,6 +102,38 @@ function send(proc: BacteriaProcessorLike, data: unknown): void {
     proc.port.onmessage?.({ data });
 }
 
+function initializeControl(proc: BacteriaProcessorLike): void {
+    send(proc, {
+        schemaVersion: 1,
+        command: 'initialize-fallback-control',
+        target: {
+            trackId: 'track-1',
+            deviceId: 'bacteria-1',
+            deviceType: 'bacteria',
+            parameterIds: ['oversampling', 'band5_drive', 'bypass'],
+        },
+        correlation: { workletGeneration: 1 },
+    });
+}
+function control(
+    parameterId: string,
+    value: number,
+    controlSequence: number,
+    scheduling: { targetFrame: number | null; deadlineFrame: number | null } = {
+        targetFrame: null,
+        deadlineFrame: null,
+    }
+): Record<string, unknown> {
+    return {
+        schemaVersion: 1,
+        command: 'set-fallback-param',
+        target: { trackId: 'track-1', deviceId: 'bacteria-1', deviceType: 'bacteria', parameterId },
+        value,
+        correlation: { workletGeneration: 1, controlSequence },
+        scheduling,
+    };
+}
+
 function stereo(frames: number, fill: number): Float32Array[] {
     return [new Float32Array(frames).fill(fill), new Float32Array(frames).fill(fill)];
 }
@@ -123,6 +155,7 @@ describe('BacteriaProcessor message handling', () => {
     it('posts ready with the initial latency on init and ignores a second init', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
@@ -132,18 +165,19 @@ describe('BacteriaProcessor message handling', () => {
     it('maps camelCase param names through PARAM_MAP and reports latency changes', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
         resetRecording();
 
         // threshold (identity-mapped) does not change latency.
-        send(proc, { type: 'param', name: 'threshold', value: 0.5 });
-        expect(paramCalls).toContainEqual({ name: 'threshold', value: 0.5 });
+        send(proc, control('unknown', 0.5, 1));
+        expect(paramCalls).toEqual([]);
         const latencyAfter1 = proc.port.postMessage.mock.calls.filter(
             (c) => (c[0] as { type: string }).type === 'latency-changed'
         );
         expect(latencyAfter1).toHaveLength(0);
 
         // oversampling triggers a latency change to 256.
-        send(proc, { type: 'param', name: 'oversampling', value: 2 });
+        send(proc, control('oversampling', 2, 2));
         expect(paramCalls).toContainEqual({ name: 'oversampling', value: 2 });
         const latencyAfter2 = proc.port.postMessage.mock.calls.filter(
             (c) => (c[0] as { type: string }).type === 'latency-changed'
@@ -152,12 +186,49 @@ describe('BacteriaProcessor message handling', () => {
         expect((latencyAfter2[0]![0] as { latency: number }).latency).toBe(256);
     });
 
-    it('forwards unmapped param names as-is (fallback to raw name)', async () => {
+    it('accepts generated band keys but rejects forged/replayed controls', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
         resetRecording();
-        send(proc, { type: 'param', name: 'someUnknownParam', value: 0.3 });
-        expect(paramCalls).toContainEqual({ name: 'someUnknownParam', value: 0.3 });
+        send(proc, control('band5_drive', 0.3, 1));
+        send(proc, control('band5_drive', 0.9, 1));
+        send(proc, {
+            ...control('band5_drive', 0.8, 2),
+            target: { trackId: 'forged', deviceId: 'bacteria-1', deviceType: 'bacteria', parameterId: 'band5_drive' },
+        });
+        expect(paramCalls).toEqual([{ name: 'band5_drive', value: 0.3 }]);
+    });
+
+    it('rejects raw, malformed, expired, and exhausted controls while applying due scheduled commands', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
+        resetRecording();
+
+        send(proc, { type: 'param', name: 'oversampling', value: 2 });
+        send(proc, { ...control('oversampling', 2, 1), scheduling: { targetFrame: 10 } });
+        send(proc, control('bypass', 1, 2));
+        expect(paramCalls).toEqual([{ name: 'bypass', value: 1 }]);
+
+        vi.stubGlobal('currentFrame', 0);
+        send(proc, control('band5_drive', 0.3, 3, { targetFrame: 128, deadlineFrame: 256 }));
+        expect(paramCalls).toHaveLength(1);
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        expect(paramCalls).toContainEqual({ name: 'band5_drive', value: 0.3 });
+
+        vi.stubGlobal('currentFrame', 300);
+        send(proc, control('band5_drive', 0.9, 4, { targetFrame: 128, deadlineFrame: 256 }));
+        expect(paramCalls).not.toContainEqual({ name: 'band5_drive', value: 0.9 });
+
+        vi.stubGlobal('currentFrame', 0);
+        for (let sequence = 5; sequence < 37; sequence++) {
+            send(proc, control('band5_drive', sequence, sequence, { targetFrame: 1_000, deadlineFrame: 2_000 }));
+        }
+        vi.stubGlobal('currentFrame', 1_000);
+        proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        expect(paramCalls.filter((call) => call.name === 'band5_drive')).toHaveLength(33);
     });
 
     it('ignores param messages before init (no instance) and after a fault', async () => {
