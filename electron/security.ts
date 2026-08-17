@@ -5,8 +5,7 @@
  * wrong default for a DAW shell: the renderer runs third-party model output and
  * user-authored content, and the permissions that matter here — the microphone
  * and the MIDI bus, including SysEx, which can reflash a controller — are
- * exactly the ones an attacker would want. So the handler denies by default and
- * names the four capabilities the product actually uses.
+ * exactly the ones an attacker would want. So the handler denies by default.
  *
  * The origin check is the other half. A grant is scoped to the shell's own
  * origin, so a permission prompt raised by anything that is not the app — an
@@ -16,11 +15,41 @@
 import type { Session, WebContents } from 'electron';
 
 /**
- * `media` covers microphone and camera capture (audio input, recording).
- * `midi` and `midiSysex` cover controller I/O. `speaker-selection` covers the
- * output-device picker. Nothing else in the product asks for a permission.
+ * The permissions the renderer is allowed to hold, on the app's origin only.
+ *
+ * Derived by walking the renderer for the Web APIs that raise a Chromium
+ * permission, not from a list written ahead of the code — the first version of
+ * this file was written that way and denied two capabilities the product uses,
+ * one of them silently. Each entry below names the API that triggers it, which
+ * is what makes the entry checkable; the search that produced them was over
+ * `navigator.mediaDevices`, `navigator.requestMIDIAccess`, `setSinkId`,
+ * `navigator.clipboard`, `navigator.storage` and `navigator.permissions`.
+ *
+ * - `media` — `navigator.mediaDevices.getUserMedia`: audio input, recording and
+ *   input monitoring.
+ * - `midi`, `midiSysex` — `navigator.requestMIDIAccess`. Chromium raises the
+ *   SysEx variant for a sysex-enabled request; the shell grants both so that
+ *   enabling SysEx in the renderer is not also a shell change.
+ * - `speaker-selection` — `AudioContext.setSinkId`, the output-device picker.
+ * - `clipboard-sanitized-write` — `navigator.clipboard.writeText`, which the
+ *   collaboration invite flow uses. Denying it rejects a promise the call sites
+ *   do not await, so a refusal is invisible: the copy button does nothing and
+ *   the session cannot be shared.
+ * - `persistent-storage` — `navigator.storage.persist()`. A refusal is handled,
+ *   but it leaves downloaded models and origin-private project data evictable
+ *   under memory pressure, which is a worse guarantee than the browser build's.
+ *
+ * Adding to this list is a security decision: it must name the API that needs
+ * it, and that API must exist in the renderer.
  */
-export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set(['media', 'midi', 'midiSysex', 'speaker-selection']);
+export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
+    'media',
+    'midi',
+    'midiSysex',
+    'speaker-selection',
+    'clipboard-sanitized-write',
+    'persistent-storage',
+]);
 
 export type PermissionPolicy = {
     /** Origins allowed to hold the permissions above — the app, plus the dev server when running unpackaged. */
