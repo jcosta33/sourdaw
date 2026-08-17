@@ -1,0 +1,50 @@
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_a40848e8f8cca9::t_76af8f6f44b7cf 9-10,60-92,100-101,148,151-172,177-185,189-190,195-197,199-201,204,231-239,244,254
+  s_a40848e8f8cca9::t_91948da4c7a0b5 173-176
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_a40848e8f8cca9::t_0b0ed87715ee38 175-185,211-231,314-319,324,327-329,339-343,346-350,374-477
+  s_a40848e8f8cca9::t_7a20147b097ff7 583
+  s_a40848e8f8cca9::t_5cb05b229eb89c 478
+  s_a40848e8f8cca9::t_a97c71d2e69512 584
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_a40848e8f8cca9::t_be37f448c70adb 129-134,348-361,432-437,451,458-460,462-475,489,491-496
+  s_a40848e8f8cca9::t_91948da4c7a0b5 148-153
+  s_a40848e8f8cca9::t_446261475fd3a4 181,183-190
+  s_a40848e8f8cca9::t_08a1c3ceb82b18 182
+  s_a40848e8f8cca9::t_81000b1f49d0e5 338-343
+src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts
+  s_a40848e8f8cca9::t_f0fa2620d95818 1,41-44
+  s_a40848e8f8cca9::t_01a34007fbfea6 2-40,45-105
+src/modules/AudioEngine/services/__tests__/runtimeDeviceControl.spec.ts
+  s_a40848e8f8cca9::t_446261475fd3a4 1-73
+  s_a40848e8f8cca9::t_275d7af909b801 74-76
+  s_a40848e8f8cca9::t_86ad8a759fae6d 77-81
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_a40848e8f8cca9::t_36a44c68c0c989 40,43,1021-1022
+  s_a40848e8f8cca9::t_f0fa2620d95818 997
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_a40848e8f8cca9::t_27a2b086d4f310 1070,1073
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_a40848e8f8cca9::t_a05fa14f1fd545 927-933,936-941
+src/modules/AudioEngine/services/__tests__/grinderProcessorControlProtocol.spec.ts
+  s_a40848e8f8cca9::t_446261475fd3a4 1-72
+  s_a40848e8f8cca9::t_dab8aea9a6bc67 73-75
+src/modules/AudioEngine/models/RuntimeDeviceControl.ts
+  s_a40848e8f8cca9::t_01a34007fbfea6 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d75dfeb0b359564b28d4a7a3b22a6f5ecc00f0c6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
