@@ -11,9 +11,10 @@ use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsS
 use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
-    timeline_rt_diagnostics_channel, AutomationEvent, AutomationTarget, ClipPlacement, DeviceChain,
-    DeviceParam, DeviceParamEvent, DeviceParamQueue, RetiredTimelineObject, RouteTarget, SendTap,
-    TimelineBus, TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot, TimelineTrack,
+    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
+    ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
+    RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineGraph,
+    TimelineRtDiagnosticsSnapshot, TimelineTrack,
 };
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
@@ -71,19 +72,37 @@ pub enum GraphCommand {
     /// placed again or removed, rather than falling back onto the master mix.
     RemoveTrack(usize),
     SetTrackOutput(usize, RouteTarget),
+    /// Close or open the post-fader mute gate.
     SetTrackMute(usize, bool),
+    /// Close or open the pre-fader solo gate — the gate that silences the
+    /// tracks the engineer is *not* soloing. Separate from the mute because it
+    /// acts at a different point of the strip and for a different reason; see
+    /// [`crate::timeline::TimelineTrack`].
+    SetTrackSoloGate(usize, bool),
     /// Splice an effect into a track's device chain at `index`, clamped to the
     /// chain's length. The effect itself is added by `AddEffect`/`AddPlugin`;
     /// this is the ordering and the splice point.
     InsertTrackDevice {
         track_id: usize,
-        effect_id: usize,
+        entry: ChainEntry,
         index: usize,
     },
     /// Take an effect out of a track's chain. The effect stays registered and
     /// returns to the master insert chain.
     RemoveTrackDevice {
         track_id: usize,
+        effect_id: usize,
+    },
+    /// Splice an effect into a *bus's* device chain, on the same contract as
+    /// [`GraphCommand::InsertTrackDevice`]. A send bus that cannot host a
+    /// reverb is not a send bus.
+    InsertBusDevice {
+        bus_id: usize,
+        entry: ChainEntry,
+        index: usize,
+    },
+    RemoveBusDevice {
+        bus_id: usize,
         effect_id: usize,
     },
     /// Add a send from a track to a bus at the given tap. A pre-fader send
@@ -108,19 +127,26 @@ pub enum GraphCommand {
     /// Move or trim a clip. Non-destructive: only the window onto the source
     /// material moves, so restoring the placement restores the edit.
     SetClipPlacement(usize, usize, ClipPlacement),
+    /// Re-state a clip's level, its fades and its rate. Non-destructive in the
+    /// same way `SetClipPlacement` is.
+    SetClipPlayback(usize, usize, ClipPlayback),
 
     // Timeline transport and automation
     /// Place the playhead at an absolute timeline frame. The playhead advances
     /// by the block size while the transport is playing and stands still while
     /// it is not, so clips and stamped parameter changes are addressed in
     /// frames rather than in callbacks.
+    ///
+    /// A locate also drops the automation the locate made stale; see
+    /// [`crate::timeline::TimelineGraph::seek`] for what the control thread
+    /// then owns.
     SeekFrames(u64),
-    /// A time-stamped change to a mixer parameter. The stamp is an absolute
-    /// timeline frame, so the change lands on the frame it names whichever
-    /// block carries the command.
+    /// A change to a mixer parameter, and how it joins whatever that parameter
+    /// already has queued. Every stamp is an absolute timeline frame, so a
+    /// change lands on the frame it names whichever block carries the command.
     AutomateParam {
         target: AutomationTarget,
-        event: AutomationEvent,
+        write: AutomationWrite,
     },
     /// A time-stamped change to a built-in device parameter, addressed without
     /// a name so consuming the command frees nothing on the audio thread.
@@ -189,9 +215,13 @@ enum EffectPlacement {
     /// A member of the named track's device chain, processed with that track's
     /// signal instead.
     Track(usize),
-    /// A member of a track that has been removed. It processes nothing until
-    /// it is placed again or removed: silently falling back onto the master
-    /// chain would put a deleted track's device on the whole mix.
+    /// A member of the named bus's device chain, processed with the bus's
+    /// summed signal. A bus insert is placed exactly like a track insert: the
+    /// two differ only in which strip's signal reaches it.
+    Bus(usize),
+    /// A member of a track or bus that has been removed. It processes nothing
+    /// until it is placed again or removed: silently falling back onto the
+    /// master chain would put a deleted strip's device on the whole mix.
     Detached,
 }
 
@@ -584,6 +614,14 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::SetTransport(state) => {
+                    // Stopping holds every mixer parameter where it stands and
+                    // drops what it had queued. A ramp is stamped in timeline
+                    // frames, and a stopped timeline never reaches the frame it
+                    // was aimed at, so without this the mix keeps gliding after
+                    // playback ends.
+                    if self.transport.is_playing && !state.is_playing {
+                        self.timeline.hold_automation(self.playhead_frames);
+                    }
                     self.transport = state;
                     None
                 }
@@ -599,11 +637,11 @@ impl AudioScheduler {
                         // names this track is cleared: an effect's placement
                         // is single-valued, so detaching one that some other
                         // chain is running would silence a live device.
-                        for effect_id in track.device_chain() {
+                        for entry in track.device_chain() {
                             if let Some(effect) = self
                                 .effects
                                 .iter_mut()
-                                .find(|e| e.id == *effect_id && e.placement == placed_on)
+                                .find(|e| e.id == entry.effect_id && e.placement == placed_on)
                             {
                                 effect.placement = EffectPlacement::Detached;
                             }
@@ -619,27 +657,22 @@ impl AudioScheduler {
                     self.timeline.set_track_mute(id, muted);
                     None
                 }
+                GraphCommand::SetTrackSoloGate(id, gated) => {
+                    self.timeline.set_track_solo_gate(id, gated);
+                    None
+                }
                 GraphCommand::InsertTrackDevice {
                     track_id,
-                    effect_id,
+                    entry,
                     index,
                 } => {
                     // Only claim the effect when the chain actually took it: a
                     // refused splice must leave the effect where it was rather
                     // than silence it.
-                    if !self.effects.iter().any(|effect| effect.id == effect_id) {
+                    if !self.effect_id_exists(entry.effect_id) {
                         self.timeline.record_unknown_target();
-                    } else if self
-                        .timeline
-                        .insert_track_device(track_id, effect_id, index)
-                    {
-                        if let Some(effect) = self
-                            .effects
-                            .iter_mut()
-                            .find(|effect| effect.id == effect_id)
-                        {
-                            effect.placement = EffectPlacement::Track(track_id);
-                        }
+                    } else if self.timeline.insert_track_device(track_id, entry, index) {
+                        self.place_effect(entry.effect_id, EffectPlacement::Track(track_id));
                     }
                     None
                 }
@@ -651,12 +684,25 @@ impl AudioScheduler {
                         // Return it to the master chain only when its
                         // placement is the one this track owns, for the reason
                         // given on `RemoveTrack`.
-                        if let Some(effect) = self.effects.iter_mut().find(|effect| {
-                            effect.id == effect_id
-                                && effect.placement == EffectPlacement::Track(track_id)
-                        }) {
-                            effect.placement = EffectPlacement::MasterChain;
-                        }
+                        self.release_effect(effect_id, EffectPlacement::Track(track_id));
+                    }
+                    None
+                }
+                GraphCommand::InsertBusDevice {
+                    bus_id,
+                    entry,
+                    index,
+                } => {
+                    if !self.effect_id_exists(entry.effect_id) {
+                        self.timeline.record_unknown_target();
+                    } else if self.timeline.insert_bus_device(bus_id, entry, index) {
+                        self.place_effect(entry.effect_id, EffectPlacement::Bus(bus_id));
+                    }
+                    None
+                }
+                GraphCommand::RemoveBusDevice { bus_id, effect_id } => {
+                    if self.timeline.remove_bus_device(bus_id, effect_id) {
+                        self.release_effect(effect_id, EffectPlacement::Bus(bus_id));
                     }
                     None
                 }
@@ -676,10 +722,24 @@ impl AudioScheduler {
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
                     RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
                 }),
-                GraphCommand::RemoveBus(id) => self
-                    .timeline
-                    .remove_bus(id)
-                    .map(|bus| RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(bus))),
+                GraphCommand::RemoveBus(id) => {
+                    let placed_on = EffectPlacement::Bus(id);
+                    self.timeline.remove_bus(id).map(|bus| {
+                        // A bus's inserts outlive it exactly as a track's do:
+                        // they stop processing rather than falling back onto
+                        // the master mix.
+                        for entry in bus.device_chain() {
+                            if let Some(effect) = self
+                                .effects
+                                .iter_mut()
+                                .find(|e| e.id == entry.effect_id && e.placement == placed_on)
+                            {
+                                effect.placement = EffectPlacement::Detached;
+                            }
+                        }
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(bus))
+                    })
+                }
                 GraphCommand::SetBusOutput(id, target) => {
                     self.timeline.set_bus_output(id, target);
                     None
@@ -698,12 +758,17 @@ impl AudioScheduler {
                         .set_clip_placement(track_id, clip_id, placement);
                     None
                 }
+                GraphCommand::SetClipPlayback(track_id, clip_id, playback) => {
+                    self.timeline.set_clip_playback(track_id, clip_id, playback);
+                    None
+                }
                 GraphCommand::SeekFrames(frame) => {
+                    self.timeline.seek(frame);
                     self.playhead_frames = frame;
                     None
                 }
-                GraphCommand::AutomateParam { target, event } => {
-                    self.timeline.automate(target, event);
+                GraphCommand::AutomateParam { target, write } => {
+                    self.timeline.automate(target, write);
                     None
                 }
                 GraphCommand::AutomateDeviceParam {
@@ -747,6 +812,30 @@ impl AudioScheduler {
 
     fn effect_id_exists(&self, id: usize) -> bool {
         self.effects.iter().any(|effect| effect.id == id)
+    }
+
+    /// Record where an effect now runs, after a chain has accepted it.
+    fn place_effect(&mut self, effect_id: usize, placement: EffectPlacement) {
+        if let Some(effect) = self
+            .effects
+            .iter_mut()
+            .find(|effect| effect.id == effect_id)
+        {
+            effect.placement = placement;
+        }
+    }
+
+    /// Return an effect to the master insert chain, but only when it is the
+    /// named chain that still holds it: an effect's placement is single-valued,
+    /// so releasing one some other chain is running would move a live device.
+    fn release_effect(&mut self, effect_id: usize, held_by: EffectPlacement) {
+        if let Some(effect) = self
+            .effects
+            .iter_mut()
+            .find(|effect| effect.id == effect_id && effect.placement == held_by)
+        {
+            effect.placement = EffectPlacement::MasterChain;
+        }
     }
 
     fn remove_effect(&mut self, id: usize) -> Option<ActiveEffect> {
@@ -2033,7 +2122,7 @@ mod tests {
 #[cfg(test)]
 mod timeline_tests {
     use super::*;
-    use crate::timeline::{RampShape, MAX_TIMELINE_TRACKS};
+    use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2197,6 +2286,17 @@ mod timeline_tests {
         }
     }
 
+    fn effect(effect_id: usize) -> ChainEntry {
+        ChainEntry {
+            effect_id,
+            kind: DeviceKind::Effect,
+        }
+    }
+
+    fn chain_ids(chain: &[ChainEntry]) -> Vec<usize> {
+        chain.iter().map(|entry| entry.effect_id).collect()
+    }
+
     /// A track carrying one mono clip of a constant value, routed to the
     /// master.
     fn track_with_constant_clip(
@@ -2214,7 +2314,7 @@ mod timeline_tests {
                 vec![value; frames],
                 Vec::new(),
                 placement(0, 0, frames as u64),
-                1.0,
+                ClipPlayback::at_gain(1.0),
             ),
         ));
     }
@@ -2226,7 +2326,13 @@ mod timeline_tests {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddClip(
             1,
-            TimelineClip::new(9, vec![1.0; 8], Vec::new(), placement(3, 0, 2), 1.0),
+            TimelineClip::new(
+                9,
+                vec![1.0; 8],
+                Vec::new(),
+                placement(3, 0, 2),
+                ClipPlayback::at_gain(1.0),
+            ),
         ));
 
         // The clip names frames 3 and 4. A block-granular scheduler would put
@@ -2244,7 +2350,13 @@ mod timeline_tests {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddClip(
             1,
-            TimelineClip::new(9, vec![1.0; 8], Vec::new(), placement(3, 0, 4), 1.0),
+            TimelineClip::new(
+                9,
+                vec![1.0; 8],
+                Vec::new(),
+                placement(3, 0, 4),
+                ClipPlayback::at_gain(1.0),
+            ),
         ));
 
         let (first, _) = harness.render(4);
@@ -2269,7 +2381,7 @@ mod timeline_tests {
                 vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
                 Vec::new(),
                 placement(0, 2, 3),
-                1.0,
+                ClipPlayback::at_gain(1.0),
             ),
         ));
 
@@ -2296,12 +2408,24 @@ mod timeline_tests {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddClip(
             1,
-            TimelineClip::new(9, vec![1.0; 2], vec![0.25; 2], placement(0, 0, 2), 1.0),
+            TimelineClip::new(
+                9,
+                vec![1.0; 2],
+                vec![0.25; 2],
+                placement(0, 0, 2),
+                ClipPlayback::at_gain(1.0),
+            ),
         ));
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
         harness.send(GraphCommand::AddClip(
             2,
-            TimelineClip::new(8, vec![0.5; 2], Vec::new(), placement(0, 0, 2), 1.0),
+            TimelineClip::new(
+                8,
+                vec![0.5; 2],
+                Vec::new(),
+                placement(0, 0, 2),
+                ClipPlayback::at_gain(1.0),
+            ),
         ));
 
         let (left, right) = harness.render(2);
@@ -2316,12 +2440,12 @@ mod timeline_tests {
         track_with_constant_clip(&mut harness, 1, 9, 1.0, 8);
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::TrackGain(1),
-            event: AutomationEvent {
+            write: AutomationWrite::Append(AutomationEvent {
                 at_frame: 0,
                 duration_frames: 4,
                 value: 0.0,
                 shape: RampShape::Linear,
-            },
+            }),
         });
 
         // A ramp applied once per block would step: this is the stair-step the
@@ -2338,12 +2462,12 @@ mod timeline_tests {
         // Queued while the playhead is at 0, three blocks before it is due.
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::TrackGain(1),
-            event: AutomationEvent {
+            write: AutomationWrite::Append(AutomationEvent {
                 at_frame: 6,
                 duration_frames: 0,
                 value: 0.5,
                 shape: RampShape::Step,
-            },
+            }),
         });
 
         let (first, _) = harness.render(4);
@@ -2360,12 +2484,12 @@ mod timeline_tests {
         track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::TrackGain(1),
-            event: AutomationEvent {
+            write: AutomationWrite::Append(AutomationEvent {
                 at_frame: 0,
                 duration_frames: 4,
                 value: 0.25,
                 shape: RampShape::Exponential,
-            },
+            }),
         });
 
         // Two halvings across four frames, so the halfway frame carries the
@@ -2443,12 +2567,12 @@ mod timeline_tests {
         for track_id in [1, 2] {
             harness.send(GraphCommand::AutomateParam {
                 target: AutomationTarget::TrackGain(track_id),
-                event: AutomationEvent {
+                write: AutomationWrite::Append(AutomationEvent {
                     at_frame: 0,
                     duration_frames: 0,
                     value: 0.5,
                     shape: RampShape::Step,
-                },
+                }),
             });
             harness.send(GraphCommand::SetTrackOutput(track_id, RouteTarget::Bus(50)));
         }
@@ -2468,12 +2592,12 @@ mod timeline_tests {
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::BusGain(50),
-            event: AutomationEvent {
+            write: AutomationWrite::Append(AutomationEvent {
                 at_frame: 0,
                 duration_frames: 0,
                 value: 0.25,
                 shape: RampShape::Step,
-            },
+            }),
         });
 
         let (left, _) = harness.render(4);
@@ -2508,7 +2632,7 @@ mod timeline_tests {
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 2,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(2)));
@@ -2551,7 +2675,7 @@ mod timeline_tests {
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
 
@@ -2564,7 +2688,7 @@ mod timeline_tests {
                 .scheduler
                 .timeline()
                 .track(1)
-                .map(|t| t.device_chain().to_vec()),
+                .map(|t| chain_ids(t.device_chain())),
             Some(vec![7])
         );
 
@@ -2591,7 +2715,7 @@ mod timeline_tests {
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
         harness.send(GraphCommand::RemoveTrack(1));
@@ -2614,7 +2738,13 @@ mod timeline_tests {
         track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
         harness.send(GraphCommand::AddClip(
             1,
-            TimelineClip::new(10, vec![1.0; 4], Vec::new(), placement(0, 0, 4), 1.0),
+            TimelineClip::new(
+                10,
+                vec![1.0; 4],
+                Vec::new(),
+                placement(0, 0, 4),
+                ClipPlayback::at_gain(1.0),
+            ),
         ));
         harness.send(GraphCommand::RemoveTrack(1));
 
@@ -2719,23 +2849,32 @@ mod timeline_tests {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddClip(
             1,
-            TimelineClip::new(9, vec![1.0; 4], vec![0.0; 4], placement(0, 0, 4), 1.0),
+            TimelineClip::new(
+                9,
+                vec![1.0; 4],
+                vec![0.0; 4],
+                placement(0, 0, 4),
+                ClipPlayback::at_gain(1.0),
+            ),
         ));
 
         let (centred_left, centred_right) = harness.render(4);
         assert_eq!(centred_left, vec![1.0; 4]);
         assert_eq!(centred_right, vec![0.0; 4]);
 
+        // Rewound first and written afterwards, which is the order the control
+        // thread issues these in: a locate drops the automation window it made
+        // stale, and the window for the new position is pushed after it.
+        harness.send(GraphCommand::SeekFrames(0));
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::TrackPan(1),
-            event: AutomationEvent {
+            write: AutomationWrite::Append(AutomationEvent {
                 at_frame: 0,
                 duration_frames: 0,
                 value: 1.0,
                 shape: RampShape::Step,
-            },
+            }),
         });
-        harness.send(GraphCommand::SeekFrames(0));
 
         // Hard right folds the left channel's material into the right rather
         // than discarding it, which is the stereo panning rule the app's own
@@ -2801,12 +2940,12 @@ mod timeline_tests {
         ));
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::MasterGain,
-            event: AutomationEvent {
+            write: AutomationWrite::Append(AutomationEvent {
                 at_frame: 0,
                 duration_frames: 0,
                 value: 0.5,
                 shape: RampShape::Step,
-            },
+            }),
         });
 
         // The insert halves the timeline sum and the fader halves it again.
@@ -2836,7 +2975,7 @@ mod timeline_tests {
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
 
@@ -2871,12 +3010,12 @@ mod timeline_tests {
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 2,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
 
@@ -2889,7 +3028,7 @@ mod timeline_tests {
                 .scheduler
                 .timeline()
                 .track(2)
-                .map(|track| track.device_chain().to_vec()),
+                .map(|track| chain_ids(track.device_chain())),
             Some(Vec::new())
         );
         assert_eq!(
@@ -2917,7 +3056,7 @@ mod timeline_tests {
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
         harness.send(GraphCommand::RemoveTrack(1));
@@ -2939,7 +3078,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 2,
-            effect_id: 7,
+            entry: effect(7),
             index: 0,
         });
         harness.render(4);
@@ -2979,5 +3118,109 @@ mod timeline_tests {
         let (after, _) = harness.render(4);
         assert_eq!(after, vec![0.0; 4]);
         assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
+    }
+
+    #[test]
+    fn a_bus_insert_is_placed_on_that_bus_and_detaches_when_the_bus_goes() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            Box::new(ScalingPlugin { factor: 0.5 }),
+        ));
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PostFader,
+            level: 1.0,
+        });
+        harness.send(GraphCommand::InsertBusDevice {
+            bus_id: 50,
+            entry: effect(7),
+            index: 0,
+        });
+
+        // The effect runs on the bus, not on the master chain: the track's own
+        // output reaches the sum untouched and only the send is halved. A bus
+        // insert left on the master chain would have halved both, giving 0.75.
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Bus(50)
+        );
+        let (left, _) = harness.render(4);
+        assert_eq!(left, vec![1.5; 4]);
+
+        // The bus's inserts outlive the bus and stop processing, exactly as a
+        // track's do — falling back onto the master mix would put a deleted
+        // bus's reverb across everything.
+        harness.send(GraphCommand::RemoveBus(50));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+        harness.send(GraphCommand::SeekFrames(0));
+        let (after, _) = harness.render(4);
+        assert_eq!(after, vec![1.0; 4]);
+    }
+
+    #[test]
+    fn stopping_the_transport_drops_the_automation_window_the_stop_made_stale() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 16);
+        harness.send(GraphCommand::AutomateParam {
+            target: AutomationTarget::TrackGain(1),
+            write: AutomationWrite::Append(AutomationEvent {
+                at_frame: 8,
+                duration_frames: 0,
+                value: 0.5,
+                shape: RampShape::Step,
+            }),
+        });
+
+        let (first, _) = harness.render(4);
+        assert_eq!(first, vec![1.0; 4]);
+
+        // Stopping at frame 4 holds every parameter and drops what each had
+        // queued: the window was pushed ahead of a playhead that no longer
+        // advances, and the control thread that owns the curve re-issues it.
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.playing();
+        let (second, _) = harness.render(8);
+        assert_eq!(
+            second,
+            vec![1.0; 8],
+            "a change stamped past the stop must not fire on its own later"
+        );
+    }
+
+    #[test]
+    fn a_locate_drops_the_automation_beyond_it_and_keeps_what_it_passed_over() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 16);
+        for (at_frame, value) in [(4u64, 0.5_f32), (12, 0.25)] {
+            harness.send(GraphCommand::AutomateParam {
+                target: AutomationTarget::TrackGain(1),
+                write: AutomationWrite::Append(AutomationEvent {
+                    at_frame,
+                    duration_frames: 0,
+                    value,
+                    shape: RampShape::Step,
+                }),
+            });
+        }
+
+        harness.send(GraphCommand::SeekFrames(8));
+        let (left, _) = harness.render(8);
+
+        // The change the locate skipped lands and puts the fader on the curve
+        // where the playhead now stands. The one beyond the locate is gone: it
+        // belongs to the window the control thread pushed for the old position
+        // and re-issues for the new one. Kept, frames 12 onward would drop to
+        // 0.25 without anyone asking.
+        assert_eq!(left, vec![0.5; 8]);
     }
 }
