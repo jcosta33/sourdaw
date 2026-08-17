@@ -1,0 +1,49 @@
+src/modules/AudioEngine/engine/CrustNode.ts
+  s_a40848e8f8cca9::t_c6f34503f1e10c 14,16-18
+  s_a40848e8f8cca9::t_104d55a51912ab 86-88
+  s_a40848e8f8cca9::t_fe15066599f46a 199-206,211-212,215
+  s_a40848e8f8cca9::t_b1c9dd4cca8eca 249-252
+  s_a40848e8f8cca9::t_d39501277c91f5 127-175,195
+  s_a40848e8f8cca9::t_5c347b658ba73e 69
+  s_a40848e8f8cca9::t_c3d2a85fca3dbd 26-37
+  s_a40848e8f8cca9::t_2b22f095ef9599 185-186,191-194
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_a40848e8f8cca9::t_cffabca4b3aa57 935-937,954,962,972-980
+  s_a40848e8f8cca9::t_3a63500caaa7b9 868-878,881-916
+  s_a40848e8f8cca9::t_64eeb528796ac9 923-924,934
+src/modules/AudioEngine/models/CrustRuntimeControl.ts
+  s_a40848e8f8cca9::t_7e653957a1128b 1-49
+src/modules/AudioEngine/services/__tests__/crustProcessor.spec.ts
+  s_a40848e8f8cca9::t_34a8bb24df5af8 125-128
+  s_a40848e8f8cca9::t_e5a6b7d00273c0 1-42,106-114,134-135
+  s_a40848e8f8cca9::t_1923084be6b5e6 43-105,115-124,129-133
+src/modules/AudioEngine/engine/__tests__/CrustNode.spec.ts
+  s_a40848e8f8cca9::t_4ea789c3df6cf1 1-75
+src/modules/AudioEngine/services/crustProcessor.ts
+  s_a40848e8f8cca9::t_702f90c0d9d4b6 106,109-111,121-125,128-131,148-233
+  s_a40848e8f8cca9::t_42cda962f7bc54 87-94
+  s_a40848e8f8cca9::t_a5534ed16db9b1 9
+  s_a40848e8f8cca9::t_83774005ff3630 53-76
+  s_a40848e8f8cca9::t_c97068f74c5b74 234
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_a40848e8f8cca9::t_a8964b142f37a1 30,66-68
+  s_a40848e8f8cca9::t_a5534ed16db9b1 10
+  s_a40848e8f8cca9::t_f1a41c1fdd136c 795-847
+  s_a40848e8f8cca9::t_8087dfd83da0dd 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "77a53e747ab07824d87c3b3b560e4480819caa36",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
