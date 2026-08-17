@@ -148,7 +148,7 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
     });
 
-    it('keeps a failed deferred graph removal retryable during ambiguous reconciliation', async () => {
+    it('does not mask a failed graph removal when ambiguous reconciliation retries it', async () => {
         const track = {
             id: 't1',
             kind: 'audio',
@@ -168,7 +168,37 @@ describe('prepareRemoveDevice', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ ...track, devices: [] }], selectedTrackId: null });
 
         await expect(result.afterCommit()).rejects.toThrow('graph teardown failed');
-        await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
+        await expect(result.afterAmbiguousCommit()).rejects.toThrow('graph teardown failed');
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledTimes(2);
+        expect(mocks.clearReportedLatency).toHaveBeenCalledOnce();
+        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['rejected', { acceptance: 'rejected', application: 'not-applied', reason: 'stale graph revision' }],
+        [
+            'needs-reconcile',
+            { acceptance: 'accepted', application: 'needs-reconcile', reason: 'partial graph removal' },
+        ],
+    ])('preserves an initial %s runtime result after a successful retry', async (_application, initialResult) => {
+        const track = {
+            id: 't1',
+            kind: 'audio',
+            devices: [createExternalDevice('d1', 'inst1')],
+        } as unknown as Track;
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.applyDeviceChainRuntimeDelta
+            .mockReturnValueOnce(initialResult)
+            .mockReturnValueOnce({ acceptance: 'accepted', application: 'applied' });
+
+        const result = prepareRemoveDevice('d1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred unload result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [{ ...track, devices: [] }], selectedTrackId: null });
+
+        await expect(result.afterCommit()).rejects.toThrow(initialResult.reason);
+        await expect(result.afterAmbiguousCommit()).rejects.toThrow(initialResult.reason);
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledTimes(2);
         expect(mocks.clearReportedLatency).toHaveBeenCalledOnce();
         expect(mocks.unloadPlugin).toHaveBeenCalledOnce();

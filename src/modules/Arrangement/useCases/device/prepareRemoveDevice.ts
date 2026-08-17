@@ -90,6 +90,7 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
     }
 
     let deviceRemovalFinalized = false;
+    let initialRuntimeGraphFailure: Error | null = null;
     const finalizedLatencyDeviceIds = new Set<string>();
     let stripRemovalFinalized = !deactivatesStrip;
     const finalizedExternalInstanceIds = new Set<string>();
@@ -110,10 +111,12 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
                 }
                 deviceRemovalFinalized = true;
             } catch (error) {
-                throw manualRepairFailure(
+                const repairFailure = manualRepairFailure(
                     `Runtime graph removal failed for device ${deviceId} on track ${track.id}`,
                     error
                 );
+                initialRuntimeGraphFailure ??= repairFailure;
+                throw repairFailure;
             }
         }
 
@@ -164,20 +167,25 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
         );
         if (currentOwners.length === 0) {
             await finalizeRuntimeEffectsStrict();
-            return;
-        }
-        if (currentOwners.length === 1) {
+        } else if (currentOwners.length === 1) {
             try {
                 projectTrackToLiveStrip({ trackId: currentOwners[0]!.id, activateDormantExternalPlugins: true });
             } catch (error) {
                 throw manualRepairFailure(`Runtime projection failed for restored device ${deviceId}`, error);
             }
-            return;
+        } else {
+            throw new Error(
+                `Runtime reconciliation found multiple owners for device ${deviceId}; manual repair is required`
+            );
         }
 
-        throw new Error(
-            `Runtime reconciliation found multiple owners for device ${deviceId}; manual repair is required`
-        );
+        if (initialRuntimeGraphFailure) {
+            throw new Error(
+                `Runtime graph removal was reconciled after its initial failure for device ${deviceId}; ` +
+                    `retry/repair acknowledgement is still required: ${initialRuntimeGraphFailure.message}`,
+                { cause: initialRuntimeGraphFailure }
+            );
+        }
     }
 
     return {
