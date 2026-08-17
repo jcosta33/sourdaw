@@ -1,14 +1,14 @@
 name: Change plan
-description: Structural change that must preserve named behavior. Not for net-new product design.
+description: Structural change that must preserve named behavior. Not net-new product design.
 title: "change(scope): "
 labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
-        Use for refactor, rewrite, migration, upgrade, performance, schema, or cleanup. File a Spec when the change is new user-facing behavior.
+        New user-facing behavior is a Spec. Secrets stay in `~/.agents/artifacts`.
 
-        Each wave becomes a child Task of a ready Spec. After create, add `priority:P*` and attach child Tasks as GitHub sub-issues. Unpublished work stays in `~/.agents/artifacts`.
+        Each wave is a child Task of a ready Spec. After create: add `priority:P*`; attach those Tasks as sub-issues.
 
   - type: dropdown
     id: kind
@@ -79,7 +79,7 @@ body:
     id: preservation
     attributes:
       label: Preservation guarantees
-      description: Cite Spec issues as #issue AC-NNN. Mint PG-NNN only for preserved behavior with no requirement ID. Do not cite local SPEC files.
+      description: Cite `#issue AC-NNN`. Mint `PG-NNN` only when no requirement ID exists. No local SPEC files.
       placeholder: |
         | ID | Behavior | Verify with |
         | --- | --- | --- |
@@ -92,7 +92,7 @@ body:
     id: waves
     attributes:
       label: Transformation waves
-      description: Smallest ordered changes that leave build and tests green. Each wave names surfaces, verification, rollback, and the child Task once filed.
+      description: "Smallest ordered green steps. Each wave: surfaces, verify, rollback, child Task."
       placeholder: |
         1. Wave — surfaces — verify — rollback — child #…
     validations:

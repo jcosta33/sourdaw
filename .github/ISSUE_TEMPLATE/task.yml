@@ -1,20 +1,20 @@
 name: Task
-description: One write-disjoint slice of a ready Spec. A Change plan may supplement; it cannot replace the Spec.
+description: One write-disjoint slice of a ready Spec. A Change plan cannot replace the Spec.
 title: "task(scope): "
 labels: ["status:ready"]
 body:
   - type: markdown
     attributes:
       value: |
-        The parent Spec must already be open. A Change plan may supplement it; it cannot replace it. One source and one implementer is not a Task — use Bug or Feature.
+        Parent Spec must already be open. One-shot work is Bug or Feature. Secrets stay in `~/.agents/artifacts`.
 
-        Copy each assigned Spec AC block verbatim. After create, add this issue as a GitHub sub-issue of the Spec (the parent number field does not create that edge), and add `priority:P*`. Unpublished work stays in `~/.agents/artifacts`.
+        After create: attach as sub-issue of the Spec; add `priority:P*`.
 
   - type: input
     id: parent_spec
     attributes:
       label: Parent Spec
-      description: Issue number of the ready Spec. Required. After filing, attach this Task as a sub-issue of that Spec.
+      description: Ready Spec issue number.
       placeholder: "2037"
     validations:
       required: true
@@ -23,7 +23,7 @@ body:
     id: change_plan
     attributes:
       label: Change plan
-      description: Issue number of the Change plan if this wave comes from one. Leave empty when there is none.
+      description: Change plan issue number, if any.
       placeholder: "2040"
     validations:
       required: false
@@ -66,7 +66,7 @@ body:
     id: requirements
     attributes:
       label: Assigned requirements
-      description: Paste each scoped Spec AC block and its Verify with line verbatim. Preservation guarantees go in Preservation scope, not here.
+      description: Paste each assigned Spec AC block verbatim. Preservation guarantees go under Preservation scope.
       placeholder: |
         ### AC-001
         - When:
@@ -95,7 +95,7 @@ body:
     id: siblings
     attributes:
       label: May run with
-      description: Other Task issue numbers proven write-disjoint with this packet, or None.
+      description: Write-disjoint Task numbers, or None.
       placeholder: "None"
     validations:
       required: true
@@ -104,7 +104,7 @@ body:
     id: preservation
     attributes:
       label: Preservation scope
-      description: When a Change plan exists, copy every preservation guarantee this packet could violate, with its check. Otherwise None.
+      description: Every preservation guarantee this packet could violate, with its check. Else None.
       placeholder: "None"
     validations:
       required: true
@@ -113,7 +113,7 @@ body:
     id: verify
     attributes:
       label: Verify
-      description: One command (or justified n/a) per assigned requirement and preservation guarantee. Put evidence on the pull request, not in this body.
+      description: One command or n/a per assigned AC and preservation guarantee. Evidence goes on the PR.
       placeholder: "pnpm test:run path/to/spec.ts"
     validations:
       required: true

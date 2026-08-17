@@ -84,4 +84,4 @@ The GitHub issue is the durable planning record. Pick the form that matches the 
 - **Audit** — current-state findings. File bugs for Blocker and Major rows; do not prescribe fixes here.
 - **Inventory** — current-state map for a coming change. Close it with that change.
 
-The issue body is the original; delete any local copy after filing. Unpublished or secret work stays in `~/.agents/artifacts` and is not filed. After create, add `priority:P*` to match the form dropdown, and attach parent/child issues as GitHub sub-issues — the number fields do not create that edge. ADRs stay in `.agents/decisions/`.
+The issue body is the original; delete any local copy after filing. Unpublished or secret work stays in `~/.agents/artifacts` and is not filed. After create, add `priority:P*` when the form collects Priority, and attach parent/child issues as GitHub sub-issues — the number fields do not create that edge. ADRs stay in `.agents/decisions/`.

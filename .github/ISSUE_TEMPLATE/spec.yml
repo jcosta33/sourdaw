@@ -1,14 +1,14 @@
 name: Spec
-description: Decided intent that must become acceptance criteria before implementation. Not for trivial work or drafts.
+description: Decided intent, as acceptance criteria. Not trivial work.
 title: "spec(scope): "
 labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
-        File only when every blocking choice is resolved and the content can be public. Unpublished or secret work stays in `~/.agents/artifacts` and is not filed.
+        File when every blocking choice is resolved. Secrets stay in `~/.agents/artifacts`.
 
-        The issue body is the spec. Delete any local copy after filing. Implementation slices use **Task**. After create, add `priority:P*` to match the dropdown; this form cannot apply it.
+        Slices are Tasks. After create, add `priority:P*`.
 
   - type: dropdown
     id: scope
@@ -56,7 +56,7 @@ body:
     id: requirements
     attributes:
       label: Requirements
-      description: One independently failing obligation per AC. Exactly those three lines, in that order. One MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in Then. Empty shells are not a spec.
+      description: "One independently failing AC. Lines, in order: When, Then, Verify with. Exactly one MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in Then."
       placeholder: |
         ### AC-001
         - When:
@@ -69,7 +69,7 @@ body:
     id: boundary
     attributes:
       label: Boundary
-      description: Optional. Add only if the intent does not already say what is out of scope.
+      description: Only if Intent does not already bound the work.
     validations:
       required: false
 
@@ -77,7 +77,7 @@ body:
     id: sources
     attributes:
       label: Sources
-      description: ADRs, parent campaign, research issue, or other GitHub URLs. No local file paths.
+      description: ADRs and GitHub URLs. No local paths.
       placeholder: "ADR 0021, #2037"
     validations:
       required: false

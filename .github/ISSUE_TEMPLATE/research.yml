@@ -1,14 +1,14 @@
 name: Research
-description: Evidence for a decision. Advisory only — do not write requirements here.
+description: Evidence for a decision. No requirements.
 title: "research(scope): "
 labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
-        One question. Fit evidence. Intent and requirements stay on a Spec.
+        One question. Evidence only. Intent and ACs belong on a Spec. Secrets stay in `~/.agents/artifacts`.
 
-        Mark unreachable claims [unconfirmed]. Unpublished work stays in `~/.agents/artifacts`. Do not submit empty R-001 shells.
+        Mark unreachable claims `[unconfirmed]`.
 
   - type: dropdown
     id: scope
@@ -66,7 +66,7 @@ body:
     id: options
     attributes:
       label: Options comparison
-      description: Named criteria. Preserve disconfirming evidence.
+      description: Named criteria. Keep disconfirming evidence.
       placeholder: |
         | Option |  |  |
         | --- | --- | --- |
@@ -78,7 +78,7 @@ body:
     id: open_questions
     attributes:
       label: Open questions
-      description: Exact question or test that unlocks direction. Use None if the evidence already chooses.
+      description: Exact question or test that unlocks direction. None if the evidence already chooses.
       placeholder: "None"
     validations:
       required: true
@@ -87,6 +87,6 @@ body:
     id: recommendation
     attributes:
       label: Advisory recommendation
-      description: Tie the recommendation to finding IDs. Do not author Intent or AC-NNN here.
+      description: Cite finding IDs. No Intent. No AC-NNN.
     validations:
       required: true

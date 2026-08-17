@@ -126,10 +126,13 @@ branch if the remover leaves it behind.
 ## Artifacts
 
 Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
-The tracker is public. Promote durable planning by filing a GitHub issue with the matching form
-under `.github/ISSUE_TEMPLATE/`. The issue body is the original; delete any local copy after filing.
+The tracker is public. The issue body is the original; delete any local copy after filing.
 Leave existing `.agents/specs/` material untouched unless assigned. Durable decisions belong in
 `.agents/decisions/` and its ADR ledger.
+
+`.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with
+`pnpm issue:file <template> --title "…" --fields <json> [--create]`. After create, attach
+parent/child issues as GitHub sub-issues.
 
 ## Delivery
 

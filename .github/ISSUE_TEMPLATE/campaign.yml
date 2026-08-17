@@ -1,14 +1,14 @@
 name: Campaign
-description: Multi-PR objective with a completion contract. Children carry status; this body does not.
+description: Multi-PR objective with a completion contract. Children carry status.
 title: "feat(campaign): "
 labels: ["epic", "status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
-        This issue is the ledger. File child Spec, Task, Bug, or Change plan issues for execution, then attach them as GitHub sub-issues.
+        Ledger only. Execute on child Spec, Task, Bug, or Change plan issues. Secrets stay in `~/.agents/artifacts`.
 
-        Do not put live SHAs, counts, lane occupancy, checkboxes, or local paths in the body. Unpublished work stays in `~/.agents/artifacts`. After create, add `priority:P*`.
+        No live SHAs, counts, occupancy, or checkboxes. After create: add `priority:P*`; attach children as sub-issues.
 
   - type: dropdown
     id: priority
@@ -34,7 +34,7 @@ body:
     id: completion
     attributes:
       label: Completion contract
-      description: Observable conditions that prove the whole campaign done.
+      description: Observable conditions that prove the campaign done.
     validations:
       required: true
 
@@ -42,7 +42,7 @@ body:
     id: authorities
     attributes:
       label: Authorities
-      description: Governing ADRs or spec issues, merge owner, and the mechanism that rejects an invalid transition.
+      description: Governing ADRs, spec issues, merge owner, and the reject mechanism.
       placeholder: "ADR 0021. Merge through pnpm deliver. Isolation — workers cannot push to main."
     validations:
       required: true
@@ -51,7 +51,7 @@ body:
     id: operating_loop
     attributes:
       label: Operating loop
-      description: Restartable pickup loop. Edit only if this campaign needs a different loop. Repeat an action only after relevant state changed, the previous attempt failed, or independent proof requires it.
+      description: Edit only if this campaign differs. Repeat a step only after state changed, the last attempt failed, or independent proof requires it.
       value: |
         1. Read this campaign and every authority.
         2. Reconcile repository, ledger, pull-request, worktree, worker, and verification state from live evidence.
@@ -75,7 +75,7 @@ body:
     id: children
     attributes:
       label: Child issues
-      description: Bare issue numbers. No task-list checkboxes. Attach them as GitHub sub-issues after they exist.
+      description: Bare issue numbers. No task-list checkboxes.
       placeholder: |
         #123
         #124
@@ -86,6 +86,6 @@ body:
     id: non_goals
     attributes:
       label: Non-goals
-      description: Optional. Add only when the objective does not already bound the work.
+      description: Only if Objective does not already bound the work.
     validations:
       required: false

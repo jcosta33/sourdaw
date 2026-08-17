@@ -1,14 +1,14 @@
 name: Inventory
-description: Current-state map for a coming change. Prescribe nothing. Close with that change.
+description: Current-state map. No prescriptions. Close with the change.
 title: "inventory(scope): "
 labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
-        Map reality. Invent nothing. No severity, target architecture, or implementation steps.
+        Map only. No severity, target architecture, or steps. Secrets stay in `~/.agents/artifacts`.
 
-        File only when a Change plan needs a durable map. Close this issue when that change lands. Unpublished maps stay in `~/.agents/artifacts`.
+        File for a Change plan. Close when that change lands.
 
   - type: dropdown
     id: scope
@@ -61,7 +61,7 @@ body:
     id: behavior
     attributes:
       label: Visible behavior
-      description: Tests, file:line, or decisive command output.
+      description: "Tests, file:line, or decisive command output."
     validations:
       required: true
 
@@ -85,7 +85,7 @@ body:
     id: unknowns
     attributes:
       label: Unknowns
-      description: Exact search boundary and missing evidence. Use None found and name the boundary if empty.
+      description: "Search boundary and missing evidence. `None found. Boundary checked: …` if empty."
       placeholder: "None found. Boundary checked: …"
     validations:
       required: true

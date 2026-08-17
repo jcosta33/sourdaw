@@ -1,20 +1,19 @@
 name: Feature
-description: Small enhancement that does not change a public contract. Use Spec when behavior must become acceptance criteria.
+description: Small enhancement that does not change a public contract. Consequential behavior is a Spec.
 title: "feat(scope): "
 labels: ["enhancement", "status:ready"]
 body:
   - type: markdown
     attributes:
       value: |
-        Titles follow `feat(scope): description`. Consequential behavior uses Spec.
+        Consequential behavior is a Spec. Secrets stay in `~/.agents/artifacts`.
 
-        After create, add `priority:P*` to match the dropdown; this form cannot apply it. Unpublished or secret work stays in `~/.agents/artifacts` and is not filed.
+        After create, add `priority:P*`.
 
   - type: dropdown
     id: scope
     attributes:
-      label: Subsystem Scope
-      description: What subsystem or bounded context will own this capability?
+      label: Subsystem
       options:
         - audio-engine (Realtime scheduling, offline render, backends)
         - daw-dsp (Synthesizers, modular DSP, audio effects)
@@ -35,8 +34,8 @@ body:
     attributes:
       label: Priority
       options:
-        - P2
         - P1
+        - P2
         - P3
     validations:
       required: true
@@ -45,7 +44,7 @@ body:
     id: intent
     attributes:
       label: Intent
-      description: One or two sentences. What becomes true, for whom. No API contract and no AC-NNN.
+      description: What becomes true, for whom. No API. No AC-NNN.
     validations:
       required: true
 
@@ -53,6 +52,6 @@ body:
     id: done_when
     attributes:
       label: Done when
-      description: Observable finish condition. Not a spec requirement.
+      description: Observable finish. Not an AC.
     validations:
       required: true
