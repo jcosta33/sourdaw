@@ -86,6 +86,58 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
+/** Clamp into range, falling back when the value is not a finite number (NaN, Infinity, undefined). */
+function clampFinite(value: number | undefined, fallback: number, min: number, max: number): number {
+    return value !== undefined && Number.isFinite(value) ? clamp(value, min, max) : fallback;
+}
+
+function clampFiniteInteger(value: number | undefined, fallback: number, min: number, max: number): number {
+    return value !== undefined && Number.isFinite(value) ? clamp(Math.round(value), min, max) : fallback;
+}
+
+function sanitizeNoteSelector(selector: NoteSelector | undefined): NoteSelector {
+    const type = NOTE_SELECTOR_TYPES.find((candidate) => candidate === selector?.type) ?? 'next';
+    if (type === 'index') {
+        return {
+            type: 'index',
+            index: clampFiniteInteger(
+                (selector as { index?: number } | undefined)?.index,
+                0,
+                0,
+                MAX_NOTE_SELECTOR_INDEX
+            ),
+        };
+    }
+    return { type };
+}
+
+/**
+ * The single range table for a step, applied on BOTH sides of the codec.
+ *
+ * Encode must sanitize too, not just decode. A non-finite field is reachable
+ * from the editor (a zero-height step cell makes the velocity pick divide by
+ * zero), and `yeastWorker.isProjectionItem` rejects a whole `setProjection`
+ * message whose params are not all finite numbers — so one NaN written into the
+ * store would stop the ENTIRE rack from updating until reload, not just corrupt
+ * one step. Sharing the table makes the channel symmetric by construction:
+ * anything encode emits, decode returns unchanged.
+ */
+export function sanitizeArpStep(step: ArpStep | undefined): ArpStep {
+    const base = defaultStep();
+    return {
+        active: step?.active !== false,
+        stepType: STEP_TYPES.find((candidate) => candidate === step?.stepType) ?? base.stepType,
+        noteSelector: sanitizeNoteSelector(step?.noteSelector),
+        velocity: clampFiniteInteger(step?.velocity, base.velocity, 1, 127),
+        velocityOverride: step?.velocityOverride === true,
+        gateMul: clampFinite(step?.gateMul, base.gateMul, 0.1, 2.0),
+        octaveOffset: clampFiniteInteger(step?.octaveOffset, base.octaveOffset, -3, 3),
+        semitoneOffset: clampFiniteInteger(step?.semitoneOffset, base.semitoneOffset, -12, 12),
+        probability: clampFinite(step?.probability, base.probability, 0, 1),
+        ratchet: clampFiniteInteger(step?.ratchet, base.ratchet, 1, 4),
+    };
+}
+
 function encodeNoteSelector(selector: NoteSelector): { selectorType: number; selectorIndex: number } {
     const selectorType = NOTE_SELECTOR_TYPES.indexOf(selector.type);
     return {
@@ -95,15 +147,9 @@ function encodeNoteSelector(selector: NoteSelector): { selectorType: number; sel
 }
 
 function decodeNoteSelector(selectorType: number | undefined, selectorIndex: number | undefined): NoteSelector {
-    const type =
-        NOTE_SELECTOR_TYPES[
-            selectorType === undefined ? 0 : clamp(Math.round(selectorType), 0, NOTE_SELECTOR_TYPES.length - 1)
-        ] ?? 'next';
+    const type = NOTE_SELECTOR_TYPES[clampFiniteInteger(selectorType, 0, 0, NOTE_SELECTOR_TYPES.length - 1)] ?? 'next';
     if (type === 'index') {
-        return {
-            type: 'index',
-            index: selectorIndex === undefined ? 0 : clamp(Math.round(selectorIndex), 0, MAX_NOTE_SELECTOR_INDEX),
-        };
+        return { type: 'index', index: clampFiniteInteger(selectorIndex, 0, 0, MAX_NOTE_SELECTOR_INDEX) };
     }
     return { type };
 }
@@ -123,7 +169,9 @@ export function encodeArpPatternParams(steps: readonly ArpStep[]): Record<string
     const base = defaultStep();
     const baseSelector = encodeNoteSelector(base.noteSelector);
     for (let index = 0; index < length; index++) {
-        const step = steps[index] ?? base;
+        // Sanitize BEFORE emitting: see `sanitizeArpStep`. An unsanitized NaN
+        // here poisons the whole projection message, not just this step.
+        const step = sanitizeArpStep(steps[index]);
         const selector = encodeNoteSelector(step.noteSelector);
         const put = (suffix: string, value: number, fallback: number): void => {
             if (value !== fallback) {
@@ -148,9 +196,10 @@ export function encodeArpPatternParams(steps: readonly ArpStep[]): Record<string
 /**
  * Decode the pattern a processor's params carry.
  *
- * Params reaching here come out of a CRDT any peer can write, so every field is
- * clamped to its documented range rather than trusted. Params without
- * `pattern_len` decode to the default pattern.
+ * Params reaching here come out of a CRDT any peer can write, so the decoded
+ * step goes through the same `sanitizeArpStep` table the encoder uses rather
+ * than being trusted. Params without `pattern_len` decode to the default
+ * pattern.
  */
 export function decodeArpPatternParams(params: Readonly<Record<string, number>> | undefined): ArpStep[] {
     const storedLength = params?.[ARP_PATTERN_LENGTH_PARAM];
@@ -161,36 +210,37 @@ export function decodeArpPatternParams(params: Readonly<Record<string, number>> 
     const base = defaultStep();
     const steps: ArpStep[] = [];
     for (let index = 0; index < length; index++) {
-        const read = (suffix: string): number | undefined => {
-            const value = params[`${ARP_PATTERN_PARAM_PREFIX}${index}_${suffix}`];
-            return value !== undefined && Number.isFinite(value) ? value : undefined;
-        };
+        const read = (suffix: string): number | undefined => params[`${ARP_PATTERN_PARAM_PREFIX}${index}_${suffix}`];
         const readFlag = (suffix: string, fallback: boolean): boolean => {
             const value = read(suffix);
-            return value === undefined ? fallback : value > 0.5;
+            return value === undefined || !Number.isFinite(value) ? fallback : value > 0.5;
         };
-        const readInteger = (suffix: string, fallback: number, min: number, max: number): number => {
-            const value = read(suffix);
-            return value === undefined ? fallback : clamp(Math.round(value), min, max);
-        };
-        const readNumber = (suffix: string, fallback: number, min: number, max: number): number => {
-            const value = read(suffix);
-            return value === undefined ? fallback : clamp(value, min, max);
-        };
-        steps.push({
-            active: readFlag('active', base.active),
-            stepType: STEP_TYPES[readInteger('type', STEP_TYPES.indexOf(base.stepType), 0, STEP_TYPES.length - 1)]!,
-            noteSelector: decodeNoteSelector(read('select'), read('select_index')),
-            velocity: readInteger('velocity', base.velocity, 1, 127),
-            velocityOverride: readFlag('velocity_override', base.velocityOverride),
-            gateMul: readNumber('gate', base.gateMul, 0.1, 2.0),
-            octaveOffset: readInteger('octave', base.octaveOffset, -3, 3),
-            semitoneOffset: readInteger('semitone', base.semitoneOffset, -12, 12),
-            probability: readNumber('probability', base.probability, 0, 1),
-            ratchet: readInteger('ratchet', base.ratchet, 1, 4),
-        });
+        steps.push(
+            sanitizeArpStep({
+                active: readFlag('active', base.active),
+                stepType:
+                    STEP_TYPES[
+                        clampFiniteInteger(read('type'), STEP_TYPES.indexOf(base.stepType), 0, STEP_TYPES.length - 1)
+                    ]!,
+                noteSelector: decodeNoteSelector(read('select'), read('select_index')),
+                velocity: clampFiniteInteger(read('velocity'), base.velocity, 1, 127),
+                velocityOverride: readFlag('velocity_override', base.velocityOverride),
+                gateMul: clampFinite(read('gate'), base.gateMul, 0.1, 2.0),
+                octaveOffset: clampFiniteInteger(read('octave'), base.octaveOffset, -3, 3),
+                semitoneOffset: clampFiniteInteger(read('semitone'), base.semitoneOffset, -12, 12),
+                probability: clampFinite(read('probability'), base.probability, 0, 1),
+                ratchet: clampFiniteInteger(read('ratchet'), base.ratchet, 1, 4),
+            })
+        );
     }
     return steps;
+}
+
+/** The `pattern_`-prefixed subset of a param record — the codec's own channel, isolated. */
+export function extractArpPatternParams(params: Readonly<Record<string, number>> | undefined): Record<string, number> {
+    return Object.fromEntries(
+        Object.entries(params ?? {}).filter(([name]) => name.startsWith(ARP_PATTERN_PARAM_PREFIX))
+    );
 }
 
 /** Drop every `pattern_`-prefixed key, so a shorter pattern cannot leave stale steps behind. */

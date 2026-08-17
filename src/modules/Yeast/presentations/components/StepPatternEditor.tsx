@@ -8,10 +8,14 @@
  * - octave offset (color/badge)
  * - probability (opacity)
  * - ratchet (subdivisions shown inside cell)
+ * - step type and note selector (cycled from the badges below/above the bar)
+ *
+ * Every field the pattern codec carries is reachable here. A field the codec
+ * persists but no gesture can set is dead weight in the document.
  */
 import { type ReactElement } from 'react';
 
-import { type ArpStep } from '../../models/ArpPattern';
+import { type ArpStep, type NoteSelector, type StepType } from '../../models/ArpPattern';
 
 type Props = {
     steps: ArpStep[];
@@ -23,6 +27,24 @@ type Props = {
 const STEP_WIDTH = 28;
 const STEP_HEIGHT = 60;
 
+/** Cycle order and readout for the step type. `random` re-picks from the pool every pass. */
+const STEP_TYPE_CYCLE: readonly { type: StepType; glyph: string; label: string }[] = [
+    { type: 'note', glyph: '♪', label: 'Note' },
+    { type: 'rest', glyph: '·', label: 'Rest' },
+    { type: 'tie', glyph: '~', label: 'Tie' },
+    { type: 'chord', glyph: '≡', label: 'Chord' },
+    { type: 'random', glyph: '?', label: 'Random' },
+];
+
+/** Cycle order and readout for which note of the held chord the step takes. */
+const NOTE_SELECTOR_CYCLE: readonly { selector: NoteSelector; glyph: string; label: string }[] = [
+    { selector: { type: 'next' }, glyph: '→', label: 'Next' },
+    { selector: { type: 'previous' }, glyph: '←', label: 'Previous' },
+    { selector: { type: 'lowest' }, glyph: '⌄', label: 'Lowest' },
+    { selector: { type: 'highest' }, glyph: '⌃', label: 'Highest' },
+    { selector: { type: 'random' }, glyph: '✳', label: 'Random' },
+];
+
 export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthChange }: Props): ReactElement => {
     const toggleStep = (index: number) => {
         const step = steps[index]!;
@@ -31,6 +53,11 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
 
     const setVelocity = (index: number, event: React.MouseEvent<HTMLDivElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
+        // A collapsed cell (hidden deck, zero-height layout pass) would divide
+        // by zero and carry NaN into the stored pattern.
+        if (rect.height <= 0) {
+            return;
+        }
         const y = 1 - (event.clientY - rect.top) / rect.height;
         const vel = Math.max(1, Math.min(127, Math.round(y * 127)));
         onStepChange(index, { ...steps[index]!, velocity: vel, velocityOverride: true });
@@ -40,6 +67,20 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
         const step = steps[index]!;
         const next = step.octaveOffset >= 2 ? -2 : step.octaveOffset + 1;
         onStepChange(index, { ...step, octaveOffset: next });
+    };
+
+    const cycleStepType = (index: number) => {
+        const step = steps[index]!;
+        const current = STEP_TYPE_CYCLE.findIndex((entry) => entry.type === step.stepType);
+        const next = STEP_TYPE_CYCLE[(current + 1) % STEP_TYPE_CYCLE.length]!;
+        onStepChange(index, { ...step, stepType: next.type });
+    };
+
+    const cycleNoteSelector = (index: number) => {
+        const step = steps[index]!;
+        const current = NOTE_SELECTOR_CYCLE.findIndex((entry) => entry.selector.type === step.noteSelector.type);
+        const next = NOTE_SELECTOR_CYCLE[(current + 1) % NOTE_SELECTOR_CYCLE.length]!;
+        onStepChange(index, { ...step, noteSelector: next.selector });
     };
 
     return (
@@ -86,12 +127,28 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                         }
                     };
 
+                    const stepTypeEntry =
+                        STEP_TYPE_CYCLE.find((entry) => entry.type === step.stepType) ?? STEP_TYPE_CYCLE[0]!;
+                    const selectorEntry =
+                        NOTE_SELECTOR_CYCLE.find((entry) => entry.selector.type === step.noteSelector.type) ??
+                        NOTE_SELECTOR_CYCLE[0]!;
+
                     return (
                         <div
                             key={index}
                             className={`flex flex-col items-center gap-0 cursor-pointer select-none ${isPlaying ? 'ring-1 ring-[var(--color-accent-peach)]' : ''}`}
                             style={{ width: STEP_WIDTH, opacity: step.active ? probOpacity : 0.2 }}
                         >
+                            {/* Which note of the held chord this step takes. */}
+                            <button
+                                type="button"
+                                aria-label={`Step ${index + 1} note selector`}
+                                title={`Note selector: ${selectorEntry.label}`}
+                                className="text-[6px] leading-none text-muted-foreground/50 hover:text-foreground cursor-pointer"
+                                onClick={() => cycleNoteSelector(index)}
+                            >
+                                {selectorEntry.glyph}
+                            </button>
                             {/* Velocity bar. Pointer height sets velocity; the
                                 keyboard has no height, so Enter/Space performs the
                                 same on/off toggle the right-click gesture does. */}
@@ -134,12 +191,17 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 {/* Octave badge */}
                                 {octaveBadge()}
                             </div>
-                            {/* Step number */}
-                            <span
-                                className={`text-[6px] ${isPlaying ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/40'}`}
+                            {/* Step number doubles as the step-type cycle. */}
+                            <button
+                                type="button"
+                                aria-label={`Step ${index + 1} type`}
+                                title={`Step type: ${stepTypeEntry.label}`}
+                                className={`text-[6px] leading-none cursor-pointer hover:text-foreground ${isPlaying ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/40'}`}
+                                onClick={() => cycleStepType(index)}
                             >
                                 {index + 1}
-                            </span>
+                                {stepTypeEntry.glyph}
+                            </button>
                         </div>
                     );
                 })}

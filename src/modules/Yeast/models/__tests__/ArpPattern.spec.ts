@@ -10,6 +10,7 @@ import {
     defaultStep,
     encodeArpPatternParams,
     MAX_ARP_PATTERN_LENGTH,
+    sanitizeArpStep,
     stripArpPatternParams,
     withArpPatternParams,
 } from '../ArpPattern';
@@ -173,6 +174,45 @@ describe('arp pattern param codec', () => {
         expect(after[ARP_PATTERN_LENGTH_PARAM]).toBe(2);
         // A stale step left behind would resurrect on a later length increase.
         expect(after.pattern_2_velocity).toBeUndefined();
+    });
+
+    it('encodes a non-finite step field as a finite in-range value', () => {
+        // A zero-height step cell drives NaN through the editor's velocity pick.
+        // `yeastWorker.isProjectionItem` rejects an ENTIRE setProjection whose
+        // params are not all finite, so one NaN reaching the store would stop
+        // the whole rack from updating until reload — not just corrupt a step.
+        const params = encodeArpPatternParams([
+            {
+                ...defaultStep(),
+                velocity: Number.NaN,
+                gateMul: Number.POSITIVE_INFINITY,
+                probability: Number.NaN,
+                octaveOffset: Number.NaN,
+                ratchet: Number.NEGATIVE_INFINITY,
+            },
+        ]);
+
+        for (const [name, value] of Object.entries(params)) {
+            expect(Number.isFinite(value), `${name} must be finite`).toBe(true);
+        }
+        // A non-finite field falls back to its default rather than being
+        // clamped to a bound — Infinity carries no intent to clamp toward.
+        expect(decodeArpPatternParams(params)).toEqual([defaultStep()]);
+    });
+
+    it('sanitizes on encode and decode from one shared table', () => {
+        const hostile: ArpStep = {
+            ...defaultStep(),
+            velocity: 5000,
+            gateMul: 99,
+            octaveOffset: -50,
+            semitoneOffset: 400,
+            probability: -3,
+            ratchet: 64,
+        };
+
+        // Symmetric by construction: what encode emits, decode returns unchanged.
+        expect(decodeArpPatternParams(encodeArpPatternParams([hostile]))).toEqual([sanitizeArpStep(hostile)]);
     });
 
     it('strips only the pattern-prefixed keys', () => {

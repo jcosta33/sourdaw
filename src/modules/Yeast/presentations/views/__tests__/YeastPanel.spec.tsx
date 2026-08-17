@@ -501,6 +501,54 @@ describe('YeastPanel', () => {
             expect(decodeArpPatternParams(applied?.params)).toHaveLength(8);
         });
 
+        it('names the arpeggiator the deck is bound to', () => {
+            // The deck binds the first arpeggiator; with two in the rack the
+            // name is the only way to tell whose persisted pattern is shown.
+            storeMock.yeastState = {
+                processors: [
+                    { id: 'arp-1', type: 'arpeggiator', name: 'Lead arp lane', bypassed: false, params: { mode: 7 } },
+                    { id: 'arp-2', type: 'arpeggiator', name: 'Bass arp lane', bypassed: false, params: { mode: 7 } },
+                ],
+                uiLevel: 3,
+            };
+
+            render(<YeastPanel />);
+
+            const patternDeck = screen.getByRole('group', { name: 'Arp pattern — Lead arp lane' });
+            expect(within(patternDeck).getByText('Lead arp lane')).toBeInTheDocument();
+            expect(screen.queryByRole('group', { name: 'Arp pattern — Bass arp lane' })).not.toBeInTheDocument();
+        });
+
+        it('commits a step type edit made from the step badge', async () => {
+            storeMock.yeastState = patternState(3);
+            render(<YeastPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Step 1 type' }));
+
+            await waitFor(() => {
+                expect(runtimeMocks.applyProjection).toHaveBeenCalled();
+            });
+            const applied = runtimeMocks.applyProjection.mock.calls
+                .at(-1)?.[0]
+                .find((processor) => processor.id === 'arp-1');
+            expect(decodeArpPatternParams(applied?.params)[0]?.stepType).toBe('rest');
+        });
+
+        it('commits a note selector edit made from the step badge', async () => {
+            storeMock.yeastState = patternState(3);
+            render(<YeastPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Step 1 note selector' }));
+
+            await waitFor(() => {
+                expect(runtimeMocks.applyProjection).toHaveBeenCalled();
+            });
+            const applied = runtimeMocks.applyProjection.mock.calls
+                .at(-1)?.[0]
+                .find((processor) => processor.id === 'arp-1');
+            expect(decodeArpPatternParams(applied?.params)[0]?.noteSelector).toEqual({ type: 'previous' });
+        });
+
         it('offers no pattern surface on the Lab deck without an arpeggiator', () => {
             storeMock.yeastState = { processors: [], uiLevel: 5 };
 

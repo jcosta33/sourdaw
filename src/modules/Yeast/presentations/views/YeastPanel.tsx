@@ -303,23 +303,28 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
     };
 
     return (
-        <StepPatternEditor
-            steps={steps}
-            currentStep={0}
-            onStepChange={(index, step) => {
-                const next = [...steps];
-                next[index] = step;
-                commitPattern(next);
-            }}
-            onLengthChange={(length) => {
-                const nextLength = clampArpPatternLength(length);
-                commitPattern(
-                    nextLength > steps.length
-                        ? [...steps, ...createDefaultPattern(nextLength - steps.length)]
-                        : steps.slice(0, nextLength)
-                );
-            }}
-        />
+        // The deck binds the FIRST arpeggiator. Naming it is the only way a rack
+        // with two of them can tell whose persisted pattern is on screen.
+        <div role="group" aria-label={`Arp pattern — ${arp.name}`}>
+            <div className="text-[7px] text-muted-foreground/60">{arp.name}</div>
+            <StepPatternEditor
+                steps={steps}
+                currentStep={0}
+                onStepChange={(index, step) => {
+                    const next = [...steps];
+                    next[index] = step;
+                    commitPattern(next);
+                }}
+                onLengthChange={(length) => {
+                    const nextLength = clampArpPatternLength(length);
+                    commitPattern(
+                        nextLength > steps.length
+                            ? [...steps, ...createDefaultPattern(nextLength - steps.length)]
+                            : steps.slice(0, nextLength)
+                    );
+                }}
+            />
+        </div>
     );
 };
 
