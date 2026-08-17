@@ -1,0 +1,23 @@
+src-tauri/tests/ipc_fixtures.rs
+  s_d91dcbe5f07151::t_ccd2dce3e350a4 68-90,95-101
+scripts/ipcFixtures/parse_scl.octave_ratio_scale.json
+  s_d91dcbe5f07151::t_f13250f64d6342 3
+scripts/ipcFixtures/parse_scl.twelve_tone_equal_temperament.json
+  s_d91dcbe5f07151::t_e5745193c49e46 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "42b424eae34f52fc75bc0a38200e01718e9003e2",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
