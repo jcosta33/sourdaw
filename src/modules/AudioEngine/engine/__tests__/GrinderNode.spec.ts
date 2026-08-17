@@ -412,10 +412,10 @@ describe('createGrinderNode', () => {
 // ── Fix 9: message-port params coalesce per animation frame ──
 //
 // A param with no backing AudioParam is forwarded to the worklet via
-// postMessage. A rapid knob drag or automation sweep fires setParam many times
-// per frame; without coalescing each call is its own structured-clone post,
-// flooding the port. The node must buffer the latest value per name and flush
-// once per requestAnimationFrame.
+// postMessage. A rapid live knob drag fires setParam many times per frame;
+// without coalescing each call is its own structured-clone post, flooding the
+// port. The node buffers the latest immediate value per name and flushes once
+// per requestAnimationFrame; scheduled automation keeps every point.
 describe('GrinderNode setParam coalescing', () => {
     let rafCallbacks: FrameRequestCallback[];
     let postMessage: ReturnType<typeof vi.fn>;
@@ -513,6 +513,45 @@ describe('GrinderNode setParam coalescing', () => {
                 scheduling: { targetFrame: null, deadlineFrame: null },
             })
         );
+    });
+
+    it('preserves ordered scheduled controls for one parameter before a frame flush', async () => {
+        const node = await makeNode();
+        postMessage.mockClear();
+
+        node.setParam('drive', 0.2, 1_024);
+        node.setParam('drive', 0.8, 2_048);
+
+        const scheduledPostsBeforeFrame = postMessage.mock.calls.filter(
+            (call) => (call[0] as { command?: string }).command === 'set-fallback-param'
+        );
+        expect(scheduledPostsBeforeFrame).toHaveLength(2);
+        flushFrame();
+
+        const scheduledPosts = postMessage.mock.calls
+            .map((call) => call[0])
+            .filter(
+                (
+                    message
+                ): message is {
+                    command: 'set-fallback-param';
+                    value: number;
+                    correlation: { controlSequence: number };
+                    scheduling: { targetFrame: number; deadlineFrame: number };
+                } => (message as { command?: string }).command === 'set-fallback-param'
+            );
+        expect(scheduledPosts).toEqual([
+            expect.objectContaining({
+                value: 0.2,
+                correlation: expect.objectContaining({ controlSequence: 1 }),
+                scheduling: { targetFrame: 1_024, deadlineFrame: 1_152 },
+            }),
+            expect.objectContaining({
+                value: 0.8,
+                correlation: expect.objectContaining({ controlSequence: 2 }),
+                scheduling: { targetFrame: 2_048, deadlineFrame: 2_176 },
+            }),
+        ]);
     });
 
     it('posts the latest value per distinct param name in one frame', async () => {

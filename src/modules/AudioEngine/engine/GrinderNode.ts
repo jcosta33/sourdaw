@@ -46,7 +46,7 @@ function projectGrinderMeter(view: Float32Array): GrinderMeterData {
 
 export type GrinderNodeResult = {
     workletNode: AudioWorkletNode;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number, sampleFrame?: number) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GrinderMeterData) => void) => void;
@@ -140,11 +140,9 @@ export async function createGrinderNode(
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
-    // Per-frame coalescing for message-port params (those without a backing
-    // AudioParam). A rapid knob drag or automation sweep fires setParam many
-    // times per frame; without coalescing each call is its own structured-clone
-    // postMessage, flooding the worklet port. Buffer the latest value per name
-    // and flush once per animation frame, so N posts of a param collapse to one.
+    // Per-frame coalescing applies only to immediate message-port controls
+    // (those without a backing AudioParam). Scheduled automation carries a
+    // sample-frame contract and is posted in call order without coalescing.
     const pendingParamPosts = new Map<string, PendingParamPost>();
     let paramFlushRafId: number | null = null;
     const canCoalesce = typeof requestAnimationFrame === 'function';
@@ -203,6 +201,10 @@ export async function createGrinderNode(
     const queueParamPost = (name: string, value: number, sampleFrame?: number): void => {
         const scheduling = toControlScheduling(sampleFrame);
         const pending = Object.freeze({ value, ...scheduling });
+        if (scheduling.targetFrame !== null) {
+            postFallbackControl(name, pending);
+            return;
+        }
         if (!canCoalesce) {
             // No rAF (offline render / non-DOM host): apply at the next safe
             // boundary instead of stranding the already validated control.
