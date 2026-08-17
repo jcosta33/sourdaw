@@ -1,0 +1,57 @@
+electron/__tests__/webviewSecurity.spec.ts
+  s_d91dcbe5f07151::t_058182939d70d1 154-162
+  s_d91dcbe5f07151::t_d9900b5312a4fa 112-116
+  s_d91dcbe5f07151::t_cad6d134f57586 163-164
+  s_c18841371d9ff8::t_9eefb74afbfeeb 22-28
+electron/__tests__/commands.spec.ts
+  s_d91dcbe5f07151::t_996a3e7beac5c8 35-53,55-61
+  s_d91dcbe5f07151::t_ec561de5502eae 139-346
+electron/channels.ts
+  s_d91dcbe5f07151::t_b683da0ab9dc83 81-94
+  s_d91dcbe5f07151::t_564a6df809b8d1 99-107
+electron/bridge.ts
+  s_d91dcbe5f07151::t_efc91f20c73b98 70-88
+  s_d91dcbe5f07151::t_6af960dd2cbe56 161
+  s_d91dcbe5f07151::t_ef9a2da6f64f0a 135-139
+electron/__tests__/scan.spec.ts
+  s_d91dcbe5f07151::t_2365150a8524a6 246-258
+electron/main.ts
+  s_d91dcbe5f07151::t_883741dc74f89c 326-327
+  s_d91dcbe5f07151::t_e5c9a50d665d90 67
+  s_d91dcbe5f07151::t_d9d0c33cffe47a 361-366
+  s_d91dcbe5f07151::t_b51a850af53d49 28
+  s_d91dcbe5f07151::t_b885bf51127ecc 250
+electron/__tests__/bridge.spec.ts
+  s_d91dcbe5f07151::t_23fa698debb49d 288-328
+  s_d91dcbe5f07151::t_f0912218b26d9e 159-179
+  s_d91dcbe5f07151::t_63e1f01e7167c0 329
+electron/security.ts
+  s_d91dcbe5f07151::t_f397ceb53c9d25 142-161
+  s_d91dcbe5f07151::t_f86e8471dea9cb 141
+electron/scan.ts
+  s_d91dcbe5f07151::t_79ef4507d7e976 69,71-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "305fa03cf3a080e2e8693d8c0c3728fc2332f9b2",
+  "prompts": {},
+  "sessions": {
+    "s_c18841371d9ff8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5e2287c99533ffcf",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
