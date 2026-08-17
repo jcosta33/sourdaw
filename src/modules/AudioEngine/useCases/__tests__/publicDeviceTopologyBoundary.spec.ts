@@ -11,6 +11,11 @@ const audioEngineContract = readFileSync(
     join(modulesDirectory, 'AudioEngine', 'models', 'AudioEngineState.ts'),
     'utf8'
 );
+const arrangementUseCases = readFileSync(join(modulesDirectory, 'Arrangement', 'useCases', 'index.ts'), 'utf8');
+const handleRemoveDevice = readFileSync(
+    join(modulesDirectory, 'Arrangement', 'handlers', 'device', 'handleRemoveDevice.ts'),
+    'utf8'
+);
 const instrumentsTab = readFileSync(
     join(modulesDirectory, 'ContentBrowser', 'presentations', 'views', 'Sidebar', 'InstrumentsTab.tsx'),
     'utf8'
@@ -28,6 +33,13 @@ describe('public device topology boundary', () => {
         expect(audioEngineContract).not.toContain('removeDeviceFromStrip');
         expect(existsSync(join(testDirectory, '..', 'deviceControls', 'addDeviceToStrip.ts'))).toBe(false);
         expect(existsSync(join(testDirectory, '..', 'deviceControls', 'removeDeviceFromStrip.ts'))).toBe(false);
+    });
+
+    it('keeps project device removal private to the registered handler', () => {
+        expect(arrangementUseCases).not.toMatch(/export \{ removeDevice \}/);
+        expect(existsSync(join(modulesDirectory, 'Arrangement', 'useCases', 'device', 'removeDevice.ts'))).toBe(false);
+        expect(handleRemoveDevice).not.toContain('../../useCases/device/removeDevice');
+        expect(handleRemoveDevice).toContain('../../useCases/device/prepareRemoveDevice');
     });
 
     it('routes Toaster and Grand Boule cards through compiled preset actions', () => {

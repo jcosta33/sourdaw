@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createTrack } from '../../../models/Track';
-import { removeDevice } from '../removeDevice';
+import { prepareRemoveDevice } from '../prepareRemoveDevice';
 
 import type { unloadPlugin } from '#/modules/PluginHost/useCases';
 import type { Device, Track } from '../../../models/Track';
@@ -10,7 +10,6 @@ import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
 import type { projectTrackToLiveStrip } from '../../projectTrackToLiveStrip';
 
 const mocks = vi.hoisted(() => ({
-    logger: { warn: vi.fn() },
     getTrackState: vi.fn<typeof getTrackState>(),
     mapAllTracks: vi.fn<typeof mapAllTracks>(),
     applyDeviceChainRuntimeDelta: vi.fn(),
@@ -24,10 +23,6 @@ const mocks = vi.hoisted(() => ({
 function clearedLatencyDeviceIds(): string[] {
     return mocks.clearReportedLatency.mock.calls.map(([deviceId]) => deviceId).sort();
 }
-
-vi.mock('#/infra/logger/appLogger', () => ({
-    logger: mocks.logger,
-}));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,
@@ -66,7 +61,17 @@ function createExternalDevice(id = 'external-1', instanceId = 'instance-1'): Dev
     };
 }
 
-describe('removeDevice', () => {
+/** Test-only commit seam: production invokes these callbacks only through Command. */
+function removeDevice(deviceId: string): 'written' | 'missing' | 'conflict' {
+    const result = prepareRemoveDevice(deviceId);
+    if (typeof result === 'string') {
+        return result;
+    }
+    void result.afterCommit();
+    return result.outcome;
+}
+
+describe('prepareRemoveDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
@@ -127,7 +132,7 @@ describe('removeDevice', () => {
             selectedTrackId: null,
         });
 
-        const result = removeDevice('d1', { deferRuntimeEffects: true });
+        const result = prepareRemoveDevice('d1');
         if (typeof result === 'string') {
             throw new TypeError('Expected deferred unload result');
         }
@@ -156,7 +161,7 @@ describe('removeDevice', () => {
             })
             .mockReturnValueOnce({ acceptance: 'accepted', application: 'applied' });
 
-        const result = removeDevice('d1', { deferRuntimeEffects: true });
+        const result = prepareRemoveDevice('d1');
         if (typeof result === 'string') {
             throw new TypeError('Expected deferred unload result');
         }
@@ -178,7 +183,7 @@ describe('removeDevice', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
         mocks.unloadPlugin.mockRejectedValueOnce(new Error('host teardown failed')).mockResolvedValueOnce(undefined);
 
-        const result = removeDevice('d1', { deferRuntimeEffects: true });
+        const result = prepareRemoveDevice('d1');
         if (typeof result === 'string') {
             throw new TypeError('Expected deferred unload result');
         }
@@ -200,7 +205,7 @@ describe('removeDevice', () => {
             })
             .mockImplementationOnce(() => undefined);
 
-        const result = removeDevice('toaster-1', { deferRuntimeEffects: true });
+        const result = prepareRemoveDevice('toaster-1');
         if (typeof result === 'string') {
             throw new TypeError('Expected deferred unload result');
         }
@@ -220,7 +225,7 @@ describe('removeDevice', () => {
         } as unknown as Track;
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
 
-        const result = removeDevice('d1', { deferRuntimeEffects: true });
+        const result = prepareRemoveDevice('d1');
         if (typeof result === 'string') {
             throw new TypeError('Expected deferred unload result');
         }
@@ -254,7 +259,7 @@ describe('removeDevice', () => {
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
     });
 
-    it('drops reported latency for every sibling plugin the strip teardown unloads', () => {
+    it('drops reported latency for every sibling plugin the strip teardown unloads', async () => {
         // Deactivating the strip tears down BOTH retained external instances even
         // though neither was the removed device. Their registry entries would
         // otherwise survive as phantom compensation on a track with no plugins.
@@ -266,7 +271,11 @@ describe('removeDevice', () => {
         ];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
 
-        removeDevice('toaster-1');
+        const result = prepareRemoveDevice('toaster-1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected prepared removal effects');
+        }
+        await result.afterCommit();
 
         expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
         expect(mocks.unloadPlugin.mock.calls.map(([id]) => id).sort()).toEqual(['instance-1', 'instance-2']);
@@ -419,7 +428,7 @@ describe('removeDevice', () => {
         expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
     });
 
-    it('commits truth while preserving the strip when the compiled removal fails', async () => {
+    it('reports a post-commit compiled removal failure without logging it away', async () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [
             createExternalDevice(),
@@ -429,16 +438,39 @@ describe('removeDevice', () => {
         mocks.applyDeviceChainRuntimeDelta.mockImplementationOnce(() => {
             throw new Error('device teardown failed');
         });
-        mocks.unloadPlugin.mockRejectedValueOnce(new Error('host teardown failed'));
+        const result = prepareRemoveDevice('toaster-1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected prepared removal effects');
+        }
 
-        expect(() => removeDevice('toaster-1')).not.toThrow();
-
-        expect(mocks.mapAllTracks.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.applyDeviceChainRuntimeDelta.mock.invocationCallOrder[0]!
-        );
+        await expect(result.afterCommit()).rejects.toThrow('device teardown failed');
+        expect(mocks.mapAllTracks).toHaveBeenCalledOnce();
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
-        await vi.waitFor(() => expect(mocks.logger.warn).toHaveBeenCalledTimes(2));
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['rejected', { acceptance: 'rejected', application: 'not-applied', reason: 'stale graph revision' }],
+        [
+            'needs-reconcile',
+            { acceptance: 'accepted', application: 'needs-reconcile', reason: 'partial graph removal' },
+        ],
+    ])('preserves the %s runtime result as a post-commit repair failure', async (_application, runtimeResult) => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.devices = [{ id: 'd1', name: 'Delay', type: 'delay', bypassed: false, parameterValues: {} }];
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(runtimeResult);
+
+        const result = prepareRemoveDevice('d1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected prepared removal effects');
+        }
+
+        await expect(result.afterCommit()).rejects.toThrow(runtimeResult.reason);
+        expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
+        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
     it('permits dormant VCA device and plugin cleanup', () => {

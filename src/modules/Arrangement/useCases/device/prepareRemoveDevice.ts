@@ -1,4 +1,3 @@
-import { logger } from '#/infra/logger/appLogger';
 import { clearReportedLatency, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 
@@ -11,22 +10,14 @@ import { applyDeviceChainRuntimeDelta } from './applyDeviceChainRuntimeDelta';
 
 import type { Device, Track } from '../../models/Track';
 
-type RemoveDeviceOutcome = 'written' | 'missing' | 'conflict';
-type DeferredRemoveDeviceUnload = {
+type PrepareRemoveDeviceOutcome = 'written' | 'missing' | 'conflict';
+type PreparedRemoveDeviceEffects = {
     outcome: 'written';
     afterCommit: () => Promise<void>;
     afterAmbiguousCommit: () => Promise<void>;
 };
 
-export function removeDevice(deviceId: string): RemoveDeviceOutcome;
-export function removeDevice(
-    deviceId: string,
-    options: { deferRuntimeEffects: true }
-): RemoveDeviceOutcome | DeferredRemoveDeviceUnload;
-export function removeDevice(
-    deviceId: string,
-    options: { deferRuntimeEffects?: boolean } = {}
-): RemoveDeviceOutcome | DeferredRemoveDeviceUnload {
+export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcome | PreparedRemoveDeviceEffects {
     const state = getTrackState();
     if (!state) {
         return 'missing';
@@ -92,56 +83,6 @@ export function removeDevice(
     const latencyDeviceIdsToClear = new Set<string>(unloadedExternalDevices.keys());
     if (device.type === 'external-plugin') {
         latencyDeviceIdsToClear.add(deviceId);
-    }
-
-    function finalizeRuntimeRemovalBestEffort(): void {
-        try {
-            const result = applyDeviceChainRuntimeDelta({
-                before: beforeTrack,
-                after: afterTrack,
-                operation: 'remove-device',
-            });
-            if (result.acceptance === 'rejected' || result.application === 'needs-reconcile') {
-                logger.warn(`Runtime graph removal was not applied for device ${deviceId} on track ${track.id}`);
-                return;
-            }
-        } catch (error) {
-            logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
-            return;
-        }
-
-        // Drop reported-latency entries (PH-4) only when the graph removal becomes
-        // durable. A transaction abort leaves both the live node and its latency
-        // projection untouched.
-        for (const clearedDeviceId of latencyDeviceIdsToClear) {
-            clearReportedLatency(clearedDeviceId);
-        }
-
-        if (deactivatesStrip) {
-            try {
-                removeTrackStrip(track.id);
-            } catch (error) {
-                logger.warn(`Failed to remove track strip ${track.id}: ${String(error)}`);
-            }
-        }
-    }
-
-    function finalizeExternalUnloadsBestEffort(): Promise<void> {
-        return Promise.all(
-            [...externalInstanceIds].map(async (instanceId) => {
-                try {
-                    await unloadPlugin(instanceId);
-                } catch (error) {
-                    logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
-                }
-            })
-        ).then(() => undefined);
-    }
-
-    if (!options.deferRuntimeEffects) {
-        finalizeRuntimeRemovalBestEffort();
-        void finalizeExternalUnloadsBestEffort();
-        return 'written';
     }
 
     function manualRepairFailure(effect: string, error: unknown): Error {
