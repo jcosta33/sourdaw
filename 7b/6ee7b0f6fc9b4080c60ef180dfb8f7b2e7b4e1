@@ -1,0 +1,43 @@
+crates/proof-chamber/tests/plate_shimmer_stability.rs
+  s_ab5443e65c7fba::t_8de27b3c878e47 14
+crates/proof-chamber/tests/plate_shimmer_render_contract.rs
+  s_ab5443e65c7fba::t_1ae55a1aa3a8cb 7-9
+  s_ab5443e65c7fba::t_ce3f9eed0a5a6e 19,21-23,25-38,40-43
+crates/proof-chamber/src/proof_chamber.rs
+  s_ab5443e65c7fba::t_dde3311aaf1353 284-287,304
+  s_ab5443e65c7fba::t_a377782dea2261 270-273,278,280
+  s_ab5443e65c7fba::t_62e4730412f551 769-771,774-781,783-785
+  s_ab5443e65c7fba::t_330b83bf58e6ce 354-355,366-367,370-378,380-383,386,388,391
+  s_ab5443e65c7fba::t_867e3776edc733 360-361
+  s_ab5443e65c7fba::t_cf41717ccd4f05 1005
+  s_ab5443e65c7fba::t_594b96d23080d6 506-512
+  s_ab5443e65c7fba::t_d6d5fe458424ef 289-291,297-299,305,317-336
+  s_ab5443e65c7fba::t_bd6c63360e1188 351-353,356-359,362-365,368-369
+  s_ab5443e65c7fba::t_ce9cbc6f56cffe 711-712
+  s_ab5443e65c7fba::t_00b70eb7311253 975
+  s_ab5443e65c7fba::t_84014ceee968fa 337-338
+public/wasm/manifest.json
+  s_ab5443e65c7fba::t_a9b4d7b9fe82e7 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_ab5443e65c7fba::t_2ca12d3cd596d9 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_ab5443e65c7fba::t_8f1ae9df5a4875 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_ab5443e65c7fba::t_4456039a2cfe77 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7b6ee7b0f6fc9b4080c60ef180dfb8f7b2e7b4e1",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
