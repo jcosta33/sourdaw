@@ -1,0 +1,16 @@
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  h_1228e573df1f42 234-264
+src/modules/AudioEngine/services/bacteriaProcessor.ts
+  h_1228e573df1f42 56-62,103,187,235-240,242-243,257-293,307-310,312-313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e2e88bf7a96895121f51bddfb55c2ab67173d6ce",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
