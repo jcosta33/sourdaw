@@ -106,7 +106,8 @@ export async function createGrinderNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
     signal?: AbortSignal,
-    controlTarget?: RuntimeDeviceControlTarget
+    controlTarget?: RuntimeDeviceControlTarget,
+    onRuntimeFailure?: (message: string) => void
 ): Promise<GrinderNodeResult> {
     // Grinder's neural-amp telemetry uses a SAB slot. Fail fast if the
     // environment cannot provide one — see `buildDeviceChain` for the UX path.
@@ -282,6 +283,7 @@ export async function createGrinderNode(
         ) {
             const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
             logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', message);
+            onRuntimeFailure?.(message);
         }
     };
     const readyPromise = handshake.promise;

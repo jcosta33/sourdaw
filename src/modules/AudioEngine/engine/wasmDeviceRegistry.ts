@@ -994,7 +994,18 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isGrinderDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, trackId, deviceId, deviceType, parameterIds, isCurrent, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        isCurrent,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         type PendingParam =
             | Readonly<{ kind: 'immediate'; name: string; value: number }>
             | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
@@ -1014,6 +1025,44 @@ const grinderDescriptor: WasmDeviceDescriptor = {
         let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: GrinderNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            pendingParams.length = 0;
+            pendingPatch = null;
+            pendingBypass = false;
+            const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
+            if (replaced) {
+                requestRuntimeRecovery?.(placeholder);
+            }
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 queueParam(name, value);
@@ -1034,10 +1083,14 @@ const grinderDescriptor: WasmDeviceDescriptor = {
             },
         };
         const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
-        const loadPromise = createGrinderNode(context, undefined, signal, controlTarget)
+        const loadPromise = createGrinderNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: GrinderNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 if (isCurrent?.() === false) {
@@ -1077,7 +1130,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 if (pendingBypass) {
                     result.setBypass(true);
                 }
-                onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -1094,7 +1147,15 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
+                if (accepted === false) {
+                    result.destroy();
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
                 return;
             })
             .catch((error) => {

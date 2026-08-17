@@ -306,22 +306,26 @@ describe('createGrinderNode', () => {
             isSettled: () => true,
         });
 
-        const node = await createGrinderNode(makeCtx());
+        const onRuntimeFailure = vi.fn();
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, undefined, onRuntimeFailure);
 
         node.workletNode.port.onmessage?.({ data: { type: 'ping' } } as MessageEvent);
         expect(logger.warn).not.toHaveBeenCalled();
+        expect(onRuntimeFailure).not.toHaveBeenCalled();
 
         node.workletNode.port.onmessage?.({ data: { type: 'error' } } as MessageEvent);
         expect(logger.warn).toHaveBeenCalledWith(
             'GrinderNode runtime fault (WASM panic — processor faulted):',
             'Unknown error'
         );
+        expect(onRuntimeFailure).toHaveBeenCalledWith('Unknown error');
 
         node.workletNode.port.onmessage?.({ data: { type: 'error', message: 'panic' } } as MessageEvent);
         expect(logger.warn).toHaveBeenCalledWith(
             'GrinderNode runtime fault (WASM panic — processor faulted):',
             'panic'
         );
+        expect(onRuntimeFailure).toHaveBeenCalledWith('panic');
     });
 
     it('should schedule a meter poll only once a telemetry slot is available, defaulting missing fields to 0', async () => {
