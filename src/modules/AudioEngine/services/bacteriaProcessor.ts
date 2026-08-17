@@ -223,20 +223,33 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         if (!immediate && (!scheduled || targetFrame > deadlineFrame)) {
             return true;
         }
-        this._lastFallbackControlSequence = message.correlation.controlSequence;
-        if (scheduled && currentFrame > deadlineFrame) {
+        if (scheduled && currentFrame < targetFrame) {
+            let slot = -1;
+            for (let index = 0; index < this._pendingFallbackControls.length; index++) {
+                if (this._pendingFallbackControls[index] === null) {
+                    slot = index;
+                    break;
+                }
+            }
+            if (slot === -1) {
+                this.port.postMessage({
+                    type: 'fallback-control-rejected',
+                    reason: 'queue-full',
+                    controlSequence: message.correlation.controlSequence,
+                });
+                return true;
+            }
+            this._pendingFallbackControls[slot] = {
+                parameterId: message.target.parameterId,
+                value: message.value,
+                targetFrame,
+                deadlineFrame,
+            };
+            this._lastFallbackControlSequence = message.correlation.controlSequence;
             return true;
         }
-        if (scheduled && currentFrame < targetFrame) {
-            const slot = this._pendingFallbackControls.findIndex((entry) => entry === null);
-            if (slot !== -1) {
-                this._pendingFallbackControls[slot] = {
-                    parameterId: message.target.parameterId,
-                    value: message.value,
-                    targetFrame,
-                    deadlineFrame,
-                };
-            }
+        this._lastFallbackControlSequence = message.correlation.controlSequence;
+        if (scheduled && currentFrame > deadlineFrame) {
             return true;
         }
         this._applyFallbackControl(message.target.parameterId, message.value, true);
