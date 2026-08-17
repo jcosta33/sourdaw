@@ -30,8 +30,7 @@
  *   >= 0.2x  `webgpu-slow`  — usable, but a 10 s phrase costs up to 50 s. Offer
  *                             it; do not make it the default.
  *    < 0.2x  `unavailable`  — a 10 s phrase costs more than 50 s. Below any
- *                             reasonable patience for a scratch preview; route
- *                             to the native renderer instead.
+ *                             reasonable patience for a scratch preview.
  *
  * Caching
  * -------
@@ -257,11 +256,8 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
             let inference: InferenceThroughput = { status: 'not-measured', reason: 'not-requested' };
 
             if (isTauriNonWindowsPlatform()) {
-                // macOS/Linux Tauri — route to native pipeline instead
                 capability = 'unsupported-platform';
-                logger.info(
-                    '[BrowserAi] Running in Tauri on macOS/Linux — browser AI disabled, native pipeline available'
-                );
+                logger.info('[BrowserAi] Running in Tauri on macOS/Linux — browser AI disabled');
             } else if (!chromeVersion) {
                 capability = 'unsupported-browser';
                 logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');

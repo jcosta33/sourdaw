@@ -72,7 +72,7 @@ Verify with: `pnpm test:run -- orchestraInferenceOffThread`
 
 ## Dropped from sources
 
-- AI-generated and resynthesized sample content (MusicGen/Stable Audio,
+- AI-generated and resynthesized sample content (text-to-audio generation,
   resynthesis-as-new-content) — frontier asset strategy with legal/quality
   concerns; out of scope for the engine, surfaced as the blocking question.
 - ONNX opset/versioning notes — implementation detail, not a requirement.

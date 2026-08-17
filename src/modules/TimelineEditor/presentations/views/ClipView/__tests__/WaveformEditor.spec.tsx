@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { getWarpState, trackStore, type Clip } from '#/modules/Arrangement/stores';
 import {
     addManualWarpMarker,
@@ -782,26 +782,10 @@ describe('WaveformEditor', () => {
         expect(vi.mocked(handleAiDenoiseClip)).not.toHaveBeenCalled();
     });
 
-    it('should dispatch AI stem separation on the clip audioBufferId', () => {
-        render(<WaveformEditor clipId="clip-uuid" audioBufferId="audio-uuid" />);
-        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
-
-        fireEvent.click(screen.getByRole('menuitem', { name: /AI Stem Separation/ }));
-
-        expect(vi.mocked(handleStemSeparationPreview)).toHaveBeenCalledWith('audio-uuid');
-    });
-
-    it('should notify the user when stem separation is attempted without an audio buffer', () => {
+    it('does not advertise unavailable stem separation', () => {
         render(<WaveformEditor {...defaultProps} />);
         fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
-
-        fireEvent.click(screen.getByRole('menuitem', { name: /AI Stem Separation/ }));
-
-        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
-            'Stem separation unavailable — clip has no audio buffer',
-            'error'
-        );
-        expect(vi.mocked(handleStemSeparationPreview)).not.toHaveBeenCalled();
+        expect(screen.queryByRole('menuitem', { name: /AI Stem Separation/ })).not.toBeInTheDocument();
     });
 
     it('should dispatch audio to MIDI for the track that contains the clip', () => {

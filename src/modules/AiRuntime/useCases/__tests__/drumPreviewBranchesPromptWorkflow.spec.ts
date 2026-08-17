@@ -315,7 +315,7 @@ function setCollaborationAuthority({ isEnabled, isHost }: { isEnabled: boolean; 
 }
 
 describe('EX-05 drum preview-branch prompt workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
@@ -331,12 +331,12 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('EX-05 drum preview workflow test');
@@ -411,7 +411,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         clearHandlerRegistry();
@@ -420,7 +420,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('EX-05 drum preview workflow cleanup');
-        cloudSession.clear();
+        await cloudSession.clear();
         vi.unstubAllGlobals();
     });
 

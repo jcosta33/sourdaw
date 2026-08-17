@@ -46,10 +46,5 @@
             "infoPlist": "Info.plist",
             "minimumSystemVersion": "11.0"
         }
-    },
-    "plugins": {
-        "shell": {
-            "open": false
-        }
     }
 }

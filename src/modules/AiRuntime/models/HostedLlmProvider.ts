@@ -5,7 +5,6 @@ export type HostedLlmProvider = (typeof HOSTED_LLM_PROVIDERS)[number];
 
 export type HostedLlmConfiguration = {
     provider: HostedLlmProvider;
-    apiKey: string;
     model: string;
     baseUrl?: string;
 };

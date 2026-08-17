@@ -1,8 +1,7 @@
 /**
  * Service: Audio resampling utilities.
  *
- * Resamples Float32Array PCM audio to 44.1 kHz using OfflineAudioContext,
- * following the same pattern as browserStemSeparation.ts.
+ * Resamples Float32Array PCM audio to 44.1 kHz using OfflineAudioContext.
  */
 
 const TARGET_SAMPLE_RATE = 44100;

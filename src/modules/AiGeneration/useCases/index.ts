@@ -1,5 +1,4 @@
 export { handleAiDenoiseClip } from './actions/handleAiDenoiseClip';
-export { handleGenerateAudioFallback } from './actions/handleGenerateAudioFallback';
 export { handleGenerateMidiPrompt } from './actions/handleGenerateMidiPrompt';
 export { handleStemSeparationPreview } from './actions/handleStemSeparationPreview';
 export { removeTask } from './actions/removeTask';

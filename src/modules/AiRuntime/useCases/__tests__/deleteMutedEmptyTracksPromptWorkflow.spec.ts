@@ -206,19 +206,19 @@ function setProviderPlan(plan: readonly { name: string; arguments: Readonly<Reco
 }
 
 describe('delete muted empty tracks prompt workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.removeTrackStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
         setProviderPlan(providerPlan);
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('delete muted empty tracks prompt workflow test');
@@ -257,7 +257,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -267,7 +267,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         vcaGroupStore.set({ groups: [] });
         configureAutomergeStoragePort(null);
-        cloudSession.clear();
+        await cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
     });

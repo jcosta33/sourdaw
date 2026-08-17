@@ -24,7 +24,7 @@ export async function initEngine(modelId?: string, options: InitEngineOptions = 
         if (backends.length === 0) {
             llmStatusStore.set({ state: 'error', message: 'No AI backend available' });
             throw createAiRuntimeError(
-                'No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.'
+                'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
             );
         }
 

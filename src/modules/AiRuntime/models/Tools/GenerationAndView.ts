@@ -99,33 +99,6 @@ export const generationTools: readonly ToolSchema[] = [
         },
         ['clipId']
     ),
-    tool(
-        'generateAudio',
-        'Generate audio from a text description using AI (MusicGen). Creates an audio clip on a track. Requires AI Audio Server running.',
-        {
-            prompt: {
-                type: 'string',
-                description:
-                    'Text description of the audio to generate (e.g. "funky bass guitar in C minor", "ambient pad with reverb")',
-            },
-            durationSeconds: { type: 'number', description: 'Duration in seconds (1-30, default 8)' },
-            trackId: { type: 'string', description: 'Optional: place on existing audio track' },
-        },
-        ['prompt']
-    ),
-    tool(
-        'stemSeparate',
-        'Separate an audio clip into individual stems using AI (Demucs): vocals, drums, bass, other. Creates new tracks for each stem.',
-        {
-            clipId: { type: 'string', description: 'Audio clip to separate' },
-            stems: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Which stems to extract: "vocals", "drums", "bass", "other", or "all" (default)',
-            },
-        },
-        ['clipId']
-    ),
 ];
 
 export const markerTools: readonly ToolSchema[] = [
