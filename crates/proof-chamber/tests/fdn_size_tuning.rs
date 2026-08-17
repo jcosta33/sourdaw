@@ -137,6 +137,69 @@ fn the_upper_quarter_of_size_still_moves_the_tank() {
     }
 }
 
+/// An out-of-range `size` write lands on the end of the range, in *both* stages
+/// that read it.
+///
+/// The tank clamped and the early reflections did not, so a write above 1.0
+/// moved the early pattern past the room the control declares while the late
+/// pattern stayed inside it — the two stages describing different rooms. Not
+/// reachable from the panel, which sends a declared range; reachable from
+/// `handleSetDeviceParameter`, which does no descriptor validation, and from a
+/// `parameterValues` CRDT map that is unvalidated and string-keyed.
+///
+/// Rendered rather than read off the tap table, because the tap table is
+/// private to `early_reflections` and the claim is about what comes out.
+/// `early_late` is deliberately left at its default here so the early path is
+/// in the mix — it is the half that was wrong.
+#[test]
+fn a_size_write_past_the_top_of_the_range_renders_as_the_top_of_the_range() {
+    let sample_rate = 48_000.0;
+
+    let render_at = |size: f32| {
+        let mut reverb = FdnReverb::new(sample_rate, 8);
+        reverb.set_param("mix", 1.0);
+        reverb.set_param("decay", 0.7);
+        reverb.set_param("size", size);
+
+        let mut left = [0.0_f32; BLOCK];
+        let mut right = [0.0_f32; BLOCK];
+        let mut response = Vec::with_capacity(IR_FRAMES);
+        let mut rendered = 0;
+        while rendered < IR_FRAMES {
+            left.fill(0.0);
+            right.fill(0.0);
+            if rendered == 0 {
+                left[0] = 1.0;
+                right[0] = 1.0;
+            }
+            reverb.process(&mut left, &mut right);
+            response.extend_from_slice(&left);
+            rendered += BLOCK;
+        }
+        response
+    };
+
+    let at_top = render_at(1.0);
+    let above_top = render_at(4.2);
+    assert!(
+        at_top.iter().any(|sample| sample.abs() > 1e-3),
+        "the comparison needs an audible render to mean anything"
+    );
+    assert_eq!(
+        digest(&above_top),
+        digest(&at_top),
+        "size 4.2 must render as size 1.0; it does not, so one of the two stages \
+         that read size is following the raw write out of range"
+    );
+
+    let below_bottom = render_at(-1.0);
+    assert_eq!(
+        digest(&below_bottom),
+        digest(&render_at(0.0)),
+        "size -1.0 must render as size 0.0"
+    );
+}
+
 /// The same claim over the whole declared range, so a fix that merely moves the
 /// dead zone somewhere else does not pass.
 #[test]
@@ -145,7 +208,19 @@ fn late_onset_rises_monotonically_across_the_whole_size_range() {
     let mut previous = 0_usize;
     for step in 0..=10 {
         let size = step as f32 / 10.0;
-        let onset = late_onset(&tank_impulse_response(sample_rate, size));
+        let response = tank_impulse_response(sample_rate, size);
+
+        // Audibility first, same as the sibling test above: `late_onset` finds
+        // the first sample over a fixed threshold, so a tank that had gone
+        // silent would report an onset from noise and compare fine.
+        let peak = response.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        assert!(
+            peak > 1e-3,
+            "size {size} rendered a silent tail (peak {peak}); its onset would \
+             not be a measurement of anything"
+        );
+
+        let onset = late_onset(&response);
         assert!(
             onset > previous,
             "size {size} produced a late onset of {onset} samples, no later than \

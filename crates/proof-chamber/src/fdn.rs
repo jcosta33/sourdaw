@@ -289,7 +289,7 @@ const DEFAULT_SIZE: f32 = 0.5;
 // shortest line is the tank's first late arrival — the room's mean free path,
 // which is what a listener hears as size — and the longest sets the modal
 // spacing. Both edges travel with the control, so the window moves as well as
-// widens and no two settings produce the same set:
+// widens:
 //
 //   size 0.0 → 10 ms … 30 ms   small, dense, fast-repeating
 //   size 1.0 → 30 ms … 80 ms   large hall, sparse early modes
@@ -302,8 +302,15 @@ const MIN_DELAY_MS_AT_SIZE_1: f32 = 30.0;
 const MAX_DELAY_MS_AT_SIZE_0: f32 = 30.0;
 const MAX_DELAY_MS: f32 = 80.0;
 
-/// Furthest the LFO can push a read past a line's base delay. `mod_offset` is
-/// `lfo * mod_depth * 8` with both factors bounded by 1.
+/// Furthest the LFO can push a read past a line's base delay, and the
+/// multiplier `process` applies to reach it: `mod_offset` is
+/// `lfo * mod_depth * MODULATION_HEADROOM`, with both factors bounded by 1.
+///
+/// One constant on both sides deliberately. The buffer capacity proof is that
+/// a base delay plus the largest modulation still indexes inside the line, and
+/// while `process` carried its own `8.0` literal the proof rested on two
+/// numbers agreeing by coincidence — raise the literal and every read past the
+/// end silently rides the clamp in `process` instead of modulating.
 const MODULATION_HEADROOM: usize = 8;
 
 /// Slack above the longest requested delay, so the prime snapping in
@@ -519,10 +526,16 @@ impl FdnReverb {
             "size" => {
                 self.size = value.clamp(0.0, 1.0);
                 self.update_delay_lengths();
+                // The clamped field, not the raw write. The tank clamps and the
+                // reflections did not, so an out-of-range `size` moved the
+                // early pattern past the range the control declares while the
+                // late pattern stayed inside it — the two stages stopped
+                // describing the same room. Same shape `output_stage.rs` fixed
+                // for `high_cut`.
                 self.early_reflections_l
-                    .update_room_size(self.sample_rate, value);
+                    .update_room_size(self.sample_rate, self.size);
                 self.early_reflections_r
-                    .update_room_size(self.sample_rate, value);
+                    .update_room_size(self.sample_rate, self.size);
             }
             "mod_depth" => self.mod_depth = value.clamp(0.0, 1.0),
             "early_late" => self.early_late_balance = value.clamp(0.0, 1.0),
@@ -651,7 +664,7 @@ impl FdnReverb {
                     self.lfo_phases[ch] -= 1.0;
                 }
 
-                let mod_offset = (lfo * self.mod_depth * 8.0) as isize;
+                let mod_offset = (lfo * self.mod_depth * MODULATION_HEADROOM as f32) as isize;
                 let effective_delay =
                     (base_delay as isize + mod_offset).clamp(1, (buf_len - 1) as isize) as usize;
 
@@ -738,7 +751,7 @@ impl FdnReverb {
 #[cfg(test)]
 mod tests {
     use super::{
-        decay_to_rt60_seconds, delay_buffer_len, normalized_hf_rt60_ratio, FdnReverb, MAX_DELAY_MS,
+        decay_to_rt60_seconds, normalized_hf_rt60_ratio, FdnReverb, MAX_DELAY_MS,
         MAX_DELAY_MS_AT_SIZE_0, MAX_FDN_CHANNELS, MAX_RT60_SECONDS, MIN_DELAY_MS_AT_SIZE_0,
         MIN_DELAY_MS_AT_SIZE_1, MIN_RT60_SECONDS, MODULATION_HEADROOM,
     };
@@ -877,17 +890,23 @@ mod tests {
     /// with the modulation pushed to its limit. The read in `process` clamps, so
     /// a length past the end degrades to a wrong delay rather than a panic —
     /// which is precisely the kind of failure that would go unnoticed.
+    ///
+    /// Measured against `buffers[index].len()`, the buffer `process` indexes,
+    /// rather than against `delay_buffer_len` recomputed here. Recomputing it
+    /// would assert that two calls to the same function agree; the claim is
+    /// about the allocation that actually exists.
     #[test]
     fn no_tuning_can_ask_for_a_delay_the_buffer_cannot_hold() {
         for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
-            let capacity = delay_buffer_len(sample_rate);
             for step in 0..=20 {
                 let size = step as f32 / 20.0;
                 let mut reverb = FdnReverb::new(sample_rate, MAX_FDN_CHANNELS);
                 reverb.set_param("size", size);
                 reverb.set_param("mod_depth", 1.0);
 
-                for (index, &length) in reverb.delay_lengths.iter().enumerate() {
+                for index in 0..reverb.delay_lengths.len() {
+                    let length = reverb.delay_lengths[index];
+                    let capacity = reverb.buffers[index].len();
                     assert!(
                         length + MODULATION_HEADROOM < capacity,
                         "line {index} asks for {length} samples plus modulation \

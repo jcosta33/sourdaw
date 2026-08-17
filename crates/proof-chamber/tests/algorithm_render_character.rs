@@ -20,15 +20,18 @@ struct Algorithm {
     wire: f32,
 }
 
+const FDN_8: Algorithm = Algorithm {
+    name: "FDN-8",
+    wire: 1.0,
+};
+const FDN_16: Algorithm = Algorithm {
+    name: "FDN-16",
+    wire: 2.0,
+};
+
 const ALGORITHMS: [Algorithm; 4] = [
-    Algorithm {
-        name: "FDN-8",
-        wire: 1.0,
-    },
-    Algorithm {
-        name: "FDN-16",
-        wire: 2.0,
-    },
+    FDN_8,
+    FDN_16,
     Algorithm {
         name: "Spring",
         wire: 3.0,
@@ -38,6 +41,16 @@ const ALGORITHMS: [Algorithm; 4] = [
         wire: 6.0,
     },
 ];
+
+/// The two engines whose delay-line tuning is a function of `size`.
+const FDN_ALGORITHMS: [Algorithm; 2] = [FDN_8, FDN_16];
+
+/// The bottom of the Size control, where the old prime-power tuning collapsed
+/// hardest.
+const SMALLEST_SIZE: f32 = 0.0;
+
+/// The `dutch-oven` descriptor's default, and so what most projects render.
+const DEFAULT_SIZE: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug)]
 struct Character {
@@ -49,14 +62,29 @@ struct Character {
 }
 
 // These are measurements, not targets. The two FDN rows were re-measured when
-// the tank's delay tuning was repaired: `size = 0.0`, which is what this file
-// renders at, used to hand the eight-line FDN two *pairs* of identical delay
-// lines, and identical lines ring identical modes. Removing the collision is
-// audible mostly in `high_frequency_ratio`, which more than halved at 48 kHz —
-// that ratio was largely the coincident short-period comb, and it is the noise
-// the prime tuning exists to prevent. Peak and RMS moved with it. Spring and
-// Reverse share no tuning with the FDN and are unchanged.
-const EXPECTED: [[Character; 4]; 2] = [
+// the tank's delay tuning was repaired, and what the measurements show is not
+// what the first attempt at this comment claimed.
+//
+// The old prime-power tuning collapsed hardest at `SMALLEST_SIZE`, which is
+// what this table renders at. How hard depended on the cell: eight lines at
+// 44.1 kHz shared two values across five of them — a *triple* on the shortest
+// line plus a pair — sixteen lines at 44.1 kHz put ten of sixteen on two
+// values, and eight lines at 48 kHz had two pairs.
+//
+// `high_frequency_ratio` is not the story, and reading it as one gets the
+// mechanism backwards. It falls at three cells and *rises 22%* at FDN-8 /
+// 44.1 kHz — the worst-collision cell of the four. A quantity that changes sign
+// across the cells is not measuring the thing being removed. It is also a
+// ratio over full-render RMS, so most of the 48 kHz fall is its denominator
+// moving.
+//
+// The sign-consistent move is that denominator: full-render RMS rises at all
+// four cells, by 10% to 63% (+4.25 dB at the widest). That is what distinct
+// lengths do — sixteen distinct modal series are excited where ten lines
+// previously shared two, so more of the tank contributes and the wet path
+// carries more energy. Spring and Reverse read no delay-line tuning from the
+// FDN and are unchanged.
+const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
     [
         Character {
             peak: 0.355_920_911,
@@ -119,6 +147,57 @@ const EXPECTED: [[Character; 4]; 2] = [
     ],
 ];
 
+/// `FDN_ALGORITHMS` at `DEFAULT_SIZE`, in the same order, at both rates.
+///
+/// A separate table rather than a third dimension on the one above: only the
+/// two size-tuned engines are pinned here, and a ragged dimension would have to
+/// carry dead rows for Spring and Reverse.
+///
+/// The default size behaves differently from `SMALLEST_SIZE` and is pinned
+/// separately for that reason. Here `high_frequency_ratio` rises at all four
+/// cells (+4% to +27%) while full-render RMS moves in both directions (+15%,
+/// +1%, −9%, −24%) — the reverse of the pattern one table up. The collisions at
+/// this size were milder, so what dominates is not how many lines were freed
+/// but where the window now sits: the first late arrival moved from a flat
+/// 1332 samples at *both* sample rates to ~20 ms at both, which is the window
+/// minimum this size asks for. A delay set that used to land on the same sample
+/// count regardless of rate was the clearest sign the tuning was answering to
+/// prime powers rather than to the room.
+const EXPECTED_AT_DEFAULT_SIZE: [[Character; 2]; 2] = [
+    [
+        Character {
+            peak: 0.434_468_806,
+            rms: 0.027_193_857,
+            active_span_ms: 3_979.864,
+            late_energy_ratio: 0.049_626_954,
+            high_frequency_ratio: 0.234_121_159,
+        },
+        Character {
+            peak: 0.415_174_931,
+            rms: 0.024_251_200,
+            active_span_ms: 3_969.592,
+            late_energy_ratio: 0.048_002_899,
+            high_frequency_ratio: 0.271_005_929,
+        },
+    ],
+    [
+        Character {
+            peak: 0.407_224_894,
+            rms: 0.026_554_497,
+            active_span_ms: 3_981.708,
+            late_energy_ratio: 0.050_607_596,
+            high_frequency_ratio: 0.179_569_095,
+        },
+        Character {
+            peak: 0.373_465_598,
+            rms: 0.024_114_160,
+            active_span_ms: 3_979.458,
+            late_energy_ratio: 0.052_145_820,
+            high_frequency_ratio: 0.205_256_239,
+        },
+    ],
+];
+
 fn stimulus(frame: usize, sample_rate: f32) -> f32 {
     let burst_frames = (BURST_SECONDS * sample_rate) as usize;
     if frame >= burst_frames {
@@ -134,13 +213,13 @@ fn stimulus(frame: usize, sample_rate: f32) -> f32 {
     tone * envelope * 0.25
 }
 
-fn render(algorithm: Algorithm, sample_rate: f32) -> Vec<f32> {
+fn render(algorithm: Algorithm, sample_rate: f32, size: f32) -> Vec<f32> {
     let mut chamber = ProofChamberInstance::new(sample_rate);
     chamber.set_param("algorithm", algorithm.wire);
     chamber.set_param("mix", 1.0);
     chamber.set_param("decay", 0.7);
     chamber.set_param("damping", 0.3);
-    chamber.set_param("size", 0.0);
+    chamber.set_param("size", size);
 
     // Settle the wet-only mix ramp for exactly one second. Processing only
     // whole blocks would leave 44.1 and 48 kHz at different Reverse grain
@@ -249,62 +328,96 @@ fn assert_relative(
     );
 }
 
+fn assert_character(
+    algorithm: Algorithm,
+    sample_rate: f32,
+    measured: Character,
+    expected: Character,
+) {
+    assert_relative(
+        algorithm,
+        sample_rate,
+        "peak level",
+        measured.peak,
+        expected.peak,
+        0.01,
+    );
+    assert_relative(
+        algorithm,
+        sample_rate,
+        "full-render RMS level",
+        measured.rms,
+        expected.rms,
+        0.01,
+    );
+    assert!(
+        (measured.active_span_ms - expected.active_span_ms).abs() <= 2.0,
+        "{} at {sample_rate:.0} Hz changed audible duration: measured {:.3} ms, \
+         expected {:.3} ms (tolerance 2 ms)",
+        algorithm.name,
+        measured.active_span_ms,
+        expected.active_span_ms
+    );
+    if expected.late_energy_ratio < 1.0e-6 {
+        assert!(
+            measured.late_energy_ratio <= 1.0e-6,
+            "{} at {sample_rate:.0} Hz grew an audible late tail: late/early RMS ratio \
+             {:.9} exceeds the absolute 0.000001 ceiling",
+            algorithm.name,
+            measured.late_energy_ratio
+        );
+    } else {
+        assert_relative(
+            algorithm,
+            sample_rate,
+            "late/early energy ratio",
+            measured.late_energy_ratio,
+            expected.late_energy_ratio,
+            0.05,
+        );
+    }
+    assert_relative(
+        algorithm,
+        sample_rate,
+        "high-frequency energy ratio",
+        measured.high_frequency_ratio,
+        expected.high_frequency_ratio,
+        0.01,
+    );
+}
+
 #[test]
 fn exposed_non_plate_algorithms_keep_their_render_character() {
     for (rate_index, sample_rate) in SAMPLE_RATES.into_iter().enumerate() {
         for (algorithm_index, algorithm) in ALGORITHMS.into_iter().enumerate() {
-            let measured = character(&render(algorithm, sample_rate), sample_rate);
-            let expected = EXPECTED[rate_index][algorithm_index];
+            let measured = character(&render(algorithm, sample_rate, SMALLEST_SIZE), sample_rate);
+            assert_character(
+                algorithm,
+                sample_rate,
+                measured,
+                EXPECTED_AT_SMALLEST_SIZE[rate_index][algorithm_index],
+            );
+        }
+    }
+}
 
-            assert_relative(
+/// The same fingerprints for the FDNs at the size a user actually gets.
+///
+/// `SMALLEST_SIZE` is the extreme of the control, and pinning only the extreme
+/// left the shipped default unmeasured — which is where a Size retune is heard
+/// by everyone who never touches the knob. The two engines whose tuning depends
+/// on Size are the two pinned here; Spring and Reverse do not read it into a
+/// delay-line set.
+#[test]
+fn the_fdn_engines_keep_their_render_character_at_the_default_size() {
+    for (rate_index, sample_rate) in SAMPLE_RATES.into_iter().enumerate() {
+        for (algorithm_index, algorithm) in FDN_ALGORITHMS.into_iter().enumerate() {
+            let measured = character(&render(algorithm, sample_rate, DEFAULT_SIZE), sample_rate);
+            assert_character(
                 algorithm,
                 sample_rate,
-                "peak level",
-                measured.peak,
-                expected.peak,
-                0.01,
-            );
-            assert_relative(
-                algorithm,
-                sample_rate,
-                "full-render RMS level",
-                measured.rms,
-                expected.rms,
-                0.01,
-            );
-            assert!(
-                (measured.active_span_ms - expected.active_span_ms).abs() <= 2.0,
-                "{} at {sample_rate:.0} Hz changed audible duration: measured {:.3} ms, \
-                 expected {:.3} ms (tolerance 2 ms)",
-                algorithm.name,
-                measured.active_span_ms,
-                expected.active_span_ms
-            );
-            if expected.late_energy_ratio < 1.0e-6 {
-                assert!(
-                    measured.late_energy_ratio <= 1.0e-6,
-                    "{} at {sample_rate:.0} Hz grew an audible late tail: late/early RMS ratio \
-                     {:.9} exceeds the absolute 0.000001 ceiling",
-                    algorithm.name,
-                    measured.late_energy_ratio
-                );
-            } else {
-                assert_relative(
-                    algorithm,
-                    sample_rate,
-                    "late/early energy ratio",
-                    measured.late_energy_ratio,
-                    expected.late_energy_ratio,
-                    0.05,
-                );
-            }
-            assert_relative(
-                algorithm,
-                sample_rate,
-                "high-frequency energy ratio",
-                measured.high_frequency_ratio,
-                expected.high_frequency_ratio,
-                0.01,
+                measured,
+                EXPECTED_AT_DEFAULT_SIZE[rate_index][algorithm_index],
             );
         }
     }
