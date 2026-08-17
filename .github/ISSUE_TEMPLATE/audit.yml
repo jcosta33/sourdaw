@@ -8,7 +8,7 @@ body:
       value: |
         Observe. Prove. Do not propose fixes, target states, or requirements in this body.
 
-        Freeze a SHA. File a Bug (or Task, if a Spec already owns the obligation) for every Blocker and Major. Minor rows may stay in the table.
+        Freeze a SHA. File a Bug (or Task, if a Spec already owns the obligation) for every Blocker and Major. Attach those as GitHub sub-issues. Unpublished or secret findings stay in `~/.agents/artifacts`.
 
   - type: dropdown
     id: scope
@@ -52,11 +52,11 @@ body:
     id: findings
     attributes:
       label: Findings
-      description: Grade by impact and reach. Evidence is file:line, a search result, or pasted output. Use None observed in scope if empty.
-      value: |
-        | ID | Grade | Evidence | Failure mode | Blast radius | Child |
-        | --- | --- | --- | --- | --- | --- |
-        | F-001 | Blocker / Major / Minor |  |  |  | # |
+      description: Grade by impact and reach. Use None observed in scope if empty. Do not submit the placeholder table unchanged.
+      placeholder: |
+        | ID | Grade | Evidence | Failure mode | Firing condition | Blast radius | Child |
+        | --- | --- | --- | --- | --- | --- | --- |
+        | F-001 | Blocker | `file:line` |  |  |  | #123 |
     validations:
       required: true
 

@@ -1,23 +1,32 @@
 name: Task
-description: One write-disjoint slice of a ready Spec or Change plan. Not a second backlog.
+description: One write-disjoint slice of a ready Spec. A Change plan may supplement; it cannot replace the Spec.
 title: "task(scope): "
 labels: ["status:ready"]
 body:
   - type: markdown
     attributes:
       value: |
-        The parent Spec or Change plan must already be open. One source and one implementer is not a Task — use Bug or Feature.
+        The parent Spec must already be open. A Change plan may supplement it; it cannot replace it. One source and one implementer is not a Task — use Bug or Feature.
 
-        Copy each assigned AC block verbatim. Do not invent or weaken requirements. Link this issue as a child of the parent after filing.
+        Copy each assigned Spec AC block verbatim. After create, add this issue as a GitHub sub-issue of the Spec (the parent number field does not create that edge), and add `priority:P*`. Unpublished work stays in `~/.agents/artifacts`.
 
   - type: input
-    id: parent
+    id: parent_spec
     attributes:
-      label: Parent issue
-      description: Number of the ready Spec or Change plan this packet implements.
+      label: Parent Spec
+      description: Issue number of the ready Spec. Required. After filing, attach this Task as a sub-issue of that Spec.
       placeholder: "2037"
     validations:
       required: true
+
+  - type: input
+    id: change_plan
+    attributes:
+      label: Change plan
+      description: Issue number of the Change plan if this wave comes from one. Leave empty when there is none.
+      placeholder: "2040"
+    validations:
+      required: false
 
   - type: dropdown
     id: scope
@@ -57,12 +66,20 @@ body:
     id: requirements
     attributes:
       label: Assigned requirements
-      description: Paste each scoped AC (or PG) block and its Verify with line verbatim from the parent.
-      value: |
+      description: Paste each scoped Spec AC block and its Verify with line verbatim. Preservation guarantees go in Preservation scope, not here.
+      placeholder: |
         ### AC-001
         - When:
         - Then:
         - Verify with:
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected_areas
+    attributes:
+      label: Affected areas
+      description: Every path this packet may write. Unknown scope conflicts with every other Task.
     validations:
       required: true
 
@@ -75,10 +92,19 @@ body:
       required: true
 
   - type: textarea
+    id: siblings
+    attributes:
+      label: May run with
+      description: Other Task issue numbers proven write-disjoint with this packet, or None.
+      placeholder: "None"
+    validations:
+      required: true
+
+  - type: textarea
     id: preservation
     attributes:
       label: Preservation scope
-      description: Required when the parent is a Change plan. Copy every preservation guarantee this packet could violate. Omit with "None" when there is no change plan.
+      description: When a Change plan exists, copy every preservation guarantee this packet could violate, with its check. Otherwise None.
       placeholder: "None"
     validations:
       required: true

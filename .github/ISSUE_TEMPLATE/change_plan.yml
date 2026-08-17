@@ -1,14 +1,14 @@
 name: Change plan
 description: Structural change that must preserve named behavior. Not for net-new product design.
 title: "change(scope): "
-labels: ["status:ready"]
+labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
         Use for refactor, rewrite, migration, upgrade, performance, schema, or cleanup. File a Spec when the change is new user-facing behavior.
 
-        Each transformation wave becomes a child Task. Do not put local `~/.agents` paths in the body.
+        Each wave becomes a child Task of a ready Spec. After create, add `priority:P*` and attach child Tasks as GitHub sub-issues. Unpublished work stays in `~/.agents/artifacts`.
 
   - type: dropdown
     id: kind
@@ -79,11 +79,12 @@ body:
     id: preservation
     attributes:
       label: Preservation guarantees
-      description: Use SPEC-id#AC-NNN for governing requirements. Mint PG-NNN only for preserved behavior with no requirement ID.
-      value: |
+      description: Cite Spec issues as #issue AC-NNN. Mint PG-NNN only for preserved behavior with no requirement ID. Do not cite local SPEC files.
+      placeholder: |
         | ID | Behavior | Verify with |
         | --- | --- | --- |
-        | SPEC-x#AC-001 |  |  |
+        | #123 AC-001 |  |  |
+        | PG-001 |  |  |
     validations:
       required: true
 

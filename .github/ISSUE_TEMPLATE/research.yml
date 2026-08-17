@@ -1,14 +1,14 @@
 name: Research
 description: Evidence for a decision. Advisory only — do not write requirements here.
 title: "research(scope): "
-labels: ["status:ready"]
+labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
         One question. Fit evidence. Intent and requirements stay on a Spec.
 
-        Mark unreachable claims [unconfirmed]. Do not put local `~/.agents` paths in the body.
+        Mark unreachable claims [unconfirmed]. Unpublished work stays in `~/.agents/artifacts`. Do not submit empty R-001 shells.
 
   - type: dropdown
     id: scope
@@ -53,7 +53,7 @@ body:
     attributes:
       label: Findings
       description: One claim per R-NNN. Separate observation, source claim, and inference.
-      value: |
+      placeholder: |
         ### R-001
         - Claim:
         - Evidence:
@@ -67,7 +67,7 @@ body:
     attributes:
       label: Options comparison
       description: Named criteria. Preserve disconfirming evidence.
-      value: |
+      placeholder: |
         | Option |  |  |
         | --- | --- | --- |
         |  |  |  |

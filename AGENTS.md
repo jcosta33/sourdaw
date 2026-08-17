@@ -125,10 +125,11 @@ branch if the remover leaves it behind.
 
 ## Artifacts
 
-Drafts and one-offs stay off GitHub and out of the repository. Promote durable planning by filing a
-GitHub issue with the matching form under `.github/ISSUE_TEMPLATE/`. The issue body is the source;
-do not leave a parallel local file. Leave existing `.agents/specs/` material untouched unless
-assigned. Durable decisions belong in `.agents/decisions/` and its ADR ledger.
+Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
+The tracker is public. Promote durable planning by filing a GitHub issue with the matching form
+under `.github/ISSUE_TEMPLATE/`. The issue body is the original; delete any local copy after filing.
+Leave existing `.agents/specs/` material untouched unless assigned. Durable decisions belong in
+`.agents/decisions/` and its ADR ledger.
 
 ## Delivery
 

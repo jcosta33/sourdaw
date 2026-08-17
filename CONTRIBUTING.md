@@ -77,11 +77,11 @@ The GitHub issue is the durable planning record. Pick the form that matches the 
 - **Bug** — unspecced defect or an audit finding.
 - **Feature** — small enhancement that does not change a public contract.
 - **Spec** — decided intent that must become acceptance criteria before implementation.
-- **Task** — one write-disjoint slice of a ready Spec or Change plan. Link the parent.
+- **Task** — one write-disjoint slice of a ready Spec. A Change plan may supplement; it cannot replace the Spec. After filing, attach the Task as a GitHub sub-issue of that Spec.
 - **Campaign** — multi-PR objective. Body stays a contract; children carry status.
 - **Change plan** — structural change that must preserve named behavior.
 - **Research** — evidence for a decision. No requirements.
 - **Audit** — current-state findings. File bugs for Blocker and Major rows; do not prescribe fixes here.
 - **Inventory** — current-state map for a coming change. Close it with that change.
 
-Do not file drafts. Do not put local `~/.agents` paths in the body. ADRs stay in `.agents/decisions/`.
+The issue body is the original; delete any local copy after filing. Unpublished or secret work stays in `~/.agents/artifacts` and is not filed. After create, add `priority:P*` to match the form dropdown, and attach parent/child issues as GitHub sub-issues — the number fields do not create that edge. ADRs stay in `.agents/decisions/`.

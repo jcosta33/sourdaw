@@ -1,14 +1,14 @@
 name: Inventory
 description: Current-state map for a coming change. Prescribe nothing. Close with that change.
 title: "inventory(scope): "
-labels: ["status:ready"]
+labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
         Map reality. Invent nothing. No severity, target architecture, or implementation steps.
 
-        File only when a Change plan needs a durable map. Close this issue when that change lands. Do not put local `~/.agents` paths in the body.
+        File only when a Change plan needs a durable map. Close this issue when that change lands. Unpublished maps stay in `~/.agents/artifacts`.
 
   - type: dropdown
     id: scope

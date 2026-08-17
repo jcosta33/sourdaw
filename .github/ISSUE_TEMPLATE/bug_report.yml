@@ -6,7 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Titles follow `fix(scope): description`. Spec-governed work uses Task. Do not put local `~/.agents` paths in the body.
+        Titles follow `fix(scope): description`. Spec-governed work uses Task.
+
+        After create, add `priority:P*` to match the dropdown; this form cannot apply it. Unpublished or secret work stays in `~/.agents/artifacts` and is not filed.
 
   - type: dropdown
     id: scope
@@ -35,10 +37,10 @@ body:
       label: Severity / Priority
       description: Select the appropriate severity level.
       options:
-        - "priority:P1 (High: audio fidelity corruption, panic, or broken core workflow)"
-        - "priority:P2 (Medium: important functional bug, UI defect, or edge-case)"
-        - "priority:P3 (Low: minor cosmetic or non-critical quirk)"
-        - "priority:P0 (Critical: security vulnerability or catastrophic data loss)"
+        - P1
+        - P2
+        - P3
+        - P0
     validations:
       required: true
 

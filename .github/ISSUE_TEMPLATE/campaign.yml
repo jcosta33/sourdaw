@@ -6,9 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        This issue is the ledger. File child Spec, Task, Bug, or Change plan issues for execution.
+        This issue is the ledger. File child Spec, Task, Bug, or Change plan issues for execution, then attach them as GitHub sub-issues.
 
-        Do not put live SHAs, counts, lane occupancy, or local `~/.agents` paths in the body. Edit children when status changes.
+        Do not put live SHAs, counts, lane occupancy, checkboxes, or local paths in the body. Unpublished work stays in `~/.agents/artifacts`. After create, add `priority:P*`.
 
   - type: dropdown
     id: priority
@@ -42,8 +42,24 @@ body:
     id: authorities
     attributes:
       label: Authorities
-      description: Governing ADRs or specs, merge owner, and the mechanism that rejects an invalid transition.
+      description: Governing ADRs or spec issues, merge owner, and the mechanism that rejects an invalid transition.
       placeholder: "ADR 0021. Merge through pnpm deliver. Isolation — workers cannot push to main."
+    validations:
+      required: true
+
+  - type: textarea
+    id: operating_loop
+    attributes:
+      label: Operating loop
+      description: Restartable pickup loop. Edit only if this campaign needs a different loop. Repeat an action only after relevant state changed, the previous attempt failed, or independent proof requires it.
+      value: |
+        1. Read this campaign and every authority.
+        2. Reconcile repository, ledger, pull-request, worktree, worker, and verification state from live evidence.
+        3. Repair ledger drift before trusting status.
+        4. Select the highest-priority dependency-ready work that fits current capacity.
+        5. Execute through implementation, verification, review, and integration gates.
+        6. Record durable progress on child issues, not in this body.
+        7. Repeat until the completion contract passes or a named stop blocks progress.
     validations:
       required: true
 
@@ -59,10 +75,10 @@ body:
     id: children
     attributes:
       label: Child issues
-      description: Stable issue numbers only. Status lives on those issues. Add them as children are filed.
+      description: Bare issue numbers. No task-list checkboxes. Attach them as GitHub sub-issues after they exist.
       placeholder: |
-        - [ ] #123
-        - [ ] #124
+        #123
+        #124
     validations:
       required: false
 

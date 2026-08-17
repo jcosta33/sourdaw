@@ -1,14 +1,14 @@
 name: Spec
 description: Decided intent that must become acceptance criteria before implementation. Not for trivial work or drafts.
 title: "spec(scope): "
-labels: ["status:ready"]
+labels: ["status:tracking"]
 body:
   - type: markdown
     attributes:
       value: |
-        File only when every blocking choice is resolved. The issue body is the spec.
+        File only when every blocking choice is resolved and the content can be public. Unpublished or secret work stays in `~/.agents/artifacts` and is not filed.
 
-        Use **Feature** when no written contract would change execution or review. Use **Task** for implementation slices after this issue exists. Do not put local `~/.agents` paths in the body.
+        The issue body is the spec. Delete any local copy after filing. Implementation slices use **Task**. After create, add `priority:P*` to match the dropdown; this form cannot apply it.
 
   - type: dropdown
     id: scope
@@ -56,14 +56,9 @@ body:
     id: requirements
     attributes:
       label: Requirements
-      description: One independently failing obligation per AC. Exactly those three lines, in that order. One MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in Then.
-      value: |
+      description: One independently failing obligation per AC. Exactly those three lines, in that order. One MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in Then. Empty shells are not a spec.
+      placeholder: |
         ### AC-001
-        - When:
-        - Then:
-        - Verify with:
-
-        ### AC-002
         - When:
         - Then:
         - Verify with:

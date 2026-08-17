@@ -7,9 +7,9 @@ Rust, and Tauri. The frontend follows module boundary contracts documented in
 
 ## Project governance
 
-Project specifications live under `.agents/specs/`, captured source material
-under `.agents/specs/intake/`, and accepted architecture decisions under
-`.agents/decisions/`.
+Durable planning lives in GitHub issues (see `.github/ISSUE_TEMPLATE/`).
+Accepted architecture decisions live under `.agents/decisions/`. Leave existing
+`.agents/specs/` material untouched unless assigned.
 
 ## Setup
 
