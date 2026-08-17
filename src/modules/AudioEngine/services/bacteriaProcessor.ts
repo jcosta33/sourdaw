@@ -53,7 +53,13 @@ const PARAM_MAP: Record<string, string> = {
 };
 
 type UnknownRecord = Record<string, unknown>;
-type ScheduledControl = { parameterId: string; value: number; targetFrame: number; deadlineFrame: number };
+type ScheduledControl = {
+    parameterId: string;
+    value: number;
+    targetFrame: number;
+    deadlineFrame: number;
+    controlSequence: number;
+};
 const MAX_PENDING_FALLBACK_CONTROLS = 32;
 const MAX_ID_LENGTH = 128;
 function isRecord(value: unknown): value is UnknownRecord {
@@ -94,6 +100,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         { length: MAX_PENDING_FALLBACK_CONTROLS },
         () => null
     );
+    _pendingFallbackControlCount = 0;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -177,6 +184,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         this._fallbackControlGeneration = message.correlation.workletGeneration;
         this._lastFallbackControlSequence = 0;
         this._pendingFallbackControls.fill(null);
+        this._pendingFallbackControlCount = 0;
         return true;
     }
 
@@ -224,27 +232,17 @@ class BacteriaProcessor extends AudioWorkletProcessor {
             return true;
         }
         if (scheduled && currentFrame < targetFrame) {
-            let slot = -1;
-            for (let index = 0; index < this._pendingFallbackControls.length; index++) {
-                if (this._pendingFallbackControls[index] === null) {
-                    slot = index;
-                    break;
-                }
-            }
-            if (slot === -1) {
-                this.port.postMessage({
-                    type: 'fallback-control-rejected',
-                    reason: 'queue-full',
+            if (
+                !this._enqueueScheduledFallbackControl({
+                    parameterId: message.target.parameterId,
+                    value: message.value,
+                    targetFrame,
+                    deadlineFrame,
                     controlSequence: message.correlation.controlSequence,
-                });
+                })
+            ) {
                 return true;
             }
-            this._pendingFallbackControls[slot] = {
-                parameterId: message.target.parameterId,
-                value: message.value,
-                targetFrame,
-                deadlineFrame,
-            };
             this._lastFallbackControlSequence = message.correlation.controlSequence;
             return true;
         }
@@ -254,6 +252,43 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         }
         this._applyFallbackControl(message.target.parameterId, message.value, true);
         return true;
+    }
+
+    _enqueueScheduledFallbackControl(control: ScheduledControl): boolean {
+        if (this._pendingFallbackControlCount === MAX_PENDING_FALLBACK_CONTROLS) {
+            this.port.postMessage({
+                type: 'fallback-control-rejected',
+                reason: 'queue-full',
+                controlSequence: control.controlSequence,
+            });
+            return false;
+        }
+        let insertAt = 0;
+        while (insertAt < this._pendingFallbackControlCount) {
+            const pending = this._pendingFallbackControls[insertAt];
+            if (
+                !pending ||
+                pending.targetFrame > control.targetFrame ||
+                (pending.targetFrame === control.targetFrame && pending.controlSequence > control.controlSequence)
+            ) {
+                break;
+            }
+            insertAt++;
+        }
+        for (let index = this._pendingFallbackControlCount; index > insertAt; index--) {
+            this._pendingFallbackControls[index] = this._pendingFallbackControls[index - 1] ?? null;
+        }
+        this._pendingFallbackControls[insertAt] = control;
+        this._pendingFallbackControlCount++;
+        return true;
+    }
+
+    _shiftPendingFallbackControl(): void {
+        for (let index = 1; index < this._pendingFallbackControlCount; index++) {
+            this._pendingFallbackControls[index - 1] = this._pendingFallbackControls[index] ?? null;
+        }
+        this._pendingFallbackControlCount--;
+        this._pendingFallbackControls[this._pendingFallbackControlCount] = null;
     }
 
     _applyFallbackControl(parameterId: string, value: number, reportLatency: boolean): void {
@@ -269,15 +304,13 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     }
 
     _applyDueFallbackControls(): void {
-        for (let index = 0; index < this._pendingFallbackControls.length; index++) {
-            const pending = this._pendingFallbackControls[index];
-            if (!pending) {
-                continue;
+        while (this._pendingFallbackControlCount > 0) {
+            const pending = this._pendingFallbackControls[0];
+            if (!pending || currentFrame < pending.targetFrame) {
+                return;
             }
-            if (currentFrame > pending.deadlineFrame) {
-                this._pendingFallbackControls[index] = null;
-            } else if (currentFrame >= pending.targetFrame) {
-                this._pendingFallbackControls[index] = null;
+            this._shiftPendingFallbackControl();
+            if (currentFrame <= pending.deadlineFrame) {
                 this._applyFallbackControl(pending.parameterId, pending.value, false);
             }
         }
