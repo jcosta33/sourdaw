@@ -1,0 +1,70 @@
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_a40848e8f8cca9::t_f698252b8f8245 700-704,707-708,1636-1637
+  s_a40848e8f8cca9::t_2093c87fc528b6 1174-1176,1317-1337
+  s_a40848e8f8cca9::t_1a4c989937b857 27,626-699,705-706,709-794
+  s_a40848e8f8cca9::t_06ab72462bbf7a 1338,1616,1618-1635,1638-1649,1653
+  s_d91dcbe5f07151::t_150eab5b96a5f3 1339
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_a40848e8f8cca9::t_1667a450f829b3 481-482
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_a40848e8f8cca9::t_4117a2efdc1022 576,591-604,645
+  s_a40848e8f8cca9::t_1b81e094c3d264 561-575,577-590,605-644,646-648
+  s_a40848e8f8cca9::t_731b5f0767b099 12,473-489
+  s_a40848e8f8cca9::t_3934a20b81d69c 490-492
+src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_e2cd585ce8f5f2 6,8,260-351,416-418
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_1667a450f829b3 154
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_a40848e8f8cca9::t_20fd4f83451224 100,104,109,113
+  s_a40848e8f8cca9::t_49d1a4b3778c32 138
+  s_a40848e8f8cca9::t_453f7bccb9a2ee 2-3,11,19,50-55,60-81,103,105-108,110-112,114-115,120
+  s_a40848e8f8cca9::t_62a38d54c81dc0 56-59
+  s_a40848e8f8cca9::t_e8dcedc56da47d 96-99,133,141
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_a40848e8f8cca9::t_1f422663faf9d9 10-15,42,56-59,106-127
+  s_a40848e8f8cca9::t_f41fd176e42f61 9,41
+  s_a40848e8f8cca9::t_d9b282e8497920 312-317
+  s_a40848e8f8cca9::t_acdf5249332fec 143-144
+  s_a40848e8f8cca9::t_3243f2ba05a5bd 247,261,276-287,309-311,318-319,337-346,359,375,384
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_a40848e8f8cca9::t_b0b6bc68fd8714 62
+  s_a40848e8f8cca9::t_f1a18f3e28f189 142,175-180,183,185,191
+src/modules/AudioEngine/useCases/initializeTrackStripFromSnapshot.ts
+  s_a40848e8f8cca9::t_1667a450f829b3 1-7
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_a40848e8f8cca9::t_48c24188a969b1 20-51,69
+src/modules/AudioEngine/models/RuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_a15fe880480be4 10-11,51-70,106-114,116
+  s_d91dcbe5f07151::t_b26de2ac54d3c9 115
+src/modules/Arrangement/useCases/runtimeGraphTopology.ts
+  s_a40848e8f8cca9::t_5467e02fe3fb0e 23
+  s_d91dcbe5f07151::t_e90304f5fe6f6c 24-30
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_a40848e8f8cca9::t_b50fefc4379c24 57-74,104-116,189-221
+  s_d91dcbe5f07151::t_7c1fc9b95597c9 222-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1adfe347609bcb7a2102a752942c7ecba9ebdd1a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
