@@ -27,6 +27,11 @@ vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
     playheadPositionRef: mocks.playheadPositionRef,
 }));
 
+// Pre-roll reads the meter map; keep this spec off the persistence-backed store.
+vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
+    timeSignatureMapStore: { value: { changes: [] } },
+}));
+
 vi.mock('#/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: mocks.startPlayheadScheduler,
 }));
@@ -125,11 +130,14 @@ describe('Pause/Start Playback', () => {
                 preRollEnabled: true,
                 preRollBars: 2,
                 timeSignatureNumerator: 4,
+                // Pre-roll now measures whole bars, so the bar length needs both
+                // halves of the meter — a 4/4 bar is four quarter notes.
+                timeSignatureDenominator: 4,
             });
 
             startPlayback();
 
-            // 16 - (2 * 4) = 8.
+            // Two 4/4 bars back from beat 16.
             await vi.waitFor(() => {
                 expect(mocks.updateTransportState).toHaveBeenCalledWith(
                     expect.objectContaining({

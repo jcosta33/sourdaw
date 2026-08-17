@@ -11,10 +11,12 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
@@ -133,20 +135,28 @@ export function toggleRecording(): void {
     }
 
     if (state.countInEnabled && state.countInBars > 0) {
-        // The count-in leads into the beat where recording begins, so resolve
-        // the meter at the playhead rather than using the flat
-        // `timeSignatureNumerator`. A project that changes time signature at
-        // the record point would otherwise count in (and accent) in the wrong
-        // meter.
-        const { numerator } = getTimeSignatureAtBeat(
+        // The count-in establishes the pulse the musician is about to play to, so
+        // it takes the meter *and* the tempo in force where recording begins —
+        // the convention every transport that offers a count-off follows. Both
+        // come from the timeline maps: the transport's own numerator and tempo
+        // are only the project defaults, and a map change at or before the record
+        // point overrides them.
+        const { numerator, denominator } = getTimeSignatureAtBeat(
             timeSignatureMapStore.value?.changes ?? [],
             state.playheadPosition,
             state.timeSignatureNumerator,
             state.timeSignatureDenominator
         );
-        const beatsPerBar = numerator;
-        const countInBeats = state.countInBars * beatsPerBar;
-        const countInDurationSec = countInBeats / (state.tempo / 60);
+        const countInTempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], state.playheadPosition, state.tempo);
+        // A meter counts `numerator` beats of the denominator's note value, and
+        // tempo is quarter notes per minute, so a count-in beat lasts
+        // `4 / denominator` quarter notes. Treating the numerator as a count of
+        // quarter notes made a 6/8 count-in six quarters long — twice the bar it
+        // was counting — and, before the tempo lookup above, it ran at the base
+        // tempo rather than the one the recording starts at.
+        const secondsPerCountInBeat = (60 / countInTempo) * (4 / denominator);
+        const countInBeats = state.countInBars * numerator;
+        const countInDurationSec = countInBeats * secondsPerCountInBeat;
 
         // Surface a failed resume rather than swallowing it: if the context stays
         // suspended the count-in clicks are inaudible, so warn the user to re-arm.
@@ -158,8 +168,8 @@ export function toggleRecording(): void {
 
         const ctx = getAudioContext();
         for (let index = 0; index < countInBeats; index++) {
-            const time = ctx.currentTime + index / (state.tempo / 60);
-            scheduleClick(time, index % beatsPerBar === 0, state.metronomeVolume ?? 0.5);
+            const time = ctx.currentTime + index * secondsPerCountInBeat;
+            scheduleClick(time, index % numerator === 0, state.metronomeVolume ?? 0.5);
         }
 
         const timerId = setTimeout(() => {

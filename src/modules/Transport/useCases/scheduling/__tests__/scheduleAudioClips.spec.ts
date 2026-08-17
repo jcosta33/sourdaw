@@ -27,9 +27,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
     },
 }));
-vi.mock('../../../stores/tempoMapStore', () => ({
+const { tempoMapStore } = vi.hoisted((): { tempoMapStore: { value: { changes: unknown[] } | null } } => ({
     tempoMapStore: { value: { changes: [] } },
 }));
+vi.mock('../../../stores/tempoMapStore', () => ({ tempoMapStore }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: vi.fn(() => ({ gainNode: { connect: vi.fn() } })),
     getCurrentTime: vi.fn(() => 0),
@@ -74,11 +75,10 @@ vi.mock('#/modules/Collaboration/stores', () => ({
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: vi.fn(() => null),
 }));
-// clipTempo (tempo at clip.startBeat) is 120 -> clipBeatsPerSecond = 2. The
-// timeline tempo is passed to scheduleAudioClips directly, so the two diverge.
-vi.mock('../../../models/TempoMap', () => ({
-    getTempoAtBeat: vi.fn(() => 120),
-}));
+// `TempoMap` is deliberately NOT stubbed: it is a pure leaf with its own spec,
+// and the timing these tests pin is exactly the question of which conversion the
+// scheduler asks it for. With an empty map every query falls back to
+// `defaultTransportState.tempo` (120), so the timeline runs at 2 beats/s.
 
 const mockResolveClips = vi.mocked(resolveClipsWithComping);
 const mockCreateBufferSource = vi.mocked(createBufferSource);
@@ -134,6 +134,7 @@ describe('scheduleAudioClips', () => {
         vi.clearAllMocks();
         trackStoreState.value = { tracks: [] };
         collaborationStoreState.value = null;
+        tempoMapStore.value = { changes: [] };
         // Reset implementations that other tests override via mockReturnValue —
         // clearAllMocks only clears call records, not per-test return values.
         vi.mocked(getCurrentTime).mockReturnValue(0);
@@ -146,50 +147,66 @@ describe('scheduleAudioClips', () => {
 
     it('does not notify when there are no tracks', () => {
         trackStoreState.value = { tracks: [] };
-        scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('sizes clip playback from the timeline tempo, not the clip-start tempo (regression: §B fix 3)', () => {
-        // Timeline tempo 60 -> 1 beat/s; clip-start tempo 120 -> 2 beats/s. The clip
-        // spans 4 visual beats (8..12). The audible duration must follow the timeline
-        // (4 beats / 1 bps = 4 s), not the clip's local rate (4 / 2 = 2 s).
+    it('sizes a clip spanning a tempo change by integrating the map, not one flat tempo', () => {
+        // 120 BPM, halving to 60 at beat 10 — inside the clip (8..12). The audible
+        // length is 2 beats at 120 (1 s) plus 2 beats at 60 (2 s) = 3 s. Dividing
+        // the 4-beat span by the tempo at the playhead gave 2 s, so the clip ran
+        // a whole second short while MIDI on the same beats did not.
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 10, tempo: 60, curve: 'instant' },
+            ],
+        };
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 60);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockGetCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(fakeSource.start).toHaveBeenCalledTimes(1);
         const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
-        // iterStartTime = getCurrentTime() + (8 - 0)/(60/60) + 0 = 8.
-        expect(when).toBeCloseTo(8, 6);
-        expect(offset).toBeCloseTo(0, 6);
-        // playDuration * stretchRatio(1): timeline duration 4 s, NOT the 2 s the bug gave.
-        expect(duration).toBeCloseTo(4, 6);
+        // Nothing before beat 8 changes tempo, so the start is unaffected: 8 beats
+        // at 120 = 4 s. That is what isolates the duration as the failing quantity.
+        expect(when).toBeCloseTo(4, 9);
+        expect(offset).toBeCloseTo(0, 9);
+        expect(duration).toBeCloseTo(3, 9);
+        // Start and length come from the same mapping, so the clip ends exactly
+        // where beat 12 lands: 10 beats at 120 (5 s) + 2 at 60 (2 s) = 7 s.
+        expect(when + duration).toBeCloseTo(7, 9);
     });
 
-    it('keeps the start time and the duration on the same tempo basis (regression: §B fix 3)', () => {
-        // With the bug, start time used the timeline tempo while duration used the
-        // clip tempo, so duration != (endTime - startTime). Assert they agree.
+    it('places a clip after a tempo change at the integrated beat time, not the flat one', () => {
+        // The change sits between the playhead (beat 0) and the clip start (beat 8),
+        // so it is the *start* that a flat rate got wrong: 4 beats at 120 (2 s) plus
+        // 4 at 60 (4 s) = 6 s, where dividing 8 beats by the playhead tempo gave 4 s.
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 60);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
-        expect(mockGetCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         const [when, , duration] = fakeSource.start.mock.calls[0]!;
-        // endTime for the 4-beat span at timeline tempo 60 is when + 4. duration must
-        // equal that span (when + duration === endTime).
-        const endTime = when + duration;
-        expect(endTime).toBeCloseTo(12, 6); // beat 12 at 1 beat/s from time 0 with offset 8
+        expect(when).toBeCloseTo(6, 9);
+        // The whole clip now sits at 60 BPM: 4 beats = 4 s.
+        expect(duration).toBeCloseTo(4, 9);
+        expect(when + duration).toBeCloseTo(10, 9);
     });
 
     it('disposeAudioClipScheduling clears the requested-asset dedup (regression: §B fix 5)', () => {
@@ -219,9 +236,9 @@ describe('scheduleAudioClips', () => {
                 },
             ],
         };
-        scheduleAudioClips(0, 4, 0, new Set(), scheduledFrozenTracks, [], defaultTransportState, 120);
+        scheduleAudioClips(0, 4, 0, new Set(), scheduledFrozenTracks, [], defaultTransportState);
         // Next tick, same buffer: still deduped.
-        scheduleAudioClips(0.2, 4.2, 0.2, new Set(), scheduledFrozenTracks, [], defaultTransportState, 120);
+        scheduleAudioClips(0.2, 4.2, 0.2, new Set(), scheduledFrozenTracks, [], defaultTransportState);
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
 
         // Refreeze mid-session: same track.id, new frozen render.
@@ -233,7 +250,7 @@ describe('scheduleAudioClips', () => {
                 },
             ],
         };
-        scheduleAudioClips(0.4, 4.4, 0.4, new Set(), scheduledFrozenTracks, [], defaultTransportState, 120);
+        scheduleAudioClips(0.4, 4.4, 0.4, new Set(), scheduledFrozenTracks, [], defaultTransportState);
 
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
@@ -252,7 +269,7 @@ describe('scheduleAudioClips', () => {
         ] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
@@ -263,7 +280,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ muted: true })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
@@ -277,7 +294,7 @@ describe('scheduleAudioClips', () => {
             ],
         };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
@@ -289,13 +306,13 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ id: 'future' })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
 
         // Clip at beats 0..2; window 4..8 → endBeat(2) < fromBeat(4) → skipped.
         mockResolveClips.mockReturnValue([makeAudioClip({ id: 'past', startBeat: 0, endBeat: 2 })] as never);
-        scheduleAudioClips(4, 8, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(4, 8, 0, new Set(), new Set(), [], defaultTransportState);
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
 
@@ -306,14 +323,14 @@ describe('scheduleAudioClips', () => {
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
         const scheduled = new Set<string>(['clip-1:0:4']);
 
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
 
     it('bails when trackStore.value is null', () => {
         trackStoreState.value = undefined as unknown as { tracks: unknown[] };
-        expect(() => scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState, 120)).not.toThrow();
+        expect(() => scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState)).not.toThrow();
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
 
@@ -325,7 +342,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
         expect(fakeSource.start).toHaveBeenCalledTimes(1);
     });
 
@@ -337,12 +354,12 @@ describe('scheduleAudioClips', () => {
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
         const scheduled = new Set<string>();
 
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
 
         expect(notifyUser).toHaveBeenCalledWith('Missing audio for clip "Lost" — re-import the audio file', 'warning');
         // Deduped so a second tick does not re-notify.
         vi.mocked(notifyUser).mockClear();
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
@@ -351,7 +368,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ audioBufferId: 'rec-123', name: 'Rec' })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(notifyUser).not.toHaveBeenCalled();
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
@@ -366,9 +383,9 @@ describe('scheduleAudioClips', () => {
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
         const scheduled = new Set<string>();
 
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
         // Second tick: asset already requested, must not re-request.
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
 
         expect(requestAsset).toHaveBeenCalledTimes(1);
         expect(requestAsset).toHaveBeenCalledWith('hash-1');
@@ -384,7 +401,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ stretchMode: 'timestretch', stretchRatio: 2 })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         // Stretch doubles playback rate and halves the audible duration.
         expect((fakeSource.playbackRate as { value: number }).value).toBe(2);
@@ -402,7 +419,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         // The envelope gain node is acquired after the fade gain; its gain.value
         // is set to 10**(db/20) before being wired ahead of the source.
@@ -432,7 +449,7 @@ describe('scheduleAudioClips', () => {
         let call = 0;
         vi.mocked(getCurrentTime).mockImplementation(() => (call++ === 0 ? 10 : 15));
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(fakeSource.start).toHaveBeenCalledTimes(1);
         const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
@@ -453,7 +470,7 @@ describe('scheduleAudioClips', () => {
         let call = 0;
         vi.mocked(getCurrentTime).mockImplementation(() => (call++ === 0 ? 0 : 100));
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(fakeSource.start).not.toHaveBeenCalled();
     });
@@ -469,7 +486,7 @@ describe('scheduleAudioClips', () => {
         let call = 0;
         vi.mocked(getCurrentTime).mockImplementation(() => (call++ === 0 ? 0 : 5));
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         const [when, offset] = fakeSource.start.mock.calls[0]!;
         expect(when).toBe(5);
@@ -490,7 +507,7 @@ describe('scheduleAudioClips', () => {
         ] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 24, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 24, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(2);
         // Timeline bps 2: iter 0 start = 8/2 = 4; iter 1 start = 12/2 = 6.
@@ -512,7 +529,7 @@ describe('scheduleAudioClips', () => {
         ] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(2);
     });
@@ -526,7 +543,7 @@ describe('scheduleAudioClips', () => {
         ] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 11, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 11, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(4096);
     });
@@ -541,14 +558,14 @@ describe('scheduleAudioClips', () => {
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
         const scheduled = new Set<string>();
 
-        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(5);
 
-        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState);
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(5);
 
-        scheduleAudioClips(4.01, 4.02, 4.01, scheduled, new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(4.01, 4.02, 4.01, scheduled, new Set(), [], defaultTransportState);
         expect(mockCreateBufferSource.mock.calls.length).toBeGreaterThan(5);
         expect(mockCreateBufferSource.mock.calls.length).toBeLessThan(12);
     });
@@ -564,7 +581,7 @@ describe('scheduleAudioClips', () => {
         ] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
     });
@@ -578,7 +595,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ fadeInBeats: 2 })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         // fadeGain is the first createGain(); capture its ramp targets.
         const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
@@ -601,7 +618,7 @@ describe('scheduleAudioClips', () => {
         let call = 0;
         vi.mocked(getCurrentTime).mockImplementation(() => (call++ === 0 ? 0 : 5));
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
         const fadeGain = ctx.createGain.mock.results[0]!.value;
@@ -615,7 +632,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ fadeInBeats: 0 })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
         const fadeGain = ctx.createGain.mock.results[0]!.value;
@@ -631,7 +648,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ fadeOutBeats: 2 })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
         const fadeGain = ctx.createGain.mock.results[0]!.value;
@@ -647,7 +664,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip({ fadeOutBeats: 0 })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
         const fadeGain = ctx.createGain.mock.results[0]!.value;
@@ -665,7 +682,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
         // Simulate the source ending → onended returns the fadeGain to the pool.
         const onended = fakeSource.onended as (() => void) | null;
         expect(onended).not.toBeNull();
@@ -673,7 +690,7 @@ describe('scheduleAudioClips', () => {
 
         const before = vi.mocked(getAudioContext).mock.results[0]!.value.createGain.mock.calls.length;
         // New schedule tick: the pooled node is popped, so no new createGain for fadeGain.
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
         const after = vi.mocked(getAudioContext).mock.results[0]!.value.createGain.mock.calls.length;
         // Only the env/fade gains created fresh this tick; the pooled fade is reused.
         expect(after).toBeGreaterThanOrEqual(before);
@@ -687,7 +704,7 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
         const onended = fakeSource.onended as (() => void) | null;
         expect(onended).not.toBeNull();
         // Invoking onended must not throw (env gain disconnect path).
@@ -702,7 +719,7 @@ describe('scheduleAudioClips', () => {
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
         vi.mocked(getCompensationDelay).mockReturnValue(0.05);
 
-        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         // iterStartTime = currentTime(0) + 8/2 + compensation(0.05) = 4.05.
         expect(fakeSource.start.mock.calls[0]![0]).toBeCloseTo(4.05, 6);

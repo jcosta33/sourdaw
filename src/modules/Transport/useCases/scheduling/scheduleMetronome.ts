@@ -1,7 +1,7 @@
 import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases';
 
-import { getTempoAtBeat } from '../../models/TempoMap';
-import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
+import { secondsBetweenBeats } from '../../models/TempoMap';
+import { getBarBeatAtPosition } from '../../models/TimeSignatureMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
@@ -27,8 +27,7 @@ export function scheduleMetronome(
     fromBeat: number,
     toBeat: number,
     accumulatedPosition: number,
-    transport: TransportState,
-    _currentTempo: number
+    transport: TransportState
 ): void {
     if (!transport.metronomeEnabled) {
         return;
@@ -37,6 +36,7 @@ export function scheduleMetronome(
     const startBeatInt = Math.ceil(fromBeat);
     const endBeatInt = Math.floor(toBeat);
     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
+    const tempoChanges = tempoMapStore.value?.changes ?? [];
 
     const nowTime = getCurrentTime();
     // Drop dedup entries whose click time played longer ago than the widest wrap
@@ -54,9 +54,13 @@ export function scheduleMetronome(
         }
         metronomeSchedulingState.lastBeat = beat;
 
-        const beatTempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], beat, transport.tempo);
-        const beatOffset = beat - accumulatedPosition;
-        const time = nowTime + beatOffset / (beatTempo / 60);
+        // Integrate the map across `[accumulatedPosition, beat]` rather than
+        // dividing the whole offset by one tempo. Reading the tempo *at* the
+        // click and applying it back to the playhead charges the post-change
+        // rate for the beats before the change, so with any tempo change inside
+        // the look-ahead the click landed at the wrong instant and drifted
+        // against the MIDI path, which has always integrated the map.
+        const time = nowTime + secondsBetweenBeats(tempoChanges, accumulatedPosition, beat, transport.tempo);
 
         // Suppress a second click at the same instant — the loop-wrap double-fire
         // of an integer loopEnd downbeat re-emitted as the wrapped loopStart beat.
@@ -66,13 +70,19 @@ export function scheduleMetronome(
         }
         metronomeSchedulingState.firedClickTimes.set(timeKey, time);
 
-        const ts = getTimeSignatureAtBeat(
+        // The accent marks a bar line, so it has to come from the bar the beat
+        // falls in. `beat % numerator === 0` measured bars from the timeline
+        // origin instead: after a meter change at any beat the grid it implies
+        // no longer lines up with the real bars, and it also read the numerator
+        // as a count of quarter notes, so every meter whose denominator is not 4
+        // accented the wrong beats even with no change in the project.
+        const barPosition = getBarBeatAtPosition(
             tsChanges,
             beat,
             transport.timeSignatureNumerator,
             transport.timeSignatureDenominator
         );
-        const isAccent = beat % ts.numerator === 0;
+        const isAccent = barPosition.beat === 1 && barPosition.tick === 0;
         scheduleClick(time, isAccent, transport.metronomeVolume);
     }
 }

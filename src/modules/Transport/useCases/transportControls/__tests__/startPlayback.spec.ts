@@ -11,6 +11,12 @@ import { ensureTrackStrips } from '../../ensureTrackStrips';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { startPlayback } from '../startPlayback';
 
+const { timeSignatureMapStore } = vi.hoisted(
+    (): { timeSignatureMapStore: { value: { changes: unknown[] } | null } } => ({
+        timeSignatureMapStore: { value: { changes: [] } },
+    })
+);
+vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore }));
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
@@ -33,6 +39,7 @@ vi.mock('../../ensureTrackStrips', () => ({
 describe('startPlayback', () => {
     beforeEach(() => {
         playheadPositionRef.current = 0;
+        timeSignatureMapStore.value = { changes: [] };
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
         vi.mocked(resumeEngine).mockReset();
@@ -80,6 +87,70 @@ describe('startPlayback', () => {
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('suspended'), 'warning');
         });
+    });
+
+    it('rolls in over the bars the time-signature map defines, not the flat numerator', () => {
+        // 4/4 until beat 6, 3/4 from there. The two bars before beat 12 are both
+        // 3/4 (beats 9..12 and 6..9), so a 2-bar pre-roll opens at beat 6.
+        // Multiplying the transport numerator gave 12 - 2*4 = 4 — a beat and a
+        // half early, and not on a bar line at all.
+        timeSignatureMapStore.value = {
+            changes: [
+                { id: 'ts-a', beat: 0, numerator: 4, denominator: 4 },
+                { id: 'ts-b', beat: 6, numerator: 3, denominator: 4 },
+            ],
+        };
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 12,
+            preRollEnabled: true,
+            preRollBars: 2,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        startPlayback();
+
+        expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 6 });
+        expect(playheadPositionRef.current).toBe(6);
+    });
+
+    it('sizes a pre-roll bar by the meter denominator, not by the numerator alone', () => {
+        // 6/8 bars are three quarter notes long, so two of them reach back six
+        // beats from 12. Treating the numerator as quarter notes reached back
+        // twelve and started the pre-roll at the timeline origin.
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 12,
+            preRollEnabled: true,
+            preRollBars: 2,
+            timeSignatureNumerator: 6,
+            timeSignatureDenominator: 8,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        startPlayback();
+
+        expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 6 });
+    });
+
+    it('clamps a pre-roll that reaches back past the timeline origin', () => {
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 2,
+            preRollEnabled: true,
+            preRollBars: 2,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        startPlayback();
+
+        expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 0 });
     });
 
     it('should not start when transport state is missing', () => {

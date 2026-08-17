@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
     createTimeSignatureChange,
     getBarBeatAtPosition,
+    getPrecedingBars,
     getTimeSignatureAtBeat,
     type TimeSignatureChange,
 } from '../TimeSignatureMap';
@@ -60,5 +61,62 @@ describe('getBarBeatAtPosition', () => {
         const past = getBarBeatAtPosition(changes, 3, 4, 4);
         expect(past.bar).toBe(1);
         expect(past.beat).toBe(2);
+    });
+});
+
+describe('getPrecedingBars', () => {
+    it('walks back whole bars of the default meter when the map is empty', () => {
+        expect(getPrecedingBars([], 12, 2, 4, 4)).toEqual([
+            { startBeat: 4, numerator: 4, denominator: 4 },
+            { startBeat: 8, numerator: 4, denominator: 4 },
+        ]);
+    });
+
+    it('sizes each bar by the meter governing it, not by the meter at the end point', () => {
+        // 4/4 to beat 6, 3/4 after. The two bars before beat 12 are both 3/4.
+        const changes: TimeSignatureChange[] = [
+            { id: 'a', beat: 0, numerator: 4, denominator: 4 },
+            { id: 'b', beat: 6, numerator: 3, denominator: 4 },
+        ];
+        expect(getPrecedingBars(changes, 12, 2, 4, 4)).toEqual([
+            { startBeat: 6, numerator: 3, denominator: 4 },
+            { startBeat: 9, numerator: 3, denominator: 4 },
+        ]);
+    });
+
+    it('gives a bar ending exactly on a change the outgoing meter', () => {
+        // The change at beat 6 starts a new bar there, so the bar that *ends* at 6
+        // is still 4/4 — the same rule getBarBeatAtPosition applies going forwards.
+        const changes: TimeSignatureChange[] = [
+            { id: 'a', beat: 0, numerator: 4, denominator: 4 },
+            { id: 'b', beat: 6, numerator: 3, denominator: 4 },
+        ];
+        expect(getPrecedingBars(changes, 6, 1, 4, 4)).toEqual([{ startBeat: 2, numerator: 4, denominator: 4 }]);
+    });
+
+    it('measures a bar in quarter notes, so the denominator decides its length', () => {
+        // A 6/8 bar is six eighths = three quarter notes.
+        expect(getPrecedingBars([], 12, 2, 6, 8)).toEqual([
+            { startBeat: 6, numerator: 6, denominator: 8 },
+            { startBeat: 9, numerator: 6, denominator: 8 },
+        ]);
+    });
+
+    it('reaches back past the timeline origin rather than clamping', () => {
+        // Counting in to beat 0 has to happen somewhere; the caller decides what
+        // to do with a negative start, this reports the true bar line.
+        expect(getPrecedingBars([], 0, 1, 4, 4)).toEqual([{ startBeat: -4, numerator: 4, denominator: 4 }]);
+    });
+
+    it('reads an unsorted change list in beat order', () => {
+        const changes: TimeSignatureChange[] = [
+            { id: 'b', beat: 6, numerator: 3, denominator: 4 },
+            { id: 'a', beat: 0, numerator: 4, denominator: 4 },
+        ];
+        expect(getPrecedingBars(changes, 12, 1, 4, 4)).toEqual([{ startBeat: 9, numerator: 3, denominator: 4 }]);
+    });
+
+    it('returns nothing for a zero bar count', () => {
+        expect(getPrecedingBars([], 12, 0, 4, 4)).toEqual([]);
     });
 });
