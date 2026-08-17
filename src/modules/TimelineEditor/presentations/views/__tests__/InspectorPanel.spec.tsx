@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -92,7 +94,14 @@ vi.mock('../Inspector/TrackInspector', () => ({
 }));
 
 vi.mock('../Inspector/ClipInspector', () => ({
-    ClipInspector: ({ clip }: { clip: { name: string } }) => <div data-testid="clip-inspector">Clip: {clip.name}</div>,
+    // The initial `useState` value freezes at mount — it only changes if the
+    // component actually remounts, which is exactly what distinguishes "keyed
+    // by clip id" from "same instance, new props" for the real ClipInspector's
+    // rename-draft state (#2039).
+    ClipInspector: ({ clip }: { clip: { name: string } }) => {
+        const [mountedName] = useState(clip.name);
+        return <div data-testid="clip-inspector">Clip: {mountedName}</div>;
+    },
 }));
 
 vi.mock('../Inspector/DeviceInspector', () => ({
@@ -168,6 +177,35 @@ describe('InspectorPanel', () => {
         });
         render(<InspectorPanel />);
         expect(screen.getByTestId('clip-inspector')).toBeInTheDocument();
+    });
+
+    it('remounts ClipInspector when the selected clip changes, instead of reusing the instance', () => {
+        mockUseStore.mockReturnValue({ selectedClipId: 'clip-1' });
+        mockUseTracks.mockReturnValue({
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Test Track',
+                    kind: 'audio',
+                    clips: [
+                        { id: 'clip-1', name: 'Clip A' },
+                        { id: 'clip-2', name: 'Clip B' },
+                    ],
+                    devices: [],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        });
+        const { rerender } = render(<InspectorPanel />);
+        expect(screen.getByTestId('clip-inspector')).toHaveTextContent('Clip: Clip A');
+
+        mockUseStore.mockReturnValue({ selectedClipId: 'clip-2' });
+        rerender(<InspectorPanel />);
+
+        // Without a `key`, the mounted mock keeps its frozen `mountedName` from
+        // clip A — the same leak that let a real rename draft for clip A leak
+        // onto clip B.
+        expect(screen.getByTestId('clip-inspector')).toHaveTextContent('Clip: Clip B');
     });
 
     it('should render device inspector when device is selected', () => {

@@ -12,17 +12,10 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 
-import {
-    type DdspInstrument,
-    type KokoroModel,
-    type ModelDownloadStatus,
-    type VocoderModel,
-} from '../models/BrowserModel';
+import { type DdspInstrument, type KokoroModel, type ModelDownloadStatus } from '../models/BrowserModel';
 import {
     DDSP_INSTRUMENT_CATALOG,
     KOKORO_VOICE_CATALOG,
-    NSF_HIFIGAN_URL,
-    NSF_HIFIGAN_SIZE_BYTES,
     KOKORO_MODEL_URL,
     KOKORO_MODEL_SIZE_BYTES,
 } from '../models/DdspInstrumentCatalog';
@@ -47,19 +40,6 @@ export const KOKORO_MODEL_ENTRY: KokoroModel = {
     status: 'not-downloaded',
     downloadProgress: 0,
     quantization: 'q8',
-};
-
-export const NSF_HIFIGAN_VOCODER: VocoderModel = {
-    id: 'nsf-hifigan-44k',
-    name: 'NSF-HiFiGAN Vocoder',
-    family: 'diffsinger/vocoder',
-    sizeBytes: NSF_HIFIGAN_SIZE_BYTES,
-    url: NSF_HIFIGAN_URL,
-    license: 'CC-BY-NC-SA-4.0',
-    attribution: 'NSF-HiFiGAN vocoder by openvpi — CC-BY-NC-SA 4.0 (non-commercial)',
-    nativeSampleRate: 44100,
-    status: 'not-downloaded',
-    downloadProgress: 0,
 };
 
 export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModelCached })(
@@ -116,30 +96,12 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
                 downloadProgress: kokoroStatus === 'ready' ? 1 : 0,
             };
 
-            // ── 4. Check vocoder cache status ──────────────────────────────
-            let vocoderStatus: ModelDownloadStatus;
-            try {
-                const cached = await checkModelCached({
-                    family: 'diffsinger/vocoder',
-                    modelId: NSF_HIFIGAN_VOCODER.id,
-                });
-                vocoderStatus = cached ? 'ready' : 'not-downloaded';
-            } catch (error) {
-                vocoderStatus = 'error';
-                logger.warn(`[BrowserAi] Vocoder cache probe failed: ${String(error)}`);
-            }
-            const vocoder: VocoderModel = {
-                ...NSF_HIFIGAN_VOCODER,
-                status: vocoderStatus,
-                downloadProgress: vocoderStatus === 'ready' ? 1 : 0,
-            };
-
-            // ── 5. Populate model registry store ───────────────────────────
+            // ── 4. Populate model registry store ───────────────────────────
             modelRegistryStore.set({
                 ddspInstruments,
                 kokoroModel,
                 diffSingerVoicebanks: [],
-                vocoder,
+                vocoder: null,
                 storageUsedBytes: 0,
             });
 
@@ -147,7 +109,7 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
                 `[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel.status}`
             );
 
-            // ── 6. Subscribe to midiStore — mark rendered phrases stale on edit ──
+            // ── 5. Subscribe to midiStore — mark rendered phrases stale on edit ──
             // The unsubscribe function is stored at module scope so it is not garbage-collected
             // and can be called if the module is ever torn down (e.g. in tests or HMR).
             midiStaleSubscription?.();

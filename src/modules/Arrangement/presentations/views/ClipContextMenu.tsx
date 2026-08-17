@@ -129,20 +129,6 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
-                    void runAiActionWithToast(() => executeAppAction({ type: 'stemSeparate', payload: { clipId } }), {
-                        startMsg: 'Separating stems… this may take a moment',
-                        successMsg: 'Stem separation complete',
-                        successDetails: ['Created separate tracks for each stem'],
-                        failMsg: 'Stem separation failed',
-                    });
-                })}
-            >
-                Separate Stems
-            </DawMenuButton>
-            <DawMenuButton
-                role="menuitem"
-                leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() => {
                     void runAiActionWithToast(() => executeAppAction({ type: 'audioToMidi', payload: { clipId } }), {
                         startMsg: 'Converting audio to MIDI…',
                         successMsg: 'Audio converted to MIDI',

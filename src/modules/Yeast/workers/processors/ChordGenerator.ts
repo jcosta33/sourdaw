@@ -6,7 +6,12 @@
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
-import { ScheduledEventQueue } from '../MidiProcessor';
+import {
+    DRAIN_FALLBACK_BLOCK_SPAN_SAMPLES,
+    resolveBlockEndSamples,
+    resolveBlockStartSamples,
+    ScheduledEventQueue,
+} from '../MidiProcessor';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -41,6 +46,8 @@ export class ChordGenerator extends BaseMidiProcessor {
     // Strummed tones whose time falls beyond the current block. They must
     // not leave the processor with a future timestamp (see processMidi).
     private scheduled = new ScheduledEventQueue();
+    // Reused across blocks so the per-block scheduled drain allocates nothing.
+    private readonly drainScratch: MidiEvent[] = [];
 
     constructor(id?: string) {
         super(id ?? `chord-${Date.now()}`);
@@ -61,11 +68,9 @@ export class ChordGenerator extends BaseMidiProcessor {
         // 100 ms with compounding pitches). Queue future tones internally
         // and drain exactly [0, blockEnd): each tone leaves in the block
         // that contains it, as final output, and never re-enters (same
-        // mechanism as the NoteRepeater fix). The 8192 fallback only serves
-        // direct processMidi callers whose transport carries no block range
-        // (isolated unit specs).
-        const now = transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
-        const blockEnd = transport.blockEndSamples ?? now + 8192;
+        // mechanism as the NoteRepeater fix).
+        const now = resolveBlockStartSamples(transport, input);
+        const blockEnd = resolveBlockEndSamples(transport, now, DRAIN_FALLBACK_BLOCK_SPAN_SAMPLES);
 
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
@@ -158,10 +163,13 @@ export class ChordGenerator extends BaseMidiProcessor {
         }
 
         // Drain internally queued strummed tones that fall in this block.
-        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        const drained = this.drainScratch;
+        drained.length = 0;
+        this.scheduled.drainRangeInto(0, blockEnd, drained, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
         }
+        drained.length = 0;
     }
 
     reset(): void {

@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-browser-diffsinger-svs
 title: Browser DiffSinger singing synthesis
-status: in-progress
+status: draft
 owner: The Sourdaw team
 sources:
   - ../audio-generation-browser/research.md
@@ -11,6 +11,8 @@ sources:
 # Browser DiffSinger singing synthesis
 
 ## Intent
+
+Blocked until a complete browser model chain passes admission.
 
 Run the full DiffSinger singing-synthesis pipeline (JS phonemizer → variance → acoustic →
 vocoder) entirely in the browser via ONNX Runtime Web on WebGPU — an industry-first browser SVS —
@@ -89,9 +91,8 @@ Verify with: `pnpm test:run -- BrowserAi speakerBlend`
 
 ## Open questions
 
-- [ ] (blocking) Which vocoder can the browser ship — does Sourdaw's distribution qualify as
-  NonCommercial under CC-BY-NC-SA 4.0 and is the ShareAlike clause compatible? Requires human
-  legal sign-off before Phase 3 ships.
+- [ ] (blocking) Admit a browser vocoder only after its license, provenance, tensor contract,
+  output quality, and runtime cost are verified. Singing synthesis stays unavailable until then.
 - [ ] (blocking) Which DiffSinger voicebank ships first, and is there a viable English voicebank
   under a compatible license? A verified per-voicebank shortlist must exist before implementation.
 
@@ -104,5 +105,5 @@ Verify with: `pnpm test:run -- BrowserAi speakerBlend`
 ## Dropped from sources
 
 - Consistency distillation and codec-token backends — forward-compatible hooks only.
-- Dual vocoder (Vocos + BigVGAN) — single shared NSF-HiFiGAN-compatible vocoder in browser.
+- Dual vocoder (Vocos + BigVGAN) — one admitted compatible vocoder in browser.
 - Checkpoint/resume of in-flight diffusion — future; MVP re-queues lost renders.

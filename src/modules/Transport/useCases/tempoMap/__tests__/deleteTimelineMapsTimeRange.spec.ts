@@ -105,4 +105,50 @@ describe('deleteTimelineMapsTimeRange', () => {
         expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
         expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledOnce();
     });
+
+    it('no-ops on an inverted range instead of shifting surviving changes the wrong direction', () => {
+        deleteTimelineMapsTimeRange({ startBeat: 6, endBeat: 3 });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('no-ops on a degenerate zero-length range', () => {
+        deleteTimelineMapsTimeRange({ startBeat: 4, endBeat: 4 });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('no-ops on a NaN startBeat instead of deleting every change below endBeat', () => {
+        // NaN fails every direct comparison, so a guard that only checks
+        // `endBeat <= startBeat` would pass this straight through: the filter
+        // would delete every change below `endBeat` and rewrite the rest to
+        // `beat: NaN`.
+        deleteTimelineMapsTimeRange({ startBeat: Number.NaN, endBeat: 5 });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('no-ops on a NaN endBeat', () => {
+        deleteTimelineMapsTimeRange({ startBeat: 3, endBeat: Number.NaN });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('no-ops on a negative startBeat', () => {
+        deleteTimelineMapsTimeRange({ startBeat: -1, endBeat: 5 });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('no-ops on an infinite endBeat', () => {
+        deleteTimelineMapsTimeRange({ startBeat: 3, endBeat: Number.POSITIVE_INFINITY });
+
+        expect(mocks.tempoMapStoreSet).not.toHaveBeenCalled();
+        expect(mocks.timeSignatureMapStoreSet).not.toHaveBeenCalled();
+    });
 });

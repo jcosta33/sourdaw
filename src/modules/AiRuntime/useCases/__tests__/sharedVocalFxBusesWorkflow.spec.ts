@@ -443,7 +443,7 @@ function createTestAudioBuffer(sampleRate = 44_100): AudioBuffer {
 }
 
 describe('shared vocal FX buses workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
@@ -456,12 +456,12 @@ describe('shared vocal FX buses workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         runtimeMocks.renderOffline.mockImplementation(() => Promise.resolve(createTestAudioBuffer()));
         configureAutomergeStoragePort(null);
@@ -492,7 +492,7 @@ describe('shared vocal FX buses workflow', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -505,7 +505,7 @@ describe('shared vocal FX buses workflow', () => {
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
-        cloudSession.clear();
+        await cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
     });

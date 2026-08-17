@@ -49,7 +49,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * `tests/e2e` is deliberately absent — those are Playwright specs, excluded by
  * `vite.config.ts` and run by `pnpm test:e2e <spec>`.
  */
-const collectableRoots = ['src', 'scripts'] as const;
+const collectableRoots = ['src', 'scripts', 'electron', 'server'] as const;
 
 /** The directory the exclusion under test is responsible for. */
 const worktreeRoot = '.agents/worktrees';
@@ -62,6 +62,14 @@ const e2eSpecPattern = /\.e2e\.spec\./;
 
 /** Directories a walk must not descend into, matching the config's `exclude`. */
 const skippedDirectories = new Set(['node_modules', 'dist', 'coverage', 'target']);
+
+/**
+ * Build output the config excludes by path rather than by name. `pnpm desktop:dev`
+ * compiles `electron/` into `electron/out/`, specs included, so without this the
+ * walk and the run would both pick up a second, compiled copy of every Electron
+ * spec on any machine that has run the shell.
+ */
+const skippedPaths = new Set(['electron/out']);
 
 function isCollectableSpec(relativePath: string): boolean {
     if (!specFilePattern.test(relativePath)) {
@@ -81,7 +89,8 @@ function walkForSpecs(absoluteDirectory: string, found: string[]): void {
     for (const entry of entries) {
         const absoluteEntry = join(absoluteDirectory, entry.name);
         if (entry.isDirectory()) {
-            if (skippedDirectories.has(entry.name)) {
+            const relativeDirectory = relative(repoRoot, absoluteEntry).split(sep).join('/');
+            if (skippedDirectories.has(entry.name) || skippedPaths.has(relativeDirectory)) {
                 continue;
             }
             walkForSpecs(absoluteEntry, found);

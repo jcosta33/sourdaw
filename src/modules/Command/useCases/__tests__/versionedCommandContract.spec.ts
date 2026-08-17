@@ -388,7 +388,6 @@ describe('versioned command contract', () => {
             { type: 'completeMidi', payload: { clipId: 'clip-1' } },
             { type: 'variationMidi', payload: { clipId: 'clip-1' } },
             { type: 'generateBassline', payload: { clipId: 'clip-1' } },
-            { type: 'generateAudio', payload: { prompt: 'warm pad' } },
             { type: 'generateDrumPattern', payload: { style: 'rock' } },
             { type: 'generateMelody', payload: { style: 'ambient' } },
             { type: 'generateChordProgression', payload: { style: 'pop' } },

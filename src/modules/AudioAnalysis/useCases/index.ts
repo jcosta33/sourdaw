@@ -4,9 +4,8 @@
 export { getAnalysisHandlers } from './getAnalysisHandlers';
 export { setMixAnalysisDisplayLifecycle } from './setMixAnalysisDisplayLifecycle';
 
-export { isAudioGenerationAvailable } from './audioAi/isAudioGenerationAvailable';
-export { generateAudio } from './audioAi/generateAudio';
 export { separateStems } from './audioAi/separateStems';
+export { isStemSeparationAvailable } from './audioAi/isStemSeparationAvailable';
 
 export { summarizeFeatures } from './summarizeFeatures';
 

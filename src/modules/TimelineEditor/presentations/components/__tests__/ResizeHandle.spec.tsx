@@ -137,4 +137,27 @@ describe('ResizeHandle — mouse drag interaction', () => {
 
         expect(onResize).not.toHaveBeenCalled();
     });
+
+    it('clears the body cursor and user-select on unmount mid-drag instead of stranding them', () => {
+        const { unmount } = render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+
+        fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
+        expect(document.body.style.cursor).toBe('col-resize');
+        expect(document.body.style.userSelect).toBe('none');
+
+        unmount();
+
+        expect(document.body.style.cursor).toBe('');
+        expect(document.body.style.userSelect).toBe('');
+    });
+
+    it('does not clear the cursor on unmount when no drag was in progress', () => {
+        document.body.style.cursor = 'wait';
+        const { unmount } = render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+
+        unmount();
+
+        expect(document.body.style.cursor).toBe('wait');
+        document.body.style.cursor = '';
+    });
 });

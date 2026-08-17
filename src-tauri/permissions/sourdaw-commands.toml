@@ -2,11 +2,11 @@
 identifier = "allow-sourdaw-commands"
 description = "Allows the bundled main webview to invoke Sourdaw's registered application commands."
 commands.allow = [
+    "open_provider_gateway_session",
+    "close_provider_gateway_session",
     "provider_gateway_request",
     "cancel_provider_gateway_request",
     "denoise_audio",
-    "separate_stems",
-    "generate_audio_clip",
     "ensure_whisper_ready",
     "start_dictation",
     "stop_dictation",
