@@ -12,6 +12,9 @@ type MockDictationResult = {
     text: string;
     durationMs: number;
 };
+type MockDictationError = {
+    message: string;
+};
 type MockVoiceStatus = {
     isListening: boolean;
     transcribing: boolean;
@@ -29,6 +32,9 @@ const mocks = vi.hoisted(() => ({
     setVoiceTranscribingStatus: vi.fn<(transcribing: boolean) => MockVoiceStatus>(),
     onDictationResult: vi
         .fn<(handler: (result: MockDictationResult) => void) => Promise<() => void>>()
+        .mockResolvedValue(() => {}),
+    onDictationError: vi
+        .fn<(handler: (error: MockDictationError) => void) => Promise<() => void>>()
         .mockResolvedValue(() => {}),
 }));
 
@@ -58,6 +64,10 @@ vi.mock('../../../useCases/voiceDictation/stopDictation', () => ({
 
 vi.mock('../../../useCases/voiceDictation/onDictationResult', () => ({
     onDictationResult: mocks.onDictationResult,
+}));
+
+vi.mock('../../../useCases/voiceDictation/onDictationError', () => ({
+    onDictationError: mocks.onDictationError,
 }));
 
 vi.mock('../../../useCases/setVoiceStatus', async () => {
@@ -170,6 +180,7 @@ describe('useVoiceRecording', () => {
         mocks.startDictation.mockResolvedValue(undefined);
         mocks.stopDictation.mockResolvedValue(undefined);
         mocks.onDictationResult.mockResolvedValue(() => {});
+        mocks.onDictationError.mockResolvedValue(() => {});
 
         // Mock global window.SpeechRecognition
         Object.defineProperty(window, 'SpeechRecognition', { value: undefined, configurable: true });
@@ -457,5 +468,170 @@ describe('useVoiceRecording', () => {
         expect(result.current.transcribing).toBe(false);
         expect(mocks.setVoiceStatus).toHaveBeenLastCalledWith({ isListening: false, transcribing: false });
         expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
+    });
+
+    it('clears transcribing without injecting text when the transcription is empty', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        const handler = mocks.onDictationResult.mock.calls[0]?.[0];
+        if (!handler) {
+            throw new Error('Expected native dictation result listener to be registered');
+        }
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.stopListening();
+        });
+
+        act(() => {
+            handler({ text: '', durationMs: 900 });
+        });
+
+        // An empty transcription must still resolve the session — nothing was
+        // said, but the UI cannot be left waiting forever for a result.
+        expect(mocks.injectPromptCommand).not.toHaveBeenCalled();
+        expect(result.current.isListening).toBe(false);
+        expect(result.current.transcribing).toBe(false);
+        expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
+    });
+
+    it('clears transcribing and surfaces an error when native dictation fails', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        const errorHandler = mocks.onDictationError.mock.calls[0]?.[0];
+        if (!errorHandler) {
+            throw new Error('Expected native dictation error listener to be registered');
+        }
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.stopListening();
+        });
+
+        expect(voiceStatusStore.value).toEqual({ isListening: true, transcribing: true });
+
+        act(() => {
+            errorHandler({ message: 'Recording failed: no microphone found' });
+        });
+
+        expect(result.current.errorText).toBe('Recording failed: no microphone found');
+        expect(result.current.isListening).toBe(false);
+        expect(result.current.transcribing).toBe(false);
+        expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
+    });
+
+    it('does not strand the UI in "transcribing" if no native event ever arrives', async () => {
+        vi.useFakeTimers();
+
+        try {
+            mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+
+            const { result } = renderHook(() => useVoiceRecording());
+
+            // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+            await act(async () => {
+                result.current.toggleListening();
+            });
+
+            // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+            await act(async () => {
+                result.current.stopListening();
+            });
+
+            expect(result.current.transcribing).toBe(true);
+
+            // Neither dictation-result nor dictation-error ever fires — the
+            // defensive timeout is the only thing that can recover the UI.
+            act(() => {
+                vi.advanceTimersByTime(45_000);
+            });
+
+            expect(result.current.isListening).toBe(false);
+            expect(result.current.transcribing).toBe(false);
+            expect(result.current.errorText).toContain('timed out');
+            expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('releases the dictation-error listener on unmount before an error arrives', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+        const unlisten = vi.fn<() => void>();
+        mocks.onDictationError.mockResolvedValueOnce(unlisten);
+
+        const { result, unmount } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        expect(mocks.onDictationError).toHaveBeenCalled();
+        expect(unlisten).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unlisten).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows an error and clears listening/transcribing state when startDictation rejects', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+        mocks.startDictation.mockRejectedValueOnce(new Error('native start failed'));
+        const resultUnlisten = vi.fn<() => void>();
+        const errorUnlisten = vi.fn<() => void>();
+        mocks.onDictationResult.mockResolvedValueOnce(resultUnlisten);
+        mocks.onDictationError.mockResolvedValueOnce(errorUnlisten);
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        expect(result.current.errorText).toBe('native start failed');
+        expect(result.current.isListening).toBe(false);
+        expect(result.current.transcribing).toBe(false);
+        expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
+        // The listeners registered before the rejection must not be left
+        // dangling — the catch path tears the session down.
+        expect(resultUnlisten).toHaveBeenCalledTimes(1);
+        expect(errorUnlisten).toHaveBeenCalledTimes(1);
+    });
+
+    it('registers native listeners exactly once for a rapid double-tap', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // Two taps issued in the same tick, before the first async start has
+        // finished registering listeners — the in-flight guard must block
+        // the second one rather than racing it into a duplicate session.
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+            result.current.toggleListening();
+        });
+
+        expect(mocks.onDictationResult).toHaveBeenCalledTimes(1);
+        expect(mocks.onDictationError).toHaveBeenCalledTimes(1);
+        expect(mocks.startDictation).toHaveBeenCalledTimes(1);
+        expect(result.current.isListening).toBe(true);
+        expect(result.current.voiceMode).toBe('whisper');
     });
 });
