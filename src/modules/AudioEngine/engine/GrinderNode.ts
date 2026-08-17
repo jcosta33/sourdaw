@@ -142,6 +142,14 @@ export async function createGrinderNode(
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
+    let lastReportedLatency: number | null = null;
+    const reportLatencyChange = (latency: number): void => {
+        if (latency === lastReportedLatency) {
+            return;
+        }
+        lastReportedLatency = latency;
+        latencyCallback?.(latency);
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
@@ -228,7 +236,7 @@ export async function createGrinderNode(
         if (outcome === 'other') {
             const data = event.data as Record<string, unknown>;
             if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
-                latencyCallback?.(data.latency);
+                reportLatencyChange(data.latency);
             }
             return;
         }
@@ -300,7 +308,9 @@ export async function createGrinderNode(
             // once, outside the poll, since it retains the last consistent snapshot.
             const readMeter = createTelemetryReader({ slot, project: projectGrinderMeter });
             const poll = () => {
-                cb(readMeter());
+                const data = readMeter();
+                reportLatencyChange(data.latency);
+                cb(data);
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);

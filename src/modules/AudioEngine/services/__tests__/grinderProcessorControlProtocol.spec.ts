@@ -4,6 +4,7 @@ import {
     createReadyGrinderProcessor,
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
+    setGrinderLatencySamplesAfterSetParam,
 } from './grinderProcessorTestHarness';
 
 function initializeControlGeneration(processor: Awaited<ReturnType<typeof createReadyGrinderProcessor>>): void {
@@ -129,6 +130,29 @@ describe('GrinderProcessor fallback-control protocol', () => {
         processor.port.onmessage?.({
             data: fallbackControl({ correlation: { workletGeneration: 7, controlSequence: 0 } }),
         });
+
+        expect(grinderSetParamCalls).toEqual([{ name: 'sag', value: 0.5 }]);
+        expect(processor.port.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('applies a due latency-changing fallback control without posting from process()', async () => {
+        setGrinderLatencySamplesAfterSetParam(96);
+        const processor = await createReadyGrinderProcessor();
+        initializeControlGeneration(processor);
+        vi.mocked(processor.port.postMessage).mockClear();
+
+        processor.port.onmessage?.({
+            data: fallbackControl({
+                scheduling: { targetFrame: 1_001, deadlineFrame: 2_000 },
+            }),
+        });
+        expect(grinderSetParamCalls).toEqual([]);
+        expect(processor.port.postMessage).not.toHaveBeenCalled();
+
+        vi.stubGlobal('currentFrame', 1_001);
+        const input = [new Float32Array(4), new Float32Array(4)];
+        const output = [new Float32Array(4), new Float32Array(4)];
+        processor.process([input], [output], {});
 
         expect(grinderSetParamCalls).toEqual([{ name: 'sag', value: 0.5 }]);
         expect(processor.port.postMessage).not.toHaveBeenCalled();

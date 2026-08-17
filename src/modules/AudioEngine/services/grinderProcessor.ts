@@ -471,11 +471,11 @@ class GrinderProcessor extends AudioWorkletProcessor {
             };
             return true;
         }
-        this._applyFallbackControl(message.target.parameterId, message.value);
+        this._applyFallbackControl(message.target.parameterId, message.value, true);
         return true;
     }
 
-    _applyFallbackControl(parameterId: string, value: number): void {
+    _applyFallbackControl(parameterId: string, value: number, reportLatency: boolean): void {
         if (this._instance === null || this._faulted) {
             return;
         }
@@ -483,7 +483,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         const oldLatency = this._instance.get_latency_samples();
         this._instance.set_param(rustName, value);
         const newLatency = this._instance.get_latency_samples();
-        if (newLatency !== oldLatency) {
+        if (reportLatency && newLatency !== oldLatency) {
             this.port.postMessage({ type: 'latency-changed', latency: newLatency });
         }
     }
@@ -500,7 +500,10 @@ class GrinderProcessor extends AudioWorkletProcessor {
             }
             if (currentFrame >= pending.targetFrame) {
                 this._pendingFallbackControls[index] = null;
-                this._applyFallbackControl(pending.parameterId, pending.value);
+                // `process()` is the render callback: latency publication travels
+                // through the preallocated SAB telemetry slot below instead of
+                // allocating a message object or posting across the worklet port.
+                this._applyFallbackControl(pending.parameterId, pending.value, false);
             }
         }
     }

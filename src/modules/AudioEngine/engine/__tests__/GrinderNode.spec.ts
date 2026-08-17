@@ -337,6 +337,31 @@ describe('createGrinderNode', () => {
         });
     });
 
+    it('refreshes latency from the telemetry signal outside the worklet render callback', async () => {
+        const { telemetryAllocator, GRINDER_IDX } = await import('../telemetryAllocator');
+        const view = new Float32Array(32);
+        view[GRINDER_IDX.latency] = 96;
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view,
+            seqView: new Int32Array(32),
+        });
+        const rafCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+
+        const node = await createGrinderNode(makeCtx());
+        const latencyCallback = vi.fn();
+        node.onLatencyChanged(latencyCallback);
+        node.onMeterData(vi.fn());
+        rafCallbacks[0]!(0);
+
+        expect(latencyCallback).toHaveBeenCalledWith(96);
+    });
+
     it('should connect to the destination and swallow a disconnect error instead of throwing', async () => {
         disconnect.mockImplementation(() => {
             throw new Error('already disconnected');
