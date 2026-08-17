@@ -25,8 +25,11 @@
     <!-- Hardened Runtime -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-    <true/>
+    <!-- `allow-dyld-environment-variables` was in the Tauri entitlements but
+         is deliberately not carried over: it re-enables DYLD_INSERT_LIBRARIES
+         into the entitled process, nothing in the app consumes dyld
+         environment variables, and CLAP loading needs only
+         `disable-library-validation` below. -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
 

@@ -30,8 +30,11 @@ publish: null
 
 asar: true
 # A `.node` addon cannot be `dlopen`ed from inside an asar, and neither can a
-# dylib it links against. Anything that has to be a real file on disk is listed
-# here rather than discovered, so adding one to the app is a deliberate act.
+# dylib it links against. These are extension rules, not explicit paths: any
+# native-library file that reaches the packaged inputs ships unpacked — and
+# unpacked files sit outside boot-time asar integrity, inside only the codesign
+# seal. Keeping native libraries out of `dist/` and `electron/out/` is what
+# keeps this surface empty (it is empty today).
 asarUnpack:
     - '**/*.node'
     - '**/*.dylib'
@@ -57,6 +60,11 @@ files:
     # Tauri `beforeBuildCommand` did; this pattern is the invariant that holds
     # even when the build runs over a stale `dist/`.
     - '!dist/samples/**/*'
+    # Vite emits hidden sourcemaps (no reference comment), which nothing at
+    # runtime can read, and a stale `electron/out/` from a `desktop:dev` run
+    # carries tsc maps the packaging tsconfig no longer emits: packing either
+    # is archive bloat plus source disclosure.
+    - '!**/*.map'
     # Production dependencies are renderer libraries, already bundled. Without
     # this, electron-builder copies every one of them into the asar.
     - '!node_modules/**/*'

@@ -21,12 +21,23 @@
  *   set, a tampered archive refuses to boot.
  * - `EnableCookieEncryption: true` — Chromium's cookie store is plaintext
  *   SQLite by default. Collaboration session cookies live there.
+ * - `EnableNodeOptionsEnvironmentVariable: false` and
+ *   `EnableNodeCliInspectArguments: false` — `NODE_OPTIONS` and
+ *   `--inspect`/`--inspect-brk` are the same local-injection class
+ *   `RunAsNode` closes: an environment or argument that turns the entitled
+ *   process into an attacker's runtime. Chromium's own
+ *   `--remote-debugging-port` is unaffected, so packaged-app verification
+ *   over CDP keeps working.
+ * - `GrantFileProtocolExtraPrivileges: false` — everything the shell serves
+ *   crosses `app://`; `file://` needs no privileges here, so it gets none.
  *
  * The read-back is the point of the second half. `flipFuses` reports how many
  * sentinels it patched, not whether the wire ended up in the requested state,
  * and a silently un-flipped fuse is invisible in every artifact the build
  * produces. `getCurrentFuseWire` re-reads the binary from disk, so this check
- * fails if the flip did not take.
+ * fails if the flip did not take. It reads the first Mach-O slice only —
+ * complete while the mac target is arm64-only; a `universal` target would
+ * need a per-slice read-back before it could trust this check.
  *
  * Ordering: electron-builder emits `afterPack` before `sanityCheckPackage` and
  * before signing, so the ad-hoc signature applied afterwards covers the patched
@@ -66,6 +77,9 @@ export const REQUIRED_FUSES: ReadonlyMap<FuseV1Options, boolean> = new Map([
     [FuseV1Options.OnlyLoadAppFromAsar, true],
     [FuseV1Options.EnableEmbeddedAsarIntegrityValidation, true],
     [FuseV1Options.EnableCookieEncryption, true],
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable, false],
+    [FuseV1Options.EnableNodeCliInspectArguments, false],
+    [FuseV1Options.GrantFileProtocolExtraPrivileges, false],
 ]);
 
 const PLATFORM_SUFFIX: Readonly<Record<string, string>> = {
@@ -117,6 +131,9 @@ export const afterPack = async (context: AfterPackContext): Promise<void> => {
         [FuseV1Options.OnlyLoadAppFromAsar]: true,
         [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
         [FuseV1Options.EnableCookieEncryption]: true,
+        [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+        [FuseV1Options.EnableNodeCliInspectArguments]: false,
+        [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
     });
 
     const wire = await getCurrentFuseWire(binaryPath);

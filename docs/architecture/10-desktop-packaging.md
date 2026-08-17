@@ -44,10 +44,11 @@ the wire off disk; a build whose fuses did not take fails there rather than ship
 Two ordering facts hold the arrangement together. The flip has to happen before signing, because
 patching a signed macOS binary invalidates the signature and Apple silicon refuses to launch the
 result. And `EnableEmbeddedAsarIntegrityValidation` is only worth anything alongside
-`OnlyLoadAppFromAsar` and a signature: the archive's hash lives in `Info.plist`, and it is the code
-signature that makes that hash unrewritable. This is why the build ad-hoc signs (`identity: '-'`)
-even though it does not distribute — an unsigned bundle would leave the integrity fuse checking a
-hash an attacker can edit.
+`OnlyLoadAppFromAsar` and a signature: the archive's hash lives in `Info.plist`, which the code
+signature seals. Ad-hoc signing (`identity: '-'`) carries no identity, so it anchors nothing
+against a deliberate local attacker — who can tamper, recompute the hash, and re-sign ad-hoc — but
+it does make the chain detect corruption and any tampering that does not re-sign, where an unsigned
+bundle would leave the integrity fuse checking a hash anyone can edit.
 
 ## 3. Hardened runtime entitlements
 
@@ -74,6 +75,11 @@ The contract a Windows build has to satisfy:
   wrongly-targeted artifact packages silently and fails at `require` time on the user's machine.
 - The Metal backend is macOS-only. `whisper-rs`'s feature set is a per-target decision, and a
   Windows build that inherits the macOS features does not link.
+- The audio backend is WASAPI only: cpal's ASIO feature stays off. This is a recorded decision,
+  not a default — no ASIO (Steinberg's proprietary SDK agreement is declined); low latency comes
+  from IAudioClient3 shared mode with WASAPI Exclusive as an opt-in
+  ([ADR 0027](../../.agents/decisions/0027-windows-device-layer-iaudioclient3.md)). A Windows
+  build that enables cpal's ASIO feature would be reversing that decision implicitly.
 - Accepting Microsoft's SDK licence (`--accept-xwin-license` or `XWIN_ACCEPT_LICENSE`) is a
   licensing act, not a build flag. It belongs in a deliberate, recorded decision rather than in a
   script that runs on someone else's machine.
