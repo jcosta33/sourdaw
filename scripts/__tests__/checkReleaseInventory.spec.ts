@@ -192,10 +192,15 @@ describe('release inventory', () => {
         }
     });
 
-    it('scans server and public endpoints plus case-insensitive public marks', () => {
+    it('scans production endpoints plus case-insensitive public marks', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
+        mkdirSync(join(root, 'crates/plugin-host/src'), { recursive: true });
         mkdirSync(join(root, 'public'), { recursive: true });
         mkdirSync(join(root, 'server'), { recursive: true });
+        writeFileSync(
+            join(root, 'crates/plugin-host/src/descriptor.rs'),
+            'static URL: &[u8] = b"https://app.example.net\\0";\n'
+        );
         writeFileSync(join(root, 'index.html'), '<title>Roland tools</title>');
         writeFileSync(
             join(root, 'public/runtime.js'),
@@ -208,11 +213,13 @@ describe('release inventory', () => {
 
         try {
             const result = loadRepositorySnapshot(root, { snapshots: [], marks: [{ value: 'Roland', paths: [] }] }, [
+                'crates/plugin-host/src/descriptor.rs',
                 'index.html',
                 'public/runtime.js',
                 'server/index.js',
             ]);
             expect(result.externalReferences).toEqual([
+                { file: 'crates/plugin-host/src/descriptor.rs', value: 'https://app.example.net' },
                 { file: 'public/runtime.js', value: 'https://public.example.net/v1' },
                 { file: 'server/index.js', value: 'runtime:WebSocket' },
                 { file: 'server/index.js', value: 'wss://server.example.net/socket' },

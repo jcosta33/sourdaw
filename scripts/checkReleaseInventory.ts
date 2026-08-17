@@ -150,7 +150,7 @@ function sortedUnique(values: string[]): string[] {
 }
 
 function isScannedSource(path: string): boolean {
-    if (!['public/', 'scripts/', 'server/', 'src/', 'src-tauri/'].some((root) => path.startsWith(root))) {
+    if (!['crates/', 'public/', 'scripts/', 'server/', 'src/', 'src-tauri/'].some((root) => path.startsWith(root))) {
         return false;
     }
     if (path.includes('/__tests__/') || path.includes('/tests/') || /\.(spec|test)\./.test(path)) {

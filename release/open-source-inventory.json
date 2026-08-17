@@ -730,16 +730,17 @@
             "owner": "OS-11",
             "releaseModes": ["web", "desktop"],
             "paths": [
+                "crates/daw-plugin-host/src/clap_host.rs",
                 "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
                 "src/modules/WorkspaceShell/presentations/components/MobileGate.tsx",
                 "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx"
             ],
-            "sources": ["https://discord.gg/bJHmmfY4"],
-            "revisions": ["live invite"],
+            "sources": ["https://discord.gg/bJHmmfY4", "https://sourdaw.app"],
+            "revisions": ["live project origins"],
             "digests": ["not-applicable:external-service"],
             "licenses": ["not-applicable:community-link"],
-            "productSurfaces": ["alpha notice", "mobile gate", "status bar help"],
-            "evidence": ["Current product surfaces link to the project Discord invite."],
+            "productSurfaces": ["alpha notice", "CLAP host metadata", "mobile gate", "status bar help"],
+            "evidence": ["Product surfaces link to the project site and Discord invite."],
             "obligations": ["Keep public project links accurate and intentional."]
         },
         {
@@ -806,6 +807,11 @@
         }
     ],
     "externalReferences": [
+        {
+            "surface": "community-links",
+            "file": "crates/daw-plugin-host/src/clap_host.rs",
+            "value": "https://sourdaw.app"
+        },
         {
             "surface": "faust-runtime",
             "file": "public/faust/libfaust-wasm.js",
