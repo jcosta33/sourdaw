@@ -6,3 +6,11 @@ allowBuilds:
   core-js: false
   protobufjs: false
   unrs-resolver: false
+  # Decided, not optional: pnpm refuses to run any script in the workspace
+  # while an undecided dependency is present, so without this entry every
+  # `pnpm typecheck` in the repository fails with ERR_PNPM_IGNORED_BUILDS.
+  #
+  # `true` grants nothing in practice — this Electron release ships no install
+  # lifecycle script at all. Its ~300 MB platform binary is fetched by the
+  # `install-electron` bin instead, which is why `desktop:dev` calls it.
+  electron: true
