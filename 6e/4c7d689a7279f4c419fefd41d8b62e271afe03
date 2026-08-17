@@ -1,0 +1,65 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx
+  s_a40848e8f8cca9::t_2a1b511ac0f98d 10-11,15-19,35-41,73,83-87,96-100
+  s_d91dcbe5f07151::t_4765e1a0210812 101-105
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_a40848e8f8cca9::t_ece48b2f2bef2c 27-28,36-42,210,218
+src/modules/Arrangement/useCases/device/__tests__/compileAddDeviceAction.spec.ts
+  s_a40848e8f8cca9::t_03beb2646d6488 1-46
+  s_d91dcbe5f07151::t_7ec7485da901f1 47-48
+src/modules/Arrangement/useCases/index.ts
+  s_a40848e8f8cca9::t_3605520f583b15 136
+src/modules/Arrangement/useCases/preset/presetLoading.ts
+  s_a40848e8f8cca9::t_2f3e2eb9b7f4be 17
+  s_a40848e8f8cca9::t_3605520f583b15 57
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_a40848e8f8cca9::t_ece48b2f2bef2c 5,13,241,245-248
+src/modules/Arrangement/handlers/device/__tests__/handleAddDevice.spec.ts
+  s_a40848e8f8cca9::t_fbdc94965de8e4 10,17,49,63,65,71,77,82-83,129,165,203
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_2f3e2eb9b7f4be 6
+  s_a40848e8f8cca9::t_3605520f583b15 122,128,131,137,140,146
+src/modules/Arrangement/useCases/device/compileAddDeviceAction.ts
+  s_a40848e8f8cca9::t_3605520f583b15 1-37
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_a40848e8f8cca9::t_ece48b2f2bef2c 6-11,13,84-95,127,140,153,166,179,192
+  s_d91dcbe5f07151::t_2044cf100544e7 193-194,207,220
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_a40848e8f8cca9::t_ece48b2f2bef2c 10-11,587-596
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_a40848e8f8cca9::t_2fb7dea2b94b18 16-17,62-67,91-95,121-125,129,156-160
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_a40848e8f8cca9::t_89bfbc8cf6fdde 9,32
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_a40848e8f8cca9::t_2f3e2eb9b7f4be 6,10,14-15,21,31,48,53-54
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_a40848e8f8cca9::t_43d59cae58ae89 1,13-17,22-26,85-89,111-129
+  s_d91dcbe5f07151::t_792f9f184a5d7b 130-139
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_a40848e8f8cca9::t_d2cabfea359c78 6-7,17-21,109-113,131-135,148-152
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_a40848e8f8cca9::t_c9c253accf4a1a 3,63,144,159-160,163,176,192,195,201,273,301,308,318-320,323,333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6e4c7d689a7279f4c419fefd41d8b62e271afe03",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
