@@ -195,23 +195,37 @@ export type PluginWindowNative = {
 };
 
 /**
+ * Whether a loaded addon carries this seam.
+ *
+ * A predicate rather than a `Partial<PluginWindowNative>` parameter, and the
+ * same shape `native.ts` uses to validate the addon it loaded. The caller
+ * passes the live `NativeHost`, whose only declared members are `shutdown` and
+ * an index signature of positional `NativeCommand`s — nothing that structurally
+ * matches these two typed signatures, so a `Partial` parameter cannot accept it
+ * and the assignability error it raises is real rather than pedantic. Narrowing
+ * here states what is actually true: the members are checked at runtime,
+ * because whether the compiled addon has them is a property of the binary on
+ * disk and of nothing the compiler can see.
+ */
+const hasPluginWindowHost = (native: object): native is PluginWindowNative =>
+    typeof Reflect.get(native, 'registerPluginWindowHost') === 'function' &&
+    typeof Reflect.get(native, 'notifyPluginWindowClosed') === 'function';
+
+/**
  * Register the shell's window callbacks with the addon.
  *
  * Survives an addon built before this packet — the rest of the native surface
  * works and plugin editors keep refusing to open, exactly the pre-T-4 state —
  * rather than turning a stale binary into a startup crash.
  */
-export const registerPluginWindowHost = (
-    native: Partial<PluginWindowNative>,
-    deps: Omit<PluginWindowHostDeps, 'notifyClosed'>
-): boolean => {
-    const { registerPluginWindowHost: register, notifyPluginWindowClosed: notifyClosed } = native;
-    if (typeof register !== 'function' || typeof notifyClosed !== 'function') {
+export const registerPluginWindowHost = (native: object, deps: Omit<PluginWindowHostDeps, 'notifyClosed'>): boolean => {
+    if (!hasPluginWindowHost(native)) {
         console.error(
             '[shell] the native addon predates the plugin window host; plugin editors are unavailable until it is rebuilt'
         );
         return false;
     }
+    const { registerPluginWindowHost: register, notifyPluginWindowClosed: notifyClosed } = native;
 
     const host = createPluginWindowHost({
         ...deps,
