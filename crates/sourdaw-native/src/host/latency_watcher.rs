@@ -13,6 +13,7 @@
 //! plugin that changes latency mid-session reaches the frontend without the UI
 //! having to ask.
 
+use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::SharedClapPlugin;
 use crate::state::EnginePluginInstanceData;
 use serde::Serialize;
@@ -20,7 +21,6 @@ use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
 
 /// Wire event name. The TS listener mirrors this string verbatim — never rename.
 pub const PLUGIN_LATENCY_CHANGED_EVENT: &str = "plugin-latency-changed";
@@ -80,7 +80,7 @@ fn runtime_for(engine_plugins: &EnginePlugins, instance_id: &str) -> Option<Arc<
 /// Decide what one wake should emit.
 ///
 /// Split out from the thread body so the emit rule is testable without a live
-/// plugin or an `AppHandle`: only a real change emits; an unchanged poll and a
+/// plugin or an event sink: only a real change emits; an unchanged poll and a
 /// failed re-query emit nothing (a failure must not publish a fabricated
 /// latency, which would corrupt compensation on every track using the plugin).
 pub fn latency_change_payload(
@@ -105,7 +105,7 @@ pub fn latency_change_payload(
 
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
 /// installed by the first `start` stays the one the host callbacks reach.
-pub fn start(app: AppHandle, engine_plugins: EnginePlugins) {
+pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
     let (sender, receiver) = channel::<String>();
     if LATENCY_CHANGE_SENDER.set(sender).is_err() {
         return;
@@ -123,7 +123,7 @@ pub fn start(app: AppHandle, engine_plugins: EnginePlugins) {
                 };
                 let refreshed = runtime.poll_latency_change_ms(CONTROL_TIMEOUT);
                 if let Some(payload) = latency_change_payload(&instance_id, refreshed) {
-                    let _ = app.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
+                    events.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
                 }
             }
         });
