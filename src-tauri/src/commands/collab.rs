@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use sourdaw_native::commands::collab as native;
 
 pub use daw_collab::discovery::NearbySession;
-pub use sourdaw_native::commands::collab::{shutdown_discovery, CollabState, MergeResultResponse};
+pub use sourdaw_native::commands::collab::{CollabState, MergeResultResponse};
 
 #[tauri::command]
 pub fn collab_create_project(

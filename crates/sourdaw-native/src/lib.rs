@@ -10,6 +10,7 @@
 pub mod commands;
 pub mod events;
 pub mod host;
+pub mod shutdown;
 pub mod state;
 
 #[cfg(feature = "napi-addon")]
@@ -64,6 +65,18 @@ impl NativeSingletons {
             provider_gateway: ProviderGatewayState::default(),
             events,
         }
+    }
+
+    /// Run the process-exit cascade over these singletons.
+    ///
+    /// See [`shutdown::shutdown`] for why the three steps are ordered as they
+    /// are. A shell that owns its singletons individually calls that function
+    /// directly; this is the same cascade for a shell that owns them here.
+    pub fn shutdown(
+        &self,
+        windows: Option<&dyn host::plugin_window::PluginWindowHost>,
+    ) -> shutdown::ShutdownReport {
+        shutdown::shutdown(&self.collab, &self.app_state, windows)
     }
 }
 

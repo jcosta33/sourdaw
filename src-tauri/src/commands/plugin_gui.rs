@@ -3,7 +3,7 @@ use sourdaw_native::state::AppState;
 
 use crate::windows::TauriWindowHost;
 
-pub use sourdaw_native::commands::plugin_gui::{close_every_plugin_gui, PluginGuiInfo};
+pub use sourdaw_native::commands::plugin_gui::PluginGuiInfo;
 
 #[tauri::command]
 pub async fn is_plugin_gui_supported(

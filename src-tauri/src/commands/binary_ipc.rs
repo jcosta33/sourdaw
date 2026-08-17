@@ -47,3 +47,22 @@ pub(crate) fn raw_body_bytes<'request>(
         }
     }
 }
+
+/// Resolve a command's `tauri::ipc::Response` and require a raw body.
+///
+/// This is the return-side guard, and it only exists here: the relocated bodies
+/// return `Vec<u8>`, so a test over one of them compares `Vec<u8>` to `Vec<u8>`
+/// and is true by construction. Only the shell can tell an `ArrayBuffer` from a
+/// JSON array of decimal numbers, so the panic below is the assertion — a
+/// command that stops wrapping its bytes in `Response::new` fails whichever
+/// test calls this.
+#[cfg(test)]
+pub(crate) fn raw_response_bytes(response: tauri::ipc::Response) -> Vec<u8> {
+    let body = tauri::ipc::IpcResponse::body(response).expect("response body should resolve");
+    match body {
+        tauri::ipc::InvokeResponseBody::Raw(bytes) => bytes,
+        tauri::ipc::InvokeResponseBody::Json(json) => {
+            panic!("payload must cross as raw bytes, got a JSON body: {json}")
+        }
+    }
+}

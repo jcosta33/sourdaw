@@ -153,3 +153,87 @@ pub async fn process_plugin_audio(
 ) -> Result<Vec<u8>, String> {
     native::process_plugin_audio(instance_id, audio_bytes, &state).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use daw_plugin_host::{AudioPlugin, ClapWrapper};
+    use sourdaw_native::host::native_bridge::SharedClapPlugin;
+    use sourdaw_native::state::{EnginePluginInstanceData, PluginRelayScratch};
+    use std::sync::Arc;
+    use tauri::Manager;
+
+    use super::super::binary_ipc::raw_response_bytes;
+
+    fn block_on<Fut: std::future::Future>(future: Fut) -> Fut::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should build")
+            .block_on(future)
+    }
+
+    fn command_test_app() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .manage(AppState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("test app should build")
+    }
+
+    fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, state_bytes: Vec<u8>) {
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+            "Engine Owned Fixture",
+            state_bytes,
+            true,
+        );
+        let parameters = wrapper.get_parameters();
+        let runtime = Arc::new(SharedClapPlugin::new(wrapper));
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        engine_plugins.insert(
+            instance_id.to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 17,
+                runtime,
+                name: "Engine Owned Fixture".to_string(),
+                parameters,
+                has_gui: true,
+                bridge: None,
+                relay_scratch: PluginRelayScratch::default(),
+            },
+        );
+    }
+
+    #[test]
+    fn get_plugin_state_bytes_returns_the_chunk_as_a_raw_body_not_a_json_number_array() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
+
+        let response = block_on(get_plugin_state_bytes(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            state.clone(),
+        ))
+        .expect("state read should succeed");
+
+        assert_eq!(raw_response_bytes(response), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn get_plugin_state_bytes_preserves_zero_and_high_bytes_verbatim() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        let chunk = vec![0u8, 1, 127, 128, 200, 254, 255, 0];
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", chunk.clone());
+
+        let response = block_on(get_plugin_state_bytes(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            state.clone(),
+        ))
+        .expect("state read should succeed");
+
+        assert_eq!(raw_response_bytes(response), chunk);
+    }
+}

@@ -33,7 +33,15 @@ use crate::NativeSingletons;
 use daw_core::{PluginId, PluginInstanceId};
 
 /// The JS callback every pushed event is delivered to, as `(event, payload)`.
-type EventEmitter = ThreadsafeFunction<(String, Value), (), (String, Value), Status, false>;
+///
+/// Weak (the last parameter) on purpose. This sink is registered once and lives
+/// for the process: the CLAP latency watcher holds a clone on a detached thread
+/// that never stops, so nothing can drop it. A *referenced* threadsafe function
+/// pins the Node event loop, which would mean a shell's `app.quit()` could never
+/// drain — the process would hang instead of exiting. Weak registration unrefs
+/// at creation, so the sink observes the loop rather than keeping it alive; what
+/// keeps a shell running is the shell.
+type EventEmitter = ThreadsafeFunction<(String, Value), (), (String, Value), Status, false, true>;
 
 /// One request's response callback, for commands that stream correlated events.
 type StreamEmitter = ThreadsafeFunction<Value, (), Value, Status, false>;
@@ -125,6 +133,21 @@ impl SourdawNative {
             windows: Arc::new(NoWindowHost),
             sidecar: Arc::new(NoSidecarHost),
         }
+    }
+
+    /// Run the process-exit cascade: retire discovery, close every plugin
+    /// editor, then sweep the retirement vec.
+    ///
+    /// A shell must call this on its quit path. The Tauri shell got the same
+    /// three steps from `RunEvent::Exit`; a Node shell has no equivalent hook,
+    /// so the cascade is an explicit entry point rather than something each
+    /// shell reassembles — and `load_plugin` / `unload_plugin` are reachable
+    /// through this surface, so the retirement vec fills here too.
+    ///
+    /// Returns the diagnostic report; nothing in it fails the exit. Idempotent.
+    #[napi]
+    pub fn shutdown(&self) -> Result<Value> {
+        json(self.singletons.shutdown(Some(self.windows.as_ref())))
     }
 
     // ── Privileged model-provider gateway ──────────────────────────────
@@ -747,14 +770,9 @@ impl SourdawNative {
         ))?)
     }
 
-    /// Retire the mDNS advertisement and the discovery threads.
-    ///
-    /// Called on the process-exit path. Skipping it leaves peers a joinable
-    /// ghost session until the record's TTL expires.
-    #[napi]
-    pub fn shutdown_discovery(&self) {
-        commands::collab::shutdown_discovery(&self.singletons.collab);
-    }
+    // Discovery shutdown is deliberately not exposed on its own: it is one step
+    // of the exit cascade, and a shell that can reach it alone can quit having
+    // run only it. `shutdown()` is the entry point.
 
     // ── Crumbs ─────────────────────────────────────────────────────────
 

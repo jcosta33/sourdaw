@@ -1975,7 +1975,6 @@ mod tests {
             result.errors
         );
 
-        let state = &state;
         let registry = state
             .plugin_registry
             .lock()
@@ -2124,8 +2123,11 @@ mod tests {
         assert_eq!(get_result, Ok(vec![9, 8, 7]));
     }
 
+    /// The body's contract is the bytes; whether they cross the wire raw or as
+    /// a JSON number array is the shell's, and is guarded in
+    /// `src-tauri/src/commands/plugins.rs` where `IpcResponse` exists.
     #[test]
-    fn get_plugin_state_bytes_returns_the_chunk_as_a_raw_body_not_a_json_number_array() {
+    fn get_plugin_state_bytes_returns_the_stored_chunk() {
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
 
