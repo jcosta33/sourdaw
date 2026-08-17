@@ -1,0 +1,77 @@
+src/modules/Arrangement/useCases/timeOperations/createUndoableGlobalTimeOperation.ts
+  s_ab5443e65c7fba::t_ccefa1a87d5124 2
+  s_ab5443e65c7fba::t_8fde8864c58ed1 18,26-50
+  s_ab5443e65c7fba::t_78eef376b44fd7 51-52
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeClipSatellites.spec.ts
+  s_ab5443e65c7fba::t_9bdfe02b2f302d 221,233,235-238,240-251,253,255-300
+  s_ab5443e65c7fba::t_3710d94b57405c 62
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_ab5443e65c7fba::t_fe0e95a146dc33 351,356
+  s_ab5443e65c7fba::t_e90bf6af3a05ec 744-781
+  s_ab5443e65c7fba::t_d9fd7dbae7db4c 71
+  s_ab5443e65c7fba::t_1c9432ea6d5fd2 524
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_ab5443e65c7fba::t_3593a2e6111911 298
+src/modules/Arrangement/stores/__tests__/clipSatelliteState.spec.ts
+  s_ab5443e65c7fba::t_97796e7c664f93 1-80
+  s_ab5443e65c7fba::t_5c1d3e0a52b44b 81-82
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_ab5443e65c7fba::t_2a2f3168adcf66 6-10
+  s_ab5443e65c7fba::t_464528cfafc611 688-692,694-695,700,715-716
+  s_ab5443e65c7fba::t_323093de17f76c 719,1502-1522,1525
+  s_ab5443e65c7fba::t_f430cf1f856e00 619-627,630,632-636,638,641-643,655,663-667,670-674
+  s_ab5443e65c7fba::t_a2ecd760274ba8 1603-1604
+  s_ab5443e65c7fba::t_fab0ec67282fa7 717-718
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_ab5443e65c7fba::t_355309517d3d6e 1263-1273,1279
+  s_ab5443e65c7fba::t_c8e31cdf7989fa 6,8-9,15-16
+  s_ab5443e65c7fba::t_6aea02ce4dcc46 998-1004
+  s_ab5443e65c7fba::t_a4e4cc8273c43e 1072-1073,1081-1084,1102,1105
+  s_ab5443e65c7fba::t_f0e752999ce7d1 1195-1214
+  s_ab5443e65c7fba::t_07fd8f7ef6d01a 965
+  s_ab5443e65c7fba::t_7d08f14c068eba 1235-1236,1241-1246
+  s_ab5443e65c7fba::t_30b36920bdea9e 898-942
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  s_ab5443e65c7fba::t_278999227e7426 1-176,178-199
+  s_ab5443e65c7fba::t_17a90b02e211be 177
+src/modules/Arrangement/useCases/timeOperations/prepareClipSatelliteStateRestore.ts
+  s_ab5443e65c7fba::t_814dc877df4705 203
+  s_ab5443e65c7fba::t_9302ac8f826e0e 37-46
+  s_ab5443e65c7fba::t_a24bd7c8027314 151,154
+  s_ab5443e65c7fba::t_a917c50b404b65 180,183-184
+  s_ab5443e65c7fba::t_eefbeb904809a5 120-126,128,132,137,142,144-149,152,156-160,162-168,187,190-202,204
+  s_ab5443e65c7fba::t_93b60f95d12b10 11
+src/modules/Automation/useCases/automation/__tests__/prepareAutomationTimeOperation.spec.ts
+  s_ab5443e65c7fba::t_8f2af5d40703aa 186-187
+  s_ab5443e65c7fba::t_37df0d3870374d 184-185,188-243
+src/modules/Automation/useCases/automation/prepareAutomationTimeOperation.ts
+  s_ab5443e65c7fba::t_4bb3ff954d5272 35-40
+  s_ab5443e65c7fba::t_1555697b40a3ac 189-227,232
+  s_ab5443e65c7fba::t_bc53d374485c4e 384,386-393,406,412,415-421
+  s_ab5443e65c7fba::t_263d52f5e3c83b 348-349
+  s_ab5443e65c7fba::t_39d23dc2a5277f 253-257,262
+  s_ab5443e65c7fba::t_12e91c51f80a66 468-469
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_ab5443e65c7fba::t_b947f607160176 202-206
+  s_ab5443e65c7fba::t_f412ebb562b20b 677-682
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  s_ab5443e65c7fba::t_ba8d254af01b70 4,33-99,101-102,105-106,119,124,128-139,141-154,156-159,162-165,167,172-187
+src/modules/Arrangement/useCases/timeOperations/timeOperationDependencies.ts
+  s_ab5443e65c7fba::t_166ca1630dff6d 87,89-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ac4c50bd504b05fc2d3c8256bb3587c3d4321773",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
