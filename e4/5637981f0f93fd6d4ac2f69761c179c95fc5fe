@@ -1,0 +1,25 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_d91dcbe5f07151::t_627b280ea8ea98 114-138
+  s_d91dcbe5f07151::t_ec1e8f36f0e6e4 946
+  s_d91dcbe5f07151::t_65c7e8e4266d52 818-939,941-945,947-958,960-966,981-995,999-1046
+  s_d91dcbe5f07151::t_dfb485607d7da1 940
+  s_d91dcbe5f07151::t_09df64150c1afe 959
+  s_d91dcbe5f07151::t_a51c2f25dc3942 967-980
+  s_d91dcbe5f07151::t_3ae1a761eca134 996-998
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e45637981f0f93fd6d4ac2f69761c179c95fc5fe",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
