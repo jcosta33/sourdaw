@@ -1,0 +1,49 @@
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_a40848e8f8cca9::t_2fe6ee2383b3cb 69-84,96-101,131-135,161-185,193-214,216-226,228-230,234-236
+  s_a40848e8f8cca9::t_084fe89cae946d 116,119-121,138-141,159-160,186-192,215,227,231-233,237
+  s_a40848e8f8cca9::t_381941bbc48403 67-68,95,102
+  s_a40848e8f8cca9::t_7067609b3b0454 10
+  s_a40848e8f8cca9::t_21962ff52f6a0b 238
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_a40848e8f8cca9::t_0dacad2de2641a 862-863,886,894,904-905,910-912
+  s_a40848e8f8cca9::t_44508656eee3f4 820-824,833,837-839,845-848,852-855
+  s_a40848e8f8cca9::t_2fe6ee2383b3cb 808-817,825-832,834-836,840-844,849-851,868-871,906-909
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  s_a40848e8f8cca9::t_b63570dfa2a77b 137-143,151
+  s_a40848e8f8cca9::t_5bc5ca98bc387d 152-153
+  s_a40848e8f8cca9::t_d10ddf9b79f35e 156-158
+src/modules/AudioEngine/services/__tests__/glutenProcessor.spec.ts
+  s_a40848e8f8cca9::t_ead1b3d5d5bf0f 201,280
+  s_a40848e8f8cca9::t_b787fcbff7ed0e 3-4,120,132-134,148-149,182,215-216,234-235,242,246-248,253-254,288
+  s_a40848e8f8cca9::t_471ef40487a9de 179-181,183-189
+  s_a40848e8f8cca9::t_7067609b3b0454 121-131,135-147
+  s_a40848e8f8cca9::t_4a45b89e769692 273
+src/modules/AudioEngine/models/GlutenRuntimeControl.ts
+  s_a40848e8f8cca9::t_2ad82c71b22de8 1-21
+  s_a40848e8f8cca9::t_d0720e7f2c63c9 22-24
+  s_a40848e8f8cca9::t_d0edb3213ccd69 25-60
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_a40848e8f8cca9::t_d8f8dac6d74678 116-139,146-154
+  s_a40848e8f8cca9::t_eb9d3c859afbca 172-173,178-182,186-191
+  s_a40848e8f8cca9::t_754acc460dbd9c 140-145
+  s_a40848e8f8cca9::t_d783f5254beca0 12,14-16,26-34,59,76-78
+  s_a40848e8f8cca9::t_dd1cc08083d0ac 155-157
+  s_a40848e8f8cca9::t_91bfbfde271179 192-193
+  s_a40848e8f8cca9::t_c5983fa0a2986d 158-162,198-199,202,237-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "410cf85cac47023f26a31d65efd3ba4d65f7e62b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
