@@ -1,0 +1,52 @@
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_ab5443e65c7fba::t_8f27782ddd6a5b 10
+  s_ab5443e65c7fba::t_ffd586d6a35d01 299-312
+  s_ab5443e65c7fba::t_b429960bf58687 422
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_ab5443e65c7fba::t_ecdbc08a8fe71a 13
+  s_ab5443e65c7fba::t_7fe6b6c956f043 128
+  s_ab5443e65c7fba::t_2882445636032a 223-246
+  s_ab5443e65c7fba::t_7a7d435f1d3e4c 247-250
+src/modules/TimelineEditor/presentations/helpers/mouseDrag.ts
+  s_ab5443e65c7fba::t_0b5cb9848dde12 6-16,18-22,25-31,36-37,41-45,53,60
+src/modules/Automation/useCases/index.ts
+  s_ab5443e65c7fba::t_dc4568b342c810 43
+src/modules/Automation/useCases/cancelDrawSession.ts
+  s_ab5443e65c7fba::t_7f03de0166d4d7 1-34
+src/modules/TimelineEditor/presentations/components/ResizeHandle.tsx
+  s_ab5443e65c7fba::t_1232bfb24271d4 44-48
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDrag.spec.tsx
+  s_ab5443e65c7fba::t_ea5583baa18d91 148-151
+  s_ab5443e65c7fba::t_d7687c193ae6ea 153-174
+  s_ab5443e65c7fba::t_e9251128a9196b 262-282
+  s_ab5443e65c7fba::t_fbd4e9e5b4b566 29
+  s_ab5443e65c7fba::t_29cd31cf416bc5 50
+  s_ab5443e65c7fba::t_d525a08b9029e5 316-339
+  s_ab5443e65c7fba::t_c01386554b5a84 404-407
+  s_ab5443e65c7fba::t_ec5a605c67434e 152,465-493
+src/modules/Automation/useCases/__tests__/cancelDrawSession.spec.ts
+  s_ab5443e65c7fba::t_6237ddcadde7b8 1-176
+src/modules/TimelineEditor/presentations/helpers/__tests__/mouseDrag.spec.ts
+  s_ab5443e65c7fba::t_23316bd5e766f5 51-98
+src/modules/TimelineEditor/presentations/helpers/automationDrag.ts
+  s_ab5443e65c7fba::t_a76c54c633ae2c 17
+  s_ab5443e65c7fba::t_450990692406af 148-153
+  s_ab5443e65c7fba::t_fb92cedf0d8912 181-187
+  s_ab5443e65c7fba::t_d491c33f44f6b4 62-64,265-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9a32fa390859d59bd86cab9cb3977ecb5ae97fa7",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
