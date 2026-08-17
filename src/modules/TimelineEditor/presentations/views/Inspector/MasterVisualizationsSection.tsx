@@ -40,9 +40,10 @@ const ANALYZER_RENDERERS: Record<AnalyzerId, () => ReactElement> = {
 };
 
 /**
- * Seven of these eight views run their own `requestAnimationFrame` loop over a
- * live canvas (audit m18); mounting all eight together — as this section used
- * to — means seven continuous redraws for however long the master track's
+ * Six of these eight views (all but SpatialPanner and Wavetable3D, which redraw
+ * only on state/interaction changes) run their own `requestAnimationFrame` loop
+ * over a live canvas (audit m18); mounting all eight together — as this section
+ * used to — means six continuous redraws for however long the master track's
  * Inspector stays open, regardless of which one anyone is looking at.
  * Standard DAW inspectors show one scope at a time (a scope select, not a
  * wall of meters); this section mounts only the selected analyzer, so

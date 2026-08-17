@@ -123,7 +123,6 @@ vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {
     return {
         ...actual,
         handleAiDenoiseClip: vi.fn(),
-        handleStemSeparationPreview: vi.fn(),
     };
 });
 

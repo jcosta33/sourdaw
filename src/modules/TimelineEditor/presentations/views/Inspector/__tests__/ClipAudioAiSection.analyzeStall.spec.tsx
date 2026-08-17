@@ -85,7 +85,6 @@ vi.mock('../../../components/Inspector/ControlHeader', () => ({
 
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     handleAiDenoiseClip: vi.fn(),
-    handleStemSeparationPreview: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({ notifyAiChange: vi.fn() }));

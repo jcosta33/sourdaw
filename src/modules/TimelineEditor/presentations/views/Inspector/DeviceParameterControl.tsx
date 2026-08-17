@@ -59,10 +59,12 @@ const NO_PARAMETER_MAPPINGS: ParameterMapping[] = [];
 
 /**
  * Pull the mappings that target this exact (trackId, deviceId, paramId) triple out of
- * every enabled modulator. Kept separate from the runtime-value lookup below so the two
- * can subscribe to their stores independently: mappings change on user edits (rare),
- * runtime values tick at modulation rate (constant) — collapsing them into one selector
- * would make the mapping scan run at runtime-tick rate for no reason.
+ * every enabled modulator. `useDeviceParameterModulation` passes a fresh closure over this
+ * function on every render, so the scan itself is not skipped by reference identity — it
+ * re-runs each render this hook participates in. What's actually cached is the *result*:
+ * `parameterMappingsEqual` (below) keeps the returned array reference stable across renders
+ * whose mapping set is unchanged, so the runtime-value selector downstream only sees a "new"
+ * mappings input when a mapping genuinely changed, not on every recompute.
  */
 function selectParameterMappings(
     state: ModulationStoreState | null,
@@ -115,10 +117,13 @@ function selectModulationTotal(
 /**
  * Narrow subscription for one device parameter's aggregated modulation amount (audit
  * m5/M5). `useStore(modulationRuntimeStore, ...)` re-renders every control in the
- * inspector on every runtime tick, whether or not a modulator targets it. Selecting down
- * to just this parameter's mappings — and their runtime values — means
- * `useSyncExternalStore`'s `Object.is` check absorbs runtime ticks for every parameter an
- * idle control isn't wired to; only a tick that changes *this* total causes a re-render.
+ * inspector on every runtime tick, whether or not a modulator targets it. This hook selects
+ * down to just this parameter's mappings and their runtime total, so `useSyncExternalStore`'s
+ * `Object.is` check on the *returned scalar* absorbs runtime ticks for every parameter an idle
+ * control isn't wired to — a tick only triggers a re-render when this parameter's total
+ * actually changes. The mapping lookup above still re-runs on each render (its selector
+ * closure isn't reference-stable across renders); `parameterMappingsEqual` is what keeps that
+ * recompute from itself causing a spurious total re-derivation for an idle parameter.
  */
 function useDeviceParameterModulation(trackId: string, deviceId: string, paramId: string): number {
     const mappings = useStoreSelector(
