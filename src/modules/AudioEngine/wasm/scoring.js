@@ -271,22 +271,41 @@ export class ScoringInstance {
         return ret >>> 0;
     }
     /**
-     * Import a Scala .scl file and apply as tuning offsets.
+     * Import a Scala .scl file and apply it as tuning offsets. Returns whether
+     * the file was applied: a malformed scale, or one that is not 12 degrees,
+     * changes nothing. The offsets table is one entry per 12-TET pitch class,
+     * so a scale of any other size cannot be represented and is refused rather
+     * than truncated into a different tuning.
      * @param {string} scl_text
+     * @returns {boolean}
      */
     import_scala(scl_text) {
         const ptr0 = passStringToWasm0(scl_text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.scoringinstance_import_scala(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.scoringinstance_import_scala(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
     }
     /**
-     * Import an AnaMark .tun file and apply as tuning offsets.
+     * Import an AnaMark .tun file and apply it as tuning offsets. Returns
+     * whether the file was applied. A file that declares no `BaseFreq` leaves
+     * the current concert-A reference alone — silence about the reference is
+     * not a request to reset it to 440.
+     *
+     * `BaseFreq` is the frequency of MIDI note 0, not concert A: the default
+     * is 8.1757989156 Hz, which is A440. It is converted, not clamped. Running
+     * it through `set_param` would fold every out-of-range value into
+     * 400..=490 and silently retune a 415 or 432 session while reporting
+     * success, so a converted reference outside that range fails the whole
+     * import and nothing is applied — a declared-but-unusable reference is
+     * corruption, not absence.
      * @param {string} tun_text
+     * @returns {boolean}
      */
     import_tun(tun_text) {
         const ptr0 = passStringToWasm0(tun_text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.scoringinstance_import_tun(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.scoringinstance_import_tun(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
     }
     /**
      * @returns {boolean}

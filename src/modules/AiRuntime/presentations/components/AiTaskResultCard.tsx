@@ -5,7 +5,7 @@ import { AudioWaveform, Loader2, Music4, Play, Plus, RefreshCw, X } from 'lucide
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { Button } from '#/components/ui/button';
 
-type AiTaskType = 'midi-generation' | 'audio-generation' | 'stem-separation' | 'denoise';
+type AiTaskType = 'midi-generation' | 'stem-separation' | 'denoise';
 
 type AiTaskStatus = 'idle' | 'processing' | 'success' | 'error';
 

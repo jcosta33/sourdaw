@@ -87,9 +87,10 @@ class SuspendableOfflineContext {
     }
 }
 
-function makeStrip(): OfflineTrackStrip {
+function makeStrip(trackId = 'track-1'): OfflineTrackStrip {
     const makeNode = () => ({ connect: vi.fn(), gain: { value: 1 } });
     return {
+        trackId,
         inputNode: makeNode() as unknown as GainNode,
         preFaderTap: makeNode() as unknown as GainNode,
         faderNode: makeNode() as unknown as GainNode,
@@ -184,7 +185,9 @@ describe('renderOffline — cancelling an in-flight render', () => {
         vi.stubGlobal('OfflineAudioContext', SuspendableOfflineContext);
         mocks.sidechainStore.value.routes = [];
         mocks.resolveRenderContext.mockReturnValue(makeContext());
-        mocks.createOfflineTrackStrip.mockImplementation(() => Promise.resolve(makeStrip()));
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: { id: string }) =>
+            Promise.resolve(makeStrip(track.id))
+        );
     });
 
     afterEach(() => {

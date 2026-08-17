@@ -8,7 +8,7 @@ const { onRemoveMock } = vi.hoisted(() => ({ onRemoveMock: vi.fn() }));
 function task(overrides: Record<string, unknown> = {}) {
     return {
         id: 't1',
-        type: 'audio-generation',
+        type: 'denoise',
         status: 'processing',
         timestamp: Date.now(),
         ...overrides,
@@ -19,7 +19,7 @@ describe('AiTaskResultCard', () => {
     it('should render task type and remove on click', () => {
         onRemoveMock.mockClear();
         render(<AiTaskResultCard task={task({ prompt: 'Make a beat' })} onRemove={onRemoveMock} />);
-        expect(screen.getByText(/audio generation/i)).toBeInTheDocument();
+        expect(screen.getByText(/denoise/i)).toBeInTheDocument();
         expect(screen.getByText(/Make a beat/)).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Remove task' }));
         expect(onRemoveMock).toHaveBeenCalledWith('t1');

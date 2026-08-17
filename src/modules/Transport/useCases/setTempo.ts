@@ -2,12 +2,9 @@ import { createInvalidTempoError } from '../errors/InvalidTempoError';
 import { createTempoRampWriteError } from '../errors/TempoRampWriteError';
 import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { MIN_TEMPO_MAP_TEMPO, MAX_TEMPO_MAP_TEMPO, tempoMapStore } from '../stores/tempoMapStore';
+import { MIN_TEMPO, MAX_TEMPO } from '../stores/transportStore';
 
 import { getTempoWriteTarget } from './transportQueries/getTempoWriteTarget';
-
-/** Range of the transport's own base tempo, mirroring `transportStore`'s validator. */
-const MIN_BASE_TEMPO = 20;
-const MAX_BASE_TEMPO = 300;
 
 export type SetTempoInput = {
     bpm: number;
@@ -81,7 +78,7 @@ export function setTempo(input: SetTempoInput): SetTempoOutput {
     }
 
     if (target.tempoChangeId === null) {
-        if (input.bpm < MIN_BASE_TEMPO || input.bpm > MAX_BASE_TEMPO) {
+        if (input.bpm < MIN_TEMPO || input.bpm > MAX_TEMPO) {
             throw createInvalidTempoError(input.bpm);
         }
         updateTransportState({ tempo: input.bpm });

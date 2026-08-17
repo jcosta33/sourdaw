@@ -4,10 +4,10 @@ import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
 
 const runtime: OpenAiCompatibleCloudRuntime = {
-    provider: 'openai',
-    api_key: 'sk-secret',
+    provider: 'openai-compatible',
+    session_id: null,
     model: 'gpt-5.2',
-    base_url: 'https://api.openai.com/v1',
+    base_url: 'http://localhost:1234/v1',
 };
 
 const tools = [
@@ -102,11 +102,10 @@ describe('generateOpenAiCompatibleToolCalls', () => {
 
         expect(result).toEqual([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
         expect(fetchMock).toHaveBeenCalledWith(
-            'https://api.openai.com/v1/chat/completions',
+            'http://localhost:1234/v1/chat/completions',
             expect.objectContaining({
                 method: 'POST',
                 headers: {
-                    Authorization: 'Bearer sk-secret',
                     'Content-Type': 'application/json',
                 },
             })
@@ -375,7 +374,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
     it('omits authorization for an auth-free compatible endpoint', async () => {
         const authFreeRuntime: OpenAiCompatibleCloudRuntime = {
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
         };
