@@ -86,12 +86,19 @@ export class RuntimeGraphMutationRejected extends Error {
     }
 }
 
+type PendingParameterWrite = Readonly<{
+    name: string;
+    value: number;
+    sampleFrame: number;
+}>;
+
 type PendingDeviceLoad = {
     abortController: AbortController;
     externalInstanceId?: string;
     bypassed?: boolean;
     parameterIds: readonly string[];
-    parameterWrites: Array<[string, number]>;
+    immediateParameterWrites: Map<string, number>;
+    scheduledParameterWrites: PendingParameterWrite[];
     loadPromise?: Promise<unknown>;
     placeholder?: BuiltinDeviceNode;
     readinessToken: DeviceReadinessToken;
@@ -631,11 +638,15 @@ export class TrackNode {
         return {
             ...controller,
             ready: false,
-            setParam: (name, value) => {
+            setParam: (name, value, sampleFrame) => {
                 if (this._disposed || pendingLoad.resolved || this._pendingDeviceLoads.get(deviceId) !== pendingLoad) {
                     return;
                 }
-                pendingLoad.parameterWrites.push([name, value]);
+                if (sampleFrame !== undefined && Number.isSafeInteger(sampleFrame) && sampleFrame >= 0) {
+                    pendingLoad.scheduledParameterWrites.push(Object.freeze({ name, value, sampleFrame }));
+                    return;
+                }
+                pendingLoad.immediateParameterWrites.set(name, value);
             },
         };
     }
@@ -682,7 +693,8 @@ export class TrackNode {
         } else if (!pendingLoad.resolved) {
             this.deps.readinessDiagnostics.cancel(pendingLoad.readinessToken);
         }
-        pendingLoad.parameterWrites.length = 0;
+        pendingLoad.immediateParameterWrites.clear();
+        pendingLoad.scheduledParameterWrites.length = 0;
         if (!pendingLoad.resolved || abortPublished) {
             pendingLoad.abortController.abort();
         }
@@ -711,8 +723,11 @@ export class TrackNode {
         try {
             finalDn.parameterIds = pendingLoad.parameterIds;
             finalDn.externalInstanceId = pendingLoad.externalInstanceId;
-            for (const [name, value] of pendingLoad.parameterWrites) {
+            for (const [name, value] of pendingLoad.immediateParameterWrites) {
                 finalDn.controller?.setParam(name, value);
+            }
+            for (const { name, value, sampleFrame } of pendingLoad.scheduledParameterWrites) {
+                finalDn.controller?.setParam(name, value, sampleFrame);
             }
             if (pendingLoad.bypassed !== undefined) {
                 finalDn.controller?.setBypass?.(pendingLoad.bypassed);
@@ -755,7 +770,8 @@ export class TrackNode {
 
         pendingLoad.resolved = true;
         this._failedDeviceLoads.delete(deviceId);
-        pendingLoad.parameterWrites.length = 0;
+        pendingLoad.immediateParameterWrites.clear();
+        pendingLoad.scheduledParameterWrites.length = 0;
         this.deps.readinessDiagnostics.markNodeReady({ token: pendingLoad.readinessToken });
         this._pendingGraphReadinessTokens.add(pendingLoad.readinessToken);
         this.scheduleRebuildChain();
@@ -970,7 +986,8 @@ export class TrackNode {
                 abortController: new AbortController(),
                 ...(externalInstanceId !== undefined ? { externalInstanceId } : {}),
                 parameterIds: Object.freeze([...parameterIds]),
-                parameterWrites: [],
+                immediateParameterWrites: new Map(),
+                scheduledParameterWrites: [],
                 readinessToken,
                 resolved: false,
             };
@@ -1058,7 +1075,8 @@ export class TrackNode {
                 const pendingLoad: PendingDeviceLoad = {
                     abortController: new AbortController(),
                     parameterIds: Object.freeze([...parameterIds]),
-                    parameterWrites: [],
+                    immediateParameterWrites: new Map(),
+                    scheduledParameterWrites: [],
                     readinessToken,
                     resolved: false,
                 };

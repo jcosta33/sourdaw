@@ -995,21 +995,30 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     matches: isGrinderDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({ context, trackId, deviceId, deviceType, parameterIds, isCurrent, signal, onLoaded }) {
-        const pendingParams: Array<[string, number]> = [];
+        type PendingScheduledParam = Readonly<{ name: string; value: number; sampleFrame: number }>;
+        const pendingImmediateParams = new Map<string, number>();
+        const pendingScheduledParams: PendingScheduledParam[] = [];
+        const queueParam = (name: string, value: number, sampleFrame?: number): void => {
+            if (sampleFrame !== undefined && Number.isSafeInteger(sampleFrame) && sampleFrame >= 0) {
+                pendingScheduledParams.push(Object.freeze({ name, value, sampleFrame }));
+                return;
+            }
+            pendingImmediateParams.set(name, value);
+        };
         let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
-                pendingParams.push([name, value]);
+                queueParam(name, value);
             },
             setBypass: (bypassed) => {
                 pendingBypass = bypassed;
             },
         };
         placeholder.controller = {
-            setParam: (name, value) => {
-                pendingParams.push([name, value]);
+            setParam: (name, value, sampleFrame) => {
+                queueParam(name, value, sampleFrame);
             },
             setPatch: (patch) => {
                 pendingPatch = patch;
@@ -1032,8 +1041,11 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
-                for (const [name, value] of pendingParams) {
+                for (const [name, value] of pendingImmediateParams) {
                     result.setParam(name, value);
+                }
+                for (const { name, value, sampleFrame } of pendingScheduledParams) {
+                    result.setParam(name, value, sampleFrame);
                 }
                 if (pendingPatch) {
                     result.setPatch(pendingPatch);

@@ -910,7 +910,7 @@ describe('wasmDeviceRegistry descriptors', () => {
     });
 
     describe('grinder', () => {
-        it('replays queued params, the pending patch, and the pending bypass on load', async () => {
+        it('preserves scheduled queued params and coalesces immediate queued params on load', async () => {
             const result: GrinderNodeResult = {
                 workletNode: makeWorkletNode(),
                 setParam: vi.fn(),
@@ -940,12 +940,19 @@ describe('wasmDeviceRegistry descriptors', () => {
                 parameterIds,
             });
             expect(placeholder.controller).toBeDefined();
+            placeholder.controller?.setParam('drive', 0.2);
             placeholder.controller?.setParam('drive', 0.7);
+            placeholder.controller?.setParam('sag', 0.25, 48_000);
+            placeholder.controller?.setParam('sag', 0.75, 96_000);
             placeholder.controller?.setPatch?.({ amp: 'lead' });
             placeholder.controller?.setBypass?.(true);
             await loadPromise;
 
-            expect(result.setParam).toHaveBeenCalledWith('drive', 0.7);
+            expect(vi.mocked(result.setParam).mock.calls).toEqual([
+                ['drive', 0.7],
+                ['sag', 0.25, 48_000],
+                ['sag', 0.75, 96_000],
+            ]);
             expect(result.setPatch).toHaveBeenCalledWith({ amp: 'lead' });
             expect(result.setBypass).toHaveBeenCalledWith(true);
         });
