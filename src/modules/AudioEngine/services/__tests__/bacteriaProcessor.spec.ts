@@ -231,6 +231,37 @@ describe('BacteriaProcessor message handling', () => {
         expect(paramCalls.filter((call) => call.name === 'band5_drive')).toHaveLength(33);
     });
 
+    it('orders accepted scheduled controls by target frame and preserves sequence order for equal frames', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
+        resetRecording();
+        vi.stubGlobal('currentFrame', 0);
+
+        send(proc, control('band5_drive', 0.3, 1, { targetFrame: 256, deadlineFrame: 384 }));
+        send(proc, control('band5_drive', 0.1, 2, { targetFrame: 128, deadlineFrame: 256 }));
+        vi.stubGlobal('currentFrame', 256);
+        proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        expect(paramCalls).toEqual([
+            { name: 'band5_drive', value: 0.1 },
+            { name: 'band5_drive', value: 0.3 },
+        ]);
+
+        const equalFrameProc = await loadProcessor();
+        send(equalFrameProc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(equalFrameProc);
+        resetRecording();
+        vi.stubGlobal('currentFrame', 0);
+        send(equalFrameProc, control('band5_drive', 0.4, 1, { targetFrame: 512, deadlineFrame: 640 }));
+        send(equalFrameProc, control('band5_drive', 0.5, 2, { targetFrame: 512, deadlineFrame: 640 }));
+        vi.stubGlobal('currentFrame', 512);
+        equalFrameProc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        expect(paramCalls).toEqual([
+            { name: 'band5_drive', value: 0.4 },
+            { name: 'band5_drive', value: 0.5 },
+        ]);
+    });
+
     it('fails closed when the preallocated scheduled-control queue is full without consuming its sequence', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
