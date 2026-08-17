@@ -478,6 +478,8 @@ export type AudioEngine = {
     setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator): void;
     /** Validated, immutable graph command applied only at the main-thread graph boundary. */
     applyRuntimeGraphDelta(delta: unknown): RuntimeGraphDeltaResult;
+    /** Rehydration-only baseline; validates one complete strip before publishing it. */
+    initializeTrackStripFromSnapshot(snapshot: unknown): RuntimeGraphDeltaResult;
     ensureTrackStrip(trackId: string): TrackChannelStrip;
     removeTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;

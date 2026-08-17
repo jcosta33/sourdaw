@@ -6,6 +6,13 @@ import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
 const mocks = vi.hoisted(() => ({
+    getRuntimeGraphRevision: vi.fn(() => 0),
+    initializeTrackStripFromSnapshot: vi.fn(() => ({
+        acceptance: 'accepted' as const,
+        application: 'applied' as const,
+        correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+        runtimeRevision: 1,
+    })),
     ensureTrackStrip: vi.fn(),
     setTrackOutput: vi.fn(),
     setTrackGain: vi.fn(),
@@ -31,6 +38,8 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     ensureTrackStrip: mocks.ensureTrackStrip,
     setTrackOutput: mocks.setTrackOutput,
     setTrackGain: mocks.setTrackGain,
@@ -42,6 +51,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
     reportLatency: mocks.reportLatency,
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: () => 'project-revision-1',
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
@@ -90,19 +103,31 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: track.id });
 
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('audio-1');
-        expect(mocks.setTrackOutput).toHaveBeenCalledWith('audio-1', 'master');
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith({
+            schemaVersion: 1,
+            command: 'initialize-track-strip',
+            correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+            nodes: [
+                {
+                    id: 'audio-1',
+                    kind: 'audio',
+                    devices: [
+                        {
+                            id: 'device-1',
+                            type: 'external-plugin',
+                            externalInstanceId: 'persisted-native-instance',
+                            parameterIds: ['feedback', 'mix'],
+                        },
+                    ],
+                },
+            ],
+            output: { kind: 'output', sourceId: 'audio-1', targetId: 'master' },
+            parameters: [],
+        });
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.setTrackGain).toHaveBeenCalledWith('audio-1', 0.75);
         expect(mocks.setTrackPan).toHaveBeenCalledWith('audio-1', -0.25);
         expect(mocks.setTrackMute).toHaveBeenCalledWith('audio-1', false);
-        expect(mocks.addDeviceToStrip.mock.calls[0]).toEqual([
-            'audio-1',
-            'device-1',
-            'external-plugin',
-            undefined,
-            [],
-            ['feedback', 'mix'],
-        ]);
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(1, 'audio-1', 'device-1', 'feedback', 0.6);
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(2, 'audio-1', 'device-1', 'mix', 0.3);
@@ -115,14 +140,8 @@ describe('projectTrackToLiveStrip', () => {
         vi.clearAllMocks();
         projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
 
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(
-            'audio-1',
-            'device-1',
-            'external-plugin',
-            'persisted-native-instance',
-            [],
-            ['feedback', 'mix']
-        );
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledOnce();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
             expect.objectContaining({
                 pluginId: 'persisted-native-plugin',
@@ -225,7 +244,7 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: 'duplicate' });
 
-        expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
     });
@@ -239,7 +258,7 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: owner.id });
 
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(owner.id);
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
     });
 
@@ -254,10 +273,18 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: track.id });
 
-        expect(mocks.addDeviceToStrip.mock.calls).toEqual([
-            ['midi-1', 'filter-1', 'filter', undefined, [], ['cutoff']],
-            ['midi-1', 'delay-1', 'delay', undefined, ['filter-1'], ['mix']],
-        ]);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({
+                        devices: [
+                            { id: 'filter-1', type: 'filter', parameterIds: ['cutoff'] },
+                            { id: 'delay-1', type: 'delay', parameterIds: ['mix'] },
+                        ],
+                    }),
+                ],
+            })
+        );
         expect(mocks.updateDeviceParam.mock.calls).toEqual([
             ['midi-1', 'filter-1', 'cutoff', 0.6],
             ['midi-1', 'delay-1', 'mix', 0.4],
@@ -279,9 +306,17 @@ describe('projectTrackToLiveStrip', () => {
         projectTrackToLiveStrip({ trackId: dormant.id });
         projectTrackToLiveStrip({ trackId: toaster.id });
 
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledOnce();
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(toaster.id);
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toaster.id, 'toaster-device', 'toaster', undefined, [], []);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledOnce();
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({
+                        id: toaster.id,
+                        devices: [{ id: 'toaster-device', type: 'toaster', parameterIds: [] }],
+                    }),
+                ],
+            })
+        );
     });
 
     it('projects Toaster pad ownership independently from the audible output', () => {
@@ -299,10 +334,16 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: routedPad.id });
 
-        expect(mocks.setTrackOutput).toHaveBeenCalledWith(routedPad.id, 'return-bus', {
-            toasterParentTrackId: toaster.id,
-            padIndex: 1,
-        });
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                output: {
+                    kind: 'output',
+                    sourceId: routedPad.id,
+                    targetId: 'return-bus',
+                    padBinding: { toasterParentTrackId: toaster.id, padIndex: 1 },
+                },
+            })
+        );
     });
 
     it('skips resolved routing targets that cannot own audio endpoints', () => {
@@ -315,7 +356,7 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: track.id });
 
-        expect(mocks.setTrackOutput).not.toHaveBeenCalled();
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         expect(mocks.setSend).not.toHaveBeenCalled();
     });
 
@@ -331,7 +372,7 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: track.id });
 
-        expect(mocks.setTrackOutput).not.toHaveBeenCalled();
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         expect(mocks.setSend).not.toHaveBeenCalled();
     });
 
@@ -340,6 +381,6 @@ describe('projectTrackToLiveStrip', () => {
 
         projectTrackToLiveStrip({ trackId: 'audio-1' });
 
-        expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
     });
 });

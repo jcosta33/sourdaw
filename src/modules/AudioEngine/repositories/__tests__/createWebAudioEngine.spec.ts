@@ -9,6 +9,7 @@ import type {
     RuntimeGraphDelta,
     RuntimeGraphDeviceChainDelta,
     RuntimeGraphOutputDelta,
+    RuntimeGraphTrackStripInitializationDelta,
 } from '../../models/RuntimeGraphDelta';
 
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
@@ -469,6 +470,26 @@ function createRuntimeDeviceDelta(
     };
 }
 
+function createTrackStripInitialization(
+    appRevision: number,
+    devices: ReadonlyArray<{ id: string; type: string; parameterIds?: readonly string[] }> = []
+): RuntimeGraphTrackStripInitializationDelta {
+    return {
+        schemaVersion: 1,
+        command: 'initialize-track-strip',
+        correlation: { appRevision, projectRevision: 'project-revision-1' },
+        nodes: [
+            {
+                id: 'bootstrap-track',
+                kind: 'audio',
+                devices: devices.map((device) => ({ ...device, parameterIds: device.parameterIds ?? [] })),
+            },
+        ],
+        output: { kind: 'output', sourceId: 'bootstrap-track', targetId: 'hw_out' },
+        parameters: [],
+    };
+}
+
 describe('AudioEngine', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
@@ -535,6 +556,94 @@ describe('AudioEngine', () => {
 
         void engine.removeTrackStrip('t1');
         expect(engine.getTrackStrip('t1')).toBeUndefined();
+    });
+
+    it('rejects a malformed rehydration snapshot before it publishes a live strip', () => {
+        const result = engine.initializeTrackStripFromSnapshot({
+            ...createTrackStripInitialization(engine.getRuntimeGraphRevision()),
+            nodes: [
+                {
+                    id: 'bootstrap-track',
+                    kind: 'audio',
+                    devices: [
+                        { id: 'duplicate', type: 'eq', parameterIds: [] },
+                        { id: 'duplicate', type: 'compressor', parameterIds: [] },
+                    ],
+                },
+            ],
+        });
+
+        expect(result).toEqual(expect.objectContaining({ acceptance: 'rejected', application: 'not-applied' }));
+        expect(engine.getTrackStrip('bootstrap-track')).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(0);
+    });
+
+    it('rejects a stale project rehydration snapshot before it creates a live effect', () => {
+        currentProjectRevision = 'project-revision-2';
+
+        const result = engine.initializeTrackStripFromSnapshot(createTrackStripInitialization(0));
+
+        expect(result).toEqual(
+            expect.objectContaining({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'Runtime graph initialization is stale for the current project revision',
+            })
+        );
+        expect(engine.getTrackStrip('bootstrap-track')).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(0);
+    });
+
+    it('rejects a stale runtime rehydration snapshot before it creates a live effect', () => {
+        const result = engine.initializeTrackStripFromSnapshot(createTrackStripInitialization(1));
+
+        expect(result).toEqual(
+            expect.objectContaining({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'Runtime graph initialization is stale for the live engine revision',
+            })
+        );
+        expect(engine.getTrackStrip('bootstrap-track')).toBeUndefined();
+        expect(engine.getRuntimeGraphRevision()).toBe(0);
+    });
+
+    it('initializes one exact ordered strip once and rejects a later ABA device delta', () => {
+        const initialization = engine.initializeTrackStripFromSnapshot(
+            createTrackStripInitialization(0, [
+                { id: 'eq-1', type: 'eq', parameterIds: ['frequency'] },
+                { id: 'compressor-1', type: 'compressor', parameterIds: ['attack', 'ratio'] },
+            ])
+        );
+
+        expect(initialization).toEqual(
+            expect.objectContaining({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1 })
+        );
+        expect(engine.getTrackStrip('bootstrap-track')?.deviceNodes.map((device) => device.deviceId)).toEqual([
+            'eq-1',
+            'compressor-1',
+        ]);
+        expect(engine.getTrackStrip('bootstrap-track')?.deviceNodes.map((device) => device.parameterIds)).toEqual([
+            ['frequency'],
+            ['attack', 'ratio'],
+        ]);
+
+        const abaReplay = engine.applyRuntimeGraphDelta({
+            schemaVersion: 1,
+            command: 'replace-track-device-chain',
+            correlation: { appRevision: 1, projectRevision: 'project-revision-1' },
+            operation: 'add-device',
+            before: { id: 'bootstrap-track', kind: 'audio', devices: [] },
+            after: {
+                id: 'bootstrap-track',
+                kind: 'audio',
+                devices: [{ id: 'eq-1', type: 'eq', parameterIds: ['frequency'] }],
+            },
+            parameters: [],
+        });
+
+        expect(abaReplay).toEqual(expect.objectContaining({ acceptance: 'rejected', application: 'not-applied' }));
+        expect(engine.getRuntimeGraphRevision()).toBe(1);
     });
 
     it('reports the master peak as unavailable until initialize() wires the meter tap', () => {

@@ -24,6 +24,7 @@ import {
     type RuntimeGraphDeltaNode,
     type RuntimeGraphDeltaResult,
     type RuntimeGraphProjectRevisionValidator,
+    type RuntimeGraphTrackStripInitializationDelta,
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
@@ -622,6 +623,175 @@ class AudioEngineImpl implements AudioEngine {
         });
     }
 
+    /**
+     * Creates a missing strip from one compiled project snapshot. The source is
+     * kept private until its full ordered chain and output route are valid, so a
+     * malformed or stale projection cannot publish a partially-built strip.
+     */
+    private applyRuntimeTrackStripInitialization(
+        delta: RuntimeGraphTrackStripInitializationDelta
+    ): RuntimeGraphDeltaResult {
+        if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph initialization is stale for the live engine revision',
+            });
+        }
+        if (!this.runtimeGraphProjectRevisionValidator) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph initialization cannot validate its project revision',
+            });
+        }
+        let isCurrentProjectRevision: boolean;
+        try {
+            isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+        } catch (error) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: `Runtime graph initialization project revision validation failed: ${String(error)}`,
+            });
+        }
+        if (!isCurrentProjectRevision) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph initialization is stale for the current project revision',
+            });
+        }
+        if (!this.runtimeGraphTopologyValidator) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph initialization cannot validate its project topology',
+            });
+        }
+        let isCurrentProjectTopology: boolean;
+        try {
+            isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
+        } catch (error) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: `Runtime graph initialization topology validation failed: ${String(error)}`,
+            });
+        }
+        if (!isCurrentProjectTopology) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph initialization does not match the current project topology',
+            });
+        }
+
+        const sourcePlan = delta.nodes[0];
+        if (!sourcePlan) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Compiled runtime graph initialization has no source strip',
+            });
+        }
+        const existing = this.trackNodes.get(sourcePlan.id);
+        if (existing) {
+            const existingPadBinding = this.toasterPadRoutes.get(sourcePlan.id);
+            const matchesPadBinding = delta.output.padBinding
+                ? existingPadBinding?.toasterParentTrackId === delta.output.padBinding.toasterParentTrackId &&
+                  existingPadBinding.padIndex === delta.output.padBinding.padIndex
+                : !existingPadBinding;
+            if (
+                this.matchesRuntimeDeviceChain(existing, sourcePlan) &&
+                existing.strip.outputId === delta.output.targetId &&
+                matchesPadBinding
+            ) {
+                return Object.freeze({
+                    acceptance: 'accepted' as const,
+                    application: 'applied' as const,
+                    correlation: delta.correlation,
+                    runtimeRevision: this.runtimeGraphRevision,
+                });
+            }
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Live source strip does not match the compiled initialization snapshot',
+            });
+        }
+        if (!this.hasRuntimeOutputDestination(delta.output.targetId)) {
+            return this.needsRuntimeGraphReconciliation(
+                delta,
+                'Live destination strip does not match the compiled initialization snapshot'
+            );
+        }
+        const targetPlan = delta.nodes[1];
+        if (targetPlan) {
+            const target = this.trackNodes.get(targetPlan.id);
+            if (!target || !this.matchesRuntimeDeviceChain(target, targetPlan)) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Live destination strip does not match the compiled initialization snapshot',
+                });
+            }
+        }
+
+        let initializedNode: TrackNode | undefined;
+        try {
+            const initialization = this.mutateRuntimeGraph(() => {
+                initializedNode = this.createTrackNode(sourcePlan.id);
+                try {
+                    for (const device of sourcePlan.devices) {
+                        initializedNode.addDevice(
+                            device.id,
+                            device.type,
+                            device.externalInstanceId,
+                            undefined,
+                            device.parameterIds
+                        );
+                    }
+                    this.trackNodes.set(sourcePlan.id, initializedNode);
+                    this.setTrackOutputTransaction(initializedNode, delta.output.targetId, delta.output.padBinding);
+                    return { value: undefined, changed: !this.fallbackMode };
+                } catch (error) {
+                    this.trackNodes.delete(sourcePlan.id);
+                    initializedNode.dispose();
+                    throw error;
+                }
+            });
+            return Object.freeze({
+                acceptance: 'accepted' as const,
+                application: 'applied' as const,
+                correlation: delta.correlation,
+                runtimeRevision: initialization.runtimeRevision,
+            });
+        } catch (error) {
+            if (error instanceof RuntimeGraphMutationRejected) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: error.rejection.reason,
+                });
+            }
+            const typedFailure = error instanceof RuntimeGraphMutationFailure ? error : undefined;
+            if (typedFailure) {
+                return this.needsRuntimeGraphReconciliation(
+                    delta,
+                    typedFailure.mutation.reason,
+                    this.runtimeGraphRevision,
+                    typedFailure.rollbackError ? 'failed' : 'not-attempted'
+                );
+            }
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: `Live strip initialization failed before publication: ${String(error)}`,
+            });
+        }
+    }
+
     public initialize(): Promise<void> {
         if (this.disposed) {
             return Promise.reject(new Error('Audio engine has been disposed.'));
@@ -1001,6 +1171,9 @@ class AudioEngineImpl implements AudioEngine {
         if (delta.command === 'replace-track-device-chain') {
             return this.applyRuntimeDeviceChainDelta(delta);
         }
+        if (delta.command === 'initialize-track-strip') {
+            return this.applyRuntimeTrackStripInitialization(delta);
+        }
         if (delta.correlation.appRevision !== this.runtimeGraphRevision) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
@@ -1139,6 +1312,29 @@ class AudioEngineImpl implements AudioEngine {
             correlation: delta.correlation,
             runtimeRevision: outputMutation.runtimeRevision,
         });
+    }
+
+    /**
+     * Rehydration-only entrypoint. It accepts only an immutable initialization
+     * snapshot, preventing bootstrap callers from reaching device graph writes.
+     */
+    public initializeTrackStripFromSnapshot(input: unknown): RuntimeGraphDeltaResult {
+        const compilation = compileRuntimeGraphDelta(input);
+        if (compilation.status === 'invalid') {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: compilation.reason,
+            });
+        }
+        if (compilation.delta.command !== 'initialize-track-strip') {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime strip initialization requires an initialization snapshot',
+            });
+        }
+        return this.applyRuntimeTrackStripInitialization(compilation.delta);
     }
 
     private reconnectRoutingForTrack(trackId: string): void {
@@ -1417,41 +1613,44 @@ class AudioEngineImpl implements AudioEngine {
         return false;
     }
 
-    private ensureTrackStripInGraph(trackId: string): RuntimeGraphMutation<TrackChannelStrip> {
+    private createTrackNode(trackId: string): TrackNode {
         this.assertActive();
+        if (this.fallbackMode) {
+            const sG = this.context.createGain();
+            return new TrackNode(trackId, {
+                context: this.context,
+                masterGainNode: sG,
+                getBusGainNode: () => undefined,
+                getTrackGainNode: () => undefined,
+                getSendsForTrack: () => [],
+                pendingDevicePromises: new Set(),
+                readinessDiagnostics: this.deviceReadinessDiagnostics,
+                getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
+            });
+        }
+        return new TrackNode(trackId, {
+            context: this.context,
+            masterGainNode: this.masterGainNode,
+            getBusGainNode: (id) => this.busNodes.get(id)?.strip.gainNode,
+            getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
+            getSendsForTrack: (tId) =>
+                Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
+            pendingDevicePromises: this.pendingDevicePromises,
+            readinessDiagnostics: this.deviceReadinessDiagnostics,
+            transportSAB: this.transportSAB ?? undefined,
+            getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
+            reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
+            onDeviceLoaded: (id) => this.reconcileToasterParent(id),
+            onDeviceRemoved: (id, device) => this.handleDeviceRemoved(id, device),
+            onAsyncRuntimeGraphMutation: (mutation) => this.recordRuntimeGraphMutation(mutation),
+        });
+    }
+
+    private ensureTrackStripInGraph(trackId: string): RuntimeGraphMutation<TrackChannelStrip> {
         let node = this.trackNodes.get(trackId);
         let created = false;
         if (!node) {
-            if (this.fallbackMode) {
-                const sG = this.context.createGain();
-                node = new TrackNode(trackId, {
-                    context: this.context,
-                    masterGainNode: sG,
-                    getBusGainNode: () => undefined,
-                    getTrackGainNode: () => undefined,
-                    getSendsForTrack: () => [],
-                    pendingDevicePromises: new Set(),
-                    readinessDiagnostics: this.deviceReadinessDiagnostics,
-                    getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
-                });
-            } else {
-                node = new TrackNode(trackId, {
-                    context: this.context,
-                    masterGainNode: this.masterGainNode,
-                    getBusGainNode: (id) => this.busNodes.get(id)?.strip.gainNode,
-                    getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
-                    getSendsForTrack: (tId) =>
-                        Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
-                    pendingDevicePromises: this.pendingDevicePromises,
-                    readinessDiagnostics: this.deviceReadinessDiagnostics,
-                    transportSAB: this.transportSAB ?? undefined,
-                    getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
-                    reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
-                    onDeviceLoaded: (id) => this.reconcileToasterParent(id),
-                    onDeviceRemoved: (id, device) => this.handleDeviceRemoved(id, device),
-                    onAsyncRuntimeGraphMutation: (mutation) => this.recordRuntimeGraphMutation(mutation),
-                });
-            }
+            node = this.createTrackNode(trackId);
             this.trackNodes.set(trackId, node);
             created = true;
         }

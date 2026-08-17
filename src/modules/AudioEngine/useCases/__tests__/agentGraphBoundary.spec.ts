@@ -54,6 +54,24 @@ function createDeviceChainDelta(overrides: Record<string, unknown> = {}) {
     };
 }
 
+function createTrackStripInitialization(overrides: Record<string, unknown> = {}) {
+    return {
+        schemaVersion: 1,
+        command: 'initialize-track-strip',
+        correlation: { appRevision: 4, projectRevision: 'project-revision-4' },
+        nodes: [
+            {
+                id: 'source',
+                kind: 'audio',
+                devices: [{ id: 'compressor', type: 'builtin-compressor', parameterIds: ['attack', 'ratio'] }],
+            },
+        ],
+        output: { kind: 'output', sourceId: 'source', targetId: 'hw_out' },
+        parameters: [],
+        ...overrides,
+    };
+}
+
 describe('agent runtime graph boundary', () => {
     it('compiles a bounded immutable output delta with exact device order and parameter ids', () => {
         const result = compileRuntimeGraphDelta(createDelta());
@@ -81,6 +99,19 @@ describe('agent runtime graph boundary', () => {
         expect(result.delta.after.devices.map((device) => device.id)).toEqual(['eq-1', 'compressor-1']);
         expect(Object.isFrozen(result.delta.before.devices)).toBe(true);
         expect(Object.isFrozen(result.delta.after.devices[1]?.parameterIds)).toBe(true);
+    });
+
+    it('compiles one immutable baseline snapshot with exact output and device schema', () => {
+        const result = compileRuntimeGraphDelta(createTrackStripInitialization());
+
+        expect(result.status).toBe('compiled');
+        if (result.status !== 'compiled' || result.delta.command !== 'initialize-track-strip') {
+            return;
+        }
+        expect(result.delta.nodes[0]?.devices.map((device) => device.id)).toEqual(['compressor']);
+        expect(result.delta.output).toEqual({ kind: 'output', sourceId: 'source', targetId: 'hw_out' });
+        expect(Object.isFrozen(result.delta)).toBe(true);
+        expect(Object.isFrozen(result.delta.output)).toBe(true);
     });
 
     it.each([
@@ -154,5 +185,42 @@ describe('agent runtime graph boundary', () => {
         ['extra continuous payload', createDeviceChainDelta({ parameters: [{ id: 'attack', value: 2 }] })],
     ])('rejects malformed device-chain proposals before live mutation: %s', (_label, delta) => {
         expect(compileRuntimeGraphDelta(delta).status).toBe('invalid');
+    });
+
+    it.each([
+        [
+            'duplicate device identities',
+            createTrackStripInitialization({
+                nodes: [
+                    {
+                        id: 'source',
+                        kind: 'audio',
+                        devices: [
+                            { id: 'duplicate', type: 'eq', parameterIds: [] },
+                            { id: 'duplicate', type: 'compressor', parameterIds: [] },
+                        ],
+                    },
+                ],
+            }),
+        ],
+        [
+            'unsorted parameter schema',
+            createTrackStripInitialization({
+                nodes: [
+                    {
+                        id: 'source',
+                        kind: 'audio',
+                        devices: [{ id: 'compressor', type: 'compressor', parameterIds: ['ratio', 'attack'] }],
+                    },
+                ],
+            }),
+        ],
+        ['extra continuous payload', createTrackStripInitialization({ parameters: [{ id: 'attack', value: 2 }] })],
+        [
+            'malformed output binding',
+            createTrackStripInitialization({ output: { kind: 'output', sourceId: 'source', targetId: 'source' } }),
+        ],
+    ])('rejects malformed initialization snapshots before a live strip can publish: %s', (_label, snapshot) => {
+        expect(compileRuntimeGraphDelta(snapshot).status).toBe('invalid');
     });
 });

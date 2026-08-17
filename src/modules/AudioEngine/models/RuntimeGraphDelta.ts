@@ -7,7 +7,8 @@
  * discriminated commands; worklet controls keep their existing owner until they
  * have an equivalent contract.
  */
-export type RuntimeGraphDelta = RuntimeGraphOutputDelta | RuntimeGraphDeviceChainDelta;
+export type RuntimeGraphDelta =
+    RuntimeGraphOutputDelta | RuntimeGraphDeviceChainDelta | RuntimeGraphTrackStripInitializationDelta;
 
 export type RuntimeGraphOutputDelta = Readonly<{
     schemaVersion: 1;
@@ -47,6 +48,26 @@ export type RuntimeGraphDeviceChainDelta = Readonly<{
     parameters: readonly [];
 }>;
 
+/**
+ * One complete, immutable live-strip baseline. Unlike a mutation delta this
+ * establishes a missing strip once; it never replays ordinary device writes.
+ */
+export type RuntimeGraphTrackStripInitializationDelta = Readonly<{
+    schemaVersion: 1;
+    command: 'initialize-track-strip';
+    correlation: Readonly<{
+        /** Expected live-engine revision immediately before this strip publishes. */
+        appRevision: number;
+        /** CRDT project revision that produced this complete strip snapshot. */
+        projectRevision: string;
+    }>;
+    /** Source first, then the non-terminal output destination when there is one. */
+    nodes: readonly RuntimeGraphDeltaNode[];
+    output: RuntimeGraphInitializationOutput;
+    /** Baseline topology binds parameter schema, never continuous values. */
+    parameters: readonly [];
+}>;
+
 export type RuntimeGraphDeltaNode = Readonly<{
     id: string;
     kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
@@ -80,6 +101,17 @@ export type RuntimeGraphOutputEdge = Readonly<{
     kind: 'output';
     sourceId: string;
     targetId: string;
+}>;
+
+export type RuntimeGraphInitializationOutput = Readonly<{
+    kind: 'output';
+    sourceId: string;
+    targetId: string;
+    /** Optional Toaster pad ownership, validated with the immutable output. */
+    padBinding?: Readonly<{
+        toasterParentTrackId: string;
+        padIndex: number;
+    }>;
 }>;
 
 export type RuntimeGraphDeltaResult =

@@ -151,3 +151,4 @@ export { configureRuntimeGraphTopologyValidator } from './configureRuntimeGraphT
 export { createRuntimeGraphTopologyFingerprint } from './createRuntimeGraphTopologyFingerprint';
 export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';
+export { initializeTrackStripFromSnapshot } from './initializeTrackStripFromSnapshot';

@@ -20,12 +20,14 @@ function createRuntimeGraphTopologyNode(track: Track): RuntimeGraphTopologyNode 
     return {
         id: track.id,
         kind: track.kind,
-        devices: track.devices.map((device) => ({
-            id: device.id,
-            type: device.type,
-            ...(device.externalInstanceId !== undefined ? { externalInstanceId: device.externalInstanceId } : {}),
-            parameterIds: Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right)),
-        })),
+        devices: track.devices
+            .filter((device) => device.type !== 'yeast')
+            .map((device) => ({
+                id: device.id,
+                type: device.type,
+                ...(device.externalInstanceId !== undefined ? { externalInstanceId: device.externalInstanceId } : {}),
+                parameterIds: Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right)),
+            })),
     };
 }
 

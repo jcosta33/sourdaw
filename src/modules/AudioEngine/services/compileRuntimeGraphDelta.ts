@@ -3,7 +3,9 @@ import {
     type RuntimeGraphDeviceChainDelta,
     type RuntimeGraphDeltaDevice,
     type RuntimeGraphDeltaNode,
+    type RuntimeGraphInitializationOutput,
     type RuntimeGraphOutputDelta,
+    type RuntimeGraphTrackStripInitializationDelta,
 } from '../models/RuntimeGraphDelta';
 
 const MAX_CORRELATION_REVISION_LENGTH = 256;
@@ -255,6 +257,98 @@ function compileOutputDelta(input: UnknownRecord): RuntimeGraphDeltaCompilation 
     return { status: 'compiled', delta };
 }
 
+function compileInitializationOutput(
+    value: unknown,
+    nodes: readonly RuntimeGraphDeltaNode[]
+): RuntimeGraphInitializationOutput | string {
+    if (!isRecord(value) || !['kind', 'sourceId', 'targetId'].every((key) => key in value)) {
+        return 'Runtime graph initialization output has an unsupported shape';
+    }
+    if (!Object.keys(value).every((key) => ['kind', 'sourceId', 'targetId', 'padBinding'].includes(key))) {
+        return 'Runtime graph initialization output has an unsupported shape';
+    }
+    if (value.kind !== 'output' || !isBoundedId(value.sourceId) || !isBoundedId(value.targetId)) {
+        return 'Runtime graph initialization output is invalid';
+    }
+    if (value.sourceId === value.targetId) {
+        return 'Runtime graph initialization output cannot create a self-route';
+    }
+    if (nodes[0]?.id !== value.sourceId) {
+        return 'Runtime graph initialization output must start at the first node';
+    }
+    const isTerminalTarget = value.targetId === 'master' || value.targetId === 'hw_out';
+    if (isTerminalTarget ? nodes.length !== 1 : nodes.length !== 2 || nodes[1]?.id !== value.targetId) {
+        return 'Runtime graph initialization output has a missing or unordered endpoint';
+    }
+    if (value.padBinding === undefined) {
+        return Object.freeze({ kind: 'output' as const, sourceId: value.sourceId, targetId: value.targetId });
+    }
+    if (!isRecord(value.padBinding) || !hasOnlyKeys(value.padBinding, ['toasterParentTrackId', 'padIndex'])) {
+        return 'Runtime graph initialization output pad binding has an unsupported shape';
+    }
+    if (
+        !isBoundedId(value.padBinding.toasterParentTrackId) ||
+        value.padBinding.toasterParentTrackId !== value.targetId ||
+        typeof value.padBinding.padIndex !== 'number' ||
+        !Number.isSafeInteger(value.padBinding.padIndex) ||
+        value.padBinding.padIndex < 0 ||
+        value.padBinding.padIndex > 15
+    ) {
+        return 'Runtime graph initialization output pad binding is invalid';
+    }
+    return Object.freeze({
+        kind: 'output' as const,
+        sourceId: value.sourceId,
+        targetId: value.targetId,
+        padBinding: Object.freeze({
+            toasterParentTrackId: value.padBinding.toasterParentTrackId,
+            padIndex: value.padBinding.padIndex,
+        }),
+    });
+}
+
+function compileTrackStripInitialization(input: UnknownRecord): RuntimeGraphDeltaCompilation {
+    if (!hasOnlyKeys(input, ['schemaVersion', 'command', 'correlation', 'nodes', 'output', 'parameters'])) {
+        return invalid('Runtime graph initialization has an unsupported schema');
+    }
+    const correlation = compileCorrelation(input.correlation);
+    if (typeof correlation === 'string') {
+        return invalid(correlation);
+    }
+    if (!isUnknownArray(input.parameters) || input.parameters.length > 0) {
+        return invalid('Runtime graph initialization cannot carry parameter controls');
+    }
+    if (!isUnknownArray(input.nodes) || input.nodes.length === 0 || input.nodes.length > MAX_NODE_COUNT) {
+        return invalid('Runtime graph initialization node count is unsupported');
+    }
+    const nodes: RuntimeGraphDeltaNode[] = [];
+    const nodeIds = new Set<string>();
+    for (const candidate of input.nodes) {
+        const node = compileNode(candidate);
+        if (typeof node === 'string') {
+            return invalid(node);
+        }
+        if (nodeIds.has(node.id)) {
+            return invalid('Runtime graph contains duplicate node ids');
+        }
+        nodeIds.add(node.id);
+        nodes.push(node);
+    }
+    const output = compileInitializationOutput(input.output, nodes);
+    if (typeof output === 'string') {
+        return invalid(output);
+    }
+    const delta: RuntimeGraphTrackStripInitializationDelta = Object.freeze({
+        schemaVersion: 1,
+        command: 'initialize-track-strip',
+        correlation,
+        nodes: Object.freeze(nodes),
+        output,
+        parameters: Object.freeze([] as const),
+    });
+    return { status: 'compiled', delta };
+}
+
 function compileDeviceChainDelta(input: UnknownRecord): RuntimeGraphDeltaCompilation {
     if (
         !hasOnlyKeys(input, ['schemaVersion', 'command', 'correlation', 'operation', 'before', 'after', 'parameters'])
@@ -318,6 +412,9 @@ export function compileRuntimeGraphDelta(input: unknown): RuntimeGraphDeltaCompi
     }
     if (input.command === 'replace-track-device-chain') {
         return compileDeviceChainDelta(input);
+    }
+    if (input.command === 'initialize-track-strip') {
+        return compileTrackStripInitialization(input);
     }
     return invalid('Runtime graph delta schema version or command is unsupported');
 }

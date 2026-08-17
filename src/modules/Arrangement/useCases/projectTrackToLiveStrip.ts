@@ -1,14 +1,14 @@
 import {
-    addDeviceToStrip,
-    ensureTrackStrip,
+    getRuntimeGraphRevision,
+    initializeTrackStripFromSnapshot,
     reportLatency,
     resolveToasterPadBinding,
     setTrackGain,
-    setTrackOutput,
     setTrackPan,
     updateDeviceBypass,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
@@ -16,6 +16,7 @@ import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDevic
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { trackStore } from '../stores/trackStore';
 
+import { runtimeGraphTopology } from './runtimeGraphTopology';
 import { applySoloLogic } from './toggleTrackState/applySoloLogic';
 
 import type { Track } from '../stores/trackStore';
@@ -46,6 +47,38 @@ function acceptsRoutingEndpoint(tracks: readonly Track[], targetId: string): boo
     return target ? getTrackEligibility(target.kind).acceptsRoutingEndpoint : false;
 }
 
+function createTrackStripInitializationSnapshot(
+    track: Track,
+    tracks: readonly Track[],
+    padBinding: ReturnType<typeof resolveToasterPadBinding>
+) {
+    const source = runtimeGraphTopology.createNode(track);
+    const targets =
+        track.outputId === 'master' || track.outputId === 'hw_out'
+            ? []
+            : tracks.filter((candidate) => candidate.id === track.outputId);
+    if (targets.length > 1 || (targets[0] && !getTrackEligibility(targets[0].kind).acceptsRoutingEndpoint)) {
+        return null;
+    }
+    const target = targets[0];
+    return {
+        schemaVersion: 1,
+        command: 'initialize-track-strip',
+        correlation: {
+            appRevision: getRuntimeGraphRevision(),
+            projectRevision: captureProjectRevision(),
+        },
+        nodes: target ? [source, runtimeGraphTopology.createNode(target)] : [source],
+        output: {
+            kind: 'output',
+            sourceId: track.id,
+            targetId: track.outputId,
+            ...(padBinding ? { padBinding } : {}),
+        },
+        parameters: [],
+    };
+}
+
 export function projectTrackToLiveStrip({
     trackId,
     deferSidechainWiring = false,
@@ -60,32 +93,35 @@ export function projectTrackToLiveStrip({
         return;
     }
 
-    ensureTrackStrip(track.id);
-    if (acceptsRoutingEndpoint(tracks, track.outputId)) {
-        const padBinding = resolveToasterPadBinding(tracks, track.id);
-        if (padBinding) {
-            setTrackOutput(track.id, track.outputId, padBinding);
-        } else {
-            setTrackOutput(track.id, track.outputId);
+    const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
+    for (const device of audioDevices) {
+        const target = resolveEligibleDeviceWriteTarget(device.id);
+        if (target.status !== 'eligible' || target.trackId !== track.id || target.deviceId !== device.id) {
+            return;
         }
     }
+    if (!acceptsRoutingEndpoint(tracks, track.outputId)) {
+        return;
+    }
+    const padBinding = resolveToasterPadBinding(tracks, track.id);
+    const snapshot = createTrackStripInitializationSnapshot(track, tracks, padBinding);
+    if (!snapshot) {
+        return;
+    }
+    const initialization = initializeTrackStripFromSnapshot(snapshot);
+    if (initialization.acceptance === 'rejected' || initialization.application === 'needs-reconcile') {
+        return;
+    }
+
     setTrackGain(track.id, track.gain);
     setTrackPan(track.id, track.pan);
     applySoloLogic({ trackId: track.id });
 
-    const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
-    for (const [deviceIndex, device] of audioDevices.entries()) {
-        const target = resolveEligibleDeviceWriteTarget(device.id);
-        if (target.status !== 'eligible' || target.trackId !== track.id) {
-            continue;
-        }
+    for (const device of audioDevices) {
         let instanceId: string | undefined;
         if (activateDormantExternalPlugins && device.type === 'external-plugin' && device.externalInstanceId) {
             instanceId = device.externalInstanceId;
         }
-        const precedingDeviceIds = audioDevices.slice(0, deviceIndex).map((candidate) => candidate.id);
-        const parameterIds = Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right));
-        addDeviceToStrip(target.trackId, target.deviceId, device.type, instanceId, precedingDeviceIds, parameterIds);
         const pluginId = device.externalPluginId;
         if (instanceId && pluginId) {
             // Idempotent load + state restore; skips if the instance is already live,
@@ -94,15 +130,15 @@ export function projectTrackToLiveStrip({
                 pluginId,
                 instanceId,
                 stateChunk: device.externalStateChunk,
-                onLatencyMs: (latencyMs) => reportLatency(target.deviceId, latencyMs),
+                onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
             });
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {
-                updateDeviceParam(target.trackId, target.deviceId, parameterId, value);
+                updateDeviceParam(track.id, device.id, parameterId, value);
             }
         }
-        updateDeviceBypass(target.trackId, target.deviceId, device.bypassed);
+        updateDeviceBypass(track.id, device.id, device.bypassed);
     }
 
     for (const send of track.sends) {
