@@ -1,0 +1,29 @@
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_a40848e8f8cca9::t_819a2ce89ab7c9 145-152,239,311-313
+src/modules/AudioEngine/services/__tests__/grinderProcessorControlProtocol.spec.ts
+  s_a40848e8f8cca9::t_199b569973851f 7,137-155,158
+  s_a40848e8f8cca9::t_3f335e39da5b72 156-157
+  s_a40848e8f8cca9::t_86e4d72cffd01f 159
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_a40848e8f8cca9::t_58f251aa5f0943 340-364
+src/modules/AudioEngine/services/__tests__/grinderProcessorTestHarness.ts
+  s_a40848e8f8cca9::t_199b569973851f 60-61,87-89,111,179-184
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_a40848e8f8cca9::t_819a2ce89ab7c9 474,478,486,503-506
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9cda149488a5a115de2f4a678bdf93943fa8a56f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
