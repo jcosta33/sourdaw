@@ -231,6 +231,35 @@ describe('BacteriaProcessor message handling', () => {
         expect(paramCalls.filter((call) => call.name === 'band5_drive')).toHaveLength(33);
     });
 
+    it('fails closed when the preallocated scheduled-control queue is full without consuming its sequence', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
+        resetRecording();
+        vi.stubGlobal('currentFrame', 0);
+
+        for (let sequence = 1; sequence <= 32; sequence++) {
+            send(proc, control('band5_drive', sequence, sequence, { targetFrame: 1_000, deadlineFrame: 2_000 }));
+        }
+        send(proc, control('band5_drive', 33, 33, { targetFrame: 1_000, deadlineFrame: 2_000 }));
+
+        const state = proc as typeof proc & {
+            _lastFallbackControlSequence: number;
+            _pendingFallbackControls: unknown[];
+        };
+        expect(state._pendingFallbackControls).toHaveLength(32);
+        expect(Object.hasOwn(state._pendingFallbackControls, '-1')).toBe(false);
+        expect(state._lastFallbackControlSequence).toBe(32);
+        expect(proc.port.postMessage).toHaveBeenCalledWith({
+            type: 'fallback-control-rejected',
+            reason: 'queue-full',
+            controlSequence: 33,
+        });
+
+        send(proc, control('bypass', 1, 33));
+        expect(paramCalls).toEqual([{ name: 'bypass', value: 1 }]);
+    });
+
     it('ignores param messages before init (no instance) and after a fault', async () => {
         const proc = await loadProcessor();
         // Before init: instance is null, param is dropped.
