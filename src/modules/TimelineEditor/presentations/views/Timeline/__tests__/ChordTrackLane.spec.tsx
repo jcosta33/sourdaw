@@ -24,7 +24,7 @@ const oneEvent = { id: 'c1', beat: 4, duration: 4, root: 0, quality: 'major' };
 
 function renderChordLane() {
     mockChordState = { enabled: false, events: [oneEvent] };
-    return render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+    return render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
 }
 
 function getChordBlock(): HTMLElement {
@@ -55,14 +55,14 @@ describe('ChordTrackLane', () => {
     });
 
     it('shows the empty-state hint and hides the clear button when there are no chords', () => {
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         expect(screen.getByText(/Right-click to add chords/)).toBeInTheDocument();
         expect(screen.queryByLabelText('Clear all chords')).not.toBeInTheDocument();
     });
 
     it('renders a chord block with its formatted name and title, and shows the clear button', () => {
         mockChordState = { enabled: false, events: [oneEvent] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         expect(screen.getByText('C')).toBeInTheDocument();
         expect(screen.getByTitle('C — 4 beats')).toBeInTheDocument();
         expect(screen.getByLabelText('Clear all chords')).toBeInTheDocument();
@@ -73,21 +73,32 @@ describe('ChordTrackLane', () => {
             enabled: false,
             events: [oneEvent, { id: 'c2', beat: 1000, duration: 1, root: 2, quality: 'min7' }],
         };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         expect(screen.getByText('C')).toBeInTheDocument();
         expect(screen.queryByText('Dmin7')).not.toBeInTheDocument();
     });
 
+    it('culls against the real viewport width instead of a fixed guess', () => {
+        // Beat 300 at pixelsPerBeat=16 → x=4800: past a hard-coded 4000px cull,
+        // but well inside a 6000px-wide viewport (#2039).
+        mockChordState = {
+            enabled: false,
+            events: [{ id: 'wide', beat: 300, duration: 1, root: 0, quality: 'major' }],
+        };
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={6000} />);
+        expect(screen.getByText('C')).toBeInTheDocument();
+    });
+
     it('reflects the enabled flag on the power toggle', () => {
         mockChordState = { enabled: true, events: [] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         const power = screen.getByLabelText('Disable harmonic following');
         expect(power).toHaveAttribute('aria-pressed', 'true');
         expect(power).toHaveAttribute('title', 'Harmonic following ON');
     });
 
     it('dispatches toggle and clear actions through Command', () => {
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         fireEvent.click(screen.getByLabelText('Enable harmonic following'));
         expect(executeAppAction).toHaveBeenCalledWith({ type: 'toggleChordTrack', payload: { enabled: true } });
 
@@ -98,7 +109,7 @@ describe('ChordTrackLane', () => {
 
     it('opens the add-chord popover and quick-adds after the last event', () => {
         mockChordState = { enabled: false, events: [oneEvent] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         fireEvent.click(screen.getByLabelText('Add chord event'));
 
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
@@ -107,14 +118,14 @@ describe('ChordTrackLane', () => {
     });
 
     it('quick-adds at beat 0 when there are no existing events', () => {
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         fireEvent.click(screen.getByLabelText('Add chord event'));
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
         expectAction({ type: 'addChordEvent', payload: { beat: 0, root: 0, quality: 'major', duration: 4 } });
     });
 
     it('right-clicking empty space opens the quick-add root menu at the clicked beat', () => {
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         const region = screen.getByRole('region', { name: 'Chord track' });
         region.getBoundingClientRect = vi.fn(() => ({ left: 0, top: 0, width: 1000, height: 26 }) as DOMRect);
 
@@ -128,7 +139,7 @@ describe('ChordTrackLane', () => {
     it('right-clicking an existing chord opens its quality/root/delete menu', async () => {
         executeAppAction.mockResolvedValue(undefined);
         mockChordState = { enabled: false, events: [oneEvent] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         const region = screen.getByRole('region', { name: 'Chord track' });
         region.getBoundingClientRect = vi.fn(() => ({ left: 0, top: 0, width: 1000, height: 26 }) as DOMRect);
 
@@ -289,7 +300,7 @@ describe('ChordTrackLane', () => {
         executeAppAction.mockRejectedValueOnce(
             createAppActionCommittedError({ actionType: 'addChordEvent', cause: new Error('history failed') })
         );
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         fireEvent.click(screen.getByLabelText('Add chord event'));
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
 
@@ -342,7 +353,7 @@ describe('ChordTrackLane', () => {
         render(
             <div>
                 <button type="button">Before lane</button>
-                <ChordTrackLane pixelsPerBeat={16} scrollX={0} />
+                <ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />
                 <button type="button">After lane</button>
             </div>
         );
@@ -407,7 +418,7 @@ describe('ChordTrackLane', () => {
     it('owns fallback focus for body-active empty-space Tab dismissal', () => {
         render(
             <div>
-                <ChordTrackLane pixelsPerBeat={16} scrollX={0} />
+                <ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />
                 <button type="button">After lane</button>
             </div>
         );
@@ -453,7 +464,7 @@ describe('ChordTrackLane', () => {
 
     it.each(['9', 'min9'] as const)('checks a persisted %s quality outside the quick-add shortlist', (quality) => {
         mockChordState = { enabled: false, events: [{ ...oneEvent, quality }] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         fireEvent.contextMenu(screen.getByRole('region', { name: 'Chord track' }), { clientX: 64, clientY: 10 });
 
         const qualityGroup = screen.getByRole('group', { name: 'Quality' });
@@ -507,7 +518,7 @@ describe('ChordTrackLane', () => {
 
         await runAndSettle(() => fireEvent.keyDown(block, { key: 'Delete' }));
         mockChordState = { enabled: false, events: [] };
-        view.rerender(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        view.rerender(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
 
         await waitFor(() => expect(alert).toHaveTextContent(/applied/i));
         expect(status).toBeEmptyDOMElement();
@@ -522,7 +533,7 @@ describe('ChordTrackLane', () => {
 
         await runAndSettle(() => fireEvent.keyDown(block, { key: 'Delete' }));
         mockChordState = { enabled: false, events: [] };
-        view.rerender(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        view.rerender(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
 
         expect(screen.getByLabelText('Add chord event')).toHaveFocus();
         expect(screen.getByRole('status')).toHaveTextContent('Removed C chord at beat 4');
@@ -530,7 +541,7 @@ describe('ChordTrackLane', () => {
 
     it('closes an open context menu on an outside click', () => {
         mockChordState = { enabled: false, events: [oneEvent] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         const region = screen.getByRole('region', { name: 'Chord track' });
         region.getBoundingClientRect = vi.fn(() => ({ left: 0, top: 0, width: 1000, height: 26 }) as DOMRect);
 
@@ -542,7 +553,7 @@ describe('ChordTrackLane', () => {
     });
 
     it('closes the add-chord popover on an outside click', () => {
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
         fireEvent.click(screen.getByLabelText('Add chord event'));
         expect(screen.getByRole('button', { name: 'C' })).toBeInTheDocument();
 

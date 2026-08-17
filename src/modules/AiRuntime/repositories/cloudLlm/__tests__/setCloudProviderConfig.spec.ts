@@ -1,104 +1,136 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { hostedLlmProviderStatusStore } from '../../../stores/hostedLlmProviderStatusStore';
-import { clearCloudApiKey } from '../clearCloudApiKey';
-import { getCloudClient } from '../getCloudClient';
-import { getCloudProviderInfo } from '../getCloudProviderInfo';
+import { clearCloudProviderConfig } from '../clearCloudProviderConfig';
 import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 import { isCloudAvailable } from '../isCloudAvailable';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { setCloudProviderConfig } from '../setCloudProviderConfig';
 
-const mockLogger = vi.hoisted(() => ({
+const mocks = vi.hoisted(() => ({
+    invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
+    isTauri: vi.fn(() => true),
     info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
 }));
 
-vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
+vi.mock('#/utils/tauriBridge', () => ({
+    isTauri: mocks.isTauri,
+    tauriInvoke: mocks.invoke,
+    createChannel: vi.fn(),
+}));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { info: mocks.info } }));
 
 describe('setCloudProviderConfig', () => {
-    beforeEach(() => {
-        clearCloudApiKey();
+    beforeEach(async () => {
+        await clearCloudProviderConfig();
         vi.clearAllMocks();
+        mocks.isTauri.mockReturnValue(true);
+        mocks.invoke.mockImplementation(async (command) =>
+            command === 'open_provider_gateway_session'
+                ? 'provider-session-00000000000000000000000000000000'
+                : undefined
+        );
     });
 
-    it('stores OpenAI-compatible credentials only in the volatile provider runtime', () => {
-        setCloudProviderConfig({
+    it('keeps an unauthenticated loopback provider renderer-local', async () => {
+        await setCloudProviderConfig({
             provider: 'openai-compatible',
-            apiKey: 'secret-key',
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
         });
 
-        expect(isCloudAvailable()).toBe(true);
-        expect(getCloudClient()).toBeNull();
         expect(getCloudProviderRuntime()).toEqual({
             provider: 'openai-compatible',
-            api_key: 'secret-key',
             model: 'qwen-local',
             base_url: 'http://localhost:1234/v1',
+            adapter: null,
+            session_id: null,
         });
-        expect(getCloudProviderInfo()).toEqual({
-            provider: 'openai-compatible',
-            model: 'qwen-local',
-            baseUrl: 'http://localhost:1234/v1',
-        });
+        expect(mocks.invoke).not.toHaveBeenCalledWith('open_provider_gateway_session', expect.anything());
         expect(hostedLlmProviderStatusStore.value).toEqual({
             provider: 'openai-compatible',
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
         });
-        expect(JSON.stringify(hostedLlmProviderStatusStore.value)).not.toContain('secret-key');
-        expect(JSON.stringify(mockLogger.info.mock.calls)).not.toContain('secret-key');
     });
 
-    it('aborts active requests before replacing the provider', () => {
-        setCloudProviderConfig({
+    it('opens an opaque native session for remote providers', async () => {
+        await setCloudProviderConfig({
             provider: 'openai',
-            apiKey: 'first',
-            model: 'gpt-5.2',
+            model: 'gpt-test',
             baseUrl: 'https://api.openai.com/v1',
+        });
+
+        expect(mocks.invoke).toHaveBeenCalledWith('open_provider_gateway_session', {
+            adapterId: 'builtin.openai-compatible.chat-completions.v1',
+            origin: 'https://api.openai.com',
+            credentialSource: 'openai',
+        });
+        expect(getCloudProviderRuntime()).toMatchObject({
+            provider: 'openai',
+            model: 'gpt-test',
+            session_id: 'provider-session-00000000000000000000000000000000',
+        });
+        expect(isCloudAvailable()).toBe(true);
+    });
+
+    it('revokes active requests and closes the old session during replacement', async () => {
+        await setCloudProviderConfig({
+            provider: 'anthropic',
+            model: 'claude-test',
         });
         const activeRequest = registerCloudStreamController(new AbortController());
 
-        setCloudProviderConfig({
+        await setCloudProviderConfig({
             provider: 'openai-compatible',
-            apiKey: 'second',
             model: 'local',
             baseUrl: 'http://localhost:1234/v1',
         });
 
         expect(activeRequest.signal.aborted).toBe(true);
-        expect(getCloudProviderInfo()?.provider).toBe('openai-compatible');
+        expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
+            sessionId: 'provider-session-00000000000000000000000000000000',
+        });
     });
 
-    it('compiles remote HTTPS configuration into the privileged adapter contract', () => {
-        setCloudProviderConfig({
-            provider: 'openai-compatible',
-            apiKey: 'remote-secret',
-            model: 'vendor/studio-model-v1',
-            baseUrl: 'https://models.example.test:8443/v1',
+    it('closes a candidate session when replacing the active session fails', async () => {
+        const previousSessionId = 'provider-session-00000000000000000000000000000000';
+        const candidateSessionId = 'provider-session-11111111111111111111111111111111';
+        await setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test' });
+        mocks.invoke.mockImplementation(async (command, args) => {
+            if (command === 'open_provider_gateway_session') {
+                return candidateSessionId;
+            }
+            if (command === 'close_provider_gateway_session' && args?.sessionId === previousSessionId) {
+                throw new Error('close failed');
+            }
+            return undefined;
         });
 
-        expect(getCloudProviderRuntime()).toMatchObject({
-            provider: 'openai-compatible',
-            model: 'vendor/studio-model-v1',
-            adapter: {
-                adapterId: 'builtin.openai-compatible.chat-completions.v1',
-                providerId: 'openai-compatible',
-                modelId: 'vendor/studio-model-v1',
-                origin: 'https://models.example.test:8443',
-                requestPath: '/v1/chat/completions',
-                probePath: '/v1/models',
-                transport: {
-                    kind: 'privileged-origin',
-                    dnsAdmission: 'public-global-only',
-                    redirects: 'disabled',
-                    proxy: 'disabled',
-                },
-            },
-        });
+        try {
+            await expect(
+                setCloudProviderConfig({
+                    provider: 'openai',
+                    model: 'gpt-test',
+                    baseUrl: 'https://api.openai.com/v1',
+                })
+            ).rejects.toThrow('close failed');
+            expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
+                sessionId: candidateSessionId,
+            });
+        } finally {
+            mocks.invoke.mockImplementation(async (command) =>
+                command === 'open_provider_gateway_session' ? previousSessionId : undefined
+            );
+            await clearCloudProviderConfig();
+        }
+    });
+
+    it('rejects hosted configuration outside the desktop shell', async () => {
+        mocks.isTauri.mockReturnValue(false);
+        await expect(setCloudProviderConfig({ provider: 'anthropic', model: 'claude-test' })).rejects.toThrow(
+            'desktop builds only'
+        );
+        expect(mocks.invoke).not.toHaveBeenCalled();
     });
 });

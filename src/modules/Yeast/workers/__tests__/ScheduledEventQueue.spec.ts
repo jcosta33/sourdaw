@@ -33,14 +33,14 @@ describe('ScheduledEventQueue', () => {
         });
     });
 
-    describe('drainRange', () => {
+    describe('drainRangeInto', () => {
         it('returns events inside [start, end) sorted by time and leaves the rest', () => {
             const queue = new ScheduledEventQueue();
             queue.push(noteOn('t1', 0, 60, 300)); // outside window
             queue.push(noteOn('t1', 0, 62, 100)); // inside
             queue.push(noteOn('t1', 0, 64, 50)); // inside (earlier — must sort first)
 
-            const drained = queue.drainRange(0, 200, 't1');
+            const drained = queue.drainRangeInto(0, 200, [], 't1');
             expect(drained.map((event) => event.timeSamples)).toEqual([50, 100]);
             // The event at 300 stays queued.
             expect(queue.size).toBe(1);
@@ -50,7 +50,7 @@ describe('ScheduledEventQueue', () => {
             const queue = new ScheduledEventQueue();
             queue.push(noteOn('t1', 0, 60, 100));
             queue.push(noteOn('t2', 0, 60, 100));
-            const drained = queue.drainRange(0, 200, 't1');
+            const drained = queue.drainRangeInto(0, 200, [], 't1');
             expect(drained).toHaveLength(1);
             expect(drained[0]?.trackId).toBe('t1');
             // The other track's event survives.
@@ -146,7 +146,7 @@ describe('ScheduledEventQueue', () => {
             expect(queue.removeNoteOn('t1', 0, 60, 100, 'inst-1')).toBe(true);
             expect(queue.size).toBe(1);
             // Remaining event is the off.
-            expect(queue.drainRange(0, 1000, 't1')[0]?.kind.type).toBe('noteOff');
+            expect(queue.drainRangeInto(0, 1000, [], 't1')[0]?.kind.type).toBe('noteOff');
         });
 
         it('removes a Note Off endpoint regardless of noteInstanceId when none is given', () => {

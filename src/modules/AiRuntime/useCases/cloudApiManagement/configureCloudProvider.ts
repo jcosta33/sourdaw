@@ -35,19 +35,14 @@ function normalizeBaseUrl(provider: HostedLlmProvider, baseUrl: string | undefin
     return parsed.toString().replace(/\/$/u, '');
 }
 
-export function configureCloudProvider(configuration: HostedLlmConfiguration): void {
-    const apiKey = configuration.apiKey.trim();
+export async function configureCloudProvider(configuration: HostedLlmConfiguration): Promise<void> {
     const model = configuration.model.trim();
-    if (configuration.provider !== 'openai-compatible' && !apiKey) {
-        throw createAiRuntimeError('API key cannot be empty');
-    }
     if (!model) {
         throw createAiRuntimeError('Model cannot be empty');
     }
 
-    setCloudProviderConfig({
+    await setCloudProviderConfig({
         provider: configuration.provider,
-        apiKey,
         model,
         baseUrl: normalizeBaseUrl(configuration.provider, configuration.baseUrl),
     });

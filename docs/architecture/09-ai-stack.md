@@ -1,6 +1,6 @@
 # AI Stack Architecture
 
-Sourdaw is AI-native in three distinct senses: it runs language models (browser and hosted runtimes), it runs generative and analytical audio ML (cloud and in-browser), and — the part that makes it a DAW feature rather than a chatbot — model output can _act on the project_ through the same write path humans use. This document maps that stack.
+Sourdaw runs language models, audio ML, and model-driven project actions.
 
 It complements:
 
@@ -12,25 +12,27 @@ It complements:
 
 ## 1. Language model runtimes
 
-Browser and hosted runtimes behind one panel (AiRuntime):
+AiRuntime owns two explicit runtime classes:
 
-| Runtime                                                                                                    | Where               | Use                                                                 |
-| ---------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------- |
-| Anthropic cloud                                                                                            | `@anthropic-ai/sdk` | Default chat completion, streaming (`streamCloudChatCompletion.ts`) |
-| WebLLM                                                                                                     | `@mlc-ai/web-llm`   | In-browser inference, no API key (`generateWebLlmCompletion.ts`)    |
-| Voice input runs through whisper-rs dictation (`speech.rs`: load model, start/stop dictation, ASR status). |
+| Runtime          | Boundary                             | Use                                                                                   |
+| ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| WebLLM           | Browser worker via `@mlc-ai/web-llm` | Local inference without credentials                                                   |
+| Hosted providers | Desktop native gateway               | Anthropic, OpenAI, and OpenAI-compatible inference through opaque credential sessions |
 
-Automatic language-model selection uses browser WebLLM only and fails closed without WebGPU. Hosted providers require explicit selection, preserving the remote-data disclosure boundary.
+Voice input runs through whisper-rs dictation in `speech.rs`.
+
+Automatic selection uses WebLLM only and fails closed without WebGPU. Hosted providers require the
+desktop app and explicit selection. Native code reads fixed `SOURDAW_*_API_KEY` environment
+variables; the renderer receives only an opaque session ID. Web builds expose no hosted credential
+surface. Unauthenticated loopback OpenAI-compatible endpoints carry no credential and remain local.
 
 ## 2. Audio ML
 
-**Native (ONNX via `ort`):** DeepFilterNet denoise and Demucs stem separation (`ai_audio.rs`), plus audio post-processing (rubato/hound resampling in `audio_postprocess.rs`).
+**Native:** DeepFilterNet denoise (`ai_audio.rs`) plus audio post-processing (`audio_postprocess.rs`).
 
-**Sidecar:** Stable Audio Open generation runs as a Python sidecar (`src-tauri/sidecar/audio_gen.py`) driven by `audio_gen.rs` (start/generate/stop) — the only Python in the shipping stack.
+**In-browser (BrowserAi):** Kokoro TTS and RAVE timbre transfer run through dedicated workers and a model registry (`initBrowserAi.ts`). Singing synthesis stays unavailable until a compatible model chain passes admission. BrowserAi initializes non-blocking at bootstrap.
 
-**In-browser (BrowserAi):** Kokoro TTS, DiffSinger singing-voice synthesis, and RAVE timbre transfer, executed through ONNX Runtime Web in a dedicated worker (`workers/onnxInferenceWorker.ts`) with a model download registry (`initBrowserAi.ts`). BrowserAi initializes non-blocking at bootstrap.
-
-**Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via Spotify's basic-pitch, browser-side stem separation preview, mix-vs-reference comparison.
+**Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via Spotify's basic-pitch, and mix-vs-reference comparison. Stem separation stays unavailable until a compatible model passes admission.
 
 ## 3. The action bridge — AI that does things
 
@@ -58,14 +60,17 @@ The operational rules for building on this bridge (registry discipline, plan/exe
 | Module        | Owns                                                                                          |
 | ------------- | --------------------------------------------------------------------------------------------- |
 | AiRuntime     | LLM runtimes, chat panel, voice commands, action execution + AI action history, preset search |
-| AiGeneration  | generative MIDI (melody/drums/chords/variations), denoise/stem-sep previews, AI task queue    |
-| BrowserAi     | in-browser ML models (TTS, SVS, timbre transfer), model registry, ONNX worker                 |
+| AiGeneration  | generative MIDI (melody/drums/chords/variations), denoise previews, AI task queue             |
+| BrowserAi     | in-browser ML models (TTS and timbre transfer), model registry, inference workers             |
 | AudioAnalysis | musical analysis and audio→MIDI                                                               |
 
-External dependency ownership is deliberate: `@anthropic-ai/sdk` and `@mlc-ai/web-llm` appear only in AiRuntime; `onnxruntime-web` only in BrowserAi and AudioAnalysis; `@spotify/basic-pitch`/`meyda`/`pitchy` only in AudioAnalysis.
+External dependency ownership is deliberate: `@mlc-ai/web-llm` appears only in AiRuntime;
+`onnxruntime-web` only in BrowserAi and AudioAnalysis; `@spotify/basic-pitch`, `meyda`, and `pitchy`
+only in AudioAnalysis. Hosted provider transport lives in `sourdaw-native`.
 
 ## References
 
 - `.agents/skills/llm-action-bridge/SKILL.md` — rules for model-driven actions
+- `.agents/decisions/0028-native-provider-credential-sessions.md` — hosted credential boundary
 - `src-tauri/AGENTS.md` — desktop-shell command inventory
 - `docs/architecture/06-crdt-collaboration.md` — the write path actions enter

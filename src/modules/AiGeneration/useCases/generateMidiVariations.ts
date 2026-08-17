@@ -206,7 +206,7 @@ ONLY output raw JSON, no markdown blocks.`;
         }
     } else {
         throw createAiGenerationError(
-            'No AI backend available. Configure a cloud API key in Settings → AI, or use Chrome with WebGPU for the browser AI engine.'
+            'No AI backend available. Configure a hosted provider in the desktop app or use Chrome with WebGPU.'
         );
     }
 

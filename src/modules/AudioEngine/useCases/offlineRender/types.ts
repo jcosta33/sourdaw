@@ -52,6 +52,15 @@ export type OfflineScheduleTally = {
 };
 
 export type OfflineTrackStrip = {
+    /**
+     * The track this strip was built for.
+     *
+     * The live `TrackChannelStrip` has always carried it; the offline strip was
+     * the one strip in the codebase that did not know which track it belonged
+     * to, so every caller kept a side map to answer the question. Carrying it
+     * means a strip and its id cannot be paired up wrongly by a caller.
+     */
+    trackId: string;
     inputNode: GainNode;
     preFaderTap: GainNode;
     faderNode: GainNode;

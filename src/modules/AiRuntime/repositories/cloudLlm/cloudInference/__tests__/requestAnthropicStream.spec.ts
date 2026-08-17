@@ -1,131 +1,79 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { requestAnthropicStream } from '../requestAnthropicStream';
 
-function responseFromChunks(chunks: Uint8Array[]): Response {
-    return new Response(
-        new ReadableStream<Uint8Array>({
-            start(controller) {
-                for (const chunk of chunks) {
-                    controller.enqueue(chunk);
-                }
-                controller.close();
-            },
-        }),
-        { status: 200 }
-    );
-}
+const requestProvider = vi.hoisted(() => vi.fn());
 
-function requestInput() {
+vi.mock('../requestAnthropicProvider', () => ({ requestAnthropicProvider: requestProvider }));
+
+function input(onEvent = vi.fn()) {
     return {
-        apiKey: 'test-key',
+        sessionId: 'provider-session-00000000000000000000000000000000',
         model: 'claude-test',
         system: 'Be helpful.',
         messages: [{ role: 'user' as const, content: 'Hello' }],
         maxTokens: 128,
         signal: new AbortController().signal,
+        onEvent,
     };
 }
 
 describe('requestAnthropicStream', () => {
-    it('rejects an oversized raw SSE chunk before parsing or exposing an event', async () => {
-        const cancel = vi.fn();
-        const chunk = new TextEncoder().encode(`data: ${'x'.repeat(70 * 1_024)}\n\n`);
-        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-            new Response(
-                new ReadableStream<Uint8Array>({
-                    start(controller) {
-                        controller.enqueue(chunk);
-                    },
-                    cancel,
-                }),
-                { status: 200 }
-            )
-        );
-        vi.stubGlobal('fetch', fetchMock);
-        const events: unknown[] = [];
-
-        await expect(async () => {
-            for await (const event of requestAnthropicStream(requestInput())) {
-                events.push(event);
-            }
-        }).rejects.toThrow(/response|chunk|event|payload|limit/i);
-
-        expect(events).toEqual([]);
-        expect(cancel).toHaveBeenCalledTimes(1);
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
 
-    it('cancels an oversized declared response before creating its reader', async () => {
-        const cancel = vi.fn();
-        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-            new Response(new ReadableStream<Uint8Array>({ cancel }), {
-                status: 200,
-                headers: { 'content-length': String(1_024 * 1_024 + 1) },
-            })
-        );
-        vi.stubGlobal('fetch', fetchMock);
-
-        await expect(async () => {
-            for await (const _event of requestAnthropicStream(requestInput())) {
-                // The declared response bound rejects before any event exists.
-            }
-        }).rejects.toThrow(/response|size|limit/i);
-
-        expect(cancel).toHaveBeenCalledTimes(1);
-    });
-
-    it('parses bounded Anthropic SSE data with the owned authenticated request', async () => {
+    it('parses bounded SSE from the native session transport', async () => {
         const event = { type: 'message_stop' };
-        const fetchMock = vi
-            .fn<typeof fetch>()
-            .mockResolvedValue(
-                responseFromChunks([
-                    new TextEncoder().encode(`event: message_stop\ndata: ${JSON.stringify(event)}\n\n`),
-                ])
-            );
-        vi.stubGlobal('fetch', fetchMock);
-        const events: unknown[] = [];
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode(`event: message_stop\ndata: ${JSON.stringify(event)}\n\n`));
+            return { status: 200, contentType: 'text/event-stream' };
+        });
+        const onEvent = vi.fn();
 
-        for await (const received of requestAnthropicStream(requestInput())) {
-            events.push(received);
-        }
+        await requestAnthropicStream(input(onEvent));
 
-        expect(events).toEqual([event]);
-        expect(fetchMock).toHaveBeenCalledWith(
-            'https://api.anthropic.com/v1/messages',
+        expect(onEvent).toHaveBeenCalledWith(event);
+        expect(requestProvider).toHaveBeenCalledWith(
             expect.objectContaining({
-                method: 'POST',
-                headers: expect.objectContaining({
-                    'anthropic-dangerous-direct-browser-access': 'true',
-                    'anthropic-version': '2023-06-01',
-                    'x-api-key': 'test-key',
-                }),
+                sessionId: 'provider-session-00000000000000000000000000000000',
+                body: expect.stringContaining('"stream":true'),
             })
         );
     });
 
-    it('cancels the response body when the consumer stops before exhaustion', async () => {
-        const cancel = vi.fn();
-        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-            new Response(
-                new ReadableStream<Uint8Array>({
-                    start(controller) {
-                        controller.enqueue(
-                            new TextEncoder().encode('event: message_stop\ndata: {"type":"message_stop"}\n\n')
-                        );
-                    },
-                    cancel,
-                }),
-                { status: 200 }
-            )
-        );
-        vi.stubGlobal('fetch', fetchMock);
+    it('rejects an oversized event before exposing it', async () => {
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode(`data: ${'x'.repeat(70 * 1024)}\n\n`));
+            return { status: 200, contentType: 'text/event-stream' };
+        });
+        const onEvent = vi.fn();
 
-        for await (const event of requestAnthropicStream(requestInput())) {
-            expect(event).toEqual({ type: 'message_stop' });
-            break;
-        }
+        await expect(requestAnthropicStream(input(onEvent))).rejects.toThrow(/event|payload|limit/i);
+        expect(onEvent).not.toHaveBeenCalled();
+    });
 
-        expect(cancel).toHaveBeenCalledTimes(1);
+    it('rejects invalid event JSON', async () => {
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode('data: {invalid}\n\n'));
+            return { status: 200, contentType: 'text/event-stream' };
+        });
+
+        await expect(requestAnthropicStream(input())).rejects.toThrow('invalid event JSON');
+    });
+
+    it('rejects provider failures without exposing their body', async () => {
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode('private provider detail'));
+            return { status: 401, contentType: 'application/json' };
+        });
+
+        await expect(requestAnthropicStream(input())).rejects.toThrow('status 401');
+    });
+
+    it('rejects a successful response with the wrong content type', async () => {
+        requestProvider.mockResolvedValue({ status: 200, contentType: 'application/json' });
+
+        await expect(requestAnthropicStream(input())).rejects.toThrow('invalid content type');
     });
 });

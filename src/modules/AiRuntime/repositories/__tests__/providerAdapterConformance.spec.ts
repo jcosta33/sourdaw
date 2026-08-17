@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { closeProviderGatewaySession } from '../closeProviderGatewaySession';
 import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import { streamOpenAiCompatibleChatCompletion } from '../cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudLlm/cloudSession';
 import { normalizeProviderCapabilityProbe } from '../normalizeProviderCapabilityProbe';
+import { openProviderGatewaySession } from '../openProviderGatewaySession';
 import { compileProviderAdapterInstallation, type ProviderAdapterInstallationInput } from '../providerAdapterRegistry';
-import { runProviderGatewayRequest, type ProviderGatewayDependencies } from '../providerGateway';
+import { runProviderGatewayRequest } from '../providerGateway';
+import { type ProviderGatewayDependencies } from '../providerGatewayDependencies';
 
 type TestGatewayChannel = {
     id: number;
@@ -49,7 +52,7 @@ const BASE_INSTALLATION: ProviderAdapterInstallationInput = {
 function createAdapterRuntime(): OpenAiCompatibleCloudRuntime {
     return {
         provider: 'openai-compatible',
-        api_key: 'remote-secret',
+        session_id: 'provider-session-00000000000000000000000000000000',
         model: 'studio-model-v1',
         base_url: 'https://models.example.test:8443/v1',
         adapter: compileProviderAdapterInstallation(BASE_INSTALLATION),
@@ -127,6 +130,41 @@ describe('provider adapter conformance', () => {
         expect(adapter.capabilities).toMatchObject({ text: true, tools: true, streaming: true });
     });
 
+    it('opens and closes only opaque native credential sessions', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(async (command) =>
+            command === 'open_provider_gateway_session'
+                ? 'provider-session-00000000000000000000000000000000'
+                : undefined
+        );
+        const dependencies: ProviderGatewayDependencies = {
+            createChannel: tauriHarness.createChannel,
+            invoke,
+        };
+
+        const sessionId = await openProviderGatewaySession(adapter, 'openai-compatible', dependencies);
+        await closeProviderGatewaySession(sessionId, dependencies);
+
+        expect(invoke).toHaveBeenNthCalledWith(1, 'open_provider_gateway_session', {
+            adapterId: adapter.adapterId,
+            origin: adapter.origin,
+            credentialSource: 'openai-compatible',
+        });
+        expect(invoke).toHaveBeenNthCalledWith(2, 'close_provider_gateway_session', { sessionId });
+    });
+
+    it('rejects a malformed native credential session ID', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const dependencies: ProviderGatewayDependencies = {
+            createChannel: tauriHarness.createChannel,
+            invoke: async () => 'secret-or-untrusted-value',
+        };
+
+        await expect(openProviderGatewaySession(adapter, 'openai-compatible', dependencies)).rejects.toThrow(
+            'invalid credential session'
+        );
+    });
+
     it.each([
         ['model supplied URL', { ...BASE_INSTALLATION, modelUrl: 'https://evil.example' }],
         ['adapter code', { ...BASE_INSTALLATION, executableCode: 'fetch("https://evil.example")' }],
@@ -157,7 +195,6 @@ describe('provider adapter conformance', () => {
     });
 
     it('uses only the privileged gateway and cancels by request ID', async () => {
-        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>();
         let rejectedCancel: Promise<unknown> | undefined;
         let readCancelCatchCount: (() => number) | undefined;
@@ -186,9 +223,8 @@ describe('provider adapter conformance', () => {
         const pending = runProviderGatewayRequest(
             {
                 requestId: 'request-1',
-                adapter,
+                sessionId: 'provider-session-00000000000000000000000000000000',
                 operation: 'request',
-                apiKey: 'secret-not-in-errors',
                 body: '{"model":"studio-model-v1"}',
                 signal: controller.signal,
                 onResponseStart: () => undefined,
@@ -205,10 +241,8 @@ describe('provider adapter conformance', () => {
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(invoke).toHaveBeenCalledWith('provider_gateway_request', {
             requestId: 'request-1',
-            adapterId: 'builtin.openai-compatible.chat-completions.v1',
-            origin: 'https://models.example.test:8443',
+            sessionId: 'provider-session-00000000000000000000000000000000',
             operation: 'request',
-            apiKey: 'secret-not-in-errors',
             body: '{"model":"studio-model-v1"}',
             onEvent: channel,
         });
@@ -219,7 +253,6 @@ describe('provider adapter conformance', () => {
     });
 
     it('does not dispatch after aborting during channel creation', async () => {
-        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(async () => undefined);
         const channel = { id: 4, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:4' };
         let resolveChannel: ((value: typeof channel) => void) | undefined;
@@ -233,9 +266,8 @@ describe('provider adapter conformance', () => {
         const pending = runProviderGatewayRequest(
             {
                 requestId: 'request-channel-race',
-                adapter,
+                sessionId: 'provider-session-00000000000000000000000000000000',
                 operation: 'request',
-                apiKey: 'stale-secret',
                 body: '{"stale":true}',
                 signal: controller.signal,
                 onResponseStart: () => undefined,
@@ -253,7 +285,6 @@ describe('provider adapter conformance', () => {
     });
 
     it('maps bounded gateway events without exposing provider bodies in failures', async () => {
-        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const channel = { id: 2, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:2' };
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(async (command, args) => {
             if (command === 'provider_gateway_request') {
@@ -273,9 +304,8 @@ describe('provider adapter conformance', () => {
         await runProviderGatewayRequest(
             {
                 requestId: 'request-2',
-                adapter,
+                sessionId: 'provider-session-00000000000000000000000000000000',
                 operation: 'probe',
-                apiKey: 'secret-not-in-errors',
                 body: null,
                 signal: new AbortController().signal,
                 onResponseStart: (response) => starts.push(response),
@@ -300,9 +330,8 @@ describe('provider adapter conformance', () => {
         const failed = runProviderGatewayRequest(
             {
                 requestId: 'request-3',
-                adapter,
+                sessionId: 'provider-session-00000000000000000000000000000000',
                 operation: 'request',
-                apiKey: 'secret-not-in-errors',
                 body: '{"private":"request-body"}',
                 signal: new AbortController().signal,
                 onResponseStart: () => undefined,
@@ -317,7 +346,6 @@ describe('provider adapter conformance', () => {
     });
 
     it('rejects a cross-request gateway event before exposing response data', async () => {
-        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const channel = { id: 5, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:5' };
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(async (_command, args) => {
             const onEvent = args?.onEvent as typeof channel;
@@ -334,9 +362,8 @@ describe('provider adapter conformance', () => {
             runProviderGatewayRequest(
                 {
                     requestId: 'request-5',
-                    adapter,
+                    sessionId: 'provider-session-00000000000000000000000000000000',
                     operation: 'request',
-                    apiKey: '',
                     body: '{}',
                     signal: new AbortController().signal,
                     onResponseStart,
@@ -349,7 +376,6 @@ describe('provider adapter conformance', () => {
     });
 
     it('cancels the privileged request when downstream event handling rejects', async () => {
-        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const channel = { id: 6, onmessage: (_event: unknown) => undefined, toJSON: () => '__CHANNEL__:6' };
         let rejectRequest: ((error: Error) => void) | undefined;
         const invoke = vi.fn<ProviderGatewayDependencies['invoke']>((command, args) => {
@@ -376,9 +402,8 @@ describe('provider adapter conformance', () => {
         const pending = runProviderGatewayRequest(
             {
                 requestId: 'request-callback-failure',
-                adapter,
+                sessionId: 'provider-session-00000000000000000000000000000000',
                 operation: 'request',
-                apiKey: '',
                 body: '{}',
                 signal: new AbortController().signal,
                 onResponseStart: vi.fn(),

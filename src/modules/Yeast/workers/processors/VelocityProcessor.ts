@@ -82,8 +82,15 @@ export class VelocityProcessor extends BaseMidiProcessor {
                 break;
             }
             case 'random': {
+                // `random_min` and `random_max` are interchangeable ends of one
+                // range, so read them in order. No UI reaches an inverted pair,
+                // but a stored project, a CRDT merge, or an AI-authored action
+                // can set one: `rngState % (max - min + 1)` then divides by a
+                // zero or negative span and a NaN velocity reaches the host.
+                const low = Math.min(this.randomMin, this.randomMax);
+                const high = Math.max(this.randomMin, this.randomMax);
                 this.rngState = nextLcg(this.rngState);
-                out = this.randomMin + (this.rngState % (this.randomMax - this.randomMin + 1));
+                out = low + (this.rngState % (high - low + 1));
                 break;
             }
         }

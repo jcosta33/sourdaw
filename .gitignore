@@ -3,6 +3,9 @@ node_modules
 dist/
 coverage/
 
+# Compiled Electron main process (`pnpm desktop:dev` output)
+electron/out/
+
 .env
 .env.*
 !.env.example

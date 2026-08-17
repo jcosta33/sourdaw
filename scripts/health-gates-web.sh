@@ -13,6 +13,7 @@ pnpm typecheck:scripts
 pnpm typecheck:e2e
 pnpm lint:full
 pnpm test:command-schema
+pnpm test:release-inventory
 pnpm test:collection-scope
 pnpm test:barrel-mocks
 pnpm test:full
