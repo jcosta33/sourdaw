@@ -1,0 +1,56 @@
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_ab5443e65c7fba::t_fecc4d0b74f728 199-200,202-209
+  s_ab5443e65c7fba::t_32c26688c6c16a 534-535,542-582
+  s_ab5443e65c7fba::t_bb5c3a3666cd27 331-341,344-347,349-354,358-370
+  s_ab5443e65c7fba::t_4e4aea2afd2bdb 11,15
+  s_ab5443e65c7fba::t_01654cb8ba244e 74-76
+  s_ab5443e65c7fba::t_0dd7499c2cf5d5 371-372,583-585
+src/modules/Yeast/workers/__tests__/arpPatternProjectionChannel.spec.ts
+  s_ab5443e65c7fba::t_e519b94273b1e2 166
+  s_ab5443e65c7fba::t_8aaa123ef62d40 12
+  s_ab5443e65c7fba::t_fcc09af01896a9 137-148,152-165,167-174,178-185,187-245
+  s_ab5443e65c7fba::t_c217799b6dd4df 186
+  s_ab5443e65c7fba::t_02e1ea86c8042d 149-151,175-177
+  s_ab5443e65c7fba::t_92092cd489e074 48-49,51-54
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_ab5443e65c7fba::t_750376fd0d3b84 504-516,520-551
+  s_ab5443e65c7fba::t_4458964f132598 517-519
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_ab5443e65c7fba::t_0d7fa3d38dfce1 311-326
+  s_ab5443e65c7fba::t_3fb9554d5cf0c4 327
+  s_ab5443e65c7fba::t_ff38b9074cc664 306-308
+  s_ab5443e65c7fba::t_2ff639ddca5512 309-310
+src/modules/Yeast/models/ArpPattern.ts
+  s_ab5443e65c7fba::t_5bf0ab721ef5b1 173-174
+  s_ab5443e65c7fba::t_5395c7f054b79b 200-202,213,216,218-234
+  s_ab5443e65c7fba::t_878a844791b74f 240-245
+  s_ab5443e65c7fba::t_9cdbd3744ffa60 89-140,172,199
+  s_ab5443e65c7fba::t_b9bd36ee68b1c0 150,152,239
+src/modules/Yeast/models/__tests__/ArpPattern.spec.ts
+  s_ab5443e65c7fba::t_317fd5e813ccac 179-197,201-217
+  s_ab5443e65c7fba::t_d9436a8ff7135e 13
+  s_ab5443e65c7fba::t_fc2bab7e3cf45b 198-200
+src/modules/Yeast/presentations/components/StepPatternEditor.tsx
+  s_ab5443e65c7fba::t_f04286217089c3 11-14,18,30-46
+  s_ab5443e65c7fba::t_2e20bcf9f53b40 130-135,142-151
+  s_ab5443e65c7fba::t_79eebf8a2b1f1a 194-200,203-204
+  s_ab5443e65c7fba::t_d796b3b84f2752 56-60
+  s_ab5443e65c7fba::t_ee6154b4b4e460 72-85
+  s_ab5443e65c7fba::t_0604b58458af33 47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "91938163cfc133c6bf13ed31af4eea0f876b8db2",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
