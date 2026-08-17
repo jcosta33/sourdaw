@@ -1,3 +1,5 @@
+import { desktopSaveDialog } from '#/utils/tauriBridge';
+
 type SelectNativeAudioExportFileInput = {
     formats: string[];
     suggestedName: string;
@@ -9,8 +11,7 @@ export async function selectNativeAudioExportFile({
     formats,
     suggestedName,
 }: SelectNativeAudioExportFileInput): SelectNativeAudioExportFileOutput {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const filePath = await save({
+    const filePath = await desktopSaveDialog({
         defaultPath: suggestedName,
         filters: [{ name: 'Audio File', extensions: formats }],
     });

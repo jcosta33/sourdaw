@@ -46,7 +46,18 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             );
         } else {
             if (selectedClip && selectedTrack) {
-                return <ClipInspector clip={selectedClip} trackId={selectedTrack.id} onBack={clearClipSelection} />;
+                // Keyed by clip id: ClipInspector owns local rename-draft state that
+                // must not survive a selection change, and remounting is the only
+                // way to guarantee that without the component resyncing on every
+                // clip prop it renders from.
+                return (
+                    <ClipInspector
+                        key={selectedClip.id}
+                        clip={selectedClip}
+                        trackId={selectedTrack.id}
+                        onBack={clearClipSelection}
+                    />
+                );
             } else {
                 if (selectedTrack) {
                     return (

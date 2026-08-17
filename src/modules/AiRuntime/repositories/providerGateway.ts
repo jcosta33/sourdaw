@@ -1,6 +1,4 @@
-import { createChannel, tauriInvoke, type TauriChannel } from '#/utils/tauriBridge';
-
-import { type CompiledProviderAdapter } from './providerAdapterRegistry';
+import { productionProviderGatewayDependencies, type ProviderGatewayDependencies } from './providerGatewayDependencies';
 
 const MAX_PROVIDER_REQUEST_BYTES = 1024 * 1024;
 const MAX_PROVIDER_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -22,25 +20,12 @@ export type ProviderGatewayResponseStart = {
 
 export type ProviderGatewayRequest = {
     requestId: string;
-    adapter: CompiledProviderAdapter;
+    sessionId: string;
     operation: 'probe' | 'request';
-    apiKey: string;
     body: string | null;
     signal: AbortSignal;
     onResponseStart: (response: ProviderGatewayResponseStart) => void;
     onBodyChunk: (chunk: Uint8Array) => void;
-};
-
-export type ProviderGatewayDependencies = {
-    createChannel: <Payload>() => Promise<TauriChannel<Payload>>;
-    invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-};
-
-const productionDependencies: ProviderGatewayDependencies = {
-    createChannel,
-    invoke(command: string, args?: Record<string, unknown>): Promise<unknown> {
-        return tauriInvoke(command, args);
-    },
 };
 
 function assertRequestId(value: string): void {
@@ -118,7 +103,7 @@ function parseWireEvent(
 
 export async function runProviderGatewayRequest(
     request: ProviderGatewayRequest,
-    dependencies: ProviderGatewayDependencies = productionDependencies
+    dependencies: ProviderGatewayDependencies = productionProviderGatewayDependencies
 ): Promise<void> {
     assertRequestId(request.requestId);
     request.signal.throwIfAborted();
@@ -165,10 +150,8 @@ export async function runProviderGatewayRequest(
         try {
             await dependencies.invoke('provider_gateway_request', {
                 requestId: request.requestId,
-                adapterId: request.adapter.adapterId,
-                origin: request.adapter.origin,
+                sessionId: request.sessionId,
                 operation: request.operation,
-                apiKey: request.apiKey,
                 body: request.body,
                 onEvent: channel,
             });

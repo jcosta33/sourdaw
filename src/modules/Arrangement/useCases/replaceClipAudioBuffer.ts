@@ -1,4 +1,4 @@
-import { clearClipPitchContour } from '#/modules/Knead/useCases';
+import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 
 import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../stores/trackStore';
@@ -62,10 +62,13 @@ export function replaceClipAudioBuffer(clipId: string, newBufferId: string): boo
         tracks,
     });
 
-    // New source audio invalidates any analyzed pitch contour: clear it so the
-    // PitchEditor gate re-opens instead of locking the waveform behind stale data.
+    // New source audio invalidates the whole pitch analysis, contour and blobs
+    // alike. Both have to go: the blobs are the previous audio's live pitch shift,
+    // which the Knead worklet would keep applying to the file just dropped in, and
+    // while they stand the editor treats the clip as already analysed and never
+    // re-runs on the new audio.
     for (const replacedClipId of replacedClipIds) {
-        clearClipPitchContour(replacedClipId);
+        clearClipPitchAnalysis(replacedClipId);
     }
     return true;
 }

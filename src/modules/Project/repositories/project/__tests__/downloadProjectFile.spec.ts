@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { save } from '@tauri-apps/plugin-dialog';
-
-import { isTauri } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isTauri } from '#/utils/tauriBridge';
 
 import { saveProjectToFile } from '../../nativeProjectFiles/saveProjectToFile';
 import { downloadProjectFile } from '../downloadProjectFile';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
+    desktopSaveDialog: vi.fn(),
 }));
 
 vi.mock('../../nativeProjectFiles/saveProjectToFile', () => ({
@@ -41,11 +40,11 @@ describe('downloadProjectFile', () => {
 
     it('should use Tauri save dialog in desktop', async () => {
         vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(save).mockResolvedValue('/path/to/save.sourdaw');
+        vi.mocked(desktopSaveDialog).mockResolvedValue('/path/to/save.sourdaw');
 
         await downloadProjectFile(projectData);
 
-        expect(save).toHaveBeenCalled();
+        expect(desktopSaveDialog).toHaveBeenCalled();
         expect(saveProjectToFile).toHaveBeenCalledWith('/path/to/save.sourdaw', projectData);
     });
 

@@ -31,6 +31,8 @@ const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 type ChordTrackLaneProps = {
     pixelsPerBeat: number;
     scrollX: number;
+    /** Timeline viewport width in px, so the off-screen cull tracks the real canvas instead of a fixed guess. */
+    viewportWidth: number;
 };
 
 type ChordQuality =
@@ -119,7 +121,7 @@ type ActionEffects = {
     onApplied?: () => void;
 };
 
-export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps): ReactElement => {
+export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordTrackLaneProps): ReactElement => {
     const state = useStore<ChordTrackViewState>(chordTrackStore, defaultState);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
@@ -540,8 +542,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     const width = event.duration * pixelsPerBeat;
                     const color = ROOT_COLORS[event.root % 12]!;
 
-                    // Cull off-screen blocks
-                    if (x + width < -20 || x > 4000) {
+                    // Cull off-screen blocks against the real viewport width — a fixed
+                    // guess here hid chord blocks on wide viewports (#2039).
+                    if (x + width < -20 || x > viewportWidth + 20) {
                         return null;
                     }
 

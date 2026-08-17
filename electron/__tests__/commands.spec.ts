@@ -1,0 +1,357 @@
+/**
+ * The exposed and denied command sets, re-derived from Rust at test time
+ * (AC-003).
+ *
+ * A list of names copied into TypeScript is only as good as the check that it
+ * still matches the thing it mirrors. So nothing here trusts
+ * `electron/commands.ts`: the registered surface is read out of
+ * `src-tauri/src/lib.rs`'s `generate_handler!`, the allowed surface out of the
+ * Tauri capability, and the addon's methods out of the addon's own Rust source.
+ * A command added, removed or renamed on the Rust side fails here rather than
+ * at the moment a musician invokes it.
+ *
+ * This is the port of `src/utils/__tests__/agentWebviewSecurity.spec.ts` to the
+ * Electron shell. The Tauri spec keeps its own assertions about the Tauri
+ * manifest and capability; this one covers what the Electron shell decides.
+ */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import { SOURDAW_COMMAND_ARGUMENTS } from '#/utils/sourdawCommandArguments';
+
+import { addonMethodName, commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS, isExposedCommand } from '../commands.js';
+
+const read = (path: string): string => readFileSync(resolve(path), 'utf8');
+
+const matches = (source: string, pattern: RegExp): string[] =>
+    [...source.matchAll(pattern)].flatMap((match) => (match[1] === undefined ? [] : [match[1]]));
+
+const sorted = (names: readonly string[]): string[] => [...new Set(names)].sort();
+
+/** Every command body the product registers, from the Tauri handler list. */
+const registeredCommands = (): string[] =>
+    sorted(matches(read('src-tauri/src/lib.rs'), /^\s*commands::[\w:]+::(\w+),$/gmu));
+
+/**
+ * The body of one TOML array, by key.
+ *
+ * Scoped rather than scanning the file, because a capability may carry both an
+ * allow and a deny list — the standard Tauri shape. Reading every quoted string
+ * would derive a denied command as granted, and the equality below would then
+ * fail in the direction that instructs the fixer to *widen* the Electron
+ * surface with commands the capability explicitly withholds.
+ */
+export const tomlArray = (source: string, key: string): string | undefined => {
+    const opening = new RegExp(String.raw`^\s*${key}\s*=\s*\[`, 'mu').exec(source);
+    if (opening === null) {
+        return undefined;
+    }
+    const start = opening.index + opening[0].length;
+    const end = source.indexOf(']', start);
+    return end === -1 ? undefined : source.slice(start, end);
+};
+
+/** Every command the Tauri main webview is granted. */
+const allowedCommands = (): string[] => {
+    const block = tomlArray(read('src-tauri/permissions/sourdaw-commands.toml'), 'commands.allow');
+    if (block === undefined) {
+        throw new Error('The capability has no commands.allow array to derive the granted surface from');
+    }
+    return sorted(matches(block, /"(\w+)"/gu));
+};
+
+/** Every method the Node addon publishes, from its `#[napi]` items. */
+const addonMethods = (): string[] =>
+    sorted(
+        matches(
+            read('crates/sourdaw-native/src/addon/mod.rs'),
+            /#\[napi[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub (?:async )?fn (\w+)/gu
+        )
+    );
+
+describe('the Electron command surface', () => {
+    it('exposes exactly the commands the Tauri webview is granted', () => {
+        // Not a hand-kept number. The Tauri capability is the product's
+        // decision about what a renderer may invoke, and the Electron shell
+        // exposing a different set would make the two shells different
+        // products.
+        expect(sorted(EXPOSED_COMMANDS)).toEqual(allowedCommands());
+    });
+
+    it('denies exactly the registered commands the capability withholds', () => {
+        const registered = registeredCommands();
+        const allowed = new Set(allowedCommands());
+
+        expect(sorted(DENIED_COMMANDS)).toEqual(registered.filter((command) => !allowed.has(command)));
+    });
+
+    it('accounts for every registered command exactly once', () => {
+        // The property that makes the two lists above a partition rather than
+        // two independent opinions: a command added to Rust and forgotten here
+        // is neither exposed nor denied, and would otherwise pass both checks.
+        expect(sorted([...EXPOSED_COMMANDS, ...DENIED_COMMANDS])).toEqual(registeredCommands());
+        expect(EXPOSED_COMMANDS.length + DENIED_COMMANDS.length).toBe(registeredCommands().length);
+    });
+
+    it('refuses a denied command by name', () => {
+        for (const command of DENIED_COMMANDS) {
+            expect(isExposedCommand(command)).toBe(false);
+        }
+        expect(isExposedCommand('scan_plugins')).toBe(true);
+        expect(isExposedCommand('')).toBe(false);
+        expect(isExposedCommand('__proto__')).toBe(false);
+    });
+
+    it('gives a denied command no channel that collides with an exposed one', () => {
+        const exposedChannels = new Set(EXPOSED_COMMANDS.map(commandChannel));
+
+        expect(exposedChannels.size).toBe(EXPOSED_COMMANDS.length);
+        for (const command of DENIED_COMMANDS) {
+            expect(exposedChannels.has(commandChannel(command))).toBe(false);
+        }
+    });
+});
+
+describe('addon method naming', () => {
+    it('maps every exposed command onto a method the addon publishes', () => {
+        // The addon declares each command as `#[napi] pub fn <command_name>`,
+        // so the comparison runs in the Rust naming. What the router then calls
+        // is the `camelCase` name napi-rs publishes it under, and that
+        // translation is pinned by name in the test below — a translation that
+        // was right for most commands and wrong for one would surface as a
+        // single command failing at runtime with "not a function".
+        const published = new Set(addonMethods());
+
+        expect(published.size).toBeGreaterThan(EXPOSED_COMMANDS.length);
+        for (const command of EXPOSED_COMMANDS) {
+            expect(published.has(command)).toBe(true);
+        }
+    });
+
+    it('translates the shapes the surface actually contains', () => {
+        expect(addonMethodName('scan_plugins')).toBe('scanPlugins');
+        expect(addonMethodName('get_plugin_state_bytes')).toBe('getPluginStateBytes');
+        expect(addonMethodName('parse_scl')).toBe('parseScl');
+        expect(addonMethodName('write_push2_display')).toBe('writePush2Display');
+        expect(addonMethodName('collab_get_document_state')).toBe('collabGetDocumentState');
+    });
+});
+
+/**
+ * The parameter list of one `#[napi]` method, in declaration order.
+ *
+ * Parsed by bracket depth rather than by regex: several signatures wrap across
+ * lines and carry generic types (`Option<String>`, `Vec<String>`), and a
+ * line-anchored pattern would silently return a short list for exactly those.
+ */
+type AddonSignature = {
+    readonly parameters: readonly string[];
+    readonly streamEmitter: boolean;
+};
+
+const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
+    const source = read('crates/sourdaw-native/src/addon/mod.rs');
+    const signatures = new Map<string, AddonSignature>();
+    const declaration = /#\[napi[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub (?:async )?fn (\w+)\s*\(/gu;
+
+    for (const match of source.matchAll(declaration)) {
+        const name = match[1];
+        if (name === undefined) {
+            continue;
+        }
+        const start = match.index + match[0].length;
+        let cursor = start;
+        let depth = 1;
+        while (cursor < source.length && depth > 0) {
+            const character = source[cursor];
+            if (character === '(' || character === '<' || character === '[') {
+                depth += 1;
+            } else if (character === ')' || character === '>' || character === ']') {
+                depth -= 1;
+            }
+            cursor += 1;
+        }
+
+        const declared: string[] = [];
+        let nesting = 0;
+        let current = '';
+        for (const character of source.slice(start, cursor - 1)) {
+            if (character === '<' || character === '(' || character === '[') {
+                nesting += 1;
+            }
+            if (character === '>' || character === ')' || character === ']') {
+                nesting -= 1;
+            }
+            if (character === ',' && nesting === 0) {
+                declared.push(current);
+                current = '';
+            } else {
+                current += character;
+            }
+        }
+        declared.push(current);
+
+        const named = declared
+            .map((parameter) => parameter.trim())
+            .filter((parameter) => parameter !== '' && parameter !== '&self' && parameter !== 'self')
+            .map((parameter) => parameter.slice(0, parameter.indexOf(':')).trim());
+
+        signatures.set(name, {
+            // The router appends the emitter itself; it is never sent by a caller.
+            parameters: named.filter((parameter) => parameter !== 'on_event'),
+            streamEmitter: named.includes('on_event'),
+        });
+    }
+    return signatures;
+};
+
+/**
+ * What each exposed command's positional arguments are, in order.
+ *
+ * `SourdawBridge` takes a positional array, so this order *is* the contract
+ * every renderer call site is written against. Under Tauri's named-argument
+ * `invoke` a transposition was unrepresentable; here `load_plugin(plugin_id,
+ * instance_id)` and `provider_gateway_request`'s five consecutive `String`
+ * parameters would be accepted swapped by napi-rs deserialization without a
+ * word, and surface as a plugin that will not load or a request signed with the
+ * wrong key.
+ *
+ * Written out rather than derived on both sides: a derivation compared against
+ * itself asserts nothing. The equality below is what makes a Rust signature
+ * change fail here instead of at a musician's first invoke.
+ */
+const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['analyze_pitch', ['analysis_id', 'audio_path']],
+    ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],
+    ['cancel_provider_gateway_request', ['request_id']],
+    ['close_midi_input', []],
+    ['close_plugin_gui', ['instance_id']],
+    ['close_provider_gateway_session', ['session_id']],
+    ['close_push_transport', []],
+    ['collab_apply_change', ['doc_id', 'change_bytes']],
+    ['collab_create_project', ['name', 'sample_rate']],
+    ['collab_get_document_state', ['doc_id']],
+    ['collab_load_bundle', ['path']],
+    ['collab_merge_bundle', ['path']],
+    ['collab_save_bundle', ['path']],
+    ['commit_pitch_edit', ['request']],
+    ['create_crumbs', ['instance_id', 'sample_rate']],
+    ['crumbs_all_sound_off', ['instance_id']],
+    ['crumbs_note_off', ['instance_id', 'note']],
+    ['crumbs_note_on', ['instance_id', 'note', 'velocity']],
+    ['denoise_audio', ['request']],
+    ['destroy_crumbs', ['instance_id']],
+    ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],
+    ['detect_smart_loop_points', ['instance_id', 'sample_id']],
+    ['disable_link', []],
+    ['enable_link', []],
+    ['engine_rt_diagnostics', []],
+    ['ensure_whisper_ready', []],
+    ['get_crumbs_position', ['instance_id']],
+    ['get_default_plugin_paths', []],
+    ['get_link_status', []],
+    ['get_plugin_parameters', ['instance_id']],
+    ['get_plugin_state_bytes', ['instance_id']],
+    ['get_waveform_peaks', ['instance_id', 'sample_id', 'level', 'channel']],
+    ['is_plugin_gui_supported', ['instance_id']],
+    ['link_start_playing', []],
+    ['link_stop_playing', []],
+    ['list_directory', ['path']],
+    ['list_midi_inputs', []],
+    ['load_plugin', ['plugin_id', 'instance_id']],
+    ['load_sample', ['instance_id', 'file_path']],
+    ['open_midi_input', ['port_index']],
+    ['open_plugin_gui', ['instance_id']],
+    ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
+    ['open_push_transport', ['model']],
+    ['parse_scl', ['content', 'root_note', 'root_freq']],
+    ['process_plugin_audio', ['instance_id', 'audio_bytes']],
+    ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
+    ['read_file_bytes', ['path']],
+    ['scan_plugins', ['paths']],
+    ['send_push_midi', ['bytes']],
+    ['set_crumbs_mode', ['instance_id', 'mode']],
+    ['set_crumbs_param', ['instance_id', 'param', 'value']],
+    ['set_link_tempo', ['tempo']],
+    ['set_plugin_bypass', ['instance_id', 'bypassed']],
+    ['set_plugin_parameter', ['instance_id', 'param_id', 'value']],
+    ['set_plugin_state_bytes', ['instance_id', 'plugin_state']],
+    ['start_dictation', []],
+    ['stop_dictation', []],
+    ['stop_recording', ['instance_id']],
+    ['unload_plugin', ['instance_id']],
+    ['write_file_bytes', ['path', 'data']],
+    ['write_push2_display', ['bytes']],
+]);
+
+describe('positional argument contract', () => {
+    it('matches the addon signature for every exposed command, in order', () => {
+        const signatures = addonSignatures();
+        const derived = EXPOSED_COMMANDS.map((command): [string, readonly string[]] => [
+            command,
+            signatures.get(command)?.parameters ?? ['<no signature found>'],
+        ]);
+
+        expect(derived).toEqual([...COMMAND_ARGUMENTS.entries()].sort(([a], [b]) => a.localeCompare(b)));
+    });
+
+    it('pins the runs of same-typed parameters a transposition would hide', () => {
+        // Named explicitly because these are the two the parity risk is real
+        // for: everything in them is a `String`, so nothing downstream rejects
+        // a swap.
+        expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id']);
+        expect(COMMAND_ARGUMENTS.get('provider_gateway_request')).toEqual([
+            'request_id',
+            'session_id',
+            'operation',
+            'body',
+        ]);
+    });
+
+    it('matches the renderer seam table, so the seam orders arguments by the same contract', () => {
+        // The renderer cannot import `electron/**`, so the seam keeps its own
+        // copy of this table; this equality is what keeps the copy honest.
+        const bySortedName = (entries: ReadonlyMap<string, readonly string[]>): [string, readonly string[]][] =>
+            [...entries.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+        expect(bySortedName(SOURDAW_COMMAND_ARGUMENTS)).toEqual(bySortedName(COMMAND_ARGUMENTS));
+    });
+
+    it('reserves the trailing emitter for exactly the streaming commands', () => {
+        // The router appends `stream.emit` as the final argument, so a command
+        // that grew an emitter without the renderer calling `stream()` would be
+        // invoked one argument short.
+        const streaming = [...addonSignatures()]
+            .filter(([name, signature]) => signature.streamEmitter && isExposedCommand(name))
+            .map(([name]) => name);
+
+        expect(streaming).toEqual(['provider_gateway_request']);
+    });
+});
+
+describe('deriving the granted surface from the capability', () => {
+    it('reads only the allow array, so a deny array can never be read as a grant', () => {
+        const capability = [
+            '[[permission]]',
+            'identifier = "sourdaw-commands"',
+            'commands.allow = [',
+            '    "load_plugin",',
+            '    "unload_plugin",',
+            ']',
+            'commands.deny = [',
+            '    "start_native_engine",',
+            ']',
+            '',
+        ].join('\n');
+
+        expect(tomlArray(capability, 'commands.allow')).toMatch(/load_plugin/u);
+        expect(tomlArray(capability, 'commands.allow')).not.toMatch(/start_native_engine/u);
+        expect(tomlArray(capability, 'commands.deny')).toMatch(/start_native_engine/u);
+    });
+
+    it('finds no array that is not there', () => {
+        expect(tomlArray('commands.allow = [ "a" ]', 'commands.deny')).toBeUndefined();
+    });
+});

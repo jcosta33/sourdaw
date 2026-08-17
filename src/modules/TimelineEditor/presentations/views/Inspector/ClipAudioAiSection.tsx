@@ -6,7 +6,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import {
     polyphonicAudioToMidi,
@@ -180,17 +180,6 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                 </div>
 
                 <div className="flex gap-1">
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
-                        onClick={() => {
-                            notifyUser('Separating stems… this may take a moment');
-                            void handleStemSeparationPreview(clip.id);
-                        }}
-                    >
-                        Separate Stems
-                    </Button>
                     <Button
                         variant="ghost"
                         size="xs"

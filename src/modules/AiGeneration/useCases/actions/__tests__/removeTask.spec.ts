@@ -7,7 +7,7 @@ describe('removeTask', () => {
     beforeEach(() => {
         aiStore.set({
             tasks: [
-                { id: 't1', type: 'audio-generation', status: 'success', timestamp: 1 },
+                { id: 't1', type: 'denoise', status: 'success', timestamp: 1 },
                 { id: 't2', type: 'midi-generation', status: 'processing', timestamp: 2 },
             ],
             isPanelOpen: false,
@@ -27,7 +27,7 @@ describe('removeTask', () => {
 
     it('preserves an unrelated current task when a stale snapshot is observed', () => {
         vi.spyOn(aiStore, 'value', 'get').mockReturnValueOnce({
-            tasks: [{ id: 't1', type: 'audio-generation', status: 'success', timestamp: 1 }],
+            tasks: [{ id: 't1', type: 'denoise', status: 'success', timestamp: 1 }],
             isPanelOpen: false,
         });
 

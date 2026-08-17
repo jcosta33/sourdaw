@@ -19,7 +19,7 @@ describe('nativeCrdtPersistence repository', () => {
 
     it('nativeApplyChange should call tauri invoke', async () => {
         vi.mocked(invokeCommand).mockResolvedValue(true);
-        const result = await nativeApplyChange('doc1', [1, 2, 3]);
+        const result = await nativeApplyChange('doc1', new Uint8Array([1, 2, 3]));
         expect(invokeCommand).toHaveBeenCalledWith('collab_apply_change', { docId: 'doc1', changeBytes: [1, 2, 3] });
         expect(result).toBe(true);
     });
