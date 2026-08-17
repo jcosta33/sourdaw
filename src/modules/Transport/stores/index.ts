@@ -11,6 +11,3 @@ export { timeSignatureMapStore } from './timeSignatureMapStore';
 
 export { transportStore, defaultTransportState, MIN_TEMPO, MAX_TEMPO } from './transportStore';
 export type { TransportState } from './transportStore';
-
-export type { LinkStatus } from './linkStatusStore';
-export { linkStatusStore, defaultLinkStatus, subscribeToLinkStatus, getLinkStatusSnapshot } from './linkStatusStore';
