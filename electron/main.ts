@@ -6,22 +6,21 @@
  * by the `sourdaw-native` addon, the event path, plugin scanning in its own
  * process, and an explicit quit cascade.
  *
- * The renderer still runs its browser path. Nothing here defines
- * `__TAURI_INTERNALS__`, so `isTauri()` stays false and no call site reaches
- * `window.sourdaw` yet — the renderer seam is rewired in the next packet. That
- * makes this addition observable through its own specs and through the dev
- * shell, and inert for the product until the seam moves.
+ * The renderer's desktop seam (`src/utils/tauriBridge.ts`) answers from the
+ * `window.sourdaw` bridge this shell's preload publishes, so under Electron
+ * the renderer takes its native paths through the surface below.
  */
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
-import { app, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron';
+import { app, BaseWindow, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron';
 
 import { registerDialogChannels, registerPathChannels, registerScanCommand, SCAN_COMMAND } from './appIpc.js';
 import { EVENT_CHANNEL, STREAM_CHANNEL } from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
+import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
@@ -284,6 +283,23 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
     });
 
 /**
+ * A bare native window for one CLAP editor: no webcontents, hidden until the
+ * addon has run the GUI lifecycle and knows the plugin's preferred size,
+ * `resizable: false` because that size is the plugin's to choose. 800×600 is
+ * only the pre-lifecycle placeholder the addon immediately resizes.
+ */
+const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
+    new BaseWindow({
+        width: 800,
+        height: 600,
+        title: options.title,
+        show: false,
+        resizable: false,
+        alwaysOnTop: options.alwaysOnTop,
+        ...(options.parent === undefined ? {} : { parent: options.parent }),
+    });
+
+/**
  * Build the native host and wire everything that depends on it.
  *
  * A missing or unloadable addon is reported and survived rather than fatal. The
@@ -325,6 +341,11 @@ const startNativeSurface = (): void => {
 
     scanSupervisor = createUtilityScanSupervisor(addonPath);
     registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
+
+    registerPluginWindowHost(nativeHost, {
+        createWindow: createEditorWindow,
+        getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
+    });
 };
 
 void app.whenReady().then(() => {

@@ -75,6 +75,25 @@ pub fn native_editor_handle_ptr(handle: RawWindowHandle) -> Result<*mut c_void, 
     }
 }
 
+/// The native pointer a shell delivered as raw bytes.
+///
+/// Electron's `getNativeWindowHandle()` hands the platform handle as a byte
+/// buffer holding the pointer's memory representation — NSView* on macOS, HWND
+/// on Windows, an X11 window id on Linux — so the cast back is a native-endian
+/// read of exactly one pointer. Any other length is a corrupt handle and is
+/// refused: handing the CLAP GUI extension a truncated pointer is a crash
+/// inside the plugin, not an error here.
+pub fn native_handle_from_bytes(bytes: &[u8]) -> Result<usize, String> {
+    let array: [u8; size_of::<usize>()] = bytes.try_into().map_err(|_| {
+        format!(
+            "Native window handle must be {} bytes, got {}",
+            size_of::<usize>(),
+            bytes.len()
+        )
+    })?;
+    Ok(usize::from_ne_bytes(array))
+}
+
 /// One live editor window.
 ///
 /// Held only for the duration of `open_plugin_gui`; afterwards the window is
@@ -188,5 +207,24 @@ mod tests {
     #[test]
     fn an_unparented_editor_window_keeps_the_always_on_top_fallback() {
         assert!(plugin_editor_needs_always_on_top(false));
+    }
+
+    /// The byte buffer is the pointer's memory representation, so the read
+    /// must be native-endian and exactly pointer-sized.
+    #[test]
+    fn a_native_handle_round_trips_through_its_byte_representation() {
+        let pointer: usize = 0x7ffe_e1b2_c3d4;
+        let bytes = pointer.to_ne_bytes();
+
+        assert_eq!(native_handle_from_bytes(&bytes), Ok(pointer));
+    }
+
+    /// A truncated or padded buffer is a corrupt handle, and handing it to a
+    /// plugin is a crash in the plugin — refusal is the only safe answer.
+    #[test]
+    fn a_wrong_sized_handle_buffer_is_refused() {
+        assert!(native_handle_from_bytes(&[1, 2, 3, 4]).is_err());
+        assert!(native_handle_from_bytes(&[0; 16]).is_err());
+        assert!(native_handle_from_bytes(&[]).is_err());
     }
 }
