@@ -1,12 +1,12 @@
-name: 🐛 Bug Report
-description: Report a defect, audio glitch, crash, or regression.
+name: Bug report
+description: Unspecced defect, crash, or audit finding. Use Task when implementing a slice of a ready Spec.
 title: "fix(scope): "
 labels: ["bug", "status:ready"]
 body:
   - type: markdown
     attributes:
       value: |
-        Please provide a concise, factual description of the issue. Titles must follow the format `fix(scope): description`.
+        Titles follow `fix(scope): description`. Spec-governed work uses Task. Do not put local `~/.agents` paths in the body.
 
   - type: dropdown
     id: scope
@@ -64,7 +64,7 @@ body:
     id: context
     attributes:
       label: Architectural Context & References
-      description: Relevant ADRs, spec files, or related issues (if known).
-      placeholder: "ADR 0020, Related to #2037, etc."
+      description: Relevant ADRs or related issues.
+      placeholder: "ADR 0020, #2037"
     validations:
       required: false

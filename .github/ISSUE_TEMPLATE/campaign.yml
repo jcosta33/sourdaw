@@ -1,0 +1,75 @@
+name: Campaign
+description: Multi-PR objective with a completion contract. Children carry status; this body does not.
+title: "feat(campaign): "
+labels: ["epic", "status:tracking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is the ledger. File child Spec, Task, Bug, or Change plan issues for execution.
+
+        Do not put live SHAs, counts, lane occupancy, or local `~/.agents` paths in the body. Edit children when status changes.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: One durable outcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: completion
+    attributes:
+      label: Completion contract
+      description: Observable conditions that prove the whole campaign done.
+    validations:
+      required: true
+
+  - type: textarea
+    id: authorities
+    attributes:
+      label: Authorities
+      description: Governing ADRs or specs, merge owner, and the mechanism that rejects an invalid transition.
+      placeholder: "ADR 0021. Merge through pnpm deliver. Isolation — workers cannot push to main."
+    validations:
+      required: true
+
+  - type: textarea
+    id: stops
+    attributes:
+      label: Stops
+      description: Named human decisions that block dependent work. Independent work continues.
+    validations:
+      required: true
+
+  - type: textarea
+    id: children
+    attributes:
+      label: Child issues
+      description: Stable issue numbers only. Status lives on those issues. Add them as children are filed.
+      placeholder: |
+        - [ ] #123
+        - [ ] #124
+    validations:
+      required: false
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Optional. Add only when the objective does not already bound the work.
+    validations:
+      required: false

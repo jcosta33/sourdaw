@@ -1,0 +1,115 @@
+name: Change plan
+description: Structural change that must preserve named behavior. Not for net-new product design.
+title: "change(scope): "
+labels: ["status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use for refactor, rewrite, migration, upgrade, performance, schema, or cleanup. File a Spec when the change is new user-facing behavior.
+
+        Each transformation wave becomes a child Task. Do not put local `~/.agents` paths in the body.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - refactor
+        - rewrite
+        - migration
+        - upgrade
+        - performance
+        - schema
+        - cleanup
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Baseline
+      description: Current state and the evidence that proves it. Link an Inventory issue when one exists.
+    validations:
+      required: true
+
+  - type: textarea
+    id: target
+    attributes:
+      label: Target
+      description: Final structure, deliberate behavior changes, and preserved behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: preservation
+    attributes:
+      label: Preservation guarantees
+      description: Use SPEC-id#AC-NNN for governing requirements. Mint PG-NNN only for preserved behavior with no requirement ID.
+      value: |
+        | ID | Behavior | Verify with |
+        | --- | --- | --- |
+        | SPEC-x#AC-001 |  |  |
+    validations:
+      required: true
+
+  - type: textarea
+    id: waves
+    attributes:
+      label: Transformation waves
+      description: Smallest ordered changes that leave build and tests green. Each wave names surfaces, verification, rollback, and the child Task once filed.
+      placeholder: |
+        1. Wave — surfaces — verify — rollback — child #…
+    validations:
+      required: true
+
+  - type: textarea
+    id: cutover
+    attributes:
+      label: Cutover / rollback
+      description: Observable entry, completion, abort, and restoration conditions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: task_split
+    attributes:
+      label: Task split
+      description: Dispatchable children and dependencies, or None.
+      placeholder: "None"
+    validations:
+      required: true

@@ -1,0 +1,88 @@
+name: Spec
+description: Decided intent that must become acceptance criteria before implementation. Not for trivial work or drafts.
+title: "spec(scope): "
+labels: ["status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        File only when every blocking choice is resolved. The issue body is the spec.
+
+        Use **Feature** when no written contract would change execution or review. Use **Task** for implementation slices after this issue exists. Do not put local `~/.agents` paths in the body.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: What must become true, for whom, and where it stops. No implementation plan.
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: One independently failing obligation per AC. Exactly those three lines, in that order. One MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in Then.
+      value: |
+        ### AC-001
+        - When:
+        - Then:
+        - Verify with:
+
+        ### AC-002
+        - When:
+        - Then:
+        - Verify with:
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Boundary
+      description: Optional. Add only if the intent does not already say what is out of scope.
+    validations:
+      required: false
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: ADRs, parent campaign, research issue, or other GitHub URLs. No local file paths.
+      placeholder: "ADR 0021, #2037"
+    validations:
+      required: false

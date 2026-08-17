@@ -125,9 +125,10 @@ branch if the remover leaves it behind.
 
 ## Artifacts
 
-Keep working specs outside the repository. Add one only when the owner explicitly promotes it.
-Leave existing `.agents/specs/` material untouched unless assigned. Durable decisions belong in
-`.agents/decisions/` and its ADR ledger.
+Drafts and one-offs stay off GitHub and out of the repository. Promote durable planning by filing a
+GitHub issue with the matching form under `.github/ISSUE_TEMPLATE/`. The issue body is the source;
+do not leave a parallel local file. Leave existing `.agents/specs/` material untouched unless
+assigned. Durable decisions belong in `.agents/decisions/` and its ADR ledger.
 
 ## Delivery
 

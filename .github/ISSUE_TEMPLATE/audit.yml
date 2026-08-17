@@ -1,0 +1,70 @@
+name: Audit
+description: Current-state findings against frozen code. Prescribe nothing. File Bug children for Blocker and Major rows.
+title: "audit(scope): "
+labels: ["status:tracking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Observe. Prove. Do not propose fixes, target states, or requirements in this body.
+
+        Freeze a SHA. File a Bug (or Task, if a Spec already owns the obligation) for every Blocker and Major. Minor rows may stay in the table.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: input
+    id: freeze
+    attributes:
+      label: Frozen SHA
+      description: Full or unambiguous prefix of the commit this audit inspected.
+      placeholder: "c9e95a379"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal and exclusions
+    validations:
+      required: true
+
+  - type: textarea
+    id: findings
+    attributes:
+      label: Findings
+      description: Grade by impact and reach. Evidence is file:line, a search result, or pasted output. Use None observed in scope if empty.
+      value: |
+        | ID | Grade | Evidence | Failure mode | Blast radius | Child |
+        | --- | --- | --- | --- | --- | --- |
+        | F-001 | Blocker / Major / Minor |  |  |  | # |
+    validations:
+      required: true
+
+  - type: textarea
+    id: unverified
+    attributes:
+      label: Unverified
+      description: Areas not checked and the missing evidence. Use None found and name the boundary if empty.
+      placeholder: "None found. Boundary checked: …"
+    validations:
+      required: true

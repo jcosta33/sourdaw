@@ -1,12 +1,12 @@
-name: 💡 Feature or Improvement Request
-description: Propose a new capability, architectural refactor, or optimization.
+name: Feature
+description: Small enhancement that does not change a public contract. Use Spec when behavior must become acceptance criteria.
 title: "feat(scope): "
 labels: ["enhancement", "status:ready"]
 body:
   - type: markdown
     attributes:
       value: |
-        Please outline the proposed capability and its architectural boundary. Titles must follow `feat(scope): description` or `refactor(scope): description`.
+        Titles follow `feat(scope): description` or `refactor(scope): description`. Consequential behavior uses Spec. Do not put local `~/.agents` paths in the body.
 
   - type: dropdown
     id: scope

@@ -1,0 +1,91 @@
+name: Inventory
+description: Current-state map for a coming change. Prescribe nothing. Close with that change.
+title: "inventory(scope): "
+labels: ["status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Map reality. Invent nothing. No severity, target architecture, or implementation steps.
+
+        File only when a Change plan needs a durable map. Close this issue when that change lands. Do not put local `~/.agents` paths in the body.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: input
+    id: consumer
+    attributes:
+      label: Consuming change
+      description: Change plan issue this map serves, if it already exists.
+      placeholder: "2040"
+    validations:
+      required: false
+
+  - type: textarea
+    id: modules
+    attributes:
+      label: Modules
+      description: Path, observed responsibility, evidence.
+    validations:
+      required: true
+
+  - type: textarea
+    id: interfaces
+    attributes:
+      label: Interfaces
+      description: Surface, callers, observed contract, evidence.
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Visible behavior
+      description: Tests, file:line, or decisive command output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: state
+    attributes:
+      label: Data, state, and consumers
+      description: Persistence, generated surfaces, configuration, external consumers.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Existing tests
+      description: What each listed test actually controls.
+    validations:
+      required: true
+
+  - type: textarea
+    id: unknowns
+    attributes:
+      label: Unknowns
+      description: Exact search boundary and missing evidence. Use None found and name the boundary if empty.
+      placeholder: "None found. Boundary checked: …"
+    validations:
+      required: true
