@@ -1351,7 +1351,17 @@ const proofDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isProofDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        isCurrent,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         const loadingControls: {
@@ -1365,7 +1375,26 @@ const proofDescriptor: WasmDeviceDescriptor = {
         };
         placeholder.nativeDspControls = loadingControls;
         placeholder.controller = loadingControls;
-        const loadPromise = createProofNode(context, undefined, signal)
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: ProofNodeResult | null = null;
+        let failed = false;
+        const onRuntimeFailure = (): void => {
+            if (failed || !publishedNode || !publishedResult) {
+                return;
+            }
+            failed = true;
+            publishedNode.controller!.ready = false;
+            pendingParams.length = 0;
+            placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            publishedResult.destroy();
+            clearReportedLatency(deviceId);
+            const sink = getAudioDeviceRuntimeSink();
+            sink.unregisterProofDevice(deviceId);
+            sink.clearProofMeters(deviceId);
+        };
+        const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
+        const loadPromise = createProofNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: ProofNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
@@ -1400,7 +1429,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     result.onMeterData((data) => {
                         runtimeSink.updateProofMeters(deviceId, data);
                     });
-                    onLoaded({
+                    const loadedNode: BuiltinDeviceNode = {
                         deviceId,
                         type: deviceType,
                         nodes: [result.workletNode],
@@ -1422,7 +1451,15 @@ const proofDescriptor: WasmDeviceDescriptor = {
                             },
                         },
                         nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                    });
+                    };
+                    const accepted = onLoaded(loadedNode);
+                    if (accepted === false) {
+                        result.destroy();
+                        return;
+                    }
+                    publishedNode = loadedNode;
+                    publishedResult = result;
+                    onRuntimeFailure();
                 } catch (error) {
                     try {
                         runtimeSink.unregisterProofDevice(deviceId);

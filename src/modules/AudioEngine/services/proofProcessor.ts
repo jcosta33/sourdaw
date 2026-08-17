@@ -9,6 +9,7 @@
  * Writes metering data (LUFS, GR, correlation, tap levels) into a shared telemetry slot.
  */
 
+import { isProofRuntimeParameterId, PROOF_RUNTIME_PARAMETER_COUNT } from '../models/ProofRuntimeControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
@@ -21,6 +22,17 @@ type ProofMsg =
     | { type: 'param'; name: string; value: number }
     | { type: 'reorder'; order: [number, number, number, number, number] }
     | { type: 'reset_integrated' };
+type UnknownRecord = Record<string, unknown>;
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function only(value: UnknownRecord, keys: readonly string[]): boolean {
+    const actual = Object.keys(value);
+    return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+function positive(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
 
 class ProofProcessor extends AudioWorkletProcessor {
     _instance: ProofInstance | null = null;
@@ -30,6 +42,9 @@ class ProofProcessor extends AudioWorkletProcessor {
     _meterCounter = 0;
     _sabView: Float32Array | null = null;
     _sabSeqView: Int32Array | null = null;
+    _fallbackControlGeneration: number | null = null;
+    _fallbackControlTarget: { trackId: string; deviceId: string; parameterIds: readonly string[] } | null = null;
+    _lastFallbackControlSequence = 0;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -41,9 +56,12 @@ class ProofProcessor extends AudioWorkletProcessor {
     constructor(...args: unknown[]) {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
-        this.port.onmessage = (event: MessageEvent<ProofMsg>) => {
+        this.port.onmessage = (event: MessageEvent<unknown>) => {
             const msg = event.data;
             try {
+                if (!isRecord(msg)) {
+                    return;
+                }
                 if (msg.type === 'init') {
                     if (this._ready) {
                         return;
@@ -53,10 +71,16 @@ class ProofProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (
+                    msg.type === 'init-sab' &&
+                    msg.sab instanceof SharedArrayBuffer &&
+                    typeof msg.byteOffset === 'number'
+                ) {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     // Int32 view over the same slot bytes for the seqlock counter.
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
+                } else if (this._initializeFallbackControl(msg)) {
+                    return;
                 } else if (this._instance !== null && !this._faulted) {
                     this._handleMessage(msg);
                 }
@@ -84,23 +108,147 @@ class ProofProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready', latency: this._instance.get_latency_samples() });
     }
 
-    _handleMessage(msg: ProofMsg): void {
+    _initializeFallbackControl(msg: UnknownRecord): boolean {
+        if (
+            this._fallbackControlGeneration !== null ||
+            !only(msg, ['schemaVersion', 'command', 'target', 'correlation']) ||
+            msg.schemaVersion !== 1 ||
+            msg.command !== 'initialize-fallback-control' ||
+            !isRecord(msg.target) ||
+            !only(msg.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
+            typeof msg.target.trackId !== 'string' ||
+            typeof msg.target.deviceId !== 'string' ||
+            msg.target.deviceType !== 'proof' ||
+            !Array.isArray(msg.target.parameterIds) ||
+            msg.target.parameterIds.length !== PROOF_RUNTIME_PARAMETER_COUNT ||
+            !msg.target.parameterIds.every(isProofRuntimeParameterId) ||
+            new Set(msg.target.parameterIds).size !== msg.target.parameterIds.length ||
+            !isRecord(msg.correlation) ||
+            !only(msg.correlation, ['workletGeneration']) ||
+            !positive(msg.correlation.workletGeneration)
+        ) {
+            return false;
+        }
+        this._fallbackControlTarget = Object.freeze({
+            trackId: msg.target.trackId,
+            deviceId: msg.target.deviceId,
+            parameterIds: Object.freeze([...msg.target.parameterIds]),
+        });
+        this._fallbackControlGeneration = msg.correlation.workletGeneration;
+        return true;
+    }
+
+    _handleMessage(msg: UnknownRecord): void {
         const inst = this._instance;
         if (!inst) {
             return;
         }
 
+        if (this._fallbackControlGeneration !== null) {
+            const target = this._fallbackControlTarget;
+            const correlation = isRecord(msg.correlation) ? msg.correlation : null;
+            const order = Array.isArray(msg.order) ? msg.order : null;
+            const validIdentity = (command: unknown): boolean =>
+                !!target &&
+                isRecord(msg.target) &&
+                only(msg.target, ['trackId', 'deviceId', 'deviceType']) &&
+                isRecord(msg.correlation) &&
+                only(msg.correlation, ['workletGeneration', 'controlSequence']) &&
+                isRecord(msg.scheduling) &&
+                only(msg.scheduling, ['targetFrame', 'deadlineFrame']) &&
+                msg.schemaVersion === 1 &&
+                command === msg.command &&
+                msg.target.trackId === target.trackId &&
+                msg.target.deviceId === target.deviceId &&
+                msg.target.deviceType === 'proof' &&
+                correlation?.workletGeneration === this._fallbackControlGeneration &&
+                positive(correlation.controlSequence) &&
+                correlation.controlSequence > this._lastFallbackControlSequence &&
+                msg.scheduling.targetFrame === null &&
+                msg.scheduling.deadlineFrame === null;
+            if (
+                msg.command === 'reset-integrated' &&
+                only(msg, ['schemaVersion', 'command', 'target', 'correlation', 'scheduling']) &&
+                validIdentity('reset-integrated')
+            ) {
+                this._lastFallbackControlSequence = correlation!.controlSequence as number;
+                inst.reset_integrated();
+                return;
+            }
+            if (
+                msg.command === 'reorder-modules' &&
+                only(msg, ['schemaVersion', 'command', 'target', 'order', 'correlation', 'scheduling']) &&
+                order &&
+                order.length === 5 &&
+                order.every(
+                    (value) => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 5
+                ) &&
+                order.every((value, index) => order.indexOf(value) === index) &&
+                validIdentity('reorder-modules')
+            ) {
+                this._lastFallbackControlSequence = correlation!.controlSequence as number;
+                inst.reorder(
+                    order[0] as number,
+                    order[1] as number,
+                    order[2] as number,
+                    order[3] as number,
+                    order[4] as number
+                );
+                return;
+            }
+            if (
+                !only(msg, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
+                msg.schemaVersion !== 1 ||
+                msg.command !== 'set-fallback-param' ||
+                !isRecord(msg.target) ||
+                !only(msg.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
+                !isProofRuntimeParameterId(msg.target.parameterId) ||
+                typeof msg.value !== 'number' ||
+                !Number.isFinite(msg.value) ||
+                !isRecord(msg.correlation) ||
+                !only(msg.correlation, ['workletGeneration', 'controlSequence']) ||
+                !positive(msg.correlation.workletGeneration) ||
+                !positive(msg.correlation.controlSequence) ||
+                !isRecord(msg.scheduling) ||
+                !only(msg.scheduling, ['targetFrame', 'deadlineFrame']) ||
+                msg.scheduling.targetFrame !== null ||
+                msg.scheduling.deadlineFrame !== null
+            ) {
+                return;
+            }
+            if (
+                !target ||
+                msg.correlation.workletGeneration !== this._fallbackControlGeneration ||
+                msg.correlation.controlSequence <= this._lastFallbackControlSequence ||
+                msg.target.trackId !== target.trackId ||
+                msg.target.deviceId !== target.deviceId ||
+                msg.target.deviceType !== 'proof' ||
+                !target.parameterIds.includes(msg.target.parameterId)
+            ) {
+                return;
+            }
+            this._lastFallbackControlSequence = msg.correlation.controlSequence;
+            inst.set_param(msg.target.parameterId, msg.value);
+            return;
+        }
+
         const oldLatency = inst.get_latency_samples();
 
-        switch (msg.type) {
+        switch ((msg as ProofMsg).type) {
             case 'init-sab':
             case 'init':
                 break;
             case 'param':
-                inst.set_param(msg.name, msg.value);
+                inst.set_param(
+                    (msg as Extract<ProofMsg, { type: 'param' }>).name,
+                    (msg as Extract<ProofMsg, { type: 'param' }>).value
+                );
                 break;
             case 'reorder':
-                inst.reorder(msg.order[0], msg.order[1], msg.order[2], msg.order[3], msg.order[4]);
+                {
+                    const order = (msg as Extract<ProofMsg, { type: 'reorder' }>).order;
+                    inst.reorder(order[0], order[1], order[2], order[3], order[4]);
+                }
                 break;
             case 'reset_integrated':
                 inst.reset_integrated();
