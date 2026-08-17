@@ -1,0 +1,115 @@
+src/modules/Arrangement/useCases/preset/matchesMaterializedPresetDevices.ts
+  s_a40848e8f8cca9::t_c8bc8947f40d3a 1-51
+src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts
+  s_a40848e8f8cca9::t_9c956c0870578e 1-2,5-7,9-10,12,15-19,21-24,26-28,30-32,34-42,44-45,47-66,68-82,84-87,89-104,106-136,138
+  s_a40848e8f8cca9::t_98ad9a95933261 14
+src/modules/Arrangement/useCases/index.ts
+  s_a40848e8f8cca9::t_98ad9a95933261 174
+src/modules/Arrangement/useCases/preset/materializePresetDevices.ts
+  s_a40848e8f8cca9::t_c8bc8947f40d3a 1-60
+src/modules/ContentBrowser/useCases/executePresetLoad.ts
+  s_a40848e8f8cca9::t_452098ba67adf1 1,3,11-15,17-35
+  s_a40848e8f8cca9::t_98ad9a95933261 2,4-10,16
+src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_b2624acdf685cd 207-210
+  s_a40848e8f8cca9::t_787453c2ba6266 197-206,211-212,399
+  s_a40848e8f8cca9::t_46b5e9937babb8 400
+src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts
+  s_a40848e8f8cca9::t_84066341c74d1e 1-41
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_a40848e8f8cca9::t_bd9b3971cdbe8e 29
+  s_d91dcbe5f07151::t_7078153f881ed5 164
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_a40848e8f8cca9::t_84066341c74d1e 16
+  s_a40848e8f8cca9::t_5bbc5b72dd7991 71
+src/modules/Arrangement/handlers/preset/handleLoadPreset.ts
+  s_a40848e8f8cca9::t_a4ef5afe892436 250-263
+  s_a40848e8f8cca9::t_de24b508ea449e 13
+  s_a40848e8f8cca9::t_6e2e6fb5261953 100,103,113
+  s_a40848e8f8cca9::t_641958571de764 19
+  s_a40848e8f8cca9::t_b86685331f05cd 1,166-172,225-228
+  s_a40848e8f8cca9::t_b7def3d9cadacd 12,16-17
+  s_a40848e8f8cca9::t_afca796141fb06 2,4-9,11,14-15,18,20,22-43,46-99,101-102,104-112,114-117,134-144,152-154,156-165,173-195,197,199-200,208-224,229-247,249,264-272,274-276,279-302
+  s_a40848e8f8cca9::t_d9c95df22d869f 118,120-133,145-151
+  s_a40848e8f8cca9::t_24e66ebfbb2f50 198,201-207
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_a40848e8f8cca9::t_787453c2ba6266 1205-1244
+src/modules/Arrangement/useCases/preset/findPresetById.ts
+  s_a40848e8f8cca9::t_7f7438325ea270 2,4,6-9
+src/modules/AudioEngine/models/RuntimeGraphDelta.ts
+  s_a40848e8f8cca9::t_ca5fb4cee73fb9 44
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_4fb0c06932a9a9 35-44,1355,1361-1370
+  s_a40848e8f8cca9::t_ca5fb4cee73fb9 1347-1354,1356-1360,1371-1372
+src/modules/Arrangement/useCases/soundPresetLibrary.ts
+  s_a40848e8f8cca9::t_84283db9a6da5e 7-8,53-55
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_a40848e8f8cca9::t_61ebbefae68f3a 3-5,102-104,278-279,282-295,312,328,330-337
+  s_a40848e8f8cca9::t_3e1a4ce84d693e 6,55-56,64,72,89-96,125-126,135-139,152,158,163-167,171,180,185-189,223,226,232,235,262
+  s_a40848e8f8cca9::t_dea5d24c393f39 1-2,11-13,15,17-22,28-40,44,48,52,65-71,73-88,97-98,107-116,128-133,140-149,153-157,159-162,168-169,172-179,181-183,190,224-225,228-230,233,237,265-266,268-277
+  s_a40848e8f8cca9::t_defd874aa8ef67 16,25-26,117-122,193-202,204,206-220
+  s_a40848e8f8cca9::t_b7def3d9cadacd 43,47
+  s_a40848e8f8cca9::t_903af66d5a992f 23
+  s_a40848e8f8cca9::t_92e48c589a1bb5 14
+  s_a40848e8f8cca9::t_3d29b7be207104 105
+  s_a40848e8f8cca9::t_8abf7a571078c0 27,57-63,106,227,236,296-311,313-327,329
+  s_a40848e8f8cca9::t_641958571de764 51
+  s_a40848e8f8cca9::t_77ee3653d8af13 240-260
+  s_a40848e8f8cca9::t_80cd0b0b7dd183 24
+src/modules/Arrangement/stores/clampDeviceParamWrite.ts
+  s_a40848e8f8cca9::t_dda463bdfe533e 62
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_a40848e8f8cca9::t_6d53c210fb5678 16,21,140-154,162,164,197-199,217-219,223-225
+  s_a40848e8f8cca9::t_3fff54660858df 24
+src/modules/Arrangement/useCases/device/applyDeviceChainRuntimeDelta.ts
+  s_a40848e8f8cca9::t_ca5fb4cee73fb9 11
+src/modules/Arrangement/handlers/getPlannedTrackState.ts
+  s_a40848e8f8cca9::t_5ba6f03d8c690b 11,13,23,33,40
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_a40848e8f8cca9::t_19c6e2aa1091a7 36,121-122,187
+  s_a40848e8f8cca9::t_47f1fba19a2ffd 24-25,27-30,32-33,40,49-50,52,174-186,194-209,214
+  s_a40848e8f8cca9::t_f1ee2ca7381e6a 1,31,51,188-193,217,219-224,245
+  s_a40848e8f8cca9::t_b82f0bf8ac1c65 210-213
+  s_a40848e8f8cca9::t_21b5a52ae86dc3 9-20,26
+  s_a40848e8f8cca9::t_d0ffd5f1260520 53
+  s_a40848e8f8cca9::t_b1cc01bfe5c0a6 215-216
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_a40848e8f8cca9::t_47f1fba19a2ffd 14-15,26-27,91-103,111-112,119-132
+  s_a40848e8f8cca9::t_f1ee2ca7381e6a 20,32,113-118
+src/modules/Arrangement/useCases/preset/sidebarInstrumentPresets.ts
+  s_a40848e8f8cca9::t_84283db9a6da5e 1-13,15-17,19-42
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_a40848e8f8cca9::t_b7def3d9cadacd 4-5
+  s_a40848e8f8cca9::t_b3a7cdc56ed969 1,8-11,14-15,18-19,22-23,26-27,30,32-34,37,41,45,47-58,62-87,91-92,94-100,102-106,109-110,112,115-118,120-124,127
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_a40848e8f8cca9::t_077bf758d7f12f 104-129
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_a40848e8f8cca9::t_3fff54660858df 6,10,14,74-77
+  s_a40848e8f8cca9::t_45ba08237c1746 78-80,82-84
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_d91dcbe5f07151::t_89d980876ea25c 2678-2681,2687-2701,2703,2782-2783,2810-2811,2833,2847,2856,2869,2882,2896,2903,2910-2912,2953-2956,2978,2983,2995,3002,3007,3009,3015,3020,3022-3023,3042,3049,3057-3058,3064,3067,3111-3112,3121-3122,3185,3200,3205,3217-3218,3249-3250,3367,3374,3380-3381,3388,3402,3417,3431,3436-3439,3467,3473,3487,3493,3538,3540,3555,3564-3565,3567,3580-3581,3584,3591,3596,3633,3638,3733,3740,3768,3776,3782,3790-3791,3831,3842,3850,3856,3863,3868,3876-3877,4079,4095,4112,4119-4120,4123,4154,4167-4170,4180-4181,4226,4236,4244,4249,4251,4299,4304,4322,4327,4351,4356,4554-4576,4582-4583,4586-4590,4592-4593,4595,4597,4601-4603,4605-4611,4613-4615,4617-4629,4631,4633-4635,4640,4644-4646,4650-4653,4655,4660,4662-4663,4665-4666,4669-4681,4685-4686,4689,4691-4693,4697-4698,4700
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ca0d755b07ff69db48c678e6c29090b97847c50a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
