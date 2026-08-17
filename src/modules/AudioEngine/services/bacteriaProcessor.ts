@@ -52,10 +52,26 @@ const PARAM_MAP: Record<string, string> = {
     lorenzSpeed: 'lorenzSpeed',
 };
 
-type BacteriaMsg =
-    | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
-    | { type: 'param'; name: string; value: number };
+type UnknownRecord = Record<string, unknown>;
+type ScheduledControl = { parameterId: string; value: number; targetFrame: number; deadlineFrame: number };
+const MAX_PENDING_FALLBACK_CONTROLS = 32;
+const MAX_ID_LENGTH = 128;
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function hasOnlyKeys(value: UnknownRecord, keys: readonly string[]): boolean {
+    const actual = Object.keys(value);
+    return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+function isBoundedId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
+}
+function isPositiveSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+function isNonNegativeSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
 
 class BacteriaProcessor extends AudioWorkletProcessor {
     _instance: BacteriaInstance | null = null;
@@ -66,6 +82,18 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     _sabView: Float32Array | null = null;
     /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
     _sabSeqView: Int32Array | null = null;
+    _fallbackControlGeneration: number | null = null;
+    _fallbackControlTarget: {
+        trackId: string;
+        deviceId: string;
+        deviceType: string;
+        parameterIds: readonly string[];
+    } | null = null;
+    _lastFallbackControlSequence = 0;
+    _pendingFallbackControls: Array<ScheduledControl | null> = Array.from(
+        { length: MAX_PENDING_FALLBACK_CONTROLS },
+        () => null
+    );
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -78,9 +106,12 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     constructor(...args: unknown[]) {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
-        this.port.onmessage = (event: MessageEvent<BacteriaMsg>) => {
+        this.port.onmessage = (event: MessageEvent<unknown>) => {
             const msg = event.data;
             try {
+                if (!isRecord(msg)) {
+                    return;
+                }
                 if (msg.type === 'init') {
                     if (this._ready) {
                         return;
@@ -90,17 +121,17 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (
+                    msg.type === 'init-sab' &&
+                    msg.sab instanceof SharedArrayBuffer &&
+                    isNonNegativeSafeInteger(msg.byteOffset)
+                ) {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
-                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
-                    const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                    const oldLatency = this._instance.get_latency_samples();
-                    this._instance.set_param(rustName, msg.value);
-                    const newLatency = this._instance.get_latency_samples();
-                    if (newLatency !== oldLatency) {
-                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
-                    }
+                } else if (this._initializeFallbackControl(msg)) {
+                    return;
+                } else {
+                    this._handleFallbackControl(msg);
                 }
             } catch (error) {
                 // Same policy as the process() catch below. A throw at the wasm
@@ -115,6 +146,128 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                 });
             }
         };
+    }
+
+    _initializeFallbackControl(message: UnknownRecord): boolean {
+        if (
+            this._fallbackControlGeneration !== null ||
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'correlation']) ||
+            message.schemaVersion !== 1 ||
+            message.command !== 'initialize-fallback-control' ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            !isBoundedId(message.target.deviceType) ||
+            !Array.isArray(message.target.parameterIds) ||
+            !message.target.parameterIds.every(isBoundedId) ||
+            new Set(message.target.parameterIds).size !== message.target.parameterIds.length ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration)
+        ) {
+            return false;
+        }
+        this._fallbackControlTarget = Object.freeze({
+            trackId: message.target.trackId,
+            deviceId: message.target.deviceId,
+            deviceType: message.target.deviceType,
+            parameterIds: Object.freeze([...message.target.parameterIds]),
+        });
+        this._fallbackControlGeneration = message.correlation.workletGeneration;
+        this._lastFallbackControlSequence = 0;
+        this._pendingFallbackControls.fill(null);
+        return true;
+    }
+
+    _handleFallbackControl(message: UnknownRecord): boolean {
+        if (message.command !== 'set-fallback-param') {
+            return false;
+        }
+        if (
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
+            message.schemaVersion !== 1 ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            !isBoundedId(message.target.deviceType) ||
+            !isBoundedId(message.target.parameterId) ||
+            typeof message.value !== 'number' ||
+            !Number.isFinite(message.value) ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration', 'controlSequence']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration) ||
+            !isPositiveSafeInteger(message.correlation.controlSequence) ||
+            !isRecord(message.scheduling) ||
+            !hasOnlyKeys(message.scheduling, ['targetFrame', 'deadlineFrame'])
+        ) {
+            return true;
+        }
+        const target = this._fallbackControlTarget;
+        if (
+            !target ||
+            this._fallbackControlGeneration === null ||
+            message.correlation.workletGeneration !== this._fallbackControlGeneration ||
+            message.correlation.controlSequence <= this._lastFallbackControlSequence ||
+            message.target.trackId !== target.trackId ||
+            message.target.deviceId !== target.deviceId ||
+            message.target.deviceType !== target.deviceType ||
+            !target.parameterIds.includes(message.target.parameterId)
+        ) {
+            return true;
+        }
+        const { targetFrame, deadlineFrame } = message.scheduling;
+        const immediate = targetFrame === null && deadlineFrame === null;
+        const scheduled = isNonNegativeSafeInteger(targetFrame) && isNonNegativeSafeInteger(deadlineFrame);
+        if (!immediate && (!scheduled || targetFrame > deadlineFrame)) {
+            return true;
+        }
+        this._lastFallbackControlSequence = message.correlation.controlSequence;
+        if (scheduled && currentFrame > deadlineFrame) {
+            return true;
+        }
+        if (scheduled && currentFrame < targetFrame) {
+            const slot = this._pendingFallbackControls.findIndex((entry) => entry === null);
+            if (slot !== -1) {
+                this._pendingFallbackControls[slot] = {
+                    parameterId: message.target.parameterId,
+                    value: message.value,
+                    targetFrame,
+                    deadlineFrame,
+                };
+            }
+            return true;
+        }
+        this._applyFallbackControl(message.target.parameterId, message.value, true);
+        return true;
+    }
+
+    _applyFallbackControl(parameterId: string, value: number, reportLatency: boolean): void {
+        if (!this._instance || this._faulted) {
+            return;
+        }
+        const oldLatency = this._instance.get_latency_samples();
+        this._instance.set_param(PARAM_MAP[parameterId] ?? parameterId, value);
+        const nextLatency = this._instance.get_latency_samples();
+        if (reportLatency && nextLatency !== oldLatency) {
+            this.port.postMessage({ type: 'latency-changed', latency: nextLatency });
+        }
+    }
+
+    _applyDueFallbackControls(): void {
+        for (let index = 0; index < this._pendingFallbackControls.length; index++) {
+            const pending = this._pendingFallbackControls[index];
+            if (!pending) {
+                continue;
+            }
+            if (currentFrame > pending.deadlineFrame) {
+                this._pendingFallbackControls[index] = null;
+            } else if (currentFrame >= pending.targetFrame) {
+                this._pendingFallbackControls[index] = null;
+                this._applyFallbackControl(pending.parameterId, pending.value, false);
+            }
+        }
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {
@@ -157,6 +310,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         const frames = out0.length;
 
         try {
+            this._applyDueFallbackControls();
             const inst = this._instance;
             const mem = this._memory?.buffer;
             if (!inst || !mem) {
