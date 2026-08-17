@@ -643,15 +643,14 @@ export class TrackNode {
                     pendingLoad.parameterWrites.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
                     return;
                 }
-                for (let index = pendingLoad.parameterWrites.length - 1; index >= 0; index--) {
-                    const pending = pendingLoad.parameterWrites[index];
-                    if (!pending || pending.kind === 'scheduled') {
-                        break;
-                    }
-                    if (pending.name === name) {
-                        pendingLoad.parameterWrites[index] = Object.freeze({ kind: 'immediate', name, value });
-                        return;
-                    }
+                const previous = pendingLoad.parameterWrites.at(-1);
+                if (previous?.kind === 'immediate' && previous.name === name) {
+                    pendingLoad.parameterWrites[pendingLoad.parameterWrites.length - 1] = Object.freeze({
+                        kind: 'immediate',
+                        name,
+                        value,
+                    });
+                    return;
                 }
                 pendingLoad.parameterWrites.push(Object.freeze({ kind: 'immediate', name, value }));
             },

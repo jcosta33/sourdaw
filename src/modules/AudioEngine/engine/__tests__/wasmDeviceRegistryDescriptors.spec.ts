@@ -942,6 +942,9 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(placeholder.controller).toBeDefined();
             placeholder.controller?.setParam('drive', 0.2);
             placeholder.controller?.setParam('drive', 0.7);
+            placeholder.controller?.setParam('gain', 0.1);
+            placeholder.controller?.setParam('tone', 0.2);
+            placeholder.controller?.setParam('gain', 0.9);
             placeholder.controller?.setParam('sag', 0.25, 48_000);
             placeholder.controller?.setParam('sag', 0.75, 96_000);
             placeholder.controller?.setParam('sag', 0.9);
@@ -951,6 +954,9 @@ describe('wasmDeviceRegistry descriptors', () => {
 
             expect(vi.mocked(result.setParam).mock.calls).toEqual([
                 ['drive', 0.7],
+                ['gain', 0.1],
+                ['tone', 0.2],
+                ['gain', 0.9],
                 ['sag', 0.25, 48_000],
                 ['sag', 0.75, 96_000],
                 ['sag', 0.9],

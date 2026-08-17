@@ -1004,15 +1004,10 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 pendingParams.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
                 return;
             }
-            for (let index = pendingParams.length - 1; index >= 0; index--) {
-                const pending = pendingParams[index];
-                if (!pending || pending.kind === 'scheduled') {
-                    break;
-                }
-                if (pending.name === name) {
-                    pendingParams[index] = Object.freeze({ kind: 'immediate', name, value });
-                    return;
-                }
+            const previous = pendingParams.at(-1);
+            if (previous?.kind === 'immediate' && previous.name === name) {
+                pendingParams[pendingParams.length - 1] = Object.freeze({ kind: 'immediate', name, value });
+                return;
             }
             pendingParams.push(Object.freeze({ kind: 'immediate', name, value }));
         };
