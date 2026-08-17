@@ -11,7 +11,12 @@ import {
     samplesPerBeat,
 } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
-import { ScheduledEventQueue } from '../MidiProcessor';
+import {
+    EMIT_FALLBACK_BLOCK_SPAN_SAMPLES,
+    resolveBlockEndSamples,
+    resolveBlockStartSamples,
+    ScheduledEventQueue,
+} from '../MidiProcessor';
 
 /** Bjorklund's algorithm — distribute `hits` across `steps` as evenly as possible. */
 function bjorklund(hits: number, steps: number): boolean[] {
@@ -48,6 +53,8 @@ export class EuclideanGenerator extends BaseMidiProcessor {
     private stepIndex = 0;
     private lastStepTime = -Infinity;
     private scheduled = new ScheduledEventQueue();
+    // Reused across blocks so the per-block scheduled drain allocates nothing.
+    private readonly drainScratch: MidiEvent[] = [];
 
     constructor(id?: string) {
         super(id ?? `euclid-${Date.now()}`);
@@ -75,15 +82,17 @@ export class EuclideanGenerator extends BaseMidiProcessor {
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
-        const now = transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
-        const blockEnd = transport.blockEndSamples ?? now + 128;
+        const now = resolveBlockStartSamples(transport, input);
+        const blockEnd = resolveBlockEndSamples(transport, now, EMIT_FALLBACK_BLOCK_SPAN_SAMPLES);
 
         if (this.lastStepTime === -Infinity) {
             this.lastStepTime = now;
         }
 
+        // Strictly `<`: the block is half-open, so a step landing exactly on
+        // `blockEnd` belongs to the next block, not this one.
         let safety = 0;
-        while (this.lastStepTime + stepLen <= blockEnd && safety < 64) {
+        while (this.lastStepTime + stepLen < blockEnd && safety < 64) {
             safety++;
             const stepTime = this.lastStepTime + stepLen;
 
@@ -109,10 +118,13 @@ export class EuclideanGenerator extends BaseMidiProcessor {
         }
 
         // Drain scheduled Note Offs
-        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        const drained = this.drainScratch;
+        drained.length = 0;
+        this.scheduled.drainRangeInto(0, blockEnd, drained, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
         }
+        drained.length = 0;
     }
 
     reset(): void {

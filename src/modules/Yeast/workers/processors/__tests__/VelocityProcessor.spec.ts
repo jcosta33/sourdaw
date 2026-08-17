@@ -191,6 +191,43 @@ describe('VelocityProcessor', () => {
         });
     });
 
+    describe('inverted random_min / random_max', () => {
+        it('reads an inverted range as the same range instead of emitting NaN', () => {
+            // No UI reaches this pair; a stored project, a CRDT merge, or an
+            // AI-authored action can. With max = min - 1 the span
+            // `max - min + 1` is 0, so `rngState % 0` is NaN and the clamp
+            // propagates it — a NaN velocity in the host's note stream.
+            const vp = new VelocityProcessor('random-inverted-degenerate');
+            vp.setParam('mode', 5); // random
+            vp.setParam('random_min', 90);
+            vp.setParam('random_max', 89);
+            for (let index = 0; index < 32; index++) {
+                const velocity = processOnce(vp, 100);
+                expect(Number.isNaN(velocity)).toBe(false);
+                expect(velocity).toBeGreaterThanOrEqual(89);
+                expect(velocity).toBeLessThanOrEqual(90);
+            }
+        });
+
+        it('produces the same draws as the equivalent ordered range', () => {
+            const inverted = new VelocityProcessor('random-inverted');
+            const ordered = new VelocityProcessor('random-ordered');
+            inverted.setParam('mode', 5);
+            inverted.setParam('random_min', 120);
+            inverted.setParam('random_max', 40);
+            ordered.setParam('mode', 5);
+            ordered.setParam('random_min', 40);
+            ordered.setParam('random_max', 120);
+
+            for (let index = 0; index < 32; index++) {
+                const drawn = processOnce(inverted, 100);
+                expect(drawn).toBe(processOnce(ordered, 100));
+                expect(drawn).toBeGreaterThanOrEqual(40);
+                expect(drawn).toBeLessThanOrEqual(120);
+            }
+        });
+    });
+
     describe('setParam fallback defaults', () => {
         it('falls back to passthrough when the mode index is out of range', () => {
             const vp = new VelocityProcessor('fb-mode');
