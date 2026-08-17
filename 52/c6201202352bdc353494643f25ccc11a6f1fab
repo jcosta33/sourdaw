@@ -1,0 +1,108 @@
+src/modules/BrowserAi/useCases/renderDiffSingerPhrase.ts
+  s_0a3429e31e555d::t_5c68a407eaec63 1,22-24
+src/modules/AudioAnalysis/repositories/isStemSeparationAvailable.ts
+  s_0a3429e31e555d::t_7604186136a8dc 2
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_0a3429e31e555d::t_1668b8c133958a 572,705-707,709
+  s_0a3429e31e555d::t_57bcb43a813d57 303-310,319
+src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx
+  s_0a3429e31e555d::t_ee8141e113261e 146
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_0a3429e31e555d::t_fbf77ceb9f384b 126,133,144
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_0a3429e31e555d::t_1e21cb2dd807f0 174-178,439
+  s_0a3429e31e555d::t_487016be370c79 7
+.agents/specs/audio-generation/spec.md
+  s_0a3429e31e555d::t_73f77444d51758 244,246
+.agents/specs/audio-generation-browser/spec.md
+  s_0a3429e31e555d::t_73f77444d51758 327
+  s_0a3429e31e555d::t_164e01167ae573 364
+src/modules/BrowserAi/services/audioResampler.ts
+  s_0a3429e31e555d::t_164e01167ae573 4
+src/modules/AudioAnalysis/useCases/__tests__/audioAi.spec.ts
+  s_0a3429e31e555d::t_f0e755f49423cc 4,31
+.agents/specs/audio-generation/research.md
+  s_0a3429e31e555d::t_73f77444d51758 29,37,42,51
+.agents/specs/workflow-ui/spec.md
+  s_0a3429e31e555d::t_73f77444d51758 153
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_0a3429e31e555d::t_515c50de1231ae 16
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_0a3429e31e555d::t_ee8141e113261e 5,785,788
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_0a3429e31e555d::t_164e01167ae573 32
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_0a3429e31e555d::t_1b3e33def9be33 21
+  s_0a3429e31e555d::t_4c48a9323a28dd 24
+  s_0a3429e31e555d::t_6181ac5ef5b5fc 27
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_0a3429e31e555d::t_821cacae460007 15,99,104,112
+src-tauri/src/lib.rs
+  s_0a3429e31e555d::t_7604186136a8dc 27
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_0a3429e31e555d::t_a06e95c51c528b 8
+src/modules/AudioAnalysis/repositories/__tests__/isStemSeparationAvailable.spec.ts
+  s_0a3429e31e555d::t_f0e755f49423cc 6-7
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.spec.tsx
+  s_0a3429e31e555d::t_f0e755f49423cc 238,240
+src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx
+  s_0a3429e31e555d::t_515c50de1231ae 9
+src/modules/AudioAnalysis/repositories/separateStems.ts
+  s_0a3429e31e555d::t_fd4ab3a80d5a03 3-5
+src/modules/BrowserAi/useCases/index.ts
+  s_0a3429e31e555d::t_821cacae460007 4
+docs/architecture/09-ai-stack.md
+  s_0a3429e31e555d::t_73f77444d51758 27,29,31,59-60
+src-tauri/src/commands/ai_audio.rs
+  s_0a3429e31e555d::t_7604186136a8dc 3
+src/modules/BrowserAi/useCases/__tests__/renderDiffSingerPhrase.cachedSessions.spec.ts
+  s_0a3429e31e555d::t_aca5b084d5d08c 1,5-15
+.agents/specs/audio-generation-browser/research.md
+  s_0a3429e31e555d::t_73f77444d51758 83-84,90-93
+src/modules/BrowserAi/repositories/__tests__/checkModelCached.spec.ts
+  s_0a3429e31e555d::t_54861f07de4f31 55
+tests/e2e/modelManagerRemoveTestId.spec.ts
+  s_0a3429e31e555d::t_5f05263fb45e32 17,24,32,34
+.agents/specs/browser-diffsinger-svs/spec.md
+  s_0a3429e31e555d::t_73f77444d51758 92-93,106
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_0a3429e31e555d::t_52a011c8586405 13
+src/modules/AudioAnalysis/repositories/__tests__/separateStems.spec.ts
+  s_0a3429e31e555d::t_9f6d52066099bb 1,6-8
+src/modules/BrowserAi/repositories/__tests__/deleteModel.spec.ts
+  s_0a3429e31e555d::t_54861f07de4f31 34,36
+src/modules/BrowserAi/models/BrowserModel.ts
+  s_0a3429e31e555d::t_821cacae460007 77
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_72e4e12cd82875 645,649
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_0a3429e31e555d::t_1668b8c133958a 353-354
+src-tauri/gen/schemas/acl-manifests.json
+  s_d91dcbe5f07151::t_d2c20dde82f256 1
+Cargo.lock
+  s_d91dcbe5f07151::t_934ec00e0554be 693,1391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "52c6201202352bdc353494643f25ccc11a6f1fab",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
