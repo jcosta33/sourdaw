@@ -38,6 +38,19 @@ export const ResizeHandle = ({ direction, onResize, onResizeEnd }: ResizeHandleP
         return () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
+            // Unmounting mid-drag (e.g. the panel it resizes is torn down) skips
+            // `handleMouseUp`, which otherwise owns clearing these — without this,
+            // the cursor and selection lock strand on `document.body` forever.
+            // This cleanup also reruns whenever `direction`, `onResize`, or
+            // `onResizeEnd` change (the effect's deps), not only on unmount — it
+            // assumes those props are referentially stable across a single drag,
+            // since an identity change mid-drag tears down and re-adds listeners
+            // without the drag itself restarting.
+            if (dragging.current) {
+                dragging.current = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
         };
     }, [direction, onResize, onResizeEnd]);
 
