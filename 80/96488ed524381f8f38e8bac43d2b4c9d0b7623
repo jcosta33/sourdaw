@@ -1,0 +1,44 @@
+src/modules/AiRuntime/presentations/hooks/__tests__/useVoiceRecording.spec.tsx
+  s_ab5443e65c7fba::t_ec78e49c7fb933 69-72
+  s_ab5443e65c7fba::t_e8be74f799010d 472-590
+  s_ab5443e65c7fba::t_ea942250774091 15-17,36-37
+  s_ab5443e65c7fba::t_24e98c3b1a31f7 183
+  s_ab5443e65c7fba::t_95242a87e0dba4 38
+crates/sourdaw-native/src/commands/speech.rs
+  s_ab5443e65c7fba::t_20006156e05460 17-25,27,29-34,40,42,47-56,71-79,82-88,90,96,99-125,147-154,178-180,182-186,189,202-209,223-225,230-234,240-241,245-246,249-250,268-273,285-297,300-307,310-317,332-338,468-474,477-539,541-542
+  s_ab5443e65c7fba::t_4e5f20a2247281 540,543-554
+src/modules/AiRuntime/repositories/voiceTauriAdapter/__tests__/onDictationError.spec.ts
+  s_ab5443e65c7fba::t_3c85aeaf87299f 1-43
+crates/sourdaw-native/src/commands/audio_postprocess.rs
+  s_ab5443e65c7fba::t_73d5fc781a01c4 206-260,262-275
+  s_ab5443e65c7fba::t_3c15997e0968a7 16-74,78-79,86-98
+  s_ab5443e65c7fba::t_78ed312b271d36 261
+  s_ab5443e65c7fba::t_309d81b951d72b 276-279
+src/modules/AiRuntime/repositories/voiceTauriAdapter/onDictationError.ts
+  s_ab5443e65c7fba::t_dfad3d6a377945 1-37
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/onDictationError.spec.ts
+  s_ab5443e65c7fba::t_ef3566b7d34c44 1-26
+src/modules/AiRuntime/presentations/hooks/useVoiceRecording.ts
+  s_ab5443e65c7fba::t_bf1b2e56d5f290 18
+  s_ab5443e65c7fba::t_fb03851324411d 25-33
+  s_ab5443e65c7fba::t_901c4d22fd6404 132-138,141-153,159-162,164-173,181-184,186-189,196,201,204-219,229-237
+  s_ab5443e65c7fba::t_9b2d850b9486fb 118-120
+src/modules/AiRuntime/useCases/voiceDictation/onDictationError.ts
+  s_ab5443e65c7fba::t_4afd54c12e3578 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8096488ed524381f8f38e8bac43d2b4c9d0b7623",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
