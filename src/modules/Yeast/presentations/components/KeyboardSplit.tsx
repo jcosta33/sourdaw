@@ -1,6 +1,10 @@
 /**
- * KeyboardSplit — visual keyboard showing held/sounding notes and split zones.
- * Mini keyboard spanning C1-C7 (36-96) with color-coded zones.
+ * KeyboardSplit — visual keyboard showing held and sounding notes.
+ * Mini keyboard spanning C1-C7 (36-96), color-coded by note activity.
+ *
+ * No split-point parameter exists anywhere in the Yeast worker, so this
+ * component does not render one — a `splitPoint` prop with no backing data
+ * would be exactly the dead-affordance defect this component previously had.
  */
 import { type ReactElement } from 'react';
 
@@ -9,8 +13,6 @@ type Props = {
     heldNotes?: readonly number[];
     /** Notes currently sounding (from arp/processor output). */
     soundingNotes?: readonly number[];
-    /** Low/high split point (MIDI note number). */
-    splitPoint?: number;
     width: number;
     height: number;
 };
@@ -22,13 +24,7 @@ function isBlack(note: number): boolean {
     return [1, 3, 6, 8, 10].includes(pc);
 }
 
-export const KeyboardSplit = ({
-    heldNotes = [],
-    soundingNotes = [],
-    splitPoint,
-    width,
-    height,
-}: Props): ReactElement => {
+export const KeyboardSplit = ({ heldNotes = [], soundingNotes = [], width, height }: Props): ReactElement => {
     const whiteKeys: number[] = [];
     const blackKeys: number[] = [];
     for (let node = RANGE_LOW; node < RANGE_HIGH; node++) {
@@ -61,18 +57,6 @@ export const KeyboardSplit = ({
 
     return (
         <div className="relative rounded overflow-hidden" style={{ width, height, background: '#0a0a0a' }}>
-            {/* Split zone overlay */}
-            {splitPoint !== undefined ? (
-                <div
-                    className="absolute top-0 bottom-0 opacity-10"
-                    style={{
-                        left: 0,
-                        width: noteToX(splitPoint),
-                        background: 'var(--color-accent-cyan)',
-                    }}
-                />
-            ) : null}
-
             {/* White keys */}
             {whiteKeys.map((note) => {
                 const x = noteToX(note);
