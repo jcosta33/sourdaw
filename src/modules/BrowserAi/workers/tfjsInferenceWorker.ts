@@ -13,8 +13,7 @@
 
 import type { WorkerRequest, WorkerResponse } from '../models/InferenceRequest';
 
-const UNAVAILABLE =
-    'DDSP browser rendering is not available: TensorFlow.js cannot be bundled by Rolldown. Use the native renderer instead.';
+const UNAVAILABLE = 'DDSP browser rendering is unavailable because TensorFlow.js cannot be bundled by Rolldown.';
 
 self.onmessage = (event: MessageEvent<WorkerRequest>): void => {
     const req = event.data;

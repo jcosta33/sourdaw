@@ -18,7 +18,6 @@ pub mod addon;
 
 use std::sync::Arc;
 
-use crate::commands::audio_gen::AudioGenState;
 use crate::commands::collab::CollabState;
 use crate::commands::crumbs::CrumbsState;
 use crate::commands::link::LinkState;
@@ -43,7 +42,6 @@ pub struct NativeSingletons {
     pub midi: MidiState,
     pub push: PushState,
     pub dictation: DictationState,
-    pub audio_gen: AudioGenState,
     pub crumbs: CrumbsState,
     pub provider_gateway: ProviderGatewayState,
     /// Where every pushed event goes. Registered once, at host init, and never
@@ -60,7 +58,6 @@ impl NativeSingletons {
             midi: MidiState::default(),
             push: PushState::default(),
             dictation: DictationState::default(),
-            audio_gen: AudioGenState::default(),
             crumbs: CrumbsState::default(),
             provider_gateway: ProviderGatewayState::default(),
             events,

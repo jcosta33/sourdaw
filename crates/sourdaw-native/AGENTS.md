@@ -15,7 +15,7 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 ## Real-time invariants (hard)
 
 - The CPAL callback lives in `crates/daw-engine/src/audio_thread.rs`. On the audio path: **no heap allocation, no locks, no IPC** — scratch buffers are preallocated (`host/native_bridge.rs`).
-- No host seam — event sink, event stream, window host, sidecar host — may be called from the audio callback. Every one of them allocates, serializes, or reaches another thread.
+- No host seam — event sink, event stream, window host — may be called from the audio callback. Every one allocates, serializes, or reaches another thread.
 - `AppState`'s field order is the drop order and is load bearing: the engine's CPAL stream must be released before the CLAP runtimes it reads. `NativeSingletons` carries the same rule for the same reason. Reordering either field list reorders teardown.
 - Never final-drop a hosted plugin on the audio thread — removed CLAP runtimes go to `retired_engine_plugins` (`state.rs`).
 - If non-RT control owns a plugin wrapper's mutex, the RT path bypasses it rather than waiting (`host/native_bridge.rs`).

@@ -27,7 +27,6 @@ use serde_json::Value;
 use crate::commands;
 use crate::events::{EventSink, EventStream};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
-use crate::host::sidecar::{NoSidecarHost, SidecarHost};
 use crate::NativeSingletons;
 
 use daw_core::{PluginId, PluginInstanceId};
@@ -106,7 +105,6 @@ pub fn run_plugin_scan_worker() -> Option<i32> {
 pub struct SourdawNative {
     singletons: Arc<NativeSingletons>,
     windows: Arc<dyn PluginWindowHost>,
-    sidecar: Arc<dyn SidecarHost>,
 }
 
 #[napi]
@@ -128,10 +126,9 @@ impl SourdawNative {
 
         Self {
             singletons,
-            // Native editor windows and the generation sidecar are wired by
-            // later packets; until then these refuse rather than pretend.
+            // Native editor windows are wired by a later packet; until then
+            // this refuses rather than pretends.
             windows: Arc::new(NoWindowHost),
-            sidecar: Arc::new(NoSidecarHost),
         }
     }
 
@@ -214,49 +211,6 @@ impl SourdawNative {
             Error::from_reason(format!("Invalid post-process request: {error}"))
         })?;
         reason(commands::audio_postprocess::post_process_audio(request))
-    }
-
-    // ── Audio generation sidecar ───────────────────────────────────────
-
-    #[napi]
-    pub async fn start_audio_gen_sidecar(&self) -> Result<()> {
-        reason(
-            commands::audio_gen::start_audio_gen_sidecar(
-                Arc::clone(&self.sidecar),
-                Arc::clone(&self.singletons.events),
-                &self.singletons.audio_gen,
-            )
-            .await,
-        )
-    }
-
-    #[napi]
-    pub async fn generate_audio_clip(
-        &self,
-        prompt: String,
-        bpm: Option<f64>,
-        key: Option<String>,
-        duration_bars: Option<u32>,
-        duration_seconds: Option<f64>,
-    ) -> Result<Value> {
-        json(reason(
-            commands::audio_gen::generate_audio_clip(
-                Arc::clone(&self.sidecar),
-                Arc::clone(&self.singletons.events),
-                prompt,
-                bpm.map(|value| value as f32),
-                key,
-                duration_bars,
-                duration_seconds.map(|value| value as f32),
-                &self.singletons.audio_gen,
-            )
-            .await,
-        )?)
-    }
-
-    #[napi]
-    pub async fn stop_audio_gen_sidecar(&self) -> Result<()> {
-        reason(commands::audio_gen::stop_audio_gen_sidecar(&self.singletons.audio_gen).await)
     }
 
     // ── Dictation ──────────────────────────────────────────────────────

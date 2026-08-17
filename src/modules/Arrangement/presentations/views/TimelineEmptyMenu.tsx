@@ -4,7 +4,6 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useStore } from '#/infra/store/useStore';
-import { isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -136,8 +135,6 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
         onClose();
     };
 
-    const isAudioGenerationEnabled = isAudioGenerationAvailable();
-
     return (
         <DawContextMenuSurface
             ref={menuRef}
@@ -194,28 +191,6 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
                 AI Generate
             </DawMenuMutedRow>
-            {isAudioGenerationEnabled ? (
-                <DawMenuButton
-                    role="menuitem"
-                    onClick={act(() => {
-                        const prompt = window.prompt('Describe the audio to generate:');
-                        if (prompt?.trim()) {
-                            void executeAppAction({
-                                type: 'generateAudio',
-                                payload: { prompt: prompt.trim(), durationSeconds: 8, trackId: trackId ?? undefined },
-                            });
-                            notifyUser('Generating audio… this may take a moment');
-                        }
-                    })}
-                >
-                    <span className="text-[var(--color-accent-lavender)] mr-1.5">✦</span>
-                    Generate Audio Here…
-                </DawMenuButton>
-            ) : (
-                <DawMenuMutedRow className="italic text-muted-foreground/50">
-                    Audio generation requires desktop app
-                </DawMenuMutedRow>
-            )}
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {

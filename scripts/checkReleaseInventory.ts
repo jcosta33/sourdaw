@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,7 +21,6 @@ export const REQUIRED_SNAPSHOT_PATHS = [
     'Cargo.toml',
     'src-tauri/Cargo.toml',
     'Cargo.lock',
-    'src-tauri/sidecar/requirements.txt',
     'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
     'public/wasm/manifest.json',
 ] as const;
@@ -62,19 +61,8 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
-    'stable-audio-open-small': [
-        'src-tauri/sidecar/**',
-        'src-tauri/src/commands/audio_gen.rs',
-        'src/modules/AudioAnalysis/repositories/generateAudio.ts',
-        'src/modules/AudioAnalysis/repositories/isAudioGenerationAvailable.ts',
-        'src/modules/AudioAnalysis/useCases/audioAi/generateAudio.ts',
-        'src/modules/AudioAnalysis/useCases/audioAi/isAudioGenerationAvailable.ts',
-        'src/modules/AiGeneration/handlers/aiMidi/handleGenerateAudioAiMidi.ts',
-        'src/modules/AiGeneration/useCases/actions/ensureAudioGenerationAvailable.ts',
-        'src/modules/AiGeneration/useCases/actions/handleGenerateAudioFallback.ts',
-    ],
     'demucs-mansfieldplumbing': [
-        'src-tauri/src/commands/ai_audio.rs',
+        'crates/sourdaw-native/src/commands/ai_audio.rs',
         'src/modules/AudioAnalysis/repositories/browserStemSeparation.ts',
     ],
     'nsf-hifigan-openvpi': [
@@ -530,8 +518,9 @@ export function loadRepositorySnapshot(
     inventory: Pick<ReleaseInventory, 'snapshots' | 'marks'>,
     trackedFiles?: string[]
 ): RepositorySnapshot {
-    const files =
+    const trackedFilesInWorktree =
         trackedFiles ?? execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+    const files = trackedFilesInWorktree.filter((path) => existsSync(resolve(root, path)));
     const contents = new Map<string, string>();
     const readText = (path: string): string => {
         const cached = contents.get(path);

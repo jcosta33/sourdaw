@@ -192,6 +192,24 @@ describe('release inventory', () => {
         }
     });
 
+    it('ignores tracked files deleted from the working tree', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
+        mkdirSync(join(root, 'src'), { recursive: true });
+        writeFileSync(join(root, 'src/current.ts'), "export const value = 'current';\n");
+
+        try {
+            const result = loadRepositorySnapshot(root, { snapshots: [], marks: [] }, [
+                'src/current.ts',
+                'src/deleted.ts',
+            ]);
+
+            expect(result.releaseFiles).toEqual(['src/current.ts']);
+            expect(result.externalReferences).toEqual([]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('scans production endpoints plus case-insensitive public marks', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-release-inventory-'));
         mkdirSync(join(root, 'crates/plugin-host/src'), { recursive: true });
