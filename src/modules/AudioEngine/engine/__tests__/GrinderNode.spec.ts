@@ -126,7 +126,12 @@ describe('createGrinderNode', () => {
     });
 
     it('should forward setPatch and setBypass messages', async () => {
-        const node = await createGrinderNode(makeCtx());
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['unmapped-param'],
+        });
         postMessage.mockClear();
 
         node.setPatch({ drive: 0.5 });
@@ -140,7 +145,12 @@ describe('createGrinderNode', () => {
     });
 
     it('ramps a named AudioParam directly when the worklet exposes it', async () => {
-        const node = await createGrinderNode(makeCtx());
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['unmapped-param'],
+        });
         postMessage.mockClear();
         // Inject a real AudioParam-backed slot so setParam takes the
         // `node.parameters.get(name)` path (setTargetAtTime) instead of the
@@ -165,6 +175,16 @@ describe('createGrinderNode', () => {
         node.setParam('drive', Number.POSITIVE_INFINITY);
 
         expect(setTarget).not.toHaveBeenCalled();
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('drops an unbound fallback parameter instead of posting the legacy raw port message', async () => {
+        vi.stubGlobal('requestAnimationFrame', undefined);
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setParam('unknown-fallback-param', 0.5);
+
         expect(postMessage).not.toHaveBeenCalled();
     });
 
@@ -315,12 +335,30 @@ describe('createGrinderNode', () => {
     it('should post message-port params immediately when requestAnimationFrame is unavailable', async () => {
         vi.stubGlobal('requestAnimationFrame', undefined);
 
-        const node = await createGrinderNode(makeCtx());
+        const node = await createGrinderNode(makeCtx(), undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['unmapped-param'],
+        });
         postMessage.mockClear();
 
         node.setParam('unmapped-param', 0.42);
 
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'unmapped-param', value: 0.42 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: 'track-1',
+                    deviceId: 'grinder-1',
+                    deviceType: 'grinder',
+                    parameterId: 'unmapped-param',
+                },
+                value: 0.42,
+                scheduling: { targetFrame: null, deadlineFrame: null },
+            })
+        );
     });
 
     it('should expose the underlying worklet node and a ready promise', async () => {
@@ -391,7 +429,12 @@ describe('GrinderNode setParam coalescing', () => {
 
     async function makeNode() {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
-        return createGrinderNode(ctx);
+        return createGrinderNode(ctx, undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['drive', 'tone'],
+        });
     }
 
     it('collapses repeated posts of one param into a single post per frame', async () => {
@@ -405,16 +448,31 @@ describe('GrinderNode setParam coalescing', () => {
 
         // Nothing posted yet — buffered until the frame flush.
         const paramPostsBeforeFrame = postMessage.mock.calls.filter(
-            (c) => (c[0] as { type?: string })?.type === 'param'
+            (c) => (c[0] as { command?: string })?.command === 'set-fallback-param'
         );
         expect(paramPostsBeforeFrame.length).toBe(0);
 
         flushFrame();
 
         // Exactly one post, carrying the LAST value of the sweep.
-        const paramPosts = postMessage.mock.calls.filter((c) => (c[0] as { type?: string })?.type === 'param');
+        const paramPosts = postMessage.mock.calls.filter(
+            (c) => (c[0] as { command?: string })?.command === 'set-fallback-param'
+        );
         expect(paramPosts.length).toBe(1);
-        expect(paramPosts[0]![0]).toEqual({ type: 'param', name: 'drive', value: 0.9 });
+        expect(paramPosts[0]![0]).toEqual(
+            expect.objectContaining({
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: 'track-1',
+                    deviceId: 'grinder-1',
+                    deviceType: 'grinder',
+                    parameterId: 'drive',
+                },
+                value: 0.9,
+                scheduling: { targetFrame: null, deadlineFrame: null },
+            })
+        );
     });
 
     it('posts the latest value per distinct param name in one frame', async () => {
@@ -428,10 +486,14 @@ describe('GrinderNode setParam coalescing', () => {
         flushFrame();
 
         const paramPosts = postMessage.mock.calls
-            .filter((c) => (c[0] as { type?: string })?.type === 'param')
+            .filter((c) => (c[0] as { command?: string })?.command === 'set-fallback-param')
             .map((c) => c[0]);
-        expect(paramPosts).toContainEqual({ type: 'param', name: 'drive', value: 0.7 });
-        expect(paramPosts).toContainEqual({ type: 'param', name: 'tone', value: 0.2 });
+        expect(paramPosts).toContainEqual(
+            expect.objectContaining({ target: expect.objectContaining({ parameterId: 'drive' }), value: 0.7 })
+        );
+        expect(paramPosts).toContainEqual(
+            expect.objectContaining({ target: expect.objectContaining({ parameterId: 'tone' }), value: 0.2 })
+        );
         expect(paramPosts.length).toBe(2);
     });
 });

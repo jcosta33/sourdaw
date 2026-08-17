@@ -924,9 +924,21 @@ describe('wasmDeviceRegistry descriptors', () => {
                 ready: Promise.resolve({ latency: 0 }),
             };
             factoryMocks.createGrinderNode.mockResolvedValue(result);
-            const deps = createDeps({ deviceType: 'grinder', deviceId: 'grind-1' });
+            const parameterIds = Object.freeze(['drive', 'sag']);
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'grinder',
+                deviceId: 'grind-1',
+                parameterIds,
+            });
 
             const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
+            expect(factoryMocks.createGrinderNode).toHaveBeenCalledWith(deps.context, undefined, deps.signal, {
+                trackId: 'track-1',
+                deviceId: 'grind-1',
+                deviceType: 'grinder',
+                parameterIds,
+            });
             expect(placeholder.controller).toBeDefined();
             placeholder.controller?.setParam('drive', 0.7);
             placeholder.controller?.setPatch?.({ amp: 'lead' });

@@ -1067,8 +1067,10 @@ export class TrackNode {
                 try {
                     created = descriptor.create({
                         context,
+                        trackId: this.trackId,
                         deviceId,
                         deviceType,
+                        parameterIds: pendingLoad.parameterIds,
                         transportSAB: this.deps.transportSAB,
                         isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                         signal: pendingLoad.abortController.signal,

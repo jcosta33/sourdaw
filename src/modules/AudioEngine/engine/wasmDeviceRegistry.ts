@@ -37,8 +37,10 @@ import type { DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
 
 export type WasmDeviceCreateDeps = {
     context: AudioContext;
+    trackId?: string;
     deviceId: string;
     deviceType: string;
+    parameterIds?: readonly string[];
     transportSAB?: SharedArrayBuffer;
     isCurrent?: () => boolean;
     signal?: AbortSignal;
@@ -992,7 +994,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isGrinderDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({ context, trackId, deviceId, deviceType, parameterIds, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
@@ -1016,7 +1018,8 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 pendingBypass = bypassed;
             },
         };
-        const loadPromise = createGrinderNode(context, undefined, signal)
+        const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
+        const loadPromise = createGrinderNode(context, undefined, signal, controlTarget)
             .then(async (result: GrinderNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
