@@ -1,0 +1,26 @@
+.github/ISSUE_TEMPLATE/bug_report.yml
+  h_1228e573df1f42 1-70
+.github/ISSUE_TEMPLATE/campaign_epic.yml
+  h_1228e573df1f42 1-35
+.github/ISSUE_TEMPLATE/config.yml
+  h_1228e573df1f42 1-5
+.github/ISSUE_TEMPLATE/feature_request.yml
+  h_1228e573df1f42 1-58
+.github/dependabot.yml
+  h_1228e573df1f42 1-29
+CONTRIBUTING.md
+  h_1228e573df1f42 1-66
+SECURITY.md
+  h_1228e573df1f42 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "494842a7bbb38a7e623909636278693e55e6eaa5",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
