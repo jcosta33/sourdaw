@@ -159,3 +159,85 @@ pub async fn stop_recording(
 ) -> Result<(), String> {
     native::stop_recording(instance_id, &state).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use daw_dsp::crumbs::engine::CrumbsMetering;
+    use daw_dsp::crumbs::sample::SampleData;
+    use daw_dsp::crumbs::types::CrumbsCommand;
+    use sourdaw_native::commands::crumbs::CrumbsInstanceData;
+    use sourdaw_native::host::native_bridge::{PendingRecordingCommit, RecordBufferPair};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tauri::Manager;
+
+    use super::super::binary_ipc::raw_response_bytes;
+
+    fn block_on<Fut: std::future::Future>(future: Fut) -> Fut::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should build")
+            .block_on(future)
+    }
+
+    /// One instance holding one mono sample, wired as `create_crumbs` wires it.
+    fn instance_with_sample(sample_id: SampleId) -> CrumbsInstanceData {
+        let (command_tx, _cmd_rx) = rtrb::RingBuffer::<CrumbsCommand>::new(8);
+        let (_commit_tx, commit_rx) = rtrb::RingBuffer::<PendingRecordingCommit>::new(2);
+        let (recycle_tx, _recycle_rx) = rtrb::RingBuffer::<RecordBufferPair>::new(2);
+
+        let mut samples = HashMap::new();
+        samples.insert(
+            sample_id,
+            Arc::new(SampleData::from_mono(
+                (0..1024).map(|i| (i as f32 / 512.0) - 1.0).collect(),
+                48_000,
+            )),
+        );
+
+        CrumbsInstanceData {
+            command_tx,
+            samples,
+            metering: Arc::new(CrumbsMetering::default()),
+            engine_plugin_id: 0,
+            next_sample_id: sample_id + 1,
+            commit_rx,
+            recycle_tx,
+            pending_mirror: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn get_waveform_peaks_returns_a_raw_body_not_a_json_number_array() {
+        let app = tauri::test::mock_builder()
+            .manage(CrumbsState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("test app should build");
+        let state = app.state::<CrumbsState>();
+        state
+            .instances
+            .lock()
+            .expect("crumbs instances lock should be available")
+            .insert("crumbs-a".to_string(), instance_with_sample(1));
+
+        let response = block_on(get_waveform_peaks(
+            "crumbs-a".to_string(),
+            1,
+            0,
+            None,
+            state.clone(),
+        ))
+        .expect("peak read should succeed");
+
+        let bytes = raw_response_bytes(response);
+        assert!(!bytes.is_empty(), "the sample must produce peaks");
+        assert_eq!(
+            bytes.len() % 4,
+            0,
+            "peaks cross as little-endian f32 bytes, not as decimal numbers"
+        );
+    }
+}

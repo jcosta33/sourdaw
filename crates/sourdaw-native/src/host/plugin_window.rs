@@ -109,6 +109,15 @@ pub trait PluginWindowHost: Send + Sync {
     /// for `(instance_id, label)`, off the event thread. Without that wiring a
     /// title-bar close leaves the plugin's internal GUI alive and the instance
     /// permanently unopenable.
+    ///
+    /// That wiring is attached here, at creation — before the window is
+    /// published to `plugin_windows` — and not after the caller finishes
+    /// sizing and showing: a window that exists with no close handling is a
+    /// leak, and the trait has no "wire this later" step to defer it to. The
+    /// consequence is that the reset path must tolerate a close event for a
+    /// window that was never published, which it does: label removal is
+    /// compare-and-remove against an absent entry, and `close_gui` returns
+    /// early when the plugin's GUI was never opened.
     fn create_editor_window(
         &self,
         label: &str,
