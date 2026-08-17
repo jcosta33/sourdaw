@@ -1,0 +1,63 @@
+package.json
+  s_99d65e8b8dd558::t_85b8e35a32865a 29
+.github/ISSUE_TEMPLATE/inventory.yml
+  s_99d65e8b8dd558::t_3533c1910b03b2 2,9,11
+  s_99d65e8b8dd558::t_2e8e85262d3bf7 88
+  s_99d65e8b8dd558::t_146c5c4500f3ec 64
+.github/ISSUE_TEMPLATE/feature_request.yml
+  s_99d65e8b8dd558::t_dbd830ecc1fa11 2,9,11,16,38,47,55
+.github/ISSUE_TEMPLATE/research.yml
+  s_99d65e8b8dd558::t_789d79ec70083f 2,9,11,69,81,90
+.github/ISSUE_TEMPLATE/task.yml
+  s_99d65e8b8dd558::t_da212b42d8f30b 11
+  s_99d65e8b8dd558::t_44a494510bc1dd 2,9,17,26,69,98,107,116
+.github/ISSUE_TEMPLATE/change_plan.yml
+  s_99d65e8b8dd558::t_caa260a0582767 2,9,11,82
+  s_99d65e8b8dd558::t_878c4eb30f3225 95
+.github/ISSUE_TEMPLATE/audit.yml
+  s_99d65e8b8dd558::t_37f6e24fa287e1 67
+  s_99d65e8b8dd558::t_f55cd59695b4ca 2,9,11,39,55
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_99d65e8b8dd558::t_e06932f1b7567c 1-5,7-44,47-91,93-109
+  s_99d65e8b8dd558::t_85b8e35a32865a 6,45-46,92
+.github/ISSUE_TEMPLATE/campaign.yml
+  s_99d65e8b8dd558::t_a03b5d341a082b 2,9,11,37,45,54,78,89
+scripts/fileTrackerIssue.ts
+  s_99d65e8b8dd558::t_dac17d8f17953a 178
+  s_99d65e8b8dd558::t_4f9fcd38a0e164 298-299
+  s_99d65e8b8dd558::t_50485685fa9a28 53
+  s_99d65e8b8dd558::t_c4636c12947246 183
+  s_99d65e8b8dd558::t_cefadfed746229 1
+  s_99d65e8b8dd558::t_85b8e35a32865a 51-52,54,88,229,316-318
+  s_99d65e8b8dd558::t_57847649f5edbc 2-50,55-61,64-65,67-87,89-177,179-182,184-228,230-297,300-315,319-328
+  s_99d65e8b8dd558::t_f4f088faa63665 62-63,66
+AGENTS.md
+  s_99d65e8b8dd558::t_096a42c8e23208 133-134
+  s_99d65e8b8dd558::t_a621759dd2f606 129,135
+  s_99d65e8b8dd558::t_78c54e255ae7fe 136
+CONTRIBUTING.md
+  s_99d65e8b8dd558::t_984e21a6c02bf5 87
+.github/ISSUE_TEMPLATE/bug_report.yml
+  s_99d65e8b8dd558::t_871f0928784495 2,9,11,16,36,38,48-49,56-57,65-66
+.github/ISSUE_TEMPLATE/config.yml
+  s_99d65e8b8dd558::t_a270f69437f49a 5,8
+.github/ISSUE_TEMPLATE/spec.yml
+  s_99d65e8b8dd558::t_c094c2720768bb 59
+  s_99d65e8b8dd558::t_e6a706286ee7c8 2,9,11,72,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9e7ab808ce1cd29717d826a59b893d5cc5b655bb",
+  "prompts": {},
+  "sessions": {
+    "s_99d65e8b8dd558": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1f4b25f7-d37b-4eea-ad19-75370859753d",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
