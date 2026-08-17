@@ -1,9 +1,16 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { composeIssueTitle, parseIssueForm, renderIssueSubmission, resolveTemplatePath } from '../fileTrackerIssue';
+import {
+    composeIssueTitle,
+    parseIssueForm,
+    readFields,
+    renderIssueSubmission,
+    resolveTemplatePath,
+} from '../fileTrackerIssue';
 
 const templates = join(process.cwd(), '.github/ISSUE_TEMPLATE');
 
@@ -105,5 +112,21 @@ describe('resolveTemplatePath', () => {
         expect(resolveTemplatePath(templates, 'bug')).toBe(join(templates, 'bug_report.yml'));
         expect(resolveTemplatePath(templates, 'feature')).toBe(join(templates, 'feature_request.yml'));
         expect(resolveTemplatePath(templates, 'change-plan')).toBe(join(templates, 'change_plan.yml'));
+    });
+});
+
+describe('readFields', () => {
+    it('parses inline JSON and coerces numbers', () => {
+        expect(readFields('{"parent_spec":2037,"priority":"P1"}')).toEqual({
+            parent_spec: '2037',
+            priority: 'P1',
+        });
+    });
+
+    it('reads a JSON file path', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'issue-file-'));
+        const path = join(dir, 'fields.json');
+        writeFileSync(path, '{"scope":"security"}');
+        expect(readFields(path)).toEqual({ scope: 'security' });
     });
 });

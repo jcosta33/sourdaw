@@ -257,19 +257,31 @@ function fail(message: string): never {
     throw new Error(message);
 }
 
-function readFields(path: string): Record<string, string> {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+export function readFields(source: string): Record<string, string> {
+    const parsed: unknown = source.trimStart().startsWith('{')
+        ? JSON.parse(source)
+        : JSON.parse(readFileSync(source, 'utf8'));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        fail('--fields must be a JSON object of string values');
+        fail('--fields must be a JSON object');
     }
     const fields: Record<string, string> = {};
     for (const [key, value] of Object.entries(parsed)) {
-        if (typeof value !== 'string') {
-            fail(`field ${key} must be a string`);
-        }
-        fields[key] = value;
+        fields[key] = fieldString(key, value);
     }
     return fields;
+}
+
+function fieldString(key: string, value: unknown): string {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return String(value);
+    }
+    if (typeof value === 'boolean') {
+        return value ? 'true' : 'false';
+    }
+    return fail(`field ${key} must be a string`);
 }
 
 function createIssue(submission: IssueSubmission): { url: string; number: number } {
