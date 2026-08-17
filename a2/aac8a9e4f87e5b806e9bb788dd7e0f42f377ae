@@ -1,0 +1,28 @@
+crates/sourdaw-native/src/commands/ai_audio.rs
+  s_ab5443e65c7fba::t_be5338b17e4737 118-119,121,123,126-128,131-137,139-141,143
+  s_ab5443e65c7fba::t_a926ec0def6ff0 219-220,223-224,228-245,270-271,278-357
+  s_ab5443e65c7fba::t_344222593efcab 138
+  s_ab5443e65c7fba::t_5bbbdef83c083a 20-28,43-54,68-84,96-98
+  s_ab5443e65c7fba::t_a93afadbeb76ee 99-100,358
+src/modules/AiGeneration/useCases/actions/handleAiDenoiseClip.ts
+  s_ab5443e65c7fba::t_b7f765ebb8b508 11-19
+  s_ab5443e65c7fba::t_2acea95e7d3109 52-73
+src/modules/AiGeneration/useCases/actions/__tests__/handleAiDenoiseClip.spec.ts
+  s_ab5443e65c7fba::t_c88f9168d986b5 119-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a2aac8a9e4f87e5b806e9bb788dd7e0f42f377ae",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
