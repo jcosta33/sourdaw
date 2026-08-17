@@ -115,34 +115,42 @@ fn resolve_target_samples(
 
 /// Post-process a generated WAV: trim/pad to exact bar length,
 /// normalize, and apply loop-friendly fades.
-pub fn post_process_audio(request: PostProcessRequest) -> Result<String, String> {
+///
+/// The whole-file read/process/write runs on a blocking worker thread so an
+/// async caller (and, through it, the shell's main thread) never stalls for
+/// the duration of a multi-minute file.
+pub async fn post_process_audio(request: PostProcessRequest) -> Result<String, String> {
     let total_seconds = validate_post_process_request(&request)?;
 
     let input = filesystem::resolve_existing_file_path(&request.input_path)?;
     let output = filesystem::resolve_writable_file_path(&request.output_path)?;
 
-    // 1. Read input WAV
-    let (mut audio, sample_rate, channels) = read_wav(&input)?;
+    tokio::task::spawn_blocking(move || {
+        // 1. Read input WAV
+        let (mut audio, sample_rate, channels) = read_wav(&input)?;
 
-    // 2. Calculate target length in samples
-    let target_samples = resolve_target_samples(total_seconds, sample_rate, channels)?;
+        // 2. Calculate target length in samples
+        let target_samples = resolve_target_samples(total_seconds, sample_rate, channels)?;
 
-    // 3. Trim or pad to exact bar length
-    for ch in audio.iter_mut() {
-        ch.resize(target_samples, 0.0);
-    }
+        // 3. Trim or pad to exact bar length
+        for ch in audio.iter_mut() {
+            ch.resize(target_samples, 0.0);
+        }
 
-    // 4. Normalize to -1 dB headroom
-    normalize(&mut audio, 0.89);
+        // 4. Normalize to -1 dB headroom
+        normalize(&mut audio, 0.89);
 
-    // 5. Apply 10 ms equal-power fade at loop boundaries
-    let fade_samples = (0.010 * sample_rate as f32) as usize;
-    apply_fade(&mut audio, fade_samples);
+        // 5. Apply 10 ms equal-power fade at loop boundaries
+        let fade_samples = (0.010 * sample_rate as f32) as usize;
+        apply_fade(&mut audio, fade_samples);
 
-    // 6. Write output
-    write_wav(&output, &audio, sample_rate, channels)?;
+        // 6. Write output
+        write_wav(&output, &audio, sample_rate, channels)?;
 
-    Ok(output.to_string_lossy().into_owned())
+        Ok(output.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 // ── WAV I/O ──────────────────────────────────────────────────────────────
@@ -167,6 +175,15 @@ fn validate_int_bits_per_sample(bits_per_sample: u16) -> Result<u16, String> {
     Ok(bits_per_sample)
 }
 
+/// Attach the failing sample's position to a sample-read error.
+///
+/// A corrupt or truncated file must fail the whole command: substituting a
+/// default for an unreadable sample would silently damage the audio it then
+/// writes back out.
+fn describe_sample_error<S>(index: usize, sample: hound::Result<S>) -> Result<S, String> {
+    sample.map_err(|e| format!("WAV sample read error at sample index {index}: {e}"))
+}
+
 fn read_wav(path: &Path) -> Result<(Vec<Vec<f32>>, u32, u16), String> {
     let reader = WavReader::open(path).map_err(|e| format!("WAV read error: {e}"))?;
     let spec = reader.spec();
@@ -176,15 +193,19 @@ fn read_wav(path: &Path) -> Result<(Vec<Vec<f32>>, u32, u16), String> {
     let all_samples: Vec<f32> = match spec.sample_format {
         SampleFormat::Float => reader
             .into_samples::<f32>()
-            .map(|s| s.unwrap_or(0.0))
-            .collect(),
+            .enumerate()
+            .map(|(index, sample)| describe_sample_error(index, sample))
+            .collect::<Result<_, _>>()?,
         SampleFormat::Int => {
             let bits_per_sample = validate_int_bits_per_sample(spec.bits_per_sample)?;
             let max_val = (1i64 << (bits_per_sample - 1)) as f32;
             reader
                 .into_samples::<i32>()
-                .map(|s| s.unwrap_or(0) as f32 / max_val)
-                .collect()
+                .enumerate()
+                .map(|(index, sample)| {
+                    describe_sample_error(index, sample).map(|s| s as f32 / max_val)
+                })
+                .collect::<Result<_, _>>()?
         }
     };
 
@@ -322,9 +343,9 @@ mod tests {
     /// The command must return a command error, not panic, for the exact
     /// shapes described in the defect: this call never reaches `read_wav`
     /// because validation runs first and fails fast.
-    #[test]
-    fn post_process_audio_returns_an_error_instead_of_panicking_on_malicious_input() {
-        let result = post_process_audio(request(f32::NAN, u32::MAX, None));
+    #[tokio::test]
+    async fn post_process_audio_returns_an_error_instead_of_panicking_on_malicious_input() {
+        let result = post_process_audio(request(f32::NAN, u32::MAX, None)).await;
         assert!(result.is_err());
     }
 
@@ -379,5 +400,133 @@ mod tests {
         assert!(validate_int_bits_per_sample(16).is_ok());
         assert!(validate_int_bits_per_sample(24).is_ok());
         assert!(validate_int_bits_per_sample(32).is_ok());
+    }
+
+    /// A short-lived on-disk WAV under the system temp dir (an allowed native
+    /// file root), removed when dropped so parallel test runs never collide.
+    struct TempWav {
+        path: std::path::PathBuf,
+    }
+
+    impl TempWav {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "sourdaw-postprocess-{label}-{}.wav",
+                uuid::Uuid::new_v4()
+            ));
+            Self { path }
+        }
+    }
+
+    impl Drop for TempWav {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn write_wav_file(path: &Path, sample_format: SampleFormat, sample_count: usize) {
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 44_100,
+            bits_per_sample: match sample_format {
+                SampleFormat::Float => 32,
+                SampleFormat::Int => 16,
+            },
+            sample_format,
+        };
+        let mut writer = WavWriter::create(path, spec).unwrap();
+        for i in 0..sample_count {
+            match sample_format {
+                SampleFormat::Float => writer.write_sample(0.1f32 * (i % 3) as f32).unwrap(),
+                SampleFormat::Int => writer.write_sample(100i16 * (i % 3) as i16).unwrap(),
+            }
+        }
+        writer.finalize().unwrap();
+    }
+
+    /// Cut the file short *after* the header is finalized, so the data
+    /// chunk's declared length still promises samples the file no longer
+    /// holds — the on-disk shape of an interrupted or corrupted write.
+    fn truncate_file(path: &Path, bytes_removed: u64) {
+        let len = std::fs::metadata(path).unwrap().len();
+        let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_len(len - bytes_removed).unwrap();
+    }
+
+    /// Regression: `read_wav` used to map every failed float-sample read to
+    /// `0.0`, so a truncated file produced silently damaged audio instead of
+    /// an error. The error must name the failing position: 100 4-byte
+    /// samples minus 5 bytes leaves 98 whole samples, so index 98 fails.
+    #[test]
+    fn read_wav_errors_on_a_truncated_float_wav_instead_of_silencing_samples() {
+        let wav = TempWav::new("truncated-float");
+        write_wav_file(&wav.path, SampleFormat::Float, 100);
+        truncate_file(&wav.path, 5);
+
+        let error = read_wav(&wav.path).unwrap_err();
+        assert!(
+            error.contains("WAV sample read error at sample index 98"),
+            "error must name the failing sample position, got: {error}"
+        );
+    }
+
+    /// Regression: the integer branch had the same defect (`unwrap_or(0)`),
+    /// which decodes to digital silence at full scale.
+    #[test]
+    fn read_wav_errors_on_a_truncated_int_wav_instead_of_silencing_samples() {
+        let wav = TempWav::new("truncated-int");
+        write_wav_file(&wav.path, SampleFormat::Int, 100);
+        truncate_file(&wav.path, 3);
+
+        let error = read_wav(&wav.path).unwrap_err();
+        assert!(
+            error.contains("WAV sample read error at sample index"),
+            "error must name the failing sample position, got: {error}"
+        );
+    }
+
+    /// The full command must surface the corrupt-sample error through its
+    /// async/spawn_blocking plumbing rather than writing a damaged output.
+    #[tokio::test]
+    async fn post_process_audio_propagates_a_corrupt_sample_error() {
+        let input = TempWav::new("corrupt-input");
+        let output = TempWav::new("corrupt-output");
+        write_wav_file(&input.path, SampleFormat::Float, 100);
+        truncate_file(&input.path, 5);
+
+        let mut req = request(120.0, 1, None);
+        req.input_path = input.path.to_string_lossy().into_owned();
+        req.output_path = output.path.to_string_lossy().into_owned();
+
+        let error = post_process_audio(req).await.unwrap_err();
+        assert!(
+            error.contains("WAV sample read error at sample index"),
+            "error must name the failing sample position, got: {error}"
+        );
+        assert!(
+            !output.path.exists(),
+            "a failed read must not leave an output file behind"
+        );
+    }
+
+    /// The async command still completes end to end for a healthy file —
+    /// this fails if the `spawn_blocking` move broke path resolution or the
+    /// result plumbing.
+    #[tokio::test]
+    async fn post_process_audio_processes_a_valid_wav_end_to_end() {
+        let input = TempWav::new("valid-input");
+        let output = TempWav::new("valid-output");
+        write_wav_file(&input.path, SampleFormat::Float, 4_410);
+
+        let mut req = request(120.0, 1, None);
+        req.input_path = input.path.to_string_lossy().into_owned();
+        req.output_path = output.path.to_string_lossy().into_owned();
+
+        let written = post_process_audio(req).await.unwrap();
+        let (audio, sample_rate, channels) = read_wav(Path::new(&written)).unwrap();
+        assert_eq!(sample_rate, 44_100);
+        assert_eq!(channels, 1);
+        // 4 beats/bar at 120 bpm over 1 bar is 2s: 88_200 samples.
+        assert_eq!(audio[0].len(), 88_200);
     }
 }
