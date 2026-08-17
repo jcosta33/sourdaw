@@ -1,0 +1,43 @@
+src-tauri/src/commands/binary_ipc.rs
+  s_d91dcbe5f07151::t_17fe0cf538b98c 50-68
+src-tauri/src/commands/plugin_gui.rs
+  s_d91dcbe5f07151::t_ac4d745c5a30ac 6
+crates/sourdaw-native/src/commands/plugins.rs
+  s_d91dcbe5f07151::t_f72e4e437af4be 2126-2128,2130
+src-tauri/src/lib.rs
+  s_d91dcbe5f07151::t_683c7303e0ef94 138-140,142-143,145-146,149-156
+crates/sourdaw-native/AGENTS.md
+  s_d91dcbe5f07151::t_94b03b77b84aea 11-12
+  s_d91dcbe5f07151::t_7398aba813406c 22
+crates/sourdaw-native/src/addon/mod.rs
+  s_d91dcbe5f07151::t_28a79c5ce88af5 36-44
+  s_d91dcbe5f07151::t_341df42b7c7eee 773-775
+  s_d91dcbe5f07151::t_95676959b265ae 138-152
+crates/sourdaw-native/src/shutdown.rs
+  s_d91dcbe5f07151::t_0ac2ddea7e473f 1-204
+crates/sourdaw-native/src/lib.rs
+  s_d91dcbe5f07151::t_ddc4af35d9644b 69-80
+  s_d91dcbe5f07151::t_bff5eae2b0055d 13
+src-tauri/src/commands/collab.rs
+  s_d91dcbe5f07151::t_5be2ce892478a2 6
+src-tauri/src/commands/filesystem.rs
+  s_d91dcbe5f07151::t_cccfc9574dfa99 40-68
+src-tauri/src/commands/plugins.rs
+  s_d91dcbe5f07151::t_71621d0a6ed6e5 156-239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5cb760d4a86074947fc9e1f11350c00b25d5c0e4",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
