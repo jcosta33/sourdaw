@@ -6,9 +6,9 @@ import { type ReactElement } from 'react';
 
 type Props = {
     /** Notes currently held (from input). */
-    heldNotes?: number[];
+    heldNotes?: readonly number[];
     /** Notes currently sounding (from arp/processor output). */
-    soundingNotes?: number[];
+    soundingNotes?: readonly number[];
     /** Low/high split point (MIDI note number). */
     splitPoint?: number;
     width: number;
