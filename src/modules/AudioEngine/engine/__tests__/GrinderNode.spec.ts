@@ -205,6 +205,25 @@ describe('createGrinderNode', () => {
         expect(postMessage).not.toHaveBeenCalled();
     });
 
+    it('schedules an AudioParam from its sample frame and clamps past frames to the current context time', async () => {
+        const ctx = makeCtx() as BaseAudioContext & { currentTime: number; sampleRate: number };
+        Object.assign(ctx, { currentTime: 1.5, sampleRate: 48_000 });
+        const node = await createGrinderNode(ctx, undefined, undefined, {
+            trackId: 'track-1',
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            parameterIds: ['drive'],
+        });
+        const setTarget = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('drive', { setTargetAtTime: setTarget });
+
+        node.setParam('drive', 0.7, 96_000);
+        node.setParam('drive', 0.2, 48_000);
+
+        expect(setTarget).toHaveBeenNthCalledWith(1, 0.7, 2, 0.01);
+        expect(setTarget).toHaveBeenNthCalledWith(2, 0.2, 1.5, 0.01);
+    });
+
     it('drops a non-finite setParam value without touching the param or port', async () => {
         const node = await createGrinderNode(makeCtx());
         postMessage.mockClear();

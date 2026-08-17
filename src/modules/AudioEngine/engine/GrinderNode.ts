@@ -90,6 +90,13 @@ function toControlScheduling(sampleFrame: number | undefined): Readonly<{
     return { targetFrame: sampleFrame, deadlineFrame };
 }
 
+function toAudioParamTime(context: BaseAudioContext, sampleFrame: number | undefined): number {
+    if (!Number.isSafeInteger(sampleFrame) || sampleFrame === undefined || sampleFrame < 0) {
+        return context.currentTime;
+    }
+    return Math.max(context.currentTime, sampleFrame / context.sampleRate);
+}
+
 export function isGrinderDevice(deviceType: string): boolean {
     return deviceType === 'grinder';
 }
@@ -261,9 +268,9 @@ export async function createGrinderNode(
             if (Number.isFinite(value)) {
                 const param = node.parameters.get(name);
                 if (param) {
-                    // AudioParam updates are already coalesced by the audio engine
-                    // (setTargetAtTime), so post these straight through.
-                    param.setTargetAtTime(value, ctx.currentTime, 0.01);
+                    // Immediate UI writes smooth from now; scheduled writes use
+                    // TrackNode's sample-frame time, bounded at the live context.
+                    param.setTargetAtTime(value, toAudioParamTime(ctx, sampleFrame), 0.01);
                 } else {
                     // Message-port params: coalesce per frame to avoid flooding the
                     // worklet port on rapid automation/knob drags.
