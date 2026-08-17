@@ -330,6 +330,26 @@ describe('ProofProcessor message handling & process guards', () => {
         expect(changed!.latency).toBe(64);
     });
 
+    it('reports latency after an accepted live v1 lim_lookahead control mutates WASM', async () => {
+        const proc = await loadProcessor();
+        initializeLiveProof(proc, 'track-1');
+        proofLatencyQueue = [0, 64];
+
+        send(
+            proc,
+            liveControl('set-fallback-param', 'track-1', 1, {
+                value: 1,
+                target: { trackId: 'track-1', deviceId: 'proof-1', deviceType: 'proof', parameterId: 'lim_lookahead' },
+            })
+        );
+
+        expect(proofParamCalls).toContainEqual({ name: 'lim_lookahead', value: 1 });
+        expect(vi.mocked(proc.port.postMessage).mock.calls.map((call) => call[0])).toContainEqual({
+            type: 'latency-changed',
+            latency: 64,
+        });
+    });
+
     it('does not report latency-changed when the message leaves latency unchanged', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
