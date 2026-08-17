@@ -1,0 +1,43 @@
+CONTRIBUTING.md
+  s_99d65e8b8dd558::t_3ad1330ada77b7 80,87
+.github/ISSUE_TEMPLATE/audit.yml
+  s_99d65e8b8dd558::t_92e8990702ecc1 11,55-59
+.github/ISSUE_TEMPLATE/task.yml
+  s_99d65e8b8dd558::t_fdea773021f081 2,9,11,14,16-17,22-30,69-70,78-85,94-102,107
+.github/ISSUE_TEMPLATE/bug_report.yml
+  s_99d65e8b8dd558::t_0593ac50e4ed42 9-11
+  s_99d65e8b8dd558::t_658538d3e7f9fa 40-43
+.github/ISSUE_TEMPLATE/spec.yml
+  s_99d65e8b8dd558::t_b7146f42448ba1 4,9,11,59-60
+.github/ISSUE_TEMPLATE/change_plan.yml
+  s_99d65e8b8dd558::t_6b5f10e0b32c78 4,11,82-83,86-87
+AGENTS.md
+  s_99d65e8b8dd558::t_6ca06d89f90469 128-132
+README.md
+  s_99d65e8b8dd558::t_3ad1330ada77b7 10-12
+.github/ISSUE_TEMPLATE/inventory.yml
+  s_99d65e8b8dd558::t_156c9e93eace2b 4,11
+.github/ISSUE_TEMPLATE/feature_request.yml
+  s_99d65e8b8dd558::t_a4b1766108a3d3 9-11,38-40,45,47-48,53,55-56
+.github/ISSUE_TEMPLATE/campaign.yml
+  s_99d65e8b8dd558::t_3d76344c69eb6d 9,11,45,50-53,56-65,78,80-81
+  s_99d65e8b8dd558::t_f17c841448a26b 54-55
+.github/ISSUE_TEMPLATE/research.yml
+  s_99d65e8b8dd558::t_b0b84a6f09ad65 4,11,56,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "babf318c3cd89200d627ae53a94b177f697c4156",
+  "prompts": {},
+  "sessions": {
+    "s_99d65e8b8dd558": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1f4b25f7-d37b-4eea-ad19-75370859753d",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
