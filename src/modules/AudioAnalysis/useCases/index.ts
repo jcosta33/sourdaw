@@ -5,6 +5,7 @@ export { getAnalysisHandlers } from './getAnalysisHandlers';
 export { setMixAnalysisDisplayLifecycle } from './setMixAnalysisDisplayLifecycle';
 
 export { separateStems } from './audioAi/separateStems';
+export { isStemSeparationAvailable } from './audioAi/isStemSeparationAvailable';
 
 export { summarizeFeatures } from './summarizeFeatures';
 

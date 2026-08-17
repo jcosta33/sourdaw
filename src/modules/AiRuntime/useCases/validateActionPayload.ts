@@ -910,7 +910,6 @@ const validators = {
     compareToReference: 'unchecked',
     getMentorTips: 'unchecked',
     searchSamples: 'unchecked',
-    stemSeparate: 'unchecked',
     autoOrganizeProject: 'unchecked',
 
     // Scratch pad

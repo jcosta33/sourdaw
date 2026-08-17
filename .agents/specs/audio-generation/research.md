@@ -26,7 +26,7 @@ quality-to-effort ratio for a first shippable feature?
 
 ### R-001 — DiffSinger via ONNX is the production-proven singing engine
 
-- **Claim:** DiffSinger (OpenVPI fork) exported to ONNX is the only singing-synthesis pipeline
+- **Claim:** DiffSinger exported to ONNX is the only singing-synthesis pipeline
   proven in a shipped desktop app, reaching ~70–80% of AceStudio's naturalness for
   straightforward singing; SoulX-Singer, TokenSynth, and ACE-Step lack validated ONNX exports.
 - **Evidence:** OpenUtau ships DiffSinger ONNX inference in C# (`DiffSingerRenderer.cs`); the
@@ -34,12 +34,12 @@ quality-to-effort ratio for a first shippable feature?
 - **Confidence:** high
 - **Bears on:** AC-001 (the DiffSinger pipeline) and the build-now vs prototype tier boundary.
 
-### R-002 — The community NSF-HiFiGAN vocoder is license-unsafe; BigVGAN v2 + Vocos are not
+### R-002 — The reference community vocoder is license-unsafe; BigVGAN v2 + Vocos are not
 
 - **Claim:** The community DiffSinger vocoder is CC-BY-NC-SA 4.0 and must not ship; BigVGAN v2
   (MIT, 45–135× realtime) and Vocos (MIT, ~6,700× realtime) are the license-safe quality and
   preview vocoders respectively.
-- **Evidence:** vocoder license/speed table; risk register rates the NSF-HiFiGAN license
+- **Evidence:** vocoder license/speed table; risk register rates the reference license
   "High severity, Certain likelihood".
 - **Confidence:** high
 - **Bears on:** AC-005 (dual vocoder) and AC-010 (no non-commercial weights).
@@ -48,7 +48,7 @@ quality-to-effort ratio for a first shippable feature?
 
 - **Claim:** DiffSinger emits 128-bin mel at a specific configuration; BigVGAN v2 was trained on a
   potentially different mel layout, so a drop-in MIT vocoder may need a mel adapter or fine-tune.
-- **Evidence:** OpenUtau pairs DiffSinger with NSF-HiFiGAN (CC-BY-NC-SA); no documented drop-in
+- **Evidence:** OpenUtau pairs DiffSinger with a CC-BY-NC-SA reference vocoder; no documented drop-in
   MIT vocoder for DiffSinger mel exists.
 - **Confidence:** medium
 - **Bears on:** the blocking open question gating implementation, and AC-005.

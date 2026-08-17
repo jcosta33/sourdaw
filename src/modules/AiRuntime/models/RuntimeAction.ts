@@ -234,7 +234,6 @@ export const RUNTIME_ACTION_TYPES = [
     'setWarpAlgorithm',
     'setWarpPitchShift',
     'startMacroRecording',
-    'stemSeparate',
     'stopMacroRecording',
     'switchMonitor',
     'toggleChordTrack',

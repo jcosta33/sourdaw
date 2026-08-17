@@ -1,12 +1,10 @@
 import { type ReactElement, useState } from 'react';
 
-import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Upload, Loader2 } from 'lucide-react';
+import { X, Sparkles, Library, Loader2 } from 'lucide-react';
 
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { DawInlineHint } from '#/components/daw/DawInlineHint';
-import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
@@ -16,29 +14,13 @@ import { aiStore } from '#/modules/AiGeneration/stores';
 import {
     toggleAiPanel,
     handleGenerateMidiPrompt,
-    handleStemSeparationPreview,
     cancelProcessingTask,
     removeTask,
 } from '#/modules/AiGeneration/useCases';
-import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
-
-type GenerativePanelWorkspaceState = {
-    selectedClipId: string | null;
-};
-
-type GenerativePanelTrackState = {
-    tracks: Array<{
-        clips: Array<{
-            id: string;
-            type: 'audio' | 'midi';
-            name: string;
-        }>;
-    }>;
-};
 
 type GenerativeTaskType = 'midi-generation' | 'stem-separation' | 'denoise';
 
@@ -61,15 +43,7 @@ type GenerativeAiState = {
 };
 
 export const GenerativeAiPanel = (): ReactElement | null => {
-    // §187.1 — All hooks MUST run in the same order on every render. The
-    // previous implementation placed two \`useStore\` calls (selection reads
-    // for stem separation) after the \`if (!state.isPanelOpen) return null\`
-    // early exit, so toggling the panel changed the hook count between
-    // renders and corrupted React's per-component hook state.
     const state = useStore<GenerativeAiState>(aiStore, { isPanelOpen: false, tasks: [] });
-    const clipSelection = useStore<GenerativePanelWorkspaceState | null>(clipSelectionStore, null);
-    const trackState = useStore<GenerativePanelTrackState | null>(trackStore, null);
-    const [activeTab, setActiveTab] = useState<'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
     const [prompt, setPrompt] = useState('');
     const [midiGenre, setMidiGenre] = useState('');
@@ -110,21 +84,6 @@ export const GenerativeAiPanel = (): ReactElement | null => {
         setPrompt('');
     };
 
-    // Get selected audio clip for stem separation — reads the already-subscribed
-    // store values (see the hook block at the top of the component).
-    const selectedClipId = clipSelection?.selectedClipId ?? null;
-    const tracks = trackState?.tracks ?? [];
-    const selectedClip =
-        tracks
-            .flatMap((time) => time.clips)
-            .find((context) => context.id === selectedClipId && context.type === 'audio') ?? null;
-
-    const handleStemSep = () => {
-        if (selectedClip) {
-            void handleStemSeparationPreview(selectedClip.id);
-        }
-    };
-
     return (
         <div className="w-[320px] border-l border-border/40 bg-surface-base flex flex-col h-full shrink-0 animate-in slide-in-from-right-8 duration-200">
             {/* Header */}
@@ -139,108 +98,42 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     </Button>
                 }
             />
-            {/* Tabs */}
-            <div className="daw-analysis-card-header flex shrink-0 gap-1 p-2">
+            {/* MIDI Sub-tabs */}
+            <div className="flex px-3 pt-2 pb-1 gap-2 shrink-0">
                 <Button
-                    variant={activeTab === 'midi' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="flex-1"
-                    data-testid="generate-tab-midi"
-                    onClick={() => setActiveTab('midi')}
+                    variant={midiSubTab === 'patterns' ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className={
+                        midiSubTab === 'patterns'
+                            ? 'text-[var(--color-accent-lavender)] drop-shadow-[0_0_4px_var(--color-accent-lavender)]'
+                            : ''
+                    }
+                    onClick={() => setMidiSubTab('patterns')}
                 >
-                    <Music className="size-3" /> MIDI
+                    <Library className="size-3" /> Patterns
                 </Button>
                 <Button
-                    variant={activeTab === 'stems' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => setActiveTab('stems')}
+                    variant={midiSubTab === 'ai' ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className={
+                        midiSubTab === 'ai'
+                            ? 'text-[var(--color-accent-lavender)] drop-shadow-[0_0_4px_var(--color-accent-lavender)]'
+                            : ''
+                    }
+                    onClick={() => setMidiSubTab('ai')}
                 >
-                    <RefreshCw className="size-3" /> Stems
+                    <Sparkles className="size-3" /> AI
                 </Button>
             </div>
-            {/* MIDI Sub-tabs */}
-            {activeTab === 'midi' ? (
-                <div className="flex px-3 pt-2 pb-1 gap-2 shrink-0">
-                    <Button
-                        variant={midiSubTab === 'patterns' ? 'secondary' : 'ghost'}
-                        size="xs"
-                        className={
-                            midiSubTab === 'patterns'
-                                ? 'text-[var(--color-accent-lavender)] drop-shadow-[0_0_4px_var(--color-accent-lavender)]'
-                                : ''
-                        }
-                        onClick={() => setMidiSubTab('patterns')}
-                    >
-                        <Library className="size-3" /> Patterns
-                    </Button>
-                    <Button
-                        variant={midiSubTab === 'ai' ? 'secondary' : 'ghost'}
-                        size="xs"
-                        className={
-                            midiSubTab === 'ai'
-                                ? 'text-[var(--color-accent-lavender)] drop-shadow-[0_0_4px_var(--color-accent-lavender)]'
-                                : ''
-                        }
-                        onClick={() => setMidiSubTab('ai')}
-                    >
-                        <Sparkles className="size-3" /> AI
-                    </Button>
-                </div>
-            ) : null}
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
-                {activeTab === 'midi' && midiSubTab === 'patterns' ? (
+                {midiSubTab === 'patterns' ? (
                     <div className="p-3">
                         <PatternBrowser />
                     </div>
                 ) : null}
 
-                {activeTab === 'stems' ? (
-                    <div className="p-3 space-y-3">
-                        <p className="text-[10px] text-muted-foreground leading-relaxed">
-                            Select an audio clip on the timeline, then click Extract. The clip will be split into
-                            individual stems (Vocals, Drums, Bass, Other).
-                        </p>
-
-                        {selectedClip ? (
-                            <DawUtilitySection
-                                title="Selected Clip"
-                                detail="The current timeline selection will be split into stems."
-                                bodyClassName="py-2"
-                            >
-                                <div className="flex items-center gap-2">
-                                    <AudioWaveform className="size-4 text-[var(--color-accent-lavender)]" />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="truncate text-[11px] font-medium text-foreground">
-                                            {selectedClip.name}
-                                        </div>
-                                        <DawEyebrowLabel className="block">Audio Clip Selected</DawEyebrowLabel>
-                                    </div>
-                                </div>
-                            </DawUtilitySection>
-                        ) : (
-                            <DawUtilityNotice tone="dashed" icon={<Upload className="size-4" />}>
-                                <DawInlineHint className="bg-transparent px-0 py-0 text-[11px] text-muted-foreground/70">
-                                    Select an audio clip on the timeline
-                                </DawInlineHint>
-                            </DawUtilityNotice>
-                        )}
-
-                        <Button
-                            className="w-full h-8 text-xs bg-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)] text-white disabled:opacity-50"
-                            onClick={handleStemSep}
-                            disabled={!selectedClip}
-                        >
-                            <RefreshCw className="size-3.5 mr-2" /> Extract Stems
-                        </Button>
-                        <DawInlineHint className="justify-start px-0 py-0 text-muted-foreground/60">
-                            First run downloads the model (~235 MB). Runs locally on your device.
-                        </DawInlineHint>
-                    </div>
-                ) : null}
-
-                {activeTab === 'midi' && midiSubTab === 'ai' ? (
+                {midiSubTab === 'ai' ? (
                     <div className="p-3 space-y-4">
                         <div className="space-y-3">
                             <div className="space-y-1.5">
@@ -351,7 +244,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     >
                         <DawUtilitySection
                             title="Recent"
-                            detail="The latest generated clips, renders, and stem jobs."
+                            detail="The latest generated clips and renders."
                             bodyClassName="px-2 py-2"
                         >
                             <div className="space-y-1.5">
