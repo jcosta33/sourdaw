@@ -1,0 +1,24 @@
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_99d65e8b8dd558::t_a848f46b331d94 1-2,7-13
+  s_99d65e8b8dd558::t_7132f83fa3040e 117-132
+scripts/fileTrackerIssue.ts
+  s_99d65e8b8dd558::t_ce54d006b76803 286
+  s_99d65e8b8dd558::t_dd74c685cb5759 260-263,265,269,274-283
+  s_99d65e8b8dd558::t_bddc56dcd295e3 284-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "19fe709fac8aa9f29174b81954e4ea872bca93e8",
+  "prompts": {},
+  "sessions": {
+    "s_99d65e8b8dd558": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1f4b25f7-d37b-4eea-ad19-75370859753d",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
