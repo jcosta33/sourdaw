@@ -1,0 +1,23 @@
+.github/ISSUE_TEMPLATE/change_plan.yml
+  s_99d65e8b8dd558::t_5dfc2d1241b997 11,95
+.github/ISSUE_TEMPLATE/campaign.yml
+  s_99d65e8b8dd558::t_5dfc2d1241b997 59
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_99d65e8b8dd558::t_dfa82432112fc2 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "14645659399d5c67200a727b6a74ead79e831d93",
+  "prompts": {},
+  "sessions": {
+    "s_99d65e8b8dd558": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1f4b25f7-d37b-4eea-ad19-75370859753d",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
