@@ -1,8 +1,9 @@
+import { desktopOpenDialog } from '#/utils/tauriBridge';
+
 type SelectNativeAudioExportDirectoryOutput = Promise<string | null>;
 
 export async function selectNativeAudioExportDirectory(): SelectNativeAudioExportDirectoryOutput {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const selected = await open({
+    const selected = await desktopOpenDialog({
         directory: true,
         multiple: false,
         title: 'Select Output Folder for Slices (Stems)',

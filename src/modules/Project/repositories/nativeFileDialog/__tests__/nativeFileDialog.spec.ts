@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { save } from '@tauri-apps/plugin-dialog';
-
-import { isTauri, readFileBytes } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isTauri, readFileBytes } from '#/utils/tauriBridge';
 
 import { openViaBrowser } from '../helpers';
 import { openFileDialog } from '../openFileDialog';
@@ -13,6 +11,7 @@ import { saveFileDialog } from '../saveFileDialog';
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
     readFileBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    desktopSaveDialog: vi.fn().mockResolvedValue('/save/path.wav'),
 }));
 
 vi.mock('../helpers', () => ({
@@ -65,7 +64,7 @@ describe('nativeFileDialog', () => {
 
         it('should use native save dialog in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(save).mockResolvedValue('/save/path.wav');
+            vi.mocked(desktopSaveDialog).mockResolvedValue('/save/path.wav');
 
             const result = await saveFileDialog({ defaultPath: 'test.wav' });
             expect(result).toBe('/save/path.wav');

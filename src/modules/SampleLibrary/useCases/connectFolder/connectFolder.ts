@@ -1,4 +1,5 @@
 import { basename_from_path } from '#/utils/path-basename';
+import { isTauri } from '#/utils/tauriRuntime';
 
 import { type LibraryRoot } from '../../models/LibraryTypes';
 import { pickTauriSampleFolder } from '../../repositories/pickTauriSampleFolder';
@@ -79,10 +80,7 @@ async function connectFolderTauri(): Promise<string | null> {
  * Returns the root ID if successful, null if cancelled.
  */
 export async function connectFolder(): Promise<string | null> {
-    // Check if we're in Tauri
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-
-    if (isTauri) {
+    if (isTauri()) {
         return connectFolderTauri();
     }
 

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from '#/utils/tauriBridge';
 
 const STANDARD_A4_ROOT_NOTE = 69;
 const STANDARD_A4_ROOT_FREQ = 440;
@@ -34,7 +34,7 @@ function isParseSclOutput(value: unknown): value is ParseSclOutput {
 }
 
 export async function parseScl(content: string): Promise<ParseSclOutput> {
-    const result = await invoke('parse_scl', {
+    const result = await tauriInvoke('parse_scl', {
         content,
         rootNote: STANDARD_A4_ROOT_NOTE,
         rootFreq: STANDARD_A4_ROOT_FREQ,
