@@ -42,4 +42,10 @@ export type YeastPreviewFeedback = Readonly<{
     droppedVisualEvents: number;
     processorActivity: readonly YeastPreviewProcessorActivity[];
     summary: string;
+    /**
+     * Pitches of realized preview events whose scheduled window currently
+     * contains the playhead — the rack's own note-activity stream, reused by
+     * KeyboardSplit so it renders real output instead of a static keyboard.
+     */
+    soundingPitches: readonly number[];
 }>;
