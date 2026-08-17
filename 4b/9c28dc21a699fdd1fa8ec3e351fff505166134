@@ -1,0 +1,90 @@
+src/modules/Transport/useCases/scheduling/__tests__/resetMetronomeBeat.spec.ts
+  s_ab5443e65c7fba::t_212500f820518c 19-20
+  s_ab5443e65c7fba::t_2054d34f0a863d 29,35,38,43
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_ab5443e65c7fba::t_c4af432fbe8e66 17-24
+  s_ab5443e65c7fba::t_4eeadbfd62663b 270-271
+  s_ab5443e65c7fba::t_2621c8494ea31f 39
+  s_ab5443e65c7fba::t_d67e4d7f0200bc 252-269,272-281
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_ab5443e65c7fba::t_e9fc88cd3fcb24 137
+  s_ab5443e65c7fba::t_669b99ee7143c9 30,33
+  s_ab5443e65c7fba::t_23ecbb816427c4 78-81
+  s_ab5443e65c7fba::t_7595f62e7afbba 155-165,172,177-196,203,206-209
+  s_ab5443e65c7fba::t_0e6f560f5022c4 150,239,241,253,272,283,297,309,315,326,333,345,357,362,371,386,388,404,422,452,473,489,510,532,546,561,565,568,584,598,621,635,651,667,685,693,707,722
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_ab5443e65c7fba::t_c8b063f02081d7 14
+  s_ab5443e65c7fba::t_23327973ee1a43 138-144,150-151,155-159
+  s_ab5443e65c7fba::t_194222ef6cb855 19
+  s_ab5443e65c7fba::t_512d156172ae44 152-154
+  s_ab5443e65c7fba::t_0d277ddf24ca3a 171-172
+src/modules/Transport/models/TempoMap.ts
+  s_ab5443e65c7fba::t_9b52fa21342217 207-227
+  s_ab5443e65c7fba::t_d7dd728a186419 13-36
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_ab5443e65c7fba::t_5c20d0e7e1b4f8 257-267,269
+  s_ab5443e65c7fba::t_11019fb6d563d7 60
+  s_ab5443e65c7fba::t_10e0d336f5f467 284-291
+  s_ab5443e65c7fba::t_f213abeb3334bd 82
+  s_ab5443e65c7fba::t_8c14b7b338e0b7 132-139,141-145
+  s_ab5443e65c7fba::t_d090f64b62f02f 181-186
+  s_ab5443e65c7fba::t_1171f1cae5edc0 16
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  s_ab5443e65c7fba::t_e7d3833f8c7ad7 6
+  s_ab5443e65c7fba::t_108d5afcebedc8 66-122
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  s_ab5443e65c7fba::t_c487f3cb9a6a8a 30
+  s_ab5443e65c7fba::t_4b7abbd19d7f45 3-4
+  s_ab5443e65c7fba::t_b5652a911af104 57-63
+  s_ab5443e65c7fba::t_1ed37fb396ab17 39
+  s_ab5443e65c7fba::t_643622fa4e6e7b 73-79,85
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_ab5443e65c7fba::t_41962964383dee 41-54
+  s_ab5443e65c7fba::t_13153d63a62b17 5,9
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts
+  s_ab5443e65c7fba::t_51a8f4c251ac27 24-27
+  s_ab5443e65c7fba::t_1686c435f7d95e 57,102,116-185,188-189
+  s_ab5443e65c7fba::t_d8eacfc940e6e0 45,51,67,78,87,94,108,195
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_ab5443e65c7fba::t_2dc18bfcd5ee2a 65-67
+  s_ab5443e65c7fba::t_12b991ee18bfff 109
+  s_ab5443e65c7fba::t_ee262befe05e57 35,37
+  s_ab5443e65c7fba::t_33cda2ed17669d 150-206,211-213
+  s_ab5443e65c7fba::t_9e5a7e1ecacb89 207-210
+src/modules/Transport/useCases/transportControls/__tests__/pauseStart.spec.ts
+  s_ab5443e65c7fba::t_dff01d94b7766b 133-135,140
+  s_ab5443e65c7fba::t_8582073399250e 30-34
+src/modules/Transport/models/__tests__/TempoMap.spec.ts
+  s_ab5443e65c7fba::t_18011f0a645f28 9
+  s_ab5443e65c7fba::t_f3e303994dc7c2 299-364
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ab5443e65c7fba::t_6f2738055c1338 473
+  s_ab5443e65c7fba::t_83e2239442c30f 451
+src/modules/Transport/models/TimeSignatureMap.ts
+  s_ab5443e65c7fba::t_79752d6b68cff1 8-26
+  s_ab5443e65c7fba::t_7f1c11ec60b7cd 37,46-52,54,62,67
+  s_ab5443e65c7fba::t_b275e4bc6450ca 98-151
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_ab5443e65c7fba::t_bd21ec33950697 61-68
+  s_ab5443e65c7fba::t_e27461c58ef48a 10-11,22-29
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_ab5443e65c7fba::t_48b4975498c9fb 92-155
+  s_ab5443e65c7fba::t_7ec89229691590 42
+  s_ab5443e65c7fba::t_d5b6bc9c225488 14-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4b9c28dc21a699fdd1fa8ec3e351fff505166134",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
