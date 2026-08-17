@@ -229,23 +229,31 @@ app.on('render-process-gone', (_event, contents, details) => {
         return;
     }
 
-    const window = BrowserWindow.fromWebContents(contents);
+    const crashedWindow = BrowserWindow.fromWebContents(contents);
     // Only the session window is recreated. A crashed webview belonging to
     // something else must not resurrect itself as the main window.
-    if (window !== mainWindow) {
+    if (crashedWindow !== mainWindow) {
         return;
     }
-    if (window !== null && !window.isDestroyed()) {
-        window.destroy();
-    }
-    mainWindow = undefined;
+
+    const destroyCrashedWindow = (): void => {
+        if (crashedWindow !== null && !crashedWindow.isDestroyed()) {
+            crashedWindow.destroy();
+        }
+    };
 
     const now = Date.now();
     recreateTimestamps = recreateTimestamps.filter((at) => now - at < RECREATE_WINDOW_MS);
     if (recreateTimestamps.length >= MAX_RECREATES) {
+        destroyCrashedWindow();
+        mainWindow = undefined;
         console.error(
             `[shell] renderer crashed ${String(recreateTimestamps.length + 1)} times within ${String(RECREATE_WINDOW_MS / 1000)}s, not recreating`
         );
+        // Deliberately ends with no window. `showErrorBox` is modal, so the
+        // user reads the reason first; afterwards `window-all-closed` quits on
+        // Windows and Linux, and on macOS the app sits windowless, which is
+        // that platform's normal state. Either way the loop is over.
         dialog.showErrorBox(
             'Sourdaw stopped responding',
             `The window crashed repeatedly (last reason: ${details.reason}). Sourdaw has stopped reopening it to avoid a crash loop. Quit and reopen the app; if it keeps happening, the log from this run is the place to start.`
@@ -254,7 +262,15 @@ app.on('render-process-gone', (_event, contents, details) => {
     }
 
     recreateTimestamps.push(now);
+    // Replacement first, dead window second. `window-all-closed` quits the app
+    // everywhere but macOS, and destroying the only window is what raises it —
+    // so a destroy-then-create order leaves an instant with zero windows in
+    // which the recovery path quits instead of recovering, on two of the three
+    // platforms. Building the replacement first means that instant never
+    // exists, and no ordering question about when Electron emits the event has
+    // to be answered.
     mainWindow = createWindow();
+    destroyCrashedWindow();
 });
 
 // A GPU or utility process can die without the session being lost. Record it

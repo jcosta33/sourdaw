@@ -162,7 +162,25 @@ const resolveWithinRoot = (root: string, requestPath: string): string | undefine
  * reload; a miss that looks like an asset stays a 404, so a broken `/wasm/**`
  * URL fails loudly instead of parsing HTML as wasm.
  */
-const isFile = (filePath: string): boolean => statSync(filePath, { throwIfNoEntry: false })?.isFile() === true;
+/**
+ * Total, not merely `ENOENT`-tolerant.
+ *
+ * `throwIfNoEntry: false` suppresses `ENOENT` and `ENOTDIR` and nothing else:
+ * `statSync` still throws on `EACCES`, `ELOOP` and `ENAMETOOLONG`, and it
+ * throws `ERR_INVALID_ARG_VALUE` for a path containing a NUL byte — which is
+ * reachable straight from the URL, since `app://sourdaw/a%00.js` decodes to
+ * one. Both call sites sit outside the handler's `try`, so a throw here would
+ * reject a request that has to answer 404. This is the one function in the
+ * shell that touches attacker-influenceable input; an unreadable, cyclic,
+ * over-long or malformed path is not a file, and that is the whole answer.
+ */
+const isFile = (filePath: string): boolean => {
+    try {
+        return statSync(filePath, { throwIfNoEntry: false })?.isFile() === true;
+    } catch {
+        return false;
+    }
+};
 
 export const resolveRequestPath = (roots: ContentRoots, pathname: string): string | undefined => {
     const normalizedPathname = pathname === '' || pathname === '/' ? '/index.html' : pathname;
