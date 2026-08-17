@@ -12,7 +12,7 @@
  * gives both, and lets every response carry the isolation headers and the same
  * Content-Security-Policy Tauri ships today.
  */
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { dirname, join, normalize, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -162,6 +162,8 @@ const resolveWithinRoot = (root: string, requestPath: string): string | undefine
  * reload; a miss that looks like an asset stays a 404, so a broken `/wasm/**`
  * URL fails loudly instead of parsing HTML as wasm.
  */
+const isFile = (filePath: string): boolean => statSync(filePath, { throwIfNoEntry: false })?.isFile() === true;
+
 export const resolveRequestPath = (roots: ContentRoots, pathname: string): string | undefined => {
     const normalizedPathname = pathname === '' || pathname === '/' ? '/index.html' : pathname;
 
@@ -173,7 +175,12 @@ export const resolveRequestPath = (roots: ContentRoots, pathname: string): strin
     if (filePath === undefined) {
         return undefined;
     }
-    if (existsSync(filePath)) {
+    // `isFile`, not "exists": `/assets` and `/wasm` are real directories, and a
+    // directory handed to `net.fetch` over `file://` answers with a generated
+    // listing. That is a 200 with the wrong body — a route collision would ship
+    // an HTML index page where the router expects `index.html`, and the failure
+    // would surface as a parse error far from its cause.
+    if (isFile(filePath)) {
         return filePath;
     }
 
@@ -197,7 +204,11 @@ const withIsolationHeaders = (response: Response): Response => {
 export const handleAppProtocol = (roots: ContentRoots): void => {
     protocol.handle(APP_SCHEME, async (request) => {
         const url = new URL(request.url);
-        if (url.hostname !== APP_HOST) {
+        // `host`, not `hostname`: they differ when a port is present, so
+        // `app://sourdaw:1/...` would pass a `hostname` check and be served as
+        // if it were the app origin. Chromium treats it as a distinct origin,
+        // which is exactly the confusion worth refusing.
+        if (url.host !== APP_HOST) {
             return withIsolationHeaders(new Response('Not found', { status: 404 }));
         }
 
@@ -205,10 +216,21 @@ export const handleAppProtocol = (roots: ContentRoots): void => {
         if (filePath === undefined) {
             return withIsolationHeaders(new Response('Forbidden', { status: 403 }));
         }
+        // Second directory guard, for the `/samples/**` root and for the
+        // extension-bearing miss that `resolveRequestPath` deliberately lets
+        // through so it can 404 here rather than fall back to `index.html`.
+        if (!isFile(filePath)) {
+            return withIsolationHeaders(new Response('Not found', { status: 404 }));
+        }
 
         try {
-            // `net.fetch` over `file://` rather than `readFile`: it streams, and
-            // it answers Range requests, which `<audio>`/`<video>` seeking needs.
+            // `net.fetch` over `file://` rather than `readFile`: it streams the
+            // body instead of buffering the whole file, which matters for wasm
+            // and for sample payloads. It does not implement Range — Electron
+            // drops request headers on a `file://` fetch — so a media element
+            // seeking inside an `app://` URL re-reads from the start. Acceptable
+            // while the shell serves no long media over this scheme; revisit
+            // with an explicit Range implementation if it ever does.
             return withIsolationHeaders(await net.fetch(pathToFileURL(filePath).toString()));
         } catch {
             return withIsolationHeaders(new Response('Not found', { status: 404 }));

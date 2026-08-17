@@ -6,7 +6,7 @@
  * path — that is deliberate for this scaffold: the shell is proven on its own
  * before any native surface is attached to it.
  */
-import { app, BrowserWindow, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, session, shell } from 'electron';
 
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { applyPermissionPolicy, normalizeOrigin } from './security.js';
@@ -16,21 +16,11 @@ import { applyPermissionPolicy, normalizeOrigin } from './security.js';
 // and a scheme registered then is silently an ordinary opaque scheme.
 registerAppScheme();
 
-/**
- * Opt the renderer into a configurable AudioWorklet render quantum.
- *
- * Chromium's fixed 128-frame quantum forces the DSP graph to run at a block
- * size the engine did not choose, which costs CPU on large sessions and pins
- * the smallest achievable latency. The feature is behind a flag in the Chromium
- * that Electron 43 ships.
- *
- * REMOVE when the shell moves to Electron 45 or later, where the feature is
- * expected to be on by default — re-check by 2026-12-31 and delete this switch
- * (and this comment) the moment `WebAudioConfigurableRenderQuantum` is no
- * longer a runtime flag. A stale `--enable-features` entry naming a graduated
- * or dropped feature is silently ignored, so nothing fails to tell us.
- */
-app.commandLine.appendSwitch('enable-features', 'WebAudioConfigurableRenderQuantum');
+// No `--enable-features=WebAudioConfigurableRenderQuantum`. Nothing in the
+// renderer passes `renderSizeHint`, so the flag changes no behaviour today, and
+// the Chromium implementation carries an open renderer-memory-safety bug
+// (crbug 485292589). Re-add it when the engine actually requests a quantum, or
+// drop the idea entirely once Electron ships a Chromium where it is default-on.
 
 /** Set by `pnpm desktop:dev`. Turns on renderer log forwarding and the isolation probe. */
 const isDevShell = process.env.SOURDAW_DESKTOP_DEV === '1';
@@ -73,8 +63,15 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
     // external link goes to the user's browser rather than an Electron window
     // that would inherit this origin.
     window.webContents.setWindowOpenHandler(({ url }) => {
-        if (/^https?:$/.test(new URL(url).protocol)) {
-            void shell.openExternal(url);
+        // The URL comes from the renderer and is not guaranteed to parse. An
+        // exception here propagates into Electron's window-open path rather
+        // than denying, so parse defensively and treat unparseable as hostile.
+        try {
+            if (/^https?:$/.test(new URL(url).protocol)) {
+                void shell.openExternal(url);
+            }
+        } catch {
+            console.warn(`[shell] blocked unparseable window-open target: ${url}`);
         }
         return { action: 'deny' };
     });
@@ -128,6 +125,14 @@ const createWindow = (): BrowserWindow => {
  * addresses its wasm and its worklet processors as `/wasm/...` and
  * `/audio/worklets/...`, which only resolve on an origin with a path root —
  * under `file://` they would 404 and the audio graph would never start.
+ *
+ * A 200 is not enough for either asset class. `WebAssembly` streaming refuses
+ * anything whose Content-Type is not exactly `application/wasm`, and
+ * `audioWorklet.addModule` refuses a response that is not a JavaScript MIME
+ * type — a protocol handler that served both as `text/plain` would pass a
+ * status check and still leave the DAW with no DSP. So the probe asserts the
+ * types and then actually performs both loads, which is the only check that
+ * cannot pass while blind to the thing it names.
  */
 const runIsolationProbe = async (window: BrowserWindow): Promise<void> => {
     const probe = `(async () => {
@@ -135,7 +140,28 @@ const runIsolationProbe = async (window: BrowserWindow): Promise<void> => {
         const probeAsset = async (path) => {
             try {
                 const assetResponse = await fetch(path, { cache: 'no-store' });
-                return assetResponse.status;
+                return {
+                    status: assetResponse.status,
+                    contentType: assetResponse.headers.get('content-type'),
+                };
+            } catch (error) {
+                return { status: String(error), contentType: null };
+            }
+        };
+        const compileWasm = async (path) => {
+            try {
+                await WebAssembly.compileStreaming(fetch(path, { cache: 'no-store' }));
+                return 'compiled';
+            } catch (error) {
+                return String(error);
+            }
+        };
+        const addWorklet = async (path) => {
+            let context;
+            try {
+                context = new OfflineAudioContext({ length: 128, sampleRate: 48000 });
+                await context.audioWorklet.addModule(path);
+                return 'added';
             } catch (error) {
                 return String(error);
             }
@@ -153,6 +179,10 @@ const runIsolationProbe = async (window: BrowserWindow): Promise<void> => {
                 '/wasm/manifest.json': await probeAsset('/wasm/manifest.json'),
                 '/wasm/daw-dsp/daw_dsp_bg.wasm': await probeAsset('/wasm/daw-dsp/daw_dsp_bg.wasm'),
                 '/audio/worklets/sidechain-compressor-processor.js': await probeAsset('/audio/worklets/sidechain-compressor-processor.js'),
+            },
+            loads: {
+                'WebAssembly.compileStreaming': await compileWasm('/wasm/daw-dsp/daw_dsp_bg.wasm'),
+                'audioWorklet.addModule': await addWorklet('/audio/worklets/sidechain-compressor-processor.js'),
             },
         });
     })()`;
@@ -178,17 +208,52 @@ void app.whenReady().then(() => {
     mainWindow = createWindow();
 });
 
-// A renderer crash must not take the session's window with it. Recreating it
-// costs the user a reload; leaving a dead window costs them the app.
+/**
+ * Recreate budget for a crashing renderer.
+ *
+ * A renderer crash must not take the session's window with it: recreating it
+ * costs the user a reload, leaving a dead window costs them the app. But a
+ * crash that reproduces on load — a bad build, a GPU driver fault, a corrupt
+ * project restored on startup — turns an unconditional recreate into a spin
+ * that burns the machine and never lets the user read the failure. So the
+ * shell recreates a bounded number of times inside a rolling window and then
+ * stops and says why.
+ */
+const MAX_RECREATES = 3;
+const RECREATE_WINDOW_MS = 60_000;
+let recreateTimestamps: number[] = [];
+
 app.on('render-process-gone', (_event, contents, details) => {
     console.error(`[shell] render process gone: ${details.reason} (exitCode ${details.exitCode})`);
     if (details.reason === 'clean-exit') {
         return;
     }
+
     const window = BrowserWindow.fromWebContents(contents);
+    // Only the session window is recreated. A crashed webview belonging to
+    // something else must not resurrect itself as the main window.
+    if (window !== mainWindow) {
+        return;
+    }
     if (window !== null && !window.isDestroyed()) {
         window.destroy();
     }
+    mainWindow = undefined;
+
+    const now = Date.now();
+    recreateTimestamps = recreateTimestamps.filter((at) => now - at < RECREATE_WINDOW_MS);
+    if (recreateTimestamps.length >= MAX_RECREATES) {
+        console.error(
+            `[shell] renderer crashed ${String(recreateTimestamps.length + 1)} times within ${String(RECREATE_WINDOW_MS / 1000)}s, not recreating`
+        );
+        dialog.showErrorBox(
+            'Sourdaw stopped responding',
+            `The window crashed repeatedly (last reason: ${details.reason}). Sourdaw has stopped reopening it to avoid a crash loop. Quit and reopen the app; if it keeps happening, the log from this run is the place to start.`
+        );
+        return;
+    }
+
+    recreateTimestamps.push(now);
     mainWindow = createWindow();
 });
 
