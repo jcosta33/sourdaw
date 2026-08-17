@@ -54,6 +54,7 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
         trackEligibility.createsLiveStrip ||
         (track.kind === 'folder' && remainingDevices.some((candidate) => candidate.type === 'toaster'));
     const deactivatesStrip = wasLive && !remainsLive;
+    const isProjectOnlyFolder = track.kind === 'folder' && !wasLive;
     const shouldUnloadRemovedExternal = wasLive || !trackEligibility.acceptsDeviceUpdate;
     // Every external-plugin device whose native instance this removal tears down,
     // keyed by engine device id — the same key the latency registry uses — so the
@@ -96,6 +97,9 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
     const finalizedExternalInstanceIds = new Set<string>();
 
     function finalizeRuntimeRemovalStrict(): void {
+        if (isProjectOnlyFolder) {
+            return;
+        }
         if (!deviceRemovalFinalized) {
             try {
                 const result = applyDeviceChainRuntimeDelta({
@@ -162,6 +166,9 @@ export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcom
     }
 
     async function reconcileRuntimeEffects(): Promise<void> {
+        if (isProjectOnlyFolder) {
+            return;
+        }
         const currentOwners = (getTrackState()?.tracks ?? []).filter((candidate) =>
             candidate.devices.some((candidateDevice) => candidateDevice.id === deviceId)
         );

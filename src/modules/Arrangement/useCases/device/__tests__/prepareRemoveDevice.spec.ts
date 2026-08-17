@@ -148,6 +148,29 @@ describe('prepareRemoveDevice', () => {
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
     });
 
+    it('keeps a non-live folder removal project-only across commit reconciliation', async () => {
+        const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
+        folder.devices = [createExternalDevice('external-1', 'instance-1')];
+        mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
+
+        const result = prepareRemoveDevice('external-1');
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred removal result');
+        }
+
+        mocks.getTrackState.mockReturnValue({ tracks: [{ ...folder, devices: [] }], selectedTrackId: null });
+        await expect(result.afterCommit()).resolves.toBeUndefined();
+        mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
+        await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
+
+        expect(mocks.mapAllTracks).toHaveBeenCalledOnce();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
+        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+    });
+
     it('does not mask a failed graph removal when ambiguous reconciliation retries it', async () => {
         const track = {
             id: 't1',
@@ -330,7 +353,7 @@ describe('prepareRemoveDevice', () => {
         expect(clearedLatencyDeviceIds()).toEqual(['external-1']);
     });
 
-    it('does not unload a removed external plugin from a never-live ordinary folder', () => {
+    it('keeps a never-live ordinary folder removal out of runtime teardown', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [createExternalDevice()];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
@@ -338,9 +361,8 @@ describe('prepareRemoveDevice', () => {
         removeDevice('external-1');
 
         expect(mocks.mapAllTracks).toHaveBeenCalled();
-        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
-            expect.objectContaining({ operation: 'remove-device' })
-        );
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
