@@ -36,6 +36,15 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
+// DeviceParameterControl's modulation subscription uses the real
+// useStoreSelector hook (narrow subscription, audit M5). Feed it a `null`
+// snapshot — same as the untouched `useStore` default below — so every
+// existing case here keeps its prior "no modulation" behavior; modulation
+// coverage lives in DeviceParameterControl.modulationSubscription.spec.tsx.
+vi.mock('#/infra/store/useStoreSelector', () => ({
+    useStoreSelector: (_store: unknown, selector: (state: unknown) => unknown) => selector(null),
+}));
+
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { id: 'automation' },
     modulationStore: { id: 'modulation' },

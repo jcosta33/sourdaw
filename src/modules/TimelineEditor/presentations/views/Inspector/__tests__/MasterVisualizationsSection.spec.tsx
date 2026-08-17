@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -15,9 +15,10 @@ vi.mock('#/components/daw/DawDisplaySurface', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({ title, compact }: { title?: string; compact?: boolean }) => (
+    DawHeaderBand: ({ title, compact, actions }: { title?: string; compact?: boolean; actions?: React.ReactNode }) => (
         <div data-testid="header-band" data-compact={compact}>
             {title}
+            {actions}
         </div>
     ),
 }));
@@ -37,6 +38,17 @@ const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
 
+const ALL_ANALYZER_TEST_IDS = [
+    'lufs-meter',
+    'goniometer',
+    'oscilloscope',
+    'spectrum-analyzer',
+    'spectrogram',
+    'phase-correlation',
+    'spatial-panner',
+    'wavetable-3d',
+];
+
 describe('MasterVisualizationsSection', () => {
     it('should render without crashing', () => {
         renderWithTooltip(<MasterVisualizationsSection />);
@@ -50,49 +62,48 @@ describe('MasterVisualizationsSection', () => {
         expect(screen.getByText('Analysis & Metering')).toBeInTheDocument();
     });
 
-    it('should render LUFS meter', () => {
+    it('mounts only the LUFS meter by default', () => {
+        // Audit m18: mounting all eight analyzers together means seven
+        // continuous requestAnimationFrame loops running for the entire time
+        // the master track's Inspector is open, whether or not anyone is
+        // looking at seven of them. Only the default selection should mount.
         renderWithTooltip(<MasterVisualizationsSection />);
+
         expect(screen.getByTestId('lufs-meter')).toBeInTheDocument();
+        for (const testId of ALL_ANALYZER_TEST_IDS.filter((id) => id !== 'lufs-meter')) {
+            expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+        }
     });
 
-    it('should render goniometer', () => {
+    it('mounts exactly one display surface at a time', () => {
         renderWithTooltip(<MasterVisualizationsSection />);
-        expect(screen.getByTestId('goniometer')).toBeInTheDocument();
+        expect(screen.getAllByTestId('display-surface')).toHaveLength(1);
     });
 
-    it('should render oscilloscope', () => {
+    it('switches the mounted analyzer, unmounting the previous one, via the scope select', () => {
         renderWithTooltip(<MasterVisualizationsSection />);
-        expect(screen.getByTestId('oscilloscope')).toBeInTheDocument();
-    });
 
-    it('should render spectrum analyzer', () => {
-        renderWithTooltip(<MasterVisualizationsSection />);
-        expect(screen.getByTestId('spectrum-analyzer')).toBeInTheDocument();
-    });
+        fireEvent.change(screen.getByLabelText('Analyzer'), { target: { value: 'spectrogram' } });
 
-    it('should render spectrogram', () => {
-        renderWithTooltip(<MasterVisualizationsSection />);
         expect(screen.getByTestId('spectrogram')).toBeInTheDocument();
+        expect(screen.queryByTestId('lufs-meter')).not.toBeInTheDocument();
+        for (const testId of ALL_ANALYZER_TEST_IDS.filter((id) => id !== 'spectrogram')) {
+            expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+        }
     });
 
-    it('should render phase correlation display', () => {
+    it('offers every analyzer as a scope option', () => {
         renderWithTooltip(<MasterVisualizationsSection />);
-        expect(screen.getByTestId('phase-correlation')).toBeInTheDocument();
-    });
-
-    it('should render spatial panner', () => {
-        renderWithTooltip(<MasterVisualizationsSection />);
-        expect(screen.getByTestId('spatial-panner')).toBeInTheDocument();
-    });
-
-    it('should render wavetable 3D', () => {
-        renderWithTooltip(<MasterVisualizationsSection />);
-        expect(screen.getByTestId('wavetable-3d')).toBeInTheDocument();
-    });
-
-    it('should render display surfaces with accent top for certain visualizations', () => {
-        renderWithTooltip(<MasterVisualizationsSection />);
-        const displaySurfaces = screen.getAllByTestId('display-surface');
-        expect(displaySurfaces.length).toBeGreaterThan(6);
+        const select = screen.getByLabelText('Analyzer') as HTMLSelectElement;
+        expect([...select.options].map((option) => option.value)).toEqual([
+            'lufs',
+            'goniometer',
+            'oscilloscope',
+            'spectrum',
+            'spectrogram',
+            'phase',
+            'panner',
+            'wavetable3d',
+        ]);
     });
 });

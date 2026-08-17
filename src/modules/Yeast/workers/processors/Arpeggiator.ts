@@ -6,7 +6,14 @@
  * octave expansion, velocity modes, latch, and multiple trigger modes.
  */
 
-import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
+import {
+    type ArpStep,
+    ARP_PATTERN_PARAM_PREFIX,
+    createDefaultPattern,
+    decodeArpPatternParams,
+    DEFAULT_ARP_PATTERN_LENGTH,
+    extractArpPatternParams,
+} from '../../models/ArpPattern';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -19,6 +26,7 @@ import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { LCG_MAX, nextLcg } from '../lcgRandom';
 import {
     type ActiveNote,
+    type MidiProcessorParams,
     EMIT_FALLBACK_BLOCK_SPAN_SAMPLES,
     resolveBlockEndSamples,
     ScheduledEventQueue,
@@ -62,7 +70,10 @@ export class Arpeggiator extends BaseMidiProcessor {
     private fixedVelocity = 100;
     private latchEnabled = false;
     private restartMode: RestartMode = 'restartOnNote';
-    private pattern: ArpStep[] = createDefaultPattern(8);
+    private pattern: ArpStep[] = createDefaultPattern(DEFAULT_ARP_PATTERN_LENGTH);
+    /** Last pattern subset handed to `replaceParams`, so an unchanged one skips the decode. */
+    private appliedPatternParams: Record<string, number> = {};
+    private appliedPatternParamCount = 0;
     // State
     private held: HeldNote[] = [];
     private latched: HeldNote[] = [];
@@ -185,9 +196,17 @@ export class Arpeggiator extends BaseMidiProcessor {
                 }
             }
 
-            // Get the note(s) for this step
+            // Get the note(s) for this step. A pattern step picks with its own
+            // selector; only outside pattern mode does the arp-wide mode decide.
             const expandedPool = this.expandOctaves(pool);
-            let stepNotes = patternStep?.stepType === 'chord' ? expandedPool : this.selectStepNotes(expandedPool);
+            let stepNotes: HeldNote[];
+            if (patternStep?.stepType === 'chord') {
+                stepNotes = expandedPool;
+            } else if (patternStep) {
+                stepNotes = this.selectPatternStepNotes(expandedPool, patternStep);
+            } else {
+                stepNotes = this.selectStepNotes(expandedPool);
+            }
 
             // Apply per-step octave and semitone offsets
             if (patternStep && (patternStep.octaveOffset !== 0 || patternStep.semitoneOffset !== 0)) {
@@ -301,6 +320,54 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.fixedVelocity = 100;
         this.latchEnabled = false;
         this.restartMode = 'restartOnNote';
+        this.pattern = createDefaultPattern(DEFAULT_ARP_PATTERN_LENGTH);
+    }
+
+    /**
+     * The pattern is carried by the `pattern_`-prefixed params rather than by a
+     * single `setParam` name: one step spans eleven fields, so the value is a
+     * whole record, not a scalar. Decoding once here — after the base class has
+     * reset the params and applied every scalar — keeps a single decode path
+     * and leaves `setParam` a pure scalar switch.
+     *
+     * The decode is skipped when the pattern subset is byte-identical to the
+     * one already applied. `MidiRack.replaceProjection` calls `replaceParams`
+     * on EVERY processor on every projection write, and a knob drag projects
+     * per tick, so an unconditional decode would rebuild the whole step array
+     * on every tick of an edit that never touched the pattern. The comparison
+     * is exact rather than a hash — a hash collision would silently strand the
+     * live pattern on a stale value — and allocates nothing when unchanged.
+     * The initial empty subset matches a projection with no pattern params,
+     * whose decode result is exactly the default pattern already installed.
+     */
+    replaceParams(params: MidiProcessorParams): void {
+        const patternUnchanged = this.patternParamsAlreadyApplied(params);
+        // `super.replaceParams` runs `resetParams`, which reinstalls the default
+        // pattern; hold the live array so an unchanged pattern keeps its identity.
+        const retainedPattern = this.pattern;
+        super.replaceParams(params);
+        if (patternUnchanged) {
+            this.pattern = retainedPattern;
+            return;
+        }
+        this.appliedPatternParams = extractArpPatternParams(params);
+        this.appliedPatternParamCount = Object.keys(this.appliedPatternParams).length;
+        this.setPattern(decodeArpPatternParams(params));
+    }
+
+    /** Exact comparison against the last-applied pattern subset, without allocating. */
+    private patternParamsAlreadyApplied(params: MidiProcessorParams): boolean {
+        let count = 0;
+        for (const name in params) {
+            if (!name.startsWith(ARP_PATTERN_PARAM_PREFIX)) {
+                continue;
+            }
+            count++;
+            if (this.appliedPatternParams[name] !== params[name]) {
+                return false;
+            }
+        }
+        return count === this.appliedPatternParamCount;
     }
 
     setParam(name: string, value: number): void {
@@ -464,9 +531,54 @@ export class Arpeggiator extends BaseMidiProcessor {
             case 'chord':
                 return byPitch;
             case 'pattern': {
-                // In pattern mode, use "next" note selection by default
+                // Reached only when a pattern step is absent (empty pattern).
+                // A present step picks through `selectPatternStepNotes`.
                 return [byPitch[this.stepIndex % byPitch.length]!];
             }
+        }
+        return [];
+    }
+
+    /**
+     * Pick this pattern step's note(s) from the expanded pool.
+     *
+     * Two independent controls land here. `noteSelector` chooses WHICH note the
+     * step takes — the per-step counterpart to the arp-wide mode, and the reason
+     * a pattern can walk the chord in an order no single mode produces. Step type
+     * `random` re-rolls the pick every pass, so a step can stay unpredictable
+     * while its neighbours stay fixed; it draws from the same pinned `rngState`
+     * as probability and mode `random`, so a given seed still replays identically.
+     */
+    private selectPatternStepNotes(pool: HeldNote[], step: ArpStep): HeldNote[] {
+        if (pool.length === 0) {
+            return [];
+        }
+        const byPitch = [...pool].sort((alpha, b) => alpha.note - b.note);
+
+        if (step.stepType === 'random') {
+            this.rngState = nextLcg(this.rngState);
+            return [byPitch[this.rngState % byPitch.length]!];
+        }
+
+        const selector = step.noteSelector;
+        switch (selector.type) {
+            case 'previous': {
+                // One behind the walking position, wrapped.
+                const index = (((this.stepIndex - 1) % byPitch.length) + byPitch.length) % byPitch.length;
+                return [byPitch[index]!];
+            }
+            case 'index':
+                return [byPitch[Math.min(selector.index, byPitch.length - 1)]!];
+            case 'random': {
+                this.rngState = nextLcg(this.rngState);
+                return [byPitch[this.rngState % byPitch.length]!];
+            }
+            case 'lowest':
+                return [byPitch[0]!];
+            case 'highest':
+                return [byPitch[byPitch.length - 1]!];
+            case 'next':
+                return [byPitch[this.stepIndex % byPitch.length]!];
         }
         return [];
     }
