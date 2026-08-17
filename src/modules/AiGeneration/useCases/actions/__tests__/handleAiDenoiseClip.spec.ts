@@ -116,6 +116,40 @@ describe('handleAiDenoiseClip', () => {
         );
     });
 
+    it('passes the dry signal through bit-exactly at strength 0 in the browser fallback', async () => {
+        const source_samples = new Float32Array([0.001, -0.003, 0.5, -0.5, 0.02, -0.007]);
+        getCachedAudioBufferMock.mockReturnValue(create_test_audio_buffer(source_samples.slice()));
+
+        await handleAiDenoiseClip('clip-identity', 0);
+
+        const cached_buffer = cacheAudioBufferMock.mock.calls[0]![0].buffer as AudioBuffer;
+        const output = cached_buffer.getChannelData(0);
+        expect(output).toStrictEqual(source_samples);
+    });
+
+    // Mirrors the Rust pin
+    // `steady_state_depth_at_the_noise_floor_matches_the_pin_through_the_full_path`
+    // in crates/sourdaw-native/src/commands/ai_audio.rs: the same Denoise
+    // action must render the same audio in browser and native. A constant
+    // ±0.01 clip is its own noise floor, the envelope settles at 0.01, and
+    // the steady-state gain at the shipped strength 0.7 is
+    // (1 / sqrt(3.1)) ** 3.5 ≈ 0.1382 (−17.2 dB).
+    it('attenuates noise-floor material by the pinned depth at the shipped strength', async () => {
+        const source_samples = new Float32Array(4800);
+        for (let index = 0; index < source_samples.length; index++) {
+            source_samples[index] = index % 2 === 0 ? 0.01 : -0.01;
+        }
+        getCachedAudioBufferMock.mockReturnValue(create_test_audio_buffer(source_samples));
+
+        await handleAiDenoiseClip('clip-depth', 0.7);
+
+        const cached_buffer = cacheAudioBufferMock.mock.calls[0]![0].buffer as AudioBuffer;
+        const output = cached_buffer.getChannelData(0);
+        const tail = Math.abs(output[4799]!);
+        const expected = 0.01 * 0.13816;
+        expect(Math.abs(tail - expected)).toBeLessThan(0.02 * expected);
+    });
+
     it('should route the browser denoise fallback through AudioEngine cache use cases', async () => {
         const source_buffer = create_test_audio_buffer(new Float32Array([0.001, -0.001, 0.5, -0.5]));
 
