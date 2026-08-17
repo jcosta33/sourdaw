@@ -1,0 +1,31 @@
+src/modules/Yeast/workers/processors/__tests__/MutationEngine.spec.ts
+  s_ab5443e65c7fba::t_fa7555a16340a1 259-264,266
+  s_ab5443e65c7fba::t_ce4ff19453e9dd 307,504-510,512-513,518-530,532
+  s_ab5443e65c7fba::t_1d848e2193412b 459-461,464,471-473,475-476,485,488,495,497
+  s_ab5443e65c7fba::t_676f369cf94264 166-169,175-178,191-258,265,267-306,308
+  s_ab5443e65c7fba::t_a71a65a88e6fb8 438-439,444-445
+  s_ab5443e65c7fba::t_9bca76f01b3e5d 474,477-484,486-487,489-494,496,498-499
+  s_ab5443e65c7fba::t_0d22bd9832c91d 620-622,625,627,642
+  s_ab5443e65c7fba::t_a4cd3284ed2cb5 514-517
+  s_ab5443e65c7fba::t_f49a651ebc490f 309
+src/modules/Yeast/workers/processors/MutationEngine.ts
+  s_ab5443e65c7fba::t_8d0519c530ecfb 2,4-19,24-25,33-35,57-62,67-74,89-95,99-105,107-109,112-125,135-137
+  s_ab5443e65c7fba::t_8ef80f081f20f8 199-205
+  s_ab5443e65c7fba::t_cd61da301b9fcf 138-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "62cba7df95d4f9fabb36045e45ffaa2d56904a2e",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
