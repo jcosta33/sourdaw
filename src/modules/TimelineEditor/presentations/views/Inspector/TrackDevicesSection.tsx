@@ -11,7 +11,6 @@ import { useStore } from '#/infra/store/useStore';
 import {
     getPlatformPlugins,
     getPluginById,
-    addExternalDevice,
     reorderDevices,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
@@ -211,7 +210,10 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 className={cn(menuBtnClass, 'justify-between text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
-                                                    addExternalDevice(track.id, plugin.id, plugin.name);
+                                                    void executeAppAction({
+                                                        type: 'loadExternalPlugin',
+                                                        payload: { pluginId: plugin.id, trackId: track.id },
+                                                    });
                                                     setShowDeviceMenu(false);
                                                 }}
                                             >

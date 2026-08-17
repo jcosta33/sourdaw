@@ -27,7 +27,6 @@ type TestActivationState = {
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
 const mockAddDevice = vi.fn<(trackId: string, pluginName: string) => void>();
-const mockAddExternalDevice = vi.fn<(trackId: string, pluginId: string, pluginName: string) => void>();
 const mockReorderDevices = vi.fn<(trackId: string, fromIndex: number, toIndex: number) => void>();
 const mockProjectTrackToLiveStrip =
     vi.fn<(input: { trackId: string; activateDormantExternalPlugins: boolean }) => void>();
@@ -46,9 +45,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         },
         addDevice: (trackId: string, pluginName: string): void => {
             mockAddDevice(trackId, pluginName);
-        },
-        addExternalDevice: (trackId: string, pluginId: string, pluginName: string): void => {
-            mockAddExternalDevice(trackId, pluginId, pluginName);
         },
         reorderDevices: (trackId: string, fromIndex: number, toIndex: number): void => {
             mockReorderDevices(trackId, fromIndex, toIndex);
@@ -337,7 +333,10 @@ describe('TrackDevicesSection', () => {
         expect(screen.queryByRole('menuitem', { name: /Stale AU/ })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('menuitem', { name: /Working CLAP/ }));
-        expect(mockAddExternalDevice).toHaveBeenCalledWith('track-1', 'clap-1', 'Working CLAP');
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'clap-1', trackId: 'track-1' },
+        });
     });
 
     it('marks a persisted external plugin unavailable when it is absent from the supported scan', () => {

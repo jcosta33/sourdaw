@@ -5,13 +5,20 @@ import { handleLoadExternalPlugin } from '../handleLoadExternalPlugin';
 const mocks = vi.hoisted(() => ({
     addExternalDevice: vi.fn(),
     addTrack: vi.fn(),
+    applyDeviceChainRuntimeDelta: vi.fn(),
     findSupportedPlugin: vi.fn(),
+    getTrackStoreState: vi.fn(),
+    reportLatency: vi.fn(),
+    activateExternalPlugin: vi.fn(),
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    activateExternalPlugin: mocks.activateExternalPlugin,
     findSupportedPlugin: mocks.findSupportedPlugin,
     findPluginByName: mocks.findSupportedPlugin,
 }));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({ reportLatency: mocks.reportLatency }));
 
 vi.mock('../../../useCases/addTrack', () => ({
     addTrack: mocks.addTrack,
@@ -19,6 +26,14 @@ vi.mock('../../../useCases/addTrack', () => ({
 
 vi.mock('../../../useCases/device/addExternalDevice', () => ({
     addExternalDevice: mocks.addExternalDevice,
+}));
+
+vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
+    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 describe('handleLoadExternalPlugin', () => {

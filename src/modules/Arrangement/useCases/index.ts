@@ -138,7 +138,6 @@ export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
 export { bypassMidiFx } from './device/bypassMidiFx';
 export { updateMidiFxParam } from './device/updateMidiFxParam';
-export { addExternalDevice } from './device/addExternalDevice';
 export { bypassDevice } from './device/bypassDevice';
 export { removeDevice } from './device/removeDevice';
 export { reorderDevices } from './device/reorderDevices';

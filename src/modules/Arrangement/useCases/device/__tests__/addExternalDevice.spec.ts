@@ -5,25 +5,8 @@ import { addExternalDevice } from '../addExternalDevice';
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     updateTrack: vi.fn(),
-    applyDeviceChainRuntimeDelta: vi.fn(() => ({
-        acceptance: 'accepted',
-        application: 'applied',
-    })),
-    activateExternalPlugin: vi.fn(),
-    reportLatency: vi.fn(),
     findSupportedPlugin: vi.fn(),
 }));
-
-/** The latency sink `addExternalDevice` injected into the activation call. */
-function injectedLatencySink(): (latencyMs: number) => void {
-    const lastCall = mocks.activateExternalPlugin.mock.calls.at(-1);
-    const input = lastCall?.[0] as { onLatencyMs?: (latencyMs: number) => void } | undefined;
-    const sink = input?.onLatencyMs;
-    if (!sink) {
-        throw new Error('activateExternalPlugin was called without a latency sink');
-    }
-    return sink;
-}
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,
@@ -33,14 +16,7 @@ vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({ reportLatency: mocks.reportLatency }));
-
-vi.mock('../applyDeviceChainRuntimeDelta', () => ({
-    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
-}));
-
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    activateExternalPlugin: mocks.activateExternalPlugin,
     findSupportedPlugin: mocks.findSupportedPlugin,
 }));
 
@@ -51,36 +27,25 @@ describe('addExternalDevice', () => {
         mocks.findSupportedPlugin.mockReturnValue({ id: 'plugin-1', format: 'clap' });
     });
 
-    it('persists an external plugin on an ordinary folder without starting runtime work', () => {
+    it('only writes project truth for an ordinary folder', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'folder-1', kind: 'folder', devices: [] }] });
 
         const device = addExternalDevice('folder-1', 'plugin-1', 'Plugin');
 
         expect(device).toMatchObject({ type: 'external-plugin' });
         expect(mocks.updateTrack).toHaveBeenCalledWith('folder-1', expect.any(Function));
-        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
-        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
-    it('adds an external plugin to an already-live Toaster folder', () => {
+    it('keeps a live Toaster folder project-only until the Command handler commits', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 'folder-1', kind: 'folder', devices: [{ id: 'toaster-1', type: 'toaster' }] }],
         });
 
-        const device = addExternalDevice('folder-1', 'plugin-1', 'Plugin');
-
-        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
-            expect.objectContaining({ operation: 'add-device' })
-        );
-        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
-            expect.objectContaining({
-                pluginId: 'plugin-1',
-                instanceId: device?.externalInstanceId,
-            })
-        );
+        expect(addExternalDevice('folder-1', 'plugin-1', 'Plugin')).toMatchObject({ type: 'external-plugin' });
+        expect(mocks.updateTrack).toHaveBeenCalledWith('folder-1', expect.any(Function));
     });
 
-    it('preserves ordinary external plugin creation and runtime loading', () => {
+    it('creates ordinary external plugin project truth', () => {
         const device = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
 
         expect(device).toMatchObject({
@@ -89,15 +54,6 @@ describe('addExternalDevice', () => {
             externalPluginId: 'plugin-1',
         });
         expect(mocks.updateTrack).toHaveBeenCalledWith('audio-1', expect.any(Function));
-        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
-            expect.objectContaining({ operation: 'add-device' })
-        );
-        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
-            expect.objectContaining({
-                pluginId: 'plugin-1',
-                instanceId: device?.externalInstanceId,
-            })
-        );
     });
 
     it('generates distinct native instance ids for plugins added in the same millisecond', () => {
@@ -110,17 +66,6 @@ describe('addExternalDevice', () => {
         now.mockRestore();
     });
 
-    it('routes the injected latency sink to the registry under this device id', () => {
-        const device = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
-
-        // The sink is keyed by the engine DEVICE id, not the plugin instance id:
-        // per-track compensation sums the registry by device.
-        injectedLatencySink()(12.5);
-
-        expect(mocks.reportLatency).toHaveBeenCalledWith(device?.id, 12.5);
-        expect(device?.id).not.toBe(device?.externalInstanceId);
-    });
-
     it('rejects duplicate track identity before truth, engine, or host work', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
@@ -131,8 +76,6 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('duplicate', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
-        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
     it('rejects a dormant VCA before ID, instance, project, engine, or plugin work', () => {
@@ -140,8 +83,6 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('vca-1', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
-        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
     it('returns null when there is no track state (cleared/absent project)', () => {
@@ -149,8 +90,6 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('audio-1', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
-        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
     it('rejects an unsupported plugin id before project or runtime work', () => {
@@ -158,7 +97,5 @@ describe('addExternalDevice', () => {
 
         expect(addExternalDevice('audio-1', 'unsupported-vst', 'Unsupported VST')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
-        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 });
