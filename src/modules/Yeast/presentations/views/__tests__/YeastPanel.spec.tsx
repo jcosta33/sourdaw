@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type TrackStoreState } from '#/modules/Arrangement/stores';
 import { type GrooveTemplateState } from '#/modules/MIDI/stores';
 
+import { decodeArpPatternParams, defaultStep, withArpPatternParams } from '../../../models/ArpPattern';
 import { type YeastRuntimeStatus } from '../../../models/YeastProcessorProjection';
 import { type YeastState } from '../../../stores/yeastStore';
 import { YeastPanel } from '../YeastPanel';
@@ -24,7 +25,9 @@ const grooveMocks = vi.hoisted(() => ({
     proposeYeastGrooveExtraction: vi.fn(),
 }));
 const runtimeMocks = vi.hoisted(() => ({
-    applyProjection: vi.fn((): Promise<void> => Promise.resolve()),
+    applyProjection: vi.fn((_projection: readonly { id: string; params: Record<string, number> }[]): Promise<void> =>
+        Promise.resolve()
+    ),
     getStatus: vi.fn((): YeastRuntimeStatus => 'ready'),
     getError: vi.fn((): string | undefined => undefined),
 }));
@@ -144,6 +147,95 @@ describe('YeastPanel', () => {
         expect(screen.getByRole('slider', { name: 'Swing' })).toHaveAttribute('aria-valuenow', '0.5');
         expect(screen.getByRole('slider', { name: 'Octaves' })).toHaveAttribute('aria-valuenow', '3');
         expect(screen.getByRole('slider', { name: 'Velocity' })).toHaveAttribute('aria-valuenow', '64');
+    });
+
+    it('renders honest Gate/Swing readouts at mid-range values instead of a collapsed "%"', () => {
+        // Pre-fix both readouts used `unit="%"` with the raw fraction: gate 0.8
+        // and swing 0.5 both rendered as "1%" (toFixed(0) of the unscaled
+        // value), collapsing the entire range to 0/1/2%. Gate is a note-length
+        // multiplier (Arpeggiator.ts multiplies step length by it), not a
+        // percentage, so it now reads as "×"; swing is a fraction and is
+        // scaled to an honest percent.
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { gate: 0.8, swing: 0.5 },
+                },
+            ],
+            uiLevel: 2,
+        };
+
+        render(<YeastPanel />);
+
+        expect(screen.getByText('0.8×')).toBeInTheDocument();
+        expect(screen.getByText('50%')).toBeInTheDocument();
+    });
+
+    it('resets a modified Gate knob to its compiled default via alt-click', async () => {
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { gate: 1.2 },
+                },
+            ],
+            uiLevel: 2,
+        };
+
+        render(<YeastPanel />);
+        const gateSlider = screen.getByRole('slider', { name: 'Gate' });
+        expect(gateSlider).toHaveAttribute('aria-valuenow', '1.2');
+
+        // RotaryKnob treats an alt-clicked pointerdown as reset-to-default
+        // rather than the start of a drag. Pre-fix, KnobCol passed
+        // `defaultValue={value}` (the live value itself), so
+        // `Object.is(value, defaultValue)` was always true and this gesture
+        // was a permanent no-op.
+        fireEvent.pointerDown(gateSlider, { button: 0, pointerId: 1, altKey: true });
+
+        await waitFor(() => {
+            expect(storeMock.yeastState?.processors[0]?.params?.gate).toBe(0.8);
+        });
+    });
+
+    it('commits an integer when dragging the Octaves knob (integer-domain param)', () => {
+        // Pre-fix, KnobCol hardcoded step={0.01} for every knob including the
+        // integer-domain octave_range (1-4). The worker rounds this param
+        // (Arpeggiator.ts setParam), so a fractional commit here would store a
+        // value the audio thread silently disagrees with.
+        storeMock.yeastState = {
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Lead arp lane',
+                    bypassed: false,
+                    params: { octave_range: 1 },
+                },
+            ],
+            uiLevel: 2,
+        };
+
+        render(<YeastPanel />);
+        const octavesSlider = screen.getByRole('slider', { name: 'Octaves' });
+
+        fireEvent.pointerDown(octavesSlider, { button: 0, pointerId: 1, clientY: 100 });
+        // deltaY = 55 against a (max-min)/150 = 0.02 sensitivity puts the raw
+        // value at 2.1 — step=0.01 would commit 2.1 (fractional); step=1
+        // quantizes to the integer 2.
+        fireEvent.pointerMove(octavesSlider, { pointerId: 1, clientY: 45 });
+        fireEvent.pointerUp(octavesSlider, { pointerId: 1 });
+
+        const committed = storeMock.yeastState?.processors[0]?.params?.octave_range;
+        expect(committed).toBe(2);
+        expect(Number.isInteger(committed)).toBe(true);
     });
 
     it('defaults latch to off without a stored param', () => {
@@ -311,5 +403,159 @@ describe('YeastPanel', () => {
 
         expect(screen.getByText('Error')).toBeInTheDocument();
         expect(screen.getByText(error.message)).toHaveAttribute('data-reason-code', 'runtime-error');
+    });
+
+    it('follows a param change that arrives from another peer', async () => {
+        // The controls must track project truth, not latch whatever they first
+        // rendered: an inbound CRDT change re-renders the panel with new state.
+        storeMock.yeastState = {
+            processors: [
+                { id: 'arp-1', type: 'arpeggiator', name: 'Arpeggiator', bypassed: false, params: { gate: 1.2 } },
+            ],
+            uiLevel: 2,
+        };
+        const view = render(<YeastPanel />);
+        expect(screen.getByRole('slider', { name: 'Gate' })).toHaveAttribute('aria-valuenow', '1.2');
+
+        storeMock.yeastState = {
+            processors: [
+                { id: 'arp-1', type: 'arpeggiator', name: 'Arpeggiator', bypassed: false, params: { gate: 0.3 } },
+            ],
+            uiLevel: 2,
+        };
+        view.rerender(<YeastPanel />);
+
+        expect(screen.getByRole('slider', { name: 'Gate' })).toHaveAttribute('aria-valuenow', '0.3');
+    });
+
+    describe('arp pattern editor', () => {
+        const patternState = (uiLevel: 3 | 5): YeastState => ({
+            processors: [
+                {
+                    id: 'arp-1',
+                    type: 'arpeggiator',
+                    name: 'Arpeggiator',
+                    bypassed: false,
+                    params: withArpPatternParams({ mode: 7 }, [
+                        { ...defaultStep() },
+                        { ...defaultStep(), active: false },
+                        { ...defaultStep(), velocity: 40, velocityOverride: true },
+                    ]),
+                },
+            ],
+            uiLevel,
+            runtimeStatus: 'ready',
+        });
+
+        it.each([
+            ['Build', 3 as const],
+            ['Lab', 5 as const],
+        ])('renders the stored pattern on the %s deck', (_deck, uiLevel) => {
+            storeMock.yeastState = patternState(uiLevel);
+
+            render(<YeastPanel />);
+
+            // Both surfaces read one stored pattern, so both agree on its
+            // length and on which steps are switched off.
+            expect(screen.getByText('Steps: 3')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Step 1' })).toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByRole('button', { name: 'Step 2' })).toHaveAttribute('aria-pressed', 'false');
+        });
+
+        it.each([
+            ['Build', 3 as const],
+            ['Lab', 5 as const],
+        ])('sends a step edit made on the %s deck to the runtime projection', async (_deck, uiLevel) => {
+            storeMock.yeastState = patternState(uiLevel);
+            render(<YeastPanel />);
+
+            fireEvent.contextMenu(screen.getByRole('button', { name: 'Step 1' }));
+
+            await waitFor(() => {
+                expect(runtimeMocks.applyProjection).toHaveBeenCalled();
+            });
+            const applied = runtimeMocks.applyProjection.mock.calls
+                .at(-1)?.[0]
+                .find((processor) => processor.id === 'arp-1');
+            // The edit is the whole point: step 1 is now inactive in the
+            // projection the Worker receives, and step 3's velocity survived.
+            expect(decodeArpPatternParams(applied?.params)).toEqual([
+                { ...defaultStep(), active: false },
+                { ...defaultStep(), active: false },
+                { ...defaultStep(), velocity: 40, velocityOverride: true },
+            ]);
+        });
+
+        it('grows the stored pattern when a length preset is chosen', async () => {
+            storeMock.yeastState = patternState(3);
+            render(<YeastPanel />);
+
+            fireEvent.click(screen.getByText('8'));
+
+            await waitFor(() => {
+                expect(runtimeMocks.applyProjection).toHaveBeenCalled();
+            });
+            const applied = runtimeMocks.applyProjection.mock.calls
+                .at(-1)?.[0]
+                .find((processor) => processor.id === 'arp-1');
+            expect(decodeArpPatternParams(applied?.params)).toHaveLength(8);
+        });
+
+        it('names the arpeggiator the deck is bound to', () => {
+            // The deck binds the first arpeggiator; with two in the rack the
+            // name is the only way to tell whose persisted pattern is shown.
+            storeMock.yeastState = {
+                processors: [
+                    { id: 'arp-1', type: 'arpeggiator', name: 'Lead arp lane', bypassed: false, params: { mode: 7 } },
+                    { id: 'arp-2', type: 'arpeggiator', name: 'Bass arp lane', bypassed: false, params: { mode: 7 } },
+                ],
+                uiLevel: 3,
+            };
+
+            render(<YeastPanel />);
+
+            const patternDeck = screen.getByRole('group', { name: 'Arp pattern — Lead arp lane' });
+            expect(within(patternDeck).getByText('Lead arp lane')).toBeInTheDocument();
+            expect(screen.queryByRole('group', { name: 'Arp pattern — Bass arp lane' })).not.toBeInTheDocument();
+        });
+
+        it('commits a step type edit made from the step badge', async () => {
+            storeMock.yeastState = patternState(3);
+            render(<YeastPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Step 1 type' }));
+
+            await waitFor(() => {
+                expect(runtimeMocks.applyProjection).toHaveBeenCalled();
+            });
+            const applied = runtimeMocks.applyProjection.mock.calls
+                .at(-1)?.[0]
+                .find((processor) => processor.id === 'arp-1');
+            expect(decodeArpPatternParams(applied?.params)[0]?.stepType).toBe('rest');
+        });
+
+        it('commits a note selector edit made from the step badge', async () => {
+            storeMock.yeastState = patternState(3);
+            render(<YeastPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Step 1 note selector' }));
+
+            await waitFor(() => {
+                expect(runtimeMocks.applyProjection).toHaveBeenCalled();
+            });
+            const applied = runtimeMocks.applyProjection.mock.calls
+                .at(-1)?.[0]
+                .find((processor) => processor.id === 'arp-1');
+            expect(decodeArpPatternParams(applied?.params)[0]?.noteSelector).toEqual({ type: 'previous' });
+        });
+
+        it('offers no pattern surface on the Lab deck without an arpeggiator', () => {
+            storeMock.yeastState = { processors: [], uiLevel: 5 };
+
+            render(<YeastPanel />);
+
+            expect(screen.queryByText(/steps:/i)).not.toBeInTheDocument();
+            expect(screen.getByText('Add an Arpeggiator to program a step pattern.')).toBeInTheDocument();
+        });
     });
 });

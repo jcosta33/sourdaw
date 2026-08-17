@@ -19,6 +19,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { SOURDAW_COMMAND_ARGUMENTS } from '#/utils/sourdawCommandArguments';
+
 import { addonMethodName, commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS, isExposedCommand } from '../commands.js';
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8');
@@ -128,6 +130,19 @@ describe('addon method naming', () => {
         }
     });
 
+    it('publishes the plugin-window host methods the shell registers against', () => {
+        // pluginGui.ts dereferences these by their napi camelCase names, and
+        // its deliberate stale-addon tolerance turns a rename into silently
+        // unavailable plugin editors rather than a failing test — so the
+        // names are pinned here against the Rust source.
+        const published = new Set(addonMethods());
+
+        expect(published.has('register_plugin_window_host')).toBe(true);
+        expect(published.has('notify_plugin_window_closed')).toBe(true);
+        expect(addonMethodName('register_plugin_window_host')).toBe('registerPluginWindowHost');
+        expect(addonMethodName('notify_plugin_window_closed')).toBe('notifyPluginWindowClosed');
+    });
+
     it('translates the shapes the surface actually contains', () => {
         expect(addonMethodName('scan_plugins')).toBe('scanPlugins');
         expect(addonMethodName('get_plugin_state_bytes')).toBe('getPluginStateBytes');
@@ -226,6 +241,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],
+    ['close_provider_gateway_session', ['session_id']],
     ['close_push_transport', []],
     ['collab_apply_change', ['doc_id', 'change_bytes']],
     ['collab_create_project', ['name', 'sample_rate']],
@@ -261,10 +277,11 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['load_sample', ['instance_id', 'file_path']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
+    ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
     ['open_push_transport', ['model']],
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],
-    ['provider_gateway_request', ['request_id', 'adapter_id', 'origin', 'operation', 'api_key', 'body']],
+    ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
     ['scan_plugins', ['paths']],
     ['send_push_midi', ['bytes']],
@@ -300,12 +317,19 @@ describe('positional argument contract', () => {
         expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id']);
         expect(COMMAND_ARGUMENTS.get('provider_gateway_request')).toEqual([
             'request_id',
-            'adapter_id',
-            'origin',
+            'session_id',
             'operation',
-            'api_key',
             'body',
         ]);
+    });
+
+    it('matches the renderer seam table, so the seam orders arguments by the same contract', () => {
+        // The renderer cannot import `electron/**`, so the seam keeps its own
+        // copy of this table; this equality is what keeps the copy honest.
+        const bySortedName = (entries: ReadonlyMap<string, readonly string[]>): [string, readonly string[]][] =>
+            [...entries.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+        expect(bySortedName(SOURDAW_COMMAND_ARGUMENTS)).toEqual(bySortedName(COMMAND_ARGUMENTS));
     });
 
     it('reserves the trailing emitter for exactly the streaming commands', () => {

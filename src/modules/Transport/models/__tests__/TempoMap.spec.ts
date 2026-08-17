@@ -6,6 +6,7 @@ import {
     getGoverningTempoChange,
     getTempoAtBeat,
     samplesToBeat,
+    secondsBetweenBeats,
     splitRangeAtTempoChanges,
     type TempoChange,
 } from '../TempoMap';
@@ -293,5 +294,71 @@ describe('linear tempo-ramp coordinates', () => {
                 expect(coordinates[index]!).toBeGreaterThan(coordinates[index - 1]!);
             }
         }
+    });
+});
+
+describe('secondsBetweenBeats', () => {
+    it('falls back to the default tempo when the map is empty', () => {
+        expect(secondsBetweenBeats([], 0, 8, 120)).toBeCloseTo(4, 12);
+    });
+
+    it('charges each segment its own tempo across an instant change', () => {
+        const changes: TempoChange[] = [
+            { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+            { id: 'b', beat: 2, tempo: 240, curve: 'instant' },
+        ];
+        // 2 beats at 120 (1 s) + 2 beats at 240 (0.5 s). A flat reading at either
+        // endpoint's tempo gives 2 s or 1 s — never 1.5 s.
+        expect(secondsBetweenBeats(changes, 0, 4, 120)).toBeCloseTo(1.5, 12);
+    });
+
+    it('is antisymmetric, so a span behind the playhead reads negative', () => {
+        const changes: TempoChange[] = [
+            { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+            { id: 'b', beat: 2, tempo: 240, curve: 'instant' },
+        ];
+        expect(secondsBetweenBeats(changes, 4, 0, 120)).toBeCloseTo(-1.5, 12);
+        expect(secondsBetweenBeats(changes, 3, 3, 120)).toBe(0);
+    });
+
+    it('integrates a linear ramp rather than averaging its endpoints', () => {
+        const changes: TempoChange[] = [
+            { id: 'a', beat: 0, tempo: 60, curve: 'linear' },
+            { id: 'b', beat: 4, tempo: 120, curve: 'instant' },
+        ];
+        // Tempo rises linearly 60 → 120 over 4 beats. The exact integral is
+        // (4 * 60 / 60) * ln(2) / 1 = 4 ln 2 ≈ 2.7726 s. Averaging the endpoints
+        // (90 BPM) would give 2.667 s.
+        expect(secondsBetweenBeats(changes, 0, 4, 120)).toBeCloseTo(4 * Math.LN2, 9);
+    });
+
+    it('reads an unsorted change list in beat order, and repeats agree', () => {
+        // The sorted view is cached by list identity, so a second call must give
+        // the same answer as the first — a cache that outlived a real edit would
+        // show up here as a disagreement.
+        const changes: TempoChange[] = [
+            { id: 'b', beat: 2, tempo: 240, curve: 'instant' },
+            { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+        ];
+        expect(secondsBetweenBeats(changes, 0, 4, 120)).toBeCloseTo(1.5, 12);
+        expect(secondsBetweenBeats(changes, 0, 4, 120)).toBeCloseTo(1.5, 12);
+        // A replaced list (the only way the store ever writes) is a different
+        // object, so it is read afresh rather than served from the first one.
+        const edited: TempoChange[] = [
+            { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+            { id: 'b', beat: 2, tempo: 60, curve: 'instant' },
+        ];
+        expect(secondsBetweenBeats(edited, 0, 4, 120)).toBeCloseTo(3, 12);
+    });
+
+    it('agrees with beatToSamples, which the MIDI path converts through', () => {
+        const changes: TempoChange[] = [
+            { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+            { id: 'b', beat: 2, tempo: 240, curve: 'instant' },
+        ];
+        const sampleRate = 48000;
+        const viaSamples =
+            (beatToSamples(changes, 4, 120, sampleRate) - beatToSamples(changes, 1, 120, sampleRate)) / sampleRate;
+        expect(secondsBetweenBeats(changes, 1, 4, 120)).toBeCloseTo(viaSamples, 6);
     });
 });

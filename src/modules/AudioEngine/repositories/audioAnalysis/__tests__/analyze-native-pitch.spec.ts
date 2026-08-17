@@ -1,17 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
-
-import { isTauri } from '#/utils/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { analyzeNativePitch } from '../analyze-native-pitch';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
-}));
-
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => true),
+    tauriInvoke: vi.fn(),
 }));
 
 describe('analyzeNativePitch', () => {
@@ -27,11 +22,11 @@ describe('analyzeNativePitch', () => {
             hop_size: 256,
             algorithm: 'pyin',
         };
-        vi.mocked(invoke).mockResolvedValue(contour);
+        vi.mocked(tauriInvoke).mockResolvedValue(contour);
 
         const result = await analyzeNativePitch({ analysisId: 'analysis-1', audioPath: 'clip-audio.wav' });
 
-        expect(invoke).toHaveBeenCalledWith('analyze_pitch', {
+        expect(tauriInvoke).toHaveBeenCalledWith('analyze_pitch', {
             analysisId: 'analysis-1',
             audioPath: 'clip-audio.wav',
         });
@@ -39,7 +34,7 @@ describe('analyzeNativePitch', () => {
     });
 
     it('should reject invalid native pitch payloads', async () => {
-        vi.mocked(invoke).mockResolvedValue({
+        vi.mocked(tauriInvoke).mockResolvedValue({
             points: [{ time_ms: 0, frequency_hz: '440', confidence: 0.9, voiced: true }],
             sample_rate: 44100,
             hop_size: 256,
@@ -57,6 +52,6 @@ describe('analyzeNativePitch', () => {
         const result = await analyzeNativePitch({ analysisId: 'analysis-1', audioPath: 'clip-audio.wav' });
 
         expect(result).toBeNull();
-        expect(invoke).not.toHaveBeenCalled();
+        expect(tauriInvoke).not.toHaveBeenCalled();
     });
 });

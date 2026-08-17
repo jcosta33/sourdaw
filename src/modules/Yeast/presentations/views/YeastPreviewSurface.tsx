@@ -36,6 +36,8 @@ type YeastPreviewSurfaceProps = {
     runtimeStatus?: YeastRuntimeStatus;
     runtimeError?: string;
     lookaheadBeats?: number;
+    /** Reports the rack's currently-sounding pitches — KeyboardSplit's note-activity source. */
+    onSoundingNotesChange?: (pitches: readonly number[]) => void;
 };
 
 type SurfaceStatus = Readonly<{
@@ -61,6 +63,7 @@ const initialFeedback: YeastPreviewFeedback = {
     droppedVisualEvents: 0,
     processorActivity: [],
     summary: '0 upcoming events',
+    soundingPitches: [],
 };
 
 function countProcessorStatuses(
@@ -147,14 +150,20 @@ export function YeastPreviewSurface({
     runtimeStatus,
     runtimeError,
     lookaheadBeats = 4,
+    onSoundingNotesChange,
 }: YeastPreviewSurfaceProps): ReactElement {
     const viewportRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const presenterRef = useRef<ReturnType<typeof createYeastPreviewPresenter> | null>(null);
     const processorsRef = useRef(processors);
     const pendingProcessorRevisionRef = useRef<number | null>(null);
+    const onSoundingNotesChangeRef = useRef(onSoundingNotesChange);
     const [rendererUnavailable, setRendererUnavailable] = useState(false);
     const [feedback, setFeedback] = useState<YeastPreviewFeedback>(initialFeedback);
+
+    useEffect(() => {
+        onSoundingNotesChangeRef.current = onSoundingNotesChange;
+    }, [onSoundingNotesChange]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -177,7 +186,10 @@ export function YeastPreviewSurface({
             clearTimer: clearPreviewTimer,
             now: () => performance.now(),
             readPlayheadBeat: () => playheadPositionRef.current,
-            onFeedback: setFeedback,
+            onFeedback: (nextFeedback) => {
+                setFeedback(nextFeedback);
+                onSoundingNotesChangeRef.current?.(nextFeedback.soundingPitches);
+            },
         });
         presenterRef.current = presenter;
 

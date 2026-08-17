@@ -45,6 +45,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
     },
     takeLaneStore: { value: { lanes: [] } },
+    // Pulled in transitively: the scheduler reaches Levain's param bridge, whose
+    // dependency bundle destructures these off this barrel at module scope. A
+    // factory that omits them fails the whole file at import, not at a test.
+    persistDeviceParam: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {

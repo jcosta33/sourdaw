@@ -16,7 +16,9 @@
 //! The event sink is a threadsafe function registered once at construction. It
 //! takes owned arguments and is never reachable from the CPAL callback.
 
-use std::sync::Arc;
+mod windows;
+
+use std::sync::{Arc, RwLock};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
@@ -28,6 +30,11 @@ use crate::commands;
 use crate::events::{EventSink, EventStream};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::NativeSingletons;
+
+use windows::{
+    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowSizeFn,
+    JsWindowCallbacks, JsWindowHost,
+};
 
 use daw_core::{PluginId, PluginInstanceId};
 
@@ -104,7 +111,10 @@ pub fn run_plugin_scan_worker() -> Option<i32> {
 #[napi]
 pub struct SourdawNative {
     singletons: Arc<NativeSingletons>,
-    windows: Arc<dyn PluginWindowHost>,
+    /// Behind a lock because the shell registers its real window host after
+    /// construction, while other methods may already be in flight; every user
+    /// clones the `Arc` out and never holds the lock across an await.
+    windows: RwLock<Arc<dyn PluginWindowHost>>,
 }
 
 #[napi]
@@ -126,10 +136,61 @@ impl SourdawNative {
 
         Self {
             singletons,
-            // Native editor windows are wired by a later packet; until then
-            // this refuses rather than pretends.
-            windows: Arc::new(NoWindowHost),
+            // Until the shell registers its window host this refuses rather
+            // than pretends.
+            windows: RwLock::new(Arc::new(NoWindowHost)),
         }
+    }
+
+    /// The current window host, cloned out so no caller holds the lock.
+    fn window_host(&self) -> Arc<dyn PluginWindowHost> {
+        Arc::clone(&self.windows.read().expect("window host lock poisoned"))
+    }
+
+    /// Register the shell's plugin-window callbacks (packet T-4).
+    ///
+    /// Called once at startup, before any plugin command. Each callback is a
+    /// weak threadsafe function for the same reason as the event sink: the
+    /// window host lives for the process, and a referenced one would pin the
+    /// Node event loop so the shell could never quit.
+    #[napi]
+    pub fn register_plugin_window_host(
+        &self,
+        create_editor_window: CreateEditorWindowFn,
+        editor_window_exists: EditorWindowExistsFn,
+        set_editor_window_size: EditorWindowSizeFn,
+        show_and_focus_editor_window: EditorWindowLabelFn,
+        destroy_editor_window: EditorWindowLabelFn,
+        hide_editor_window: EditorWindowLabelFn,
+        show_editor_window: EditorWindowLabelFn,
+    ) {
+        *self.windows.write().expect("window host lock poisoned") =
+            Arc::new(JsWindowHost::new(JsWindowCallbacks {
+                create: create_editor_window,
+                exists: editor_window_exists,
+                set_size: set_editor_window_size,
+                show_and_focus: show_and_focus_editor_window,
+                destroy: destroy_editor_window,
+                hide: hide_editor_window,
+                show: show_editor_window,
+            }));
+    }
+
+    /// The shell reports that the OS ended a plugin editor window (title-bar
+    /// close, or the owner-destroy cascade).
+    ///
+    /// Async so the reset runs on the executor rather than the JS thread —
+    /// the same off-the-event-thread contract the Tauri shell honours by
+    /// spawning, because the reset takes the plugin mutexes and the CLAP
+    /// control lock. Idempotent; see
+    /// [`commands::plugin_gui::reset_plugin_gui_state_after_os_close`].
+    #[napi]
+    pub async fn notify_plugin_window_closed(&self, instance_id: String, label: String) {
+        commands::plugin_gui::reset_plugin_gui_state_after_os_close(
+            &instance_id,
+            &label,
+            &self.singletons.app_state,
+        );
     }
 
     /// Run the process-exit cascade: retire discovery, close every plugin
@@ -144,7 +205,8 @@ impl SourdawNative {
     /// Returns the diagnostic report; nothing in it fails the exit. Idempotent.
     #[napi]
     pub fn shutdown(&self) -> Result<Value> {
-        json(self.singletons.shutdown(Some(self.windows.as_ref())))
+        let windows = self.window_host();
+        json(self.singletons.shutdown(Some(windows.as_ref())))
     }
 
     // ── Privileged model-provider gateway ──────────────────────────────
@@ -328,10 +390,11 @@ impl SourdawNative {
 
     #[napi]
     pub async fn unload_plugin(&self, instance_id: Option<String>) -> Result<Value> {
+        let windows = self.window_host();
         json(reason(
             commands::plugins::unload_plugin(
                 instance_id.map(PluginInstanceId),
-                self.windows.as_ref(),
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
@@ -489,10 +552,11 @@ impl SourdawNative {
 
     #[napi]
     pub async fn open_plugin_gui(&self, instance_id: String) -> Result<Value> {
+        let windows = self.window_host();
         json(reason(
             commands::plugin_gui::open_plugin_gui(
                 instance_id,
-                self.windows.as_ref(),
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
@@ -501,10 +565,11 @@ impl SourdawNative {
 
     #[napi]
     pub async fn close_plugin_gui(&self, instance_id: String) -> Result<()> {
+        let windows = self.window_host();
         reason(
             commands::plugin_gui::close_plugin_gui(
                 instance_id,
-                self.windows.as_ref(),
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
@@ -513,9 +578,10 @@ impl SourdawNative {
 
     #[napi]
     pub async fn close_all_plugin_guis(&self) -> Result<Value> {
+        let windows = self.window_host();
         json(reason(
             commands::plugin_gui::close_all_plugin_guis(
-                self.windows.as_ref(),
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
@@ -524,9 +590,10 @@ impl SourdawNative {
 
     #[napi]
     pub async fn hide_all_plugin_guis(&self) -> Result<()> {
+        let windows = self.window_host();
         reason(
             commands::plugin_gui::hide_all_plugin_guis(
-                self.windows.as_ref(),
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
@@ -535,9 +602,10 @@ impl SourdawNative {
 
     #[napi]
     pub async fn show_all_plugin_guis(&self) -> Result<()> {
+        let windows = self.window_host();
         reason(
             commands::plugin_gui::show_all_plugin_guis(
-                self.windows.as_ref(),
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,

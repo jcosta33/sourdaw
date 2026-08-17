@@ -116,6 +116,46 @@ describe('Yeast preview geometry', () => {
         );
     });
 
+    it('reports only realized events whose window contains the playhead as sounding pitches', () => {
+        // KeyboardSplit's note-activity display (Yeast panel Route/Lab decks)
+        // is fed by this field. It must exclude events that haven't started
+        // yet, events whose duration already elapsed, and unrealized/rejected
+        // candidates — otherwise the keyboard would show notes that never
+        // actually sound.
+        const frames: FrameRequestCallback[] = [];
+        const feedback = vi.fn();
+        const presenter = createYeastPreviewPresenter({
+            renderer: { backend: 'canvas2d', render: vi.fn(), resize: vi.fn(), dispose: vi.fn() },
+            requestFrame: (callback) => {
+                frames.push(callback);
+                return frames.length;
+            },
+            cancelFrame: vi.fn(),
+            setTimer: vi.fn(() => 1),
+            clearTimer: vi.fn(),
+            now: () => 0,
+            readPlayheadBeat: () => 2,
+            onFeedback: feedback,
+        });
+
+        presenter.acceptSnapshot(
+            createPreviewSnapshot([
+                // Sounding: window [1, 3) contains the playhead at beat 2.
+                createPreviewEvent({ eventId: 1, beatTime: 1, durationBeats: 2, pitch: 60, realized: true }),
+                // Not yet started: beatTime 5 is still ahead of the playhead.
+                createPreviewEvent({ eventId: 2, beatTime: 5, durationBeats: 1, pitch: 64, realized: true }),
+                // Already finished: window [0, 1) ended before the playhead.
+                createPreviewEvent({ eventId: 3, beatTime: 0, durationBeats: 1, pitch: 67, realized: true }),
+                // Rejected candidate in the same window as event 1 — never realized, must not sound.
+                createPreviewEvent({ eventId: 4, beatTime: 1, durationBeats: 2, pitch: 70, realized: false }),
+            ]),
+            0
+        );
+        frames.shift()!(16);
+
+        expect(feedback).toHaveBeenLastCalledWith(expect.objectContaining({ soundingPitches: [60] }));
+    });
+
     it('reallocates the Canvas backing store when only device pixel ratio changes', () => {
         const context = {
             clearRect: vi.fn(),

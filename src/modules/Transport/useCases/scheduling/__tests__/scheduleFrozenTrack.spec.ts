@@ -14,6 +14,14 @@ import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 // need the same identity the module calls, not a fresh fn per getAudioContext().
 const contextMocks = vi.hoisted(() => ({ createGain: vi.fn(() => ({ connect: vi.fn() })) }));
 
+// The real `TempoMap` runs against this: with an empty map every conversion
+// falls back to the tempo the caller passes, which is what the existing
+// expectations below are written against.
+const { tempoMapStore } = vi.hoisted((): { tempoMapStore: { value: { changes: unknown[] } | null } } => ({
+    tempoMapStore: { value: { changes: [] } },
+}));
+vi.mock('../../../stores/tempoMapStore', () => ({ tempoMapStore }));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     createBufferSource: vi.fn(),
     ensureTrackStrip: vi.fn(() => ({ preFaderTap: { connect: vi.fn() } })),
@@ -28,6 +36,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 describe('scheduleFrozenTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        tempoMapStore.value = { changes: [] };
     });
 
     // §5 — A frozen buffer is rendered starting at the track's earliest clip
@@ -239,5 +248,35 @@ describe('scheduleFrozenTrack', () => {
 
         expect(scheduled).toBe(true);
         expect(start).toHaveBeenCalledWith(0, 0.98);
+    });
+
+    it('integrates the tempo map between the playhead and the track start', () => {
+        // 120 BPM to beat 4, 60 after. The buffer starts at beat 8, so from the
+        // playhead at beat 0 that is 4 beats at 120 (2 s) plus 4 at 60 (4 s) = 6 s.
+        // A flat 120 placed the frozen render at 4 s — two seconds ahead of every
+        // live track around it, which converts through the same map.
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null } as never;
+        vi.mocked(createBufferSource).mockReturnValue(source);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+        // `clearAllMocks` drops call records, not return values a prior test set.
+        vi.mocked(getCompensationDelay).mockReturnValue(0);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 8 }],
+        };
+
+        expect(scheduleFrozenTrack(track, 0, [], 120)).toBe(true);
+        expect(start).toHaveBeenCalledWith(6);
     });
 });
