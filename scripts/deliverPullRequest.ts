@@ -248,6 +248,44 @@ function parseJson<Value>(value: string, label: string): Value {
     }
 }
 
+type RepositoryMergeSettings = {
+    allow_merge_commit?: unknown;
+    allow_rebase_merge?: unknown;
+    allow_squash_merge?: unknown;
+};
+
+type MergeMethod = 'merge' | 'squash' | 'rebase';
+
+function repositoryMergeMethod(repository: string, shell: ShellRunner): MergeMethod {
+    let settings: RepositoryMergeSettings;
+    try {
+        settings = parseJson<RepositoryMergeSettings>(
+            shell.capture('gh', ['api', `repos/${repository}`]),
+            'repository merge settings'
+        );
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`cannot determine repository merge settings: ${detail}`, { cause: error });
+    }
+    if (
+        typeof settings.allow_merge_commit !== 'boolean' ||
+        typeof settings.allow_squash_merge !== 'boolean' ||
+        typeof settings.allow_rebase_merge !== 'boolean'
+    ) {
+        throw new TypeError('cannot prove repository merge settings');
+    }
+    if (settings.allow_merge_commit) {
+        return 'merge';
+    }
+    if (settings.allow_squash_merge) {
+        return 'squash';
+    }
+    if (settings.allow_rebase_merge) {
+        return 'rebase';
+    }
+    throw new Error('no merge method is enabled for this repository');
+}
+
 export function shellPort(repository: string, shell: ShellRunner = { capture, run }): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
@@ -357,6 +395,7 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
         localDirty: () => shell.capture('git', ['status', '--porcelain=v1']) !== '',
         remoteBranchHead: (branch) => shell.capture('git', ['rev-parse', `refs/remotes/origin/${branch}`]),
         merge: (number, expectedHead) => {
+            const method = repositoryMergeMethod(repository, shell);
             const result = parseJson<{ merged: boolean; message: string }>(
                 shell.capture('gh', [
                     'api',
@@ -366,7 +405,7 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
                     '-f',
                     `sha=${expectedHead}`,
                     '-f',
-                    'merge_method=merge',
+                    `merge_method=${method}`,
                 ]),
                 'merge request'
             );
