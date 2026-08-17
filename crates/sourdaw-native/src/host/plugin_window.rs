@@ -27,15 +27,33 @@ pub const PLUGIN_WINDOW_LABEL_PREFIX: &str = "plugin-";
 /// The window label for one instance's editor.
 ///
 /// Derived from the instance id rather than stored, so the same instance always
-/// addresses the same window and a label can be recomputed on any path. Dots and
-/// colons are replaced because window labels are restricted to a smaller
+/// addresses the same window and a label can be recomputed on any path. Dots
+/// and colons are escaped because window labels are restricted to a smaller
 /// alphabet than instance ids are.
+///
+/// The escaping is injective, which a flat character substitution is not: two
+/// instance ids that differ only in which of `.`, `:` or `-` they use — e.g.
+/// `"a.b"`, `"a:b"`, `"a-b"` — must not collapse onto the same label, or the
+/// second instance's editor either refuses to open ("already open") or is
+/// addressed through the first instance's window on close/destroy. `-` is the
+/// escape character: every literal `-` in the id is doubled to `--`, and `.`
+/// and `:` become the two-character sequences `-d` and `-c`. Because `-` never
+/// appears in the output on its own — only as the first character of one of
+/// these three fixed two-character sequences — the encoding can be scanned
+/// left to right and unambiguously decoded back into the original id. A
+/// function with a well-defined left inverse is injective, so distinct ids
+/// always produce distinct labels.
 pub fn plugin_editor_window_label(instance_id: &str) -> String {
-    format!(
-        "{}{}",
-        PLUGIN_WINDOW_LABEL_PREFIX,
-        instance_id.replace('.', "-").replace(':', "-")
-    )
+    let mut escaped = String::with_capacity(instance_id.len());
+    for ch in instance_id.chars() {
+        match ch {
+            '-' => escaped.push_str("--"),
+            '.' => escaped.push_str("-d"),
+            ':' => escaped.push_str("-c"),
+            other => escaped.push(other),
+        }
+    }
+    format!("{}{}", PLUGIN_WINDOW_LABEL_PREFIX, escaped)
 }
 
 /// Whether a plugin editor window still needs `always_on_top`.
@@ -190,7 +208,36 @@ mod tests {
     fn an_instance_id_maps_to_one_stable_window_label() {
         assert_eq!(
             plugin_editor_window_label("com.vendor.plugin:3"),
-            "plugin-com-vendor-plugin-3"
+            "plugin-com-dvendor-dplugin-c3"
+        );
+    }
+
+    /// A flat `.`/`:` -> `-` substitution collapses these three ids onto the
+    /// same label, which is exactly the defect this encoding fixes: the
+    /// second instance's editor either refuses to open ("already open") or
+    /// close/destroy targets the wrong window. The escaping must keep them
+    /// distinct.
+    #[test]
+    fn ids_that_collided_under_the_old_flat_substitution_now_get_distinct_labels() {
+        let dot = plugin_editor_window_label("a.b");
+        let colon = plugin_editor_window_label("a:b");
+        let dash = plugin_editor_window_label("a-b");
+
+        assert_ne!(dot, colon);
+        assert_ne!(dot, dash);
+        assert_ne!(colon, dash);
+    }
+
+    /// The label is recomputed from the instance id on every path rather than
+    /// stored, so recomputation must be stable or the same instance would
+    /// address a different window depending on which path asked.
+    #[test]
+    fn the_same_instance_id_always_recomputes_the_same_label() {
+        let instance_id = "com.vendor.plugin:7";
+
+        assert_eq!(
+            plugin_editor_window_label(instance_id),
+            plugin_editor_window_label(instance_id)
         );
     }
 
