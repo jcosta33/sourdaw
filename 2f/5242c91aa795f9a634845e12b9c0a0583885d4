@@ -1,0 +1,39 @@
+src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts
+  s_a40848e8f8cca9::t_5942e305e7689b 13-14,20
+src/modules/Arrangement/useCases/device/__tests__/prepareRemoveDevice.spec.ts
+  s_a40848e8f8cca9::t_ab90e7f4174f58 1-491
+src/modules/AudioEngine/useCases/__tests__/publicDeviceTopologyBoundary.spec.ts
+  s_a40848e8f8cca9::t_007c71ed3672a2 14-18,38-40
+  s_a40848e8f8cca9::t_5942e305e7689b 41-42
+  s_ab5443e65c7fba::t_91aa1c2393f0c0 43-44
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_a40848e8f8cca9::t_df1111a4a0f5cb 3
+  s_a40848e8f8cca9::t_34bfbe1913b69c 49
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveDevice.spec.ts
+  s_a40848e8f8cca9::t_a55ded90083409 10
+  s_a40848e8f8cca9::t_c9deebd29fc1ab 6,11,28,35,42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2f5242c91aa795f9a634845e12b9c0a0583885d4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
