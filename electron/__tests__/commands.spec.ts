@@ -130,6 +130,19 @@ describe('addon method naming', () => {
         }
     });
 
+    it('publishes the plugin-window host methods the shell registers against', () => {
+        // pluginGui.ts dereferences these by their napi camelCase names, and
+        // its deliberate stale-addon tolerance turns a rename into silently
+        // unavailable plugin editors rather than a failing test — so the
+        // names are pinned here against the Rust source.
+        const published = new Set(addonMethods());
+
+        expect(published.has('register_plugin_window_host')).toBe(true);
+        expect(published.has('notify_plugin_window_closed')).toBe(true);
+        expect(addonMethodName('register_plugin_window_host')).toBe('registerPluginWindowHost');
+        expect(addonMethodName('notify_plugin_window_closed')).toBe('notifyPluginWindowClosed');
+    });
+
     it('translates the shapes the surface actually contains', () => {
         expect(addonMethodName('scan_plugins')).toBe('scanPlugins');
         expect(addonMethodName('get_plugin_state_bytes')).toBe('getPluginStateBytes');

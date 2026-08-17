@@ -7,6 +7,8 @@ import {
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 
+import { secondsBetweenBeats } from '../../models/TempoMap';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 
 export function scheduleFrozenTrack(
@@ -17,7 +19,14 @@ export function scheduleFrozenTrack(
     },
     accumulatedPosition: number,
     activeAudioSources: AudioBufferSourceNode[],
-    currentTempo: number
+    /**
+     * Tempo the map falls back to, read only when the project has no tempo
+     * changes at all. Callers inside the scheduler may pass either the
+     * transport's base tempo or the tempo resolved at the playhead: with an
+     * empty map those are the same number, and with a non-empty one the map
+     * supplies every value and this is never consulted.
+     */
+    defaultTempo: number
 ): boolean {
     if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
@@ -33,7 +42,6 @@ export function scheduleFrozenTrack(
     // start beat so frozen tracks line up with the playhead instead of firing at
     // the project origin.
     const trackStartBeat = track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0;
-    const beatOffset = trackStartBeat - accumulatedPosition;
 
     // FX-4 — the frozen buffer bypasses the device chain (it feeds preFaderTap
     // directly) but its content already carries that chain's latency, and the
@@ -50,7 +58,14 @@ export function scheduleFrozenTrack(
     // drift is permanent. Tracks frozen before the snapshot existed fall back
     // to the live lookup — the pre-existing behaviour, not a worse one.
     const compensation = track.freezeState.compensationSeconds ?? getCompensationDelay(track.id);
-    const startTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
+    // Same beat → time contract as the live clip and MIDI paths: integrate the
+    // tempo map across the offset. A flat rate here would leave a frozen track
+    // drifting against the un-frozen tracks around it the moment a tempo change
+    // sat between the playhead and the track's first clip.
+    const startTime =
+        getCurrentTime() +
+        secondsBetweenBeats(tempoMapStore.value?.changes ?? [], accumulatedPosition, trackStartBeat, defaultTempo) +
+        compensation;
     const now = getCurrentTime();
     const elapsed = now - startTime;
 

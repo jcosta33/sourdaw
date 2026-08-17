@@ -448,8 +448,7 @@ export function startPlayheadScheduler(): void {
             schedulerSession.lastScheduledBeat,
             scheduleUpTo,
             schedulerSession.accumulatedPosition,
-            current,
-            currentTempo
+            current
         );
         await scheduleMidiNotes(
             schedulerSession.lastScheduledBeat,
@@ -471,8 +470,7 @@ export function startPlayheadScheduler(): void {
             schedulerSession.scheduledAudioClips,
             schedulerSession.scheduledFrozenTracks,
             schedulerSession.activeAudioSources,
-            current,
-            currentTempo
+            current
         );
         // applyAutomation runs first and returns the tracks whose fader gain it
         // composed (VCA multiplier folded in); applyVcaGains then drives only the

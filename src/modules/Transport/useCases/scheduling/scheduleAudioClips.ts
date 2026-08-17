@@ -13,7 +13,7 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { getTempoAtBeat } from '../../models/TempoMap';
+import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
@@ -57,8 +57,7 @@ export function scheduleAudioClips(
     scheduledAudioClipsSet: Set<string>,
     scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
-    transport: TransportState,
-    currentTempo: number
+    transport: TransportState
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -80,7 +79,7 @@ export function scheduleAudioClips(
             // entry and leave the refrozen track silent for the whole session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
-                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
+                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, transport.tempo);
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
                 }
@@ -130,15 +129,20 @@ export function scheduleAudioClips(
             const clipBeatsPerSecond = clipTempo / 60;
 
             // Single source of truth for beat → audio-context time on the timeline.
-            // Both the iteration start time and its duration must derive from the
-            // *same* tempo basis or, under a tempo curve, the audible clip length
-            // drifts from its visual length (the start time used the scheduler's
-            // currentTempo while the duration used the clip's local tempo). Buffer-
-            // content offsets stay on `clipBeatsPerSecond` (the rate the audio was
-            // rendered at); only timeline placement/duration use this mapping.
-            const timelineBeatsPerSecond = currentTempo / 60;
+            // Every timeline quantity — iteration start, iteration length, fade
+            // boundaries — goes through this one mapping, so they cannot disagree
+            // about the tempo basis. It integrates the tempo map instead of
+            // dividing by the tempo at the playhead: with a tempo change inside
+            // the look-ahead the flat rate placed the clip at the wrong instant
+            // and sized it wrongly, drifting against MIDI, which converts through
+            // the map. Buffer-*content* offsets stay on `clipBeatsPerSecond`, the
+            // rate the audio itself was rendered at.
             function beatToAudioTime(beat: number): number {
-                return getCurrentTime() + (beat - accumulatedPosition) / timelineBeatsPerSecond + compensation;
+                return (
+                    getCurrentTime() +
+                    secondsBetweenBeats(changes, accumulatedPosition, beat, transport.tempo) +
+                    compensation
+                );
             }
 
             const clipVisualLength = clip.endBeat - clip.startBeat;
@@ -174,7 +178,12 @@ export function scheduleAudioClips(
                 const iterDurationBeats = Math.min(loopLen, remainingBeats);
                 // Timeline duration of this iteration: derived from the same beat→time
                 // mapping as iterStartTime so start and length agree under a tempo curve.
-                const iterDurationSeconds = iterDurationBeats / timelineBeatsPerSecond;
+                const iterDurationSeconds = secondsBetweenBeats(
+                    changes,
+                    iterStartBeat,
+                    iterStartBeat + iterDurationBeats,
+                    transport.tempo
+                );
 
                 const source = createBufferSource();
                 source.buffer = buffer;
@@ -245,10 +254,19 @@ export function scheduleAudioClips(
                     const effectiveStart = Math.max(iterStartTime, now);
 
                     if (isFirstIter && clip.fadeInBeats > 0) {
-                        const fadeInEnd = iterStartTime + clip.fadeInBeats / clipBeatsPerSecond;
+                        // A fade length is a span of the timeline, so it is measured
+                        // with the timeline's own mapping. Dividing by the clip's
+                        // local rate made the ramp outlast (or undershoot) its beat
+                        // span whenever a tempo change fell inside the fade.
+                        const fadeInSeconds = secondsBetweenBeats(
+                            changes,
+                            iterStartBeat,
+                            iterStartBeat + clip.fadeInBeats,
+                            transport.tempo
+                        );
+                        const fadeInEnd = iterStartTime + fadeInSeconds;
                         if (effectiveStart < fadeInEnd) {
-                            const progressRatio =
-                                Math.max(0, effectiveStart - iterStartTime) / (clip.fadeInBeats / clipBeatsPerSecond);
+                            const progressRatio = Math.max(0, effectiveStart - iterStartTime) / fadeInSeconds;
                             fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
                             fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
                         } else {
@@ -263,7 +281,14 @@ export function scheduleAudioClips(
 
                     if (isLastIter && clip.fadeOutBeats > 0) {
                         const clipEndTime = beatToAudioTime(clip.endBeat);
-                        const fadeOutStart = clipEndTime - clip.fadeOutBeats / clipBeatsPerSecond;
+                        const fadeOutStart =
+                            clipEndTime -
+                            secondsBetweenBeats(
+                                changes,
+                                clip.endBeat - clip.fadeOutBeats,
+                                clip.endBeat,
+                                transport.tempo
+                            );
                         fadeGain.gain.setValueAtTime(1, Math.max(fadeOutStart, effectiveStart));
                         fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
                     } else if (needsMicroFadeOut) {
