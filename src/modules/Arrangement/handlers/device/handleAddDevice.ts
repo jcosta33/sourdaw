@@ -11,6 +11,37 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type DeviceIndexResolution = { status: 'resolved'; deviceIndex?: number } | { status: 'conflict' };
+type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
+type RuntimeDeviceDeltaFailure = Exclude<
+    RuntimeDeviceDeltaResult,
+    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
+>;
+
+class RuntimeDeviceDeltaPostCommitError extends Error {
+    public readonly outcome: RuntimeDeviceDeltaFailure;
+    public readonly remediation: 'retry' | 'repair';
+
+    constructor(outcome: RuntimeDeviceDeltaFailure) {
+        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
+        super(
+            outcome.acceptance === 'rejected'
+                ? `Device runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
+                : `Device runtime delta requires ${remediation} after project commit: ${outcome.reason}`
+        );
+        this.name = 'RuntimeDeviceDeltaPostCommitError';
+        this.outcome = outcome;
+        this.remediation = remediation;
+    }
+}
+
+function getRuntimeDeviceDeltaPostCommitFailure(
+    result: RuntimeDeviceDeltaResult
+): RuntimeDeviceDeltaPostCommitError | undefined {
+    if (result.acceptance === 'accepted' && result.application === 'applied') {
+        return undefined;
+    }
+    return new RuntimeDeviceDeltaPostCommitError(result);
+}
 
 function ensureDeviceId(action: AddDeviceAction): string {
     if (action.payload.deviceId) {
@@ -135,10 +166,16 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 ...committedBefore.devices.slice(insertionIndex),
             ],
         };
+        let postCommitFailure: RuntimeDeviceDeltaPostCommitError | undefined;
         function applyRuntimeEffect(): void {
+            if (postCommitFailure) {
+                throw postCommitFailure;
+            }
             const result = applyDeviceChainRuntimeDelta({ before: committedBefore, after, operation: 'add-device' });
-            if (result.acceptance === 'rejected' || result.application === 'needs-reconcile') {
-                return;
+            const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
+            if (runtimeFailure) {
+                postCommitFailure = runtimeFailure;
+                throw postCommitFailure;
             }
             for (const [parameterId, value] of Object.entries(committedDevice.parameterValues)) {
                 updateDeviceParam(after.id, committedDevice.id, parameterId, value);

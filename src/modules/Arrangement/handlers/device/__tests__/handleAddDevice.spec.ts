@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
+
 import { handleAddDevice } from '../handleAddDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +32,9 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 describe('handleAddDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        clearUndoHistory();
     });
 
     it('finalizes the bare chain from the actual post-add chain at execute', () => {
@@ -134,5 +141,79 @@ describe('handleAddDevice', () => {
         );
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'device-1', 'threshold', -12);
         expect(handleAddDevice.requiresAbortCompensation).toBe(false);
+    });
+
+    it.each([
+        [
+            'runtime rejection before any live effect',
+            { acceptance: 'rejected', application: 'not-applied', reason: 'runtime revision is stale' },
+            'retry',
+        ],
+        [
+            'runtime reconciliation requirement after a partial live effect',
+            {
+                acceptance: 'accepted',
+                application: 'needs-reconcile',
+                compensation: 'failed',
+                correlation: { appRevision: 3, projectRevision: 'project-3' },
+                reason: 'device rebuild left live graph unhealthy',
+                runtimeRevision: 4,
+            },
+            'repair',
+        ],
+    ])('does not report clean command success after %s', async (_label, runtimeResult, remediation) => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: {} });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue(runtimeResult);
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        const committedError = await executeAppAction({
+            type: 'addDevice',
+            payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
+        }).then(
+            () => {
+                throw new Error('Expected committed runtime failure');
+            },
+            (error: unknown) => error
+        );
+
+        expect(isAppActionCommittedError(committedError)).toBe(true);
+        if (
+            !(committedError instanceof Error) ||
+            !isAppActionCommittedError(committedError) ||
+            !(committedError.cause instanceof AggregateError)
+        ) {
+            throw new Error('Expected the Command post-commit receipt to retain the runtime failure');
+        }
+        expect(committedError.cause.errors).toHaveLength(2);
+        for (const runtimeFailure of committedError.cause.errors) {
+            expect(runtimeFailure).toMatchObject({
+                name: 'RuntimeDeviceDeltaPostCommitError',
+                outcome: runtimeResult,
+                remediation,
+            });
+        }
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('reports clean command success only after an applied runtime delta', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', devices: [] }] });
+        mocks.addDevice.mockReturnValue({ id: 'device-1', parameterValues: { threshold: -12 } });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
+        registerHandlerMap({ addDevice: handleAddDevice });
+
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
+            })
+        ).resolves.toBeUndefined();
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledOnce();
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'device-1', 'threshold', -12);
     });
 });
