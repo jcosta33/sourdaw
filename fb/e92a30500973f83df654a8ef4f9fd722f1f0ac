@@ -1,0 +1,58 @@
+src/modules/Yeast/models/ArpPattern.ts
+  s_ab5443e65c7fba::t_bc79fc8336b74d 46-209
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_ab5443e65c7fba::t_f95e72bfc80ab5 71
+  s_ab5443e65c7fba::t_aa198d0d14c33b 9-14
+  s_ab5443e65c7fba::t_272da6b4f5b4e7 310-324
+  s_ab5443e65c7fba::t_118507707e00ea 27
+src/modules/Yeast/useCases/__tests__/setYeastArpPattern.spec.ts
+  s_ab5443e65c7fba::t_ff7ab98927b2f5 35-37
+  s_ab5443e65c7fba::t_5c0a317b895e08 96-102
+  s_ab5443e65c7fba::t_748265d60a8dbc 8-16,18-19,21-23
+  s_ab5443e65c7fba::t_00a081bdf6d283 63-68
+  s_ab5443e65c7fba::t_0c11e0ab221cad 6
+  s_ab5443e65c7fba::t_98d2fd657e59c1 82-84
+  s_ab5443e65c7fba::t_84c169ecdc4adc 1-5,7,17,20,24-34,38-62,69-73,75-81,85-95,103-122
+  s_ab5443e65c7fba::t_7d6a44e1885b28 74
+src/modules/Yeast/workers/__tests__/arpPatternProjectionChannel.spec.ts
+  s_ab5443e65c7fba::t_7ae050dc203b90 1-15,17-134
+  s_ab5443e65c7fba::t_631df39d79ef7c 16
+src/modules/Yeast/presentations/components/StepPatternEditor.tsx
+  s_ab5443e65c7fba::t_eb9d5f9733cd2a 95-97,99-102,106-112
+src/modules/Yeast/models/__tests__/ArpPattern.spec.ts
+  s_ab5443e65c7fba::t_b63608df203d52 4-15
+  s_ab5443e65c7fba::t_9887b9e3dd6b2d 66-183
+src/modules/Yeast/stores/__tests__/yeastStore.spec.ts
+  s_ab5443e65c7fba::t_710dc22615baf4 9-15
+  s_ab5443e65c7fba::t_bcdda74727cfd8 105-124,135,138-161
+  s_ab5443e65c7fba::t_2d254eb456b7e6 125-134,136-137
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_ab5443e65c7fba::t_d9670e4c102222 407-476,480-497,501-512
+  s_ab5443e65c7fba::t_ede87473b507bb 28-30
+  s_ab5443e65c7fba::t_95069eb657c098 477-479,498-500
+  s_ab5443e65c7fba::t_5a698ee2c4f847 7
+src/modules/Yeast/useCases/setYeastArpPattern.ts
+  s_ab5443e65c7fba::t_c9fcea787f2c48 1-46
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_ab5443e65c7fba::t_03092aaf55aede 905
+  s_ab5443e65c7fba::t_c23469402fbdc5 41
+  s_ab5443e65c7fba::t_93064537cc102f 29-34
+  s_ab5443e65c7fba::t_62c001815f9c9d 282-325
+  s_ab5443e65c7fba::t_58b6884c4cb5fe 711
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fbe92a30500973f83df654a8ef4f9fd722f1f0ac",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
