@@ -1,3 +1,9 @@
+import type {
+    RuntimeGraphDeltaResult,
+    RuntimeGraphProjectRevisionValidator,
+    RuntimeGraphTopologyValidator,
+} from './RuntimeGraphDelta';
+
 export type AudioEngineState = {
     isReady: boolean;
     sampleRate: number;
@@ -460,6 +466,14 @@ export type AudioEngine = {
     resetPlaybackLatencyStats(): void;
     dispose(): Promise<void>;
     resetGraph(): void;
+    /** Monotonic live-graph revision used to reject stale compiled deltas. */
+    getRuntimeGraphRevision(): number;
+    /** Composition-owned freshness authority; AudioEngine never reads project state directly. */
+    setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator): void;
+    /** Composition-owned exact topology authority; AudioEngine never reads project state directly. */
+    setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator): void;
+    /** Validated, immutable graph command applied only at the main-thread graph boundary. */
+    applyRuntimeGraphDelta(delta: unknown): RuntimeGraphDeltaResult;
     ensureTrackStrip(trackId: string): TrackChannelStrip;
     removeTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;

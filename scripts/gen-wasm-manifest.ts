@@ -11,6 +11,12 @@
  * The installed `wasm-pack` is asserted against the pin here: the manifest can
  * only be honestly stamped by the pinned CLI, which bundles the pinned
  * `wasm-opt` and drives the pinned `wasm-bindgen` schema version (WB-8).
+ *
+ * `crateSourceHash` is only re-derived for packages this run has evidence were
+ * rebuilt — their artifacts moved, or the caller named them (`--all`,
+ * `--package <id>`). A package left alone keeps the hash its committed artifacts
+ * were actually built from, so a partial rebuild can no longer launder another
+ * package's pending source change into a green `pnpm wasm:verify` (#2053).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -39,6 +45,21 @@ if (installed !== pinned.wasmPack) {
     );
 }
 
-const manifest = wasmArtifacts.buildManifest();
+const rebuilt = wasmArtifacts.parseRebuiltPackageIds(process.argv.slice(2));
+const previous = wasmArtifacts.readPreviousManifest();
+const { manifest, refreshed, preserved } = wasmArtifacts.buildManifest({ previous, rebuilt });
 writeFileSync(wasmArtifacts.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 console.log(`✓ Wrote ${wasmArtifacts.manifestPath} (${Object.keys(manifest.packages).length} packages)`);
+console.log(`  crate-source provenance refreshed: ${refreshed.length > 0 ? refreshed.join(', ') : 'none'}`);
+if (preserved.length > 0) {
+    const rebuildHints = preserved
+        .map((id) => {
+            const spec = wasmArtifacts.packages.find((candidate) => candidate.id === id);
+            return spec === undefined ? id : `pnpm ${spec.buildScript}`;
+        })
+        .join(', ');
+    console.log(
+        `  crate-source provenance preserved (not rebuilt by this run): ${preserved.join(', ')} — ` +
+            `if \`pnpm wasm:verify\` reports one of them stale, rebuild it (${rebuildHints}) and re-run \`pnpm wasm:manifest\``
+    );
+}
