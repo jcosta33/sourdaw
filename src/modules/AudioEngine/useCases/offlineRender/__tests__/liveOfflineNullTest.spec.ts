@@ -95,6 +95,12 @@
  *     shape rather than a resting value.
  *   - **VCA multipliers, `honorMuted` and `contributesAudio`.** Every fixture
  *     here is built with the mixdown's settings.
+ *   - **Live mute parity.** `renderLive` calls `setMute`, but every
+ *     live/offline fixture keeps `muted: false` — the live gate never closes,
+ *     so a live mute law gating the wrong node would pass this file. The one
+ *     muted fixture runs contract-vs-reference, where both legs bake mute
+ *     through the same `createOfflineTrackStrip` code and cannot see it
+ *     either. Pinning it needs a keeper strip on the live leg first.
  *   - **The master chain and adjustment layers.** The most a fixture routes is
  *     three strips and a send into one master gain.
  *   - **Note timing, loop iterations, comping and render tails.** One audio

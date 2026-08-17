@@ -291,6 +291,39 @@ class HarnessAudioParam {
     }
 }
 
+/**
+ * The rate param the buffer source reads as a plain `.value` — its
+ * `transform` never walks the timeline, so a scheduled write here would be
+ * recorded and then silently ignored, the silent-inert-node failure this
+ * module exists to refuse. Scheduling therefore throws until the node
+ * samples the timeline, which the stretched-clip fixture (jcosta33/sourdaw#2098)
+ * will force.
+ */
+class HarnessPlaybackRateParam extends HarnessAudioParam {
+    private static refuse(): never {
+        throw new Error(
+            'nullTestRenderHarness: AudioBufferSourceNode.playbackRate is read as a plain value; ' +
+                'a scheduled write would be silently ignored — teach the node to sample the timeline first'
+        );
+    }
+
+    override setValueAtTime(): never {
+        HarnessPlaybackRateParam.refuse();
+    }
+    override linearRampToValueAtTime(): never {
+        HarnessPlaybackRateParam.refuse();
+    }
+    override exponentialRampToValueAtTime(): never {
+        HarnessPlaybackRateParam.refuse();
+    }
+    override setTargetAtTime(): never {
+        HarnessPlaybackRateParam.refuse();
+    }
+    override setValueCurveAtTime(): never {
+        HarnessPlaybackRateParam.refuse();
+    }
+}
+
 type StereoBlock = { left: Float32Array; right: Float32Array };
 
 class HarnessAudioNode {
@@ -886,7 +919,9 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
                         "{ automation: 'scheduled' }; a settled context collapses its fade envelope to silence"
                 );
             }
-            return new HarnessAudioBufferSourceNode(this.param(1), this.sampleRate);
+            const rate = new HarnessPlaybackRateParam(1, this.automation);
+            this.params.push(rate);
+            return new HarnessAudioBufferSourceNode(rate, this.sampleRate);
         }
         createWaveShaper(): HarnessWaveShaperNode {
             return new HarnessWaveShaperNode();
