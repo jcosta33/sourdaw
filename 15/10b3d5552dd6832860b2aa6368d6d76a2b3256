@@ -1,0 +1,35 @@
+crates/sourdaw-native/src/commands/speech.rs
+  s_ab5443e65c7fba::t_7cc8606c165ed1 589-615,617,619,621-625,629-676
+  s_ab5443e65c7fba::t_3caa0e51ea4a9e 47-90,94-107,677
+  s_ab5443e65c7fba::t_89a4290e2da0e8 301-305,307,325-326,340,343-344,350,355,358-360
+  s_ab5443e65c7fba::t_654201c841d5c5 678
+crates/sourdaw-native/src/commands/audio_postprocess.rs
+  s_ab5443e65c7fba::t_f0883d2def8ab9 29-39
+  s_ab5443e65c7fba::t_ca876dda5143b9 79-92,100-103,112-115,127-128
+  s_ab5443e65c7fba::t_4eeccb063123b9 97,150-169,182-183
+  s_ab5443e65c7fba::t_d91b35d33832f8 94-96,104-111
+  s_ab5443e65c7fba::t_c92af9dcf9ade7 98,330-382
+  s_ab5443e65c7fba::t_8b7ef41b36a8e2 93,99
+src/modules/AiRuntime/presentations/hooks/useVoiceRecording.ts
+  s_ab5443e65c7fba::t_77dafc354ae4eb 121,125-136
+  s_ab5443e65c7fba::t_3fbe6ca80c1478 183-185,187-188,194-205,209-211,222-224,233-236,246-248,254,262-264,275-277,284-290
+  s_ab5443e65c7fba::t_8b1501d56da4d8 465-468
+src/modules/AiRuntime/presentations/hooks/__tests__/useVoiceRecording.spec.tsx
+  s_ab5443e65c7fba::t_6b8a238deb7403 591-636
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1510b3d5552dd6832860b2aa6368d6d76a2b3256",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
