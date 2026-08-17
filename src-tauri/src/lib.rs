@@ -22,6 +22,8 @@ pub fn run() {
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
             // Privileged model-provider gateway
+            commands::provider_gateway::open_provider_gateway_session,
+            commands::provider_gateway::close_provider_gateway_session,
             commands::provider_gateway::provider_gateway_request,
             commands::provider_gateway::cancel_provider_gateway_request,
             // AI audio processing

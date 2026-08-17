@@ -7,25 +7,40 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Mutex};
+use uuid::Uuid;
+use zeroize::Zeroizing;
 
-const COMPILED_ADAPTER_ID: &str = "builtin.openai-compatible.chat-completions.v1";
+const OPENAI_ADAPTER_ID: &str = "builtin.openai-compatible.chat-completions.v1";
+const ANTHROPIC_ADAPTER_ID: &str = "builtin.anthropic.messages.v1";
+const OPENAI_ORIGIN: &str = "https://api.openai.com";
+const ANTHROPIC_ORIGIN: &str = "https://api.anthropic.com";
 const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RESPONSE_EVENT_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_EVENTS: u32 = 256;
 const MAX_API_KEY_BYTES: usize = 16 * 1024;
 const MAX_CANCELLATION_ENTRIES: usize = 256;
+const MAX_CREDENTIAL_SESSIONS: usize = 8;
 const CANCELLATION_TOMBSTONE_TTL: Duration = Duration::from_secs(30);
 
 struct ProviderGatewayCancellation {
     sender: watch::Sender<bool>,
     registered: bool,
+    session_id: Option<String>,
     created_at: Instant,
+}
+
+#[derive(Clone)]
+struct ProviderCredentialSession {
+    adapter_id: String,
+    origin: String,
+    api_key: Zeroizing<String>,
 }
 
 #[derive(Default)]
 pub struct ProviderGatewayState {
     cancellations: Arc<Mutex<HashMap<String, ProviderGatewayCancellation>>>,
+    sessions: Arc<Mutex<HashMap<String, ProviderCredentialSession>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -60,6 +75,67 @@ fn validate_request_id(request_id: &str) -> Result<(), String> {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
     {
         return Err("Provider gateway request ID is invalid".to_string());
+    }
+    Ok(())
+}
+
+fn validate_session_id(session_id: &str) -> Result<(), String> {
+    let Some(suffix) = session_id.strip_prefix("provider-session-") else {
+        return Err("Provider gateway session ID is invalid".to_string());
+    };
+    if suffix.len() != 32 || !suffix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Provider gateway session ID is invalid".to_string());
+    }
+    Ok(())
+}
+
+fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), String> {
+    match adapter_id {
+        OPENAI_ADAPTER_ID => {
+            parse_canonical_origin(origin)?;
+        }
+        ANTHROPIC_ADAPTER_ID => {
+            if origin != ANTHROPIC_ORIGIN {
+                return Err("Anthropic requires its compiled origin".to_string());
+            }
+        }
+        _ => return Err("Provider gateway adapter is not compiled into this release".to_string()),
+    }
+    Ok(())
+}
+
+fn load_credential(source: &str) -> Result<String, String> {
+    let (variable, required) = match source {
+        "anthropic" => ("SOURDAW_ANTHROPIC_API_KEY", true),
+        "openai" => ("SOURDAW_OPENAI_API_KEY", true),
+        "openai-compatible" => ("SOURDAW_OPENAI_COMPATIBLE_API_KEY", false),
+        _ => return Err("Provider gateway credential source is invalid".to_string()),
+    };
+    let credential = match std::env::var(variable) {
+        Ok(value) => value,
+        Err(std::env::VarError::NotPresent) if !required => String::new(),
+        Err(_) => return Err("Provider gateway credential is unavailable".to_string()),
+    };
+    if credential.len() > MAX_API_KEY_BYTES {
+        return Err("Provider gateway credential exceeds its size limit".to_string());
+    }
+    if required && credential.is_empty() {
+        return Err("Provider gateway credential is unavailable".to_string());
+    }
+    Ok(credential)
+}
+
+fn validate_credential_binding(adapter_id: &str, origin: &str, source: &str) -> Result<(), String> {
+    let valid = match source {
+        "anthropic" => adapter_id == ANTHROPIC_ADAPTER_ID && origin == ANTHROPIC_ORIGIN,
+        "openai" => adapter_id == OPENAI_ADAPTER_ID && origin == OPENAI_ORIGIN,
+        "openai-compatible" => adapter_id == OPENAI_ADAPTER_ID,
+        _ => false,
+    };
+    if !valid {
+        return Err(
+            "Provider gateway credential source does not match its adapter and origin".to_string(),
+        );
     }
     Ok(())
 }
@@ -143,6 +219,7 @@ fn parse_canonical_origin(origin: &str) -> Result<(reqwest::Url, String, u16), S
 async fn register_cancellation(
     state: &ProviderGatewayState,
     request_id: &str,
+    session_id: &str,
 ) -> Result<watch::Receiver<bool>, String> {
     let mut cancellations = state.cancellations.lock().await;
     prune_cancellation_tombstones(&mut cancellations);
@@ -153,6 +230,7 @@ async fn register_cancellation(
     }
     if let Some(existing) = cancellations.get_mut(request_id) {
         existing.registered = true;
+        existing.session_id = Some(session_id.to_string());
         return Ok(existing.sender.subscribe());
     }
     evict_oldest_cancellation_tombstone_if_full(&mut cancellations);
@@ -165,10 +243,26 @@ async fn register_cancellation(
         ProviderGatewayCancellation {
             sender,
             registered: true,
+            session_id: Some(session_id.to_string()),
             created_at: Instant::now(),
         },
     );
     Ok(receiver)
+}
+
+async fn admit_provider_gateway_request(
+    state: &ProviderGatewayState,
+    request_id: &str,
+    session_id: &str,
+) -> Result<(ProviderCredentialSession, watch::Receiver<bool>), String> {
+    let sessions = state.sessions.lock().await;
+    let session = sessions
+        .get(session_id)
+        .cloned()
+        .ok_or_else(|| "Provider gateway credential session is unavailable".to_string())?;
+    let cancellation = register_cancellation(state, request_id, session_id).await?;
+    drop(sessions);
+    Ok((session, cancellation))
 }
 
 fn prune_cancellation_tombstones(cancellations: &mut HashMap<String, ProviderGatewayCancellation>) {
@@ -212,6 +306,7 @@ async fn request_cancellation(
         ProviderGatewayCancellation {
             sender: watch::channel(true).0,
             registered: false,
+            session_id: None,
             created_at: Instant::now(),
         },
     );
@@ -250,48 +345,99 @@ pub async fn cancel_provider_gateway_request(
     request_cancellation(&state, &request_id).await
 }
 
-pub async fn provider_gateway_request(
-    request_id: String,
+pub async fn open_provider_gateway_session(
     adapter_id: String,
     origin: String,
-    operation: String,
+    credential_source: String,
+    state: &ProviderGatewayState,
+) -> Result<String, String> {
+    validate_adapter(&adapter_id, &origin)?;
+    validate_credential_binding(&adapter_id, &origin, &credential_source)?;
+    let api_key = load_credential(&credential_source)?;
+    open_provider_gateway_session_with_credential(adapter_id, origin, api_key, state).await
+}
+
+async fn open_provider_gateway_session_with_credential(
+    adapter_id: String,
+    origin: String,
     api_key: String,
+    state: &ProviderGatewayState,
+) -> Result<String, String> {
+    validate_adapter(&adapter_id, &origin)?;
+    if api_key.len() > MAX_API_KEY_BYTES
+        || (adapter_id == ANTHROPIC_ADAPTER_ID && api_key.is_empty())
+    {
+        return Err("Provider gateway credential is invalid".to_string());
+    }
+    let mut sessions = state.sessions.lock().await;
+    if sessions.len() >= MAX_CREDENTIAL_SESSIONS {
+        return Err("Provider gateway has too many credential sessions".to_string());
+    }
+    let session_id = format!("provider-session-{}", Uuid::new_v4().simple());
+    sessions.insert(
+        session_id.clone(),
+        ProviderCredentialSession {
+            adapter_id,
+            origin,
+            api_key: Zeroizing::new(api_key),
+        },
+    );
+    Ok(session_id)
+}
+
+pub async fn close_provider_gateway_session(
+    session_id: String,
+    state: &ProviderGatewayState,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    state.sessions.lock().await.remove(&session_id);
+    let cancellations = state.cancellations.lock().await;
+    for cancellation in cancellations.values() {
+        if cancellation.session_id.as_deref() == Some(session_id.as_str()) {
+            cancellation.sender.send_replace(true);
+        }
+    }
+    Ok(())
+}
+
+pub async fn provider_gateway_request(
+    request_id: String,
+    session_id: String,
+    operation: String,
     body: Option<String>,
     on_event: &dyn EventStream<ProviderGatewayEvent>,
     state: &ProviderGatewayState,
 ) -> Result<(), String> {
     validate_request_id(&request_id)?;
-    if adapter_id != COMPILED_ADAPTER_ID {
-        return Err("Provider gateway adapter is not compiled into this release".to_string());
-    }
-    if api_key.len() > MAX_API_KEY_BYTES {
-        return Err("Provider gateway credential exceeds its size limit".to_string());
-    }
-    if body
-        .as_ref()
-        .is_some_and(|value| value.len() > MAX_REQUEST_BODY_BYTES)
-    {
-        return Err("Provider gateway request exceeds its body limit".to_string());
-    }
-    let (origin_url, host, port) = parse_canonical_origin(&origin)?;
-    let (method, path) = match operation.as_str() {
-        "probe" => (reqwest::Method::GET, "/v1/models"),
-        "request" => (reqwest::Method::POST, "/v1/chat/completions"),
-        _ => {
-            return Err(
-                "Provider gateway operation is not supported by the compiled adapter".to_string(),
-            )
-        }
-    };
-    let request_url = origin_url
-        .join(path)
-        .map_err(|_| "Provider gateway could not compile the request URL".to_string())?;
-    if request_url.origin() != origin_url.origin() {
-        return Err("Provider gateway refused to forward a request across origins".to_string());
-    }
-
-    let mut cancellation = register_cancellation(&state, &request_id).await?;
+    validate_session_id(&session_id)?;
+    let (session, mut cancellation) =
+        admit_provider_gateway_request(state, &request_id, &session_id).await?;
     let result = async {
+        if body
+            .as_ref()
+            .is_some_and(|value| value.len() > MAX_REQUEST_BODY_BYTES)
+        {
+            return Err("Provider gateway request exceeds its body limit".to_string());
+        }
+        let (origin_url, host, port) = parse_canonical_origin(&session.origin)?;
+        let (method, path) = match (session.adapter_id.as_str(), operation.as_str()) {
+            (OPENAI_ADAPTER_ID, "probe") => (reqwest::Method::GET, "/v1/models"),
+            (OPENAI_ADAPTER_ID, "request") => (reqwest::Method::POST, "/v1/chat/completions"),
+            (ANTHROPIC_ADAPTER_ID, "request") => (reqwest::Method::POST, "/v1/messages"),
+            _ => {
+                return Err(
+                    "Provider gateway operation is not supported by the compiled adapter"
+                        .to_string(),
+                )
+            }
+        };
+        let request_url = origin_url
+            .join(path)
+            .map_err(|_| "Provider gateway could not compile the request URL".to_string())?;
+        if request_url.origin() != origin_url.origin() {
+            return Err("Provider gateway refused to forward a request across origins".to_string());
+        }
+
         let resolved_addresses = await_provider_step_or_cancellation(&mut cancellation, async {
             tokio::net::lookup_host((host.as_str(), port))
                 .await
@@ -312,8 +458,14 @@ pub async fn provider_gateway_request(
         let mut request = client
             .request(method, request_url)
             .header("Accept", "application/json, text/event-stream");
-        if !api_key.is_empty() {
-            request = request.bearer_auth(api_key);
+        if !session.api_key.is_empty() {
+            request = if session.adapter_id == ANTHROPIC_ADAPTER_ID {
+                request
+                    .header("anthropic-version", "2023-06-01")
+                    .header("x-api-key", session.api_key.as_str())
+            } else {
+                request.bearer_auth(session.api_key.as_str())
+            };
         }
         if let Some(body) = body {
             request = request
@@ -346,6 +498,16 @@ pub async fn provider_gateway_request(
             })
             .map_err(|_| "Provider gateway response channel closed".to_string())?;
         sequence += 1;
+
+        if !(200..300).contains(&status) {
+            on_event
+                .send(ProviderGatewayEvent::Done {
+                    request_id: request_id.clone(),
+                    sequence,
+                })
+                .map_err(|_| "Provider gateway response channel closed".to_string())?;
+            return Ok(());
+        }
 
         let mut response_bytes = 0usize;
         let mut stream = response.bytes_stream();
@@ -400,9 +562,12 @@ pub async fn provider_gateway_request(
 #[cfg(test)]
 mod tests {
     use super::{
-        await_provider_step_or_cancellation, parse_canonical_origin, register_cancellation,
-        request_cancellation, validate_resolved_addresses, ProviderGatewayEvent,
-        ProviderGatewayState, CANCELLATION_TOMBSTONE_TTL, MAX_CANCELLATION_ENTRIES,
+        admit_provider_gateway_request, await_provider_step_or_cancellation,
+        close_provider_gateway_session, open_provider_gateway_session_with_credential,
+        parse_canonical_origin, register_cancellation, request_cancellation,
+        validate_credential_binding, validate_resolved_addresses, ProviderGatewayEvent,
+        ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL,
+        MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, OPENAI_ADAPTER_ID, OPENAI_ORIGIN,
     };
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
@@ -479,11 +644,11 @@ mod tests {
     #[tokio::test]
     async fn provider_gateway_rejects_duplicate_live_request_ids() {
         let state = ProviderGatewayState::default();
-        let _first = register_cancellation(&state, "duplicate-live")
+        let _first = register_cancellation(&state, "duplicate-live", "session-a")
             .await
             .expect("first registration");
 
-        assert!(register_cancellation(&state, "duplicate-live")
+        assert!(register_cancellation(&state, "duplicate-live", "session-a")
             .await
             .is_err());
     }
@@ -505,7 +670,9 @@ mod tests {
             .count();
         assert_eq!(tombstone_count, MAX_CANCELLATION_ENTRIES);
 
-        assert!(register_cancellation(&state, "new-live").await.is_ok());
+        assert!(register_cancellation(&state, "new-live", "session-a")
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -522,7 +689,7 @@ mod tests {
             .expect("stored tombstone")
             .created_at = Instant::now() - (CANCELLATION_TOMBSTONE_TTL + Duration::from_secs(1));
 
-        let expired_receiver = register_cancellation(&state, "expired")
+        let expired_receiver = register_cancellation(&state, "expired", "session-a")
             .await
             .expect("expired tombstone must not cancel a reused ID");
         assert!(!*expired_receiver.borrow());
@@ -530,7 +697,7 @@ mod tests {
         request_cancellation(&state, "pre-registration")
             .await
             .expect("pre-registration cancellation");
-        let receiver = register_cancellation(&state, "pre-registration")
+        let receiver = register_cancellation(&state, "pre-registration", "session-a")
             .await
             .expect("matching registration consumes tombstone");
         assert!(*receiver.borrow());
@@ -553,5 +720,135 @@ mod tests {
             result.expect_err("stalled admission must cancel"),
             "Provider gateway request was cancelled"
         );
+    }
+
+    #[tokio::test]
+    async fn credential_sessions_are_opaque_bounded_and_revocable() {
+        let state = ProviderGatewayState::default();
+        let session_id = open_provider_gateway_session_with_credential(
+            OPENAI_ADAPTER_ID.to_string(),
+            "https://api.example.com".to_string(),
+            "secret".to_string(),
+            &state,
+        )
+        .await
+        .expect("open session");
+
+        assert!(session_id.starts_with("provider-session-"));
+        assert!(!session_id.contains("secret"));
+        assert_eq!(state.sessions.lock().await.len(), 1);
+
+        close_provider_gateway_session(session_id.clone(), &state)
+            .await
+            .expect("close session");
+        assert!(state.sessions.lock().await.is_empty());
+        assert!(
+            close_provider_gateway_session("not-a-session".to_string(), &state)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_a_credential_session_cancels_its_active_requests() {
+        let state = ProviderGatewayState::default();
+        let session_id = open_provider_gateway_session_with_credential(
+            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_ORIGIN.to_string(),
+            "secret".to_string(),
+            &state,
+        )
+        .await
+        .expect("open session");
+        let (_session, receiver) =
+            admit_provider_gateway_request(&state, "active-request", &session_id)
+                .await
+                .expect("admit request");
+
+        close_provider_gateway_session(session_id, &state)
+            .await
+            .expect("close session");
+
+        assert!(*receiver.borrow());
+    }
+
+    #[tokio::test]
+    async fn credential_sessions_enforce_compiled_adapter_policy() {
+        let state = ProviderGatewayState::default();
+        assert!(open_provider_gateway_session_with_credential(
+            ANTHROPIC_ADAPTER_ID.to_string(),
+            ANTHROPIC_ORIGIN.to_string(),
+            "secret".to_string(),
+            &state,
+        )
+        .await
+        .is_ok());
+        assert!(open_provider_gateway_session_with_credential(
+            ANTHROPIC_ADAPTER_ID.to_string(),
+            "https://proxy.example.com".to_string(),
+            "secret".to_string(),
+            &state,
+        )
+        .await
+        .is_err());
+        assert!(open_provider_gateway_session_with_credential(
+            ANTHROPIC_ADAPTER_ID.to_string(),
+            ANTHROPIC_ORIGIN.to_string(),
+            String::new(),
+            &state,
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn credential_sessions_reject_unbounded_growth() {
+        let state = ProviderGatewayState::default();
+        for _ in 0..MAX_CREDENTIAL_SESSIONS {
+            open_provider_gateway_session_with_credential(
+                OPENAI_ADAPTER_ID.to_string(),
+                OPENAI_ORIGIN.to_string(),
+                "secret".to_string(),
+                &state,
+            )
+            .await
+            .expect("session within bound");
+        }
+
+        assert!(open_provider_gateway_session_with_credential(
+            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_ORIGIN.to_string(),
+            "secret".to_string(),
+            &state,
+        )
+        .await
+        .is_err());
+    }
+
+    #[test]
+    fn first_party_credentials_are_bound_to_first_party_origins() {
+        assert!(validate_credential_binding(OPENAI_ADAPTER_ID, OPENAI_ORIGIN, "openai").is_ok());
+        assert!(
+            validate_credential_binding(ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, "anthropic")
+                .is_ok()
+        );
+        assert!(validate_credential_binding(
+            OPENAI_ADAPTER_ID,
+            "https://provider.example",
+            "openai-compatible"
+        )
+        .is_ok());
+        assert!(validate_credential_binding(
+            OPENAI_ADAPTER_ID,
+            "https://provider.example",
+            "openai"
+        )
+        .is_err());
+        assert!(validate_credential_binding(
+            ANTHROPIC_ADAPTER_ID,
+            ANTHROPIC_ORIGIN,
+            "openai-compatible"
+        )
+        .is_err());
     }
 }

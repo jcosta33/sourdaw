@@ -150,14 +150,41 @@ impl SourdawNative {
     // ── Privileged model-provider gateway ──────────────────────────────
 
     #[napi]
+    pub async fn open_provider_gateway_session(
+        &self,
+        adapter_id: String,
+        origin: String,
+        credential_source: String,
+    ) -> Result<String> {
+        reason(
+            commands::provider_gateway::open_provider_gateway_session(
+                adapter_id,
+                origin,
+                credential_source,
+                &self.singletons.provider_gateway,
+            )
+            .await,
+        )
+    }
+
+    #[napi]
+    pub async fn close_provider_gateway_session(&self, session_id: String) -> Result<()> {
+        reason(
+            commands::provider_gateway::close_provider_gateway_session(
+                session_id,
+                &self.singletons.provider_gateway,
+            )
+            .await,
+        )
+    }
+
+    #[napi]
     #[allow(clippy::too_many_arguments)]
     pub async fn provider_gateway_request(
         &self,
         request_id: String,
-        adapter_id: String,
-        origin: String,
+        session_id: String,
         operation: String,
-        api_key: String,
         body: Option<String>,
         on_event: StreamEmitter,
     ) -> Result<()> {
@@ -165,10 +192,8 @@ impl SourdawNative {
         reason(
             commands::provider_gateway::provider_gateway_request(
                 request_id,
-                adapter_id,
-                origin,
+                session_id,
                 operation,
-                api_key,
                 body,
                 &stream,
                 &self.singletons.provider_gateway,

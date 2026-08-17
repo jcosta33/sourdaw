@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { clearCloudApiKey } from '../clearCloudApiKey';
+import { clearCloudProviderConfig } from '../clearCloudProviderConfig';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 
 describe('registerCloudStreamController', () => {
-    beforeEach(() => {
-        clearCloudApiKey();
+    beforeEach(async () => {
+        await clearCloudProviderConfig();
     });
 
-    it('should return and retain the registered controller until revocation', () => {
+    it('should return and retain the registered controller until revocation', async () => {
         const controller = new AbortController();
 
         expect(registerCloudStreamController(controller)).toBe(controller);
-        clearCloudApiKey();
+        await clearCloudProviderConfig();
         expect(controller.signal.aborted).toBe(true);
     });
 });

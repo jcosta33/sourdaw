@@ -184,7 +184,7 @@ function expectExactMix(): void {
 }
 
 describe('mix prompt workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
@@ -206,12 +206,12 @@ describe('mix prompt workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('mix prompt workflow test');
@@ -255,7 +255,7 @@ describe('mix prompt workflow', () => {
         });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
         resetActionReplayAuthority();
@@ -266,7 +266,7 @@ describe('mix prompt workflow', () => {
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
-        cloudSession.clear();
+        await cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
     });
