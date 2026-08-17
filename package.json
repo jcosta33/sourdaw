@@ -43,7 +43,7 @@
         "deps:validate": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused -- node scripts/check-dependency-boundaries.mjs",
         "deps:unused": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- pnpm exec knip",
         "deps:unused:production": "node --experimental-strip-types scripts/resourceGuard.ts --profile broad -- pnpm exec knip --production",
-        "desktop:dev": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- sh -c 'install-electron && vite build && tsc -p electron/tsconfig.json && SOURDAW_DESKTOP_DEV=1 electron electron/out/main.js 2>&1 | tee electron/out/desktop-dev.log'",
+        "desktop:dev": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- sh -c 'install-electron && vite build && tsc -p electron/tsconfig.json && node --experimental-strip-types scripts/buildElectronPreload.ts && SOURDAW_DESKTOP_DEV=1 electron electron/out/main.js 2>&1 | tee electron/out/desktop-dev.log'",
         "tauri:dev": "tauri dev",
         "tauri:build": "node --experimental-strip-types scripts/resourceGuard.ts --profile extended -- tauri build",
         "cargo:fmt": "node --experimental-strip-types scripts/resourceGuard.ts --profile focused --require-target -- cargo fmt",

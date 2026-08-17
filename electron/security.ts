@@ -123,6 +123,46 @@ export type PermissionPolicy = {
 };
 
 /**
+ * Whether the shell will navigate to this URL.
+ *
+ * Anything off-app is off-app: a link in a chat panel, a redirect from a model
+ * provider, a crafted `location =`. Those belong in the user's browser, never
+ * in a window that holds the session.
+ *
+ * A separate function from `isPermissionAllowed` only because the inputs
+ * differ; the origin comparison is the same one, deliberately, so a URL that
+ * cannot navigate here also cannot hold a permission.
+ */
+export const isNavigationAllowed = (allowedOrigins: readonly string[], url: string): boolean => {
+    const origin = normalizeOrigin(url);
+    return origin !== undefined && allowedOrigins.some((allowed) => normalizeOrigin(allowed) === origin);
+};
+
+/**
+ * What to do with a window-open request.
+ *
+ * A DAW window is the session. Nothing gets to open a second one, so the action
+ * is always `deny`; the only question is whether the target is an ordinary web
+ * URL worth handing to the user's browser.
+ *
+ * The URL comes from the renderer and is not guaranteed to parse. An exception
+ * inside Electron's window-open path propagates rather than denying, so an
+ * unparseable target is treated as hostile here instead of thrown on.
+ */
+export type WindowOpenDecision = {
+    readonly action: 'deny';
+    readonly openExternally: boolean;
+};
+
+export const decideWindowOpen = (url: string): WindowOpenDecision => {
+    try {
+        return { action: 'deny', openExternally: /^https?:$/u.test(new URL(url).protocol) };
+    } catch {
+        return { action: 'deny', openExternally: false };
+    }
+};
+
+/**
  * Reduce a URL or origin string to `scheme://host`.
  *
  * Not `URL.origin`: Node does not know that Chromium treats `app:` as a

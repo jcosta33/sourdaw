@@ -1,15 +1,33 @@
 /**
- * Electron main process (REQ-001).
+ * Electron main process (REQ-001, REQ-004, REQ-006, REQ-007, REQ-012).
  *
- * The shell hosts the unmodified web build. It adds no preload and exposes no
- * bridge, so `isTauri()` is false in the renderer and the app runs its browser
- * path — that is deliberate for this scaffold: the shell is proven on its own
- * before any native surface is attached to it.
+ * The shell hosts the unmodified web build and now also carries the native
+ * surface: a preload bridge, one `ipcMain` handler per exposed command backed
+ * by the `sourdaw-native` addon, the event path, plugin scanning in its own
+ * process, and an explicit quit cascade.
+ *
+ * The renderer still runs its browser path. Nothing here defines
+ * `__TAURI_INTERNALS__`, so `isTauri()` stays false and no call site reaches
+ * `window.sourdaw` yet — the renderer seam is rewired in the next packet. That
+ * makes this addition observable through its own specs and through the dev
+ * shell, and inert for the product until the seam moves.
  */
-import { app, BrowserWindow, dialog, session, shell } from 'electron';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
 
+import { app, BrowserWindow, dialog, ipcMain, session, shell, utilityProcess } from 'electron';
+
+import { registerDialogChannels, registerPathChannels, registerScanCommand, SCAN_COMMAND } from './appIpc.js';
+import { EVENT_CHANNEL, STREAM_CHANNEL } from './channels.js';
+import { EXPOSED_COMMANDS } from './commands.js';
+import { createCommandStream, createEventForwarder } from './events.js';
+import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
-import { applyPermissionPolicy, normalizeOrigin } from './security.js';
+import { registerCommandRouter } from './router.js';
+import { createScanSupervisor, type ScanSupervisor } from './scan.js';
+import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed } from './security.js';
+import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
+import { systemTimers } from './timers.js';
 
 // Before anything that can await. Chromium builds its privileged-scheme table
 // once, at `ready`; the ESM main entry resumes after `ready` at the first await,
@@ -44,10 +62,17 @@ const allowedOrigins = (): readonly string[] => {
     return origins;
 };
 
-const isAllowedNavigation = (url: string): boolean => {
-    const origin = normalizeOrigin(url);
-    return origin !== undefined && allowedOrigins().some((allowed) => normalizeOrigin(allowed) === origin);
-};
+const isAllowedNavigation = (url: string): boolean => isNavigationAllowed(allowedOrigins(), url);
+
+/**
+ * The origin check every IPC handler runs before it does anything (REQ-004).
+ *
+ * The same allow-list navigation uses, taking `undefined` because a sender
+ * frame that has already gone has no URL — and a request from a frame that no
+ * longer exists is refused rather than trusted, since the sender cannot be
+ * shown to be the app.
+ */
+const isAllowedFrameUrl = (url: string | undefined): boolean => url !== undefined && isAllowedNavigation(url);
 
 let mainWindow: BrowserWindow | undefined;
 
@@ -63,17 +88,13 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
     // external link goes to the user's browser rather than an Electron window
     // that would inherit this origin.
     window.webContents.setWindowOpenHandler(({ url }) => {
-        // The URL comes from the renderer and is not guaranteed to parse. An
-        // exception here propagates into Electron's window-open path rather
-        // than denying, so parse defensively and treat unparseable as hostile.
-        try {
-            if (/^https?:$/.test(new URL(url).protocol)) {
-                void shell.openExternal(url);
-            }
-        } catch {
-            console.warn(`[shell] blocked unparseable window-open target: ${url}`);
+        const decision = decideWindowOpen(url);
+        if (decision.openExternally) {
+            void shell.openExternal(url);
+        } else {
+            console.warn(`[shell] blocked window-open target: ${url}`);
         }
-        return { action: 'deny' };
+        return { action: decision.action };
     });
 
     if (isDevShell) {
@@ -106,6 +127,11 @@ const createWindow = (): BrowserWindow => {
             // when the window is behind another app. Chromium's background
             // timer throttling would stall them — unacceptable while recording.
             backgroundThrottling: false,
+            // The bundle from `scripts/buildElectronPreload.ts`, not `tsc`'s
+            // `preload.js`. A sandboxed preload is CommonJS and its `require`
+            // is a polyfill that resolves nothing relative, so it has to arrive
+            // as one self-contained file.
+            preload: join(import.meta.dirname, 'preload.cjs'),
         },
     });
 
@@ -202,11 +228,162 @@ const runIsolationProbe = async (window: BrowserWindow): Promise<void> => {
     }
 };
 
+/**
+ * The repository root when running unpackaged, matching `resolveContentRoots`:
+ * this file compiles into `electron/out/`, so the root is two levels up.
+ */
+const repoRoot = (): string => resolve(dirname(import.meta.dirname), '..');
+
+const nativeAddonPath = (): string =>
+    resolveNativeAddonPath({
+        env: process.env,
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        repoRoot: repoRoot(),
+    });
+
+/**
+ * The live renderer, for the event and stream paths.
+ *
+ * Read through a function rather than captured, because the window is replaced
+ * on a renderer crash. A captured `webContents` would keep pushing events at
+ * the dead one, so a recovered session would come back with no MIDI, no
+ * dictation and no plugin latency updates — silently, since every one of those
+ * is fire and forget.
+ */
+const rendererTarget = (): BrowserWindow['webContents'] | undefined =>
+    mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined;
+
+let nativeHost: NativeHost | undefined;
+
+/**
+ * The plugin-scan supervisor, over a real `utilityProcess`.
+ *
+ * The adapter is here rather than in `scan.ts` so that the supervisor's logic —
+ * single-flight, timeout, crash-is-a-failed-scan, next-scan-works — is testable
+ * without an Electron process, and this is the only code that has to know what
+ * Electron calls those two signals.
+ */
+const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
+    createScanSupervisor({
+        timers: systemTimers,
+        fork: () => {
+            const child = utilityProcess.fork(join(import.meta.dirname, 'scanWorker.js'), [], {
+                // The addon path is passed rather than re-derived: the utility
+                // process has no `app` and cannot ask whether this is a
+                // packaged build.
+                env: { ...process.env, [NATIVE_ADDON_PATH_ENV]: addonPath },
+                stdio: 'ignore',
+            });
+            return {
+                postMessage: (message) => child.postMessage(message),
+                onMessage: (listener) => {
+                    child.on('message', listener);
+                },
+                onExit: (listener) => {
+                    child.on('exit', listener);
+                },
+                kill: () => {
+                    child.kill();
+                },
+            };
+        },
+    });
+
+/**
+ * Build the native host and wire everything that depends on it.
+ *
+ * A missing or unloadable addon is reported and survived rather than fatal. The
+ * renderer runs its browser path today, so a shell with no addon is the shell
+ * that shipped in the previous packet — refusing to start would turn a build
+ * step into an outage for a window that does not need the addon yet.
+ */
+const startNativeSurface = (): void => {
+    const events = createEventForwarder({
+        target: rendererTarget,
+        schedule: queueMicrotask,
+        channel: EVENT_CHANNEL,
+    });
+
+    const addonPath = nativeAddonPath();
+    try {
+        const addon = loadNativeAddon({ path: addonPath, load: createRequire(import.meta.url) });
+        nativeHost = new addon.SourdawNative((event, payload) => {
+            events.emit(event, payload);
+        });
+    } catch (error) {
+        console.error(
+            `[shell] the native addon at ${addonPath} did not load: ${String(error)}. ` +
+                `Set ${NATIVE_ADDON_PATH_ENV} to a built addon; native commands are unavailable until then.`
+        );
+        return;
+    }
+
+    registerCommandRouter({
+        ipcMain,
+        native: () => nativeHost,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        createStream: (streamId) => createCommandStream({ streamId, target: rendererTarget, channel: STREAM_CHANNEL }),
+        // Every exposed command except the one whose backend is another
+        // process. Its channel is registered by `registerScanCommand`, so the
+        // renderer-visible surface is identical either way.
+        commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_COMMAND),
+    });
+
+    registerScanCommand({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        supervisor: createUtilityScanSupervisor(addonPath),
+    });
+};
+
 void app.whenReady().then(() => {
     handleAppProtocol(resolveContentRoots());
     applyPermissionPolicy(session.defaultSession, { allowedOrigins: allowedOrigins() });
+
+    registerDialogChannels({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, dialogs: dialog });
+    registerPathChannels({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        // The same root-absolute path the web build uses, made absolute so it
+        // also resolves from worker and worklet contexts.
+        samplesBaseUrl: `${APP_ORIGIN}/samples`,
+        join,
+    });
+    startNativeSurface();
+
     mainWindow = createWindow();
 });
+
+/**
+ * Quit is explicit (REQ-012).
+ *
+ * Rust drop order is load bearing and Node does not reliably run destructors at
+ * process exit, so the cascade is called rather than waited for. The deadline
+ * is what keeps a third-party plugin editor from wedging quit: past it the
+ * shell exits anyway, because a musician who cannot close the app will kill it,
+ * and that is strictly worse.
+ */
+app.on(
+    'before-quit',
+    createQuitHandler(
+        async (): Promise<ShutdownOutcome> => {
+            const host = nativeHost;
+            if (host === undefined) {
+                return { status: 'completed', report: undefined };
+            }
+            return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers: systemTimers });
+        },
+        {
+            exit: (code) => app.exit(code),
+            report: (outcome) => {
+                if (outcome.status !== 'completed') {
+                    console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
+                }
+            },
+        }
+    )
+);
 
 /**
  * Recreate budget for a crashing renderer.
