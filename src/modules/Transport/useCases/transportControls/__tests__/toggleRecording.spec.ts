@@ -32,7 +32,9 @@ type StartAudioRecording = (trackId: string, callback: (buffer: TestRecordingBuf
 
 const mocks = vi.hoisted(() => {
     const timeSignatureMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
+    const tempoMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
     return {
+        tempoMapStore,
         scheduleClick: vi.fn<(...args: unknown[]) => void>(),
         resumeEngine: vi.fn<() => Promise<void>>(),
         notifyUser: vi.fn<(...args: unknown[]) => void>(),
@@ -59,6 +61,9 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 }));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: mocks.timeSignatureMapStore,
+}));
+vi.mock('../../../stores/tempoMapStore', () => ({
+    tempoMapStore: mocks.tempoMapStore,
 }));
 
 // Side-effecting collaborators of the count-in / recording paths.
@@ -101,6 +106,7 @@ describe('toggleRecording', () => {
         recordingLifecycle.setCountInTimerId(null);
         mocks.getAudioContext.mockReturnValue({ currentTime: 0, baseLatency: 0, outputLatency: 0 });
         mocks.timeSignatureMapStore.value = { changes: [] };
+        mocks.tempoMapStore.value = { changes: [] };
     });
 
     afterEach(() => {
@@ -139,6 +145,70 @@ describe('toggleRecording', () => {
 
         // 2 bars * 3 beats/bar (resolved at beat 12) = 6 clicks, not 8.
         expect(mocks.scheduleClick).toHaveBeenCalledTimes(6);
+    });
+
+    it('should count in at the tempo the tempo map gives the record point, not the base tempo', () => {
+        // Base tempo 120, but the map halves it to 60 exactly where recording
+        // begins. The count-in has to hand the musician the pulse the recording
+        // will keep, so its beats are one second apart, not half a second.
+        mocks.tempoMapStore.value = {
+            changes: [{ id: 'tempo-1', beat: 8, tempo: 60, curve: 'instant' }],
+        };
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: true,
+            countInBars: 1,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            playheadPosition: 8,
+        });
+
+        toggleRecording();
+
+        expect(mocks.scheduleClick.mock.calls.map((call) => call[0])).toEqual([0, 1, 2, 3]);
+        // The count-in lasts a full four seconds; the base tempo gave two.
+        vi.advanceTimersByTime(3999);
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+        expect(mocks.startRecording).toHaveBeenCalled();
+    });
+
+    it('should count a compound meter in its own beat unit rather than in quarter notes', () => {
+        // 6/8 at 120 BPM: six eighth notes span three quarter notes, so the bar
+        // lasts 1.5 s and each click is 0.25 s apart. Reading the numerator as a
+        // count of quarter notes stretched the count-in to 3 s — a bar and a half
+        // of the music it was counting in.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: true,
+            countInBars: 1,
+            tempo: 120,
+            timeSignatureNumerator: 6,
+            timeSignatureDenominator: 8,
+            playheadPosition: 0,
+        });
+
+        toggleRecording();
+
+        expect(mocks.scheduleClick.mock.calls.map((call) => call[0])).toEqual([0, 0.25, 0.5, 0.75, 1, 1.25]);
+        // Only the bar's first beat is accented.
+        expect(mocks.scheduleClick.mock.calls.map((call) => call[1])).toEqual([
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+        ]);
+        vi.advanceTimersByTime(1499);
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+        expect(mocks.startRecording).toHaveBeenCalled();
     });
 
     it('surfaces a failed engine resume during count-in instead of swallowing it', async () => {

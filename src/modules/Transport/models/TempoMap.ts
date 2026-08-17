@@ -10,8 +10,30 @@ export type TempoRange = {
     toBeat: number;
 };
 
-function sortTempoChanges(changes: readonly TempoChange[]): TempoChange[] {
-    return [...changes].sort((alpha, beta) => alpha.beat - beta.beat);
+/**
+ * Beat-ordered view of a change list, keyed by the list's own identity.
+ *
+ * Every query below needs the changes in beat order, and the scheduler asks for
+ * several conversions per scheduled event per tick — `beatToSamples` alone runs
+ * three times for every MIDI note. Sorting inside each call put a copy plus a
+ * comparison sort on that path for a list that does not change between calls.
+ *
+ * Identity is a sound key because the tempo map is only ever written by
+ * replacement: `tempoMapStore.set` takes a freshly built array, and the store's
+ * sanitizer either returns the same object or builds a new one. Nothing mutates
+ * a change list in place, so a list that is identical is also unchanged. The
+ * returned array is shared and must be treated as read-only.
+ */
+const sortedTempoChanges = new WeakMap<readonly TempoChange[], readonly TempoChange[]>();
+
+function sortTempoChanges(changes: readonly TempoChange[]): readonly TempoChange[] {
+    const cached = sortedTempoChanges.get(changes);
+    if (cached) {
+        return cached;
+    }
+    const sorted = [...changes].sort((alpha, beta) => alpha.beat - beta.beat);
+    sortedTempoChanges.set(changes, sorted);
+    return sorted;
 }
 
 /**
@@ -180,6 +202,27 @@ function secondsAcrossSortedTempoRange(
         }
     }
     return seconds;
+}
+
+/**
+ * Wall-clock seconds the transport spends travelling from `fromBeat` to
+ * `toBeat`, integrating every tempo change and ramp in between.
+ *
+ * This is the only correct beat → time conversion for anything the scheduler
+ * places on the timeline. A flat `secondsPerBeat = 60 / tempo` is right only
+ * while the window contains no tempo change; with one inside it, the reading is
+ * wrong by the whole area between the two tempo curves, and the affected voices
+ * drift against every path that does integrate the map. Negative spans are
+ * supported (the result is negative), so a caller may pass the playhead as
+ * `fromBeat` and a beat behind it as `toBeat`.
+ */
+export function secondsBetweenBeats(
+    changes: readonly TempoChange[],
+    fromBeat: number,
+    toBeat: number,
+    defaultTempo: number
+): number {
+    return secondsAcrossSortedTempoRange(sortTempoChanges(changes), fromBeat, toBeat, defaultTempo);
 }
 
 export function beatToSamples(
