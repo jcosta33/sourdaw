@@ -112,9 +112,7 @@ fn provider_gateway_webview_boundary() {
         "read_audio_file".to_owned(),
         "send_plugin_midi".to_owned(),
         "show_all_plugin_guis".to_owned(),
-        "start_audio_gen_sidecar".to_owned(),
         "start_native_engine".to_owned(),
-        "stop_audio_gen_sidecar".to_owned(),
         "update_plugin_transport".to_owned(),
         "write_audio_file".to_owned(),
     ]);

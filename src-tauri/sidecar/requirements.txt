@@ -1,5 +1,0 @@
-torch>=2.4.0
-torchaudio>=2.4.0
-stable-audio-tools>=0.1.0
-einops>=0.7.0
-soundfile>=0.12.0

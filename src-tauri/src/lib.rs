@@ -1,7 +1,6 @@
 mod commands;
 mod events;
 pub mod host;
-mod sidecar;
 pub mod state;
 mod windows;
 
@@ -18,10 +17,8 @@ pub fn run() {
         .manage(commands::midi::MidiState::default())
         .manage(commands::midi::PushState::default())
         .manage(commands::speech::DictationState::default())
-        .manage(commands::audio_gen::AudioGenState::default())
         .manage(commands::crumbs::CrumbsState::default())
         .manage(commands::provider_gateway::ProviderGatewayState::default())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
             // Privileged model-provider gateway
@@ -30,10 +27,6 @@ pub fn run() {
             // AI audio processing (DeepFilterNet + Demucs ONNX)
             commands::ai_audio::denoise_audio,
             commands::ai_audio::separate_stems,
-            // Audio generation sidecar (Stable Audio Open)
-            commands::audio_gen::start_audio_gen_sidecar,
-            commands::audio_gen::generate_audio_clip,
-            commands::audio_gen::stop_audio_gen_sidecar,
             commands::audio_postprocess::post_process_audio,
             commands::speech::load_whisper_model,
             commands::speech::ensure_whisper_ready,
