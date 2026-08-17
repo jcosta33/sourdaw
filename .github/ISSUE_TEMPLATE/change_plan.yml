@@ -8,7 +8,7 @@ body:
       value: |
         New user-facing behavior is a Spec. Secrets stay in `~/.agents/artifacts`.
 
-        Each wave is a child Task of a ready Spec. After create: add `priority:P*`; attach those Tasks as sub-issues.
+        Each wave stays green. Task split dispatches write-disjoint Tasks of a ready Spec. After create: add `priority:P*`; attach those Tasks as sub-issues.
 
   - type: dropdown
     id: kind
@@ -92,7 +92,7 @@ body:
     id: waves
     attributes:
       label: Transformation waves
-      description: "Smallest ordered green steps. Each wave: surfaces, verify, rollback, child Task."
+      description: "Smallest ordered green steps. Each wave: surfaces, verify, rollback. Child Tasks go in Task split."
       placeholder: |
         1. Wave — surfaces — verify — rollback — child #…
     validations:

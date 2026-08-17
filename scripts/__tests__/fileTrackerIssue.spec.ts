@@ -39,6 +39,7 @@ describe('parseIssueForm', () => {
         const loop = parseIssueForm(load('campaign.yml')).fields.find((field) => field.id === 'operating_loop');
         expect(loop?.required).toBe(true);
         expect(loop?.defaultValue).toMatch(/^1\. Read this campaign and every authority\./);
+        expect(loop?.defaultValue).toContain('and ownership');
     });
 });
 

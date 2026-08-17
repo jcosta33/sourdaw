@@ -56,7 +56,7 @@ body:
         1. Read this campaign and every authority.
         2. Reconcile repository, ledger, pull-request, worktree, worker, and verification state from live evidence.
         3. Repair ledger drift before trusting status.
-        4. Select the highest-priority dependency-ready work that fits current capacity.
+        4. Select the highest-priority dependency-ready work that fits current capacity and ownership.
         5. Execute through implementation, verification, review, and integration gates.
         6. Record durable progress on child issues, not in this body.
         7. Repeat until the completion contract passes or a named stop blocks progress.
