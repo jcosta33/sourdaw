@@ -1,0 +1,26 @@
+crates/daw-engine/src/timeline.rs
+  s_d91dcbe5f07151::t_6bc9447e3c91e6 177
+  s_d91dcbe5f07151::t_e5f5ace75e6f7e 216-219
+  s_d91dcbe5f07151::t_1512f6ebf3f5ce 546-550,556
+  s_d91dcbe5f07151::t_a0dbb863e11590 1502-1516
+  s_d91dcbe5f07151::t_7129786d35d0e7 1779-1830
+  s_d91dcbe5f07151::t_08b7423dd09f04 136-140
+  s_d91dcbe5f07151::t_f41988f4797af4 969
+  s_d91dcbe5f07151::t_abea84b1ef33a2 1378-1385,1388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1a0e2a7eae2dc28a30825a3820517c3729543a85",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
