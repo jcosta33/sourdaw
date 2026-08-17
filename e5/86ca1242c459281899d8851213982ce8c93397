@@ -1,0 +1,44 @@
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_ab5443e65c7fba::t_199b31af007334 504-546,548-575
+  s_ab5443e65c7fba::t_c4398c6b804def 547
+crates/proof-chamber/tests/plate_shimmer_render_contract.rs
+  s_ab5443e65c7fba::t_60160640ab38bf 111
+  s_ab5443e65c7fba::t_0d3cae75f96ed2 1-110,112-205
+crates/proof-chamber/tests/reverse_grain_continuity.rs
+  s_ab5443e65c7fba::t_5de1494ca7d2b9 95
+  s_ab5443e65c7fba::t_65681ef78ccbb6 1-94,96-162
+crates/proof-chamber/tests/plate_shimmer_stability.rs
+  s_ab5443e65c7fba::t_b572d5d6179f0f 92-94,102,106-120
+  s_ab5443e65c7fba::t_d446dedec5cfaa 7-14
+  s_ab5443e65c7fba::t_78dec1306cec62 57
+  s_ab5443e65c7fba::t_5b8e494e35dd6f 121,161-195
+  s_ab5443e65c7fba::t_374759a24b07a9 26-31,35-38
+  s_d91dcbe5f07151::t_cfcf061c7db22c 122
+crates/proof-chamber/tests/vintage_character.rs
+  s_ab5443e65c7fba::t_714ffb0f13f502 2-8
+  s_ab5443e65c7fba::t_6c19122ffe4585 119-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e586ca1242c459281899d8851213982ce8c93397",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
