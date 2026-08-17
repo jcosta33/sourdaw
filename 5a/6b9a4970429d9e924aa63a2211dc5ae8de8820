@@ -1,0 +1,63 @@
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_d91dcbe5f07151::t_4a3c0621233efc 340-342
+  s_d91dcbe5f07151::t_d81b5d1f92623a 387
+  s_d91dcbe5f07151::t_3251505881d701 138
+  s_d91dcbe5f07151::t_2db49db1f82445 219-221
+  s_d91dcbe5f07151::t_cd4d5ad02df612 205-208
+  s_d91dcbe5f07151::t_fc0f5a1f32392f 217-218,227
+  s_d91dcbe5f07151::t_2cf0e8279a6248 39,42-43
+  s_d91dcbe5f07151::t_5d867671c43f03 84,91-108
+  s_d91dcbe5f07151::t_d0d0c0916c77e9 109
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_d91dcbe5f07151::t_b364886eac02c3 363
+  s_d91dcbe5f07151::t_6dec7248ddc276 312
+  s_d91dcbe5f07151::t_26da53c98a80c5 97-108
+  s_d91dcbe5f07151::t_e236c588142d7e 166-170
+  s_d91dcbe5f07151::t_6cfc5e12a02a15 350
+  s_d91dcbe5f07151::t_a3e27145ddaded 288
+  s_d91dcbe5f07151::t_dc5babdb67d0ef 6-10
+  s_d91dcbe5f07151::t_161eca44b4dac6 45-62
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_d91dcbe5f07151::t_4d3d7daf8fe86d 194-195
+src/modules/AudioEngine/models/RuntimeGraphDelta.ts
+  s_d91dcbe5f07151::t_dfdea06f203f12 10-25,29
+  s_d91dcbe5f07151::t_220b7a77e6eff8 79,90
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_d91dcbe5f07151::t_a7b5c618aad867 232
+  s_d91dcbe5f07151::t_47a1162e88ca99 73-85,91-115
+  s_d91dcbe5f07151::t_312534d8add8b3 605-631
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_d91dcbe5f07151::t_27f20bbcca6971 110-117,120-121
+  s_d91dcbe5f07151::t_4fb6032960849f 171,173,175,177,179,181,183-203
+  s_d91dcbe5f07151::t_24dc754321e39f 394-397,400,406-407,415-416
+  s_d91dcbe5f07151::t_0d51f88d632b8e 487
+  s_d91dcbe5f07151::t_4a393dfb5bdeb2 492-493,495,497-499,501
+  s_d91dcbe5f07151::t_4f0ff89ac9dd48 87,90-97
+  s_d91dcbe5f07151::t_f75a2f31254268 41-73
+  s_d91dcbe5f07151::t_4c8e455ac09680 263,428,435,439,442,446-456
+  s_d91dcbe5f07151::t_c0b4d0ab4e85c0 264-284,294-296,301-306,308-309,457
+  s_d91dcbe5f07151::t_5e03cf65f0e485 307
+  s_d91dcbe5f07151::t_3072975ccf6628 379-382,386
+  s_d91dcbe5f07151::t_879a9ce52050c1 353
+  s_d91dcbe5f07151::t_302eed244032cd 98
+  s_d91dcbe5f07151::t_2a83ecebe237ec 458
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createWebAudioOfflineBackend.spec.ts
+  s_d91dcbe5f07151::t_aff05beacb1bae 268,270-354
+  s_d91dcbe5f07151::t_1ccc0a1a2583a1 269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5a6b9a4970429d9e924aa63a2211dc5ae8de8820",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
