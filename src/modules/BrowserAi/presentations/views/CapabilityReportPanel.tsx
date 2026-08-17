@@ -70,13 +70,11 @@ export function CapabilityReportPanel(): ReactElement {
     if (report.capability !== 'supported') {
         const reason =
             report.capability === 'unsupported-platform'
-                ? 'macOS/Linux Tauri — use native renderer'
+                ? 'macOS/Linux desktop webview lacks WebGPU'
                 : 'Non-Chrome browser — AI features require Chrome latest';
 
         const summary =
-            report.capability === 'unsupported-platform'
-                ? 'Native rendering is available in Settings → Audio Generation.'
-                : undefined;
+            report.capability === 'unsupported-platform' ? 'Use Sourdaw in Chrome for browser AI.' : undefined;
 
         return (
             <DawBlockedState

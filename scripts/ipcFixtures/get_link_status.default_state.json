@@ -1,0 +1,17 @@
+{
+    "args": {},
+    "case": "default_state",
+    "command": "get_link_status",
+    "outcome": "ok",
+    "payload": {
+        "beat": 0.0,
+        "enabled": false,
+        "implementation": "unsupported",
+        "message": "Ableton Link native runtime integration is not implemented in this build",
+        "num_peers": 0,
+        "phase": 0.0,
+        "quantum": 4.0,
+        "supported": false,
+        "tempo": 120.0
+    }
+}
