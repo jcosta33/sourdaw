@@ -1,0 +1,19 @@
+electron/security.ts
+  s_d91dcbe5f07151::t_a2d7137e6bdd68 8,18-43,45-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "05b2944ed6c46253ee51906aa66598001baa9b59",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
