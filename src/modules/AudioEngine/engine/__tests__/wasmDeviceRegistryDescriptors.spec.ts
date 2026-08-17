@@ -7,6 +7,7 @@ import { externalLatencyRegistry } from '../../useCases/latencyCompensation/comp
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
 import { type CrumbsNodeResult } from '../CrumbsNode';
+import { type CrustNodeResult } from '../CrustNode';
 import { type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { type FermenterNodeResult } from '../FermenterNode';
 import { type GlutenNodeResult } from '../GlutenNode';
@@ -26,6 +27,7 @@ const factoryMocks = vi.hoisted(() => ({
     createCrumbsNode: vi.fn(),
     createProofChamberNode: vi.fn(),
     createGlutenNode: vi.fn(),
+    createCrustNode: vi.fn(),
     createBacteriaNode: vi.fn(),
     createGrinderNode: vi.fn(),
     createScoringNode: vi.fn(),
@@ -60,6 +62,10 @@ vi.mock('../ProofChamberNode', async (importOriginal) => ({
 vi.mock('../GlutenNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GlutenNode')>()),
     createGlutenNode: factoryMocks.createGlutenNode,
+}));
+vi.mock('../CrustNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../CrustNode')>()),
+    createCrustNode: factoryMocks.createCrustNode,
 }));
 vi.mock('../BacteriaNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../BacteriaNode')>()),
@@ -783,6 +789,59 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(result.destroy).toHaveBeenCalledTimes(1);
             expect(externalLatencyRegistry.has('glu-1')).toBe(false);
             expect(deleteGlutenMeters).toHaveBeenCalledWith('glu-1');
+        });
+    });
+
+    describe('crust', () => {
+        function makeCrustResult(): CrustNodeResult {
+            return {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+        }
+
+        it('retires a post-ready fault, clears latency and meters, and does not request default recovery', async () => {
+            const result = makeCrustResult();
+            factoryMocks.createCrustNode.mockResolvedValue(result);
+            const replaceRuntimeFailure = vi.fn(() => true);
+            const requestRuntimeRecovery = vi.fn();
+            const deleteCrustMeters = vi.fn();
+            setAudioDeviceRuntimeSink({ deleteCrustMeters });
+            const deps = createDeps({
+                deviceType: 'crust',
+                deviceId: 'crust-failed',
+                trackId: 'track-1',
+                parameterIds: ['ceiling'],
+                onRuntimeFailure: replaceRuntimeFailure,
+                onRuntimeRecovery: requestRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('crust').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const factoryCall = factoryMocks.createCrustNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[4];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected CrustNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('wasm trap');
+            reportRuntimeFailure('duplicate failure');
+
+            expect(loaded.controller?.ready).toBe(false);
+            expect(replaceRuntimeFailure).toHaveBeenCalledOnce();
+            expect(replaceRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(deleteCrustMeters).toHaveBeenCalledWith('crust-failed');
+            expect(externalLatencyRegistry.get('crust-failed')).toBeUndefined();
+            expect(requestRuntimeRecovery).not.toHaveBeenCalled();
         });
     });
 
