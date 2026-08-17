@@ -1,0 +1,62 @@
+.agents/specs/audio-generation-browser/research.md
+  s_0a3429e31e555d::t_07feff13d7a253 153-154
+src/modules/AiGeneration/useCases/actions/__tests__/addTask.spec.ts
+  s_0a3429e31e555d::t_ddbfc9f2b259ff 19,25,45,51,75,78,99,113
+.agents/specs/audio-generation/spec.md
+  s_0a3429e31e555d::t_07feff13d7a253 17,48-50,299
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0a3429e31e555d::t_ec5773ae2d2984 195-212
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_d91dcbe5f07151::t_9432934f6d20af 621,738-739,749-750,1497,2230,3567,3572,3667,3674,3702,3710,3716,3724-3725,3765,3776,3784,3790,3797,3802,3810-3811,4013,4029,4046,4053-4054,4057,4088,4101-4104,4114-4115,4160,4170,4178,4183,4185,4233,4238,4256,4261,4285,4290,4554-4560,4562,4564-4566,4571,4575-4577,4581-4584,4586,4591,4593-4594,4596-4597,4600-4612,4616-4617,4620,4622-4624,4628-4629,4631
+src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx
+  s_0a3429e31e555d::t_715210448231b6 8
+src-tauri/gen/schemas/acl-manifests.json
+  s_d91dcbe5f07151::t_a96c9ed29ace9e 1
+scripts/checkReleaseInventory.ts
+  s_0a3429e31e555d::t_ec5773ae2d2984 5,521,523
+  s_0a3429e31e555d::t_5bbe9698fd6135 65
+src/modules/AiGeneration/useCases/actions/__tests__/updateTask.spec.ts
+  s_0a3429e31e555d::t_ddbfc9f2b259ff 10,26,37,44,56
+src/modules/AiGeneration/stores/aiStore.ts
+  s_0a3429e31e555d::t_715210448231b6 8
+src/modules/AiGeneration/useCases/actions/__tests__/cancelProcessingTask.spec.ts
+  s_0a3429e31e555d::t_ddbfc9f2b259ff 10-11,23,28,33,40,44,49,54
+.agents/specs/orchestra-ai-pipelines/spec.md
+  s_0a3429e31e555d::t_07feff13d7a253 75
+src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx
+  s_0a3429e31e555d::t_59531adc21e039 3,43,72,97-99,109
+src/modules/AiGeneration/useCases/actions/__tests__/removeTask.spec.ts
+  s_0a3429e31e555d::t_ddbfc9f2b259ff 10,30
+crates/sourdaw-native/src/addon/mod.rs
+  s_0a3429e31e555d::t_996f045e6d5592 129-130
+src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx
+  s_0a3429e31e555d::t_fb3aad1a089eb4 86,123,145
+src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx
+  s_0a3429e31e555d::t_ff6e36bf09572d 11,22
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_5bbe9698fd6135 177,297,726,730,734,742,802,807
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "94050fa9d870adc817701a01a06df0b3e57ab84b",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
