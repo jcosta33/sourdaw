@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke as bridgeInvoke } from '#/utils/tauriBridge';
 
 import { isTauriAvailable } from './helpers';
 
@@ -6,6 +6,6 @@ export async function tauriInvoke<TResult>(cmd: string, args?: Record<string, un
     if (!isTauriAvailable()) {
         throw new Error('Tauri not available');
     }
-    const result = await invoke(cmd, args);
+    const result = await bridgeInvoke(cmd, args);
     return result as TResult;
 }

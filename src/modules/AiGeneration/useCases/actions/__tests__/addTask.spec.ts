@@ -16,13 +16,13 @@ describe('addTask', () => {
     });
 
     it('adds a new task with generated id and timestamp', () => {
-        const id = addTask({ type: 'audio-generation', status: 'processing' });
+        const id = addTask({ type: 'denoise', status: 'processing' });
 
         expect(id).toMatch(/^ai-task-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         expect(aiStore.value!.tasks).toHaveLength(1);
         expect(aiStore.value!.tasks[0]).toEqual({
             id,
-            type: 'audio-generation',
+            type: 'denoise',
             status: 'processing',
             timestamp: 1000,
         });
@@ -42,13 +42,13 @@ describe('addTask', () => {
         });
         vi.spyOn(aiStore, 'value', 'get').mockReturnValueOnce({ tasks: [], isPanelOpen: false });
 
-        const id = addTask({ type: 'audio-generation', status: 'processing' });
+        const id = addTask({ type: 'denoise', status: 'processing' });
 
         expect(aiStore.getSnapshot()).toEqual({
             tasks: [
                 {
                     id,
-                    type: 'audio-generation',
+                    type: 'denoise',
                     status: 'processing',
                     timestamp: 1000,
                 },
@@ -72,10 +72,10 @@ describe('addTask', () => {
         }));
         aiStore.set({ tasks: existingTasks, isPanelOpen: false });
 
-        addTask({ type: 'audio-generation', status: 'processing' });
+        addTask({ type: 'denoise', status: 'processing' });
 
         expect(aiStore.value!.tasks).toHaveLength(50);
-        expect(aiStore.value!.tasks[0]!.type).toBe('audio-generation');
+        expect(aiStore.value!.tasks[0]!.type).toBe('denoise');
         expect(aiStore.value!.tasks[49]!.id).toBe('task-48');
     });
 
@@ -96,7 +96,7 @@ describe('addTask', () => {
         });
 
         for (let index = 0; index < 50; index++) {
-            addTask({ type: 'audio-generation', status: 'success' });
+            addTask({ type: 'denoise', status: 'success' });
         }
 
         const tasks = aiStore.value!.tasks;
@@ -110,7 +110,7 @@ describe('addTask', () => {
     it('keeps newest-first order and matches a plain slice when nothing is processing', () => {
         const existingTasks = Array.from({ length: 55 }, (_, index) => ({
             id: `task-${index}`,
-            type: 'audio-generation' as const,
+            type: 'denoise' as const,
             status: 'success' as const,
             timestamp: 0,
         }));

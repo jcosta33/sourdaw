@@ -4,7 +4,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -55,10 +54,6 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioAnalysis/useCases', () => ({
-    isAudioGenerationAvailable: vi.fn(() => false),
 }));
 
 const importMidiFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -112,7 +107,6 @@ describe('TimelineEmptyMenu', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(isAudioGenerationAvailable).mockReturnValue(false);
     });
 
     it('should render without crashing', () => {
@@ -176,33 +170,6 @@ describe('TimelineEmptyMenu', () => {
     it('should show AI Generate section', () => {
         renderWithTooltip(<TimelineEmptyMenu x={100} y={100} trackId={null} beat={8} onClose={mockOnClose} />);
         expect(screen.getByText('AI Generate')).toBeInTheDocument();
-    });
-
-    it('should show desktop-only notice for audio generation when unavailable', () => {
-        renderWithTooltip(<TimelineEmptyMenu x={100} y={100} trackId={null} beat={8} onClose={mockOnClose} />);
-        expect(screen.getByText('Audio generation requires desktop app')).toBeInTheDocument();
-        expect(screen.queryByText('Generate Audio Here…')).not.toBeInTheDocument();
-        expect(screen.getByText('Generate Drum Pattern')).toBeInTheDocument();
-        expect(screen.getByText('Generate Chord Progression')).toBeInTheDocument();
-    });
-
-    it('should call generate audio action when audio generation is available', () => {
-        vi.mocked(isAudioGenerationAvailable).mockReturnValue(true);
-        const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('  shimmering pad  ');
-
-        renderWithTooltip(<TimelineEmptyMenu x={100} y={100} trackId="track1" beat={8} onClose={mockOnClose} />);
-
-        fireEvent.click(screen.getByText('Generate Audio Here…'));
-
-        expect(promptSpy).toHaveBeenCalledWith('Describe the audio to generate:');
-        expect(executeAppAction).toHaveBeenCalledWith({
-            type: 'generateAudio',
-            payload: { prompt: 'shimmering pad', durationSeconds: 8, trackId: 'track1' },
-        });
-        expect(notifyUser).toHaveBeenCalledWith('Generating audio… this may take a moment');
-        expect(mockOnClose).toHaveBeenCalled();
-
-        promptSpy.mockRestore();
     });
 
     it('should have correct positioning', () => {
@@ -471,28 +438,6 @@ describe('TimelineEmptyMenu', () => {
 
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Failed to import'), 'error');
         expect(addClip).not.toHaveBeenCalled();
-    });
-
-    it('does not dispatch a generate-audio action when the prompt is cancelled', () => {
-        vi.mocked(isAudioGenerationAvailable).mockReturnValue(true);
-        const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue(null);
-
-        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={8} onClose={mockOnClose} />);
-        fireEvent.click(screen.getByText('Generate Audio Here…'));
-
-        expect(executeAppAction).not.toHaveBeenCalled();
-        promptSpy.mockRestore();
-    });
-
-    it('does not dispatch a generate-audio action when the prompt is blank', () => {
-        vi.mocked(isAudioGenerationAvailable).mockReturnValue(true);
-        const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('   ');
-
-        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={8} onClose={mockOnClose} />);
-        fireEvent.click(screen.getByText('Generate Audio Here…'));
-
-        expect(executeAppAction).not.toHaveBeenCalled();
-        promptSpy.mockRestore();
     });
 
     it('falls back to 120 BPM when the transport tempo is unavailable', async () => {

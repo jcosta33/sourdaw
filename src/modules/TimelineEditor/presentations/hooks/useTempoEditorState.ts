@@ -247,6 +247,13 @@ export const useTempoEditorState = (): TempoEditorState => {
     const commitTimeSig = (): void => {
         const num = parseInt(numValue, 10);
         const den = parseInt(denValue, 10);
+        // Mirrors `handleAddTempoChange`'s guard below: a bad `parseInt` (empty
+        // field, stray text) must not reach `executeAppAction` as NaN — the old
+        // `numerator < 1 || numerator > 32` range check silently passes NaN
+        // through since both comparisons are false against it.
+        if (isNaN(num) || isNaN(den) || num < 1 || num > 32) {
+            return;
+        }
         void executeAppAction({ type: 'setTimeSignature', payload: { numerator: num, denominator: den } });
         setEditingTimeSig(false);
     };

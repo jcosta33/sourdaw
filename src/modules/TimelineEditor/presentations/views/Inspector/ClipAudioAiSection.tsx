@@ -6,7 +6,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import {
     polyphonicAudioToMidi,
@@ -185,19 +185,19 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                         size="xs"
                         className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
                         onClick={() => {
-                            notifyUser('Separating stems… this may take a moment');
-                            void handleStemSeparationPreview(clip.id);
-                        }}
-                    >
-                        Separate Stems
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
-                        onClick={() => {
-                            audioToMidi({ clipId: clip.id, trackId });
-                            notifyAiChange('Audio converted to MIDI', ['New MIDI clip created from detected onsets']);
+                            // audioToMidi silently no-ops (missing clip/buffer, no onsets
+                            // detected, or MIDI track resolution failed) instead of throwing —
+                            // its boolean return is the only signal a conversion actually
+                            // happened, so the success toast must be gated on it or a no-op
+                            // click reports success it never delivered.
+                            const converted = audioToMidi({ clipId: clip.id, trackId });
+                            if (converted) {
+                                notifyAiChange('Audio converted to MIDI', [
+                                    'New MIDI clip created from detected onsets',
+                                ]);
+                            } else {
+                                notifyUser('Audio to MIDI conversion failed', 'error');
+                            }
                         }}
                     >
                         MIDI (Basic)

@@ -63,6 +63,3 @@ export { getTempoMapState } from './transportQueries/getTempoMapState';
 export { resolveTempoFieldState } from './transportQueries/resolveTempoFieldState';
 export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBeat';
 export { updateTransportState } from './transportQueries/updateTransportState';
-
-export { enableLink } from './link/enableLink';
-export { disableLink } from './link/disableLink';

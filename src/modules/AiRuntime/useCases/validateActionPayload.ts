@@ -890,7 +890,6 @@ const validators = {
     generateChordProgression: 'unchecked',
     generateBassline: 'unchecked',
     generateFill: 'unchecked',
-    generateAudio: 'unchecked',
     generateAllTransitions: 'unchecked',
     variationMidi: 'unchecked',
     completeMidi: 'unchecked',
@@ -911,7 +910,6 @@ const validators = {
     compareToReference: 'unchecked',
     getMentorTips: 'unchecked',
     searchSamples: 'unchecked',
-    stemSeparate: 'unchecked',
     autoOrganizeProject: 'unchecked',
 
     // Scratch pad

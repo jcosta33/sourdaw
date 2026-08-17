@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addClip, addTrack, getTrackStoreState, removeTrack } from '#/modules/Arrangement/useCases';
-import { separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
+import { isStemSeparationAvailable, separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { audioBufferToWav } from '#/modules/AudioRendering/useCases';
 import { createHandler } from '#/utils/createHandler';
@@ -19,6 +19,12 @@ function isValidStem(value: string): value is StemSelection {
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({
     execute: async (alpha) => {
+        if (!isStemSeparationAvailable()) {
+            const message = 'Stem separation is unavailable until a compatible model is admitted.';
+            notifyUser(message, 'error');
+            throw new Error(message);
+        }
+
         const requested = alpha.payload.stems ?? ['all'];
 
         // Validate at the boundary: reject any stem name outside the allow-list

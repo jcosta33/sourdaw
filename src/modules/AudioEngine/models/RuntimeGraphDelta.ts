@@ -7,18 +7,29 @@
  * discriminated commands; worklet controls keep their existing owner until they
  * have an equivalent contract.
  */
+/**
+ * What a graph write is correlated against, so a stale one can be refused.
+ *
+ * Named on its own because more than one protocol carries it, and each of them
+ * versions independently. A protocol that referenced the *containing* type's
+ * `correlation` would have its own wire shape changed by a reshape here without
+ * its own `schemaVersion` moving; referencing this type makes that a deliberate
+ * decision at every call site instead.
+ */
+export type RuntimeGraphCorrelation = Readonly<{
+    /** Expected live-engine revision immediately before this command applies. */
+    appRevision: number;
+    /** CRDT project revision that produced this graph view. */
+    projectRevision: string;
+}>;
+
 export type RuntimeGraphDelta =
     RuntimeGraphOutputDelta | RuntimeGraphDeviceChainDelta | RuntimeGraphTrackStripInitializationDelta;
 
 export type RuntimeGraphOutputDelta = Readonly<{
     schemaVersion: 1;
     command: 'set-track-output';
-    correlation: Readonly<{
-        /** Expected live-engine revision immediately before this command applies. */
-        appRevision: number;
-        /** CRDT project revision that produced this graph view. */
-        projectRevision: string;
-    }>;
+    correlation: RuntimeGraphCorrelation;
     /** Source first, then the non-terminal destination when there is one. */
     nodes: readonly RuntimeGraphDeltaNode[];
     edges: readonly [RuntimeGraphOutputEdge];
@@ -123,7 +134,7 @@ export type RuntimeGraphDeltaResult =
     | Readonly<{
           acceptance: 'accepted';
           application: 'applied';
-          correlation: RuntimeGraphDelta['correlation'];
+          correlation: RuntimeGraphCorrelation;
           runtimeRevision: number;
       }>
     | Readonly<{
@@ -134,7 +145,7 @@ export type RuntimeGraphDeltaResult =
            * A failed compensation never claims the project graph was restored.
            */
           compensation: 'not-attempted' | 'failed';
-          correlation: RuntimeGraphDelta['correlation'];
+          correlation: RuntimeGraphCorrelation;
           reason: string;
           runtimeRevision: number;
       }>;

@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     updateClip: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     cacheAudioBuffer: vi.fn(),
-    clearClipPitchContour: vi.fn(),
+    clearClipPitchAnalysis: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
 }));
 
@@ -25,7 +25,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Knead/useCases', () => ({
-    clearClipPitchContour: mocks.clearClipPitchContour,
+    clearClipPitchAnalysis: mocks.clearClipPitchAnalysis,
 }));
 
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
@@ -139,7 +139,7 @@ describe('reverseClip', () => {
 
         reverseClip('c1');
 
-        expect(mocks.clearClipPitchContour).toHaveBeenCalledWith('c1');
+        expect(mocks.clearClipPitchAnalysis).toHaveBeenCalledWith('c1');
     });
 
     it('keeps the pitch contour when the clip cannot be reversed', () => {
@@ -149,7 +149,7 @@ describe('reverseClip', () => {
 
         reverseClip('c1');
 
-        expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
+        expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
     });
 
     it('does not publish cache or contour effects when the eligible update is not committed', () => {
@@ -172,7 +172,7 @@ describe('reverseClip', () => {
 
         expect(didWrite).toBe(false);
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
+        expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
     });
 
     it('bails if clip is not found or not audio', () => {
@@ -197,7 +197,7 @@ describe('reverseClip', () => {
         expect(mockCtx.createBuffer).not.toHaveBeenCalled();
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.updateClip).not.toHaveBeenCalled();
-        expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
+        expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
     });
 
     it('rejects when the track store has not loaded', () => {

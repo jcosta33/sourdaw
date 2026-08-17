@@ -74,7 +74,7 @@ export type DiffSingerVoicebank = {
     };
 };
 
-/** Shared NSF-HiFiGAN vocoder — downloaded once, reused across all voicebanks */
+/** Shared singing vocoder — downloaded once, reused across all voicebanks. */
 export type VocoderModel = BrowserModel & {
     family: 'diffsinger/vocoder';
 };

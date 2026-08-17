@@ -1,13 +1,11 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "open_provider_gateway_session",
+            "close_provider_gateway_session",
             "provider_gateway_request",
             "cancel_provider_gateway_request",
             "denoise_audio",
-            "separate_stems",
-            "start_audio_gen_sidecar",
-            "generate_audio_clip",
-            "stop_audio_gen_sidecar",
             "post_process_audio",
             "load_whisper_model",
             "ensure_whisper_ready",

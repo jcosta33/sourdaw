@@ -9,6 +9,7 @@ members = [
     "crates/daw-plugin-host",
     "crates/proof-chamber",
     "crates/scoring",
+    "crates/sourdaw-native",
     "src-tauri"
 ]
 resolver = "2"

@@ -1,4 +1,4 @@
-import { writeFileBytes } from '#/utils/tauriBridge';
+import { desktopPathJoin, writeFileBytes } from '#/utils/tauriBridge';
 
 type WriteNativeAudioStemFileInput = {
     bytes: Uint8Array;
@@ -13,7 +13,6 @@ export async function writeNativeAudioStemFile({
     directoryPath,
     fileName,
 }: WriteNativeAudioStemFileInput): WriteNativeAudioStemFileOutput {
-    const { join } = await import('@tauri-apps/api/path');
-    const filePath = await join(directoryPath, fileName);
+    const filePath = await desktopPathJoin(directoryPath, fileName);
     await writeFileBytes({ path: filePath, bytes });
 }

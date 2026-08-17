@@ -18,6 +18,24 @@ describe('setTimeSignature', () => {
         expect(updateTransportState).not.toHaveBeenCalled();
     });
 
+    it('should reject a NaN numerator instead of writing it through', () => {
+        // `numerator < 1 || numerator > 32` is false for NaN — both comparisons
+        // are false — so a bad upstream `parseInt` used to reach the store.
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        setTimeSignature(NaN, 4);
+
+        expect(updateTransportState).not.toHaveBeenCalled();
+    });
+
+    it('should reject a non-integer numerator', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        setTimeSignature(4.5, 4);
+
+        expect(updateTransportState).not.toHaveBeenCalled();
+    });
+
     it('should update numerator and denominator when valid', () => {
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
 

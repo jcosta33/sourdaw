@@ -6,7 +6,6 @@ import { type ReactElement } from 'react';
 import { Eye, EyeOff, X, Maximize2 } from 'lucide-react';
 
 type AutomationLaneControlsProps = {
-    laneId: string;
     isVisible: boolean;
     selectedCount: number;
     onZoomToUsedRange: () => void;

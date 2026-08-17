@@ -35,6 +35,29 @@ describe('Transposer', () => {
         };
     });
 
+    it('reads an inverted clamp window as the same window', () => {
+        // No UI reaches this pair; a stored project, a CRDT merge, or an
+        // AI-authored action can. Applied in the stored order the outer
+        // `Math.max(clampMin, …)` wins outright, pinning every note to
+        // clamp_min (72) and ignoring the clamp_max ceiling (48) entirely.
+        trans.setParam('clamp_min', 72);
+        trans.setParam('clamp_max', 48);
+
+        const output: MidiEvent[] = [];
+        trans.processMidi(
+            [
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 24, velocity: 100 } },
+                { timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+                { timeSamples: 2, kind: { type: 'noteOn', channel: 0, note: 100, velocity: 100 } },
+            ],
+            output,
+            transport
+        );
+
+        // The window is [48, 72] whichever end each param was stored in.
+        expect(output.filter(isNoteOn).map((event) => event.kind.note)).toEqual([48, 60, 72]);
+    });
+
     it('shifts notes by semitones and octaves', () => {
         trans.setParam('semitones', 2);
         trans.setParam('octaves', 1); // Total = +14 semitones

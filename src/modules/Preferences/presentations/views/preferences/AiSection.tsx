@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
-import { Sparkles, Eye, EyeOff } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Button } from '#/components/ui/button';
@@ -10,11 +10,12 @@ import { useStore } from '#/infra/store/useStore';
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     configureCloudProvider,
-    removeCloudApi,
+    removeCloudProvider,
     resolveBackend,
     setAiBackendPreference,
 } from '#/modules/AiRuntime/useCases';
 import { CapabilityReportPanel, ModelManagerPanel } from '#/modules/BrowserAi/presentations/views';
+import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 
 import { SectionTitle, FieldGroup } from '../preferencesShared';
@@ -82,30 +83,22 @@ function getProviderLabel(provider: HostedProviderSelection): string {
     return 'OpenAI-compatible';
 }
 
-function getApiKeyPlaceholder(provider: HostedProviderSelection): string {
-    if (provider === 'anthropic') {
-        return 'sk-ant-...';
-    }
-    if (provider === 'openai') {
-        return 'sk-...';
-    }
-    return 'Provider API key (optional)';
-}
-
 export const AiSection = (): ReactElement => {
     const backendPreference = useStore(aiBackendPreferenceStore, 'auto');
     const configuredProvider = useStore(hostedLlmProviderStatusStore, null);
     const llmStatus = useStore(llmStatusStore, { state: 'idle' });
-    const [apiKey, setApiKey] = useState('');
-    const [showKey, setShowKey] = useState(false);
     const [provider, setProvider] = useState<HostedProviderSelection>(configuredProvider?.provider ?? 'anthropic');
     const [model, setModel] = useState(
         configuredProvider?.model ?? DEFAULT_MODELS[configuredProvider?.provider ?? 'anthropic']
     );
     const [baseUrl, setBaseUrl] = useState(configuredProvider?.baseUrl ?? '');
     const [configurationError, setConfigurationError] = useState<string | null>(null);
+    const [configurationPending, setConfigurationPending] = useState(false);
+    const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
     const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
-    const selectedBackend = getSelectedBackend({ backend, preference: backendPreference });
+    const selectedBackend = hostedProvidersAvailable
+        ? getSelectedBackend({ backend, preference: backendPreference })
+        : 'webllm';
     const cloudAvailable = configuredProvider !== null;
     const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
     const customFirstPartyModel =
@@ -131,6 +124,32 @@ export const AiSection = (): ReactElement => {
         }
         return 'None';
     };
+    const saveHostedProvider = async (): Promise<void> => {
+        setConfigurationPending(true);
+        try {
+            await configureCloudProvider({
+                provider,
+                model,
+                baseUrl: provider === 'openai-compatible' ? baseUrl : undefined,
+            });
+            setConfigurationError(null);
+        } catch (error) {
+            setConfigurationError(error instanceof Error ? error.message : 'Hosted provider configuration failed');
+        } finally {
+            setConfigurationPending(false);
+        }
+    };
+    const removeHostedProvider = async (): Promise<void> => {
+        setConfigurationPending(true);
+        try {
+            await removeCloudProvider();
+            setConfigurationError(null);
+        } catch (error) {
+            setConfigurationError(error instanceof Error ? error.message : 'Hosted provider removal failed');
+        } finally {
+            setConfigurationPending(false);
+        }
+    };
 
     return (
         <>
@@ -149,7 +168,7 @@ export const AiSection = (): ReactElement => {
                 >
                     <option value="auto">Automatic</option>
                     <option value="webllm">Browser WebLLM</option>
-                    <option value="cloud">Hosted provider</option>
+                    {hostedProvidersAvailable ? <option value="cloud">Hosted provider</option> : null}
                 </select>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
                     Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts
@@ -173,185 +192,155 @@ export const AiSection = (): ReactElement => {
                 </div>
             </FieldGroup>
             <Separator />
-            <FieldGroup label="Hosted AI provider">
-                <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
-                    Bring your own Anthropic, OpenAI, or OpenAI-compatible endpoint. Credentials stay in memory only and
-                    are sent directly to the selected provider; browser CORS policy still applies.
-                </p>
-                <div className="grid grid-cols-2 gap-1.5 mb-1.5">
-                    <select
-                        value={provider}
-                        onChange={(event) => {
-                            const nextProvider = event.target.value;
-                            if (!isHostedProviderSelection(nextProvider)) {
-                                return;
-                            }
-                            setProvider(nextProvider);
-                            setModel(DEFAULT_MODELS[nextProvider]);
-                            setBaseUrl('');
-                            setApiKey('');
-                            setShowKey(false);
-                            setConfigurationError(null);
-                        }}
-                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                        aria-label="Hosted AI provider"
-                    >
-                        <option value="anthropic">Anthropic</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="openai-compatible">OpenAI-compatible</option>
-                    </select>
-                    {provider === 'openai-compatible' ? (
-                        <div>
-                            <Input
-                                value={model}
-                                onChange={(event) => {
-                                    setModel(event.target.value);
-                                    setConfigurationError(null);
-                                }}
-                                placeholder="Model identifier from your provider"
-                                className="h-8 text-xs font-mono"
-                                aria-label="Hosted AI model"
-                            />
-                            <p className="mt-1 text-[9px] leading-tight text-muted-foreground">
-                                Custom endpoints define their own model IDs.
-                            </p>
-                        </div>
-                    ) : (
+            {hostedProvidersAvailable ? (
+                <FieldGroup label="Hosted AI provider">
+                    <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
+                        Set the provider credential in the matching SOURDAW_*_API_KEY environment variable before
+                        launch. The renderer receives only an opaque session ID.
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5 mb-1.5">
                         <select
-                            value={customFirstPartyModel ? CUSTOM_MODEL_VALUE : model}
+                            value={provider}
                             onChange={(event) => {
-                                setModel(event.target.value === CUSTOM_MODEL_VALUE ? '' : event.target.value);
+                                const nextProvider = event.target.value;
+                                if (!isHostedProviderSelection(nextProvider)) {
+                                    return;
+                                }
+                                setProvider(nextProvider);
+                                setModel(DEFAULT_MODELS[nextProvider]);
+                                setBaseUrl('');
                                 setConfigurationError(null);
                             }}
                             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                            aria-label="Hosted AI model"
+                            aria-label="Hosted AI provider"
                         >
-                            {HOSTED_MODEL_OPTIONS[provider].map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                            <option value={CUSTOM_MODEL_VALUE}>Custom model ID…</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="openai-compatible">OpenAI-compatible</option>
                         </select>
-                    )}
-                </div>
-                {customFirstPartyModel ? (
-                    <Input
-                        value={model}
-                        onChange={(event) => {
-                            setModel(event.target.value);
-                            setConfigurationError(null);
-                        }}
-                        placeholder="Model ID from your provider account"
-                        className="h-8 text-xs font-mono mb-1.5"
-                        aria-label={`Custom ${getProviderLabel(provider)} model ID`}
-                    />
-                ) : null}
-                {provider === 'openai-compatible' ? (
-                    <Input
-                        value={baseUrl}
-                        onChange={(event) => {
-                            setBaseUrl(event.target.value);
-                            setApiKey('');
-                            setShowKey(false);
-                            setConfigurationError(null);
-                        }}
-                        placeholder="https://provider.example/v1"
-                        className="h-8 text-xs font-mono mb-1.5"
-                        aria-label="OpenAI-compatible base URL"
-                    />
-                ) : null}
-                <div className="flex gap-1.5">
-                    <div className="relative flex-1">
-                        <Input
-                            type={showKey ? 'text' : 'password'}
-                            value={apiKey}
-                            onChange={(event) => {
-                                setApiKey(event.target.value);
-                                setConfigurationError(null);
-                            }}
-                            placeholder={getApiKeyPlaceholder(provider)}
-                            className="h-8 text-xs font-mono pr-8"
-                            aria-label={`${getProviderLabel(provider)} API key`}
-                        />
-                        <button
-                            type="button"
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            onClick={() => setShowKey((prev) => !prev)}
-                            aria-label={showKey ? 'Hide API key' : 'Show API key'}
-                        >
-                            {showKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                        </button>
+                        {provider === 'openai-compatible' ? (
+                            <div>
+                                <Input
+                                    value={model}
+                                    onChange={(event) => {
+                                        setModel(event.target.value);
+                                        setConfigurationError(null);
+                                    }}
+                                    placeholder="Model identifier from your provider"
+                                    className="h-8 text-xs font-mono"
+                                    aria-label="Hosted AI model"
+                                />
+                                <p className="mt-1 text-[9px] leading-tight text-muted-foreground">
+                                    Custom endpoints define their own model IDs.
+                                </p>
+                            </div>
+                        ) : (
+                            <select
+                                value={customFirstPartyModel ? CUSTOM_MODEL_VALUE : model}
+                                onChange={(event) => {
+                                    setModel(event.target.value === CUSTOM_MODEL_VALUE ? '' : event.target.value);
+                                    setConfigurationError(null);
+                                }}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                aria-label="Hosted AI model"
+                            >
+                                {HOSTED_MODEL_OPTIONS[provider].map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                                <option value={CUSTOM_MODEL_VALUE}>Custom model ID…</option>
+                            </select>
+                        )}
                     </div>
-                    <Button
-                        size="sm"
-                        className="h-8 text-xs"
-                        disabled={
-                            (provider !== 'openai-compatible' && !apiKey.trim()) ||
-                            !model.trim() ||
-                            (provider === 'openai-compatible' && !baseUrl.trim())
-                        }
-                        onClick={() => {
-                            try {
-                                configureCloudProvider({
-                                    provider,
-                                    apiKey,
-                                    model,
-                                    baseUrl: provider === 'openai-compatible' ? baseUrl : undefined,
-                                });
-                                setApiKey('');
-                                setConfigurationError(null);
-                            } catch (error) {
-                                setConfigurationError(
-                                    error instanceof Error ? error.message : 'Hosted provider configuration failed'
-                                );
-                            }
-                        }}
-                    >
-                        Save
-                    </Button>
-                </div>
-                {configurationError ? (
-                    <p className="mt-1.5 text-[10px] text-destructive" role="alert">
-                        {configurationError}
-                    </p>
-                ) : null}
-
-                <div className="flex items-center justify-between mt-2">
-                    <span className="text-[10px] text-muted-foreground">
-                        Status:{' '}
-                        <span
-                            className={
-                                cloudAvailable
-                                    ? 'text-[var(--color-state-success)]'
-                                    : 'text-[var(--color-state-warning)]'
-                            }
-                        >
-                            {configuredProvider
-                                ? `Configured: ${getProviderLabel(configuredProvider.provider)} / ${configuredProvider.model}`
-                                : 'Not configured'}
-                        </span>
-                    </span>
-                    {cloudAvailable ? (
-                        <Button
-                            variant="ghost"
-                            size="xs"
-                            className="text-destructive text-[10px]"
-                            onClick={() => {
-                                removeCloudApi();
+                    {customFirstPartyModel ? (
+                        <Input
+                            value={model}
+                            onChange={(event) => {
+                                setModel(event.target.value);
                                 setConfigurationError(null);
                             }}
-                        >
-                            Remove Key
-                        </Button>
+                            placeholder="Model ID from your provider account"
+                            className="h-8 text-xs font-mono mb-1.5"
+                            aria-label={`Custom ${getProviderLabel(provider)} model ID`}
+                        />
                     ) : null}
-                </div>
-            </FieldGroup>
+                    {provider === 'openai-compatible' ? (
+                        <Input
+                            value={baseUrl}
+                            onChange={(event) => {
+                                setBaseUrl(event.target.value);
+                                setConfigurationError(null);
+                            }}
+                            placeholder="https://provider.example/v1"
+                            className="h-8 text-xs font-mono mb-1.5"
+                            aria-label="OpenAI-compatible base URL"
+                        />
+                    ) : null}
+                    <div className="flex justify-end">
+                        <Button
+                            size="sm"
+                            className="h-8 text-xs"
+                            disabled={
+                                configurationPending ||
+                                !model.trim() ||
+                                (provider === 'openai-compatible' && !baseUrl.trim())
+                            }
+                            onClick={() => {
+                                void saveHostedProvider();
+                            }}
+                        >
+                            Save
+                        </Button>
+                    </div>
+                    {configurationError ? (
+                        <p className="mt-1.5 text-[10px] text-destructive" role="alert">
+                            {configurationError}
+                        </p>
+                    ) : null}
+
+                    <div className="flex items-center justify-between mt-2">
+                        <span className="text-[10px] text-muted-foreground">
+                            Status:{' '}
+                            <span
+                                className={
+                                    cloudAvailable
+                                        ? 'text-[var(--color-state-success)]'
+                                        : 'text-[var(--color-state-warning)]'
+                                }
+                            >
+                                {configuredProvider
+                                    ? `Configured: ${getProviderLabel(configuredProvider.provider)} / ${configuredProvider.model}`
+                                    : 'Not configured'}
+                            </span>
+                        </span>
+                        {cloudAvailable ? (
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                className="text-destructive text-[10px]"
+                                disabled={configurationPending}
+                                onClick={() => {
+                                    void removeHostedProvider();
+                                }}
+                            >
+                                Remove
+                            </Button>
+                        ) : null}
+                    </div>
+                </FieldGroup>
+            ) : (
+                <FieldGroup label="Hosted AI provider">
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        Hosted providers require the desktop app. Web builds never accept provider credentials.
+                    </p>
+                </FieldGroup>
+            )}
             <Separator />
             <FieldGroup label="Browser AI">
                 <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
-                    Instrument synthesis (DDSP), vocal previews (Kokoro TTS), and singing voice synthesis (DiffSinger) —
-                    all running in the browser via WebGPU on Chrome. No server required.
+                    Instrument synthesis (DDSP) and vocal previews (Kokoro TTS) run in the browser via WebGPU on Chrome.
+                    No server required.
                 </p>
                 <div className="border border-border/30 rounded overflow-hidden">
                     <CapabilityReportPanel />

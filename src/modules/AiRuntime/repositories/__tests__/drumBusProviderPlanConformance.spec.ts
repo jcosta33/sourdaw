@@ -52,9 +52,9 @@ describe('drum bus provider plan conformance', () => {
         );
         const hostedRuntime: OpenAiCompatibleCloudRuntime = {
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         };
 
         const webLlm = await generateWebLlmToolCalls('system', 'request', tools);

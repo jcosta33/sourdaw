@@ -287,7 +287,7 @@ function getConfirmationId(): string {
 }
 
 describe('bass-processing section copy workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         vi.spyOn(audioEngine, 'applyAdjustmentLayerTick').mockImplementation(() => undefined);
@@ -305,12 +305,12 @@ describe('bass-processing section copy workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('bass-processing copy workflow test');
@@ -420,7 +420,7 @@ describe('bass-processing section copy workflow', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -433,7 +433,7 @@ describe('bass-processing section copy workflow', () => {
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
-        cloudSession.clear();
+        await cloudSession.clear();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         removeCrdtDoc('root');

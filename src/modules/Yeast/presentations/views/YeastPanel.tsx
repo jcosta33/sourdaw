@@ -4,7 +4,7 @@
  * Level 1 (Play):   Arp on/off, mode, rate, latch
  * Level 2 (Shape):  Gate, swing, octave, velocity, scale/chord
  * Level 3 (Build):  Rack view with add/remove/reorder modules
- * Level 4 (Route):  Keyboard split zones, CC routing
+ * Level 4 (Route):  Live note activity, CC routing
  * Level 5 (Lab):    Euclidean, Markov, mutation, groove template
  */
 import { type ComponentProps, type ReactElement, useState } from 'react';
@@ -26,13 +26,19 @@ import {
     getSupportedGrooveSubdivisions,
 } from '#/modules/MIDI/useCases';
 
-import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
-import { PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
+import {
+    type ArpStep,
+    clampArpPatternLength,
+    createDefaultPattern,
+    decodeArpPatternParams,
+} from '../../models/ArpPattern';
+import { PROCESSOR_PARAM_DEFAULTS, PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
 import { yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
 import { YEAST_GROOVE_OWNER_ID } from '../../useCases/getYeastGrooveAssignment';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
+import { setYeastArpPattern } from '../../useCases/setYeastArpPattern';
 import { setYeastGrooveTemplate } from '../../useCases/setYeastGrooveTemplate';
 import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
 import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';
@@ -51,7 +57,7 @@ const LEVEL_OPTIONS = [
     { level: 1 as const, label: 'Play', detail: 'Sprout' },
     { level: 2 as const, label: 'Shape', detail: 'Drift' },
     { level: 3 as const, label: 'Build', detail: 'Rack' },
-    { level: 4 as const, label: 'Route', detail: 'Split' },
+    { level: 4 as const, label: 'Route', detail: 'Notes' },
     { level: 5 as const, label: 'Lab', detail: 'Mutate' },
 ];
 
@@ -124,8 +130,12 @@ function getLevelMeta(level: YeastState['uiLevel']): { title: string; descriptio
 
     if (level === 4) {
         return {
-            title: 'Split map',
-            description: 'Zones and routes belong in the same frame as the note motion they control.',
+            // No split-point parameter exists in the worker (checked NoteFilter and
+            // every other processor): the keyboard here shows live note activity,
+            // not a keyboard split, so the deck is named for what it actually
+            // renders rather than a control that was never wired to anything.
+            title: 'Note activity',
+            description: 'Sounding notes render in the same frame as the routing chain that shapes them.',
         };
     }
 
@@ -135,7 +145,7 @@ function getLevelMeta(level: YeastState['uiLevel']): { title: string; descriptio
     };
 }
 
-function renderDeck(state: YeastState): ReactElement {
+function renderDeck(state: YeastState, soundingNotes: readonly number[]): ReactElement {
     if (state.uiLevel === 1) {
         return <Level1Play state={state} />;
     }
@@ -149,10 +159,10 @@ function renderDeck(state: YeastState): ReactElement {
     }
 
     if (state.uiLevel === 4) {
-        return <Level4Route state={state} />;
+        return <Level4Route state={state} soundingNotes={soundingNotes} />;
     }
 
-    return <Level5Lab state={state} />;
+    return <Level5Lab state={state} soundingNotes={soundingNotes} />;
 }
 
 type PreviewBinding = Readonly<{
@@ -269,9 +279,63 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
     );
 };
 
+/**
+ * Arp pattern editor bound to the stored pattern.
+ *
+ * Every deck that exposes a pattern surface renders THIS, so the Build and Lab
+ * decks edit one pattern instead of two private drafts that neither persisted
+ * nor reached the Worker. Standard arp convention is a single pattern with a
+ * length control — which the editor already carries — not one pattern per view.
+ */
+const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
+    const arp = state.processors.find((processor) => processor.type === 'arpeggiator');
+    if (!arp) {
+        return (
+            <div className="text-[8px] leading-3 text-muted-foreground/60">
+                Add an Arpeggiator to program a step pattern.
+            </div>
+        );
+    }
+
+    const steps = decodeArpPatternParams(arp.params);
+    const commitPattern = (next: readonly ArpStep[]): void => {
+        void setYeastArpPattern(arp.id, next).catch(() => undefined);
+    };
+
+    return (
+        // The deck binds the FIRST arpeggiator. Naming it is the only way a rack
+        // with two of them can tell whose persisted pattern is on screen.
+        <div role="group" aria-label={`Arp pattern — ${arp.name}`}>
+            <div className="text-[7px] text-muted-foreground/60">{arp.name}</div>
+            <StepPatternEditor
+                steps={steps}
+                currentStep={0}
+                onStepChange={(index, step) => {
+                    const next = [...steps];
+                    next[index] = step;
+                    commitPattern(next);
+                }}
+                onLengthChange={(length) => {
+                    const nextLength = clampArpPatternLength(length);
+                    commitPattern(
+                        nextLength > steps.length
+                            ? [...steps, ...createDefaultPattern(nextLength - steps.length)]
+                            : steps.slice(0, nextLength)
+                    );
+                }}
+            />
+        </div>
+    );
+};
+
 export const YeastPanel = (): ReactElement => {
     const state = useStore(yeastStore, defaultYeastState);
     const trackState = useStore(trackStore, defaultTrackState);
+    // Fed by YeastPreviewSurface's own preview subscription — the panel has no
+    // other channel for "what is the rack playing right now", so the Route and
+    // Lab decks' KeyboardSplit reuses that existing stream instead of opening a
+    // second one.
+    const [soundingNotes, setSoundingNotes] = useState<readonly number[]>([]);
 
     const { uiLevel } = state;
     const levelMeta = getLevelMeta(uiLevel);
@@ -365,9 +429,12 @@ export const YeastPanel = (): ReactElement => {
                         processors={state.processors}
                         runtimeStatus={state.runtimeStatus}
                         runtimeError={state.runtimeError}
+                        onSoundingNotesChange={setSoundingNotes}
                     />
 
-                    <div className="yeast-window min-h-0 flex-1 overflow-auto p-3">{renderDeck(state)}</div>
+                    <div className="yeast-window min-h-0 flex-1 overflow-auto p-3">
+                        {renderDeck(state, soundingNotes)}
+                    </div>
                 </Stack>
 
                 <aside className="min-h-0 overflow-y-auto pr-1">
@@ -468,7 +535,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Rate</span>
                 <YeastKnob
                     aria-label="Rate"
-                    value={arp?.params?.rate_denom ?? 8}
+                    value={arp?.params?.rate_denom ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom!}
                     onChange={(value) => {
                         if (arp) {
                             handleSetYeastProcessorParam(arp.id, 'rate_denom', Math.round(value));
@@ -477,10 +544,12 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     min={1}
                     max={32}
                     step={1}
-                    defaultValue={8}
+                    defaultValue={PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom}
                     size="lg"
                 />
-                <span className="text-[8px] text-muted-foreground font-mono">1/{arp?.params?.rate_denom ?? 8}</span>
+                <span className="text-[8px] text-muted-foreground font-mono">
+                    1/{arp?.params?.rate_denom ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom!}
+                </span>
             </Stack>
             {/* Latch */}
             <YeastChip
@@ -509,7 +578,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
         <Row align="start" justify="around" className="flex-1 px-4 py-3">
             <KnobCol
                 label="Gate"
-                value={arp?.params?.gate ?? 0.8}
+                value={arp?.params?.gate ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.gate!}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -518,11 +587,17 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 }}
                 min={0.01}
                 max={2}
-                unit="%"
+                step={0.01}
+                // Gate is a note-length multiplier (Arpeggiator.ts multiplies the
+                // step length by this value), not a percentage — 0.8 does not mean
+                // "80%", it means "0.8x the step". "%" here previously read every
+                // sub-1 value as 0% or 1%.
+                unit="×"
+                defaultValue={PROCESSOR_PARAM_DEFAULTS.arpeggiator.gate!}
             />
             <KnobCol
                 label="Swing"
-                value={arp?.params?.swing ?? 0}
+                value={arp?.params?.swing ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.swing!}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -531,11 +606,13 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 }}
                 min={0}
                 max={1}
+                step={0.01}
                 unit="%"
+                defaultValue={PROCESSOR_PARAM_DEFAULTS.arpeggiator.swing!}
             />
             <KnobCol
                 label="Octaves"
-                value={arp?.params?.octave_range ?? 1}
+                value={arp?.params?.octave_range ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.octave_range!}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -544,11 +621,13 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 }}
                 min={1}
                 max={4}
+                step={1}
                 unit=""
+                defaultValue={PROCESSOR_PARAM_DEFAULTS.arpeggiator.octave_range!}
             />
             <KnobCol
                 label="Velocity"
-                value={arp?.params?.fixed_velocity ?? 100}
+                value={arp?.params?.fixed_velocity ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.fixed_velocity!}
                 onChange={(value) => {
                     if (!arp) {
                         return;
@@ -557,7 +636,9 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 }}
                 min={1}
                 max={127}
+                step={1}
                 unit=""
+                defaultValue={PROCESSOR_PARAM_DEFAULTS.arpeggiator.fixed_velocity!}
             />
         </Row>
     );
@@ -567,22 +648,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
 
 const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [arpPattern, setArpPattern] = useState<ArpStep[]>(() => createDefaultPattern(8));
     const hasArpPattern = state.processors.some((param) => param.type === 'arpeggiator');
-
-    const handleStepChange = (index: number, step: ArpStep) => {
-        const next = [...arpPattern];
-        next[index] = step;
-        setArpPattern(next);
-    };
-
-    const handleLengthChange = (length: number) => {
-        if (length > arpPattern.length) {
-            setArpPattern([...arpPattern, ...createDefaultPattern(length - arpPattern.length)]);
-        } else {
-            setArpPattern(arpPattern.slice(0, length));
-        }
-    };
 
     return (
         <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
@@ -647,12 +713,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                     <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">
                         Arp Pattern
                     </span>
-                    <StepPatternEditor
-                        steps={arpPattern}
-                        currentStep={0}
-                        onStepChange={handleStepChange}
-                        onLengthChange={handleLengthChange}
-                    />
+                    <ArpPatternDeck state={state} />
                 </Stack>
             ) : null}
             {/* Add processor */}
@@ -669,7 +730,13 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
 
 // ── Level 4: Route ───────────────────────────────────────────────────────────
 
-const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
+const Level4Route = ({
+    state,
+    soundingNotes,
+}: {
+    state: YeastState;
+    soundingNotes: readonly number[];
+}): ReactElement => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     return (
@@ -677,7 +744,7 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
             {/* Keyboard visualization */}
             <Stack gap={1}>
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">Keyboard</span>
-                <KeyboardSplit width={500} height={32} />
+                <KeyboardSplit width={500} height={32} soundingNotes={soundingNotes} />
             </Stack>
             {/* Rack chain with params */}
             <Stack gap={1}>
@@ -745,9 +812,8 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
 
 // ── Level 5: Lab ─────────────────────────────────────────────────────────────
 
-const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
+const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes: readonly number[] }): ReactElement => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [arpPattern, setArpPattern] = useState<ArpStep[]>(() => createDefaultPattern(16));
 
     return (
         <Row grow className="min-h-0 overflow-hidden">
@@ -841,25 +907,10 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
             {/* Right: Pattern editor + keyboard */}
             <Stack gap={2} className="w-[280px] shrink-0 border-l border-border/20 p-2 overflow-y-auto">
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest">Pattern Editor</span>
-                <StepPatternEditor
-                    steps={arpPattern}
-                    currentStep={0}
-                    onStepChange={(idx, step) => {
-                        const next = [...arpPattern];
-                        next[idx] = step;
-                        setArpPattern(next);
-                    }}
-                    onLengthChange={(len) => {
-                        if (len > arpPattern.length) {
-                            setArpPattern([...arpPattern, ...createDefaultPattern(len - arpPattern.length)]);
-                        } else {
-                            setArpPattern(arpPattern.slice(0, len));
-                        }
-                    }}
-                />
+                <ArpPatternDeck state={state} />
 
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest mt-2">Keyboard</span>
-                <KeyboardSplit width={260} height={28} />
+                <KeyboardSplit width={260} height={28} soundingNotes={soundingNotes} />
             </Stack>
         </Row>
     );
@@ -867,20 +918,36 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 
+/** Render the value readout: percent units scale to 0-100, everything else keeps its raw magnitude. */
+function formatKnobReadout(value: number, unit: string, step: number): string {
+    if (unit === '%') {
+        return `${Math.round(value * 100)}%`;
+    }
+    return `${value.toFixed(step >= 1 ? 0 : 1)}${unit}`;
+}
+
 const KnobCol = ({
     label,
     value,
     onChange,
     min,
     max,
+    step,
     unit,
+    defaultValue,
 }: {
     label: string;
     value: number;
     onChange: (v: number) => void;
     min: number;
     max: number;
+    /** Quantization step. Integer-domain params (octave count, velocity) must pass 1 — the
+     *  worker rounds them (Arpeggiator.ts setParam), so a fractional commit here would store
+     *  a value the audio thread silently disagrees with. */
+    step: number;
     unit: string;
+    /** Compiled default for this param — alt-click/double-click resets here, not to the live value. */
+    defaultValue: number;
 }): ReactElement => (
     <Stack align="center" gap={1}>
         <span className="text-[8px] text-muted-foreground uppercase tracking-widest">{label}</span>
@@ -890,13 +957,10 @@ const KnobCol = ({
             onChange={onChange}
             min={min}
             max={max}
-            step={0.01}
-            defaultValue={value}
+            step={step}
+            defaultValue={defaultValue}
             size="md"
         />
-        <span className="text-[7px] text-muted-foreground font-mono">
-            {value.toFixed(unit === '%' ? 0 : 1)}
-            {unit}
-        </span>
+        <span className="text-[7px] text-muted-foreground font-mono">{formatKnobReadout(value, unit, step)}</span>
     </Stack>
 );

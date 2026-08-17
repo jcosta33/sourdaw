@@ -1,7 +1,5 @@
-import { save } from '@tauri-apps/plugin-dialog';
-
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isTauri } from '#/utils/tauriBridge';
 
 import { type ProjectData } from '../../models/ProjectData';
 import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
@@ -22,7 +20,7 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
     const filename = `${safeName}.sourdaw`;
 
     if (isTauri()) {
-        const filePath = await save({
+        const filePath = await desktopSaveDialog({
             defaultPath: filename,
             filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
         });

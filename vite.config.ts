@@ -53,7 +53,18 @@ export default defineConfig({
          * root `vitest run` collected every live lane's copy of the whole suite.
          * `pnpm test:collection-scope` now fails the gate if this stops matching.
          */
-        exclude: [...configDefaults.exclude, 'dist/**', '.agents/worktrees/**', 'tests/e2e/**', '**/*.e2e.spec.*'],
+        exclude: [
+            ...configDefaults.exclude,
+            'dist/**',
+            // `pnpm desktop:dev` compiles `electron/` — specs and all — into this
+            // gitignored directory. The sources are collected; the build output of
+            // the same sources must not be, or the run doubles up on any machine
+            // that has started the shell.
+            'electron/out/**',
+            '.agents/worktrees/**',
+            'tests/e2e/**',
+            '**/*.e2e.spec.*',
+        ],
         coverage: {
             all: true,
             provider: 'v8',

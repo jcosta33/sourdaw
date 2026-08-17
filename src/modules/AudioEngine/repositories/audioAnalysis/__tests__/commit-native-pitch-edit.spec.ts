@@ -1,17 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
-
-import { isTauri } from '#/utils/tauriBridge';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { commitNativePitchEdit } from '../commit-native-pitch-edit';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
-}));
-
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => true),
+    tauriInvoke: vi.fn(),
 }));
 
 describe('commitNativePitchEdit', () => {
@@ -31,7 +26,7 @@ describe('commitNativePitchEdit', () => {
             contour,
         });
 
-        expect(invoke).toHaveBeenCalledWith('commit_pitch_edit', {
+        expect(tauriInvoke).toHaveBeenCalledWith('commit_pitch_edit', {
             request: {
                 inputAudioPath: 'test.wav',
                 outputAudioPath: 'test_pitch.wav',
@@ -53,6 +48,6 @@ describe('commitNativePitchEdit', () => {
         });
 
         expect(result).toBe(false);
-        expect(invoke).not.toHaveBeenCalled();
+        expect(tauriInvoke).not.toHaveBeenCalled();
     });
 });

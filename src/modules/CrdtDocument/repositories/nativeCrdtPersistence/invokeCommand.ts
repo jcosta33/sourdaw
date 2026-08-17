@@ -5,6 +5,6 @@ export async function invokeCommand(command: string, args?: Record<string, unkno
         return null;
     }
 
-    const { invoke } = await import('@tauri-apps/api/core');
-    return invoke(command, args);
+    const { tauriInvoke } = await import('#/utils/tauriBridge');
+    return tauriInvoke(command, args);
 }

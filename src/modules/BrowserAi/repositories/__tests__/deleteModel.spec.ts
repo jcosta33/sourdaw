@@ -31,9 +31,9 @@ describe('deleteModel', () => {
             getDirectory: vi.fn(() => Promise.resolve(root)) as unknown as StorageManager['getDirectory'],
         });
 
-        await deleteModel({ family: 'diffsinger/vocoder', modelId: 'nsf-hifigan-44k' });
+        await deleteModel({ family: 'diffsinger/vocoder', modelId: 'test-vocoder' });
 
-        expect(removeEntry).toHaveBeenCalledWith('nsf-hifigan-44k');
+        expect(removeEntry).toHaveBeenCalledWith('test-vocoder');
     });
 
     it('rethrows a storage failure so callers do not clear registry state', async () => {
