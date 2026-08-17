@@ -1,0 +1,156 @@
+# Desktop packaging for the Electron shell (REQ-009, REQ-010).
+#
+# The renderer is the unmodified web build in `dist/`; the shell is the compiled
+# `electron/out/`. Everything below exists to make the packaged layout the one
+# `electron/main.ts` and `electron/protocol.ts` already assume: `dist/` inside
+# the asar, the sample library and the native addon beside it in `Resources/`.
+#
+# No signing identity, no notarization, no updater. `identity: '-'` is ad-hoc
+# signing, which is not distribution — it is what makes the app runnable on
+# Apple silicon after the fuses are flipped, and what anchors the asar
+# integrity hash in `Info.plist`.
+
+appId: com.sourdaw.daw
+productName: Sourdaw
+
+directories:
+    output: release/desktop
+    buildResources: build
+
+# Nothing in `dependencies` is a Node runtime dependency — every one of them is
+# a renderer library that Vite has already bundled into `dist/`. There is no
+# native module to rebuild against Electron's headers, so a rebuild is pure cost
+# and one more way for a machine without a toolchain to fail a build it does not
+# need.
+npmRebuild: false
+
+# No publish provider. The shell has no updater, and a configured provider is
+# how an accidental `--publish always` reaches the internet.
+publish: null
+
+asar: true
+# A `.node` addon cannot be `dlopen`ed from inside an asar, and neither can a
+# dylib it links against. Anything that has to be a real file on disk is listed
+# here rather than discovered, so adding one to the app is a deliberate act.
+asarUnpack:
+    - '**/*.node'
+    - '**/*.dylib'
+    - '**/*.so'
+    - '**/*.so.*'
+    - '**/*.dll'
+
+# Default-deny. Only the two build outputs and the manifest go into the asar.
+files:
+    - package.json
+    - electron/out/**/*
+    # `desktop:build` compiles through `electron/tsconfig.build.json`, which
+    # leaves the specs out. This pattern covers the other way they get there:
+    # `electron/out/` is not cleaned between builds, so a `pnpm desktop:dev`
+    # run leaves compiled specs behind for the next package step to pick up.
+    - '!electron/out/**/__tests__/**'
+    - dist/**/*
+    # `public/samples/**` is copied into `dist/` by Vite's public-directory
+    # step and shipped as an unpacked resource below. It must not also be in
+    # the asar: the sample loader hands the audio backend real filesystem
+    # paths, and a second copy would add ~1 GB to the archive for nothing.
+    # `desktop:build` deletes `dist/samples` before packaging, exactly as the
+    # Tauri `beforeBuildCommand` did; this pattern is the invariant that holds
+    # even when the build runs over a stale `dist/`.
+    - '!dist/samples/**/*'
+    # Production dependencies are renderer libraries, already bundled. Without
+    # this, electron-builder copies every one of them into the asar.
+    - '!node_modules/**/*'
+
+extraResources:
+    # `resolveContentRoots()` in `electron/protocol.ts` reads packaged samples
+    # from `<Resources>/samples`.
+    - from: public/samples
+      to: samples
+    # `resolveNativeAddonPath()` in `electron/native.ts` reads the packaged
+    # addon from `<Resources>/sourdaw-native.node`. A directory source with a
+    # filter, rather than a file source, so a build without a compiled addon
+    # produces a shell that reports the missing addon at startup instead of
+    # failing the package step.
+    - from: crates/sourdaw-native
+      to: .
+      filter:
+          - '*.node'
+          - '*.dylib'
+
+# Flips and then reads back the Electron fuses. Runs before signing, so the
+# signature electron-builder applies covers the modified binary.
+afterPack: ./scripts/flipElectronFuses.ts
+
+mac:
+    icon: src-tauri/icons/icon.icns
+    category: public.app-category.music
+    minimumSystemVersion: '11.0'
+    hardenedRuntime: true
+    entitlements: build/entitlements.mac.plist
+    entitlementsInherit: build/entitlements.mac.plist
+    # Ad-hoc. See the header note.
+    identity: '-'
+    target:
+        - target: dmg
+          arch:
+              - arm64
+        - target: zip
+          arch:
+              - arm64
+    # Carried over from `src-tauri/Info.plist`. electron-builder's `extendInfo`
+    # takes an inline object only — there is no path form — so the entries live
+    # here rather than in a second plist under `build/`.
+    extendInfo:
+        NSMicrophoneUsageDescription: Sourdaw needs microphone access for audio recording and voice commands.
+        NSHighResolutionCapable: true
+        NSSupportsAutomaticGraphicsSwitching: true
+        CFBundleDocumentTypes:
+            - CFBundleTypeName: Sourdaw Project
+              CFBundleTypeRole: Editor
+              LSHandlerRank: Owner
+              CFBundleTypeExtensions:
+                  - sourdaw
+              LSItemContentTypes:
+                  - com.sourdaw.project
+            - CFBundleTypeName: MIDI File
+              CFBundleTypeRole: Editor
+              LSHandlerRank: Alternate
+              CFBundleTypeExtensions:
+                  - mid
+                  - midi
+            - CFBundleTypeName: Audio File
+              CFBundleTypeRole: Editor
+              LSHandlerRank: Alternate
+              CFBundleTypeExtensions:
+                  - wav
+                  - mp3
+                  - flac
+                  - ogg
+                  - aiff
+        UTExportedTypeDeclarations:
+            - UTTypeIdentifier: com.sourdaw.project
+              UTTypeDescription: Sourdaw Project File
+              UTTypeConformsTo:
+                  - public.json
+              UTTypeTagSpecification:
+                  public.filename-extension:
+                      - sourdaw
+
+dmg:
+    writeUpdateInfo: false
+
+# Configuration only. The `sourdaw-native` addon has no Windows build on this
+# machine; see `docs/architecture/10-desktop-packaging.md` for the cargo-xwin
+# cross-compile contract that has to be satisfied before this target produces a
+# working installer.
+win:
+    icon: src-tauri/icons/icon.ico
+    target:
+        - target: nsis
+          arch:
+              - x64
+
+nsis:
+    oneClick: false
+    perMachine: false
+    allowToChangeInstallationDirectory: true

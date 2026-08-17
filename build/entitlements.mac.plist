@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Hardened-runtime entitlements for the packaged Electron shell.
+
+    Relocated from `src-tauri/Entitlements.plist`. Two deliberate differences,
+    both forced by which runtime executes the code:
+
+    - `com.apple.security.cs.allow-jit` replaces
+      `com.apple.security.cs.allow-unsigned-executable-memory`. V8 and the
+      WebAssembly tiering compiler need writable-then-executable pages; under
+      the hardened runtime Chromium asks for them through the MAP_JIT path,
+      which `allow-jit` is the entitlement for. `allow-unsigned-executable-
+      memory` grants the same capability without MAP_JIT's restrictions, so it
+      is the strictly wider of the two and buys nothing an Electron renderer
+      uses.
+
+    - Everything else is carried over unchanged. `disable-library-validation`
+      is load bearing twice over: third-party CLAP plugins are unsigned dylibs
+      loaded into this process, and the app is ad-hoc signed, which library
+      validation would otherwise reject at launch.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Hardened Runtime -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Audio input (microphone) for recording and voice commands -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Network access for collaboration, AI inference, plugin downloads -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- File access for native project files and audio import -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- USB/MIDI device access -->
+    <key>com.apple.security.device.usb</key>
+    <true/>
+
+    <!-- App Sandbox — DISABLED for third-party plugin loading (CLAP/VST3/AU) -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+</dict>
+</plist>
