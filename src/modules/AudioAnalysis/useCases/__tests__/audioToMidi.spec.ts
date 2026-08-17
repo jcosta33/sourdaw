@@ -160,6 +160,66 @@ describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => 
     });
 });
 
+describe('audioToMidi return value discriminates real conversion from no-op/failure', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getTransportState.mockReturnValue({ tempo: 120 });
+        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
+    });
+
+    function loudBuffer(): AudioBuffer {
+        const length = SAMPLE_RATE;
+        return makeBuffer(length, (index) => (index % 5000 < 100 ? 1.0 : 0));
+    }
+
+    function silentBuffer(): AudioBuffer {
+        const length = SAMPLE_RATE;
+        return makeBuffer(length, () => 0);
+    }
+
+    it('returns true when notes were actually written', () => {
+        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
+        const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
+        mocks.getAllTracks.mockReturnValue([midiTrack]);
+        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
+
+        const result = audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
+
+        expect(result).toBe(true);
+        expect(mocks.addMidiNote).toHaveBeenCalled();
+    });
+
+    it('returns false without writing a clip when no onsets are detected', () => {
+        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
+        const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
+        mocks.getAllTracks.mockReturnValue([midiTrack]);
+        mocks.getCachedAudioBuffer.mockReturnValue(silentBuffer());
+
+        const result = audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
+
+        expect(result).toBe(false);
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+    });
+
+    it('returns false instead of throwing when addMidiNote fails (e.g. MIDI store not initialized)', () => {
+        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
+        const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
+        mocks.getAllTracks.mockReturnValue([midiTrack]);
+        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
+        mocks.addMidiNote.mockImplementation(() => {
+            throw new Error('MIDI store not initialized');
+        });
+
+        let result: boolean | undefined;
+        expect(() => {
+            result = audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
+        }).not.toThrow();
+
+        expect(result).toBe(false);
+    });
+});
+
 // Fix 3 (pitch-window bounds clamp in detectPitchForOnsets) has no red/green regression
 // test here, deliberately. The clamp slides the pitch window left so estimatePitch always
 // receives a full `2 * FRAME_SIZE` window instead of a silently shrunk one near the clip
