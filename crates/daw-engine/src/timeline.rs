@@ -2915,4 +2915,26 @@ mod tests {
         assert_eq!(gain.value_at(8, &mut diagnostics), 0.5);
         assert_eq!(gain.value_at(100, &mut diagnostics), 0.5);
     }
+
+    #[test]
+    fn a_locate_drops_a_change_stamped_exactly_on_its_frame() {
+        // The boundary is the law the control thread orders itself around: a
+        // write stamped on the locate frame belongs to the stale window and
+        // dies with it, so the window pushed *after* the locate is the only
+        // thing that can land there. Pinned separately because the straddling
+        // test above cannot tell `>=` from `>`.
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        graph.automate(
+            AutomationTarget::TrackGain(1),
+            AutomationWrite::Append(ramp(8, 0, 0.25, RampShape::Step)),
+        );
+
+        graph.seek(8);
+
+        let gain = &mut graph.track_mut(1).expect("the track").gain;
+        assert_eq!(gain.value_at(8, &mut diagnostics), 1.0);
+        assert_eq!(gain.value_at(100, &mut diagnostics), 1.0);
+    }
 }
