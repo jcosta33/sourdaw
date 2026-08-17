@@ -24,11 +24,11 @@ Automatic language-model selection uses browser WebLLM only and fails closed wit
 
 ## 2. Audio ML
 
-**Native (ONNX via `ort`):** DeepFilterNet denoise and Demucs stem separation (`ai_audio.rs`), plus audio post-processing (rubato/hound resampling in `audio_postprocess.rs`).
+**Native:** DeepFilterNet denoise (`ai_audio.rs`) plus audio post-processing (`audio_postprocess.rs`).
 
-**In-browser (BrowserAi):** Kokoro TTS, DiffSinger singing-voice synthesis, and RAVE timbre transfer, executed through ONNX Runtime Web in a dedicated worker (`workers/onnxInferenceWorker.ts`) with a model download registry (`initBrowserAi.ts`). BrowserAi initializes non-blocking at bootstrap.
+**In-browser (BrowserAi):** Kokoro TTS and RAVE timbre transfer run through dedicated workers and a model registry (`initBrowserAi.ts`). Singing synthesis stays unavailable until a compatible model chain passes admission. BrowserAi initializes non-blocking at bootstrap.
 
-**Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via Spotify's basic-pitch, browser-side stem separation preview, mix-vs-reference comparison.
+**Analysis (AudioAnalysis):** key/tempo/onset/pitch detection (`meyda`, `pitchy`), audio→MIDI via Spotify's basic-pitch, and mix-vs-reference comparison. Stem separation stays unavailable until a compatible model passes admission.
 
 ## 3. The action bridge — AI that does things
 
@@ -56,8 +56,8 @@ The operational rules for building on this bridge (registry discipline, plan/exe
 | Module        | Owns                                                                                          |
 | ------------- | --------------------------------------------------------------------------------------------- |
 | AiRuntime     | LLM runtimes, chat panel, voice commands, action execution + AI action history, preset search |
-| AiGeneration  | generative MIDI (melody/drums/chords/variations), denoise/stem-sep previews, AI task queue    |
-| BrowserAi     | in-browser ML models (TTS, SVS, timbre transfer), model registry, ONNX worker                 |
+| AiGeneration  | generative MIDI (melody/drums/chords/variations), denoise previews, AI task queue             |
+| BrowserAi     | in-browser ML models (TTS and timbre transfer), model registry, inference workers             |
 | AudioAnalysis | musical analysis and audio→MIDI                                                               |
 
 External dependency ownership is deliberate: `@anthropic-ai/sdk` and `@mlc-ai/web-llm` appear only in AiRuntime; `onnxruntime-web` only in BrowserAi and AudioAnalysis; `@spotify/basic-pitch`/`meyda`/`pitchy` only in AudioAnalysis.

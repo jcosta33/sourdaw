@@ -198,14 +198,6 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn separate_stems(&self, request: Value) -> Result<Value> {
-        let request = serde_json::from_value(request).map_err(|error| {
-            Error::from_reason(format!("Invalid stem separation request: {error}"))
-        })?;
-        json(reason(commands::ai_audio::separate_stems(request).await)?)
-    }
-
-    #[napi]
     pub fn post_process_audio(&self, request: Value) -> Result<String> {
         let request = serde_json::from_value(request).map_err(|error| {
             Error::from_reason(format!("Invalid post-process request: {error}"))

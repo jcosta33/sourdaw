@@ -61,17 +61,6 @@ export const REQUIRED_MARKS = [
 ] as const;
 
 export const REQUIRED_COMPONENT_PATHS: Readonly<Record<string, readonly string[]>> = {
-    'demucs-mansfieldplumbing': [
-        'crates/sourdaw-native/src/commands/ai_audio.rs',
-        'src/modules/AudioAnalysis/repositories/browserStemSeparation.ts',
-    ],
-    'nsf-hifigan-openvpi': [
-        'scripts/upload-vocoder-to-hf.sh',
-        'src/modules/BrowserAi/models/BrowserModel.ts',
-        'src/modules/BrowserAi/models/DdspInstrumentCatalog.ts',
-        'src/modules/BrowserAi/useCases/initBrowserAi.ts',
-        'src/modules/BrowserAi/useCases/renderDiffSingerPhrase.ts',
-    ],
     'rave-models': [
         'src/modules/BrowserAi/handlers/rave/**',
         'src/modules/BrowserAi/stores/rave.ts',

@@ -80,19 +80,17 @@ build order make a shippable feature feasible without a server or sidecar?
   acoustic ~50–80 MB + variance/pitch/linguistic ~15–30 MB + ~50 MB vocoder) is the most viable
   near-term candidate, within the ~500M-param ceiling but at the heavy end, requiring a JS port of
   OpenUtau's tensor-preparation logic and a sequential diffusion loop.
-- **Evidence:** capability matrix (DiffSinger score 5); confirmed voicebank file structure and
-  tensor shapes; Demucs (235 MB) already runs in-browser as a size precedent.
+- **Evidence:** capability matrix (DiffSinger score 5) and confirmed voicebank file structure and
+  tensor shapes. Browser memory and throughput remain unproven for the full chain.
 - **Confidence:** medium
 - **Bears on:** the DiffSinger child spec and its descope risk.
 
 ### R-008 — Vocoder and voicebank licensing are the gating unknowns for SVS
 
-- **Claim:** The reference vocoder (community NSF-HiFiGAN, CC-BY-NC-SA 4.0) and the best-tested
-  voicebank (Opencpop, Chinese) are license- and language-constrained; whether Sourdaw's
-  distribution qualifies as NonCommercial and whether an English voicebank exists under compatible
-  terms require human determination before SVS ships.
-- **Evidence:** openvpi/vocoders license; Opencpop is Chinese-only; no enumerated English
-  CC-BY-NC-SA voicebank shortlist exists.
+- **Claim:** Surveyed community vocoders and voicebanks are license- or language-constrained. The
+  browser chain cannot ship until every weight has compatible terms and the target languages.
+- **Evidence:** the reference vocoder uses a non-commercial ShareAlike license; the best-tested
+  voicebank is Chinese-only; no verified compatible English shortlist exists.
 - **Confidence:** medium
 - **Bears on:** the two blocking open questions on the DiffSinger child spec.
 

@@ -324,7 +324,7 @@ Verify with: `pnpm test:run -- BrowserAi diffSingerVoicebankLoad`
 - [ ] (restored detail) Per-stage SVS model budget. The MIDI→singing pipeline is five browser
   stages: phonemizer (rule-based JS, ~0 MB), duration model (~5–10 MB), pitch model (~10–20 MB),
   acoustic DiffSinger shallow-diffusion (~30–50 MB, later research revised to ~50–80 MB), and
-  NSF-HiFiGAN vocoder (~30–55 MB), totalling ~80–175 MB. AC-034/AC-035 fix the tensor and
+  compatible vocoder (~30–55 MB), totalling ~80–175 MB. AC-034/AC-035 fix the tensor and
   voicebank contracts; this records the size envelope that progressive loading (load phonemizer
   + duration first, stream acoustic + vocoder behind) must budget against.
 - [ ] (restored detail) DDSP synthesis-only mode parameters. The DDSP autoencoder (ICLR 2020) is
@@ -361,7 +361,7 @@ Verify with: `pnpm test:run -- BrowserAi diffSingerVoicebankLoad`
 
 - `src/modules/BrowserAi/` (new module: workers, stores, repositories, useCases, views, events)
 - `src/modules/BrowserAi/workers/onnxInferenceWorker.ts`, `tfjsInferenceWorker.ts`, `downloadWorker.ts`
-- reuses the `browserStemSeparation.ts` / `audioAiEngine.ts` patterns from `AudioAnalysis`
+- reuses the worker-bridge and audio-engine patterns from `BrowserAi` and `AudioAnalysis`
 - new npm deps: `@huggingface/transformers`, `@tensorflow/tfjs`, `@tensorflow/tfjs-backend-webgpu`
 
 ## Known risks

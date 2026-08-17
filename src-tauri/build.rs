@@ -4,7 +4,6 @@ fn main() {
             "provider_gateway_request",
             "cancel_provider_gateway_request",
             "denoise_audio",
-            "separate_stems",
             "post_process_audio",
             "load_whisper_model",
             "ensure_whisper_ready",

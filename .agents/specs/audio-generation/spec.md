@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-audio-generation
 title: Native singing synthesis
-status: in-progress
+status: draft
 owner: The Sourdaw team
 sources:
   - research.md
@@ -11,6 +11,8 @@ sources:
 # Native singing synthesis
 
 ## Intent
+
+Blocked until a complete native model chain passes admission.
 
 Generate singing-voice audio from MIDI notes plus lyrics using a DiffSinger ONNX pipeline
 that runs natively in Rust (phonemize → variance → acoustic → vocoder), with optional RVC
@@ -241,9 +243,9 @@ Verify with: `pnpm test:run -- executeDsoEdit`
 - [ ] (non-blocking) (restored detail — rejected design alternatives) The chosen architecture
   rejected, with reasons worth preserving: candle / Rust-native ML (DiffSinger is trained in
   PyTorch and exported to ONNX — reimplementing in candle is high-effort with no quality gain;
-  `ort` is the standard path and already integrated for Demucs); a single vocoder (the
+  `ort` is the standard path and already integrated for native inference); a single vocoder (the
   quality/speed gap is real — Vocos ~6,700× RT for preview, BigVGAN v2 ~45–135× RT for final);
-  community NSF-HiFiGAN (CC-BY-NC-SA 4.0, blocks commercial use); a DDSP vocoder (monophonic,
+  reference community vocoder (CC-BY-NC-SA 4.0, blocks commercial use); a DDSP vocoder (monophonic,
   needs per-instrument training); a pure-Python sidecar for DiffSinger (~2.6 GB packaging +
   2–5 s startup, loses in-process latency); and an external ComfyUI-style service (two separate
   installs, worst UX). GPU detection at first-run uses `system_profiler` (macOS) / `nvidia-smi`

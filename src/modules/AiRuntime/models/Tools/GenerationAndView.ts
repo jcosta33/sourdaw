@@ -99,19 +99,6 @@ export const generationTools: readonly ToolSchema[] = [
         },
         ['clipId']
     ),
-    tool(
-        'stemSeparate',
-        'Separate an audio clip into individual stems using AI (Demucs): vocals, drums, bass, other. Creates new tracks for each stem.',
-        {
-            clipId: { type: 'string', description: 'Audio clip to separate' },
-            stems: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Which stems to extract: "vocals", "drums", "bass", "other", or "all" (default)',
-            },
-        },
-        ['clipId']
-    ),
 ];
 
 export const markerTools: readonly ToolSchema[] = [

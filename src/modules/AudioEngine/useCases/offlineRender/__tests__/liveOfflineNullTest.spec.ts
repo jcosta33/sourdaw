@@ -111,6 +111,31 @@
  * because they are exempt, but because the harness models no node for them and
  * refuses to build one rather than silently rendering them as pass-throughs.
  * Extending this to them means extending the harness first.
+ *
+ * ── The backend axis ──────────────────────────────────────────────────────
+ *
+ * The two legs above vary *which construction path* built the graph, with one
+ * renderer underneath. The third leg varies the renderer: it nulls backend A
+ * against backend B over the same fixture table, so that when the Rust engine
+ * becomes the desktop backend the question "does the native render sound like
+ * the web render?" is asked by an instrument that already exists and is already
+ * known to be sharp, rather than by one written after the fact to fit whatever
+ * the new backend happens to produce.
+ *
+ * Backend B does not exist yet. The leg therefore runs backend A against a
+ * stand-in that reaches the same renderer through the seam a real backend B
+ * will occupy, and its teeth are the perturbed half: the stand-in is handed
+ * divergences of the exact magnitudes the sharpness probes below already prove
+ * visible, and the leg is required to go **red**. A comparison harness that
+ * cannot fail is decoration. Both states are asserted — perturbed reds, and the
+ * same fixture through an agreeing backend B nulls.
+ *
+ * Read the green half honestly: while backend B is a stand-in for backend A it
+ * is not an independent implementation, so an agreeing null there pins the
+ * seam's plumbing and backend A's determinism, not cross-backend parity. The
+ * seam is shown to carry two genuinely different implementations by driving it
+ * with the live and offline builders — the pair leg one already cross-checks —
+ * which is what makes a native backend a drop-in for the same slot.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -416,28 +441,61 @@ const FIXTURE_DEVICES = {
 
 const FIXTURE_DEVICE_ENTRIES = Object.entries(FIXTURE_DEVICES);
 
+/**
+ * The strip and chain configurations rendered by more than one leg.
+ *
+ * These were literals inside the tests below until the backend leg started
+ * sweeping the same population, and two hand-maintained copies of a fixture is
+ * the same defect the `FIXTURE_DEVICES` comment above describes: they drift on
+ * the first edit, nothing goes red, and the backend leg's "same population, one
+ * axis changed" attribution quietly stops being true. One definition, two
+ * consumers.
+ *
+ * The extraction is mechanical and nothing else moved. Every assertion, every
+ * budget and every comment in the legs below is where it was; only the fixture
+ * expression each test passes changed, from a literal to the name of that same
+ * literal. Nothing mutates these objects — the perturbed backend leg copies
+ * before it changes anything — so sharing them cannot couple two legs' results.
+ */
+const SHARED_FIXTURES = {
+    unityStrip: { ...BASE_TRACK, gain: 1 },
+    faderOffUnity: { ...BASE_TRACK, gain: 0.37 },
+    faderAboveCeiling: { ...BASE_TRACK, gain: 1.8 },
+    pannedStrip: { ...BASE_TRACK, pan: -31 },
+    chainInProjectOrder: {
+        ...BASE_TRACK,
+        gain: 0.62,
+        pan: 18,
+        devices: [FIXTURE_DEVICES.gain, FIXTURE_DEVICES.filter, FIXTURE_DEVICES.distortion, FIXTURE_DEVICES.eq],
+    },
+    chainWithBypassedDevice: {
+        ...BASE_TRACK,
+        devices: [FIXTURE_DEVICES.gain, { ...FIXTURE_DEVICES.filter, bypassed: true }, FIXTURE_DEVICES.gainTrim],
+    },
+} satisfies Record<string, TrackFixture>;
+
 describe('live/offline null test — the strip itself', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('nulls a bare strip at unity', async () => {
-        expectNull(await nullTestFixture({ ...BASE_TRACK, gain: 1 }));
+        expectNull(await nullTestFixture(SHARED_FIXTURES.unityStrip));
     });
 
     it('nulls a strip whose fader is not at unity', async () => {
-        expectNull(await nullTestFixture({ ...BASE_TRACK, gain: 0.37 }));
+        expectNull(await nullTestFixture(SHARED_FIXTURES.faderOffUnity));
     });
 
     it('nulls a strip whose stored gain sits above the fader ceiling', async () => {
         // FX-7: live clamps in `TrackNode.setGain`, offline in
         // `createOfflineTrackStrip`. A project carrying gain > 1 — importers and
         // older files do — is where the two laws can part.
-        expectNull(await nullTestFixture({ ...BASE_TRACK, gain: 1.8 }));
+        expectNull(await nullTestFixture(SHARED_FIXTURES.faderAboveCeiling));
     });
 
     it('nulls a panned strip', async () => {
-        expectNull(await nullTestFixture({ ...BASE_TRACK, pan: -31 }));
+        expectNull(await nullTestFixture(SHARED_FIXTURES.pannedStrip));
     });
 });
 
@@ -450,30 +508,14 @@ describe('live/offline null test — deterministic device chains', () => {
         // Ordering is the part of the device chain that really is two
         // implementations: `rebuildChain` walks `prevs` and `buildDeviceChain`
         // walks `prev`, and they were written separately.
-        expectNull(
-            await nullTestFixture({
-                ...BASE_TRACK,
-                gain: 0.62,
-                pan: 18,
-                devices: [FIXTURE_DEVICES.gain, FIXTURE_DEVICES.filter, FIXTURE_DEVICES.distortion, FIXTURE_DEVICES.eq],
-            })
-        );
+        expectNull(await nullTestFixture(SHARED_FIXTURES.chainInProjectOrder));
     });
 
     it('nulls a chain with a bypassed device in the middle', async () => {
         // The two runtimes disagree about *representation* here and must still
         // agree about audio: live keeps the bypassed device in `deviceNodes` and
         // skips it while rewiring, offline filters it out before construction.
-        expectNull(
-            await nullTestFixture({
-                ...BASE_TRACK,
-                devices: [
-                    FIXTURE_DEVICES.gain,
-                    { ...FIXTURE_DEVICES.filter, bypassed: true },
-                    FIXTURE_DEVICES.gainTrim,
-                ],
-            })
-        );
+        expectNull(await nullTestFixture(SHARED_FIXTURES.chainWithBypassedDevice));
     });
 });
 
@@ -788,5 +830,271 @@ describe('live/offline null test — determinism', () => {
 
         expect(repeat.signalPeakDbfs).toBeGreaterThan(-40);
         expect(repeat.residualPeakDbfs).toBe(-Infinity);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// The backend axis
+// ---------------------------------------------------------------------------
+
+/**
+ * The seam a real backend B occupies.
+ *
+ * One function: hand it a fixture, get back a render and the device ids that
+ * render actually contained. Both existing legs already satisfy it —
+ * `renderLive` and `renderOffline` are assignable as written — which is the
+ * point. A backend is anything that can turn a track configuration into
+ * samples, and the native engine will be swapped in by writing one more object
+ * of this type. Nothing below reaches past it, so the swap touches this file in
+ * exactly one place.
+ *
+ * `LegRender` rather than a bare buffer because the presence pin has to survive
+ * the abstraction: a backend that silently rendered without a fixtured device
+ * nulls perfectly against another backend that did the same. Both of today's
+ * renderers call `assertDevicesBuilt` internally, and relying on that would
+ * make the guard a convention rather than a contract — a D1 backend that simply
+ * did not call it would lose the pin with nothing to notice. So the seam
+ * re-checks it, on both legs, from the ids the backend reports.
+ */
+type RenderBackend = {
+    id: string;
+    render: (fixture: TrackFixture, options?: RenderOptions) => Promise<LegRender>;
+};
+
+/** Backend A: the Web Audio render path as an export builds it, today. */
+const BACKEND_A: RenderBackend = { id: 'web-audio/offline', render: renderOffline };
+
+/** The same renderer through the live builder — used to prove the seam is real. */
+const BACKEND_A_LIVE: RenderBackend = { id: 'web-audio/live', render: renderLive };
+
+/**
+ * How a stand-in backend B misreads the fixture it is handed.
+ *
+ * A backend that renders a project differently is observationally identical to
+ * a backend that renders a slightly different project, so a perturbation of the
+ * configuration is a faithful stand-in for a divergence in the renderer — and,
+ * unlike a hand-injected offset in the output samples, it is the shape the real
+ * divergences take. A native backend gets a fader wrong by converting dB to
+ * linear with a different rounding, a cutoff wrong by marshalling it through an
+ * `f32`, a pan position wrong by normalising −100…100 with a different law.
+ * Those are the three below.
+ */
+type FixtureMisread = (fixture: TrackFixture) => TrackFixture;
+
+function standInBackendB(input: { name: string; misread: FixtureMisread }): RenderBackend {
+    return {
+        id: `stand-in/${input.name}`,
+        render: (fixture, options) => renderOffline(input.misread(fixture), options),
+    };
+}
+
+/** The un-perturbed stand-in. The green half of the experiment. */
+const AGREEING_BACKEND_B = standInBackendB({ name: 'agrees', misread: (fixture) => fixture });
+
+/**
+ * Every device the fixture asks for, in the ids the backend reported.
+ *
+ * Bypassed devices are excluded because the two runtimes already disagree about
+ * whether a bypassed device is *present* — live keeps it in `deviceNodes`,
+ * offline filters it out before construction — and a seam that took a side
+ * would refuse a correct backend. What no backend may do is render without a
+ * device that is supposed to be audible.
+ */
+function assertBackendBuiltDevices(input: { backend: RenderBackend; fixture: TrackFixture; render: LegRender }): void {
+    assertDevicesBuilt({
+        leg: `backend ${input.backend.id}`,
+        expected: input.fixture.devices.filter((entry) => !entry.bypassed).map((entry) => entry.id),
+        built: input.render.builtDeviceIds,
+    });
+}
+
+async function nullTestBackends(input: {
+    a: RenderBackend;
+    b: RenderBackend;
+    fixture: TrackFixture;
+}): Promise<NullTestResult> {
+    const a = await input.a.render(input.fixture);
+    const b = await input.b.render(input.fixture);
+    assertBackendBuiltDevices({ backend: input.a, fixture: input.fixture, render: a });
+    assertBackendBuiltDevices({ backend: input.b, fixture: input.fixture, render: b });
+    return nullTest({ a: a.buffer, b: b.buffer });
+}
+
+/**
+ * The fixture set the backend leg sweeps: every device in the shared device
+ * table, plus every shared strip and chain fixture leg one pins. Same
+ * population, same budget, one axis changed — which is the only way a residual
+ * here can be attributed to the backend rather than to a fixture the other legs
+ * never render, and why both tables are read from `SHARED_FIXTURES` and
+ * `FIXTURE_DEVICES` rather than restated here.
+ */
+const BACKEND_FIXTURES: Array<[string, TrackFixture]> = [
+    ...Object.entries(SHARED_FIXTURES).map(([name, fixture]): [string, TrackFixture] => [name, fixture]),
+    ...FIXTURE_DEVICE_ENTRIES.map(([name, entry]): [string, TrackFixture] => [
+        `the ${name} device on its own`,
+        { ...BASE_TRACK, devices: [entry] },
+    ]),
+];
+
+type BackendDivergence = {
+    /** What backend B got wrong. */
+    name: string;
+    /** The configuration both backends are asked for. */
+    fixture: TrackFixture;
+    /** What backend B rendered instead. */
+    misread: FixtureMisread;
+};
+
+/**
+ * The three divergences the sharpness probes above already measured, re-aimed
+ * at the backend seam.
+ *
+ * The magnitudes are not re-derived and not chosen to be comfortably large:
+ * they are one part in five hundred of a fader, 1 Hz in 2400 of a cutoff, and
+ * one fifty-thousandth of full scale of a pan position — the exact quantities
+ * this file already proves the −90 dBFS budget can see. Reusing them is what
+ * makes the red half a statement about the *instrument's resolution at the
+ * backend seam* rather than a statement that subtraction works.
+ *
+ * The residuals recorded below are a property of the perturbation and not of
+ * which two legs were subtracted: measured across all four live/offline
+ * pairings of the cutoff divergence, every one lands on the same residual at
+ * the same frame, because the un-perturbed legs are bit-identical. So these
+ * numbers are directly comparable with the probes'.
+ */
+const BACKEND_B_DIVERGENCES: BackendDivergence[] = [
+    {
+        // Measured −69.12 dBFS against a −15.14 dBFS signal.
+        name: 'a fader that arrives one part in five hundred hot',
+        fixture: { ...BASE_TRACK, gain: 0.5 },
+        misread: (fixture) => ({ ...fixture, gain: 0.501 }),
+    },
+    {
+        // Measured −78.11 dBFS against a −15.18 dBFS signal.
+        name: 'a filter cutoff that arrives 1 Hz off in 2400',
+        fixture: { ...BASE_TRACK, devices: [FIXTURE_DEVICES.filter] },
+        misread: (fixture) => ({
+            ...fixture,
+            devices: fixture.devices.map((entry) =>
+                entry.id === FIXTURE_DEVICES.filter.id
+                    ? { ...entry, parameterValues: { ...entry.parameterValues, 'filter-cutoff': 2401 } }
+                    : entry
+            ),
+        }),
+    },
+    {
+        // Measured −82.96 dBFS against a −7.09 dBFS signal.
+        name: 'a pan position that arrives one fifty-thousandth of full scale off',
+        fixture: { ...BASE_TRACK, pan: 20 },
+        misread: (fixture) => ({ ...fixture, pan: 20.01 }),
+    },
+];
+
+describe('live/offline null test — the backend axis', () => {
+    /**
+     * The green half. Every fixture measures `-Infinity` today, because the
+     * stand-in reaches the same renderer, and the assertion is deliberately the
+     * −90 dBFS budget rather than that measurement.
+     *
+     * Pinning `-Infinity` would look stronger and would be a trap: two genuinely
+     * independent backends cannot be bit-identical, so the first real backend B
+     * would force this assertion to be *loosened* — and a budget that gets
+     * loosened to admit the thing it was measuring is the exact failure the file
+     * header refuses. −90 dBFS is the number backend B has to meet, so −90 dBFS
+     * is the number asserted, from the day the seam exists. Nondeterminism in
+     * backend A is caught by the determinism leg above, which does pin
+     * `-Infinity` and is entitled to.
+     */
+    it.each(BACKEND_FIXTURES)('nulls %s across the backend seam', async (_name, fixture) => {
+        expectNull(await nullTestBackends({ a: BACKEND_A, b: AGREEING_BACKEND_B, fixture }));
+    });
+
+    /**
+     * The seam is driven by two genuinely different implementations.
+     *
+     * Be precise about what this does and does not carry, because the two are
+     * easy to swap. That `renderLive` *fits* the slot is settled by the type
+     * annotation on `BACKEND_A_LIVE` — the file would not typecheck otherwise —
+     * and no runtime assertion is doing that work. Deleting the annotation is
+     * not made safe by this test.
+     *
+     * What the null adds is that the seam's own machinery survives a renderer
+     * it was not shaped around. `renderOffline` is the one every other test
+     * here drives; `renderLive` awaits a microtask rebuild before it renders,
+     * builds a different node graph, and reports bypassed devices in
+     * `builtDeviceIds` where offline omits them — so it exercises the ordering
+     * `nullTestBackends` imposes and the device pin it now applies to both
+     * legs. A seam that only ever receives one renderer is wrong in ways
+     * nothing notices until a second one arrives, and a native backend is that
+     * second one.
+     *
+     * Measured `-Infinity` on this four-device chain: leg one's result restated
+     * through the seam, which is what makes the restatement worth its render.
+     */
+    it('accepts two independently-written implementations in the same slot', async () => {
+        expectNull(
+            await nullTestBackends({
+                a: BACKEND_A_LIVE,
+                b: BACKEND_A,
+                fixture: SHARED_FIXTURES.chainInProjectOrder,
+            })
+        );
+    });
+
+    /**
+     * The seam's presence pin is a contract, not a convention.
+     *
+     * Both of today's renderers refuse internally, so nothing in the leg above
+     * can distinguish a seam that re-checks from one that trusts. This backend
+     * renders correct audio and reports no devices — exactly what a D1 backend
+     * that forgot the internal guard looks like — and the null it would produce
+     * against backend A is a clean one. `nullTestBackends` has to be what
+     * refuses it.
+     */
+    it('refuses a backend that reports it rendered without the fixtured devices', async () => {
+        const forgetful: RenderBackend = {
+            id: 'forgetful',
+            render: async (fixture, options) => ({ ...(await renderOffline(fixture, options)), builtDeviceIds: [] }),
+        };
+
+        await expect(
+            nullTestBackends({ a: BACKEND_A, b: forgetful, fixture: SHARED_FIXTURES.chainInProjectOrder })
+        ).rejects.toThrow(/rendered without fixtured device/);
+    });
+
+    /**
+     * The red half. Both claims are asserted per divergence:
+     *
+     *   1. the perturbed backend B breaks the budget — the leg is an instrument;
+     *   2. it breaks it by an amount **below** the audible line — the residual
+     *      is the injected divergence and not a backend that dropped a device,
+     *      went silent or lost a whole chain. A gross failure would clear
+     *      −60 dBFS and this assertion would refuse it, which is what keeps a
+     *      red for the wrong reason from being read as a red for the right one.
+     *
+     * The controlled half runs immediately after, on the same fixture through
+     * the agreeing backend B, so a red cannot be attributed to the fixture.
+     */
+    it.each(BACKEND_B_DIVERGENCES)('reds when backend B renders $name', async (divergence) => {
+        const perturbed = await nullTestBackends({
+            a: BACKEND_A,
+            b: standInBackendB({ name: divergence.name, misread: divergence.misread }),
+            fixture: divergence.fixture,
+        });
+
+        expect(perturbed.signalPeakDbfs).toBeGreaterThan(-40);
+        expect(
+            perturbed.residualPeakDbfs,
+            `perturbed backend B nulled at ${perturbed.residualPeakDbfs.toFixed(2)} dBFS — the leg is blind`
+        ).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+        expect(perturbed.residualPeakDbfs).toBeLessThan(RESIDUAL_DEFECT_DBFS);
+
+        const agreeing = await nullTestBackends({
+            a: BACKEND_A,
+            b: AGREEING_BACKEND_B,
+            fixture: divergence.fixture,
+        });
+
+        expectNull(agreeing);
     });
 });

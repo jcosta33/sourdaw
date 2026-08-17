@@ -24,9 +24,8 @@ pub fn run() {
             // Privileged model-provider gateway
             commands::provider_gateway::provider_gateway_request,
             commands::provider_gateway::cancel_provider_gateway_request,
-            // AI audio processing (DeepFilterNet + Demucs ONNX)
+            // AI audio processing
             commands::ai_audio::denoise_audio,
-            commands::ai_audio::separate_stems,
             commands::audio_postprocess::post_process_audio,
             commands::speech::load_whisper_model,
             commands::speech::ensure_whisper_ready,
