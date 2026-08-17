@@ -86,16 +86,28 @@
  *     **no wasm device is fixtured at all** (Fermenter, Toaster, Levain, Grand
  *     Boule, Grinder, Gluten, Proof, Bacteria, Knead, Crumbs). The devices whose
  *     live/offline divergence motivated this phase are all in that second group.
- *   - **All `AudioParam` automation.** Params are settled before frame 0; a
- *     lane that moves during the render is out of scope by construction.
- *   - **Mute, VCA multipliers, `honorMuted` and `contributesAudio`.** A muted
- *     fixture renders digital silence on both legs, which the presence pin
- *     correctly refuses — so mute parity is not asserted here at all.
- *   - **Sends, buses, the master chain and adjustment layers.** The fixture is
- *     one strip into one gain.
- *   - **Clip scheduling, note timing and render tails.** The signal is injected
- *     directly at the strip input, so nothing upstream of the strip is exercised.
+ *   - **The path an automated parameter takes between two writes.** The fader
+ *     fixtures at the foot of this file measure where a `ramp-to`, `smoothed`
+ *     or `hold` sequence comes to *rest*, which is what a bounce of a settled
+ *     mixer owes. A lane gliding across a render is a different property, with
+ *     its own specs (`automationScheduling`, `offlineVcaGainParity`) — the one
+ *     exception is a clip's fade envelope, which is walked because a fade is a
+ *     shape rather than a resting value.
+ *   - **VCA multipliers, `honorMuted` and `contributesAudio`.** Every fixture
+ *     here is built with the mixdown's settings.
+ *   - **Live mute parity.** `renderLive` calls `setMute`, but every
+ *     live/offline fixture keeps `muted: false` — the live gate never closes,
+ *     so a live mute law gating the wrong node would pass this file. The one
+ *     muted fixture runs contract-vs-reference, where both legs bake mute
+ *     through the same `createOfflineTrackStrip` code and cannot see it
+ *     either. Pinning it needs a keeper strip on the live leg first.
+ *   - **The master chain and adjustment layers.** The most a fixture routes is
+ *     three strips and a send into one master gain.
+ *   - **Note timing, loop iterations, comping and render tails.** One audio
+ *     clip with its two user fades is fixtured; nothing MIDI is.
  *     `offlineNoteScheduleTiming.spec.ts` covers the note path.
+ *   - **A stretched clip.** `playbackRate != 1` is deliberately unfixtured
+ *     while jcosta33/sourdaw#2098 is open; see `ClipFixture` below.
  *
  * ── Fixture constraints ───────────────────────────────────────────────────
  *
@@ -147,12 +159,15 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AudioGraphCommand, type AudioGraphParameterWrite } from '../../../models/AudioGraphBackend';
 import { type Device } from '../../../models/TrackViewTypes';
 
 import {
+    createFixtureAudioBuffer,
     createFixtureSignal,
     createNullTestRenderHarness,
     nullTest,
+    type HarnessContextOptions,
     type HarnessRenderContext,
     type NullTestResult,
     type RenderedBuffer,
@@ -181,8 +196,11 @@ await import('../../../services/meteringProcessor');
 
 const { TrackNode } = await import('../../../engine/TrackNode');
 const { createDeviceReadinessDiagnostics } = await import('../../../engine/deviceReadinessDiagnostics');
+const { createOfflineBusStrip } = await import('../createOfflineBusStrip');
 const { createOfflineTrackStrip } = await import('../createOfflineTrackStrip');
 const { createWebAudioOfflineBackend } = await import('../createWebAudioOfflineBackend');
+const { scheduleOfflineClipSource } = await import('../scheduleOfflineClipSource');
+const { MICRO_FADE_SECONDS } = await import('../constants');
 
 type TrackFixture = {
     name: string;
@@ -207,8 +225,43 @@ function device(input: {
     };
 }
 
-function newContext(): HarnessRenderContext {
-    return new harness.OfflineAudioContext(2, RENDER_FRAMES, SAMPLE_RATE);
+function newContext(options?: HarnessContextOptions): HarnessRenderContext {
+    return new harness.OfflineAudioContext(2, RENDER_FRAMES, SAMPLE_RATE, options);
+}
+
+/**
+ * Bridge a production node type onto the harness's.
+ *
+ * The strips are typed `GainNode`/`StereoPannerNode` because production builds
+ * them, and the harness's nodes are structurally different objects that answer
+ * the same calls. Named once so the casts read as the one bridge they are
+ * rather than as a claim about the types.
+ */
+type ConnectableNode = { connect: (to: unknown) => unknown };
+
+function connectNodes(from: unknown, to: unknown): void {
+    (from as ConnectableNode).connect(to);
+}
+
+/** A master gain wired to the destination, as every leg builds one. */
+function newMaster(context: HarnessRenderContext): unknown {
+    const master = context.createGain() as { gain: { value: number }; connect: (to: unknown) => unknown };
+    master.gain.value = 1;
+    master.connect(context.destination);
+    return master;
+}
+
+/**
+ * The refusal every leg owes the fixture set.
+ *
+ * `buildDeviceChain` treats a device it cannot construct as a degrade — it warns
+ * and continues. Correct for an export, wrong for a fixture, because the null is
+ * then taken between two graphs that both lack the device under test.
+ */
+function throwOnDegradedDevice(leg: string): (message: string) => void {
+    return (message: string) => {
+        throw new Error(`${leg} degraded a fixtured device instead of building it: ${message}`);
+    };
 }
 
 type RenderOptions = {
@@ -930,7 +983,28 @@ const AGREEING_BACKEND_B = standInBackendB({ name: 'agrees', misread: (fixture) 
  * those two, loudly, instead of shipping a second level law nothing compares.
  */
 
-async function renderThroughContract(fixture: TrackFixture, options: RenderOptions = {}): Promise<LegRender> {
+/**
+ * A fader driven by something other than a single step.
+ *
+ * `initialGain` is deliberately **not** the fixture's gain. If the creating
+ * command already seeded the strip with the value the writes land on, a backend
+ * that dropped `ramp-to`, `smoothed` and `hold` on the floor would null: the
+ * strip would happen to hold the right level for the wrong reason. Creating the
+ * strip somewhere else makes the writes the only route to the fixture's level,
+ * so the clean leg is a statement that they arrived and were applied by the
+ * laws the strip itself applies.
+ */
+type FaderAutomationPlan = {
+    initialGain: number;
+    /** Issued in order, in place of the fixture's single step write. */
+    writes: AudioGraphParameterWrite[];
+};
+
+async function renderThroughContract(
+    fixture: TrackFixture,
+    options: RenderOptions = {},
+    plan?: FaderAutomationPlan
+): Promise<LegRender> {
     const context = newContext();
     const master = context.createGain() as { gain: { value: number }; connect: (to: unknown) => unknown };
     master.gain.value = 1;
@@ -941,10 +1015,10 @@ async function renderThroughContract(fixture: TrackFixture, options: RenderOptio
         masterNode: master as unknown as AudioNode,
         // Same reason as `renderOffline`'s: a degraded device would otherwise
         // let this leg null against another graph that also lacks it.
-        onWarning: (message: string) => {
-            throw new Error(`contract backend degraded a fixtured device instead of building it: ${message}`);
-        },
+        onWarning: throwOnDegradedDevice('contract backend'),
     });
+
+    const faderWrites: AudioGraphParameterWrite[] = plan?.writes ?? [{ shape: 'step', value: fixture.gain, time: 0 }];
 
     const result = await backend.apply({
         schemaVersion: 1,
@@ -954,7 +1028,7 @@ async function renderThroughContract(fixture: TrackFixture, options: RenderOptio
                 trackId: FIXTURE_TRACK_ID,
                 name: fixture.name,
                 state: {
-                    gain: fixture.gain,
+                    gain: plan?.initialGain ?? fixture.gain,
                     pan: fixture.pan,
                     muted: fixture.muted,
                     soloGated: false,
@@ -965,11 +1039,11 @@ async function renderThroughContract(fixture: TrackFixture, options: RenderOptio
                 contributesAudio: true,
             },
             { kind: 'set-track-output', trackId: FIXTURE_TRACK_ID, target: { kind: 'master' } },
-            {
+            ...faderWrites.map((write): AudioGraphCommand => ({
                 kind: 'write-parameter',
                 target: { kind: 'track-fader', trackId: FIXTURE_TRACK_ID },
-                write: { shape: 'step', value: fixture.gain, time: 0 },
-            },
+                write,
+            })),
             {
                 kind: 'write-parameter',
                 target: { kind: 'track-pan', trackId: FIXTURE_TRACK_ID },
@@ -1319,5 +1393,723 @@ describe('live/offline null test — the backend axis', () => {
         expect(perturbed.residualPeakDbfs).toBeLessThan(RESIDUAL_DEFECT_DBFS);
 
         expectNull(await nullTestBackends({ a: BACKEND_A, b: BACKEND_B_CONTRACT, fixture: divergence.fixture }));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// The four contract gaps: sends and solo, bus chains, automation writes, clips
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything above this line renders **one strip**, and that is the shape of the
+ * blind spot #2099 records: the four behaviors the `AudioGraphBackend` contract
+ * was widened to carry (jcosta33/sourdaw#2085) are exactly the four a
+ * single-strip fixture cannot reach.
+ *
+ * Each fixture below is built the same way the contract legs above are — a
+ * reference graph assembled from the production builders, and the same graph
+ * expressed as commands — so a residual is a statement about the *translation*
+ * and not about rendering, for the reason `renderThroughContract` states. What
+ * is new is the population, not the claim.
+ *
+ * Each also ships its perturbed twin, and the twins state which side of the
+ * audible line they are supposed to land on rather than leaving a red
+ * unqualified: `inaudible` proves the instrument's resolution at that seam,
+ * `audible` proves the consequence of the defect it stands in for.
+ */
+type ResidualBand = 'inaudible' | 'audible';
+
+function expectPerturbedRed(input: { result: NullTestResult; band: ResidualBand; leg: string }): void {
+    const { result, band, leg } = input;
+    expect(result.signalPeakDbfs).toBeGreaterThan(-40);
+    expect(
+        result.residualPeakDbfs,
+        `perturbed ${leg} nulled at ${result.residualPeakDbfs.toFixed(2)} dBFS — the leg is blind`
+    ).toBeGreaterThan(band === 'inaudible' ? RESIDUAL_BUDGET_DBFS : RESIDUAL_DEFECT_DBFS);
+    // The upper claim is what separates "the injected divergence" from "the
+    // backend fell over". An `inaudible` red that clears −60 dBFS is a red for
+    // the wrong reason and is refused here rather than counted as coverage.
+    expect(result.residualPeakDbfs).toBeLessThan(band === 'inaudible' ? RESIDUAL_DEFECT_DBFS : 0);
+}
+
+// ---------------------------------------------------------------------------
+// Gap 1 and 2: the pre-fader send tap, the solo gate, and a bus with a chain
+// ---------------------------------------------------------------------------
+
+const KEEPER_TRACK_ID = 'track-2';
+const SEND_BUS_ID = 'bus-1';
+/**
+ * The keeper's signal, as a power of two so the scaling is exact in binary
+ * floating point and contributes no round-off of its own.
+ */
+const KEEPER_SIGNAL_SCALE = 0.5;
+
+/**
+ * Two strips and a bus.
+ *
+ * The `keeper` exists so the presence pin survives the variant under test: a
+ * solo-gated source renders digital silence through both its output and its
+ * send, and a null taken against two silences is the failure ADR 0015 rule 4
+ * names. A second strip straight to master keeps real programme in both legs
+ * while the gate does its work.
+ */
+type GraphFixture = {
+    /** The strip whose gate the variant moves. Its send is the thing under test. */
+    source: TrackFixture & { soloGated: boolean };
+    /** A second strip straight to master, so a gated source cannot silence the render. */
+    keeper: TrackFixture;
+    /** The bus the send feeds. It carries its own device chain — #2085 §2. */
+    bus: TrackFixture;
+    /** Stored linear send level, tapped pre-fader. */
+    sendLevel: number;
+};
+
+function stripInput(
+    fixture: TrackFixture,
+    id: string
+): {
+    id: string;
+    name: string;
+    gain: number;
+    muted: boolean;
+    pan: number;
+    devices: Device[];
+} {
+    return {
+        id,
+        name: fixture.name,
+        gain: fixture.gain,
+        muted: fixture.muted,
+        pan: fixture.pan,
+        devices: fixture.devices,
+    };
+}
+
+function expectedGraphDeviceIds(fixture: GraphFixture): string[] {
+    return [fixture.bus, fixture.source, fixture.keeper].flatMap((strip) =>
+        strip.devices.filter((entry) => !entry.bypassed).map((entry) => entry.id)
+    );
+}
+
+/**
+ * The reference graph: the production builders, wired by hand exactly as the
+ * export's own send loop wires them.
+ *
+ * The solo gate is written where `createWebAudioOfflineBackend` writes it and
+ * nowhere else — `preFaderTap.gain`, upstream of the send tap. That is the
+ * whole content of the fixture: a runtime that closed the *post*-fader gate
+ * instead would silence the output and keep feeding the bus.
+ */
+async function renderSendGraphOffline(fixture: GraphFixture): Promise<LegRender> {
+    const context = newContext();
+    const master = newMaster(context);
+    const onWarning = throwOnDegradedDevice('offline send graph');
+    const offlineContext = context as unknown as OfflineAudioContext;
+
+    const busTrackStrip = await createOfflineTrackStrip(offlineContext, stripInput(fixture.bus, SEND_BUS_ID), {
+        onWarning,
+    });
+    const bus = createOfflineBusStrip(busTrackStrip);
+    const source = await createOfflineTrackStrip(offlineContext, stripInput(fixture.source, FIXTURE_TRACK_ID), {
+        onWarning,
+    });
+    if (fixture.source.soloGated) {
+        source.preFaderTap.gain.value = 0;
+    }
+    const keeper = await createOfflineTrackStrip(offlineContext, stripInput(fixture.keeper, KEEPER_TRACK_ID), {
+        onWarning,
+    });
+
+    connectNodes(busTrackStrip.outputNode, master);
+    connectNodes(source.outputNode, master);
+    connectNodes(keeper.outputNode, master);
+
+    const sendGain = context.createGain() as { gain: { value: number } };
+    sendGain.gain.value = Math.max(0, Math.min(1, fixture.sendLevel));
+    connectNodes(source.preFaderTap, sendGain);
+    connectNodes(sendGain, bus.gainNode);
+
+    connectNodes(context.createSignalSource(fixtureSignal(1)), source.inputNode);
+    connectNodes(context.createSignalSource(fixtureSignal(KEEPER_SIGNAL_SCALE)), keeper.inputNode);
+
+    const buffer = await context.startRendering();
+    return {
+        buffer,
+        builtDeviceIds: [...busTrackStrip.deviceEntries, ...source.deviceEntries, ...keeper.deviceEntries].map(
+            (entry) => entry.deviceId
+        ),
+    };
+}
+
+function sendGraphCommands(fixture: GraphFixture): AudioGraphCommand[] {
+    return [
+        {
+            kind: 'create-bus-strip',
+            busId: SEND_BUS_ID,
+            name: fixture.bus.name,
+            state: {
+                gain: fixture.bus.gain,
+                pan: fixture.bus.pan,
+                muted: fixture.bus.muted,
+                soloGated: false,
+                vcaMultiplier: 1,
+            },
+            devices: fixture.bus.devices,
+            honorMuted: true,
+            contributesAudio: true,
+        },
+        {
+            kind: 'create-track-strip',
+            trackId: FIXTURE_TRACK_ID,
+            name: fixture.source.name,
+            state: {
+                gain: fixture.source.gain,
+                pan: fixture.source.pan,
+                muted: fixture.source.muted,
+                soloGated: fixture.source.soloGated,
+                vcaMultiplier: 1,
+            },
+            devices: fixture.source.devices,
+            honorMuted: true,
+            contributesAudio: true,
+        },
+        {
+            kind: 'create-track-strip',
+            trackId: KEEPER_TRACK_ID,
+            name: fixture.keeper.name,
+            state: {
+                gain: fixture.keeper.gain,
+                pan: fixture.keeper.pan,
+                muted: fixture.keeper.muted,
+                soloGated: false,
+                vcaMultiplier: 1,
+            },
+            devices: fixture.keeper.devices,
+            honorMuted: true,
+            contributesAudio: true,
+        },
+        // A bus is addressed by putting its strip id in `trackId`; there is no
+        // `set-bus-output`. One id space is contract law, and a backend that
+        // kept two would fail here rather than in a bounce.
+        { kind: 'set-track-output', trackId: SEND_BUS_ID, target: { kind: 'master' } },
+        { kind: 'set-track-output', trackId: FIXTURE_TRACK_ID, target: { kind: 'master' } },
+        { kind: 'set-track-output', trackId: KEEPER_TRACK_ID, target: { kind: 'master' } },
+        { kind: 'add-send', trackId: FIXTURE_TRACK_ID, busId: SEND_BUS_ID, tap: 'pre-fader', level: fixture.sendLevel },
+    ];
+}
+
+async function renderSendGraphThroughContract(fixture: GraphFixture): Promise<LegRender> {
+    const context = newContext();
+    const master = newMaster(context);
+
+    const backend = createWebAudioOfflineBackend({
+        context: context as unknown as OfflineAudioContext,
+        masterNode: master as AudioNode,
+        onWarning: throwOnDegradedDevice('contract send graph'),
+    });
+
+    const result = await backend.apply({ schemaVersion: 1, commands: sendGraphCommands(fixture) });
+    if (result.application !== 'applied') {
+        throw new Error(`contract backend refused the send-graph batch: ${JSON.stringify(result)}`);
+    }
+    const source = backend.getTrackStrip(FIXTURE_TRACK_ID);
+    const keeper = backend.getTrackStrip(KEEPER_TRACK_ID);
+    if (!source || !keeper) {
+        throw new Error('contract backend applied three strip commands and holds fewer than three strips');
+    }
+
+    connectNodes(context.createSignalSource(fixtureSignal(1)), source.inputNode);
+    connectNodes(context.createSignalSource(fixtureSignal(KEEPER_SIGNAL_SCALE)), keeper.inputNode);
+
+    const buffer = await context.startRendering();
+    return { buffer, builtDeviceIds: result.reports.flatMap((report) => [...report.deviceIds]) };
+}
+
+type GraphMisread = (fixture: GraphFixture) => GraphFixture;
+
+async function nullTestSendGraph(input: { fixture: GraphFixture; misread?: GraphMisread }): Promise<NullTestResult> {
+    const misread = input.misread ?? ((fixture: GraphFixture) => fixture);
+    const asked = misread(input.fixture);
+    const reference = await renderSendGraphOffline(input.fixture);
+    const contract = await renderSendGraphThroughContract(asked);
+    assertDevicesBuilt({
+        leg: 'offline send graph',
+        expected: expectedGraphDeviceIds(input.fixture),
+        built: reference.builtDeviceIds,
+    });
+    assertDevicesBuilt({
+        leg: 'contract send graph',
+        expected: expectedGraphDeviceIds(asked),
+        built: contract.builtDeviceIds,
+    });
+    return nullTest({ a: reference.buffer, b: contract.buffer });
+}
+
+const SEND_GRAPH_BASE: GraphFixture = {
+    source: { name: 'Source', gain: 0.74, pan: -18, muted: false, soloGated: false, devices: [FIXTURE_DEVICES.gain] },
+    keeper: { name: 'Keeper', gain: 0.55, pan: 22, muted: false, devices: [] },
+    // An EQ rather than the filter: the bus device has to shape the send without
+    // burying it, or the one-part-in-five-hundred send-level probe below would
+    // be measuring the device's attenuation rather than the instrument's floor.
+    bus: { name: 'Bus', gain: 0.9, pan: 0, muted: false, devices: [FIXTURE_DEVICES.eq] },
+    sendLevel: 0.62,
+};
+
+/** Solo-gated and muted, differing at nothing but which gate is closed. */
+const SOLO_GATED_SOURCE: GraphFixture = {
+    ...SEND_GRAPH_BASE,
+    source: { ...SEND_GRAPH_BASE.source, soloGated: true },
+};
+const MUTED_SOURCE: GraphFixture = {
+    ...SEND_GRAPH_BASE,
+    source: { ...SEND_GRAPH_BASE.source, muted: true },
+};
+
+const SEND_GRAPH_FIXTURES: Array<[string, GraphFixture]> = [
+    ['a source feeding a bus through a pre-fader send', SEND_GRAPH_BASE],
+    ['a solo-gated source, whose send is gated with it', SOLO_GATED_SOURCE],
+    ['a muted source, whose pre-fader send keeps feeding its bus', MUTED_SOURCE],
+];
+
+const SEND_GRAPH_DIVERGENCES: Array<{
+    name: string;
+    fixture: GraphFixture;
+    misread: GraphMisread;
+    band: ResidualBand;
+}> = [
+    {
+        // The defect the whole fixture exists for. The native strip has one
+        // `muted` flag applied post-fader (#2085 §1), so a backend that folded
+        // solo into it puts the gate downstream of the send tap and a non-soloed
+        // track keeps feeding its cue bus at full level.
+        //
+        // Measured −16.30 dBFS against a −16.10 dBFS signal: the residual is the
+        // whole bus, as loud as the programme. This is the one divergence in the
+        // file that is *supposed* to clear the audible line.
+        name: 'folds the solo gate into the mute gate',
+        fixture: SOLO_GATED_SOURCE,
+        misread: (fixture) => ({
+            ...fixture,
+            source: { ...fixture.source, soloGated: false, muted: true },
+        }),
+        band: 'audible',
+    },
+    {
+        // The same magnitude the fader probe above proves visible, aimed at the
+        // send level instead: this is what a native backend marshalling the
+        // level through an `f32` produces. Measured −70.28 dBFS against a
+        // −10.79 dBFS signal — over budget, twenty dB below audible.
+        name: 'takes a send level one part in five hundred hot',
+        fixture: MUTED_SOURCE,
+        misread: (fixture) => ({ ...fixture, sendLevel: fixture.sendLevel * 1.002 }),
+        band: 'inaudible',
+    },
+];
+
+describe('live/offline null test — sends, solo gates and bus chains', () => {
+    it.each(SEND_GRAPH_FIXTURES)('nulls %s through the contract-backed backend', async (_name, fixture) => {
+        expectNull(await nullTestSendGraph({ fixture }));
+    });
+
+    /**
+     * The claim the two variants exist to make.
+     *
+     * Solo-in-place and mute are different gates in different places, and the
+     * only observable that separates them is what reaches the bus: a muted
+     * track's pre-fader send still feeds its cue mix, a solo-gated one's does
+     * not. If the two renders were identical, every null above would still be
+     * green and the fixture would be measuring nothing — so this is the pin
+     * that makes the pair worth rendering.
+     */
+    it('renders a solo-gated source and a muted one as different mixes', async () => {
+        const gated = await renderSendGraphThroughContract(SOLO_GATED_SOURCE);
+        const muted = await renderSendGraphThroughContract(MUTED_SOURCE);
+        const difference = nullTest({ a: muted.buffer, b: gated.buffer });
+
+        expect(difference.signalPeakDbfs).toBeGreaterThan(-40);
+        // The bus's whole contribution, which only the muted variant carries.
+        expect(difference.residualPeakDbfs).toBeGreaterThan(-25);
+    });
+
+    it.each(SEND_GRAPH_DIVERGENCES)('reds when the contract-backed backend $name', async (divergence) => {
+        expectPerturbedRed({
+            result: await nullTestSendGraph({ fixture: divergence.fixture, misread: divergence.misread }),
+            band: divergence.band,
+            leg: 'send graph',
+        });
+
+        expectNull(await nullTestSendGraph({ fixture: divergence.fixture }));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 3: cancel-and-replace automation, and the hold
+// ---------------------------------------------------------------------------
+
+/**
+ * A fader written by something other than a step, and what a backend that got
+ * one thing wrong would have written instead.
+ *
+ * These render on a **settled** context, which is what makes them measurable at
+ * all: the harness collapses each timeline to the value it comes to rest on, so
+ * what is compared is where a cancel-and-replace sequence *ends up*, against a
+ * strip built at that level directly. See the automation notes in
+ * `nullTestRenderHarness`.
+ */
+const FADER_AUTOMATION_FIXTURES: Array<{
+    name: string;
+    misreadName: string;
+    band: ResidualBand;
+    fixture: TrackFixture;
+    plan: FaderAutomationPlan;
+    misread: FaderAutomationPlan;
+}> = [
+    {
+        /**
+         * Two `ramp-to` writes whose spans overlap, with the **first** landing
+         * later than the second. That ordering is the entire fixture: it is what
+         * makes the cancel half of cancel-and-replace the thing being measured
+         * rather than the ramp. A backend that appends comes to rest on 0.19 —
+         * the stale target of the write it should have dropped — and a backend
+         * that ignores `ramp-to` altogether stays at the 0.77 the strip was
+         * created with. Only cancel-and-replace lands on 0.42.
+         */
+        name: 'two overlapping ramp-to writes, the second replacing the first',
+        // Measured −70.64 dBFS against a −16.66 dBFS signal.
+        misreadName: 'lands a replacing ramp one part in five hundred hot',
+        band: 'inaudible',
+        fixture: { ...BASE_TRACK, gain: 0.42 },
+        plan: {
+            initialGain: 0.77,
+            writes: [
+                { shape: 'ramp-to', value: 0.19, startTime: 0.1, landTime: 0.3 },
+                { shape: 'ramp-to', value: 0.42, startTime: 0.15, landTime: 0.25 },
+            ],
+        },
+        misread: {
+            initialGain: 0.77,
+            writes: [
+                { shape: 'ramp-to', value: 0.19, startTime: 0.1, landTime: 0.3 },
+                { shape: 'ramp-to', value: 0.42084, startTime: 0.15, landTime: 0.25 },
+            ],
+        },
+    },
+    {
+        /**
+         * A `hold` closing the sequence, with a ramp still pending ahead of it.
+         *
+         * What is pinned is the half the contract states without ambiguity —
+         * "drop every pending event" — and nothing else: the hold sits at 0.10,
+         * before the pending ramp's own `startTime`, so the level it holds is
+         * the same number whether a backend reads the parameter's current value
+         * or evaluates its timeline at the hold. A backend that dropped the
+         * `hold` command instead of applying it comes to rest on 0.62124, the
+         * target of the ramp the hold was supposed to cancel.
+         */
+        name: 'a hold that drops a ramp still pending',
+        // Measured −67.25 dBFS against a −13.27 dBFS signal.
+        misreadName: 'drops the hold instead of applying it',
+        band: 'inaudible',
+        fixture: { ...BASE_TRACK, gain: 0.62 },
+        plan: {
+            initialGain: 0.62,
+            writes: [
+                { shape: 'ramp-to', value: 0.62124, startTime: 0.2, landTime: 0.3 },
+                { shape: 'hold', time: 0.1 },
+            ],
+        },
+        misread: {
+            initialGain: 0.62,
+            writes: [{ shape: 'ramp-to', value: 0.62124, startTime: 0.2, landTime: 0.3 }],
+        },
+    },
+    {
+        /**
+         * The third write shape, and the one an interactive mixer move uses. It
+         * never lands exactly, so what a settled harness reads is the target it
+         * approaches — which is the level the session comes to rest at once the
+         * engineer lets go of the fader, and therefore the level a bounce owes.
+         */
+        name: 'a smoothed write settling on its target',
+        // Measured −66.45 dBFS against a −12.47 dBFS signal.
+        misreadName: 'settles a smoothed write one part in five hundred hot',
+        band: 'inaudible',
+        fixture: { ...BASE_TRACK, gain: 0.68 },
+        plan: {
+            initialGain: 0.35,
+            writes: [{ shape: 'smoothed', value: 0.68, time: 0.05, timeConstantSeconds: 0.01 }],
+        },
+        misread: {
+            initialGain: 0.35,
+            writes: [{ shape: 'smoothed', value: 0.68136, time: 0.05, timeConstantSeconds: 0.01 }],
+        },
+    },
+];
+
+function contractBackendWithPlan(name: string, plan: FaderAutomationPlan): RenderBackend {
+    return {
+        id: `audio-graph-backend/${name}`,
+        render: (fixture, options) => renderThroughContract(fixture, options, plan),
+    };
+}
+
+describe('live/offline null test — automation writes across the backend seam', () => {
+    it.each(FADER_AUTOMATION_FIXTURES)('nulls a fader driven by $name', async (entry) => {
+        expectNull(
+            await nullTestBackends({
+                a: BACKEND_A,
+                b: contractBackendWithPlan(entry.name, entry.plan),
+                fixture: entry.fixture,
+            })
+        );
+    });
+
+    it.each(FADER_AUTOMATION_FIXTURES)('reds when the contract-backed backend $misreadName', async (entry) => {
+        expectPerturbedRed({
+            result: await nullTestBackends({
+                a: BACKEND_A,
+                b: contractBackendWithPlan(entry.misreadName, entry.misread),
+                fixture: entry.fixture,
+            }),
+            band: entry.band,
+            leg: 'automation plan',
+        });
+
+        expectNull(
+            await nullTestBackends({
+                a: BACKEND_A,
+                b: contractBackendWithPlan(entry.name, entry.plan),
+                fixture: entry.fixture,
+            })
+        );
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 4: a scheduled clip, with the fades that keep its edges from clicking
+// ---------------------------------------------------------------------------
+
+/** The clip's material. Deterministic, broadband, and asymmetric across channels. */
+const CLIP_MATERIAL = createFixtureAudioBuffer({ frames: RENDER_FRAMES, sampleRate: SAMPLE_RATE });
+
+/**
+ * One playback, with a user fade in and a user fade out.
+ *
+ * **`playbackRate` is fixed at 1 and there is deliberately no stretched
+ * variant.** The two web runtimes disagree today about what `durationSeconds`
+ * means for a stretched clip — `AudioGraphClipPlayback.durationSeconds` records
+ * the divergence and jcosta33/sourdaw#2098 owns it — so a `playbackRate != 1`
+ * fixture added now would red for that reason and not for anything a backend
+ * did. Add it when #2098 lands; a red fixture standing in for a filed defect is
+ * a fixture nobody trusts.
+ */
+type ClipFixture = {
+    strip: TrackFixture;
+    startSec: number;
+    bufferOffsetSec: number;
+    playDurationSec: number;
+    /** Absolute destination time the user's fade in reaches full level. */
+    fadeInReachesFullAt: number;
+    /** Absolute destination time the user's fade out begins. */
+    fadeOutBeginsAt: number;
+    clipGain: number;
+};
+
+const CLIP_START_SEC = 0.05;
+const CLIP_DURATION_SEC = 0.4;
+
+const CLIP_FIXTURE: ClipFixture = {
+    strip: { ...BASE_TRACK, name: 'Clip', gain: 0.8, devices: [FIXTURE_DEVICES.filter] },
+    startSec: CLIP_START_SEC,
+    bufferOffsetSec: 0.02,
+    playDurationSec: CLIP_DURATION_SEC,
+    fadeInReachesFullAt: CLIP_START_SEC + 0.06,
+    fadeOutBeginsAt: CLIP_START_SEC + CLIP_DURATION_SEC - 0.08,
+    clipGain: 0.7,
+};
+
+/**
+ * The reference leg: `scheduleOfflineClipSource` called directly, which is what
+ * `scheduleTrackClips` — the export's only clip caller — does.
+ *
+ * Both legs run the same body, so what a residual here reports is the
+ * *translation* the contract performs: which absolute times the fade edges
+ * arrive on, that an absent time still means the anti-click floor, and that the
+ * clip's own gain is not folded in twice.
+ */
+async function renderClipOffline(fixture: ClipFixture): Promise<LegRender> {
+    const context = newContext({ automation: 'scheduled' });
+    const master = newMaster(context);
+
+    const strip = await createOfflineTrackStrip(
+        context as unknown as OfflineAudioContext,
+        stripInput(fixture.strip, FIXTURE_TRACK_ID),
+        { onWarning: throwOnDegradedDevice('offline clip leg') }
+    );
+    connectNodes(strip.outputNode, master);
+
+    scheduleOfflineClipSource({
+        context: context as unknown as BaseAudioContext,
+        destinationNode: strip.inputNode,
+        buffer: CLIP_MATERIAL as unknown as AudioBuffer,
+        startSec: fixture.startSec,
+        bufferOffsetSec: fixture.bufferOffsetSec,
+        playDuration: fixture.playDurationSec,
+        playbackRate: 1,
+        clipGainValue: fixture.clipGain,
+        fadeIn: { userEndSec: fixture.fadeInReachesFullAt },
+        fadeOut: { userStartSec: fixture.fadeOutBeginsAt },
+        microFadeSeconds: MICRO_FADE_SECONDS,
+    });
+
+    const buffer = await context.startRendering();
+    return { buffer, builtDeviceIds: strip.deviceEntries.map((entry) => entry.deviceId) };
+}
+
+async function renderClipThroughContract(fixture: ClipFixture): Promise<LegRender> {
+    const context = newContext({ automation: 'scheduled' });
+    const master = newMaster(context);
+
+    const backend = createWebAudioOfflineBackend({
+        context: context as unknown as OfflineAudioContext,
+        masterNode: master as AudioNode,
+        onWarning: throwOnDegradedDevice('contract clip leg'),
+    });
+
+    const result = await backend.apply({
+        schemaVersion: 1,
+        commands: [
+            {
+                kind: 'create-track-strip',
+                trackId: FIXTURE_TRACK_ID,
+                name: fixture.strip.name,
+                state: {
+                    gain: fixture.strip.gain,
+                    pan: fixture.strip.pan,
+                    muted: fixture.strip.muted,
+                    soloGated: false,
+                    vcaMultiplier: 1,
+                },
+                devices: fixture.strip.devices,
+                honorMuted: true,
+                contributesAudio: true,
+            },
+            { kind: 'set-track-output', trackId: FIXTURE_TRACK_ID, target: { kind: 'master' } },
+            {
+                kind: 'schedule-clip',
+                playback: {
+                    trackId: FIXTURE_TRACK_ID,
+                    source: { sourceId: 'fixture-take', buffer: CLIP_MATERIAL as unknown as AudioBuffer },
+                    startTime: fixture.startSec,
+                    sourceOffsetSeconds: fixture.bufferOffsetSec,
+                    durationSeconds: fixture.playDurationSec,
+                    playbackRate: 1,
+                    gain: fixture.clipGain,
+                    fade: {
+                        fadeIn: { reachesFullAt: fixture.fadeInReachesFullAt },
+                        fadeOut: { beginsAt: fixture.fadeOutBeginsAt },
+                        microFadeSeconds: MICRO_FADE_SECONDS,
+                    },
+                },
+            },
+        ],
+    });
+
+    if (result.application !== 'applied') {
+        throw new Error(`contract backend refused the clip batch: ${JSON.stringify(result)}`);
+    }
+    const report = result.reports.find((entry) => entry.id === FIXTURE_TRACK_ID);
+    if (!report) {
+        throw new Error('contract backend applied a strip command and reported no strip');
+    }
+
+    const buffer = await context.startRendering();
+    return { buffer, builtDeviceIds: [...report.deviceIds] };
+}
+
+type ClipMisread = (fixture: ClipFixture) => ClipFixture;
+
+async function nullTestClip(input: { fixture: ClipFixture; misread?: ClipMisread }): Promise<NullTestResult> {
+    const asked = (input.misread ?? ((fixture: ClipFixture) => fixture))(input.fixture);
+    const reference = await renderClipOffline(input.fixture);
+    const contract = await renderClipThroughContract(asked);
+    const expected = input.fixture.strip.devices.filter((entry) => !entry.bypassed).map((entry) => entry.id);
+    assertDevicesBuilt({ leg: 'offline clip leg', expected, built: reference.builtDeviceIds });
+    assertDevicesBuilt({ leg: 'contract clip leg', expected, built: contract.builtDeviceIds });
+    return nullTest({ a: reference.buffer, b: contract.buffer });
+}
+
+/** Every one measured against a −18.49 dBFS signal. */
+const CLIP_DIVERGENCES: Array<{ name: string; misread: ClipMisread; band: ResidualBand }> = [
+    {
+        // Measured −72.47 dBFS.
+        name: 'takes a clip gain one part in five hundred hot',
+        misread: (fixture) => ({ ...fixture, clipGain: fixture.clipGain * 1.002 }),
+        band: 'inaudible',
+    },
+    {
+        // A tenth of a millisecond — under five frames at 48 kHz — on a 60 ms
+        // fade, measured −75.12 dBFS. The number is small on purpose: a fade
+        // edge that arrives a whole millisecond late is a defect anyone would
+        // find, and proving the seam catches *that* would say nothing about its
+        // resolution. This says the fade's absolute times cross the seam intact.
+        name: 'reaches the top of a user fade in a tenth of a millisecond late',
+        misread: (fixture) => ({ ...fixture, fadeInReachesFullAt: fixture.fadeInReachesFullAt + 0.0001 }),
+        band: 'inaudible',
+    },
+    {
+        // Measured −76.90 dBFS. Lower than the fade in's for the reason the
+        // arithmetic gives: the same tenth of a millisecond is a smaller
+        // fraction of the 80 ms fade out, so it moves the envelope less.
+        name: 'begins a user fade out a tenth of a millisecond early',
+        misread: (fixture) => ({ ...fixture, fadeOutBeginsAt: fixture.fadeOutBeginsAt - 0.0001 }),
+        band: 'inaudible',
+    },
+];
+
+describe('live/offline null test — a scheduled clip and its fades', () => {
+    it('nulls a clip with a user fade in and fade out through the contract-backed backend', async () => {
+        expectNull(await nullTestClip({ fixture: CLIP_FIXTURE }));
+    });
+
+    /**
+     * The clip has to actually fade, or every null above is taken between two
+     * renders of a rectangular window and the fade fields are decoration.
+     *
+     * Measured at the head: the first frames of a 60 ms fade in sit far below
+     * the clip's steady level, and a scheduler that ignored `fadeIn` would put
+     * full level there.
+     */
+    it('renders the fade in as a fade rather than an edge', async () => {
+        const rendered = await renderClipThroughContract(CLIP_FIXTURE);
+        const channel = rendered.buffer.getChannelData(0);
+        const startFrame = Math.round(CLIP_FIXTURE.startSec * SAMPLE_RATE);
+        const fadeSpan = Math.round((CLIP_FIXTURE.fadeInReachesFullAt - CLIP_FIXTURE.startSec) * SAMPLE_RATE);
+
+        function peakBetween(from: number, to: number): number {
+            let peak = 0;
+            for (let frame = from; frame < to; frame++) {
+                peak = Math.max(peak, Math.abs(channel[frame] ?? 0));
+            }
+            return peak;
+        }
+
+        const head = peakBetween(startFrame, startFrame + Math.round(fadeSpan * 0.1));
+        const settled = peakBetween(startFrame + fadeSpan, startFrame + fadeSpan * 2);
+
+        expect(settled).toBeGreaterThan(0);
+        // A tenth of the way into the fade the envelope is at a tenth of level.
+        // A rectangular window would put these two within rounding of each other.
+        expect(head).toBeLessThan(settled * 0.35);
+    });
+
+    it.each(CLIP_DIVERGENCES)('reds when the contract-backed backend $name', async (divergence) => {
+        expectPerturbedRed({
+            result: await nullTestClip({ fixture: CLIP_FIXTURE, misread: divergence.misread }),
+            band: divergence.band,
+            leg: 'clip leg',
+        });
+
+        expectNull(await nullTestClip({ fixture: CLIP_FIXTURE }));
     });
 });

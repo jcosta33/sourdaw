@@ -551,11 +551,15 @@ impl ProofChamberInstance {
     /// engine at once; `CachedParameter` is `Copy`, so each entry is lifted
     /// out and the borrow of `self.params` ends before the forward.
     ///
-    /// Allocation happens here — an FDN `size` write rebuilds its delay table
-    /// — but this only ever runs from an engine construction, which has just
-    /// allocated every delay buffer in the engine. It is not reachable from
-    /// the steady-state parameter path that `numeric_automation_setter_does_
-    /// not_allocate` pins.
+    /// This only ever runs from an engine construction, which has just
+    /// allocated every delay buffer in the engine, so it is not on the
+    /// steady-state parameter path that `numeric_automation_setter_does_not_
+    /// allocate` pins and carries no allocation claim of its own.
+    ///
+    /// It used to say allocation happened here, because an FDN `size` write
+    /// rebuilt its delay table. That write is allocation-free now — the tank is
+    /// allocated once at construction for its longest reachable delay — and
+    /// `crates/proof-chamber/tests/fdn_size_automation_rt.rs` guards it.
     fn replay_cached_parameters(&mut self) {
         for index in 0..self.params.entries.len() {
             let entry = self.params.entries[index];

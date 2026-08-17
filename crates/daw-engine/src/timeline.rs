@@ -20,6 +20,10 @@ pub const MAX_TIMELINE_TRACKS: usize = 128;
 pub const MAX_TIMELINE_BUSES: usize = 64;
 /// Devices one track's chain holds.
 pub const MAX_TRACK_DEVICES: usize = 32;
+/// Devices one bus's chain holds. A bus is a strip like any other — a send bus
+/// that cannot host a reverb defeats the purpose of a send bus — so its chain
+/// is built to the same fixed-capacity contract as a track's.
+pub const MAX_BUS_DEVICES: usize = 32;
 /// Sends one track holds.
 pub const MAX_TRACK_SENDS: usize = 16;
 /// Clips one track holds.
@@ -54,6 +58,34 @@ pub enum RouteTarget {
 pub enum SendTap {
     PreFader,
     PostFader,
+}
+
+/// What one entry of a device chain does to the signal reaching it.
+///
+/// A strictly serial chain cannot express an instrument: a generator has no
+/// audio input, so running it in place over the running signal would discard
+/// everything upstream of it. The app's own `rebuildChain` accumulates a
+/// generator's output into the chain instead of displacing it — every previous
+/// output stays connected and the generator joins them — and that fan-in is
+/// what this distinction reproduces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeviceKind {
+    /// Consumes the signal reaching it and replaces it with what it produced.
+    Effect,
+    /// Produces signal of its own, which is summed into the chain rather than
+    /// replacing it. Whatever follows in the chain therefore processes the sum,
+    /// exactly as it does in the app's graph.
+    Generator,
+}
+
+/// One entry of a device chain: which effect, and how it joins the signal.
+///
+/// The effects themselves stay in the scheduler's id-addressed table; a chain
+/// is the ordering and the splice points.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChainEntry {
+    pub effect_id: usize,
+    pub kind: DeviceKind,
 }
 
 /// How a time-stamped parameter change travels from its current value to its
@@ -138,6 +170,12 @@ pub struct TimelineRtDiagnosticsSnapshot {
     /// than once per block, so the number is a count of events an engineer can
     /// act on and not of callbacks.
     pub unresolved_send_buses: u64,
+    /// A clip playback refused because its rate was not a positive, finite
+    /// number of source frames per rendered frame. The clip keeps the playback
+    /// it already had, and a new clip carrying one is never installed: a rate
+    /// the renderer cannot read has no correct substitute, and guessing unity
+    /// would play the wrong material at the wrong pitch without saying so.
+    pub invalid_clip_playbacks: u64,
 }
 
 pub(crate) struct TimelineRtDiagnosticsReader {
@@ -175,6 +213,7 @@ impl TimelineRtDiagnostics {
                 invalid_bus_routings: 0,
                 exponential_ramp_fallbacks: 0,
                 unresolved_send_buses: 0,
+                invalid_clip_playbacks: 0,
             },
         }
     }
@@ -217,6 +256,11 @@ impl TimelineRtDiagnostics {
     fn record_unresolved_send_bus(&mut self) {
         self.snapshot.unresolved_send_buses = self.snapshot.unresolved_send_buses.saturating_add(1);
     }
+
+    fn record_invalid_clip_playback(&mut self) {
+        self.snapshot.invalid_clip_playbacks =
+            self.snapshot.invalid_clip_playbacks.saturating_add(1);
+    }
 }
 
 /// One time-stamped parameter change, waiting for the playhead to reach it.
@@ -230,12 +274,63 @@ pub struct AutomationEvent {
     pub shape: RampShape,
 }
 
-impl AutomationEvent {
-    const SETTLED: Self = Self {
+/// How a change joins whatever the parameter already has scheduled.
+///
+/// The two halves of the app's write path need different laws, and a queue that
+/// only appends can serve one of them. An automation lane replaying a recorded
+/// curve pushes a window of stamped changes that must all be heard, in order.
+/// An interactive move — a dragged fader, a lane being written — re-issues a
+/// fresh ramp on every scheduler tick and means each one to *supersede* the
+/// last: appended, those pile up until the fixed queue refuses, and the
+/// parameter is then stranded on a target the user has long since dragged past.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AutomationWrite {
+    /// Land this change in timeline order alongside everything else queued.
+    /// The form an automation lane replaying its curve uses.
+    Append(AutomationEvent),
+    /// Drop everything still queued, then land this change — the cancel-and-
+    /// replace primitive, and the native form of the app's
+    /// `cancelScheduledValues` + `setValueAtTime` + `linearRampToValueAtTime`
+    /// tick.
+    ///
+    /// Dropping the whole queue is exactly `cancelScheduledValues(now)` and not
+    /// more: a queued change is by construction still ahead of the playhead,
+    /// because a change the playhead has reached has already landed and left
+    /// the queue. The replacement therefore always finds a free slot, so an
+    /// interactive stream can write on every tick forever without overflowing
+    /// and without the audio thread growing anything.
+    ///
+    /// The ramp re-anchors at the value the parameter holds at its own start
+    /// frame, so each tick continues the trajectory instead of compounding onto
+    /// the target the previous tick aimed at.
+    Replace(AutomationEvent),
+    /// Hold the parameter wherever it is at `at_frame` and drop everything
+    /// queued. Carries no value by construction: a hold that named one would be
+    /// a write, and would jump.
+    ///
+    /// This is the per-parameter form. The engine applies the same law to every
+    /// mixer parameter at once when the transport stops — see
+    /// [`TimelineGraph::hold_automation`] — so a ramp aimed at a frame the
+    /// playhead will now never reach does not keep gliding.
+    Hold { at_frame: u64 },
+}
+
+/// One entry of a parameter's pending queue.
+///
+/// A hold has no value, so it cannot be an [`AutomationEvent`]; keeping it in
+/// the same stamp-ordered queue is what lets a hold be scheduled ahead of the
+/// playhead and still land on the frame it names.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PendingWrite {
+    at_frame: u64,
+    /// `None` is a hold.
+    change: Option<AutomationEvent>,
+}
+
+impl PendingWrite {
+    const IDLE: Self = Self {
         at_frame: 0,
-        duration_frames: 0,
-        value: 0.0,
-        shape: RampShape::Step,
+        change: None,
     };
 }
 
@@ -246,6 +341,27 @@ struct ActiveRamp {
     from: f32,
     to: f32,
     shape: RampShape,
+}
+
+impl ActiveRamp {
+    /// The value this ramp holds at `frame`, without consuming it. A frame
+    /// outside the span resolves to the endpoint on that side, which is what
+    /// Web Audio's ramp methods do with a time outside theirs.
+    fn value_at(self, frame: u64) -> f32 {
+        if frame >= self.end_frame {
+            return self.to;
+        }
+        if frame <= self.start_frame {
+            return self.from;
+        }
+
+        let span = (self.end_frame - self.start_frame) as f32;
+        let progress = (frame - self.start_frame) as f32 / span;
+        match self.shape {
+            RampShape::Exponential => self.from * (self.to / self.from).powf(progress),
+            RampShape::Linear | RampShape::Step => self.from + (self.to - self.from) * progress,
+        }
+    }
 }
 
 /// A parameter whose value is a function of the timeline frame.
@@ -260,7 +376,7 @@ struct ActiveRamp {
 pub struct RampedParam {
     value: f32,
     active: Option<ActiveRamp>,
-    pending: [AutomationEvent; AUTOMATION_QUEUE_CAPACITY],
+    pending: [PendingWrite; AUTOMATION_QUEUE_CAPACITY],
     pending_len: usize,
 }
 
@@ -269,7 +385,7 @@ impl RampedParam {
         Self {
             value,
             active: None,
-            pending: [AutomationEvent::SETTLED; AUTOMATION_QUEUE_CAPACITY],
+            pending: [PendingWrite::IDLE; AUTOMATION_QUEUE_CAPACITY],
             pending_len: 0,
         }
     }
@@ -279,22 +395,78 @@ impl RampedParam {
         self.value
     }
 
+    /// Apply one write. Returns `false` when the queue had no room for it; the
+    /// caller counts the refusal.
+    fn write(&mut self, write: AutomationWrite) -> bool {
+        match write {
+            AutomationWrite::Append(event) => self.schedule(event),
+            AutomationWrite::Replace(event) => {
+                self.pending_len = 0;
+                self.schedule(event)
+            }
+            AutomationWrite::Hold { at_frame } => {
+                self.pending_len = 0;
+                self.enqueue(PendingWrite {
+                    at_frame,
+                    change: None,
+                })
+            }
+        }
+    }
+
     /// Queue a change, keeping the queue ordered by stamp so an event that
     /// arrives out of order still lands in timeline order. Returns `false`
     /// when the queue is full; the caller counts the refusal.
     fn schedule(&mut self, event: AutomationEvent) -> bool {
+        self.enqueue(PendingWrite {
+            at_frame: event.at_frame,
+            change: Some(event),
+        })
+    }
+
+    fn enqueue(&mut self, write: PendingWrite) -> bool {
         if self.pending_len == AUTOMATION_QUEUE_CAPACITY {
             return false;
         }
 
         let mut index = self.pending_len;
-        while index > 0 && self.pending[index - 1].at_frame > event.at_frame {
+        while index > 0 && self.pending[index - 1].at_frame > write.at_frame {
             self.pending[index] = self.pending[index - 1];
             index -= 1;
         }
-        self.pending[index] = event;
+        self.pending[index] = write;
         self.pending_len += 1;
         true
+    }
+
+    /// Drop every queued change stamped at or after `frame` and stop a ramp
+    /// that would still be moving there, keeping the value the parameter
+    /// currently holds. Nothing jumps.
+    ///
+    /// This is the engine-driven half of the cancel story — transport stop and
+    /// locate — and it is deliberately immediate rather than queued, because a
+    /// stop must not depend on a free queue slot to take effect.
+    ///
+    /// Seek and replay. The graph holds no automation curve: it holds a window
+    /// of stamped changes the control thread pushed ahead of the playhead, and
+    /// the queue is consumed as the playhead passes each one. A locate
+    /// invalidates that window in both directions — forward, because the window
+    /// describes frames now behind; backward, because the frames ahead were
+    /// already consumed and cannot be replayed from here. So the engine drops
+    /// what the locate made stale and holds its level, and the control thread,
+    /// which owns the curve, re-issues the window for the new position. A
+    /// forward locate keeps the changes stamped *before* the target on purpose:
+    /// they land on the next block and put the parameter on the curve where the
+    /// playhead now stands, rather than leaving it where the user left it.
+    fn cancel_from(&mut self, frame: u64) {
+        while self.pending_len > 0 && self.pending[self.pending_len - 1].at_frame >= frame {
+            self.pending_len -= 1;
+        }
+        if let Some(ramp) = self.active {
+            if ramp.end_frame > frame {
+                self.active = None;
+            }
+        }
     }
 
     /// The single value this parameter holds for a whole block, or `None` when
@@ -314,31 +486,38 @@ impl RampedParam {
     /// Advance the parameter to `frame` and return its value there.
     fn value_at(&mut self, frame: u64, diagnostics: &mut TimelineRtDiagnostics) -> f32 {
         while self.pending_len > 0 && self.pending[0].at_frame <= frame {
-            let event = self.pending[0];
+            let write = self.pending[0];
             self.pending.copy_within(1..self.pending_len, 0);
             self.pending_len -= 1;
-            self.begin(event, diagnostics);
+            match write.change {
+                Some(event) => self.begin(event, diagnostics),
+                None => {
+                    // A hold freezes the trajectory at the frame it names, not
+                    // at the frame the block happened to reach it on.
+                    self.value = self.value_at_frame(write.at_frame);
+                    self.active = None;
+                }
+            }
         }
 
         if let Some(ramp) = self.active {
+            self.value = ramp.value_at(frame);
             if frame >= ramp.end_frame {
-                self.value = ramp.to;
                 self.active = None;
-            } else if frame > ramp.start_frame {
-                let span = (ramp.end_frame - ramp.start_frame) as f32;
-                let progress = (frame - ramp.start_frame) as f32 / span;
-                self.value = match ramp.shape {
-                    RampShape::Exponential => ramp.from * (ramp.to / ramp.from).powf(progress),
-                    RampShape::Linear | RampShape::Step => {
-                        ramp.from + (ramp.to - ramp.from) * progress
-                    }
-                };
-            } else {
-                self.value = ramp.from;
             }
         }
 
         self.value
+    }
+
+    /// The value the parameter holds at `frame` without consuming anything,
+    /// for the two places that have to re-anchor on a trajectory rather than
+    /// advance it.
+    fn value_at_frame(&self, frame: u64) -> f32 {
+        match self.active {
+            Some(ramp) => ramp.value_at(frame),
+            None => self.value,
+        }
     }
 
     fn begin(&mut self, event: AutomationEvent, diagnostics: &mut TimelineRtDiagnostics) {
@@ -348,7 +527,11 @@ impl RampedParam {
             return;
         }
 
-        let from = self.value;
+        // Anchored at the value the parameter holds on the ramp's own start
+        // frame, so a ramp that replaces one already in flight continues from
+        // where the signal actually is instead of from the block boundary the
+        // command happened to arrive on.
+        let from = self.value_at_frame(event.at_frame);
         let mut shape = event.shape;
         if shape == RampShape::Exponential && (from <= 0.0 || event.value <= 0.0) {
             diagnostics.record_exponential_ramp_fallback();
@@ -464,6 +647,129 @@ pub struct ClipPlacement {
     pub length_frames: u64,
 }
 
+/// How a clip's level enters and leaves.
+///
+/// A clip **always** fades, even when the user asked for no fade: a span that
+/// begins or ends on a non-zero sample steps the output, and a step is a click.
+/// `micro_fade_frames` is that anti-click floor, and it is also the shortest a
+/// user's own fade is allowed to be — the same law the app's clip scheduler
+/// applies, so a clip does not click on one backend and not on the other.
+///
+/// Either side may be suppressed. A span that continues an unbroken sound — the
+/// second and later iterations of a loop, a region entered part-way — must not
+/// re-fade at the seam, because that is an audible dip rather than an
+/// anti-click, and `None` is how a caller says so.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ClipFade {
+    /// Frames the user's own fade in spans, or `None` to suppress the head
+    /// fade entirely. `Some(0)` is "no fade of the user's own", which still
+    /// gets the anti-click floor.
+    pub fade_in_frames: Option<u32>,
+    /// The same, for the tail.
+    pub fade_out_frames: Option<u32>,
+    /// The anti-click floor, applied whether or not the user asked for a fade.
+    pub micro_fade_frames: u32,
+}
+
+impl ClipFade {
+    /// No fade at either edge and no floor — the shape a caller uses for a span
+    /// that continues a sound on both sides.
+    pub const NONE: Self = Self {
+        fade_in_frames: None,
+        fade_out_frames: None,
+        micro_fade_frames: 0,
+    };
+
+    /// Both edges faded at the anti-click floor and nothing more, which is what
+    /// an ordinary clip with no authored fade sounds like.
+    pub const fn anti_click(micro_fade_frames: u32) -> Self {
+        Self {
+            fade_in_frames: Some(0),
+            fade_out_frames: Some(0),
+            micro_fade_frames,
+        }
+    }
+
+    /// Frames the head fade actually spans over a clip `length_frames` long.
+    ///
+    /// A user fade is never shorter than the anti-click floor and never eats
+    /// more than half the audible span, so a fade authored longer than the clip
+    /// cannot swallow it or collide with the tail fade.
+    fn head_frames(self, length_frames: u64) -> u64 {
+        Self::resolve(self.fade_in_frames, self.micro_fade_frames, length_frames)
+    }
+
+    fn tail_frames(self, length_frames: u64) -> u64 {
+        Self::resolve(self.fade_out_frames, self.micro_fade_frames, length_frames)
+    }
+
+    fn resolve(authored: Option<u32>, micro_fade_frames: u32, length_frames: u64) -> u64 {
+        let Some(authored) = authored else {
+            return 0;
+        };
+        u64::from(authored.max(micro_fade_frames)).min(length_frames / 2)
+    }
+}
+
+/// How one clip sounds: its level, its edges, and how fast it reads its source.
+///
+/// Bundled rather than passed as loose arguments because the three travel
+/// together through every command that installs or re-states a clip's playback,
+/// and because the app's own clip command carries exactly these alongside the
+/// placement.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClipPlayback {
+    /// The clip's own level, as a linear amplitude.
+    pub gain: f32,
+    pub fade: ClipFade,
+    /// Source frames consumed per rendered frame. `1.0` reads the material
+    /// untouched; anything else is varispeed — the rate and the pitch move
+    /// together, which is what the app's `playbackRate` means and what an
+    /// `AudioBufferSourceNode` does.
+    ///
+    /// The placement's `length_frames` is always measured on the timeline, not
+    /// on the material: a clip that sounds for two seconds sounds for two
+    /// seconds whatever its rate, and the rate decides how much material those
+    /// two seconds consume.
+    ///
+    /// Pitch-preserving time stretch is **not** this field and is not
+    /// implemented here. It is a different transform — it needs a phase vocoder
+    /// or a granular stage with state of its own, which is a device, not a clip
+    /// attribute — and pretending this field delivered it would silently
+    /// transpose every stretched clip. A rate that is not positive and finite
+    /// is refused rather than rounded to unity.
+    pub playback_rate: f32,
+}
+
+impl ClipPlayback {
+    /// A clip that plays its material untouched at `gain`, fading only enough
+    /// not to click.
+    pub const fn anti_click(gain: f32, micro_fade_frames: u32) -> Self {
+        Self {
+            gain,
+            fade: ClipFade::anti_click(micro_fade_frames),
+            playback_rate: 1.0,
+        }
+    }
+
+    /// A clip that neither fades nor resamples — the shape for a caller that is
+    /// asserting on the material itself.
+    pub const fn at_gain(gain: f32) -> Self {
+        Self {
+            gain,
+            fade: ClipFade::NONE,
+            playback_rate: 1.0,
+        }
+    }
+
+    /// Whether the renderer can read this playback at all. A rate of zero or
+    /// less has no meaning as "source frames per rendered frame", and a
+    /// non-finite one indexes nothing.
+    fn is_renderable(self) -> bool {
+        self.playback_rate.is_finite() && self.playback_rate > 0.0
+    }
+}
+
 /// One audio clip on a track, owning its source material.
 ///
 /// Built on the control thread and moved into the graph, because the two
@@ -474,7 +780,7 @@ pub struct TimelineClip {
     /// Empty for a mono source, which is played to both outputs.
     right: Vec<f32>,
     placement: ClipPlacement,
-    gain: f32,
+    playback: ClipPlayback,
 }
 
 impl TimelineClip {
@@ -485,14 +791,14 @@ impl TimelineClip {
         left: Vec<f32>,
         right: Vec<f32>,
         placement: ClipPlacement,
-        gain: f32,
+        playback: ClipPlayback,
     ) -> Box<Self> {
         Box::new(Self {
             clip_id,
             left,
             right,
             placement,
-            gain,
+            playback,
         })
     }
 
@@ -504,11 +810,16 @@ impl TimelineClip {
         self.placement
     }
 
+    pub const fn playback(&self) -> ClipPlayback {
+        self.playback
+    }
+
     /// Sum the part of this clip that falls inside `[block_start, block_start +
     /// frames)` into the track's signal, sample for sample.
     fn render_into(&self, block_start: u64, frames: usize, left: &mut [f32], right: &mut [f32]) {
         let start = self.placement.start_frame;
-        let end = start.saturating_add(self.placement.length_frames);
+        let length = self.placement.length_frames;
+        let end = start.saturating_add(length);
         let block_end = block_start + frames as u64;
         if end <= block_start || start >= block_end {
             return;
@@ -517,29 +828,98 @@ impl TimelineClip {
         let first = start.max(block_start);
         let last = end.min(block_end);
         let mono = self.right.is_empty();
+        let head = self.playback.fade.head_frames(length);
+        let tail = self.playback.fade.tail_frames(length);
+        let unity_rate = self.playback.playback_rate == 1.0;
 
         for frame in first..last {
-            let source_index = self.placement.source_offset_frames + (frame - start);
-            let Ok(source_index) = usize::try_from(source_index) else {
-                return;
-            };
-            // Material shorter than the placement plays out and leaves the rest
-            // of the span silent. The index only grows, so nothing after this
-            // frame can be in range either.
-            let Some(&sample_left) = self.left.get(source_index) else {
-                return;
-            };
-            let sample_right = if mono {
-                sample_left
+            let offset = frame - start;
+            // Unity keeps whole-sample indexing rather than interpolating a
+            // fraction that is exactly zero: an unresampled clip must reach the
+            // mix bit for bit, and interpolation through `f64` would not
+            // promise that.
+            let Some((sample_left, sample_right)) = (if unity_rate {
+                self.sample_at(self.placement.source_offset_frames + offset, mono)
             } else {
-                self.right.get(source_index).copied().unwrap_or(sample_left)
+                self.resampled_at(offset, mono)
+            }) else {
+                // Material shorter than the placement plays out and leaves the
+                // rest of the span silent. The read position only grows, so
+                // nothing after this frame can be in range either.
+                return;
             };
 
+            let level = self.playback.gain * clip_fade_envelope(offset, length, head, tail);
             let out = (frame - block_start) as usize;
-            left[out] += sample_left * self.gain;
-            right[out] += sample_right * self.gain;
+            left[out] += sample_left * level;
+            right[out] += sample_right * level;
         }
     }
+
+    /// The frame of material at a whole source index, or `None` past its end.
+    fn sample_at(&self, source_index: u64, mono: bool) -> Option<(f32, f32)> {
+        let source_index = usize::try_from(source_index).ok()?;
+        let &sample_left = self.left.get(source_index)?;
+        let sample_right = if mono {
+            sample_left
+        } else {
+            self.right.get(source_index).copied().unwrap_or(sample_left)
+        };
+        Some((sample_left, sample_right))
+    }
+
+    /// The frame of material `offset` rendered frames into the clip at a rate
+    /// other than unity, linearly interpolated between the two source frames it
+    /// falls between.
+    ///
+    /// Linear interpolation is the deliberate floor, not the intent: it is
+    /// exact at unity (which never reaches here), monotonic, allocation-free
+    /// and stateless, and its error is a gentle high-frequency roll-off rather
+    /// than the aliasing a nearest-neighbour read produces. A resampler with a
+    /// longer kernel belongs behind the same call and changes nothing about
+    /// this contract.
+    fn resampled_at(&self, offset: u64, mono: bool) -> Option<(f32, f32)> {
+        let position = self.placement.source_offset_frames as f64
+            + offset as f64 * f64::from(self.playback.playback_rate);
+        let base = position.floor();
+        let index = if base >= 0.0 {
+            base as u64
+        } else {
+            return None;
+        };
+        let fraction = (position - base) as f32;
+
+        let (left_base, right_base) = self.sample_at(index, mono)?;
+        // The last frame of the material has no successor to interpolate
+        // toward; holding it is the only reading that does not invent one.
+        let (left_next, right_next) = self
+            .sample_at(index + 1, mono)
+            .unwrap_or((left_base, right_base));
+
+        Some((
+            left_base + (left_next - left_base) * fraction,
+            right_base + (right_next - right_base) * fraction,
+        ))
+    }
+}
+
+/// The clip's own fade envelope at `offset` rendered frames into a clip
+/// `length` frames long, with `head` and `tail` already resolved against that
+/// length.
+///
+/// Linear on both edges, reaching full level exactly `head` frames in and zero
+/// exactly at the end, so the first rendered frame of a faded head and the
+/// frame after a faded tail are both silent — which is the whole point.
+#[inline]
+fn clip_fade_envelope(offset: u64, length: u64, head: u64, tail: u64) -> f32 {
+    let mut envelope = 1.0;
+    if head > 0 && offset < head {
+        envelope *= offset as f32 / head as f32;
+    }
+    if tail > 0 && offset >= length - tail {
+        envelope *= (length - offset) as f32 / tail as f32;
+    }
+    envelope
 }
 
 /// One send from a track to a bus.
@@ -556,26 +936,38 @@ pub struct TrackSend {
     bus_missing: bool,
 }
 
-/// One track: an input sum, clips, a device chain, sends, a fader, a mute, a
-/// panner, and an output.
+/// One track: an input sum, clips, a device chain, a solo gate, sends, a fader,
+/// a mute, a panner, and an output.
 ///
 /// The order of the strip is the professional one and the one the app's graph
-/// already builds: input and clips, then the device chain, then the pre-fader
-/// send tap, then the fader, then the mute, then the panner, then the
-/// post-fader send tap and the output.
+/// already builds: input and clips, then the device chain, then the solo gate,
+/// then the pre-fader send tap, then the fader, then the mute, then the panner,
+/// then the post-fader send tap and the output.
+///
+/// The two silencing gates sit at different points on purpose, and folding them
+/// into one flag is the defect this separation exists to prevent. `muted` is
+/// post-fader, downstream of the pre-fader send tap, because a pre-fader send
+/// is *defined* by tapping ahead of the fader: keeping it alive under mute is
+/// exactly what makes a cue or monitor mix usable while the engineer pulls a
+/// fader down. Solo-in-place silences every track the engineer is not listening
+/// to, and a gate placed where mute sits would leave all of them feeding their
+/// pre-fader sends into the return buses — soloing a vocal would still play
+/// every other track's reverb tail. So the solo gate closes ahead of both send
+/// taps. Held separately from `muted` so the two reasons never overwrite each
+/// other: releasing solo restores the tap without clearing a mute the user
+/// actually pressed.
 pub struct TimelineTrack {
     id: usize,
     input_left: Vec<f32>,
     input_right: Vec<f32>,
     clips: Vec<Box<TimelineClip>>,
-    /// Ids of the effects that make up this track's device chain, in order.
-    /// The effects themselves stay in the scheduler's id-addressed table; this
-    /// is the ordering and the splice point.
-    chain: Vec<usize>,
+    /// The effects that make up this track's device chain, in order.
+    chain: Vec<ChainEntry>,
     sends: Vec<TrackSend>,
     gain: RampedParam,
     pan: RampedParam,
     muted: bool,
+    solo_gated: bool,
     output: RouteTarget,
 }
 
@@ -594,6 +986,7 @@ impl TimelineTrack {
             gain: RampedParam::new(1.0),
             pan: RampedParam::new(0.0),
             muted: false,
+            solo_gated: false,
             output: RouteTarget::Master,
         })
     }
@@ -610,7 +1003,13 @@ impl TimelineTrack {
         self.muted
     }
 
-    pub fn device_chain(&self) -> &[usize] {
+    /// Whether the pre-fader solo gate is closed — that is, whether this track
+    /// is one of the tracks being silenced because another one is soloed.
+    pub const fn is_solo_gated(&self) -> bool {
+        self.solo_gated
+    }
+
+    pub fn device_chain(&self) -> &[ChainEntry] {
         &self.chain
     }
 
@@ -632,12 +1031,21 @@ impl TimelineTrack {
     }
 }
 
-/// One bus: an input sum, a gain, and an output. Buses are summed after every
-/// track, so a bus may feed the master or another bus but never a track.
+/// One bus: an input sum, a device chain, a gain, and an output. Buses are
+/// summed after every track, so a bus may feed the master or another bus but
+/// never a track.
+///
+/// The chain is the point of a send bus. A bus without one is a gain and a
+/// routing hop, which cannot host the reverb or the delay every send in a mix
+/// is sent *to* — so the whole reason to route a send there disappears. It runs
+/// on exactly the same splice contract as a track's chain, ahead of the bus
+/// fader, and an effect belongs to one chain in the graph whether that chain is
+/// on a track or on a bus.
 pub struct TimelineBus {
     id: usize,
     input_left: Vec<f32>,
     input_right: Vec<f32>,
+    chain: Vec<ChainEntry>,
     gain: RampedParam,
     output: RouteTarget,
 }
@@ -650,6 +1058,7 @@ impl TimelineBus {
             id,
             input_left: vec![0.0; MAX_CALLBACK_FRAMES],
             input_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            chain: Vec::with_capacity(MAX_BUS_DEVICES),
             gain: RampedParam::new(1.0),
             output: RouteTarget::Master,
         })
@@ -661,6 +1070,14 @@ impl TimelineBus {
 
     pub const fn output(&self) -> RouteTarget {
         self.output
+    }
+
+    pub fn device_chain(&self) -> &[ChainEntry] {
+        &self.chain
+    }
+
+    pub const fn gain(&self) -> &RampedParam {
+        &self.gain
     }
 
     fn clear_input(&mut self, frames: usize) {
@@ -703,6 +1120,11 @@ pub struct TimelineGraph {
     master_gain: RampedParam,
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
+    /// Where a generator writes before it is summed into the chain it sits on.
+    /// A generator produces rather than transforms, so it cannot be run in
+    /// place over the running signal without discarding it.
+    generator_left: Vec<f32>,
+    generator_right: Vec<f32>,
     diagnostics: TimelineRtDiagnostics,
 }
 
@@ -717,6 +1139,8 @@ impl TimelineGraph {
             master_gain: RampedParam::new(1.0),
             scratch_left: vec![0.0; MAX_CALLBACK_FRAMES],
             scratch_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            generator_left: vec![0.0; MAX_CALLBACK_FRAMES],
+            generator_right: vec![0.0; MAX_CALLBACK_FRAMES],
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -736,6 +1160,8 @@ impl TimelineGraph {
             master_gain: RampedParam::new(1.0),
             scratch_left: Vec::new(),
             scratch_right: Vec::new(),
+            generator_left: Vec::new(),
+            generator_right: Vec::new(),
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -897,29 +1323,42 @@ impl TimelineGraph {
         track.muted = muted;
     }
 
+    /// Open or close a track's pre-fader solo gate. Independent of the mute for
+    /// the reason given on [`TimelineTrack`].
+    pub(crate) fn set_track_solo_gate(&mut self, id: usize, gated: bool) {
+        let Some(track) = self.track_mut(id) else {
+            self.diagnostics.record_unknown_target();
+            return;
+        };
+        track.solo_gated = gated;
+    }
+
+    /// Whether any chain in the graph — on a track or on a bus — already holds
+    /// this effect.
+    ///
+    /// An effect belongs to exactly one chain. One instance spliced into two
+    /// would run its state over two unrelated streams interleaved, and the
+    /// effect's single-valued placement could only ever name one of the two
+    /// claimants, so the second claim is refused wherever it comes from.
+    fn effect_is_claimed(&self, effect_id: usize) -> bool {
+        let claims = |chain: &[ChainEntry]| chain.iter().any(|entry| entry.effect_id == effect_id);
+        self.tracks.iter().any(|track| claims(&track.chain))
+            || self.buses.iter().any(|bus| claims(&bus.chain))
+    }
+
     /// Returns whether the chain took the effect, so the caller only claims an
     /// effect the chain accepted.
-    ///
-    /// An effect belongs to exactly one chain. A second claim — by the same
-    /// track or by another one — is refused and counted as an id collision:
-    /// one instance spliced into two chains would run its state over two
-    /// unrelated streams interleaved, and the effect's single-valued placement
-    /// could only ever name one of the two claimants.
     pub(crate) fn insert_track_device(
         &mut self,
         track_id: usize,
-        effect_id: usize,
+        entry: ChainEntry,
         index: usize,
     ) -> bool {
         let Some(target) = self.tracks.iter().position(|track| track.id == track_id) else {
             self.diagnostics.record_unknown_target();
             return false;
         };
-        if self
-            .tracks
-            .iter()
-            .any(|track| track.chain.contains(&effect_id))
-        {
+        if self.effect_is_claimed(entry.effect_id) {
             self.diagnostics.record_id_collision();
             return false;
         }
@@ -930,7 +1369,7 @@ impl TimelineGraph {
             return false;
         }
 
-        track.chain.insert(index.min(track.chain.len()), effect_id);
+        track.chain.insert(index.min(track.chain.len()), entry);
         true
     }
 
@@ -939,12 +1378,62 @@ impl TimelineGraph {
             self.diagnostics.record_unknown_target();
             return false;
         };
-        let Some(index) = track.chain.iter().position(|id| *id == effect_id) else {
+        let Some(index) = track
+            .chain
+            .iter()
+            .position(|entry| entry.effect_id == effect_id)
+        else {
             self.diagnostics.record_unknown_target();
             return false;
         };
 
         track.chain.remove(index);
+        true
+    }
+
+    /// Splice an effect into a bus's chain, on the same contract as
+    /// [`TimelineGraph::insert_track_device`] — including the single-claim
+    /// rule, which spans tracks and buses alike.
+    pub(crate) fn insert_bus_device(
+        &mut self,
+        bus_id: usize,
+        entry: ChainEntry,
+        index: usize,
+    ) -> bool {
+        let Some(target) = self.buses.iter().position(|bus| bus.id == bus_id) else {
+            self.diagnostics.record_unknown_target();
+            return false;
+        };
+        if self.effect_is_claimed(entry.effect_id) {
+            self.diagnostics.record_id_collision();
+            return false;
+        }
+
+        let bus = &mut self.buses[target];
+        if bus.chain.len() == bus.chain.capacity() {
+            self.diagnostics.record_capacity_refusal();
+            return false;
+        }
+
+        bus.chain.insert(index.min(bus.chain.len()), entry);
+        true
+    }
+
+    pub(crate) fn remove_bus_device(&mut self, bus_id: usize, effect_id: usize) -> bool {
+        let Some(bus) = self.buses.iter_mut().find(|bus| bus.id == bus_id) else {
+            self.diagnostics.record_unknown_target();
+            return false;
+        };
+        let Some(index) = bus
+            .chain
+            .iter()
+            .position(|entry| entry.effect_id == effect_id)
+        else {
+            self.diagnostics.record_unknown_target();
+            return false;
+        };
+
+        bus.chain.remove(index);
         true
     }
 
@@ -998,6 +1487,10 @@ impl TimelineGraph {
         track_id: usize,
         clip: Box<TimelineClip>,
     ) -> Option<Box<TimelineClip>> {
+        if !clip.playback.is_renderable() {
+            self.diagnostics.record_invalid_clip_playback();
+            return Some(clip);
+        }
         let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
             self.diagnostics.record_unknown_target();
             return Some(clip);
@@ -1056,7 +1549,42 @@ impl TimelineGraph {
         clip.placement = placement;
     }
 
-    pub(crate) fn automate(&mut self, target: AutomationTarget, event: AutomationEvent) {
+    /// Re-state a clip's level, its fades and its rate. Non-destructive in the
+    /// same way a trim is: the source material is untouched, so restoring the
+    /// playback restores the edit.
+    pub(crate) fn set_clip_playback(
+        &mut self,
+        track_id: usize,
+        clip_id: usize,
+        playback: ClipPlayback,
+    ) {
+        if !playback.is_renderable() {
+            self.diagnostics.record_invalid_clip_playback();
+            return;
+        }
+        let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
+            self.diagnostics.record_unknown_target();
+            return;
+        };
+        let Some(clip) = track.clips.iter_mut().find(|clip| clip.clip_id == clip_id) else {
+            self.diagnostics.record_unknown_target();
+            return;
+        };
+
+        clip.playback = playback;
+    }
+
+    /// The playback a clip currently holds, for callers proving an edit
+    /// re-stated the envelope rather than the material.
+    pub fn clip_playback(&self, track_id: usize, clip_id: usize) -> Option<ClipPlayback> {
+        self.track(track_id)?
+            .clips
+            .iter()
+            .find(|clip| clip.clip_id == clip_id)
+            .map(|clip| clip.playback)
+    }
+
+    pub(crate) fn automate(&mut self, target: AutomationTarget, write: AutomationWrite) {
         let param = match target {
             AutomationTarget::MasterGain => Some(&mut self.master_gain),
             AutomationTarget::TrackGain(id) => self.track_mut(id).map(|track| &mut track.gain),
@@ -1079,8 +1607,44 @@ impl TimelineGraph {
             return;
         };
 
-        if !param.schedule(event) {
+        if !param.write(write) {
             self.diagnostics.record_automation_queue_overflow();
+        }
+    }
+
+    /// Hold every mixer parameter wherever it is and drop what each of them has
+    /// queued — the transport-stop law.
+    ///
+    /// A ramp aimed at a frame the playhead is about to stop short of would
+    /// otherwise keep gliding after playback ended, because the stamp on it is
+    /// a timeline frame and the timeline no longer advances. Holding is the
+    /// only answer that does not jump: the parameters keep the values the last
+    /// rendered frame left them on.
+    pub(crate) fn hold_automation(&mut self, at_frame: u64) {
+        self.for_each_param(|param| param.cancel_from(at_frame));
+    }
+
+    /// Drop what a locate made stale on every mixer parameter. See
+    /// [`RampedParam::cancel_from`] for the seek-and-replay law this half
+    /// implements and for what the control thread owns.
+    pub(crate) fn seek(&mut self, frame: u64) {
+        self.for_each_param(|param| param.cancel_from(frame));
+    }
+
+    /// Visit every parameter the graph itself owns, in a fixed order, without
+    /// allocating: the two graph-wide automation laws apply to all of them and
+    /// neither may miss one.
+    fn for_each_param(&mut self, mut visit: impl FnMut(&mut RampedParam)) {
+        visit(&mut self.master_gain);
+        for track in self.tracks.iter_mut() {
+            visit(&mut track.gain);
+            visit(&mut track.pan);
+            for send in track.sends.iter_mut() {
+                visit(&mut send.level);
+            }
+        }
+        for bus in self.buses.iter_mut() {
+            visit(&mut bus.gain);
         }
     }
 
@@ -1191,6 +1755,8 @@ impl TimelineGraph {
             bus_order,
             scratch_left,
             scratch_right,
+            generator_left,
+            generator_right,
             diagnostics,
             ..
         } = self;
@@ -1218,13 +1784,26 @@ impl TimelineGraph {
                 }
             }
 
-            for chain_index in 0..tracks[index].chain.len() {
-                let effect_id = tracks[index].chain[chain_index];
-                devices.run_device(effect_id, left, right, frames);
-            }
+            run_device_chain(
+                &tracks[index].chain,
+                devices,
+                frames,
+                left,
+                right,
+                &mut generator_left[..frames],
+                &mut generator_right[..frames],
+            );
 
             {
                 let track = &mut tracks[index];
+                // Solo-in-place, ahead of both send taps. Placed with the mute
+                // instead, every track the engineer is not listening to would
+                // go on feeding its pre-fader send into the return buses. See
+                // `TimelineTrack`.
+                if track.solo_gated {
+                    left.fill(0.0);
+                    right.fill(0.0);
+                }
                 run_sends(
                     track,
                     SendTap::PreFader,
@@ -1308,6 +1887,22 @@ impl TimelineGraph {
                 let bus = &mut buses[index];
                 left.copy_from_slice(&bus.input_left[..frames]);
                 right.copy_from_slice(&bus.input_right[..frames]);
+            }
+
+            // The bus's inserts run over its summed input and ahead of its
+            // fader, which is where a track's chain sits on its own strip.
+            run_device_chain(
+                &buses[index].chain,
+                devices,
+                frames,
+                left,
+                right,
+                &mut generator_left[..frames],
+                &mut generator_right[..frames],
+            );
+
+            {
+                let bus = &mut buses[index];
                 apply_gain(&mut bus.gain, block_start, frames, left, right, diagnostics);
             }
 
@@ -1349,6 +1944,38 @@ impl TimelineGraph {
             &mut right[..frames],
             &mut self.diagnostics,
         );
+    }
+}
+
+/// Run one strip's device chain over the signal in `left` / `right`.
+///
+/// An effect transforms the signal in place. A generator has no audio input, so
+/// it is run over a cleared scratch pair and summed in: the signal reaching the
+/// chain at that point survives, and everything after the generator processes
+/// the sum. That is the fan-in the app's `rebuildChain` builds — every previous
+/// output stays connected and the generator's output joins them — and it is the
+/// only way a chain can hold an instrument without the instrument erasing
+/// whatever the strip already carried.
+fn run_device_chain(
+    chain: &[ChainEntry],
+    devices: &mut impl DeviceChain,
+    frames: usize,
+    left: &mut [f32],
+    right: &mut [f32],
+    generator_left: &mut [f32],
+    generator_right: &mut [f32],
+) {
+    for entry in chain {
+        match entry.kind {
+            DeviceKind::Effect => devices.run_device(entry.effect_id, left, right, frames),
+            DeviceKind::Generator => {
+                generator_left.fill(0.0);
+                generator_right.fill(0.0);
+                devices.run_device(entry.effect_id, generator_left, generator_right, frames);
+                sum_into(left, generator_left);
+                sum_into(right, generator_right);
+            }
+        }
     }
 }
 
@@ -1514,6 +2141,40 @@ mod tests {
         }
     }
 
+    /// Runs one scaling effect and one generator that emits a constant,
+    /// addressed by id, so a chain's arithmetic is readable from the mix.
+    struct TestDevices {
+        scaler_id: usize,
+        factor: f32,
+        generator_id: usize,
+        emits: f32,
+    }
+
+    impl DeviceChain for TestDevices {
+        fn run_device(
+            &mut self,
+            effect_id: usize,
+            left: &mut [f32],
+            right: &mut [f32],
+            frames: usize,
+        ) {
+            if effect_id == self.scaler_id {
+                for index in 0..frames {
+                    left[index] *= self.factor;
+                    right[index] *= self.factor;
+                }
+            } else if effect_id == self.generator_id {
+                // A generator ignores whatever reached it and emits its own
+                // material, which is exactly why running one in place would
+                // erase the strip's signal.
+                for index in 0..frames {
+                    left[index] = self.emits;
+                    right[index] = self.emits;
+                }
+            }
+        }
+    }
+
     fn placement(start_frame: u64, source_offset_frames: u64, length_frames: u64) -> ClipPlacement {
         ClipPlacement {
             start_frame,
@@ -1529,6 +2190,24 @@ mod tests {
             value,
             shape,
         }
+    }
+
+    fn effect(effect_id: usize) -> ChainEntry {
+        ChainEntry {
+            effect_id,
+            kind: DeviceKind::Effect,
+        }
+    }
+
+    fn generator(effect_id: usize) -> ChainEntry {
+        ChainEntry {
+            effect_id,
+            kind: DeviceKind::Generator,
+        }
+    }
+
+    fn chain_ids(chain: &[ChainEntry]) -> Vec<usize> {
+        chain.iter().map(|entry| entry.effect_id).collect()
     }
 
     /// Walk a parameter frame by frame the way `apply_gain` does, so the
@@ -1647,7 +2326,7 @@ mod tests {
         for index in 0..=AUTOMATION_QUEUE_CAPACITY {
             graph.automate(
                 AutomationTarget::TrackGain(1),
-                ramp(1_000 + index as u64, 0, 0.5, RampShape::Step),
+                AutomationWrite::Append(ramp(1_000 + index as u64, 0, 0.5, RampShape::Step)),
             );
         }
 
@@ -1707,7 +2386,13 @@ mod tests {
     #[test]
     fn a_trimmed_clip_renders_the_window_its_placement_names_and_keeps_its_material() {
         let material = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
-        let mut clip = TimelineClip::new(9, material, Vec::new(), placement(0, 2, 3), 1.0);
+        let mut clip = TimelineClip::new(
+            9,
+            material,
+            Vec::new(),
+            placement(0, 2, 3),
+            ClipPlayback::at_gain(1.0),
+        );
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
         clip.render_into(0, 4, &mut left, &mut right);
@@ -1726,7 +2411,13 @@ mod tests {
 
     #[test]
     fn a_placement_reaching_past_its_material_renders_silence_rather_than_stale_samples() {
-        let clip = TimelineClip::new(9, vec![1.0, 1.0], Vec::new(), placement(0, 0, 6), 1.0);
+        let clip = TimelineClip::new(
+            9,
+            vec![1.0, 1.0],
+            Vec::new(),
+            placement(0, 0, 6),
+            ClipPlayback::at_gain(1.0),
+        );
         let mut left = vec![0.0; 6];
         let mut right = vec![0.0; 6];
         clip.render_into(0, 6, &mut left, &mut right);
@@ -1736,7 +2427,13 @@ mod tests {
 
     #[test]
     fn a_clip_sums_into_the_span_it_names_and_leaves_the_rest_of_the_block_alone() {
-        let clip = TimelineClip::new(9, vec![1.0; 8], Vec::new(), placement(3, 0, 2), 0.5);
+        let clip = TimelineClip::new(
+            9,
+            vec![1.0; 8],
+            Vec::new(),
+            placement(3, 0, 2),
+            ClipPlayback::at_gain(0.5),
+        );
         let mut left = vec![0.0; 8];
         let mut right = vec![0.0; 8];
         clip.render_into(0, 8, &mut left, &mut right);
@@ -1751,30 +2448,39 @@ mod tests {
     }
 
     #[test]
-    fn an_effect_one_track_already_claims_is_refused_by_every_other_chain() {
+    fn an_effect_one_chain_already_claims_is_refused_by_every_other_chain() {
         let mut graph = TimelineGraph::new();
         assert!(graph.add_track(TimelineTrack::new(1)).is_none());
         assert!(graph.add_track(TimelineTrack::new(2)).is_none());
-        assert!(graph.insert_track_device(1, 7, 0));
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        assert!(graph.insert_track_device(1, effect(7), 0));
 
         // One instance on two chains would run its state over two unrelated
         // streams interleaved, and the effect's placement could only name one
-        // of the two tracks that hold it.
-        assert!(!graph.insert_track_device(2, 7, 0));
-        assert!(!graph.insert_track_device(1, 7, 0));
-        assert_eq!(graph.diagnostics().id_collisions, 2);
+        // of the strips that hold it. A bus chain is a chain like any other, so
+        // it is bound by the same rule and not by a second one.
+        assert!(!graph.insert_track_device(2, effect(7), 0));
+        assert!(!graph.insert_track_device(1, effect(7), 0));
+        assert!(!graph.insert_bus_device(50, effect(7), 0));
+        assert_eq!(graph.diagnostics().id_collisions, 3);
         assert_eq!(
-            graph.track(1).map(|track| track.device_chain().to_vec()),
+            graph.track(1).map(|track| chain_ids(track.device_chain())),
             Some(vec![7])
         );
         assert_eq!(
-            graph.track(2).map(|track| track.device_chain().to_vec()),
+            graph.track(2).map(|track| chain_ids(track.device_chain())),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            graph.bus(50).map(|bus| chain_ids(bus.device_chain())),
             Some(Vec::new())
         );
 
-        // Freed by the track that holds it, the effect is available again.
+        // Freed by the strip that holds it, the effect is available again —
+        // including to a bus.
         assert!(graph.remove_track_device(1, 7));
-        assert!(graph.insert_track_device(2, 7, 0));
+        assert!(graph.insert_bus_device(50, effect(7), 0));
+        assert!(!graph.insert_track_device(2, effect(7), 0));
     }
 
     #[test]
@@ -1785,7 +2491,13 @@ mod tests {
         assert!(graph
             .add_clip(
                 1,
-                TimelineClip::new(9, vec![1.0; 8], Vec::new(), placement(0, 0, 8), 1.0)
+                TimelineClip::new(
+                    9,
+                    vec![1.0; 8],
+                    Vec::new(),
+                    placement(0, 0, 8),
+                    ClipPlayback::at_gain(1.0)
+                )
             )
             .is_none());
         graph.add_send(1, 50, SendTap::PostFader, 1.0);
@@ -1827,5 +2539,402 @@ mod tests {
         right.fill(0.0);
         graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
         assert_eq!(graph.diagnostics().unresolved_send_buses, 2);
+    }
+
+    /// A track carrying one mono clip of a constant value, with no fade of any
+    /// kind so the arithmetic under test is the only thing shaping the mix.
+    fn graph_with_constant_clip(track_id: usize, value: f32, frames: u64) -> TimelineGraph {
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(track_id)).is_none());
+        assert!(graph
+            .add_clip(
+                track_id,
+                TimelineClip::new(
+                    9,
+                    vec![value; frames as usize],
+                    Vec::new(),
+                    placement(0, 0, frames),
+                    ClipPlayback::at_gain(1.0),
+                )
+            )
+            .is_none());
+        graph
+    }
+
+    #[test]
+    fn the_solo_gate_closes_ahead_of_the_send_taps_and_the_mute_deliberately_does_not() {
+        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        graph.add_send(1, 50, SendTap::PreFader, 1.0);
+
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![2.0; 4], "the track's output plus its cue send");
+
+        // Mute is post-fader by design: the cue send keeps feeding its bus
+        // while the engineer pulls the fader down, which is the whole reason a
+        // pre-fader send exists.
+        graph.set_track_mute(1, true);
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4], "the muted track still feeds its bus");
+
+        // Solo-in-place has to silence the track *and* its sends, so soloing
+        // one track does not go on playing every other track's reverb tail.
+        // A gate folded into the mute would leave this at 1.0.
+        graph.set_track_mute(1, false);
+        graph.set_track_solo_gate(1, true);
+        assert!(graph.track(1).expect("the track").is_solo_gated());
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![0.0; 4], "a solo-gated track feeds nothing");
+
+        // The two reasons are independent: releasing solo restores the tap
+        // without clearing a mute the user pressed.
+        graph.set_track_mute(1, true);
+        graph.set_track_solo_gate(1, false);
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 4]);
+        assert!(graph.track(1).expect("the track").is_muted());
+    }
+
+    #[test]
+    fn a_send_bus_runs_its_own_insert_chain_over_what_reaches_it() {
+        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        let mut devices = TestDevices {
+            scaler_id: 7,
+            factor: 0.5,
+            generator_id: usize::MAX,
+            emits: 0.0,
+        };
+
+        // A bus with no insert is a gain and a routing hop: the send arrives at
+        // the master untouched, and there is nowhere to put the reverb the send
+        // was routed there for.
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut devices, &mut left, &mut right);
+        assert_eq!(left, vec![2.0; 4]);
+
+        assert!(graph.insert_bus_device(50, effect(7), 0));
+        assert_eq!(
+            graph.bus(50).map(|bus| chain_ids(bus.device_chain())),
+            Some(vec![7])
+        );
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut devices, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![1.5; 4],
+            "the track's own output plus a send the bus's insert halved"
+        );
+
+        // And the splice is reversible without unloading the effect.
+        assert!(graph.remove_bus_device(50, 7));
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, 4, true, &mut devices, &mut left, &mut right);
+        assert_eq!(left, vec![2.0; 4]);
+    }
+
+    #[test]
+    fn a_generator_joins_the_chain_and_what_follows_it_processes_the_sum() {
+        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        assert!(graph.insert_track_device(1, generator(11), 0));
+        assert!(graph.insert_track_device(1, effect(7), 1));
+        let mut devices = TestDevices {
+            scaler_id: 7,
+            factor: 0.5,
+            generator_id: 11,
+            emits: 0.5,
+        };
+
+        // The generator accumulates into the chain rather than displacing it,
+        // and the effect behind it sees the sum: (1.0 + 0.5) * 0.5. Run in
+        // place, as a strictly serial chain must, the generator would have
+        // erased the clip and left 0.5 * 0.5.
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        graph.render(0, 4, true, &mut devices, &mut left, &mut right);
+        assert_eq!(left, vec![0.75; 4]);
+        assert_eq!(right, vec![0.75; 4]);
+    }
+
+    #[test]
+    fn a_clip_fades_both_edges_at_the_anti_click_floor_it_was_given() {
+        let mut clip = TimelineClip::new(
+            9,
+            vec![1.0; 8],
+            Vec::new(),
+            placement(0, 0, 8),
+            ClipPlayback::anti_click(1.0, 2),
+        );
+        let mut left = vec![0.0; 8];
+        let mut right = vec![0.0; 8];
+        clip.render_into(0, 8, &mut left, &mut right);
+
+        // Starting and stopping on a full-scale sample steps the output, and a
+        // step is a click. Without the floor every one of these would be 1.0.
+        assert_eq!(left, vec![0.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]);
+        assert_eq!(right, left);
+
+        // A user's own fade replaces the floor when it is longer, and is held
+        // to the floor when it is shorter.
+        clip.playback.fade = ClipFade {
+            fade_in_frames: Some(4),
+            fade_out_frames: Some(1),
+            micro_fade_frames: 2,
+        };
+        left.fill(0.0);
+        right.fill(0.0);
+        clip.render_into(0, 8, &mut left, &mut right);
+        assert_eq!(left, vec![0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 0.5]);
+
+        // And a fade authored longer than the clip cannot swallow it: neither
+        // edge takes more than half the audible span.
+        clip.playback.fade = ClipFade {
+            fade_in_frames: Some(100),
+            fade_out_frames: Some(100),
+            micro_fade_frames: 2,
+        };
+        left.fill(0.0);
+        right.fill(0.0);
+        clip.render_into(0, 8, &mut left, &mut right);
+        assert_eq!(left, vec![0.0, 0.25, 0.5, 0.75, 1.0, 0.75, 0.5, 0.25]);
+    }
+
+    #[test]
+    fn a_suppressed_edge_does_not_re_fade_a_sound_that_is_already_running() {
+        // The second iteration of a loop continues the first without a break.
+        // Fading in there is an audible dip, not an anti-click, so the caller
+        // suppresses that edge and the renderer must honour it.
+        let clip = TimelineClip::new(
+            9,
+            vec![1.0; 8],
+            Vec::new(),
+            placement(0, 0, 8),
+            ClipPlayback {
+                gain: 1.0,
+                fade: ClipFade {
+                    fade_in_frames: None,
+                    fade_out_frames: Some(0),
+                    micro_fade_frames: 2,
+                },
+                playback_rate: 1.0,
+            },
+        );
+        let mut left = vec![0.0; 8];
+        let mut right = vec![0.0; 8];
+        clip.render_into(0, 8, &mut left, &mut right);
+
+        assert_eq!(left, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]);
+    }
+
+    #[test]
+    fn a_clip_rate_reads_its_material_faster_or_slower_across_the_span_it_names() {
+        let material = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        let mut clip = TimelineClip::new(
+            9,
+            material,
+            Vec::new(),
+            placement(0, 0, 4),
+            ClipPlayback {
+                gain: 1.0,
+                fade: ClipFade::NONE,
+                playback_rate: 2.0,
+            },
+        );
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        clip.render_into(0, 4, &mut left, &mut right);
+
+        // The placement's length is timeline frames, not source frames: four
+        // frames sound, and the rate decides how much material they consume.
+        assert_eq!(left, vec![0.0, 2.0, 4.0, 6.0]);
+
+        // Below unity the read lands between frames and is interpolated.
+        clip.playback.playback_rate = 0.5;
+        left.fill(0.0);
+        right.fill(0.0);
+        clip.render_into(0, 4, &mut left, &mut right);
+        assert_eq!(left, vec![0.0, 0.5, 1.0, 1.5]);
+
+        // Unity is the untouched read, bit for bit.
+        clip.playback.playback_rate = 1.0;
+        left.fill(0.0);
+        right.fill(0.0);
+        clip.render_into(0, 4, &mut left, &mut right);
+        assert_eq!(left, vec![0.0, 1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn a_clip_playback_the_renderer_cannot_read_is_refused_rather_than_guessed() {
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+
+        // Zero source frames per rendered frame has no reading, and rounding it
+        // to unity would play the material at a rate nobody asked for.
+        let stalled = ClipPlayback {
+            gain: 1.0,
+            fade: ClipFade::NONE,
+            playback_rate: 0.0,
+        };
+        assert!(graph
+            .add_clip(
+                1,
+                TimelineClip::new(9, vec![1.0; 4], Vec::new(), placement(0, 0, 4), stalled)
+            )
+            .is_some());
+        assert_eq!(graph.diagnostics().invalid_clip_playbacks, 1);
+        assert_eq!(graph.track(1).map(|track| track.clips.len()), Some(0));
+
+        assert!(graph
+            .add_clip(
+                1,
+                TimelineClip::new(
+                    9,
+                    vec![1.0; 4],
+                    Vec::new(),
+                    placement(0, 0, 4),
+                    ClipPlayback::at_gain(1.0)
+                )
+            )
+            .is_none());
+        graph.set_clip_playback(
+            1,
+            9,
+            ClipPlayback {
+                gain: 1.0,
+                fade: ClipFade::NONE,
+                playback_rate: f32::NAN,
+            },
+        );
+        assert_eq!(graph.diagnostics().invalid_clip_playbacks, 2);
+        assert_eq!(
+            graph
+                .clip_playback(1, 9)
+                .map(|playback| playback.playback_rate),
+            Some(1.0),
+            "the clip keeps the playback it already had"
+        );
+    }
+
+    #[test]
+    fn a_replacing_write_supersedes_the_queue_and_an_appending_one_fills_it() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut replaced = RampedParam::new(0.0);
+        let mut appended = RampedParam::new(0.0);
+
+        // Twenty ticks of a dragged fader, each meaning to supersede the last.
+        for tick in 0..20u64 {
+            let event = ramp(tick, 4, tick as f32, RampShape::Linear);
+            assert!(
+                replaced.write(AutomationWrite::Replace(event)),
+                "tick {tick} of a replacing stream must always find a slot"
+            );
+            // The same stream appended runs out of queue in eight ticks, which
+            // is the failure this primitive exists to remove.
+            assert_eq!(
+                appended.write(AutomationWrite::Append(event)),
+                tick < AUTOMATION_QUEUE_CAPACITY as u64
+            );
+        }
+
+        // The replacing stream lands on the target the user actually dragged
+        // to. The appending one is stranded on the eighth tick's target,
+        // however long the drag went on.
+        assert_eq!(replaced.value_at(100, &mut diagnostics), 19.0);
+        assert_eq!(appended.value_at(100, &mut diagnostics), 7.0);
+    }
+
+    #[test]
+    fn a_replacing_ramp_continues_the_trajectory_instead_of_compounding_onto_it() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.write(AutomationWrite::Replace(ramp(0, 8, 0.0, RampShape::Linear)));
+        assert_eq!(param.value_at(2, &mut diagnostics), 0.75);
+
+        // A second tick, aimed at 1.0 four frames out. It has to start from
+        // where the parameter actually is at frame 4 — mid-glide at 0.5 — not
+        // from the 0.0 the first ramp was still aiming at.
+        param.write(AutomationWrite::Replace(ramp(4, 4, 1.0, RampShape::Linear)));
+        assert_eq!(param.value_at(4, &mut diagnostics), 0.5);
+        assert_eq!(param.value_at(6, &mut diagnostics), 0.75);
+        assert_eq!(param.value_at(8, &mut diagnostics), 1.0);
+    }
+
+    #[test]
+    fn a_hold_freezes_the_parameter_on_the_frame_it_names_and_drops_what_was_queued() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut param = RampedParam::new(1.0);
+        param.write(AutomationWrite::Append(ramp(0, 8, 0.0, RampShape::Linear)));
+        param.write(AutomationWrite::Append(ramp(8, 0, 0.9, RampShape::Step)));
+        assert_eq!(param.value_at(2, &mut diagnostics), 0.75);
+
+        param.write(AutomationWrite::Hold { at_frame: 4 });
+
+        // Frozen on frame 4, not on the frame the block happened to reach the
+        // hold on, and holding rather than jumping.
+        assert_eq!(param.value_at(3, &mut diagnostics), 0.625);
+        assert_eq!(param.value_at(4, &mut diagnostics), 0.5);
+        assert_eq!(param.value_at(5, &mut diagnostics), 0.5);
+        // The change stamped behind the hold went with it: it was aimed at a
+        // trajectory the hold ended.
+        assert_eq!(param.value_at(100, &mut diagnostics), 0.5);
+    }
+
+    #[test]
+    fn a_locate_drops_the_window_beyond_it_and_keeps_what_the_playhead_passed() {
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        graph.automate(
+            AutomationTarget::TrackGain(1),
+            AutomationWrite::Append(ramp(4, 0, 0.5, RampShape::Step)),
+        );
+        graph.automate(
+            AutomationTarget::TrackGain(1),
+            AutomationWrite::Append(ramp(12, 0, 0.25, RampShape::Step)),
+        );
+
+        graph.seek(8);
+
+        // The change the locate skipped over still lands, which is what puts
+        // the fader on the curve where the playhead now stands. The change
+        // beyond the locate is gone: it belongs to a window the control thread
+        // pushed for the old position and will re-issue for the new one.
+        let gain = &mut graph.track_mut(1).expect("the track").gain;
+        assert_eq!(gain.value_at(8, &mut diagnostics), 0.5);
+        assert_eq!(gain.value_at(100, &mut diagnostics), 0.5);
+    }
+
+    #[test]
+    fn a_locate_drops_a_change_stamped_exactly_on_its_frame() {
+        // The boundary is the law the control thread orders itself around: a
+        // write stamped on the locate frame belongs to the stale window and
+        // dies with it, so the window pushed *after* the locate is the only
+        // thing that can land there. Pinned separately because the straddling
+        // test above cannot tell `>=` from `>`.
+        let mut diagnostics = TimelineRtDiagnostics::new();
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        graph.automate(
+            AutomationTarget::TrackGain(1),
+            AutomationWrite::Append(ramp(8, 0, 0.25, RampShape::Step)),
+        );
+
+        graph.seek(8);
+
+        let gain = &mut graph.track_mut(1).expect("the track").gain;
+        assert_eq!(gain.value_at(8, &mut diagnostics), 1.0);
+        assert_eq!(gain.value_at(100, &mut diagnostics), 1.0);
     }
 }
