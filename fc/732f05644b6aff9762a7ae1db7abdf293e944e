@@ -1,0 +1,48 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/MasterVisualizationsSection.spec.tsx
+  s_ab5443e65c7fba::t_88ba54c749f758 1,18,21,41-51,65-69,71,73-75,78,80,83,86,89-92,95,97-107
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_ab5443e65c7fba::t_9e1490b32a53fc 39-47
+src/modules/TimelineEditor/presentations/views/Inspector/MasterVisualizationsSection.tsx
+  s_ab5443e65c7fba::t_310b4e0eb5c215 74
+  s_ab5443e65c7fba::t_781f37fe2ca51b 61-63,72-73
+  s_ab5443e65c7fba::t_b1f21231b59a59 17-39
+  s_ab5443e65c7fba::t_55cbd47f4c5528 1,3,40-51,53-58,64-71,75
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ab5443e65c7fba::t_b310891f5fafe9 56-130
+  s_ab5443e65c7fba::t_2690b6ad91b90e 6
+  s_ab5443e65c7fba::t_3b1f475762e20b 172-174
+  s_ab5443e65c7fba::t_dd59fa19d841a1 9-14
+  s_ab5443e65c7fba::t_11f4741075e64f 131-132,175-176
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.spec.tsx
+  s_ab5443e65c7fba::t_6ad9a193811d4e 5-6,8
+  s_ab5443e65c7fba::t_c296476dafaca5 251-276
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.modulationSubscription.spec.tsx
+  s_ab5443e65c7fba::t_38b379bd8a4c93 126-128
+  s_ab5443e65c7fba::t_7f69ad2912319c 1-2,17-24,37-41,65-69,73,102-108,114,118-124,130-133
+  s_ab5443e65c7fba::t_1e8c83b28d2776 110-112
+  s_ab5443e65c7fba::t_19869186f60d0a 117
+  s_ab5443e65c7fba::t_7bb371f28b7bed 4-16,25-36,42-64,70-72,74-100,109,113,115-116,125,129,134-135
+  s_ab5443e65c7fba::t_bb843dfe78a07a 3
+  s_ab5443e65c7fba::t_47b45b4013cf1f 101
+  s_ab5443e65c7fba::t_3e6ce7e49f9b0e 136-142
+src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx
+  s_ab5443e65c7fba::t_2c29607bcf9233 188-200
+src/modules/AudioAnalysis/useCases/audioToMidi.ts
+  s_ab5443e65c7fba::t_e7675fe43711c6 99-106,113,119,133,138,153,173-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fc732f05644b6aff9762a7ae1db7abdf293e944e",
+  "prompts": {},
+  "sessions": {
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
