@@ -1,26 +1,30 @@
-import Anthropic from '@anthropic-ai/sdk';
-
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { isTauri } from '#/utils/tauriBridge';
 
 import { type HostedLlmConfiguration } from '../../models/HostedLlmProvider';
+import { openProviderGatewaySession } from '../openProviderGatewaySession';
 import { compileProviderAdapterInstallation } from '../providerAdapterRegistry';
 
 import { cloudSession, type CloudProviderRuntime } from './cloudSession';
 
+const ANTHROPIC_PROVIDER_ADAPTER = Object.freeze({
+    adapterId: 'builtin.anthropic.messages.v1' as const,
+    origin: 'https://api.anthropic.com' as const,
+});
+
 export const setCloudProviderConfig = inject({ logger })(
     ({ logger }) =>
-        function setCloudProviderConfig(configuration: HostedLlmConfiguration): void {
+        async function setCloudProviderConfig(configuration: HostedLlmConfiguration): Promise<void> {
             let runtime: CloudProviderRuntime;
             if (configuration.provider === 'anthropic') {
+                if (!isTauri()) {
+                    throw new Error('Hosted providers are available in desktop builds only');
+                }
                 runtime = {
                     provider: 'anthropic',
-                    api_key: configuration.apiKey,
                     model: configuration.model,
-                    client: new Anthropic({
-                        apiKey: configuration.apiKey,
-                        dangerouslyAllowBrowser: true,
-                    }),
+                    session_id: await openProviderGatewaySession(ANTHROPIC_PROVIDER_ADAPTER, 'anthropic'),
                 };
             } else {
                 if (!configuration.baseUrl) {
@@ -31,28 +35,31 @@ export const setCloudProviderConfig = inject({ logger })(
                 if (usesPrivilegedAdapter && parsedBaseUrl.pathname !== '/' && parsedBaseUrl.pathname !== '/v1') {
                     throw new Error('Remote OpenAI-compatible provider must use the compiled /v1 protocol path');
                 }
+                const adapter = usesPrivilegedAdapter
+                    ? compileProviderAdapterInstallation({
+                          adapterId: 'builtin.openai-compatible.chat-completions.v1',
+                          providerId: configuration.provider,
+                          modelId: configuration.model,
+                          protocolFamily: 'openai-chat-completions',
+                          origin: parsedBaseUrl.origin,
+                      })
+                    : null;
+                if (adapter !== null && !isTauri()) {
+                    throw new Error('Hosted providers are available in desktop builds only');
+                }
                 runtime = {
                     provider: configuration.provider,
-                    api_key: configuration.apiKey,
                     model: configuration.model,
                     base_url: configuration.baseUrl,
-                    ...(usesPrivilegedAdapter
-                        ? {
-                              adapter: compileProviderAdapterInstallation({
-                                  adapterId: 'builtin.openai-compatible.chat-completions.v1',
-                                  providerId: configuration.provider,
-                                  modelId: configuration.model,
-                                  protocolFamily: 'openai-chat-completions',
-                                  origin: parsedBaseUrl.origin,
-                              }),
-                          }
-                        : {}),
+                    adapter,
+                    session_id:
+                        adapter === null ? null : await openProviderGatewaySession(adapter, configuration.provider),
                 };
             }
 
-            cloudSession.replace_runtime(runtime);
+            await cloudSession.replace_runtime(runtime);
             if (configuration.provider === 'anthropic') {
-                logger.info('[Cloud AI] API key set');
+                logger.info('[Cloud AI] Anthropic provider configured');
             } else {
                 logger.info(`[Cloud AI] ${configuration.provider} provider configured`);
             }

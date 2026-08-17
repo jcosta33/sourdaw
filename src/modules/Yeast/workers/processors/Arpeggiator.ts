@@ -17,7 +17,12 @@ import {
 import { YEAST_PREVIEW_CAPACITY } from '../../models/YeastPreviewSnapshot';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { LCG_MAX, nextLcg } from '../lcgRandom';
-import { type ActiveNote, ScheduledEventQueue } from '../MidiProcessor';
+import {
+    type ActiveNote,
+    EMIT_FALLBACK_BLOCK_SPAN_SAMPLES,
+    resolveBlockEndSamples,
+    ScheduledEventQueue,
+} from '../MidiProcessor';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -66,6 +71,8 @@ export class Arpeggiator extends BaseMidiProcessor {
     private lastStepTimeSamples = -Infinity;
     private activeGenerated: ActiveNote[] = [];
     private scheduled = new ScheduledEventQueue();
+    // Reused across blocks so the per-block scheduled drain allocates nothing.
+    private readonly drainScratch: MidiEvent[] = [];
     private rngState = 0xdead;
     private readonly rejectedPitch = new Uint8Array(YEAST_PREVIEW_CAPACITY);
     private readonly rejectedVelocity = new Float64Array(YEAST_PREVIEW_CAPACITY);
@@ -111,7 +118,7 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
 
         const blockStart = transport.blockStartSamples ?? transport.ppqPosition * samplesPerBeat(transport);
-        const blockEnd = transport.blockEndSamples ?? blockStart + 128;
+        const blockEnd = resolveBlockEndSamples(transport, blockStart, EMIT_FALLBACK_BLOCK_SPAN_SAMPLES);
 
         const pool = this.getEffectivePool();
         if (pool.length === 0) {
@@ -131,8 +138,10 @@ export class Arpeggiator extends BaseMidiProcessor {
             this.lastStepTimeSamples = input[0]?.timeSamples ?? blockStart;
         }
 
+        // Strictly `<`: the block is half-open, so a step landing exactly on
+        // `blockEnd` belongs to the next block, not this one.
         let safety = 0;
-        while (this.lastStepTimeSamples + stepLenSamples <= blockEnd && safety < 64) {
+        while (this.lastStepTimeSamples + stepLenSamples < blockEnd && safety < 64) {
             safety++;
             const stepTime = this.lastStepTimeSamples + stepLenSamples;
 
@@ -668,7 +677,9 @@ export class Arpeggiator extends BaseMidiProcessor {
     }
 
     private drainScheduledNoteOffs(output: MidiEvent[], blockEnd: number): void {
-        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        const drained = this.drainScratch;
+        drained.length = 0;
+        this.scheduled.drainRangeInto(0, blockEnd, drained, this.trackId);
         for (const event of drained) {
             output.push(event);
             if (event.kind.type === 'noteOff') {
@@ -681,6 +692,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                 );
             }
         }
+        drained.length = 0;
     }
 
     private removeActiveGenerated(

@@ -12,7 +12,12 @@ import {
 } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { LCG_MAX, nextLcg } from '../lcgRandom';
-import { ScheduledEventQueue } from '../MidiProcessor';
+import {
+    EMIT_FALLBACK_BLOCK_SPAN_SAMPLES,
+    resolveBlockEndSamples,
+    resolveBlockStartSamples,
+    ScheduledEventQueue,
+} from '../MidiProcessor';
 
 const MAX_STATES = 12; // max pitch classes or held notes
 
@@ -36,6 +41,8 @@ export class MarkovChain extends BaseMidiProcessor {
     private rngState = 0xabcd;
     private lastStepTime = -Infinity;
     private scheduled = new ScheduledEventQueue();
+    // Reused across blocks so the per-block scheduled drain allocates nothing.
+    private readonly drainScratch: MidiEvent[] = [];
 
     // Map states to MIDI notes (from held notes or scale degrees).
     // Pre-allocated at MAX_STATES; `stateNoteCount` tracks the active length.
@@ -170,15 +177,17 @@ export class MarkovChain extends BaseMidiProcessor {
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
-        const now = transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
-        const blockEnd = transport.blockEndSamples ?? now + 128;
+        const now = resolveBlockStartSamples(transport, input);
+        const blockEnd = resolveBlockEndSamples(transport, now, EMIT_FALLBACK_BLOCK_SPAN_SAMPLES);
 
         if (this.lastStepTime === -Infinity) {
             this.lastStepTime = now;
         }
 
+        // Strictly `<`: the block is half-open, so a step landing exactly on
+        // `blockEnd` belongs to the next block, not this one.
         let safety = 0;
-        while (this.lastStepTime + stepLen <= blockEnd && safety < 64) {
+        while (this.lastStepTime + stepLen < blockEnd && safety < 64) {
             safety++;
             const stepTime = this.lastStepTime + stepLen;
 
@@ -204,10 +213,13 @@ export class MarkovChain extends BaseMidiProcessor {
             this.lastStepTime = stepTime;
         }
 
-        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        const drained = this.drainScratch;
+        drained.length = 0;
+        this.scheduled.drainRangeInto(0, blockEnd, drained, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
         }
+        drained.length = 0;
     }
 
     reset(): void {

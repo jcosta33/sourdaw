@@ -20,6 +20,24 @@ impl EventStream<ProviderGatewayEvent> for ProviderGatewayChannel {
 }
 
 #[tauri::command]
+pub async fn open_provider_gateway_session(
+    adapter_id: String,
+    origin: String,
+    credential_source: String,
+    state: tauri::State<'_, ProviderGatewayState>,
+) -> Result<String, String> {
+    native::open_provider_gateway_session(adapter_id, origin, credential_source, &state).await
+}
+
+#[tauri::command]
+pub async fn close_provider_gateway_session(
+    session_id: String,
+    state: tauri::State<'_, ProviderGatewayState>,
+) -> Result<(), String> {
+    native::close_provider_gateway_session(session_id, &state).await
+}
+
+#[tauri::command]
 pub async fn cancel_provider_gateway_request(
     request_id: String,
     state: tauri::State<'_, ProviderGatewayState>,
@@ -31,20 +49,16 @@ pub async fn cancel_provider_gateway_request(
 #[allow(clippy::too_many_arguments)]
 pub async fn provider_gateway_request(
     request_id: String,
-    adapter_id: String,
-    origin: String,
+    session_id: String,
     operation: String,
-    api_key: String,
     body: Option<String>,
     on_event: Channel<ProviderGatewayEvent>,
     state: tauri::State<'_, ProviderGatewayState>,
 ) -> Result<(), String> {
     native::provider_gateway_request(
         request_id,
-        adapter_id,
-        origin,
+        session_id,
         operation,
-        api_key,
         body,
         &ProviderGatewayChannel(on_event),
         &state,

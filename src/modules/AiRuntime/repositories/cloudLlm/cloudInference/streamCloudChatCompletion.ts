@@ -32,7 +32,7 @@ export async function streamCloudChatCompletion(
 ): Promise<CloudChatCompletionOutcome> {
     const runtime = getCloudProviderRuntime();
     if (!runtime) {
-        throw new Error('Cloud AI not configured. Set API key first.');
+        throw new Error('Hosted AI is not configured');
     }
 
     const systemMessage = messages.find((message) => message.role === 'system');
@@ -43,9 +43,6 @@ export async function streamCloudChatCompletion(
             content: message.content,
         }));
 
-    // Register an abort controller so clearing the API key (key revocation)
-    // tears this stream down immediately, rather than letting it keep using the
-    // revoked key until the SSE stream closes on its own.
     const controller = registerCloudStreamController(new AbortController());
     const unlinkCallerAbort = linkCloudRequestAbort(options?.signal, controller);
 
@@ -68,96 +65,81 @@ export async function streamCloudChatCompletion(
             return { status: 'complete' };
         }
 
-        const stream = requestAnthropicStream({
-            apiKey: runtime.api_key,
-            model: runtime.model || CLOUD_MODEL,
-            maxTokens: options?.maxTokens ?? 2048,
-            system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
-            messages: chatMessages,
-            signal: controller.signal,
-        });
-
-        // Stream-error handling: the Anthropic SDK's MessageStream event union
-        // (RawMessageStreamEvent) has NO 'error' member — it is only
-        // message_start | message_delta | message_stop | content_block_{start,delta,stop}.
-        // An SDK stream error (network drop, API error, abort) is surfaced by the
-        // async iterator *rejecting*, so it propagates out of this `for await` as a
-        // thrown exception and is caught by the caller's try/catch (sendChatMessage).
-        // There is therefore no explicit 'error' branch to add here — guarding for
-        // `event.type === 'error'` would be a dead branch that can never run. The
-        // `finally` below still runs on the throw, unregistering the controller.
         let incompleteReason: string | null = null;
         let sawTerminalDelta = false;
         let sawMessageStop = false;
         let eventCount = 0;
         let streamedBytes = 0;
-        for await (const event of stream) {
-            if (!isRecord(event) || typeof event.type !== 'string') {
-                throw new Error('Hosted AI chat stream returned an invalid event');
-            }
-            const eventBytes = encodedJsonBytes(event);
-            eventCount += 1;
-            if (
-                eventBytes > MAX_ANTHROPIC_EVENT_BYTES ||
-                streamedBytes + eventBytes > MAX_ANTHROPIC_STREAM_BYTES ||
-                eventCount > MAX_ANTHROPIC_STREAM_EVENTS
-            ) {
-                throw new Error('Hosted AI chat stream exceeded its bounded event or payload limit');
-            }
-            streamedBytes += eventBytes;
-            if (sawMessageStop || (sawTerminalDelta && event.type !== 'message_stop')) {
-                throw new Error('Hosted AI chat stream returned an event after completion');
-            }
-            const usageEvent = readAnthropicUsageEvent(event);
-            if (usageEvent) {
-                options?.onUsage?.(usageEvent);
-            }
-            // Text tokens are the visible output.
-            if (event.type === 'content_block_delta') {
-                if (!isRecord(event.delta) || typeof event.delta.type !== 'string') {
-                    throw new Error('Hosted AI chat stream returned an invalid content event');
+        await requestAnthropicStream({
+            sessionId: runtime.session_id,
+            model: runtime.model || CLOUD_MODEL,
+            maxTokens: options?.maxTokens ?? 2048,
+            system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
+            messages: chatMessages,
+            signal: controller.signal,
+            onEvent: (event) => {
+                if (!isRecord(event) || typeof event.type !== 'string') {
+                    throw new Error('Hosted AI chat stream returned an invalid event');
                 }
-                if (event.delta.type === 'text_delta') {
-                    if (typeof event.delta.text !== 'string') {
-                        throw new TypeError('Hosted AI chat stream returned invalid text');
-                    }
-                    onToken(event.delta.text);
-                }
-                continue;
-            }
-
-            // A non-end_turn stop is the model truncating (e.g. hit max_tokens) or
-            // refusing — previously invisible to the caller. Surface it as a
-            // diagnostic so a cut-off completion is not silently treated as whole.
-            if (event.type === 'message_delta') {
+                const eventBytes = encodedJsonBytes(event);
+                eventCount += 1;
                 if (
-                    !isRecord(event.delta) ||
-                    (event.delta.stop_reason !== null && typeof event.delta.stop_reason !== 'string')
+                    eventBytes > MAX_ANTHROPIC_EVENT_BYTES ||
+                    streamedBytes + eventBytes > MAX_ANTHROPIC_STREAM_BYTES ||
+                    eventCount > MAX_ANTHROPIC_STREAM_EVENTS
                 ) {
-                    throw new Error('Hosted AI chat stream returned an invalid completion event');
+                    throw new Error('Hosted AI chat stream exceeded its bounded event or payload limit');
                 }
-                const stopReason = event.delta.stop_reason;
-                if (stopReason !== null) {
-                    sawTerminalDelta = true;
+                streamedBytes += eventBytes;
+                if (sawMessageStop || (sawTerminalDelta && event.type !== 'message_stop')) {
+                    throw new Error('Hosted AI chat stream returned an event after completion');
                 }
-                if (stopReason !== null && stopReason !== 'end_turn') {
-                    logger.warn(`[Cloud AI] stream stopped with reason="${stopReason}" (output may be incomplete)`);
-                    incompleteReason = stopReason;
+                const usageEvent = readAnthropicUsageEvent(event);
+                if (usageEvent) {
+                    options?.onUsage?.(usageEvent);
                 }
-                continue;
-            }
-            if (event.type === 'message_stop') {
-                sawMessageStop = true;
-                continue;
-            }
-            if (
-                event.type !== 'message_start' &&
-                event.type !== 'content_block_start' &&
-                event.type !== 'content_block_stop'
-            ) {
-                options?.onUnknownEvent?.(`anthropic:${event.type}`);
-            }
-        }
+                if (event.type === 'content_block_delta') {
+                    if (!isRecord(event.delta) || typeof event.delta.type !== 'string') {
+                        throw new Error('Hosted AI chat stream returned an invalid content event');
+                    }
+                    if (event.delta.type === 'text_delta') {
+                        if (typeof event.delta.text !== 'string') {
+                            throw new TypeError('Hosted AI chat stream returned invalid text');
+                        }
+                        onToken(event.delta.text);
+                    }
+                    return;
+                }
+                if (event.type === 'message_delta') {
+                    if (
+                        !isRecord(event.delta) ||
+                        (event.delta.stop_reason !== null && typeof event.delta.stop_reason !== 'string')
+                    ) {
+                        throw new Error('Hosted AI chat stream returned an invalid completion event');
+                    }
+                    const stopReason = event.delta.stop_reason;
+                    if (stopReason !== null) {
+                        sawTerminalDelta = true;
+                    }
+                    if (stopReason !== null && stopReason !== 'end_turn') {
+                        logger.warn(`[Cloud AI] stream stopped with reason="${stopReason}" (output may be incomplete)`);
+                        incompleteReason = stopReason;
+                    }
+                    return;
+                }
+                if (event.type === 'message_stop') {
+                    sawMessageStop = true;
+                    return;
+                }
+                if (
+                    event.type !== 'message_start' &&
+                    event.type !== 'content_block_start' &&
+                    event.type !== 'content_block_stop'
+                ) {
+                    options?.onUnknownEvent?.(`anthropic:${event.type}`);
+                }
+            },
+        });
         controller.signal.throwIfAborted();
         if (!sawTerminalDelta || !sawMessageStop) {
             throw new Error('Hosted AI chat stream ended unexpectedly');

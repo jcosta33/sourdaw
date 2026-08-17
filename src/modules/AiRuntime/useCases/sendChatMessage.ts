@@ -292,13 +292,15 @@ export async function sendChatMessage(
     // Regular chat streams from one selected backend. Prompt mode delegates
     // readiness and provider fallback to generateToolCalls.
     if (backend === 'none') {
-        throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
+        throw createAiRuntimeError(
+            'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
+        );
     }
     if (interactionMode === 'explain' && backend === 'webllm' && !getLlmEngine()) {
         throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
     }
     if (interactionMode === 'explain' && backend === 'cloud' && !isCloudAvailable()) {
-        throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
+        throw createAiRuntimeError('Hosted AI is not configured.');
     }
 
     const runId = `agent-run-${crypto.randomUUID()}`;

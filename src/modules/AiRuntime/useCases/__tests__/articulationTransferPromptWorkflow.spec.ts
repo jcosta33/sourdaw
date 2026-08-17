@@ -266,7 +266,7 @@ function getConfirmationId(): string {
 }
 
 describe('MF-03 articulation transfer prompt workflow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
@@ -282,12 +282,12 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
-        cloudSession.clear();
-        cloudSession.replace_runtime({
+        await cloudSession.clear();
+        await cloudSession.replace_runtime({
             provider: 'openai-compatible',
-            api_key: '',
+            session_id: null,
             model: 'fixture-model',
-            base_url: 'https://provider.example/v1',
+            base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('MF-03 articulation workflow test');

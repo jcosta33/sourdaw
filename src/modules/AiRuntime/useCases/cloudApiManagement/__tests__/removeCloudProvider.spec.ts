@@ -1,18 +1,18 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { removeCloudApi } from '../removeCloudApi';
+import { removeCloudProvider } from '../removeCloudProvider';
 
 const mocks = vi.hoisted(() => {
     const llmStatusValue: { value: Record<string, unknown> } = { value: { state: 'idle' } };
     return {
-        clearCloudApiKey: vi.fn(),
+        clearCloudProviderConfig: vi.fn(async () => undefined),
         llmStatusSet: vi.fn(),
         llmStatusValue,
     };
 });
 
-vi.mock('#/modules/AiRuntime/repositories/cloudLlm/clearCloudApiKey', () => ({
-    clearCloudApiKey: mocks.clearCloudApiKey,
+vi.mock('#/modules/AiRuntime/repositories/cloudLlm/clearCloudProviderConfig', () => ({
+    clearCloudProviderConfig: mocks.clearCloudProviderConfig,
 }));
 
 vi.mock('#/modules/AiRuntime/stores/llmStatusStore', () => ({
@@ -24,29 +24,29 @@ vi.mock('#/modules/AiRuntime/stores/llmStatusStore', () => ({
     },
 }));
 
-describe('removeCloudApi', () => {
+describe('removeCloudProvider', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.llmStatusValue.value = { state: 'idle' };
     });
 
-    it('calls clearCloudApiKey from the repository', () => {
-        removeCloudApi();
-        expect(mocks.clearCloudApiKey).toHaveBeenCalledTimes(1);
+    it('clears the provider runtime', async () => {
+        await removeCloudProvider();
+        expect(mocks.clearCloudProviderConfig).toHaveBeenCalledTimes(1);
     });
 
-    it('clears a ready cloud status after removing its credentials', () => {
+    it('clears a ready cloud status', async () => {
         mocks.llmStatusValue.value = { state: 'ready', backend: 'cloud', modelId: 'hosted-model' };
 
-        removeCloudApi();
+        await removeCloudProvider();
 
         expect(mocks.llmStatusSet).toHaveBeenCalledWith({ state: 'idle' });
     });
 
-    it('preserves the status of an active local backend', () => {
+    it('preserves an active local backend', async () => {
         mocks.llmStatusValue.value = { state: 'ready', backend: 'webllm', modelId: 'local-model' };
 
-        removeCloudApi();
+        await removeCloudProvider();
 
         expect(mocks.llmStatusSet).not.toHaveBeenCalled();
     });
