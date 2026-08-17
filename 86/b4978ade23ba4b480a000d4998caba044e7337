@@ -1,0 +1,86 @@
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  s_d91dcbe5f07151::t_9d4756c2a5f5e3 55-63
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineVcaGainParity.spec.ts
+  s_d91dcbe5f07151::t_3c59092122a08e 155
+  s_d91dcbe5f07151::t_e6682e6747ae5c 106,172
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createWebAudioOfflineBackend.spec.ts
+  s_d91dcbe5f07151::t_25eefd459b1654 1-296
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_d91dcbe5f07151::t_bd4888b6d6a715 9-10
+  s_d91dcbe5f07151::t_62d2803bc246e2 104
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_d91dcbe5f07151::t_948a53f5eaf04c 145,148
+  s_d91dcbe5f07151::t_54b74d03cad5b6 196-198,266,300,361,422,521
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createOfflineTrackStrip.spec.ts
+  s_d91dcbe5f07151::t_c7a7564738f517 51
+  s_d91dcbe5f07151::t_61ed9c39514b33 36
+  s_d91dcbe5f07151::t_7975ad36964bcd 87
+  s_d91dcbe5f07151::t_814b2af016f82d 72
+  s_d91dcbe5f07151::t_0fd2b1641b1a10 96
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_d91dcbe5f07151::t_75f35de12b9a6f 910-912,916-921,923-932
+  s_d91dcbe5f07151::t_b6630925189ca1 40
+  s_d91dcbe5f07151::t_155d8819a71032 905-909,913-915,922,933-947
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_d91dcbe5f07151::t_e45c2b5845d26b 6
+  s_d91dcbe5f07151::t_9b878eea8bbfd5 419
+  s_d91dcbe5f07151::t_3429b9dcf3b604 138-142
+  s_d91dcbe5f07151::t_253daa29e1b347 316-320
+  s_d91dcbe5f07151::t_4979a270b5d9b9 83-86
+  s_d91dcbe5f07151::t_158643971c591e 249-257,259-282,284-287,290-292
+  s_d91dcbe5f07151::t_6e2e9c34dfddad 313-315,322-337
+  s_d91dcbe5f07151::t_9ebdbadfe35146 17-20
+  s_d91dcbe5f07151::t_0b6db1bb7cac09 206
+  s_d91dcbe5f07151::t_078d4339006854 42-70
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineClipSource.ts
+  s_d91dcbe5f07151::t_e6938b0ef8b3bf 1-126
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_d91dcbe5f07151::t_d8c804bac23a73 322
+  s_d91dcbe5f07151::t_853e4317449d9d 334-338
+  s_d91dcbe5f07151::t_6c0746798aa1d7 1-58,60-152,158-159,165-166,168-174,176-177,179-193,197-213,219-228,230,232-244,256-259,261-263,267-321,323-333,339-340,343,345-373,375-413
+  s_d91dcbe5f07151::t_f3658f4fef15b3 160-164,167,175,178
+  s_d91dcbe5f07151::t_41b3e1b0abb942 194-196
+  s_d91dcbe5f07151::t_8a664347e31668 245-255,260,264-266
+  s_d91dcbe5f07151::t_64c418f418bdca 374
+  s_d91dcbe5f07151::t_98d1d515fea1d8 231
+  s_d91dcbe5f07151::t_66fb1464edf5ab 341-342,344
+  s_d91dcbe5f07151::t_b8c1177fc7efb6 59
+  s_d91dcbe5f07151::t_e6415710f6ceb0 214-218
+  s_d91dcbe5f07151::t_8021ada4e193fd 229
+  s_d91dcbe5f07151::t_f85b904c3624e5 153-157
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_d91dcbe5f07151::t_99e4be7238bc5c 1133-1184,1186-1197,1199-1202,1320
+  s_d91dcbe5f07151::t_6dd54ff11fcd83 185
+  s_d91dcbe5f07151::t_bdc78fa42cb67d 296
+  s_d91dcbe5f07151::t_65e557937f18fc 125,127-142
+  s_d91dcbe5f07151::t_b886a664a50afc 907-953,955-966,968-969,971-974,976-979,981-984,986-993,995-997,999-1012
+  s_d91dcbe5f07151::t_8636a6ca0a32ba 168-169
+  s_d91dcbe5f07151::t_9797cab329361c 1292-1319
+  s_d91dcbe5f07151::t_e6779c13798bf9 352,600,906,954,967,970,975,980,985,994,998,1013-1014,1185,1198,1203,1321-1322
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_d91dcbe5f07151::t_8a323cf4b2d534 424
+  s_d91dcbe5f07151::t_4a040700cb021b 1-53,55-247,259,261-423,425-484
+  s_d91dcbe5f07151::t_c20948941023f4 248-258,260
+  s_d91dcbe5f07151::t_c9eec7429e7cd5 54
+src/modules/AudioEngine/useCases/__tests__/renderOfflineCancellation.spec.ts
+  s_d91dcbe5f07151::t_db1f09fee06080 90,93
+  s_d91dcbe5f07151::t_72ed12c4316114 188-190
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_d91dcbe5f07151::t_d87b08c3cd21fd 247-258,588-599,673-684
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "86b4978ade23ba4b480a000d4998caba044e7337",
+  "prompts": {},
+  "sessions": {
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
