@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     beginDrawSession: vi.fn(),
     paintDrawPoint: vi.fn(),
     endDrawSession: vi.fn(),
+    cancelDrawSession: vi.fn(),
     selectPointsInRange: vi.fn(),
     pushUndoEntry: vi.fn(),
 }));
@@ -46,6 +47,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     beginDrawSession: mocks.beginDrawSession,
     paintDrawPoint: mocks.paintDrawPoint,
     endDrawSession: mocks.endDrawSession,
+    cancelDrawSession: mocks.cancelDrawSession,
     selectPointsInRange: mocks.selectPointsInRange,
 }));
 
@@ -143,6 +145,33 @@ describe('automationDrag', () => {
 
             expect(mocks.beginDrawSession).toHaveBeenCalledWith('lane-1', 1, true);
             expect(mocks.paintDrawPoint).toHaveBeenCalledWith(0, 0.6);
+
+            // Tear down this gesture's window listeners — otherwise they outlive
+            // the test and double-fire alongside a later test's own listeners.
+            fireEvent.mouseUp(window, { clientX: -30, clientY: 40 });
+        });
+
+        it('Escape cancels the session instead of ending it, and stops forwarding further paints', () => {
+            const lane = makeLane([]);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) => onDrawMouseDown(event, lane, 0.25, coords),
+            });
+
+            fireEvent.mouseDown(surface, { clientX: 50, clientY: 40 });
+            fireEvent.mouseMove(window, { clientX: 80, clientY: 20 });
+
+            fireEvent.keyDown(window, { key: 'Escape' });
+
+            expect(mocks.cancelDrawSession).toHaveBeenCalledTimes(1);
+            expect(mocks.endDrawSession).not.toHaveBeenCalled();
+
+            // Listeners are torn down: further movement paints nothing, and a real
+            // mouseup after Escape does not also end the (already-cancelled) session.
+            fireEvent.mouseMove(window, { clientX: 100, clientY: 10 });
+            fireEvent.mouseUp(window, { clientX: 100, clientY: 10 });
+            expect(mocks.paintDrawPoint).toHaveBeenCalledTimes(2);
+            expect(mocks.endDrawSession).not.toHaveBeenCalled();
+            expect(mocks.cancelDrawSession).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -230,6 +259,27 @@ describe('automationDrag', () => {
             expect(setRubberBand).not.toHaveBeenCalled();
             expect(setSelectedPoints).not.toHaveBeenCalled();
         });
+
+        it('Escape clears the rubber band and neither adds a point nor selects a range', () => {
+            const lane = makeLane([]);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) => onRubberBandStart(event, lane, setRubberBand, setSelectedPoints, coords),
+            });
+
+            fireEvent.mouseDown(surface, { clientX: 50, clientY: 40 });
+            fireEvent.mouseMove(window, { clientX: 150, clientY: 80 });
+            setRubberBand.mockClear();
+
+            fireEvent.keyDown(window, { key: 'Escape' });
+
+            expect(setRubberBand).toHaveBeenCalledWith(null);
+            expect(mocks.addAutomationPoint).not.toHaveBeenCalled();
+            expect(mocks.selectPointsInRange).not.toHaveBeenCalled();
+
+            // Listeners are torn down: a mouseup after Escape does nothing further.
+            fireEvent.mouseUp(window, { clientX: 150, clientY: 80 });
+            expect(mocks.addAutomationPoint).not.toHaveBeenCalled();
+        });
     });
 
     describe('onTensionMouseDown', () => {
@@ -262,6 +312,30 @@ describe('automationDrag', () => {
 
             expect(setTensionDrag).not.toHaveBeenCalled();
             expect(mocks.setAutomationPointCurve).not.toHaveBeenCalled();
+        });
+
+        it('Escape restores the tension to its pre-drag value and clears the drag state', () => {
+            const lane = makeLane([makePoint(2, 0.5, { curve: 's-curve', tension: 0.2 })]);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) => onTensionMouseDown(2, event, lane, setTensionDrag),
+            });
+
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 100 });
+            fireEvent.mouseMove(window, { clientX: 20, clientY: 400 });
+            expect(mocks.setAutomationPointCurve).toHaveBeenLastCalledWith('lane-1', 2, 's-curve', 1);
+
+            fireEvent.keyDown(window, { key: 'Escape' });
+
+            // The store already holds the live-dragged tension (1) — cancel must
+            // write the original (0.2) back through the same use case, not merely
+            // clear local state.
+            expect(mocks.setAutomationPointCurve).toHaveBeenLastCalledWith('lane-1', 2, 's-curve', 0.2);
+            expect(setTensionDrag).toHaveBeenLastCalledWith(null);
+
+            // Listeners are torn down: a mouseup after Escape does nothing further.
+            const callsAfterCancel = mocks.setAutomationPointCurve.mock.calls.length;
+            fireEvent.mouseUp(window, { clientX: 20, clientY: 400 });
+            expect(mocks.setAutomationPointCurve).toHaveBeenCalledTimes(callsAfterCancel);
         });
     });
 
@@ -327,6 +401,10 @@ describe('automationDrag', () => {
             fireEvent.mouseMove(window, { clientX: 60, clientY: 45, shiftKey: true });
 
             expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.5, 6);
+
+            // Tear down this gesture's window listeners — otherwise they outlive
+            // the test and double-fire alongside a later test's own listeners.
+            fireEvent.mouseUp(window, { clientX: 60, clientY: 45, shiftKey: true });
         });
 
         it('matches the dragged point by exact final beat, not a nearby point within the old tolerance', () => {
@@ -382,6 +460,35 @@ describe('automationDrag', () => {
             fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
             fireEvent.mouseUp(window, { clientX: 20, clientY: 50 });
 
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('Escape restores the point to its pre-drag beat/value, clears drag state, and leaves undo untouched', () => {
+            const lane = makeLane([makePoint(2, 0.5)]);
+            mocks.automationState = {
+                lanes: [{ id: 'lane-1', points: [{ beat: 2, value: 0.5, curve: 'linear', tension: 0 }] }],
+            };
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords),
+            });
+
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
+            fireEvent.mouseMove(window, { clientX: 40, clientY: 30 }); // live-writes the point to beat 4, value 0.7
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.7, 4);
+
+            fireEvent.keyDown(window, { key: 'Escape' });
+
+            // Cancel must address the point at its current (moved-to) beat, and
+            // write the original beat/value back — the same shape a commit uses.
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 4, 0.5, 2);
+            expect(setDragPointBeat).toHaveBeenLastCalledWith(null);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+
+            // Listeners are torn down: a mouseup after Escape does nothing further.
+            const callsAfterCancel = mocks.updateAutomationPoint.mock.calls.length;
+            fireEvent.mouseUp(window, { clientX: 40, clientY: 30 });
+            expect(mocks.updateAutomationPoint).toHaveBeenCalledTimes(callsAfterCancel);
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
     });

@@ -10,6 +10,7 @@ import {
     zoomToUsedRange,
     toggleAutomationVisibility,
     removeAutomationLane,
+    restoreAutomationLanes,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
@@ -124,6 +125,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     removeAutomationPoint: vi.fn(),
     toggleAutomationVisibility: vi.fn(),
     removeAutomationLane: vi.fn(),
+    restoreAutomationLanes: vi.fn(),
     insertAutomationShape: vi.fn(),
     deleteSelectedPoints: vi.fn(),
     adjustYZoom: vi.fn(),
@@ -216,6 +218,34 @@ describe('AutomationLaneRow', () => {
         fireEvent.click(screen.getByText('close-lane'));
         expect(removeAutomationLane).toHaveBeenCalledWith('lane-1');
         expect(toggleAutomationVisibility).toHaveBeenCalledTimes(1);
+    });
+
+    it('closing a lane pushes an undo entry whose undo restores the lane with its points', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [
+                { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 4, value: 0.6, curve: 'linear', tension: 0 },
+            ],
+        };
+        render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+
+        fireEvent.click(screen.getByText('close-lane'));
+
+        expect(removeAutomationLane).toHaveBeenCalledWith('lane-1');
+        expect(pushUndoEntry).toHaveBeenCalledWith(
+            'Remove automation lane',
+            expect.any(Function),
+            expect.any(Function)
+        );
+
+        const [, undoFn, redoFn] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+
+        undoFn();
+        expect(restoreAutomationLanes).toHaveBeenCalledWith([lane]);
+
+        redoFn();
+        expect(removeAutomationLane).toHaveBeenCalledTimes(2);
     });
 
     it('cancels an in-flight drag when the row unmounts mid-gesture', () => {

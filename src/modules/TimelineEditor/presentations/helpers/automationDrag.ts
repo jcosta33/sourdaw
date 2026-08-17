@@ -14,6 +14,7 @@ import {
     beginDrawSession,
     paintDrawPoint,
     endDrawSession,
+    cancelDrawSession,
     selectPointsInRange,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
@@ -58,6 +59,9 @@ export const onDrawMouseDown = (
         },
         () => {
             endDrawSession();
+        },
+        () => {
+            cancelDrawSession();
         }
     );
 };
@@ -141,6 +145,12 @@ export const onRubberBandStart = (
                 );
             }
             setRubberBand(null);
+        },
+        () => {
+            // Nothing was ever committed to the store during this gesture — the
+            // point-add and range-selection both happen at mouseup, never in
+            // `onMove` — so cancel only has to drop the rectangle's local state.
+            setRubberBand(null);
         }
     );
 };
@@ -167,6 +177,13 @@ export const onTensionMouseDown = (
             setAutomationPointCurve(lane.id, pointBeat, point.curve, newTension);
         },
         () => {
+            setTensionDrag(null);
+        },
+        () => {
+            // `onMove` already wrote every intermediate tension straight to the
+            // store (there is no separate commit step), so cancel must put the
+            // point's tension back the way it was, not just drop local UI state.
+            setAutomationPointCurve(lane.id, pointBeat, point.curve, initialTension);
             setTensionDrag(null);
         }
     );
@@ -245,6 +262,15 @@ export const onPointMouseDown = (
                     }
                 );
             }
+        },
+        () => {
+            // `onMove` already wrote every intermediate position straight to the
+            // store, so cancel must revert the point back to where it started —
+            // through the same use case a commit would use — rather than just
+            // clearing local UI state. No undo entry: reverting makes this a net
+            // no-op, so there is nothing for the user to undo.
+            updateAutomationPoint(lane.id, currentBeat, origValue, origBeat);
+            setDragPointBeat(null);
         }
     );
 };

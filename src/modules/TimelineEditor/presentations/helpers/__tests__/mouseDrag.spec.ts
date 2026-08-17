@@ -48,6 +48,54 @@ describe('startMouseDrag', () => {
         expect(onUp).not.toHaveBeenCalled();
     });
 
+    it('calls onCancel instead of onUp on Escape, so a caller can revert a live mutation', () => {
+        const onMove = vi.fn();
+        const onUp = vi.fn();
+        const onCancel = vi.fn();
+
+        startMouseDrag(onMove, onUp, onCancel);
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+        expect(onCancel).toHaveBeenCalledTimes(1);
+        expect(onUp).not.toHaveBeenCalled();
+    });
+
+    it('the returned cancel handle runs onCancel too, not just listener removal', () => {
+        const onMove = vi.fn();
+        const onUp = vi.fn();
+        const onCancel = vi.fn();
+
+        const cancel = startMouseDrag(onMove, onUp, onCancel);
+        cancel();
+
+        expect(onCancel).toHaveBeenCalledTimes(1);
+        expect(onUp).not.toHaveBeenCalled();
+    });
+
+    it('never calls onCancel after a real mouseup already committed, even if Escape races in after', () => {
+        const onMove = vi.fn();
+        const onUp = vi.fn();
+        const onCancel = vi.fn();
+
+        startMouseDrag(onMove, onUp, onCancel);
+        window.dispatchEvent(new MouseEvent('mouseup'));
+        expect(onUp).toHaveBeenCalledTimes(1);
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+        expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it('is safe to omit onCancel — Escape still tears down listeners without throwing', () => {
+        const onMove = vi.fn();
+        const onUp = vi.fn();
+
+        startMouseDrag(onMove, onUp);
+
+        expect(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))).not.toThrow();
+    });
+
     it('ignores a non-Escape key so an ordinary keystroke does not cancel the drag', () => {
         const onMove = vi.fn();
         const onUp = vi.fn();

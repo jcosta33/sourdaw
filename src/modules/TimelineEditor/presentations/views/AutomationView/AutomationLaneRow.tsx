@@ -7,6 +7,7 @@ import {
     removeAutomationPoint,
     toggleAutomationVisibility,
     removeAutomationLane,
+    restoreAutomationLanes,
     insertAutomationShape,
     deleteSelectedPoints,
     getSelectionBounds,
@@ -295,6 +296,20 @@ export const AutomationLaneRow = ({
         setSelectedPoints((prev) => prev.filter((b) => b !== pointBeat));
     };
 
+    const handleCloseLane = () => {
+        const savedLane: AutomationLane = { ...lane, points: [...lane.points] };
+        removeAutomationLane(lane.id);
+        pushUndoEntry(
+            'Remove automation lane',
+            () => {
+                restoreAutomationLanes([savedLane]);
+            },
+            () => {
+                removeAutomationLane(lane.id);
+            }
+        );
+    };
+
     const handleCurveSelect = (curve: AutomationCurveType) => {
         if (!contextMenu) {
             return;
@@ -404,7 +419,7 @@ export const AutomationLaneRow = ({
                 selectedCount={selectedPoints.length}
                 onZoomToUsedRange={() => zoomToUsedRange(lane.id)}
                 onToggleVisibility={() => toggleAutomationVisibility(lane.id)}
-                onClose={() => removeAutomationLane(lane.id)}
+                onClose={handleCloseLane}
             />
             <svg
                 ref={svgRef}
