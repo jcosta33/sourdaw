@@ -1,9 +1,8 @@
-import { addDeviceToStrip, reportLatency } from '#/modules/AudioEngine/useCases';
-import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
+import { findSupportedPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 
 function nextDeviceIdStr(): string {
@@ -40,17 +39,7 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
         externalInstanceId: instanceId,
     };
 
-    const hadLiveStrip = shouldCreateLiveTrackStrip(track);
-    updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
-
-    if (hadLiveStrip) {
-        addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
-        activateExternalPlugin({
-            pluginId,
-            instanceId,
-            onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
-        });
-    }
+    updateTrack(trackId, () => ({ ...track, devices: [...track.devices, device] }));
 
     return device;
 }

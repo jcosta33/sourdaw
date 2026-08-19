@@ -2,28 +2,19 @@
  * Demo 5 — Nebula Drift
  * ~5:00 @ 76 BPM | A minor / modal drift | Tangerine Dream–inspired atmosphere.
  *
- * Toaster (see createDrumTrackStack): parent track is a **folder** that **hosts** the Toaster
+ * Toaster: parent track is a **folder** that **hosts** the Toaster
  * device; **16 child** MIDI tracks (one per pad) use `devices: []` and `outputId = parent.id`
  * so MIDI routes to the parent’s Toaster and audio sums on the parent strip. Folder strips are
- * skipped by ensureTrackStrips — we call addDeviceToStrip(parentId, …) before ensureTrackStrips
- * so the parent node exists when children route to it.
+ * skipped by ensureTrackStrips — projectTrackToLiveStrip publishes its validated
+ * initialization snapshot before the parent is used as a child output.
  *
  * Toaster pads: MIDI is split into **section clips** (Intro / Build / Peak / Break / Outro); empty
  * sections are omitted. Notes use **clip-relative** beats and GM pitches `36 + padIndex`.
  * Toaster folder + pad tracks use **muted oklch** strip/clip colors (not the kit’s bright PAD_COLORS).
  */
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
-import { createTrack } from '#/modules/Arrangement/useCases';
-import {
-    addDeviceToStrip,
-    ensureTrackStrip,
-    setTrackGain,
-    setTrackMute,
-    setTrackOutput,
-    setTrackPan,
-    updateDeviceParam,
-    waitForDevices,
-} from '#/modules/AudioEngine/useCases';
+import { createTrack, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
+import { waitForDevices } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
 import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
@@ -180,7 +171,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const tSpaceBus = createTrack({ name: 'Space Bus', kind: 'bus' });
     const tDelayBus = createTrack({ name: 'Delay Bus', kind: 'bus' });
 
-    // ── Toaster: folder instrument + 16 pad children (same contract as createDrumTrackStack) ──
+    // ── Toaster: folder instrument + 16 pad children ─────────────────────────
     const toasterFolder = createTrack({ name: '⚡ Toaster Kit', kind: 'folder' });
     toasterFolder.color = 'oklch(0.39 0.024 255)';
     toasterFolder.collapsed = false;
@@ -2326,20 +2317,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     syncArrangement(tracks);
 
-    const toasterDev = toasterFolder.devices.find((data) => data.type === 'toaster');
-    if (toasterDev) {
-        addDeviceToStrip(toasterFolder.id, toasterDev.id, 'toaster');
-        for (const [paramId, value] of Object.entries(toasterDev.parameterValues)) {
-            if (typeof value === 'number') {
-                updateDeviceParam(toasterFolder.id, toasterDev.id, paramId, value);
-            }
-        }
-    }
-    ensureTrackStrip(toasterFolder.id);
-    setTrackOutput(toasterFolder.id, toasterFolder.outputId);
-    setTrackGain(toasterFolder.id, toasterFolder.gain);
-    setTrackPan(toasterFolder.id, toasterFolder.pan);
-    setTrackMute(toasterFolder.id, toasterFolder.muted);
+    projectTrackToLiveStrip({ trackId: toasterFolder.id });
 
     const createdAt = Date.now();
     projectStore.set({

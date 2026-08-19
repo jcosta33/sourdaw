@@ -14,3 +14,10 @@ allowBuilds:
   # lifecycle script at all. Its ~300 MB platform binary is fetched by the
   # `install-electron` bin instead, which is why `desktop:dev` calls it.
   electron: true
+  # Reached only through `electron-builder`'s Squirrel.Windows target, which
+  # this repository does not build — the Windows target is NSIS. Its install
+  # script fetches the Squirrel toolchain, so denying it costs nothing and
+  # keeps a Windows-only download out of every developer's install. Same
+  # reason as above for stating it at all: an undecided dependency fails every
+  # script in the workspace.
+  electron-winstaller: false

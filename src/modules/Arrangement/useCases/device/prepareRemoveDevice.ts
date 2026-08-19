@@ -1,5 +1,4 @@
-import { logger } from '#/infra/logger/appLogger';
-import { clearReportedLatency, removeDeviceFromStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
+import { clearReportedLatency, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -7,24 +6,18 @@ import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 
+import { applyDeviceChainRuntimeDelta } from './applyDeviceChainRuntimeDelta';
+
 import type { Device, Track } from '../../models/Track';
 
-type RemoveDeviceOutcome = 'written' | 'missing' | 'conflict';
-type DeferredRemoveDeviceUnload = {
+type PrepareRemoveDeviceOutcome = 'written' | 'missing' | 'conflict';
+type PreparedRemoveDeviceEffects = {
     outcome: 'written';
     afterCommit: () => Promise<void>;
     afterAmbiguousCommit: () => Promise<void>;
 };
 
-export function removeDevice(deviceId: string): RemoveDeviceOutcome;
-export function removeDevice(
-    deviceId: string,
-    options: { deferRuntimeEffects: true }
-): RemoveDeviceOutcome | DeferredRemoveDeviceUnload;
-export function removeDevice(
-    deviceId: string,
-    options: { deferRuntimeEffects?: boolean } = {}
-): RemoveDeviceOutcome | DeferredRemoveDeviceUnload {
+export function prepareRemoveDevice(deviceId: string): PrepareRemoveDeviceOutcome | PreparedRemoveDeviceEffects {
     const state = getTrackState();
     if (!state) {
         return 'missing';
@@ -52,13 +45,16 @@ export function removeDevice(
         return 'conflict';
     }
 
+    const beforeTrack = structuredClone(track);
     const remainingDevices = track.devices.filter((candidate) => candidate.id !== deviceId);
+    const afterTrack = { ...track, devices: remainingDevices };
     const trackEligibility = getTrackEligibility(track.kind);
     const wasLive = shouldCreateLiveTrackStrip(track);
     const remainsLive =
         trackEligibility.createsLiveStrip ||
         (track.kind === 'folder' && remainingDevices.some((candidate) => candidate.type === 'toaster'));
     const deactivatesStrip = wasLive && !remainsLive;
+    const isProjectOnlyFolder = track.kind === 'folder' && !wasLive;
     const shouldUnloadRemovedExternal = wasLive || !trackEligibility.acceptsDeviceUpdate;
     // Every external-plugin device whose native instance this removal tears down,
     // keyed by engine device id — the same key the latency registry uses — so the
@@ -90,66 +86,41 @@ export function removeDevice(
         latencyDeviceIdsToClear.add(deviceId);
     }
 
-    function finalizeRuntimeRemovalBestEffort(): void {
-        try {
-            removeDeviceFromStrip(track.id, deviceId);
-        } catch (error) {
-            logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
-        }
-
-        // Drop reported-latency entries (PH-4) only when the graph removal becomes
-        // durable. A transaction abort leaves both the live node and its latency
-        // projection untouched.
-        for (const clearedDeviceId of latencyDeviceIdsToClear) {
-            clearReportedLatency(clearedDeviceId);
-        }
-
-        if (deactivatesStrip) {
-            try {
-                removeTrackStrip(track.id);
-            } catch (error) {
-                logger.warn(`Failed to remove track strip ${track.id}: ${String(error)}`);
-            }
-        }
-    }
-
-    function finalizeExternalUnloadsBestEffort(): Promise<void> {
-        return Promise.all(
-            [...externalInstanceIds].map(async (instanceId) => {
-                try {
-                    await unloadPlugin(instanceId);
-                } catch (error) {
-                    logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
-                }
-            })
-        ).then(() => undefined);
-    }
-
-    if (!options.deferRuntimeEffects) {
-        finalizeRuntimeRemovalBestEffort();
-        void finalizeExternalUnloadsBestEffort();
-        return 'written';
-    }
-
     function manualRepairFailure(effect: string, error: unknown): Error {
         return new Error(`${effect}: ${String(error)}; manual repair is required`, { cause: error });
     }
 
     let deviceRemovalFinalized = false;
+    let initialRuntimeGraphFailure: Error | null = null;
     const finalizedLatencyDeviceIds = new Set<string>();
     let stripRemovalFinalized = !deactivatesStrip;
     const finalizedExternalInstanceIds = new Set<string>();
 
     function finalizeRuntimeRemovalStrict(): void {
+        if (isProjectOnlyFolder) {
+            return;
+        }
         if (!deviceRemovalFinalized) {
             try {
-                removeDeviceFromStrip(track.id, deviceId);
+                const result = applyDeviceChainRuntimeDelta({
+                    before: beforeTrack,
+                    after: afterTrack,
+                    operation: 'remove-device',
+                });
+                if (result.acceptance === 'rejected') {
+                    throw new Error(result.reason);
+                }
+                if (result.application === 'needs-reconcile') {
+                    throw new Error(result.reason);
+                }
                 deviceRemovalFinalized = true;
             } catch (error) {
-                throw manualRepairFailure(
+                const repairFailure = manualRepairFailure(
                     `Runtime graph removal failed for device ${deviceId} on track ${track.id}`,
                     error
                 );
+                initialRuntimeGraphFailure ??= repairFailure;
+                throw repairFailure;
             }
         }
 
@@ -195,25 +166,33 @@ export function removeDevice(
     }
 
     async function reconcileRuntimeEffects(): Promise<void> {
+        if (isProjectOnlyFolder) {
+            return;
+        }
         const currentOwners = (getTrackState()?.tracks ?? []).filter((candidate) =>
             candidate.devices.some((candidateDevice) => candidateDevice.id === deviceId)
         );
         if (currentOwners.length === 0) {
             await finalizeRuntimeEffectsStrict();
-            return;
-        }
-        if (currentOwners.length === 1) {
+        } else if (currentOwners.length === 1) {
             try {
                 projectTrackToLiveStrip({ trackId: currentOwners[0]!.id, activateDormantExternalPlugins: true });
             } catch (error) {
                 throw manualRepairFailure(`Runtime projection failed for restored device ${deviceId}`, error);
             }
-            return;
+        } else {
+            throw new Error(
+                `Runtime reconciliation found multiple owners for device ${deviceId}; manual repair is required`
+            );
         }
 
-        throw new Error(
-            `Runtime reconciliation found multiple owners for device ${deviceId}; manual repair is required`
-        );
+        if (initialRuntimeGraphFailure) {
+            throw new Error(
+                `Runtime graph removal was reconciled after its initial failure for device ${deviceId}; ` +
+                    `retry/repair acknowledgement is still required: ${initialRuntimeGraphFailure.message}`,
+                { cause: initialRuntimeGraphFailure }
+            );
+        }
     }
 
     return {

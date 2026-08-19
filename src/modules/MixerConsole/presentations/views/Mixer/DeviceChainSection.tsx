@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
-import { selectTrack, reorderDevices, getPlatformPlugins } from '#/modules/Arrangement/useCases';
+import { compileReorderDevicesAction, getPlatformPlugins, selectTrack } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { openInspector } from '#/modules/WorkspaceShell/useCases';
@@ -25,7 +25,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
     return (
         <MixerSection label="Devices">
             <div className="max-h-[100px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10">
-                {track.devices.map((data, deviceIndex) => (
+                {track.devices.map((data) => (
                     <div key={data.id} className="group relative">
                         <MixerInsetButton
                             className={cn(
@@ -43,7 +43,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 // and is undoable — the same mutation issued
                                 // by an AI prompt already goes through this
                                 // action (#1938 precedent).
-                                executeAppAction({
+                                void executeAppAction({
                                     type: 'bypassDevice',
                                     payload: { deviceId: data.id, bypassed: !data.bypassed },
                                 });
@@ -51,7 +51,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             title={`${data.name} — click to inspect, double-click to ${data.bypassed ? 'enable' : 'bypass'}`}
                             draggable
                             onDragStart={(event) => {
-                                event.dataTransfer.setData('text/plain', String(deviceIndex));
+                                event.dataTransfer.setData('text/plain', data.id);
                                 event.dataTransfer.effectAllowed = 'move';
                             }}
                             onDragOver={(event) => {
@@ -60,9 +60,10 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             }}
                             onDrop={(event) => {
                                 event.preventDefault();
-                                const fromIndex = parseInt(event.dataTransfer.getData('text/plain'), 10);
-                                if (!isNaN(fromIndex) && fromIndex !== deviceIndex) {
-                                    reorderDevices(track.id, fromIndex, deviceIndex);
+                                const draggedDeviceId = event.dataTransfer.getData('text/plain');
+                                const action = compileReorderDevicesAction(track.id, draggedDeviceId, data.id);
+                                if (action) {
+                                    void executeAppAction(action);
                                 }
                             }}
                         >
@@ -79,7 +80,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 // Same boundary routing as bypass: the
                                 // removeDevice action is undoable (its
                                 // restoreDevice inverse snapshots the device).
-                                executeAppAction({
+                                void executeAppAction({
                                     type: 'removeDevice',
                                     payload: { deviceId: data.id },
                                 });
@@ -99,7 +100,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             key={param.id}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                executeAppAction({
+                                void executeAppAction({
                                     type: 'addDevice',
                                     payload: { trackId: track.id, deviceType: param.id },
                                 });
@@ -121,7 +122,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             tone="accent"
                             onClick={(event) => {
                                 event.stopPropagation();
-                                executeAppAction({
+                                void executeAppAction({
                                     type: 'addDevice',
                                     payload: { trackId: track.id, deviceType: fx.name },
                                 });

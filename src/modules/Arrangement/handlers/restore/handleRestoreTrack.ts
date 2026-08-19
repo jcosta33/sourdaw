@@ -128,15 +128,16 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                     );
                 }
                 effects.push(
-                    () =>
+                    () => {
                         projectTrackToLiveStrip({
                             trackId: alpha.payload.trackId,
                             deferSidechainWiring: true,
                             activateDormantExternalPlugins: true,
-                        }),
-                    ...routingPatches.map(
-                        (patch) => () => projectTrackToLiveStrip({ trackId: patch.trackId, deferSidechainWiring: true })
-                    ),
+                        });
+                    },
+                    ...routingPatches.map((patch) => () => {
+                        projectTrackToLiveStrip({ trackId: patch.trackId, deferSidechainWiring: true });
+                    }),
                     () => refreshToasterPadBindings(tracks, trackParentId),
                     finalizeSidechainRestore,
                     () =>
@@ -162,21 +163,21 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                         () => setBusGain(committedTrack.id, committedTrack.gain)
                     );
                 }
-                effects.push(() =>
+                effects.push(() => {
                     projectTrackToLiveStrip({
                         trackId: committedTrack.id,
                         deferSidechainWiring: true,
                         activateDormantExternalPlugins: true,
-                    })
-                );
+                    });
+                });
                 for (const patch of routingPatches) {
                     if (committedState.tracks.some((track) => track.id === patch.trackId)) {
-                        effects.push(() =>
+                        effects.push(() => {
                             projectTrackToLiveStrip({
                                 trackId: patch.trackId,
                                 deferSidechainWiring: true,
-                            })
-                        );
+                            });
+                        });
                     }
                 }
                 effects.push(

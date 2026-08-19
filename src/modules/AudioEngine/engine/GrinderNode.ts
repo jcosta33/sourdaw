@@ -6,6 +6,9 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
+import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
+import { compileRuntimeGrinderNeuralPatch } from '../services/compileRuntimeGrinderNeuralPatch';
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -44,7 +47,7 @@ function projectGrinderMeter(view: Float32Array): GrinderMeterData {
 
 export type GrinderNodeResult = {
     workletNode: AudioWorkletNode;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number, sampleFrame?: number) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GrinderMeterData) => void) => void;
@@ -55,6 +58,46 @@ export type GrinderNodeResult = {
     ready: Promise<Record<string, unknown>>;
 };
 
+const CONTROL_DEADLINE_FRAMES = 128;
+let nextWorkletControlGeneration = 1;
+
+type PendingParamPost = Readonly<{
+    value: number;
+    targetFrame: number | null;
+    deadlineFrame: number | null;
+}>;
+
+function allocateWorkletControlGeneration(): number {
+    const generation = nextWorkletControlGeneration;
+    if (generation >= Number.MAX_SAFE_INTEGER) {
+        nextWorkletControlGeneration = 1;
+    } else {
+        nextWorkletControlGeneration++;
+    }
+    return generation;
+}
+
+function toControlScheduling(sampleFrame: number | undefined): Readonly<{
+    targetFrame: number | null;
+    deadlineFrame: number | null;
+}> {
+    if (!Number.isSafeInteger(sampleFrame) || sampleFrame === undefined || sampleFrame < 0) {
+        return { targetFrame: null, deadlineFrame: null };
+    }
+    const deadlineFrame = sampleFrame + CONTROL_DEADLINE_FRAMES;
+    if (!Number.isSafeInteger(deadlineFrame)) {
+        return { targetFrame: null, deadlineFrame: null };
+    }
+    return { targetFrame: sampleFrame, deadlineFrame };
+}
+
+function toAudioParamTime(context: BaseAudioContext, sampleFrame: number | undefined): number {
+    if (!Number.isSafeInteger(sampleFrame) || sampleFrame === undefined || sampleFrame < 0) {
+        return context.currentTime;
+    }
+    return Math.max(context.currentTime, sampleFrame / context.sampleRate);
+}
+
 export function isGrinderDevice(deviceType: string): boolean {
     return deviceType === 'grinder';
 }
@@ -62,7 +105,9 @@ export function isGrinderDevice(deviceType: string): boolean {
 export async function createGrinderNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    controlTarget?: RuntimeDeviceControlTarget,
+    onRuntimeFailure?: (message: string) => void
 ): Promise<GrinderNodeResult> {
     // Grinder's neural-amp telemetry uses a SAB slot. Fail fast if the
     // environment cannot provide one — see `buildDeviceChain` for the UX path.
@@ -99,36 +144,123 @@ export async function createGrinderNode(
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
+    let lastReportedLatency: number | null = null;
+    const reportLatencyChange = (latency: number): void => {
+        if (latency === lastReportedLatency) {
+            return;
+        }
+        lastReportedLatency = latency;
+        latencyCallback?.(latency);
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
-    // Per-frame coalescing for message-port params (those without a backing
-    // AudioParam). A rapid knob drag or automation sweep fires setParam many
-    // times per frame; without coalescing each call is its own structured-clone
-    // postMessage, flooding the worklet port. Buffer the latest value per name
-    // and flush once per animation frame, so N posts of a param collapse to one.
-    const pendingParamPosts = new Map<string, number>();
+    // Per-frame coalescing applies only to immediate message-port controls
+    // (those without a backing AudioParam). Scheduled automation carries a
+    // sample-frame contract and is posted in call order without coalescing.
+    const pendingParamPosts = new Map<string, PendingParamPost>();
     let paramFlushRafId: number | null = null;
     const canCoalesce = typeof requestAnimationFrame === 'function';
+    const workletGeneration = allocateWorkletControlGeneration();
+    const fallbackControlTarget = controlTarget
+        ? Object.freeze({
+              trackId: controlTarget.trackId,
+              deviceId: controlTarget.deviceId,
+              deviceType: controlTarget.deviceType,
+              parameterIds: Object.freeze([...new Set([...controlTarget.parameterIds, 'bypass'])]),
+          })
+        : undefined;
+    let nextControlSequence = 1;
+
+    const postFallbackControl = (name: string, pending: PendingParamPost): void => {
+        if (!fallbackControlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
+            return;
+        }
+        const result = compileRuntimeDeviceControl(
+            {
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
+                    parameterId: name,
+                },
+                value: pending.value,
+                correlation: {
+                    workletGeneration,
+                    controlSequence: nextControlSequence,
+                },
+                scheduling: {
+                    targetFrame: pending.targetFrame,
+                    deadlineFrame: pending.deadlineFrame,
+                },
+            },
+            fallbackControlTarget.parameterIds
+        );
+        if (result.status !== 'compiled') {
+            return;
+        }
+        nextControlSequence++;
+        node.port.postMessage(result.control);
+    };
+
+    const postNeuralPatch = (patch: Record<string, unknown>): void => {
+        if (!fallbackControlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
+            return;
+        }
+        const result = compileRuntimeGrinderNeuralPatch({
+            schemaVersion: 1,
+            command: 'apply-grinder-neural-patch',
+            target: {
+                trackId: fallbackControlTarget.trackId,
+                deviceId: fallbackControlTarget.deviceId,
+                deviceType: fallbackControlTarget.deviceType,
+            },
+            patch,
+            correlation: {
+                workletGeneration,
+                controlSequence: nextControlSequence,
+            },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        });
+        if (result.status !== 'compiled') {
+            return;
+        }
+        nextControlSequence++;
+        node.port.postMessage(result.patch);
+    };
 
     const flushParamPosts = (): void => {
         paramFlushRafId = null;
-        for (const [name, value] of pendingParamPosts) {
-            node.port.postMessage({ type: 'param', name, value });
+        for (const [name, pending] of pendingParamPosts) {
+            postFallbackControl(name, pending);
         }
         pendingParamPosts.clear();
     };
 
-    const queueParamPost = (name: string, value: number): void => {
-        if (!canCoalesce) {
-            // No rAF (offline render / non-DOM host): post immediately so the
-            // value is not stranded with no flush ever scheduled.
-            node.port.postMessage({ type: 'param', name, value });
+    const queueParamPost = (name: string, value: number, sampleFrame?: number): void => {
+        const scheduling = toControlScheduling(sampleFrame);
+        const pending = Object.freeze({ value, ...scheduling });
+        if (scheduling.targetFrame !== null) {
+            // Scheduled fallback controls apply on the render thread. Their latency
+            // changes are observable only through the preallocated telemetry slot,
+            // so reject them when the pool is exhausted rather than leave PDC stale.
+            if (!slot) {
+                return;
+            }
+            postFallbackControl(name, pending);
             return;
         }
-        pendingParamPosts.set(name, value);
+        if (!canCoalesce) {
+            // No rAF (offline render / non-DOM host): apply at the next safe
+            // boundary instead of stranding the already validated control.
+            postFallbackControl(name, pending);
+            return;
+        }
+        pendingParamPosts.set(name, pending);
         paramFlushRafId ??= requestAnimationFrame(flushParamPosts);
     };
 
@@ -138,7 +270,7 @@ export async function createGrinderNode(
         if (outcome === 'other') {
             const data = event.data as Record<string, unknown>;
             if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
-                latencyCallback?.(data.latency);
+                reportLatencyChange(data.latency);
             }
             return;
         }
@@ -151,33 +283,52 @@ export async function createGrinderNode(
         ) {
             const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
             logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', message);
+            onRuntimeFailure?.(message);
         }
     };
     const readyPromise = handshake.promise;
 
+    if (fallbackControlTarget) {
+        node.port.postMessage(
+            Object.freeze({
+                schemaVersion: 1,
+                command: 'initialize-fallback-control',
+                target: Object.freeze({
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
+                    parameterIds: fallbackControlTarget.parameterIds,
+                }),
+                correlation: Object.freeze({ workletGeneration }),
+            })
+        );
+    }
     node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,
-        setParam(name: string, value: number) {
+        setParam(name: string, value: number, sampleFrame?: number) {
             if (Number.isFinite(value)) {
                 const param = node.parameters.get(name);
                 if (param) {
-                    // AudioParam updates are already coalesced by the audio engine
-                    // (setTargetAtTime), so post these straight through.
-                    param.setTargetAtTime(value, ctx.currentTime, 0.01);
+                    // Immediate UI writes smooth from now; scheduled writes use
+                    // TrackNode's sample-frame time, bounded at the live context.
+                    param.setTargetAtTime(value, toAudioParamTime(ctx, sampleFrame), 0.01);
                 } else {
                     // Message-port params: coalesce per frame to avoid flooding the
                     // worklet port on rapid automation/knob drags.
-                    queueParamPost(name, value);
+                    queueParamPost(name, value, sampleFrame);
                 }
             }
         },
         setPatch(patch: Record<string, unknown>) {
-            node.port.postMessage({ type: 'patch', patch });
+            postNeuralPatch(patch);
         },
         setBypass(state: boolean) {
-            node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
+            postFallbackControl(
+                'bypass',
+                Object.freeze({ value: state ? 1 : 0, targetFrame: null, deadlineFrame: null })
+            );
         },
         onMeterData(cb: (data: GrinderMeterData) => void) {
             if (meterRafId !== null) {
@@ -192,7 +343,9 @@ export async function createGrinderNode(
             // once, outside the poll, since it retains the last consistent snapshot.
             const readMeter = createTelemetryReader({ slot, project: projectGrinderMeter });
             const poll = () => {
-                cb(readMeter());
+                const data = readMeter();
+                reportLatencyChange(data.latency);
+                cb(data);
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);

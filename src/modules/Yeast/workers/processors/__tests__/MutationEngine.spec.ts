@@ -95,7 +95,7 @@ describe('MutationEngine', () => {
             const values: number[] = [];
             for (let index = 0; index < 8; index++) {
                 runBeats(engine, 1);
-                values.push(engine.getTargetValues()[0]!.value);
+                values.push(engine.__getTargetValuesForTest()[0]!.value);
             }
             return values;
         }
@@ -134,7 +134,7 @@ describe('MutationEngine', () => {
             // Drive several mutation steps so velocity_offset drifts; it is
             // clamped to [-30, 30], so any note velocity near 127 must clamp.
             runBeats(engine, 2);
-            const offset = engine.getTargetValues()[0]!.value; // already depth-scaled
+            const offset = engine.__getTargetValuesForTest()[0]!.value; // already depth-scaled
             const out: MidiEvent[] = [];
             engine.processMidi([noteOn(0, 60, 127)], out, transport);
             const expected = clampRound(127 + offset);
@@ -154,7 +154,7 @@ describe('MutationEngine', () => {
             // processMidi to know what was actually applied.
             const out: MidiEvent[] = [];
             engine.processMidi([noteOn(0, 60, 1)], out, transport);
-            const appliedOffset = engine.getTargetValues()[0]!.value;
+            const appliedOffset = engine.__getTargetValuesForTest()[0]!.value;
             if (out[0]?.kind.type === 'noteOn') {
                 expect(out[0].kind.velocity).toBe(clampRound(1 + appliedOffset));
                 expect(out[0].kind.velocity).toBeGreaterThanOrEqual(1);
@@ -163,13 +163,19 @@ describe('MutationEngine', () => {
     });
 
     describe('processMidi non-noteOn passthrough', () => {
-        it('passes noteOff events through unchanged', () => {
+        it('passes an orphan noteOff through with its original note (no matching noteOn seen)', () => {
+            // No prior noteOn means no passDecisions/pitchVoices entry for this
+            // key — the engine must not drop or shift it (parity with
+            // NoteFilter's undefined-decision passthrough).
             const engine = new MutationEngine('pass-off');
             const event = noteOff(0, 60);
             const out: MidiEvent[] = [];
             engine.processMidi([event], out, transport);
             expect(out).toHaveLength(1);
-            expect(out[0]).toBe(event);
+            expect(out[0]?.kind.type).toBe('noteOff');
+            if (out[0]?.kind.type === 'noteOff') {
+                expect(out[0].kind.note).toBe(60);
+            }
         });
 
         it('passes CC events through unchanged', () => {
@@ -179,6 +185,191 @@ describe('MutationEngine', () => {
             engine.processMidi([event], out, transport);
             expect(out).toHaveLength(1);
             expect(out[0]).toBe(event);
+        });
+    });
+
+    describe('processMidi octave_bias pitch mutation', () => {
+        it('leaves pitch unchanged while octave_bias is at its base of 0', () => {
+            const engine = new MutationEngine('octave-base');
+            const out: MidiEvent[] = [];
+            engine.processMidi([noteOn(0, 60, 100)], out, transport);
+            if (out[0]?.kind.type === 'noteOn') {
+                expect(out[0].kind.note).toBe(60);
+            }
+        });
+
+        it('shifts a noteOn by the current octave_bias walk, and the matching noteOff carries the same shift', () => {
+            const engine = new MutationEngine('octave-shift');
+            engine.setParam('depth', 1);
+            engine.setParam('rate', 10);
+            runBeats(engine, 2); // drift octave_bias away from 0
+
+            const onOut: MidiEvent[] = [];
+            engine.processMidi([noteOn(0, 60, 100)], onOut, transport);
+            // processMidi advances the walk at its start, so the value that was
+            // actually applied is only knowable by reading it back afterward —
+            // same reasoning the velocity clamp tests above already rely on.
+            const appliedShift = Math.round(engine.__getTargetValuesForTest()[1]!.value * 12);
+            const expectedNote = Math.max(0, Math.min(127, 60 + appliedShift));
+            expect(onOut[0]?.kind.type).toBe('noteOn');
+            if (onOut[0]?.kind.type === 'noteOn') {
+                expect(onOut[0].kind.note).toBe(expectedNote);
+            }
+
+            // The walk keeps moving on the Off's own processMidi call, but the
+            // Off must still carry the shift that was applied to its On, not
+            // whatever octave_bias reads now.
+            const offOut: MidiEvent[] = [];
+            engine.processMidi([noteOff(0, 60)], offOut, transport);
+            expect(offOut[0]?.kind.type).toBe('noteOff');
+            if (offOut[0]?.kind.type === 'noteOff') {
+                expect(offOut[0].kind.note).toBe(expectedNote);
+            }
+        });
+
+        it('clamps a shifted note into the valid MIDI range', () => {
+            const engine = new MutationEngine('octave-clamp');
+            engine.setParam('depth', 1);
+            engine.setParam('rate', 10);
+            runBeats(engine, 20);
+
+            const out: MidiEvent[] = [];
+            engine.processMidi([noteOn(0, 120, 100)], out, transport);
+            if (out[0]?.kind.type === 'noteOn') {
+                expect(out[0].kind.note).toBeGreaterThanOrEqual(0);
+                expect(out[0].kind.note).toBeLessThanOrEqual(127);
+            }
+        });
+
+        it('correlates two overlapping same-pitch voices by their own noteInstanceId, not release order', () => {
+            // Two Note Ons at the same pitch, overlapping, each carrying its own
+            // noteInstanceId (as both the live and offline feeds do). The walk
+            // moves between them, so each gets a DIFFERENT applied shift. Voice
+            // "b"'s Off arrives first, before voice "a"'s Off — releasing out of
+            // On order, same as On1/On2/Off2/Off1 in the wild.
+            //
+            // A pitch-composite key (channel/note only, no instance id) cannot
+            // tell these two voices apart: both share note 60, so they queue on
+            // the SAME FIFO. Releasing Off2 before Off1 would then shift Off2 by
+            // shiftA (voice a's shift, dequeued first) and Off1 by shiftB —
+            // cross-assigned. Keying by noteInstanceId keeps each voice's
+            // correlation independent of the other's release order.
+            const engine = new MutationEngine('overlap');
+            engine.setParam('depth', 1);
+            engine.setParam('rate', 10);
+
+            runBeats(engine, 1);
+            const onAOut: MidiEvent[] = [];
+            engine.processMidi(
+                [{ ...noteOn(0, 60, 100), trackId: 'track', noteInstanceId: 'voice-a' }],
+                onAOut,
+                transport
+            );
+            const shiftA = Math.round(engine.__getTargetValuesForTest()[1]!.value * 12);
+            expect(onAOut).toHaveLength(1);
+
+            runBeats(engine, 5);
+            const onBOut: MidiEvent[] = [];
+            engine.processMidi(
+                [{ ...noteOn(0, 60, 100), trackId: 'track', noteInstanceId: 'voice-b' }],
+                onBOut,
+                transport
+            );
+            const shiftB = Math.round(engine.__getTargetValuesForTest()[1]!.value * 12);
+            expect(onBOut).toHaveLength(1);
+            // The fixture only proves anything if the two shifts differ from
+            // each other AND from 0 — otherwise a cross-assignment would be
+            // indistinguishable from a correct one.
+            expect(shiftA).not.toBe(0);
+            expect(shiftB).not.toBe(0);
+            expect(shiftA).not.toBe(shiftB);
+
+            const offBOut: MidiEvent[] = [];
+            engine.processMidi(
+                [{ ...noteOff(0, 60), trackId: 'track', noteInstanceId: 'voice-b' }],
+                offBOut,
+                transport
+            );
+            expect(offBOut[0]?.kind.type).toBe('noteOff');
+            if (offBOut[0]?.kind.type === 'noteOff') {
+                expect(offBOut[0].kind.note).toBe(60 + shiftB);
+            }
+
+            const offAOut: MidiEvent[] = [];
+            engine.processMidi(
+                [{ ...noteOff(0, 60), trackId: 'track', noteInstanceId: 'voice-a' }],
+                offAOut,
+                transport
+            );
+            expect(offAOut[0]?.kind.type).toBe('noteOff');
+            if (offAOut[0]?.kind.type === 'noteOff') {
+                expect(offAOut[0].kind.note).toBe(60 + shiftA);
+            }
+        });
+    });
+
+    describe('processMidi probability_offset gating', () => {
+        it('never drops a note while probability_offset is at its base of 0', () => {
+            const engine = new MutationEngine('prob-base');
+            const out: MidiEvent[] = [];
+            for (let index = 0; index < 20; index++) {
+                engine.processMidi([noteOn(index, 60 + index, 100)], out, transport);
+            }
+            expect(out).toHaveLength(20);
+        });
+
+        it('thins the stream once the walk pushes probability_offset negative, dropping each Note Off alongside its dropped Note On', () => {
+            const engine = new MutationEngine('prob-drift');
+            engine.setParam('depth', 1);
+            engine.setParam('rate', 10);
+            // 60 beats of drift and 1000 notes: empirically the shortest drive
+            // (for this fixed seed) that reliably visits negative
+            // probability_offset territory at least once — the walk is
+            // damped toward 0, so a shorter span can spend its entire
+            // duration on the positive (never-drops) side by chance.
+            runBeats(engine, 60);
+
+            const notesSent = 1000;
+            const onOutputs: MidiEvent[] = [];
+            const offOutputs: MidiEvent[] = [];
+            for (let index = 0; index < notesSent; index++) {
+                const note = 20 + (index % 80); // spread keys; on/off pairs never overlap
+                const onOut: MidiEvent[] = [];
+                engine.processMidi([noteOn(index, note, 100)], onOut, transport);
+                const offOut: MidiEvent[] = [];
+                engine.processMidi([noteOff(index, note)], offOut, transport);
+                onOutputs.push(...onOut);
+                offOutputs.push(...offOut);
+            }
+
+            expect(onOutputs.length).toBeLessThan(notesSent);
+            // Every surviving Note On has exactly one Note Off: the drop
+            // decision suppresses the pair as a whole, never one side of it.
+            expect(offOutputs.length).toBe(onOutputs.length);
+        });
+
+        it('is deterministic: two engines with the same seed and params drop the same notes', () => {
+            const first = new MutationEngine('prob-det-a');
+            const second = new MutationEngine('prob-det-b');
+            for (const engine of [first, second]) {
+                engine.setParam('depth', 1);
+                engine.setParam('rate', 10);
+            }
+            runBeats(first, 20);
+            runBeats(second, 20);
+
+            const collect = (engine: MutationEngine): MidiEvent[] => {
+                const collected: MidiEvent[] = [];
+                for (let index = 0; index < 50; index++) {
+                    const note = 20 + (index % 80);
+                    const out: MidiEvent[] = [];
+                    engine.processMidi([noteOn(index, note, 100)], out, transport);
+                    collected.push(...out);
+                }
+                return collected;
+            };
+
+            expect(collect(first)).toEqual(collect(second));
         });
     });
 
@@ -192,10 +383,10 @@ describe('MutationEngine', () => {
             engine.setParam('depth', 1);
 
             runBeats(engine, 0.9);
-            expect(engine.getTargetValues()[0]!.value).toBe(0);
+            expect(engine.__getTargetValuesForTest()[0]!.value).toBe(0);
 
             runBeats(engine, 0.2); // crosses the first beat boundary
-            expect(engine.getTargetValues()[0]!.value).not.toBe(0);
+            expect(engine.__getTargetValuesForTest()[0]!.value).not.toBe(0);
         });
 
         it('evolves identically at 44.1 kHz/128 and 96 kHz/512 over the same musical span', () => {
@@ -214,9 +405,9 @@ describe('MutationEngine', () => {
             runBeats(standard, 8, { sampleRate: 44_100, blockSizeSamples: 128 });
             runBeats(highRate, 8, { sampleRate: 96_000, blockSizeSamples: 512 });
 
-            expect(highRate.getTargetValues()).toEqual(standard.getTargetValues());
+            expect(highRate.__getTargetValuesForTest()).toEqual(standard.__getTargetValuesForTest());
             // 8 beats × 2 per beat = 16 steps — the walk actually moved.
-            expect(standard.getTargetValues()[0]!.value).not.toBe(0);
+            expect(standard.__getTargetValuesForTest()[0]!.value).not.toBe(0);
         });
 
         it('scales the number of steps with `rate`, at any block size', () => {
@@ -232,7 +423,7 @@ describe('MutationEngine', () => {
             runBeats(fast, 2, { blockSizeSamples: 64 });
             runBeats(slow, 4, { blockSizeSamples: 1024 });
 
-            expect(slow.getTargetValues()).toEqual(fast.getTargetValues());
+            expect(slow.__getTargetValuesForTest()).toEqual(fast.__getTargetValuesForTest());
         });
 
         it('carries the sub-beat remainder across blocks instead of quantizing to block edges', () => {
@@ -247,7 +438,7 @@ describe('MutationEngine', () => {
             runBeats(ragged, 6, { blockSizeSamples: 1000 });
             runBeats(even, 6, { blockSizeSamples: 2205 });
 
-            expect(ragged.getTargetValues()).toEqual(even.getTargetValues());
+            expect(ragged.__getTargetValuesForTest()).toEqual(even.__getTargetValuesForTest());
         });
     });
 
@@ -279,7 +470,7 @@ describe('MutationEngine', () => {
             const reference = cappedEngine('cap-exact');
             runSamples(reference, (CAP + 1) * SAMPLES_PER_MUTATION);
 
-            expect(capped.getTargetValues()).toEqual(reference.getTargetValues());
+            expect(capped.__getTargetValuesForTest()).toEqual(reference.__getTargetValuesForTest());
         });
 
         it('drops the backlog when the bound actually cuts the loop short', () => {
@@ -294,7 +485,7 @@ describe('MutationEngine', () => {
             const reference = cappedEngine('cap-overrun');
             runSamples(reference, (CAP + 1) * SAMPLES_PER_MUTATION);
 
-            expect(overrun.getTargetValues()).toEqual(reference.getTargetValues());
+            expect(overrun.__getTargetValuesForTest()).toEqual(reference.__getTargetValuesForTest());
         });
     });
 
@@ -305,19 +496,19 @@ describe('MutationEngine', () => {
             engine.setParam('depth', 1); // raw target value visible at depth 1
             runBeats(engine, 20); // 200 mutation steps
             // depth=1 so getTargetValues reports the raw clamped value.
-            const raw = engine.getTargetValues()[0]!.value;
+            const raw = engine.__getTargetValuesForTest()[0]!.value;
             expect(raw).toBeGreaterThanOrEqual(-30);
             expect(raw).toBeLessThanOrEqual(30);
         });
 
-        it('never lets gate_mul escape [0.3, 1.8] after many steps', () => {
-            const engine = new MutationEngine('range-gate');
+        it('never lets octave_bias escape [-1, 1] after many steps', () => {
+            const engine = new MutationEngine('range-octave');
             engine.setParam('rate', 10);
             engine.setParam('depth', 1);
             runBeats(engine, 20);
-            const raw = engine.getTargetValues()[1]!.value;
-            expect(raw).toBeGreaterThanOrEqual(0.3);
-            expect(raw).toBeLessThanOrEqual(1.8);
+            const raw = engine.__getTargetValuesForTest()[1]!.value;
+            expect(raw).toBeGreaterThanOrEqual(-1);
+            expect(raw).toBeLessThanOrEqual(1);
         });
     });
 
@@ -328,51 +519,98 @@ describe('MutationEngine', () => {
             engine.setParam('depth', 1);
             // Drift the targets.
             runBeats(engine, 1);
-            expect(engine.getTargetValues().some((t) => t.value !== 0)).toBe(true);
+            expect(engine.__getTargetValuesForTest().some((t) => t.value !== 0)).toBe(true);
 
             engine.reset();
-            // After reset every target.value is back at its baseValue.
-            // getTargetValues reports value * depth; with depth=1 that is the
-            // raw baseValue: velocity_offset 0, gate_mul 1, octave_bias 0,
-            // probability_offset 0.
-            const reported = engine.getTargetValues();
+            // After reset every target.value is back at its baseValue — all
+            // three targets have baseValue 0, so every reported value (raw
+            // baseValue * depth) is 0 regardless of depth.
+            const reported = engine.__getTargetValuesForTest();
             expect(reported[0]!.value).toBe(0);
-            expect(reported[1]!.value).toBe(1);
+            expect(reported[1]!.value).toBe(0);
             expect(reported[2]!.value).toBe(0);
-            expect(reported[3]!.value).toBe(0);
 
             // The mutation phase is zeroed too: at one mutation per two beats,
             // a full beat of transport after the reset still must not step.
             engine.setParam('rate', 0.5);
             runBeats(engine, 1);
-            // gate_mul still at base 1 (depth 1) → unchanged.
-            expect(engine.getTargetValues()[1]!.value).toBe(1);
+            expect(engine.__getTargetValuesForTest()[0]!.value).toBe(0);
+        });
+
+        it('clears queued pitch-shift and drop-decision correlation state', () => {
+            // Mirrors NoteFilter.reset(): a noteOn processed just before a reset
+            // (an all-notes-off, a discontinuity) may never see its matching
+            // noteOff arrive. Left uncleared, that FIFO entry would still be
+            // sitting at the head the next time an unrelated noteOn/noteOff
+            // pair reuses the same channel/note key, and get read for the
+            // wrong note. `size` is a black-box count across every key, so
+            // this does not depend on which way the random walk happened to
+            // move — a noteOn queues exactly one entry in each map whenever it
+            // is not dropped, and a fresh engine's probability_offset is at
+            // base 0 (never drops).
+            const engine = new MutationEngine('reset-voices');
+            const out: MidiEvent[] = [];
+            engine.processMidi([noteOn(0, 60, 100)], out, transport);
+
+            const internal = engine as unknown as {
+                pitchVoices: { size: number };
+                passDecisions: { size: number };
+            };
+            expect(internal.pitchVoices.size).toBe(1);
+            expect(internal.passDecisions.size).toBe(1);
+
+            engine.reset();
+
+            expect(internal.pitchVoices.size).toBe(0);
+            expect(internal.passDecisions.size).toBe(0);
         });
     });
 
     describe('resetParams restores configured depth and rate', () => {
-        it('resets depth to 0.5 and rate to one mutation per beat', () => {
-            const engine = new MutationEngine('reset-params');
+        it('resets depth to 0.5', () => {
+            // Every target's baseValue is 0, so a reset walk reports 0
+            // regardless of depth — depth can only be observed through a
+            // DRIFTED value. Compare against a sister engine explicitly
+            // configured at depth 0.5: same seed, same rate, so the raw walk
+            // is identical and only the depth-scaled report can differ.
+            const engine = new MutationEngine('reset-params-depth');
             engine.setParam('depth', 1);
+            engine.setParam('rate', 10);
+            (engine as unknown as { resetParams: () => void }).resetParams();
+            // resetParams resets BOTH depth and rate to their defaults (0.5,
+            // 1) — hold rate at the sister's value so cadence is identical
+            // and only the depth reset is under test.
+            engine.setParam('rate', 10);
+
+            const sister = new MutationEngine('reset-params-depth-sister');
+            sister.setParam('depth', 0.5);
+            sister.setParam('rate', 10);
+
+            runBeats(engine, 1);
+            runBeats(sister, 1);
+            expect(engine.__getTargetValuesForTest()).toEqual(sister.__getTargetValuesForTest());
+            expect(engine.__getTargetValuesForTest()[0]!.value).not.toBe(0);
+        });
+
+        it('resets rate to one mutation per beat', () => {
+            const engine = new MutationEngine('reset-params-rate');
             engine.setParam('rate', 10); // ten mutations per beat
+            engine.setParam('depth', 1);
             // Confirm the rate took effect: a tenth of a beat drifts the walk.
             runBeats(engine, 0.15);
-            expect(engine.getTargetValues()[0]!.value).not.toBe(0);
+            expect(engine.__getTargetValuesForTest()[0]!.value).not.toBe(0);
 
-            // Access protected resetParams via unknown cast.
             (engine as unknown as { resetParams: () => void }).resetParams();
             // resetParams only resets depth/rate, NOT live target drift, so clear
             // the targets explicitly to detect the fresh cadence.
             engine.reset();
-            // depth is back at 0.5, so the untouched gate_mul base of 1 reports 0.5.
-            expect(engine.getTargetValues()[1]!.value).toBe(0.5);
             engine.setParam('depth', 1);
 
             // Back at one mutation per beat: 0.9 beats must not step.
             runBeats(engine, 0.9);
-            expect(engine.getTargetValues()[0]!.value).toBe(0); // still base
+            expect(engine.__getTargetValuesForTest()[0]!.value).toBe(0); // still base
             runBeats(engine, 0.2); // crosses the beat
-            expect(engine.getTargetValues()[0]!.value).not.toBe(0);
+            expect(engine.__getTargetValuesForTest()[0]!.value).not.toBe(0);
         });
     });
 
@@ -388,7 +626,7 @@ describe('MutationEngine', () => {
             sister.setParam('rate', 10);
             runBeats(engine, 1);
             runBeats(sister, 1);
-            expect(engine.getTargetValues()[0]!.value).toBe(sister.getTargetValues()[0]!.value);
+            expect(engine.__getTargetValuesForTest()[0]!.value).toBe(sister.__getTargetValuesForTest()[0]!.value);
         });
 
         it('clamps depth below 0 up to 0 (no mutation audible)', () => {
@@ -398,7 +636,7 @@ describe('MutationEngine', () => {
             runBeats(engine, 1);
             // depth=0 → every reported value is raw * 0 = 0 regardless of drift.
             // (JS may yield -0 for the velocity_offset product; treat ±0 as zero.)
-            for (const target of engine.getTargetValues()) {
+            for (const target of engine.__getTargetValuesForTest()) {
                 expect(Object.is(target.value, -0) || target.value === 0).toBe(true);
             }
         });
@@ -410,9 +648,9 @@ describe('MutationEngine', () => {
             engine.setParam('rate', 0); // → clamped to 0.1
             runBeats(engine, 9); // still short of the first step
             // velocity_offset (baseValue 0) must still be at its base → reported 0.
-            expect(engine.getTargetValues()[0]!.value).toBe(0);
+            expect(engine.__getTargetValuesForTest()[0]!.value).toBe(0);
             runBeats(engine, 2); // crosses beat 10
-            expect(engine.getTargetValues()[0]!.value).not.toBe(0);
+            expect(engine.__getTargetValuesForTest()[0]!.value).not.toBe(0);
         });
 
         it('clamps rate above 10 down to 10 (ten mutations per beat)', () => {
@@ -422,8 +660,8 @@ describe('MutationEngine', () => {
             ceiling.setParam('rate', 10);
             runBeats(engine, 4);
             runBeats(ceiling, 4);
-            expect(engine.getTargetValues()).toEqual(ceiling.getTargetValues());
-            expect(engine.getTargetValues().some((t) => t.value !== 0)).toBe(true);
+            expect(engine.__getTargetValuesForTest()).toEqual(ceiling.__getTargetValuesForTest());
+            expect(engine.__getTargetValuesForTest().some((t) => t.value !== 0)).toBe(true);
         });
 
         it('does not step twice inside one beat-crossing block at the rate ceiling', () => {
@@ -440,27 +678,20 @@ describe('MutationEngine', () => {
             runBeats(oneBigBlock, 1, { blockSizeSamples: 22_050 });
             runBeats(manySmall, 1, { blockSizeSamples: 128 });
 
-            expect(oneBigBlock.getTargetValues()).toEqual(manySmall.getTargetValues());
+            expect(oneBigBlock.__getTargetValuesForTest()).toEqual(manySmall.__getTargetValuesForTest());
         });
     });
 
-    describe('getTargetValues', () => {
-        it('reports all four mutation targets by name and base values', () => {
+    describe('__getTargetValuesForTest', () => {
+        it('reports the three mutation targets by name and base values', () => {
+            // gate_mul is gone: it was written by the walk but never read by
+            // processMidi or any other processor (audit residue, #2039).
             const engine = new MutationEngine('targets');
-            const values = engine.getTargetValues();
-            expect(values.map((t) => t.name)).toEqual([
-                'velocity_offset',
-                'gate_mul',
-                'octave_bias',
-                'probability_offset',
-            ]);
-            // Fresh engine, depth 0.5. Reported = baseValue * depth:
-            // velocity_offset 0*0.5=0, gate_mul 1*0.5=0.5, octave_bias 0,
-            // probability_offset 0.
+            const values = engine.__getTargetValuesForTest();
+            expect(values.map((t) => t.name)).toEqual(['velocity_offset', 'octave_bias', 'probability_offset']);
             expect(values[0]!.value).toBe(0);
-            expect(values[1]!.value).toBe(0.5);
+            expect(values[1]!.value).toBe(0);
             expect(values[2]!.value).toBe(0);
-            expect(values[3]!.value).toBe(0);
         });
 
         it('scales every reported value by depth', () => {
@@ -474,9 +705,9 @@ describe('MutationEngine', () => {
             runBeats(sister, 1);
             // Same seed/sigma → identical raw target; reported values differ by
             // the depth factor (0.5 vs 1.0).
-            for (let i = 0; i < 4; i++) {
-                const half = engine.getTargetValues()[i]!.value;
-                const full = sister.getTargetValues()[i]!.value;
+            for (let i = 0; i < 3; i++) {
+                const half = engine.__getTargetValuesForTest()[i]!.value;
+                const full = sister.__getTargetValuesForTest()[i]!.value;
                 if (full !== 0) {
                     expect(half).toBeCloseTo(full / 2, 6);
                 }

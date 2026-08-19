@@ -1,0 +1,69 @@
+name: Bug report
+description: Unspecced defect, crash, or audit finding. Spec-governed work is a Task.
+title: "fix(scope): "
+labels: ["bug", "status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Spec-governed work is a Task. Secrets stay in `~/.agents/artifacts`.
+
+        After create, add `priority:P*`.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine (Realtime scheduling, offline render, buffers)
+        - daw-dsp (Synthesizers, filters, delay, reverbs, saturation)
+        - electron (Desktop shell, IPC, window management, native addon)
+        - native (crates/sourdaw-native, audio backends)
+        - plugin-host (CLAP/VST3 hosting, scanning, isolation)
+        - midi (MPE, MIDI 2.0, routing, clock sync)
+        - arrangement (Timeline, clips, tracks, automation, transport)
+        - yeast / bacteria / knead / levain / crumbs (Instruments & processors)
+        - ai / airuntime (AI agentic tools, proposals, streaming)
+        - workspace-shell / ui (Presentation components, mixer, piano roll)
+        - build / ci (TypeScript, Rust, WASM, bundling)
+        - security (CSP, sandbox, memory safety)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Defect
+      description: Observed versus expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduce
+      description: Minimal steps, snippet, or command.
+      placeholder: "1. Open project...\n2. Route track...\n3. Observe..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: References
+      description: ADRs or related issues.
+      placeholder: "ADR 0020, #2037"
+    validations:
+      required: false

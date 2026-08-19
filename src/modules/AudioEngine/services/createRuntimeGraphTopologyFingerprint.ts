@@ -8,6 +8,6 @@ export function createRuntimeGraphTopologyFingerprint(node: RuntimeGraphDeltaNod
     return JSON.stringify([
         node.id,
         node.kind,
-        node.devices.map((device) => [device.id, device.type, device.parameterIds]),
+        node.devices.map((device) => [device.id, device.type, device.externalInstanceId ?? null, device.parameterIds]),
     ]);
 }
