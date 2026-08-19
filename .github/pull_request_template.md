@@ -16,7 +16,7 @@
 
 <!--
 Title: type(scope): subject — conventional commits, matching git log.
-Body ceiling 4000 bytes. Not here: mutation tables, per-config sweeps, stance labels,
-reviewer prose, repeated evidence, recaps. Commit message or linked issue instead.
-Review findings go on the diff line, not in a top-level comment. See AGENTS.md.
+Body ceiling 4000 bytes. What changed, why, how to test, Closes #N.
+Not here: session diaries, unpublished rounds, mutation tables.
+Findings go on the diff line. See AGENTS.md Delivery.
 -->
