@@ -1,0 +1,21 @@
+scripts/buildElectronPreload.ts
+  s_7ba0b7bee9e951::t_35329b4fdec612 43-44
+scripts/__tests__/resourceGuard.spec.ts
+  s_7ba0b7bee9e951::t_7bd460159c1dc8 392
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "afcc1a6ec63308426b487ae8a8e3d6218763b9fb",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
