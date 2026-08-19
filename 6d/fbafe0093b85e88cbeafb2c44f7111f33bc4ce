@@ -1,0 +1,59 @@
+crates/proof-chamber/src/decay_eq.rs
+  s_487e9aa1e46063::t_98af1fc52a89c4 140-159
+crates/proof-chamber/src/proof_chamber.rs
+  s_487e9aa1e46063::t_95a172805ca9ed 11,265-284,287-300,304-307,312,314,318-325,327-335,338,341-343,348-349,361-407,415-418,423-460,462-465,468,470,473,588-594,793-794,851-853,856-863,865-867,1057,1087
+crates/proof-chamber/tests/plate_shimmer_render_contract.rs
+  s_487e9aa1e46063::t_56e22e7763c2d7 7-9,19,21-23,25-39,41-43,62-77,89-98,107,133,174-200,216-217,220-221,255-314
+crates/proof-chamber/tests/plate_shimmer_stability.rs
+  s_487e9aa1e46063::t_f2a80fcc1637f1 14
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_487e9aa1e46063::t_34430bfaf90e1a 21,55-87,538-545,547-554,570-614,619,1116-1286
+public/wasm/manifest.json
+  s_487e9aa1e46063::t_f21315321dd92b 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_487e9aa1e46063::t_f834db67fecc25 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_487e9aa1e46063::t_bbf44c8a0e8f86 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_487e9aa1e46063::t_11e221c69c92bb 1
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_487e9aa1e46063::t_755251741ea2a1 90-157
+src/modules/Collaboration/models/__tests__/peerIdentityBounds.spec.ts
+  s_487e9aa1e46063::t_1fbddd3813a6cb 1-70
+src/modules/Collaboration/repositories/__tests__/peerConnection.spec.ts
+  s_487e9aa1e46063::t_3dffa31190ad7a 268-300
+src/modules/Collaboration/repositories/peerConnection.ts
+  s_487e9aa1e46063::t_7302b5da429355 124-125,130-140
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_487e9aa1e46063::t_271c131dd1cdf1 198-205
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_487e9aa1e46063::t_522d53a67fac90 209-217
+src/modules/Collaboration/useCases/collaboration/__tests__/onPresence.spec.ts
+  s_487e9aa1e46063::t_f39d3554425499 9,15,22,30-31,42-43,53
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_1e830e41cd3448 12,298-311,329,461,482,494-521,535-562,583-601,723-820
+src/modules/Collaboration/useCases/collaboration/acceptAnswer.ts
+  s_487e9aa1e46063::t_a817032882d348 2,84-86
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_487e9aa1e46063::t_038d08ff2a86fc 2,70-72
+src/modules/Collaboration/useCases/collaboration/onPresence.ts
+  s_487e9aa1e46063::t_b503ea5facabc5 5-10,12,14
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_70c595b358784f 25,31-32,75-80,93,96-111,123-124,127-128,431,451-452,559,621-632,635-661,670-676,679-681,683-685,690-696,708-716,723-727,743-745,748-749,837-843,859
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6dfbafe0093b85e88cbeafb2c44f7111f33bc4ce",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
