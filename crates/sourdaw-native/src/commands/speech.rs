@@ -25,6 +25,17 @@ struct LoadedModel {
 
 pub struct DictationState {
     loaded: Mutex<Option<LoadedModel>>,
+    /// Serializes `ensure_whisper_ready`'s check→download→build→store. The
+    /// `loaded` mutex alone cannot provide this: it must not be held across
+    /// the download's await points, so without this guard two concurrent
+    /// `ensure_whisper_ready` calls both observe not-loaded and both
+    /// download and build the ~142 MB model, the loser's context being
+    /// dropped on overwrite. Async so the second caller awaits the first.
+    /// `load_whisper_model` deliberately does *not* take this guard — the
+    /// explicit local-load entry point must never queue behind an
+    /// auto-download; explicit-load-wins is preserved by the re-check after
+    /// `produce` in `ensure_loaded_exclusively`.
+    load_guard: tokio::sync::Mutex<()>,
     stop_flag: Arc<AtomicBool>,
     /// Set for the lifetime of one record-then-transcribe session so a
     /// second `start_dictation` while one is in flight is rejected instead
@@ -38,6 +49,7 @@ impl Default for DictationState {
     fn default() -> Self {
         Self {
             loaded: Mutex::new(None),
+            load_guard: tokio::sync::Mutex::new(()),
             stop_flag: Arc::new(AtomicBool::new(false)),
             session_active: Arc::new(AtomicBool::new(false)),
         }
@@ -179,16 +191,66 @@ fn try_begin_dictation_session(session_active: &AtomicBool) -> Result<(), String
     Ok(())
 }
 
+/// Serializes "observe not-loaded → produce → store" so a second concurrent
+/// caller awaits the first and receives its value instead of repeating the
+/// production. The already-loaded check runs *under* `load_guard`: checking
+/// before acquiring is exactly the check-then-act race this exists to close.
+///
+/// The slot is re-checked *after* `produce` as well: `load_whisper_model`
+/// writes the slot without taking `load_guard` (so an explicit local load
+/// never queues behind an in-flight auto-download), and an explicit load
+/// that lands mid-produce must win — the produced value is discarded and the
+/// explicitly loaded one returned, never overwritten.
+///
+/// Generic so the exclusion contract is testable without a real
+/// `WhisperContext` — see the `#[cfg(test)]` module.
+async fn ensure_loaded_exclusively<T, Fut>(
+    loaded: &Mutex<Option<T>>,
+    load_guard: &tokio::sync::Mutex<()>,
+    produce: impl FnOnce() -> Fut,
+) -> Result<T, String>
+where
+    T: Clone,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    let _exclusive = load_guard.lock().await;
+
+    {
+        let guard = loaded.lock().map_err(|e| format!("Lock error: {e}"))?;
+        if let Some(value) = guard.as_ref() {
+            return Ok(value.clone());
+        }
+    }
+
+    let value = produce().await?;
+
+    let mut guard = loaded.lock().map_err(|e| format!("Lock error: {e}"))?;
+    if let Some(existing) = guard.as_ref() {
+        // An explicit load landed while we were producing: it wins.
+        return Ok(existing.clone());
+    }
+    *guard = Some(value.clone());
+    Ok(value)
+}
+
 // ── Commands ────────────────────────────────────────────────────────────
 
 /// Load a Whisper GGML model from disk. Call once on startup or
 /// lazily before the first dictation session.
+///
+/// Deliberately replaces whatever is loaded, and deliberately does *not*
+/// take `load_guard`: this is the entry point a user reaches for when the
+/// auto-download is slow, so it must never queue behind one (the download is
+/// bounded only by a 3600 s HTTP timeout). An `ensure_whisper_ready` that
+/// finishes later will not overwrite this explicit load — its post-produce
+/// re-check in `ensure_loaded_exclusively` yields to the value stored here.
 pub async fn load_whisper_model(
     model_path: String,
     state: &DictationState,
 ) -> Result<AsrStatus, String> {
     let model_path = filesystem::resolve_existing_file_path(&model_path)?;
     let model_path_str = model_path.to_string_lossy().to_string();
+
     let ctx = WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
         .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
 
@@ -228,45 +290,32 @@ const WHISPER_MODEL: model_download::ModelDownload = model_download::ModelDownlo
 
 /// Ensure the Whisper model is downloaded and loaded.
 /// Auto-downloads `ggml-base.en.bin` (~142MB) from HuggingFace on first use.
+///
+/// The already-loaded short-circuit reports whatever model is actually
+/// loaded, not the default file: a caller may have loaded a custom model via
+/// `load_whisper_model` first. Concurrent calls serialize on `load_guard`
+/// inside `ensure_loaded_exclusively`, so exactly one downloads and builds.
 pub async fn ensure_whisper_ready(state: &DictationState) -> Result<AsrStatus, String> {
-    // Check if already loaded — report whatever model is actually loaded,
-    // not the default file: a caller may have loaded a custom model via
-    // `load_whisper_model` first.
-    {
-        let guard = state
-            .loaded
-            .lock()
-            .map_err(|e| format!("Lock error: {e}"))?;
-        if let Some(loaded) = guard.as_ref() {
-            return Ok(AsrStatus {
-                loaded: true,
-                model_name: Some(loaded.name.clone()),
-            });
-        }
-    }
+    let loaded = ensure_loaded_exclusively(&state.loaded, &state.load_guard, || async {
+        let model_path = model_download::ensure_model(&WHISPER_MODEL).await?;
+        let model_path_str = model_path.to_string_lossy().to_string();
 
-    // Download model if needed
-    let model_path = model_download::ensure_model(&WHISPER_MODEL).await?;
-    let model_path_str = model_path.to_string_lossy().to_string();
+        let ctx =
+            WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
+                .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
 
-    // Load model
-    let ctx = WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
-        .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
+        eprintln!("[Whisper] Model loaded: {}", WHISPER_MODEL_FILE);
 
-    let mut guard = state
-        .loaded
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
-    *guard = Some(LoadedModel {
-        ctx: Arc::new(ctx),
-        name: WHISPER_MODEL_FILE.to_string(),
-    });
-
-    eprintln!("[Whisper] Model loaded: {}", WHISPER_MODEL_FILE);
+        Ok(LoadedModel {
+            ctx: Arc::new(ctx),
+            name: WHISPER_MODEL_FILE.to_string(),
+        })
+    })
+    .await?;
 
     Ok(AsrStatus {
         loaded: true,
-        model_name: Some(WHISPER_MODEL_FILE.to_string()),
+        model_name: Some(loaded.name),
     })
 }
 
@@ -676,5 +725,151 @@ mod tests {
         assert!(!session_active.load(Ordering::SeqCst));
         assert_eq!(sink.events().len(), 1);
         assert_eq!(sink.events()[0].0, "dictation-error");
+    }
+
+    /// Regression for the `ensure_whisper_ready` check-then-act race: two
+    /// concurrent callers both observed not-loaded and both downloaded and
+    /// built the ~142 MB model, the loser's context dropped on overwrite.
+    /// The first caller is parked inside `produce` until the second has been
+    /// spawned and given time to run, so before the fix the second caller's
+    /// `produce` also runs and the build count reaches two; with the
+    /// exclusion it awaits the first and receives its value.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_ensure_calls_build_exactly_once_and_share_the_result() {
+        use std::sync::atomic::AtomicUsize;
+
+        let loaded = Arc::new(Mutex::new(None::<u32>));
+        let load_guard = Arc::new(tokio::sync::Mutex::new(()));
+        let builds = Arc::new(AtomicUsize::new(0));
+        let first_entered = Arc::new(tokio::sync::Notify::new());
+        let release_first = Arc::new(tokio::sync::Notify::new());
+
+        let first = {
+            let loaded = loaded.clone();
+            let load_guard = load_guard.clone();
+            let builds = builds.clone();
+            let first_entered = first_entered.clone();
+            let release_first = release_first.clone();
+            tokio::spawn(async move {
+                ensure_loaded_exclusively(&loaded, &load_guard, || async {
+                    builds.fetch_add(1, Ordering::SeqCst);
+                    first_entered.notify_one();
+                    release_first.notified().await;
+                    Ok(7_u32)
+                })
+                .await
+            })
+        };
+        first_entered.notified().await;
+
+        let second = {
+            let loaded = loaded.clone();
+            let load_guard = load_guard.clone();
+            let builds = builds.clone();
+            tokio::spawn(async move {
+                ensure_loaded_exclusively(&loaded, &load_guard, || async {
+                    builds.fetch_add(1, Ordering::SeqCst);
+                    Ok(9_u32)
+                })
+                .await
+            })
+        };
+        // Give the second caller time to run its produce if the exclusion is
+        // broken; with the exclusion it parks on the guard here.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        release_first.notify_one();
+
+        let first_result = first.await.expect("first task must not panic");
+        let second_result = second.await.expect("second task must not panic");
+
+        assert_eq!(first_result, Ok(7));
+        assert_eq!(
+            second_result,
+            Ok(7),
+            "second caller must share the first build"
+        );
+        assert_eq!(
+            builds.load(Ordering::SeqCst),
+            1,
+            "exactly one build may run"
+        );
+    }
+
+    /// `load_whisper_model` writes the slot directly, without taking
+    /// `load_guard`, so an explicit load can land while
+    /// `ensure_loaded_exclusively` is mid-produce. The explicit load must
+    /// win: the produced value is discarded, and the slot is never
+    /// overwritten with it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_explicit_load_landing_mid_produce_wins_over_the_produced_value() {
+        let loaded = Arc::new(Mutex::new(None::<u32>));
+        let load_guard = Arc::new(tokio::sync::Mutex::new(()));
+        let produce_entered = Arc::new(tokio::sync::Notify::new());
+        let release_produce = Arc::new(tokio::sync::Notify::new());
+
+        let ensure = {
+            let loaded = loaded.clone();
+            let load_guard = load_guard.clone();
+            let produce_entered = produce_entered.clone();
+            let release_produce = release_produce.clone();
+            tokio::spawn(async move {
+                ensure_loaded_exclusively(&loaded, &load_guard, || async {
+                    produce_entered.notify_one();
+                    release_produce.notified().await;
+                    Ok(7_u32)
+                })
+                .await
+            })
+        };
+        produce_entered.notified().await;
+
+        // Simulates load_whisper_model: store the explicit value under the
+        // `loaded` mutex alone, while the producer is parked mid-produce.
+        *loaded.lock().unwrap() = Some(42);
+        release_produce.notify_one();
+
+        let result = ensure.await.expect("ensure task must not panic");
+        assert_eq!(result, Ok(42), "the explicit load must win");
+        assert_eq!(
+            *loaded.lock().unwrap(),
+            Some(42),
+            "the produced value must never overwrite the explicit load"
+        );
+    }
+
+    /// A failed production releases the exclusion and stores nothing, so the
+    /// next caller retries instead of observing a poisoned or half-loaded
+    /// state.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_failed_load_releases_the_exclusion_and_the_next_caller_retries() {
+        use std::sync::atomic::AtomicUsize;
+
+        let loaded = Mutex::new(None::<u32>);
+        let load_guard = tokio::sync::Mutex::new(());
+        let attempts = AtomicUsize::new(0);
+
+        let failed = ensure_loaded_exclusively(&loaded, &load_guard, || async {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            Err("download failed".to_string())
+        })
+        .await;
+        assert_eq!(failed, Err("download failed".to_string()));
+
+        let retried = ensure_loaded_exclusively(&loaded, &load_guard, || async {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            Ok(3_u32)
+        })
+        .await;
+        assert_eq!(retried, Ok(3));
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+
+        // Once stored, later callers get the value without re-producing.
+        let cached = ensure_loaded_exclusively(&loaded, &load_guard, || async {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            Ok(4_u32)
+        })
+        .await;
+        assert_eq!(cached, Ok(3));
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
 }
