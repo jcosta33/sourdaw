@@ -1,0 +1,29 @@
+crates/proof-chamber/tests/plate_shimmer_render_contract.rs
+  s_487e9aa1e46063::t_e318087110da3f 269-274
+crates/proof-chamber/src/proof_chamber.rs
+  s_487e9aa1e46063::t_336db841a2086c 292-299
+public/wasm/manifest.json
+  s_487e9aa1e46063::t_d8f941977d8899 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_487e9aa1e46063::t_e768919da19b21 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_487e9aa1e46063::t_6b1448efd449db 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_487e9aa1e46063::t_9a97542b5e9ccc 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "54b119f1a1cf2fc4637155390350fa08a66b9558",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
