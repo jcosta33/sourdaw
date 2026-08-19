@@ -21,6 +21,7 @@ Before writing any code, start with the foundational principles. Our codebase fo
 - ➡️ **Read about the [WASM DSP pipeline](./architecture/07-wasm-dsp-pipeline.md) before touching device engines or worklets**
 - ➡️ **Follow the [device authoring playbook](./architecture/08-device-authoring.md) when adding or changing a built-in device**
 - ➡️ **Read about the [AI stack](./architecture/09-ai-stack.md) before touching LLM or ML features**
+- ➡️ **Read about [desktop packaging](./architecture/10-desktop-packaging.md) before changing the packaged layout, fuses, or entitlements**
 
 ### 2. Dependency Injection
 

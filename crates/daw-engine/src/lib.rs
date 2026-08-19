@@ -17,9 +17,9 @@ use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, RingBuffer};
 use scheduler::GraphCommand;
 use timeline::{
-    timeline_rt_diagnostics_channel, AutomationEvent, AutomationTarget, ClipPlacement, DeviceParam,
-    RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineRtDiagnosticsReader,
-    TimelineRtDiagnosticsSnapshot, TimelineTrack,
+    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
+    ClipPlayback, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip,
+    TimelineRtDiagnosticsReader, TimelineRtDiagnosticsSnapshot, TimelineTrack,
 };
 
 /// Run a start attempt, and on failure run it once more with the negotiated
@@ -238,16 +238,24 @@ impl EngineHandle {
         self.push(GraphCommand::SetTrackMute(id, muted))
     }
 
+    /// Close or open a track's pre-fader solo gate — the gate that silences
+    /// the tracks the engineer is not soloing. It sits ahead of the send taps,
+    /// so a gated track stops feeding its cue and return buses too, which is
+    /// what mute deliberately does not do.
+    pub fn set_track_solo_gate(&mut self, id: usize, gated: bool) -> Result<(), String> {
+        self.push(GraphCommand::SetTrackSoloGate(id, gated))
+    }
+
     /// Splice an already registered effect into a track's device chain.
     pub fn insert_track_device(
         &mut self,
         track_id: usize,
-        effect_id: usize,
+        entry: ChainEntry,
         index: usize,
     ) -> Result<(), String> {
         self.push(GraphCommand::InsertTrackDevice {
             track_id,
-            effect_id,
+            entry,
             index,
         })
     }
@@ -259,6 +267,25 @@ impl EngineHandle {
             track_id,
             effect_id,
         })
+    }
+
+    /// Splice an already registered effect into a bus's device chain — the
+    /// reverb or delay a send bus exists to host.
+    pub fn insert_bus_device(
+        &mut self,
+        bus_id: usize,
+        entry: ChainEntry,
+        index: usize,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::InsertBusDevice {
+            bus_id,
+            entry,
+            index,
+        })
+    }
+
+    pub fn remove_bus_device(&mut self, bus_id: usize, effect_id: usize) -> Result<(), String> {
+        self.push(GraphCommand::RemoveBusDevice { bus_id, effect_id })
     }
 
     /// Add a send from a track to a bus at the given tap.
@@ -305,11 +332,11 @@ impl EngineHandle {
         left: Vec<f32>,
         right: Vec<f32>,
         placement: ClipPlacement,
-        gain: f32,
+        playback: ClipPlayback,
     ) -> Result<(), String> {
         self.push(GraphCommand::AddClip(
             track_id,
-            TimelineClip::new(clip_id, left, right, placement, gain),
+            TimelineClip::new(clip_id, left, right, placement, playback),
         ))
     }
 
@@ -327,20 +354,32 @@ impl EngineHandle {
         self.push(GraphCommand::SetClipPlacement(track_id, clip_id, placement))
     }
 
+    /// Re-state a clip's level, fades and rate without touching its source
+    /// material.
+    pub fn set_clip_playback(
+        &mut self,
+        track_id: usize,
+        clip_id: usize,
+        playback: ClipPlayback,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::SetClipPlayback(track_id, clip_id, playback))
+    }
+
     /// Place the playhead at an absolute timeline frame.
     pub fn seek_frames(&mut self, frame: u64) -> Result<(), String> {
         self.push(GraphCommand::SeekFrames(frame))
     }
 
-    /// Schedule a mixer parameter change at an absolute timeline frame. The
-    /// stamp is authoritative, so the same command stream renders the same
-    /// automation however the blocks fall.
+    /// Write a mixer parameter at an absolute timeline frame. The stamp is
+    /// authoritative, so the same command stream renders the same automation
+    /// however the blocks fall; the write's own form decides whether it joins
+    /// what is queued or replaces it.
     pub fn automate_param(
         &mut self,
         target: AutomationTarget,
-        event: AutomationEvent,
+        write: AutomationWrite,
     ) -> Result<(), String> {
-        self.push(GraphCommand::AutomateParam { target, event })
+        self.push(GraphCommand::AutomateParam { target, write })
     }
 
     /// Schedule a built-in device parameter change at an absolute timeline

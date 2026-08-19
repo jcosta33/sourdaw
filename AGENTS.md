@@ -125,9 +125,15 @@ branch if the remover leaves it behind.
 
 ## Artifacts
 
-Keep working specs outside the repository. Add one only when the owner explicitly promotes it.
-Leave existing `.agents/specs/` material untouched unless assigned. Durable decisions belong in
+Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
+The tracker is public. The issue body is the original; delete any local copy after filing.
+`.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
+their work is done. New planning is GitHub issues only. Durable decisions belong in
 `.agents/decisions/` and its ADR ledger.
+
+`.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with
+`pnpm issue:file <template> --title "…" --fields <json> [--create]`. After create, attach
+parent/child issues as GitHub sub-issues.
 
 ## Delivery
 

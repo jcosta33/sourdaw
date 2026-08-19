@@ -39,7 +39,7 @@ export type DeliveryPort = {
     localHead: () => string;
     localDirty: () => boolean;
     remoteBranchHead: (branch: string) => string;
-    merge: (number: number, expectedHead: string) => void;
+    merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
     retarget: (number: number, baseBranch: string) => void;
     log: (message: string) => void;
 };
@@ -215,7 +215,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
         validateDependent(port.pullRequest(dependent.number), dependent);
     }
 
-    port.merge(number, current.headRefOid);
+    port.merge(number, current.headRefOid, currentDependents.length > 0);
     retargetDependents(currentDependents, current.baseRefName, port);
 }
 
@@ -246,6 +246,52 @@ function parseJson<Value>(value: string, label: string): Value {
     } catch (error) {
         throw new Error(`${label} returned invalid JSON`, { cause: error });
     }
+}
+
+type RepositoryMergeSettings = {
+    allow_merge_commit?: unknown;
+    allow_rebase_merge?: unknown;
+    allow_squash_merge?: unknown;
+    delete_branch_on_merge?: unknown;
+};
+
+type MergeMethod = 'merge' | 'squash' | 'rebase';
+
+type RepositoryMergePolicy = {
+    method: MergeMethod;
+    deletesMergedBranches: boolean;
+};
+
+function repositoryMergePolicy(repository: string, shell: ShellRunner): RepositoryMergePolicy {
+    let settings: RepositoryMergeSettings;
+    try {
+        settings = parseJson<RepositoryMergeSettings>(
+            shell.capture('gh', ['api', `repos/${repository}`]),
+            'repository merge settings'
+        );
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`cannot determine repository merge settings: ${detail}`, { cause: error });
+    }
+    if (
+        typeof settings.allow_merge_commit !== 'boolean' ||
+        typeof settings.allow_squash_merge !== 'boolean' ||
+        typeof settings.allow_rebase_merge !== 'boolean' ||
+        typeof settings.delete_branch_on_merge !== 'boolean'
+    ) {
+        throw new TypeError('cannot prove repository merge settings');
+    }
+    const deletesMergedBranches = settings.delete_branch_on_merge;
+    if (settings.allow_merge_commit) {
+        return { method: 'merge', deletesMergedBranches };
+    }
+    if (settings.allow_squash_merge) {
+        return { method: 'squash', deletesMergedBranches };
+    }
+    if (settings.allow_rebase_merge) {
+        return { method: 'rebase', deletesMergedBranches };
+    }
+    throw new Error('no merge method is enabled for this repository');
 }
 
 export function shellPort(repository: string, shell: ShellRunner = { capture, run }): DeliveryPort {
@@ -356,7 +402,11 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
         localHead: () => shell.capture('git', ['rev-parse', 'HEAD']),
         localDirty: () => shell.capture('git', ['status', '--porcelain=v1']) !== '',
         remoteBranchHead: (branch) => shell.capture('git', ['rev-parse', `refs/remotes/origin/${branch}`]),
-        merge: (number, expectedHead) => {
+        merge: (number, expectedHead, hasDependents) => {
+            const policy = repositoryMergePolicy(repository, shell);
+            if (hasDependents && policy.deletesMergedBranches) {
+                fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
+            }
             const result = parseJson<{ merged: boolean; message: string }>(
                 shell.capture('gh', [
                     'api',
@@ -366,7 +416,7 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
                     '-f',
                     `sha=${expectedHead}`,
                     '-f',
-                    'merge_method=merge',
+                    `merge_method=${policy.method}`,
                 ]),
                 'merge request'
             );

@@ -134,7 +134,13 @@ describe('createGlutenNode', () => {
         node.setParam('threshold', Number.POSITIVE_INFINITY);
 
         expect(postMessage).toHaveBeenCalledTimes(1);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'threshold', value: -12 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'threshold' }),
+                value: -12,
+            })
+        );
     });
 
     it('should forward setBypass as a param message named bypass', async () => {
@@ -142,10 +148,14 @@ describe('createGlutenNode', () => {
         postMessage.mockClear();
 
         node.setBypass(true);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 1 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ target: expect.objectContaining({ parameterId: 'bypass' }), value: 1 })
+        );
 
         node.setBypass(false);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 0 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ target: expect.objectContaining({ parameterId: 'bypass' }), value: 0 })
+        );
     });
 
     it('should poll meter data only when a telemetry slot is available', async () => {

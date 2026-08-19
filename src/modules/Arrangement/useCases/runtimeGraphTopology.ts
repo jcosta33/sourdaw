@@ -10,6 +10,7 @@ export type RuntimeGraphTopologyNode = Readonly<{
     devices: readonly Readonly<{
         id: string;
         type: string;
+        externalInstanceId?: string;
         parameterIds: readonly string[];
     }>[];
 }>;
@@ -19,11 +20,14 @@ function createRuntimeGraphTopologyNode(track: Track): RuntimeGraphTopologyNode 
     return {
         id: track.id,
         kind: track.kind,
-        devices: track.devices.map((device) => ({
-            id: device.id,
-            type: device.type,
-            parameterIds: Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right)),
-        })),
+        devices: track.devices
+            .filter((device) => device.type !== 'yeast')
+            .map((device) => ({
+                id: device.id,
+                type: device.type,
+                ...(device.externalInstanceId !== undefined ? { externalInstanceId: device.externalInstanceId } : {}),
+                parameterIds: Object.keys(device.parameterValues).sort((left, right) => left.localeCompare(right)),
+            })),
     };
 }
 
@@ -48,8 +52,16 @@ function doesRuntimeGraphDeltaMatchCurrentProjectTopology(nodes: readonly Runtim
     });
 }
 
+function doesTrackMatchRuntimeGraphTopologyNode(track: Track, node: RuntimeGraphTopologyNode): boolean {
+    return (
+        createRuntimeGraphTopologyFingerprint(createRuntimeGraphTopologyNode(track)) ===
+        createRuntimeGraphTopologyFingerprint(node)
+    );
+}
+
 /** One Arrangement-owned topology contract shared by graph compilation and bootstrap validation. */
 export const runtimeGraphTopology = Object.freeze({
     createNode: createRuntimeGraphTopologyNode,
+    matchesNode: doesTrackMatchRuntimeGraphTopologyNode,
     matchesCurrentProject: doesRuntimeGraphDeltaMatchCurrentProjectTopology,
 });

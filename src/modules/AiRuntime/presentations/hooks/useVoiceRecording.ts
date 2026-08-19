@@ -15,11 +15,21 @@ import { setVoiceListeningStatus } from '../../useCases/setVoiceListeningStatus'
 import { setVoiceStatus } from '../../useCases/setVoiceStatus';
 import { setVoiceTranscribingStatus } from '../../useCases/setVoiceTranscribingStatus';
 import { ensureWhisperReady } from '../../useCases/voiceDictation/ensureWhisperReady';
+import { onDictationError } from '../../useCases/voiceDictation/onDictationError';
 import { onDictationResult } from '../../useCases/voiceDictation/onDictationResult';
 import { startDictation } from '../../useCases/voiceDictation/startDictation';
 import { stopDictation } from '../../useCases/voiceDictation/stopDictation';
 import { resolveVoiceInputMode, type VoiceInputMode } from '../../useCases/voiceInput/resolveVoiceInputMode';
 import { onVoiceToggle } from '../../useCases/voiceToggle/onVoiceToggle';
+
+/**
+ * Safety margin on top of the native 15s recording cap
+ * (`crates/sourdaw-native/src/commands/speech.rs`) plus resample/inference
+ * time. The native side always emits `dictation-result` or `dictation-error`
+ * when a session ends, but this backstop keeps a future native regression
+ * from stranding the UI in "transcribing" forever.
+ */
+const DICTATION_TIMEOUT_MS = 45_000;
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -105,10 +115,25 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
     const [voiceMode, setVoiceMode] = useState<VoiceInputMode>(null);
     const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-    const dictationUnlistenRef = useRef<(() => void) | null>(null);
+    const dictationResultUnlistenRef = useRef<(() => void) | null>(null);
+    const dictationErrorUnlistenRef = useRef<(() => void) | null>(null);
+    const dictationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const dictationErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const modeRef = useRef<VoiceInputMode>(null);
     const isListeningRef = useRef(false);
     const isMountedRef = useRef(true);
+    // Incremented once per attempted Whisper session. Every async handler
+    // and ref-write registered during a session captures the generation it
+    // started with and checks it against the current value before acting,
+    // so a stale session — superseded by a newer start, or unmounted — can
+    // never clobber state a later session owns.
+    const dictationGenerationRef = useRef(0);
+    // Synchronous re-entrancy guard for startWhisperRecording. `isListening`
+    // state lags behind a rapid double-tap by at least one render, so a
+    // second tap can read the stale `false` and start a second session
+    // before the first finishes registering its listeners. A ref is read
+    // and written immediately, closing that window.
+    const whisperStartInFlightRef = useRef(false);
 
     // Keep ref in sync with state
     useEffect(() => {
@@ -117,58 +142,152 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
     // ── Whisper recording ───────────────────────────────────────────────
 
+    const clearDictationTimeout = (): void => {
+        if (dictationTimeoutRef.current !== null) {
+            clearTimeout(dictationTimeoutRef.current);
+            dictationTimeoutRef.current = null;
+        }
+    };
+
     // Release the native dictation-result listener registered in
     // startWhisperRecording. Safe to call when no listener is active.
-    const releaseDictationListener = (): void => {
-        const unlisten = dictationUnlistenRef.current;
-        dictationUnlistenRef.current = null;
+    const releaseDictationResultListener = (): void => {
+        const unlisten = dictationResultUnlistenRef.current;
+        dictationResultUnlistenRef.current = null;
         if (unlisten) {
             unlisten();
         }
     };
 
+    // Release the native dictation-error listener registered in
+    // startWhisperRecording. Safe to call when no listener is active.
+    const releaseDictationErrorListener = (): void => {
+        const unlisten = dictationErrorUnlistenRef.current;
+        dictationErrorUnlistenRef.current = null;
+        if (unlisten) {
+            unlisten();
+        }
+    };
+
+    // Tears down everything a Whisper session holds while it waits for a
+    // native result: both listeners and the defensive timeout. Called once
+    // the session is settled (result, error, or timeout) as well as on
+    // unmount, so nothing accumulates or fires after the fact.
     const cleanupWhisperRecording = (): void => {
-        releaseDictationListener();
+        releaseDictationResultListener();
+        releaseDictationErrorListener();
+        clearDictationTimeout();
+    };
+
+    const showDictationError = (message: string): void => {
+        if (dictationErrorTimeoutRef.current !== null) {
+            clearTimeout(dictationErrorTimeoutRef.current);
+        }
+        setErrorText(message);
+        dictationErrorTimeoutRef.current = setTimeout(() => {
+            dictationErrorTimeoutRef.current = null;
+            setErrorText('');
+        }, 3000);
     };
 
     const startWhisperRecording = async (): Promise<void> => {
+        // Double-tap guard: a second call while the first is still awaiting
+        // model load / listener registration / `startDictation` bails out
+        // immediately instead of racing it into a second set of listeners.
+        if (whisperStartInFlightRef.current) {
+            return;
+        }
+        whisperStartInFlightRef.current = true;
+        const generation = ++dictationGenerationRef.current;
+        const isCurrentSession = (): boolean => {
+            return isMountedRef.current && generation === dictationGenerationRef.current;
+        };
+
         try {
             // Auto-download and load model on first use
             await ensureWhisperLoaded();
+            if (!isCurrentSession()) {
+                return;
+            }
 
-            // A prior listener may still be live if recording restarts before a
-            // result arrived — release it so listeners do not accumulate.
-            releaseDictationListener();
+            // A prior session may still be live if recording restarts before a
+            // result arrived — tear it down so listeners and timers do not
+            // accumulate.
+            cleanupWhisperRecording();
 
-            // Listen for transcription result from Rust
-            const unlisten = await onDictationResult((result) => {
+            // Listen for transcription result from Rust. Fires even for an
+            // empty transcription, so this is the only path that needs to
+            // clear "transcribing" on the happy path.
+            const resultUnlisten = await onDictationResult((result) => {
+                if (generation !== dictationGenerationRef.current) {
+                    return;
+                }
                 const text = result.text?.trim() ?? '';
                 if (text) {
                     setFinalText(text);
                     injectPromptCommand(text);
                 }
                 syncVoiceStatus({ isListening: false, transcribing: false });
-                releaseDictationListener();
+                cleanupWhisperRecording();
             });
-            // If the component unmounted while we awaited the listener
-            // registration, release it immediately instead of leaking it.
-            if (!isMountedRef.current) {
-                unlisten();
+            // If the component unmounted, or a newer session superseded this
+            // one, while we awaited the listener registration, release it
+            // immediately instead of leaking it or double-registering.
+            if (!isCurrentSession()) {
+                resultUnlisten();
                 return;
             }
-            dictationUnlistenRef.current = unlisten;
+            dictationResultUnlistenRef.current = resultUnlisten;
+
+            // Listen for a native failure — mic-stream build, recording,
+            // resample, or transcription — so the UI never sits stuck in
+            // "transcribing" waiting for an event that will never arrive.
+            const errorUnlisten = await onDictationError((error) => {
+                if (generation !== dictationGenerationRef.current) {
+                    return;
+                }
+                logger.warn(`Native dictation failed: ${error.message}`);
+                syncVoiceStatus({ isListening: false, transcribing: false });
+                showDictationError(error.message);
+                cleanupWhisperRecording();
+            });
+            if (!isCurrentSession()) {
+                errorUnlisten();
+                return;
+            }
+            dictationErrorUnlistenRef.current = errorUnlisten;
 
             // Start native recording via cpal + whisper inference
             await startDictation();
+            if (!isCurrentSession()) {
+                return;
+            }
 
             modeRef.current = 'whisper';
             setVoiceMode('whisper');
             setListening(true);
             setFinalText('');
             setInterimText('Recording...');
+
+            // Defensive backstop: if neither event above ever arrives, do not
+            // strand the UI in "transcribing" forever.
+            dictationTimeoutRef.current = setTimeout(() => {
+                if (generation !== dictationGenerationRef.current) {
+                    return;
+                }
+                logger.warn('Native dictation timed out waiting for a result');
+                syncVoiceStatus({ isListening: false, transcribing: false });
+                showDictationError('Voice dictation timed out. Please try again.');
+                cleanupWhisperRecording();
+            }, DICTATION_TIMEOUT_MS);
         } catch (error: unknown) {
-            logger.warn(`Whisper recording failed: ${String(error)}`);
-            setListening(false);
+            const message = error instanceof Error ? error.message : String(error);
+            logger.warn(`Whisper recording failed: ${message}`);
+            cleanupWhisperRecording();
+            syncVoiceStatus({ isListening: false, transcribing: false });
+            showDictationError(message);
+        } finally {
+            whisperStartInFlightRef.current = false;
         }
     };
 
@@ -343,6 +462,10 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 recognitionRef.current.abort();
             }
             cleanupWhisperRecording();
+            if (dictationErrorTimeoutRef.current !== null) {
+                clearTimeout(dictationErrorTimeoutRef.current);
+                dictationErrorTimeoutRef.current = null;
+            }
         };
     }, []);
 

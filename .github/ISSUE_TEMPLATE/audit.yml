@@ -1,0 +1,70 @@
+name: Audit
+description: Findings against frozen code. No prescriptions. Bug children for Blocker and Major.
+title: "audit(scope): "
+labels: ["status:tracking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Observe. Prove. No fixes, target states, or requirements. Secrets stay in `~/.agents/artifacts`.
+
+        File a Bug for every Blocker and Major (Task if a Spec already owns it). Attach those as sub-issues.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: input
+    id: freeze
+    attributes:
+      label: Frozen SHA
+      description: Full or unambiguous prefix of the inspected commit.
+      placeholder: "c9e95a379"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal and exclusions
+    validations:
+      required: true
+
+  - type: textarea
+    id: findings
+    attributes:
+      label: Findings
+      description: Grade by impact and reach. `None observed in scope` if empty.
+      placeholder: |
+        | ID | Grade | Evidence | Failure mode | Firing condition | Blast radius | Child |
+        | --- | --- | --- | --- | --- | --- | --- |
+        | F-001 | Blocker | `file:line` |  |  |  | #123 |
+    validations:
+      required: true
+
+  - type: textarea
+    id: unverified
+    attributes:
+      label: Unverified
+      description: "Areas not checked and the missing evidence. `None found. Boundary checked: …` if empty."
+      placeholder: "None found. Boundary checked: …"
+    validations:
+      required: true
