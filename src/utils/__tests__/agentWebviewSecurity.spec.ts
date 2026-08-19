@@ -104,15 +104,30 @@ describe('packaged agent webview security boundary', () => {
     it('admits only bundled workers and secure provider or model connections in production', () => {
         const production = parseCsp(configuration.app.security.csp);
 
+        // The enumerated production connection surface, and nothing wider:
+        // Tauri IPC and the bundled-resource asset protocol, loopback HTTP for
+        // user-run OpenAI-compatible LLM servers (`configureCloudProvider`
+        // admits http on loopback only), Hugging Face plus its CDN redirect
+        // hosts for Kokoro/WebLLM model artifacts, the MLC wasm runtime on
+        // raw.githubusercontent.com, and DDSP checkpoints on
+        // storage.googleapis.com. A bare `https:` here is an open exfiltration
+        // channel and must never return.
         expect(production.get('connect-src')).toEqual([
             "'self'",
             'ipc:',
             'http://ipc.localhost',
+            'asset:',
+            'http://asset.localhost',
             'http://localhost:*',
             'http://127.0.0.1:*',
             'http://[::1]:*',
-            'https:',
+            'https://huggingface.co',
+            'https://*.huggingface.co',
+            'https://*.hf.co',
+            'https://raw.githubusercontent.com',
+            'https://storage.googleapis.com',
         ]);
+        expect(production.get('connect-src')).not.toContain('https:');
         expect(production.get('object-src')).toEqual(["'none'"]);
         expect(production.get('base-uri')).toEqual(["'self'"]);
 

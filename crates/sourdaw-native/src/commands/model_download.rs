@@ -14,9 +14,8 @@ pub struct ModelDownload {
 
 /// Get the shared model cache directory.
 pub fn model_dir() -> Result<PathBuf, String> {
-    let dir = dirs::data_dir()
+    let dir = super::app_dirs::app_data_dir()
         .ok_or("Could not determine data directory")?
-        .join("com.sourdaw.app")
         .join("models");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model directory: {e}"))?;
     Ok(dir)

@@ -1,4 +1,5 @@
 pub mod ai_audio;
+pub mod app_dirs;
 pub mod audio_postprocess;
 pub mod binary_ipc;
 pub mod collab;

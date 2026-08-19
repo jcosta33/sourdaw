@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 
-const APP_DIR_NAME: &str = "com.sourdaw.app";
+use super::app_dirs;
+
 const IPC_TEMP_DIR_NAME: &str = "sourdaw_ipc";
 const MAX_FILE_IPC_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_RENDERER_PATH_BYTES: usize = 4096;
@@ -248,11 +249,11 @@ fn ensure_allowed_root(canonical_path: &Path) -> Result<(), String> {
 fn allowed_roots() -> Vec<PathBuf> {
     let mut roots = vec![std::env::temp_dir()];
 
-    if let Some(data_dir) = dirs::data_dir() {
-        roots.push(data_dir.join(APP_DIR_NAME));
+    if let Some(data_dir) = app_dirs::app_data_dir() {
+        roots.push(data_dir);
     }
-    if let Some(cache_dir) = dirs::cache_dir() {
-        roots.push(cache_dir.join(APP_DIR_NAME));
+    if let Some(cache_dir) = app_dirs::app_cache_dir() {
+        roots.push(cache_dir);
     }
     if let Some(document_dir) = dirs::document_dir() {
         roots.push(document_dir);

@@ -22,7 +22,7 @@
         ],
         "security": {
             "capabilities": ["default"],
-            "csp": "default-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost http://localhost:* http://127.0.0.1:* http://[::1]:* https:; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'none'; form-action 'self'",
+            "csp": "default-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost http://localhost:* http://127.0.0.1:* http://[::1]:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://storage.googleapis.com; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'none'; form-action 'self'",
             "devCsp": "default-src 'self' asset: http://asset.localhost http://localhost:*; connect-src 'self' ipc: http://ipc.localhost http://localhost:* ws://localhost:* https:; img-src 'self' asset: http://asset.localhost http://localhost:* data: blob:; media-src 'self' asset: http://asset.localhost http://localhost:* data: blob:; style-src 'self' 'unsafe-inline' http://localhost:*; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' http://localhost:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-src 'none'; form-action 'self'",
             "assetProtocol": {
                 "enable": true,
