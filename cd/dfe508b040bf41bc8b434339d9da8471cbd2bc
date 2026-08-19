@@ -1,0 +1,32 @@
+AGENTS.md
+  s_99d65e8b8dd558::t_8a554645b99664 130-131
+README.md
+  s_99d65e8b8dd558::t_e99ed1e38b0a5f 11-12
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_99d65e8b8dd558::t_65dca847a010ab 94
+  s_99d65e8b8dd558::t_7da365b9d89cfe 59
+  s_99d65e8b8dd558::t_c3826ccb8db481 153
+  s_99d65e8b8dd558::t_d5568b2b917b7d 157,194-202
+  s_99d65e8b8dd558::t_97eb2d58b854f2 143-145,151-152,154-156
+scripts/fileTrackerIssue.ts
+  s_99d65e8b8dd558::t_1c4122d59729b2 82-84,88-90,95,97-111,118,140
+  s_99d65e8b8dd558::t_84629d10fd260f 92-94,96
+  s_99d65e8b8dd558::t_9bcb664e652839 85,87
+  s_99d65e8b8dd558::t_133a78187d0862 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "cddfe508b040bf41bc8b434339d9da8471cbd2bc",
+  "prompts": {},
+  "sessions": {
+    "s_99d65e8b8dd558": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1f4b25f7-d37b-4eea-ad19-75370859753d",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
