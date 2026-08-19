@@ -87,3 +87,71 @@ export function peerColorForIndex(index: number): string {
     const hue = Math.round((overflow * 137.508) % 360);
     return `hsl(${hue}, 70%, 55%)`;
 }
+
+// -- Sender-controlled identity bounds --
+//
+// Peer id, name, and color strings arrive from remote senders on several
+// ingress paths — presence broadcasts, `peer-info` messages, invite offers,
+// and signaling answers — and are stored, keyed on, and rendered in the
+// presence overlay and peer list. Every ingress must apply the same bounds; a
+// path that stores a raw sender string verbatim lets a hostile peer inject
+// unbounded payloads into store state and overlay rendering.
+
+/** Max accepted length for a sender-supplied display name. */
+export const MAX_PEER_NAME_LEN = 64;
+/** Max accepted length for a sender-supplied color string. */
+export const MAX_PEER_COLOR_LEN = 32;
+/** Max accepted length for a sender-supplied peer id. */
+export const MAX_PEER_ID_LEN = 64;
+
+/** Fallback applied when a peer's color is not a well-formed CSS color. */
+export const FALLBACK_PEER_COLOR = '#888888';
+
+/**
+ * Accept only the CSS color formats this app actually mints for peers — hex
+ * (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`) and the functional `hsl()/hsla()/
+ * rgb()/rgba()` forms (see {@link PEER_COLORS} and {@link peerColorForIndex}).
+ * Anything else is rejected so a sender-supplied string can't break out of
+ * the CSS gradient value it is interpolated into at PresenceMarker.tsx
+ * (`repeating-linear-gradient(..., ${color}, ...)`).
+ */
+const SAFE_CSS_COLOR_RE =
+    /^(#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgb|rgba|hsl|hsla)\([0-9.,%/\s]+\))$/;
+
+/**
+ * Truncate a sender-supplied display name to the shared bound.
+ *
+ * The cut is at UTF-16 code units, so it can land between the two halves of a
+ * surrogate pair (an emoji, or anything outside the BMP). A trailing lone high
+ * surrogate is dropped rather than stored: it is not well-formed UTF-16, and
+ * it renders as U+FFFD in the peer list and the presence overlay.
+ */
+export function sanitizePeerName(name: string): string {
+    if (name.length <= MAX_PEER_NAME_LEN) {
+        return name;
+    }
+    const cut = name.slice(0, MAX_PEER_NAME_LEN);
+    return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
+/**
+ * Whether a sender-supplied peer id is within the shared bound.
+ *
+ * Rejected rather than truncated, unlike the display fields: an id is an
+ * identity key, not text. Cutting an over-length id would fold distinct
+ * senders onto one key and let a hostile peer-info collide with — and
+ * overwrite — an existing peer's record. A well-formed id is a UUID, far
+ * inside this bound, so nothing legitimate is refused.
+ */
+export function isAcceptablePeerId(id: string): boolean {
+    return id.length <= MAX_PEER_ID_LEN;
+}
+
+/**
+ * Bound a sender-supplied color string and replace anything that is not a
+ * well-formed CSS color with a neutral fallback.
+ */
+export function sanitizePeerColor(color: string): string {
+    const bounded = color.length <= MAX_PEER_COLOR_LEN ? color : color.slice(0, MAX_PEER_COLOR_LEN);
+    return SAFE_CSS_COLOR_RE.test(bounded) ? bounded : FALLBACK_PEER_COLOR;
+}
