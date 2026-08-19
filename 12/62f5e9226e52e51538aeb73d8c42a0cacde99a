@@ -1,0 +1,54 @@
+src/modules/Arrangement/useCases/clip/applyClipAutomationLaneTransition.ts
+  s_487e9aa1e46063::t_73d512f52f9167 1-59
+src/modules/Arrangement/useCases/restoreStripSilenceState.ts
+  s_487e9aa1e46063::t_6c500e2e728f67 6-7
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_487e9aa1e46063::t_d35b9dc2ae4502 6-7
+  s_487e9aa1e46063::t_73d074a2374271 114-116
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  s_487e9aa1e46063::t_05f1760614cad0 39
+src/modules/Arrangement/useCases/clip/clipAutomationLaneTransitionMatchesStore.ts
+  s_487e9aa1e46063::t_0fad0572f8cc49 1-28
+src/modules/Arrangement/useCases/clipEditing/prepareClipGlue.ts
+  s_487e9aa1e46063::t_6aeb62ae32c798 10
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  s_487e9aa1e46063::t_7def5d08348633 1
+src/modules/Arrangement/useCases/clip/readClipScopedAutomationLanes.ts
+  s_487e9aa1e46063::t_88d523a09f9138 1
+  s_487e9aa1e46063::t_f78ba06248ed71 2-14
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_487e9aa1e46063::t_0f7b4cf6bc8c87 4-5
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_487e9aa1e46063::t_eebb9005d10a10 5,8,11
+  s_487e9aa1e46063::t_6f76ca9284a3e6 86
+src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts
+  s_487e9aa1e46063::t_7acd984685582f 4-5
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_487e9aa1e46063::t_504598af0eb0cc 75
+src/modules/Arrangement/useCases/clipReplacementSnapshot.ts
+  s_487e9aa1e46063::t_5cb65f02a632bf 17
+src/modules/Arrangement/handlers/clip/__tests__/handleStripSilence.spec.ts
+  s_487e9aa1e46063::t_a28de605c27729 88-92
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_487e9aa1e46063::t_ea43d368ee2f22 437-439
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_487e9aa1e46063::t_d14083f49e33c9 54,110,120,144,160,187
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_487e9aa1e46063::t_d097db17304edf 34,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1262f5e9226e52e51538aeb73d8c42a0cacde99a",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
