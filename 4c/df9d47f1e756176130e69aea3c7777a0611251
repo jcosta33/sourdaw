@@ -1,0 +1,39 @@
+.node-version
+  s_7ba0b7bee9e951::t_477d47f91da761 1
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_7ba0b7bee9e951::t_05792e1cd5fb0a 27
+scripts/verify-wasm-artifacts.ts
+  s_7ba0b7bee9e951::t_1fc1e2c936460f 224
+eslint.config.mjs
+  s_7ba0b7bee9e951::t_8e9ffa5eca717b 2349-2352
+scripts/tsconfig.json
+  s_7ba0b7bee9e951::t_d970a15174e17c 18
+scripts/removeLane.ts
+  s_7ba0b7bee9e951::t_6b49c1497d2328 391,398
+release/open-source-inventory.json
+  s_7ba0b7bee9e951::t_9edfcb90ab195e 616
+package.json
+  s_7ba0b7bee9e951::t_50451364d2ca13 13,22,24-25,27-36,45-47,51-52,59-62,64-65
+  s_7ba0b7bee9e951::t_c71efd2100cada 9
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_7ba0b7bee9e951::t_15f5e40d6e8f1b 7,11-16
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_7ba0b7bee9e951::t_465e8b03810002 195
+  s_7ba0b7bee9e951::t_33106ca896d21c 193-194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4cdf9d47f1e756176130e69aea3c7777a0611251",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
