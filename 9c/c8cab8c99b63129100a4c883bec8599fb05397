@@ -1,0 +1,48 @@
+scripts/resourceGuard.ts
+  s_42d78e0bb71895::t_7276eb5857c8d7 295-297,306-308
+  s_42d78e0bb71895::t_4c3cc8009b701c 291-294,298-302
+  s_42d78e0bb71895::t_da315a347feb76 309-310
+package.json
+  s_17304f5c488d05::t_68b4713c35bef6 13
+  s_17304f5c488d05::t_80716bec0ee7eb 46,53-54,61-64
+  s_17304f5c488d05::t_254508f9e01e9b 45
+  s_17304f5c488d05::t_e51ea5c196ae79 15,17-28,36-44,50-52,55-60,66-67
+scripts/runLint.ts
+  s_17304f5c488d05::t_6d16240706a3f4 3
+  s_17304f5c488d05::t_b16c8626ec21aa 46-48,58
+  s_17304f5c488d05::t_2d561858722ce8 67
+AGENTS.md
+  s_17304f5c488d05::t_ba4e154ae0cec8 66-79
+  s_17304f5c488d05::t_1c361db7256ba5 55-58
+docs/06-testing.md
+  s_17304f5c488d05::t_ba4e154ae0cec8 684-693
+  s_17304f5c488d05::t_b31b844035e36b 697-700
+scripts/__tests__/resourceGuard.spec.ts
+  s_42d78e0bb71895::t_2a526d6fe02039 169-184
+  s_42d78e0bb71895::t_ba454c38bac6fc 13
+  s_17304f5c488d05::t_a71bd42a6a1f5b 389,393
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9cc8cab8c99b63129100a4c883bec8599fb05397",
+  "prompts": {},
+  "sessions": {
+    "s_17304f5c488d05": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12ae5903-f746-4e24-878e-d160658947d3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_42d78e0bb71895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5db0d749-ff23-4f4c-8e27-17b7e9b2a62c",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
