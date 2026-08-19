@@ -1,0 +1,45 @@
+crates/sourdaw-native/src/commands/model_download.rs
+  s_487e9aa1e46063::t_b474193f01c5f6 171-173
+  s_487e9aa1e46063::t_4587394509a956 51-55,63
+  s_487e9aa1e46063::t_61259106890609 290-296,299
+  s_487e9aa1e46063::t_185126143b289e 315-316,318-328,331-372,378
+  s_487e9aa1e46063::t_a3904d4b1682dd 97,100-102
+  s_487e9aa1e46063::t_775e2e16996149 3
+  s_487e9aa1e46063::t_8a9f4d8e2abb2b 458-477
+  s_487e9aa1e46063::t_f1ef80d3cd831e 138-143,150,154
+  s_487e9aa1e46063::t_c55588cfe929a9 226-248
+crates/sourdaw-native/Cargo.toml
+  s_487e9aa1e46063::t_6210907bedde0e 57-58
+  s_487e9aa1e46063::t_92ed352a1a8405 37
+crates/sourdaw-native/src/commands/speech.rs
+  s_ab5443e65c7fba::t_b1b07cbce65a13 241-246
+  s_ab5443e65c7fba::t_a49539136bb039 198-204,228-231
+  s_487e9aa1e46063::t_55dba409f83ac3 798-839
+  s_ab5443e65c7fba::t_64fc1e69974236 28-32,34-37
+crates/sourdaw-native/src/lib.rs
+  s_487e9aa1e46063::t_328cf046bc728a 96-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fbb38106b2dba8bd8cd0a69c1d578d592fdbd199",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
