@@ -420,6 +420,14 @@ function initializeSessionRuntime(): PeerConnectionManager {
         onProgress: (_hash, _received, _total) => {
             // Could update a UI progress indicator.
         },
+        // An abandoned asset transfer is not a session failure — peers stay
+        // connected and the hash becomes requestable again — but it does mean
+        // clips referencing it stay silent, which the user otherwise has no way
+        // to see. Surface it on the panel's error row.
+        onTransferFailed: (hash, reason) => {
+            logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
+            setCollaborationError(`Could not receive shared audio from a peer — ${reason}. It will be retried.`);
+        },
     });
 
     return peerManager;
@@ -443,6 +451,10 @@ function cleanupSubsystems(): void {
         sessionState.cleanupProjectionBridge();
         sessionState.cleanupProjectionBridge = null;
     }
+    // Dispose before dropping the reference: in-flight transfers hold partial
+    // chunk buffers and armed stall timers that would otherwise fire against a
+    // torn-down session.
+    sessionState.assetTransfer?.dispose();
     sessionState.assetTransfer = null;
     if (sessionState.peerManager) {
         sessionState.peerManager.closeAll();

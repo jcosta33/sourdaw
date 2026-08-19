@@ -18,7 +18,7 @@ import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 
-import { gainNodePool, sessionState } from './audioClipSchedulingState';
+import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 
@@ -111,10 +111,15 @@ export function scheduleAudioClips(
                 if (!isRecordingClip) {
                     const inSession = collaborationStore.value?.isEnabled ?? false;
                     if (inSession && clip.assetHash) {
-                        if (!sessionState.requestedAssets.has(clip.assetHash)) {
-                            sessionState.requestedAssets.add(clip.assetHash);
-                            getAssetTransfer()?.requestAsset(clip.assetHash);
-                        }
+                        // Deliberately unconditional. `requestAsset` is idempotent
+                        // while a request is outstanding or a transfer is in
+                        // flight, and it becomes requestable again once one is
+                        // abandoned. A dedup Set here instead recorded "asked
+                        // once, ever": after a corrupt chunk or a dead sender
+                        // aborted the transfer, the asset could never be
+                        // re-requested for the rest of the session and the clip
+                        // stayed silent forever.
+                        getAssetTransfer()?.requestAsset(clip.assetHash);
                     } else {
                         notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
                         scheduledAudioClipsSet.add(clipKey);

@@ -1,9 +1,17 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
-import { type PeerMessage } from '../../models/CollaborationTypes';
+import {
+    ASSET_CHUNK_SIZE,
+    MAX_ASSET_CHUNK_SIZE,
+    MAX_ASSET_MIME_LEN,
+    MAX_ASSET_NAME_LEN,
+    MAX_ASSET_SIZE,
+    MIN_ASSET_CHUNK_SIZE,
+    type PeerMessage,
+} from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
-import { AssetTransfer } from '../assetTransfer';
+import { AssetTransfer, ASSET_TRANSFER_STALL_TIMEOUT_MS } from '../assetTransfer';
 
 function makePeerManager(): PeerConnectionManager {
     return {
@@ -34,7 +42,11 @@ async function captureTransferMessages(blob: Blob, name: string): Promise<{ hash
         }),
     } as unknown as PeerConnectionManager;
 
-    const host = new AssetTransfer(hostPeer, { onAssetAvailable: vi.fn(), onProgress: vi.fn() });
+    const host = new AssetTransfer(hostPeer, {
+        onAssetAvailable: vi.fn(),
+        onProgress: vi.fn(),
+        onTransferFailed: vi.fn(),
+    });
     const hash = await host.addLocalAsset(blob, name);
 
     // Simulate the requester's `asset.request` arriving at the host.
@@ -51,13 +63,22 @@ describe('AssetTransfer', () => {
     let peer: PeerConnectionManager;
     let onAssetAvailable: Mock<(hash: string) => void>;
     let onProgress: Mock<(hash: string, receivedChunks: number, totalChunks: number) => void>;
+    let onTransferFailed: Mock<(hash: string, reason: string) => void>;
     let transfer: AssetTransfer;
 
     beforeEach(() => {
         peer = makePeerManager();
         onAssetAvailable = vi.fn<(hash: string) => void>();
         onProgress = vi.fn<(hash: string, receivedChunks: number, totalChunks: number) => void>();
-        transfer = new AssetTransfer(peer, { onAssetAvailable, onProgress });
+        onTransferFailed = vi.fn<(hash: string, reason: string) => void>();
+        transfer = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed });
+    });
+
+    afterEach(() => {
+        // Every test leaves at most one instance; disposing clears any armed
+        // stall timer so a later test's fake clock can't inherit it.
+        transfer.dispose();
+        vi.useRealTimers();
     });
 
     it('addLocalAsset hashes and stores a blob', async () => {
@@ -279,16 +300,21 @@ describe('AssetTransfer', () => {
     it('first-responder-wins: a late manifest does not reset an in-flight transfer', async () => {
         transfer.requestAsset(HASH);
         // First responder opens a consistent 2-chunk transfer and delivers chunk 0.
-        const twoChunk = { size: 8, chunkSize: 4, chunkCount: 2 };
+        const twoChunk = {
+            size: MIN_ASSET_CHUNK_SIZE * 2,
+            chunkSize: MIN_ASSET_CHUNK_SIZE,
+            chunkCount: 2,
+        };
+        const fullChunk = btoa('a'.repeat(MIN_ASSET_CHUNK_SIZE));
         await transfer.handleMessage('peer-1', manifestMessage(twoChunk));
-        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('aaaa')));
+        await transfer.handleMessage('peer-1', chunkMessage(0, fullChunk));
         onProgress.mockClear();
 
         // A late manifest from a second peer must be ignored (no slot reset).
         await transfer.handleMessage('peer-2', manifestMessage(twoChunk));
         // Chunk 1 completes the ORIGINAL transfer — chunk 0 was retained, so
         // the final progress is 2/2 rather than restarting from 1/2.
-        await transfer.handleMessage('peer-2', chunkMessage(1, btoa('bbbb')));
+        await transfer.handleMessage('peer-2', chunkMessage(1, fullChunk));
         expect(onProgress).toHaveBeenLastCalledWith(HASH, 2, 2);
     });
 
@@ -307,10 +333,13 @@ describe('AssetTransfer', () => {
 
     it('rejects a chunk whose decoded size exceeds the declared chunk size', async () => {
         transfer.requestAsset(HASH);
-        // Declare a tiny chunkSize so an oversized chunk trips the bound.
-        await transfer.handleMessage('peer-1', manifestMessage({ size: 4, chunkSize: 4, chunkCount: 1 }));
+        // Declare the smallest legal chunkSize so an oversized chunk trips the bound.
+        await transfer.handleMessage(
+            'peer-1',
+            manifestMessage({ size: MIN_ASSET_CHUNK_SIZE, chunkSize: MIN_ASSET_CHUNK_SIZE, chunkCount: 1 })
+        );
 
-        const oversized = btoa('x'.repeat(64)); // 64 decoded bytes > declared 4
+        const oversized = btoa('x'.repeat(MIN_ASSET_CHUNK_SIZE + 1));
         await transfer.handleMessage('peer-1', chunkMessage(0, oversized));
         expect(onProgress).not.toHaveBeenCalled();
     });
@@ -318,10 +347,186 @@ describe('AssetTransfer', () => {
     it('rejects a manifest with inconsistent dimensions', async () => {
         transfer.requestAsset(HASH);
         // chunkCount does not equal ceil(size / chunkSize).
-        await transfer.handleMessage('peer-1', manifestMessage({ size: 10, chunkSize: 4, chunkCount: 99 }));
+        await transfer.handleMessage(
+            'peer-1',
+            manifestMessage({ size: 10, chunkSize: ASSET_CHUNK_SIZE, chunkCount: 99 })
+        );
 
         // No transfer opened → a chunk for it is dropped.
         await transfer.handleMessage('peer-1', chunkMessage(0, btoa('data')));
         expect(onProgress).not.toHaveBeenCalled();
+    });
+
+    // --- F7: manifest dimension bounds -------------------------------------
+
+    it('rejects a manifest whose chunk size is below the accepted floor', async () => {
+        transfer.requestAsset(HASH);
+        // Internally consistent and inside the byte ceiling, but declares one
+        // chunk slot per byte: ~5e8 Map + Set entries once chunks start landing.
+        await transfer.handleMessage(
+            'peer-1',
+            manifestMessage({ size: MAX_ASSET_SIZE, chunkSize: 1, chunkCount: MAX_ASSET_SIZE })
+        );
+
+        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('x')));
+        expect(onProgress).not.toHaveBeenCalled();
+    });
+
+    it('rejects a manifest whose chunk size is above the accepted ceiling', async () => {
+        transfer.requestAsset(HASH);
+        const chunkSize = MAX_ASSET_CHUNK_SIZE + 1;
+        await transfer.handleMessage('peer-1', manifestMessage({ size: chunkSize, chunkSize, chunkCount: 1 }));
+
+        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('x')));
+        expect(onProgress).not.toHaveBeenCalled();
+    });
+
+    it('rejects a manifest with an over-long name or mime string', async () => {
+        transfer.requestAsset(HASH);
+        await transfer.handleMessage('peer-1', manifestMessage({ name: 'n'.repeat(MAX_ASSET_NAME_LEN + 1) }));
+        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('x')));
+        expect(onProgress).not.toHaveBeenCalled();
+
+        await transfer.handleMessage('peer-1', manifestMessage({ mime: 'm'.repeat(MAX_ASSET_MIME_LEN + 1) }));
+        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('x')));
+        expect(onProgress).not.toHaveBeenCalled();
+    });
+
+    it('accepts the chunk size this app actually sends', async () => {
+        // Guards the two bounds against each other: a floor or ceiling that
+        // excluded ASSET_CHUNK_SIZE would make every manifest this app mints
+        // unacceptable to its own peers.
+        expect(ASSET_CHUNK_SIZE).toBeGreaterThanOrEqual(MIN_ASSET_CHUNK_SIZE);
+        expect(ASSET_CHUNK_SIZE).toBeLessThanOrEqual(MAX_ASSET_CHUNK_SIZE);
+
+        transfer.requestAsset(HASH);
+        await transfer.handleMessage('peer-1', manifestMessage());
+        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('1234567890')));
+        expect(onProgress).toHaveBeenCalledWith(HASH, 1, 1);
+    });
+
+    it('bounds a remote missingChunks list to the indices the asset actually has', async () => {
+        const sent: PeerMessage[] = [];
+        const hostPeer = {
+            broadcastCrdtSync: vi.fn(),
+            sendCrdtSync: vi.fn(),
+            sendCrdtSyncBuffered: vi.fn(({ message }: { peerId: string; message: PeerMessage }) => {
+                sent.push(message);
+                return Promise.resolve();
+            }),
+        } as unknown as PeerConnectionManager;
+        const host = new AssetTransfer(hostPeer, {
+            onAssetAvailable: vi.fn(),
+            onProgress: vi.fn(),
+            onTransferFailed: vi.fn(),
+        });
+        const hash = await host.addLocalAsset(new Blob(['tiny'], { type: 'text/plain' }), 'tiny.txt');
+
+        // A hostile request: duplicates and out-of-range indices. The asset is
+        // one chunk, so at most one chunk send may result.
+        await host.handleMessage('attacker', {
+            type: 'crdt-sync',
+            docId: DOC_ID_ASSET,
+            data: JSON.stringify({
+                type: 'asset.request',
+                hash,
+                missingChunks: [0, 0, 0, 5, 99, -1, 1.5, Number.MAX_SAFE_INTEGER],
+            }),
+        });
+
+        expect(sent).toHaveLength(1);
+        host.dispose();
+    });
+
+    // --- F6: abort recovery -------------------------------------------------
+
+    it('reports a failure and re-opens the hash when a chunk is rejected', async () => {
+        transfer.requestAsset(HASH);
+        await transfer.handleMessage('peer-1', manifestMessage());
+        vi.mocked(peer.broadcastCrdtSync).mockClear();
+
+        // Out-of-range chunk aborts the transfer.
+        await transfer.handleMessage('peer-1', chunkMessage(1, btoa('x')));
+
+        expect(onTransferFailed).toHaveBeenCalledTimes(1);
+        expect(onTransferFailed.mock.calls[0]?.[0]).toBe(HASH);
+
+        // Recovery: the hash is requestable again, and a fresh manifest from a
+        // different peer is accepted rather than dropped as unsolicited.
+        transfer.requestAsset(HASH);
+        expect(peer.broadcastCrdtSync).toHaveBeenCalledTimes(1);
+        await transfer.handleMessage('peer-2', manifestMessage());
+        await transfer.handleMessage('peer-2', chunkMessage(0, btoa('1234567890')));
+        expect(onProgress).toHaveBeenCalledWith(HASH, 1, 1);
+    });
+
+    it('drops partial chunks and re-opens the hash when a transfer stalls', async () => {
+        vi.useFakeTimers();
+        const twoChunk = {
+            size: MIN_ASSET_CHUNK_SIZE * 2,
+            chunkSize: MIN_ASSET_CHUNK_SIZE,
+            chunkCount: 2,
+        };
+        transfer.requestAsset(HASH);
+        await transfer.handleMessage('peer-1', manifestMessage(twoChunk));
+        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('a'.repeat(MIN_ASSET_CHUNK_SIZE))));
+        expect(onProgress).toHaveBeenLastCalledWith(HASH, 1, 2);
+
+        // The sender dies mid-stream: chunk 1 never arrives.
+        vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS + 1);
+
+        expect(onTransferFailed).toHaveBeenCalledTimes(1);
+        expect(onTransferFailed.mock.calls[0]?.[0]).toBe(HASH);
+
+        // The abandoned transfer released its slot: the late chunk 1 finds no
+        // in-flight transfer, so the partial state is genuinely gone.
+        vi.mocked(peer.broadcastCrdtSync).mockClear();
+        onProgress.mockClear();
+        await transfer.handleMessage('peer-1', chunkMessage(1, btoa('b'.repeat(MIN_ASSET_CHUNK_SIZE))));
+        expect(onProgress).not.toHaveBeenCalled();
+
+        // And the asset is fetchable again from scratch.
+        transfer.requestAsset(HASH);
+        expect(peer.broadcastCrdtSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not stall a transfer that keeps making progress', async () => {
+        vi.useFakeTimers();
+        const twoChunk = {
+            size: MIN_ASSET_CHUNK_SIZE * 2,
+            chunkSize: MIN_ASSET_CHUNK_SIZE,
+            chunkCount: 2,
+        };
+        transfer.requestAsset(HASH);
+
+        // Each step sits just inside the deadline; the clock must restart on
+        // every accepted message rather than measure total duration.
+        vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS - 1);
+        await transfer.handleMessage('peer-1', manifestMessage(twoChunk));
+        vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS - 1);
+        await transfer.handleMessage('peer-1', chunkMessage(0, btoa('a'.repeat(MIN_ASSET_CHUNK_SIZE))));
+        vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS - 1);
+
+        expect(onTransferFailed).not.toHaveBeenCalled();
+        expect(onProgress).toHaveBeenLastCalledWith(HASH, 1, 2);
+    });
+
+    it('requestAsset is idempotent while a request is outstanding', () => {
+        transfer.requestAsset(HASH);
+        transfer.requestAsset(HASH);
+        transfer.requestAsset(HASH);
+
+        expect(peer.broadcastCrdtSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispose clears armed stall timers so a discarded session reports nothing', async () => {
+        vi.useFakeTimers();
+        transfer.requestAsset(HASH);
+        await transfer.handleMessage('peer-1', manifestMessage());
+
+        transfer.dispose();
+        vi.advanceTimersByTime(ASSET_TRANSFER_STALL_TIMEOUT_MS * 2);
+
+        expect(onTransferFailed).not.toHaveBeenCalled();
     });
 });
