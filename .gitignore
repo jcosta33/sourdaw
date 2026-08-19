@@ -14,7 +14,7 @@ release/desktop/
 .env.*
 !.env.example
 
-# Rust / Tauri
+# Rust
 target/
 
 # Editor

@@ -212,7 +212,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
         // Warn before attempting formats the browser commonly cannot decode, so a
         // failed preview is explained rather than appearing to do nothing. The
-        // native (Tauri) build decodes these fine, so the warning is browser-only.
+        // desktop build decodes these natively, so the warning is browser-only.
         if (showBrowserDecodeWarnings && isBrowserDecodeRisky(sample.ext)) {
             notifyUser(
                 `"${sample.displayName}" is a .${sample.ext} file — your browser may not be able to preview it.`,

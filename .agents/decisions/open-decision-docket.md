@@ -401,7 +401,7 @@ code: no (all dormant).
   `src/modules/MIDI/repositories/webMidi/store.ts`,
   `src/modules/MIDI/useCases/webMidiInput/helpers.ts:9`,
   `src/modules/MIDI/useCases/index.ts:118`.
-  **RESOLVED 2026-07-18 (#428): promoted to `src/modules/MIDI/stores/webMidiStore.ts` (barrel-exported public read contract); `repositories/webMidi/store.ts` kept as a thin sync adapter that seeds + subscribes (the store may not import `repositories/` or the Tauri bridge — `usecases-only-write-boundary-to-repositories` / `tauri-ipc-only-in-repositories`). `useCases/webMidiInput/helpers.ts` removed; importers repointed to `#/modules/MIDI/stores`. ADR-0011 W7.**
+  **RESOLVED 2026-07-18 (#428): promoted to `src/modules/MIDI/stores/webMidiStore.ts` (barrel-exported public read contract); `repositories/webMidi/store.ts` kept as a thin sync adapter that seeds + subscribes (the store may not import `repositories/` or the Tauri bridge — `usecases-only-write-boundary-to-repositories` / `desktop-ipc-only-in-repositories`). `useCases/webMidiInput/helpers.ts` removed; importers repointed to `#/modules/MIDI/stores`. ADR-0011 W7.**
 
 ## Grinder
 
