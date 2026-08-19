@@ -45,12 +45,15 @@ export function parseArgs(args: string[]): Options {
 
 function runStep(label: string, args: string[]): void {
     const result = spawnSync('pnpm', args, { stdio: 'inherit' });
+    if (result.error !== undefined) {
+        throw new Error(`${label} failed to start: ${result.error.message}`);
+    }
     if (result.status !== 0) {
         throw new Error(`${label} failed`);
     }
 }
 
-async function main(): Promise<number> {
+function main(): number {
     try {
         const options = parseArgs(process.argv.slice(2));
         const targets = options.full ? ['src', 'scripts'] : options.files;
@@ -84,5 +87,5 @@ async function main(): Promise<number> {
 
 const invokedPath = process.argv[1] === undefined ? '' : resolve(process.argv[1]);
 if (invokedPath === fileURLToPath(import.meta.url)) {
-    process.exit(await main());
+    process.exit(main());
 }

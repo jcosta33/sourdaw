@@ -394,6 +394,16 @@ describe('resource CLI', () => {
         expect(() => parseCliArgs(['--profile', 'focused', '--require-target', '--', 'vitest', 'run'])).not.toThrow();
     });
 
+    it('never wraps the web build', () => {
+        // Guard admission refuses on low MemFree, which is the resting state
+        // of cloud build containers — a guarded build breaks every deploy.
+        const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+            scripts: Record<string, string>;
+        };
+        expect(packageJson.scripts.build).toBe('vite build');
+        expect(packageJson.scripts.format).toMatch(/prettier --write --$/);
+    });
+
     it('pins validation worker limits', () => {
         expect(readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8')).toMatch(/maxWorkers:\s*2/);
         expect(readFileSync(join(process.cwd(), 'playwright.config.ts'), 'utf8')).toMatch(/workers:\s*1/);

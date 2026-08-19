@@ -159,6 +159,7 @@ parent/child issues as GitHub sub-issues.
 - Never run destructive git, force-push, amend published history, or delete branches without
   explicit authority.
 - Never install packages or edit CI/build controls unless the task requires it.
-- Never widen a formatter, codemod, or autofix past the files your change owns. `pnpm format`
-  requires a target; never route around it with a raw `prettier --write` or `cargo fmt --all`.
+- Never widen a formatter, codemod, or autofix past the files your change owns. Always pass
+  explicit file targets to `pnpm format` and `pnpm cargo:fmt`; repository-wide formatting is
+  `format:full` and runs only when explicitly requested.
 - Reproduce behavioral defects before repair. After three failed attempts, stop and change strategy.
