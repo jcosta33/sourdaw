@@ -289,16 +289,16 @@ describe('check-dependency-boundaries', () => {
         expect(isExcluded('src/modules/ControlSurface/repositories/pushMidiCodec.ts')).toBe(false);
     });
 
-    it('should isolate worklets from foreign modules and resolved Tauri packages', () => {
+    it('should isolate worklets from foreign modules and the desktop IPC surface', () => {
         const moduleRule = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'worklets-no-module-runtime-imports'
         );
-        const tauriRule = mainConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'worklets-no-app-helper-or-tauri'
+        const desktopIpcRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'worklets-no-app-helper-or-desktop-ipc'
         );
 
         expect(new RegExp(moduleRule.to.path).test('src/modules/Bar/useCases/run.ts')).toBe(true);
-        expect(new RegExp(tauriRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
+        expect(new RegExp(desktopIpcRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
     });
 
     it('should block reverse imports into AudioEngine worklets while keeping the Yeast Worker client separate', () => {
@@ -338,8 +338,8 @@ describe('check-dependency-boundaries', () => {
         const reverseRule = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports'
         );
-        const tauriRule = mainConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'workers-no-app-helper-or-tauri'
+        const desktopIpcRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'workers-no-app-helper-or-desktop-ipc'
         );
         const testReverseRule = testConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports'
@@ -347,13 +347,13 @@ describe('check-dependency-boundaries', () => {
 
         expect(workerRule).toBeDefined();
         expect(reverseRule).toBeDefined();
-        expect(tauriRule).toBeDefined();
+        expect(desktopIpcRule).toBeDefined();
         expect(testReverseRule).toBeDefined();
         expect(new RegExp(workerRule.to.path).test('src/modules/Yeast/useCases/run.ts')).toBe(true);
         expect(new RegExp(reverseRule.from.path).test('src/modules/Yeast/useCases/run.ts')).toBe(true);
         expect(new RegExp(reverseRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
         expect(new RegExp(reverseRule.from.path).test('src/modules/Yeast/engine/YeastWorkerClient.ts')).toBe(false);
-        expect(new RegExp(tauriRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
+        expect(new RegExp(desktopIpcRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
         expect(new RegExp(testReverseRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
     });
 
@@ -378,12 +378,12 @@ describe('check-dependency-boundaries', () => {
         expect(matchesReactPath('/node_modules/react-dom/index.js')).toBe(false);
     });
 
-    it('should enforce Tauri IPC origins against resolved packages and bridge laundering', () => {
-        const tauriRule = mainConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories'
+    it('should enforce desktop IPC origins against resolved packages and bridge laundering', () => {
+        const desktopIpcRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'desktop-ipc-only-in-repositories'
         );
-        const testTauriRule = testConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories'
+        const testDesktopIpcRule = testConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'desktop-ipc-only-in-repositories'
         );
         const matches = (patterns: string | string[], filePath: string): boolean => {
             const patternList = Array.isArray(patterns) ? patterns : [patterns];
@@ -423,36 +423,36 @@ describe('check-dependency-boundaries', () => {
             'src/modules/Foo/repositoriesSibling/tauriClient.ts',
         ];
 
-        expect(tauriRule.severity).toBe('error');
-        expect(testTauriRule).toBe(tauriRule);
+        expect(desktopIpcRule.severity).toBe('error');
+        expect(testDesktopIpcRule).toBe(desktopIpcRule);
         for (const resolvedTauriPath of resolvedTauriPaths) {
-            expect(violates(tauriRule, 'src/modules/Foo/useCases/run.ts', resolvedTauriPath)).toBe(true);
+            expect(violates(desktopIpcRule, 'src/modules/Foo/useCases/run.ts', resolvedTauriPath)).toBe(true);
             for (const origin of nonModuleOrigins) {
-                expect(violates(tauriRule, origin, resolvedTauriPath)).toBe(true);
+                expect(violates(desktopIpcRule, origin, resolvedTauriPath)).toBe(true);
             }
             for (const origin of allowedRepositoryOrigins) {
-                expect(violates(tauriRule, origin, resolvedTauriPath)).toBe(false);
+                expect(violates(desktopIpcRule, origin, resolvedTauriPath)).toBe(false);
             }
             for (const origin of nestedRepositoryOrigins) {
-                expect(violates(tauriRule, origin, resolvedTauriPath)).toBe(true);
+                expect(violates(desktopIpcRule, origin, resolvedTauriPath)).toBe(true);
             }
         }
-        expect(violates(tauriRule, 'src/modules/Foo/useCases/run.ts', 'src/utils/tauriBridge.ts')).toBe(true);
-        expect(violates(tauriRule, 'src/utils/tauriBridge.ts', resolvedTauriPaths[0])).toBe(false);
-        expect(violates(tauriRule, 'src/utils/__tests__/tauriBridge.spec.ts', resolvedTauriPaths[0])).toBe(false);
-        expect(violates(tauriRule, allowedRepositoryOrigins[0], 'src/utils/tauriBridge.ts')).toBe(false);
-        expect(violates(tauriRule, 'src/utils/otherBridge.ts', 'src/utils/tauriBridge.ts')).toBe(true);
-        expect(violates(testTauriRule, 'src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPaths[0])).toBe(
+        expect(violates(desktopIpcRule, 'src/modules/Foo/useCases/run.ts', 'src/utils/desktopBridge.ts')).toBe(true);
+        expect(violates(desktopIpcRule, 'src/utils/desktopBridge.ts', resolvedTauriPaths[0])).toBe(false);
+        expect(violates(desktopIpcRule, 'src/utils/__tests__/desktopBridge.spec.ts', resolvedTauriPaths[0])).toBe(false);
+        expect(violates(desktopIpcRule, allowedRepositoryOrigins[0], 'src/utils/desktopBridge.ts')).toBe(false);
+        expect(violates(desktopIpcRule, 'src/utils/otherBridge.ts', 'src/utils/desktopBridge.ts')).toBe(true);
+        expect(violates(testDesktopIpcRule, 'src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPaths[0])).toBe(
             true
         );
     });
 
-    it('should apply Tauri IPC confinement to type-only edges', () => {
-        const tauriRule = mainConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories'
+    it('should apply desktop IPC confinement to type-only edges', () => {
+        const desktopIpcRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'desktop-ipc-only-in-repositories'
         );
-        const typeTauriRule = typeConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories-type-only'
+        const typeDesktopIpcRule = typeConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'desktop-ipc-only-in-repositories-type-only'
         );
         const matches = (patterns: string | string[] | undefined, filePath: string): boolean => {
             let patternList: string[];
@@ -466,26 +466,26 @@ describe('check-dependency-boundaries', () => {
             return patternList.some((pattern) => new RegExp(pattern).test(filePath));
         };
         const violates = (from: string, to: string): boolean =>
-            matches(typeTauriRule.from.path, from) &&
-            !matches(typeTauriRule.from.pathNot, from) &&
-            matches(typeTauriRule.to.path, to) &&
-            typeTauriRule.to.dependencyTypes.includes('type-only');
+            matches(typeDesktopIpcRule.from.path, from) &&
+            !matches(typeDesktopIpcRule.from.pathNot, from) &&
+            matches(typeDesktopIpcRule.to.path, to) &&
+            typeDesktopIpcRule.to.dependencyTypes.includes('type-only');
 
-        expect(typeTauriRule).toBeDefined();
-        expect(typeTauriRule.to.dependencyTypes).toEqual(['type-only']);
-        expect(typeTauriRule.from).toEqual(tauriRule.from);
-        expect(typeTauriRule.to.path).toBe(tauriRule.to.path);
-        expect(typeTauriRule.to.pathNot).toEqual(tauriRule.to.pathNot);
+        expect(typeDesktopIpcRule).toBeDefined();
+        expect(typeDesktopIpcRule.to.dependencyTypes).toEqual(['type-only']);
+        expect(typeDesktopIpcRule.from).toEqual(desktopIpcRule.from);
+        expect(typeDesktopIpcRule.to.path).toBe(desktopIpcRule.to.path);
+        expect(typeDesktopIpcRule.to.pathNot).toEqual(desktopIpcRule.to.pathNot);
 
         const resolvedTauriPath = '/node_modules/.pnpm/@tauri-apps+api@2.5.0/node_modules/@tauri-apps/api/index.d.ts';
         expect(violates('src/modules/Foo/useCases/run.ts', resolvedTauriPath)).toBe(true);
         expect(violates('src/infra/tauriTypes.ts', resolvedTauriPath)).toBe(true);
         expect(violates('src/modules/Foo/repositories/read.ts', resolvedTauriPath)).toBe(false);
-        expect(violates('src/utils/tauriBridge.ts', resolvedTauriPath)).toBe(false);
-        expect(violates('src/utils/__tests__/tauriBridge.spec.ts', resolvedTauriPath)).toBe(false);
+        expect(violates('src/utils/desktopBridge.ts', resolvedTauriPath)).toBe(false);
+        expect(violates('src/utils/__tests__/desktopBridge.spec.ts', resolvedTauriPath)).toBe(false);
         expect(violates('src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPath)).toBe(true);
-        expect(violates('src/modules/Foo/useCases/run.ts', 'src/utils/tauriBridge.ts')).toBe(true);
-        expect(violates('src/modules/Foo/repositories/read.ts', 'src/utils/tauriBridge.ts')).toBe(false);
+        expect(violates('src/modules/Foo/useCases/run.ts', 'src/utils/desktopBridge.ts')).toBe(true);
+        expect(violates('src/modules/Foo/repositories/read.ts', 'src/utils/desktopBridge.ts')).toBe(false);
     });
 
     it('should reject Tauri vendor types crossing repository public surfaces', () => {
@@ -502,9 +502,9 @@ describe('check-dependency-boundaries', () => {
             writeFixtureFiles(repositoryDirectory, {
                 'direct-export.ts': "export type { InvokeArgs } from '@tauri-apps/api/core';\n",
                 'bridge.ts': [
-                    "import type { TauriChannel as BridgeChannel } from '#/utils/tauriBridge';",
+                    "import type { TauriChannel as BridgeChannel } from '#/utils/desktopBridge';",
                     'export type PublicChannel = BridgeChannel<unknown>;',
-                    "export { type TauriChannel } from '#/utils/tauriBridge';",
+                    "export { type TauriChannel } from '#/utils/desktopBridge';",
                 ],
                 'alias.ts': [
                     "import type { InvokeArgs as TauriInvokeArgs } from '@tauri-apps/api/core';",
@@ -578,8 +578,8 @@ describe('check-dependency-boundaries', () => {
                     vendorFinding('src/modules/Foo/repositories/alias.ts', 3),
                     vendorFinding('src/modules/Foo/repositories/alias.ts', 4),
                     vendorFinding('src/modules/Foo/repositories/alias.ts', 5),
-                    vendorFinding('src/modules/Foo/repositories/bridge.ts', 2, '#/utils/tauriBridge'),
-                    vendorFinding('src/modules/Foo/repositories/bridge.ts', 3, '#/utils/tauriBridge'),
+                    vendorFinding('src/modules/Foo/repositories/bridge.ts', 2, '#/utils/desktopBridge'),
+                    vendorFinding('src/modules/Foo/repositories/bridge.ts', 3, '#/utils/desktopBridge'),
                     vendorFinding('src/modules/Foo/repositories/direct-export.ts', 1),
                     vendorFinding('src/modules/Foo/repositories/inline.mts', 1),
                     vendorFinding('src/modules/Foo/repositories/inline.mts', 2),
@@ -620,7 +620,7 @@ describe('check-dependency-boundaries', () => {
 
             writeFixtureFiles(repositoryRoot, {
                 'package.json': JSON.stringify({ type: 'module' }),
-                'src/utils/tauriBridge.ts': 'export type BridgeChannel<T> = { value: T };\n',
+                'src/utils/desktopBridge.ts': 'export type BridgeChannel<T> = { value: T };\n',
             });
             writeFixtureFiles(vendorDirectory, {
                 'package.json': JSON.stringify({

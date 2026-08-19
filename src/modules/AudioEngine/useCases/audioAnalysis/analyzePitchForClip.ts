@@ -116,7 +116,7 @@ async function analyzePitchWithWasm({ targetClip, onProgress }: AnalyzePitchWith
 }
 
 /**
- * Runs the offline native pitch analysis on a full audio clip via Tauri IPC or WASM fallback.
+ * Runs the offline native pitch analysis on a full audio clip via native IPC or WASM fallback.
  */
 export async function analyzePitchForClip({
     clipId,

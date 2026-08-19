@@ -21,7 +21,7 @@ const useCasesPath = /\/useCases\//;
 const leafComponentPath = /(^src\/components\/|\/presentations\/components\/)/;
 const sourceFilePath = new RegExp(SOURCE_FILE_RE, 'i');
 const moduleRootRepositoryPath = /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/repositories(?:\/|$)/;
-const tauriBridgeModulePath = /(?:^|\/)utils\/tauriBridge(?:\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx))?$/i;
+const desktopBridgeModulePath = /(?:^|\/)utils\/desktopBridge(?:\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx))?$/i;
 const commonJsRuntimeNames = new Set(['exports', 'module', 'require']);
 const globalObjectNames = new Set(['global', 'globalThis', 'self', 'window']);
 const commonJsSurfaceReason = 'CommonJS module, exports, and require are not available under src';
@@ -262,7 +262,7 @@ function tauriVendorModule(moduleSpecifier) {
     if (normalizedSpecifier.startsWith('@tauri-apps/')) {
         return normalizedSpecifier;
     }
-    if (tauriBridgeModulePath.test(normalizedSpecifier)) {
+    if (desktopBridgeModulePath.test(normalizedSpecifier)) {
         return normalizedSpecifier;
     }
     return null;
@@ -923,8 +923,8 @@ function vendorModulesForFile(context, fileName) {
     const normalizedFileName = normalizeFileName(fileName);
     const modules = new Set(context.vendorModulesByFile.get(normalizedFileName) ?? []);
     const relativePath = repositoryRelativePath(context.repositoryRoot, normalizedFileName);
-    if (relativePath && tauriBridgeModulePath.test(relativePath)) {
-        modules.add('#/utils/tauriBridge');
+    if (relativePath && desktopBridgeModulePath.test(relativePath)) {
+        modules.add('#/utils/desktopBridge');
     }
     if (modules.size === 0) {
         const packageMatch = /(?:^|\/)node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(@tauri-apps\/[^/]+)/.exec(

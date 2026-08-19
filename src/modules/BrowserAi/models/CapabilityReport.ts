@@ -75,5 +75,3 @@ export type CapabilityReport = {
     inference: InferenceThroughput;
     detectedAt: number;
 };
-
-export type CapabilityDisabledReason = 'not-chrome' | 'no-webgpu' | 'tauri-macos' | 'tauri-linux' | 'unknown';

@@ -1,8 +1,8 @@
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
 export async function closePluginGui(instanceId: string): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('close_plugin_gui', { instanceId });
+    await desktopInvoke('close_plugin_gui', { instanceId });
 }

@@ -7,8 +7,8 @@
  * cross-module private imports inside tests are invisible there. This cruise
  * keeps tests in the graph, treats `vi.mock()` targets as dependencies, and
  * enforces barrel boundaries from tests, __tests__ support, and setupTests.ts
- * plus the shared promoted Tauri/model rules. The exact tauriBridge spec mock
- * is the only non-repository Tauri test allowance.
+ * plus the shared promoted desktop-IPC/model rules. The exact desktopBridge spec mock
+ * is the only non-repository desktop-IPC test allowance.
  * Production-only hygiene stays on the main cruise; promoted boundary rules
  * are shared here deliberately because the main cruise excludes specs/tests.
  *
@@ -22,7 +22,7 @@ const {
     MODELS_MUST_BE_TITLE_CASE,
     MODULE_ROOT,
     SOURCE_FILE_RE,
-    TAURI_IPC_ONLY_IN_REPOSITORIES,
+    DESKTOP_IPC_ONLY_IN_REPOSITORIES,
 } = require('./.dependency-cruiser.shared.cjs');
 
 // from: module-rooted test / __tests__ files (keeps $1$2 for same-module pathNot)
@@ -44,7 +44,7 @@ module.exports = {
     forbidden: [
         // Promoted rules are shared with the main cruise because that cruise
         // excludes specs/tests from its graph.
-        TAURI_IPC_ONLY_IN_REPOSITORIES,
+        DESKTOP_IPC_ONLY_IN_REPOSITORIES,
         MODELS_MUST_BE_TITLE_CASE,
         {
             name: 'test-dependencies-must-resolve',

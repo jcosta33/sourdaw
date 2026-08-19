@@ -1,4 +1,4 @@
-import { isTauri, tauriListen } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopListen } from '#/utils/desktopBridge';
 
 type ListenPitchAnalysisProgressInput = {
     analysisId: string;
@@ -16,11 +16,11 @@ export async function listenPitchAnalysisProgress({
     analysisId,
     onProgress,
 }: ListenPitchAnalysisProgressInput): ListenPitchAnalysisProgressOutput {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return null;
     }
 
-    return tauriListen('pitch-analysis-progress', (envelope) => {
+    return desktopListen('pitch-analysis-progress', (envelope) => {
         const { payload } = envelope as { payload: AnalysisProgress };
         if (payload.analysisId !== analysisId) {
             return;

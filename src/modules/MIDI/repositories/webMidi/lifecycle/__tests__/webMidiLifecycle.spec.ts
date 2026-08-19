@@ -20,25 +20,25 @@ const setStateMock = vi.hoisted(() =>
     vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean }) => void>()
 );
 const readPersistedInputIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
-const setTauriModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
+const setNativeModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
 
 // Must stub before importing the subject
 vi.stubGlobal('navigator', {
     requestMIDIAccess: requestMidiAccessMock,
 });
 
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
 import { webMidiRuntime } from '../../state';
 import { attachInput } from '../helpers';
 import { initWebMidi } from '../initWebMidi';
-import { selectMidiInputTauri } from '../selectMidiInputTauri';
+import { selectMidiInputNative } from '../selectMidiInputNative';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(),
-    tauriInvoke: vi.fn(),
-    tauriListen: vi.fn().mockResolvedValue(() => {}),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(),
+    desktopInvoke: vi.fn(),
+    desktopListen: vi.fn().mockResolvedValue(() => {}),
 }));
 
 vi.mock('../../getMidiAccess', () => ({
@@ -77,16 +77,16 @@ vi.mock('../../readPersistedInputId', () => ({
     readPersistedInputId: () => readPersistedInputIdMock(),
 }));
 
-vi.mock('../../setTauriMode', () => ({
-    setTauriMode: (enabled: boolean) => setTauriModeMock(enabled),
+vi.mock('../../setNativeMode', () => ({
+    setNativeMode: (enabled: boolean) => setNativeModeMock(enabled),
 }));
 
 vi.mock('../helpers', () => ({
     attachInput: vi.fn(),
 }));
 
-vi.mock('../selectMidiInputTauri', () => ({
-    selectMidiInputTauri: vi.fn(),
+vi.mock('../selectMidiInputNative', () => ({
+    selectMidiInputNative: vi.fn(),
 }));
 
 describe('initWebMidi', () => {
@@ -185,19 +185,19 @@ describe('initWebMidi', () => {
         expect(persistedSelectionWrites).toEqual([]);
     });
 
-    it('should fallback to Tauri if Web MIDI fails', async () => {
+    it('should fallback to the native bridge if Web MIDI fails', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         // Force failure of browser MIDI
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Tauri MIDI' }]);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Native MIDI' }]);
 
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(true);
-        expect(setTauriModeMock).toHaveBeenCalledWith(true);
-        expect(tauriInvoke).toHaveBeenCalledWith('list_midi_inputs');
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, portName: 'Tauri MIDI', onMidiMessage });
+        expect(setNativeModeMock).toHaveBeenCalledWith(true);
+        expect(desktopInvoke).toHaveBeenCalledWith('list_midi_inputs');
+        expect(selectMidiInputNative).toHaveBeenCalledWith({ portIndex: 0, portName: 'Native MIDI', onMidiMessage });
     });
 
     it('rejects a malformed list_midi_inputs payload instead of opening a NaN port', async () => {
@@ -206,20 +206,20 @@ describe('initWebMidi', () => {
         // which was handed straight to `open_midi_input`.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([{ name: 'Tauri MIDI' }]);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ name: 'Native MIDI' }]);
 
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(false);
-        expect(selectMidiInputTauri).not.toHaveBeenCalled();
+        expect(selectMidiInputNative).not.toHaveBeenCalled();
         expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
     });
 
     it('should return false if neither is supported', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
         const result = await initWebMidi({ onMidiMessage });
 
@@ -370,32 +370,32 @@ describe('initWebMidi', () => {
         expect(requestMidiAccessMock).not.toHaveBeenCalled();
     });
 
-    it('should fall straight through to Tauri when Web MIDI is unavailable in navigator', async () => {
+    it('should fall straight through to the native bridge when Web MIDI is unavailable in navigator', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         vi.stubGlobal('navigator', {/* no requestMIDIAccess */});
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Tauri MIDI' }]);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Native MIDI' }]);
 
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(true);
-        expect(setTauriModeMock).toHaveBeenCalledWith(true);
+        expect(setNativeModeMock).toHaveBeenCalledWith(true);
 
         // restore navigator stub for subsequent tests
         vi.stubGlobal('navigator', { requestMIDIAccess: requestMidiAccessMock });
     });
 
-    it('should return true with no input selection when Tauri lists zero devices', async () => {
+    it('should return true with no input selection when the native bridge lists zero devices', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([]);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([]);
 
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(true);
         expect(setStateMock).toHaveBeenCalledWith({ inputs: [], isSupported: true });
-        expect(selectMidiInputTauri).not.toHaveBeenCalled();
+        expect(selectMidiInputNative).not.toHaveBeenCalled();
     });
 
     it('should report "Unknown Device" for an input whose name is null', async () => {
@@ -420,13 +420,13 @@ describe('initWebMidi', () => {
         expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'in-1' }, { persistSelection: false });
     });
 
-    it('does not overwrite the saved preference on the Tauri path either', async () => {
-        // Tauri ports are indices, so a device list that shifted by one port
+    it('does not overwrite the saved preference on the native path either', async () => {
+        // Native ports are indices, so a device list that shifted by one port
         // rebinds the saved preference to a different instrument entirely.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
         getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '3' });
         readPersistedInputIdMock.mockReturnValue('3');
 
@@ -436,7 +436,7 @@ describe('initWebMidi', () => {
             ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
         );
         expect(persistedSelectionWrites).toEqual([]);
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, portName: 'Built-in', onMidiMessage });
+        expect(selectMidiInputNative).toHaveBeenCalledWith({ portIndex: 0, portName: 'Built-in', onMidiMessage });
     });
 
     it('re-opens the saved native device after the enumeration order changes', async () => {
@@ -445,8 +445,8 @@ describe('initWebMidi', () => {
         // now holds it; keyed on the port name it follows the device.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([
             { index: 0, name: 'Built-in' },
             { index: 1, name: 'Launchkey' },
         ]);
@@ -455,7 +455,7 @@ describe('initWebMidi', () => {
 
         await initWebMidi({ onMidiMessage });
 
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 1, portName: 'Launchkey', onMidiMessage });
+        expect(selectMidiInputNative).toHaveBeenCalledWith({ portIndex: 1, portName: 'Launchkey', onMidiMessage });
         expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }, { persistSelection: false });
     });
 
@@ -465,8 +465,8 @@ describe('initWebMidi', () => {
         // they never chose; it has to degrade to no saved selection.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([
             { index: 0, name: 'Built-in' },
             { index: 1, name: 'Launchkey' },
         ]);
@@ -475,7 +475,7 @@ describe('initWebMidi', () => {
 
         await initWebMidi({ onMidiMessage });
 
-        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, portName: 'Built-in', onMidiMessage });
+        expect(selectMidiInputNative).toHaveBeenCalledWith({ portIndex: 0, portName: 'Built-in', onMidiMessage });
         const persistedSelectionWrites = setStateMock.mock.calls.filter(
             ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
         );
@@ -489,9 +489,9 @@ describe('initWebMidi', () => {
         // an app restart.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
-        vi.mocked(selectMidiInputTauri).mockRejectedValueOnce(new Error('device busy'));
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
+        vi.mocked(selectMidiInputNative).mockRejectedValueOnce(new Error('device busy'));
 
         const result = await initWebMidi({ onMidiMessage });
 
@@ -505,8 +505,8 @@ describe('initWebMidi', () => {
     it('publishes native inputs under their stable ids', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue([
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([
             { index: 0, name: 'MPK Mini' },
             { index: 1, name: 'MPK Mini' },
         ]);
@@ -522,11 +522,11 @@ describe('initWebMidi', () => {
         });
     });
 
-    it('should report unsupported and return false when the Tauri MIDI init throws', async () => {
+    it('should report unsupported and return false when the native MIDI init throws', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockRejectedValue(new Error('tauri port closed'));
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockRejectedValue(new Error('native port closed'));
 
         const result = await initWebMidi({ onMidiMessage });
 

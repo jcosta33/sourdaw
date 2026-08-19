@@ -22,7 +22,7 @@ type TestDirectoryHandle = {
     getFileHandle: (name: string) => Promise<{ getFile: () => Promise<File> }>;
 };
 
-type ReadTauriLibrarySampleFile = (input: {
+type ReadNativeLibrarySampleFile = (input: {
     rootPath: string;
     relativePath: string;
     fallbackName: string;
@@ -35,9 +35,9 @@ function createLibraryStore(root: TestLibraryRoot): TestLibraryStore {
 }
 
 describe('resolveDroppedSampleFile', () => {
-    it('should resolve a native Tauri-root sample through the Tauri file reader', async () => {
+    it('should resolve a native-root sample through the native file reader', async () => {
         const file = new File(['audio'], 'Kick.wav', { type: 'audio/wav' });
-        const readTauriLibrarySampleFile = vi.fn<ReadTauriLibrarySampleFile>().mockResolvedValue(file);
+        const readNativeLibrarySampleFile = vi.fn<ReadNativeLibrarySampleFile>().mockResolvedValue(file);
         const readBrowserLibrarySampleFile = vi.fn<ReadBrowserLibrarySampleFile>();
         const isNativeSampleLibraryRuntimeAvailable = vi.fn(() => true);
         injectDependencies(resolveDroppedSampleFile, {
@@ -47,7 +47,7 @@ describe('resolveDroppedSampleFile', () => {
                 rootRef: '/Users/jose/Samples',
             }),
             isNativeSampleLibraryRuntimeAvailable,
-            readTauriLibrarySampleFile,
+            readNativeLibrarySampleFile,
             readBrowserLibrarySampleFile,
         });
 
@@ -58,7 +58,7 @@ describe('resolveDroppedSampleFile', () => {
         });
 
         expect(result).toEqual({ status: 'resolved', provider: 'tauri', file });
-        expect(readTauriLibrarySampleFile).toHaveBeenCalledWith({
+        expect(readNativeLibrarySampleFile).toHaveBeenCalledWith({
             rootPath: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',
             fallbackName: 'Kick',
@@ -72,7 +72,7 @@ describe('resolveDroppedSampleFile', () => {
             getDirectoryHandle: vi.fn(),
             getFileHandle: vi.fn(),
         };
-        const readTauriLibrarySampleFile = vi.fn<ReadTauriLibrarySampleFile>();
+        const readNativeLibrarySampleFile = vi.fn<ReadNativeLibrarySampleFile>();
         const readBrowserLibrarySampleFile = vi.fn<ReadBrowserLibrarySampleFile>().mockResolvedValue(file);
         const isNativeSampleLibraryRuntimeAvailable = vi.fn(() => false);
         injectDependencies(resolveDroppedSampleFile, {
@@ -83,7 +83,7 @@ describe('resolveDroppedSampleFile', () => {
                 handle: rootHandle,
             }),
             isNativeSampleLibraryRuntimeAvailable,
-            readTauriLibrarySampleFile,
+            readNativeLibrarySampleFile,
             readBrowserLibrarySampleFile,
         });
 
@@ -98,11 +98,11 @@ describe('resolveDroppedSampleFile', () => {
             rootHandle,
             relativePath: 'Drums/Clap.wav',
         });
-        expect(readTauriLibrarySampleFile).not.toHaveBeenCalled();
+        expect(readNativeLibrarySampleFile).not.toHaveBeenCalled();
     });
 
     it('should leave unmatched provider/runtime pairs unresolved', async () => {
-        const readTauriLibrarySampleFile = vi.fn<ReadTauriLibrarySampleFile>();
+        const readNativeLibrarySampleFile = vi.fn<ReadNativeLibrarySampleFile>();
         const readBrowserLibrarySampleFile = vi.fn<ReadBrowserLibrarySampleFile>();
         const isNativeSampleLibraryRuntimeAvailable = vi.fn(() => false);
         injectDependencies(resolveDroppedSampleFile, {
@@ -112,7 +112,7 @@ describe('resolveDroppedSampleFile', () => {
                 rootRef: '/Users/jose/Samples',
             }),
             isNativeSampleLibraryRuntimeAvailable,
-            readTauriLibrarySampleFile,
+            readNativeLibrarySampleFile,
             readBrowserLibrarySampleFile,
         });
 
@@ -123,7 +123,7 @@ describe('resolveDroppedSampleFile', () => {
         });
 
         expect(result).toEqual({ status: 'unresolved' });
-        expect(readTauriLibrarySampleFile).not.toHaveBeenCalled();
+        expect(readNativeLibrarySampleFile).not.toHaveBeenCalled();
         expect(readBrowserLibrarySampleFile).not.toHaveBeenCalled();
     });
 });

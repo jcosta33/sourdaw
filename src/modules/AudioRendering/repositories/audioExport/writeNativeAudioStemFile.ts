@@ -1,4 +1,4 @@
-import { desktopPathJoin, writeFileBytes } from '#/utils/tauriBridge';
+import { desktopPathJoin, writeFileBytes } from '#/utils/desktopBridge';
 
 type WriteNativeAudioStemFileInput = {
     bytes: Uint8Array;

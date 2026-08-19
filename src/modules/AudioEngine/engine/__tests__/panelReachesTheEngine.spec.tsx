@@ -51,7 +51,7 @@ import { TrackNode, type TrackNodeDeps } from '../TrackNode';
  * Neither is computed from the other. The readout moving proves the gesture
  * landed and the control is live rather than dead; the node receiving the same
  * number proves it landed *in the thing that makes sound*. A control that
- * writes a session store and a native Tauri instance satisfies the first and
+ * writes a session store and a native backend instance satisfies the first and
  * fails the second, which is exactly the shape being retired.
  *
  * Deriving the expected value from the readout rather than from a literal is
@@ -123,11 +123,11 @@ vi.mock('../../repositories/createWebAudioEngine', async (importOriginal) => {
  * authored for the Content Browser, so nobody edits it to move a test.
  */
 function readFullDeviceCatalog(): readonly string[] {
-    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    Object.defineProperty(window, 'sourdaw', { value: {}, configurable: true });
     try {
         return getPlatformPlugins().map((descriptor) => descriptor.id);
     } finally {
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+        Reflect.deleteProperty(window, 'sourdaw');
     }
 }
 

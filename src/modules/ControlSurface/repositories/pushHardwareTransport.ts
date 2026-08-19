@@ -1,4 +1,4 @@
-import { invokeWithBinaryBody, isTauri, tauriInvoke, tauriListen } from '#/utils/tauriBridge';
+import { invokeWithBinaryBody, isDesktopRuntime, desktopInvoke, desktopListen } from '#/utils/desktopBridge';
 
 import { createPushDisplayProtocol, type PushDisplayProtocol } from './pushDisplayProtocol';
 import {
@@ -66,12 +66,12 @@ async function closeSession(session: ActiveSession | undefined): Promise<void> {
     for (const stopListening of session?.unlisten ?? []) {
         stopListening();
     }
-    await tauriInvoke('close_push_transport');
+    await desktopInvoke('close_push_transport');
 }
 
 async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardwareInput): Promise<void> {
     return serialize(async () => {
-        if (!isTauri()) {
+        if (!isDesktopRuntime()) {
             throw new Error('Ableton Push hardware requires the Sourdaw desktop app');
         }
         if (activeSession) {
@@ -141,7 +141,6 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
             const send = invokeWithBinaryBody({
                 command: 'send_push_midi',
                 bytes: started.bytes,
-                headers: {},
                 maxBytes: 23,
             });
             try {
@@ -156,9 +155,9 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
         }
 
         try {
-            unlisten.push(await tauriListen('push-midi-message', handleMidiEnvelope));
-            unlisten.push(await tauriListen('push-disconnected', handleNativeDisconnect));
-            await tauriInvoke('open_push_transport', { model });
+            unlisten.push(await desktopListen('push-midi-message', handleMidiEnvelope));
+            unlisten.push(await desktopListen('push-disconnected', handleNativeDisconnect));
+            await desktopInvoke('open_push_transport', { model });
             nativeOpened = true;
 
             if (model === 'push2') {
@@ -171,7 +170,6 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
                             await invokeWithBinaryBody({
                                 command: 'write_push2_display',
                                 bytes: data,
-                                headers: {},
                                 maxBytes: DISPLAY_PAYLOAD_MAX_BYTES,
                             });
                             return { bytesWritten: data.byteLength };
@@ -203,7 +201,7 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
                 stopListening();
             }
             if (nativeOpened) {
-                await tauriInvoke('close_push_transport').catch(() => undefined);
+                await desktopInvoke('close_push_transport').catch(() => undefined);
             }
             throw error;
         }

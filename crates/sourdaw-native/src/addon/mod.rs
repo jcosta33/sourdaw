@@ -1,9 +1,8 @@
 //! The Node addon surface over the command bodies.
 //!
 //! One class, [`SourdawNative`], owns the long-lived singletons for the life of
-//! the process, exactly as the Tauri shell's `.manage()` registrations did. Its
-//! methods carry the same names, arguments and results as the commands they
-//! replace.
+//! the process. Its methods carry the same names, arguments and results as the
+//! command bodies they expose.
 //!
 //! Two shapes are deliberate. Structured arguments and results cross as JSON
 //! values rather than as generated JS classes: the wire shapes are already
@@ -99,9 +98,10 @@ impl<Event: Serialize> EventStream<Event> for TsfnEventStream {
 
 /// Run the bounded CLAP descriptor-extraction worker.
 ///
-/// The process contract is the argv scan the Tauri binary performed in
-/// `main.rs`: same policy, same bounded child process, same exit code. Returns
-/// `None` when this process was not started as a scan worker.
+/// The process contract is an argv scan of the application binary: same
+/// policy, same bounded child process, same exit code regardless of which
+/// shell started the process. Returns `None` when this process was not
+/// started as a scan worker.
 #[napi]
 pub fn run_plugin_scan_worker() -> Option<i32> {
     crate::run_plugin_scan_worker_from_process_args()
@@ -180,9 +180,8 @@ impl SourdawNative {
     /// close, or the owner-destroy cascade).
     ///
     /// Async so the reset runs on the executor rather than the JS thread —
-    /// the same off-the-event-thread contract the Tauri shell honours by
-    /// spawning, because the reset takes the plugin mutexes and the CLAP
-    /// control lock. Idempotent; see
+    /// the reset must never run on the shell's event thread, because it takes
+    /// the plugin mutexes and the CLAP control lock. Idempotent; see
     /// [`commands::plugin_gui::reset_plugin_gui_state_after_os_close`].
     #[napi]
     pub async fn notify_plugin_window_closed(&self, instance_id: String, label: String) {

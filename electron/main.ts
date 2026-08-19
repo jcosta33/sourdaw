@@ -6,7 +6,7 @@
  * by the `sourdaw-native` addon, the event path, plugin scanning in its own
  * process, and an explicit quit cascade.
  *
- * The renderer's desktop seam (`src/utils/tauriBridge.ts`) answers from the
+ * The renderer's desktop seam (`src/utils/desktopBridge.ts`) answers from the
  * `window.sourdaw` bridge this shell's preload publishes, so under Electron
  * the renderer takes its native paths through the surface below.
  */

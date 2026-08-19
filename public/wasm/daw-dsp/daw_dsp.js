@@ -141,7 +141,7 @@ if (Symbol.dispose) BacteriaInstance.prototype[Symbol.dispose] = BacteriaInstanc
  * WASM-exported Crumbs instance for AudioWorklet rendering.
  *
  * Crumbs' native host reaches `CrumbsEngine` over an SPSC command ring from
- * the Tauri command layer. A worklet has no such ring — messages already
+ * the native command layer. A worklet has no such ring — messages already
  * arrive one at a time on the port — so this wrapper calls `handle_command`
  * directly, which is the same entry point the native host's drain loop calls.
  *

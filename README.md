@@ -1,9 +1,10 @@
 # Sourdaw
 
 Sourdaw is a browser-first DAW built with React 19, TypeScript, Vite, pnpm,
-Rust, and Tauri. The frontend follows module boundary contracts documented in
+Rust, and Electron. The frontend follows module boundary contracts documented in
 `AGENTS.md`; backend/native work is split across the Rust workspace crates under
-`crates/` and the thin Tauri bridge in `src-tauri/`.
+`crates/` and the thin desktop shell in `electron/`, which loads the
+`crates/sourdaw-native` addon.
 
 ## Project governance
 

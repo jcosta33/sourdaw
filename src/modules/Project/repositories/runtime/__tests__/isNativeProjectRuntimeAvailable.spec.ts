@@ -1,29 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { isNativeProjectRuntimeAvailable } from '../isNativeProjectRuntimeAvailable';
 
-vi.mock('#/utils/tauriRuntime', () => ({
-    isTauri: vi.fn(),
+vi.mock('#/utils/desktopRuntime', () => ({
+    isDesktopRuntime: vi.fn(),
 }));
 
 describe('isNativeProjectRuntimeAvailable', () => {
     beforeEach(() => {
-        vi.mocked(isTauri).mockReset();
+        vi.mocked(isDesktopRuntime).mockReset();
     });
 
-    it('should return true when the Tauri runtime marker is available', () => {
-        vi.mocked(isTauri).mockReturnValue(true);
+    it('should return true when the desktop runtime marker is available', () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
 
         expect(isNativeProjectRuntimeAvailable()).toBe(true);
-        expect(isTauri).toHaveBeenCalledTimes(1);
+        expect(isDesktopRuntime).toHaveBeenCalledTimes(1);
     });
 
-    it('should return false when the Tauri runtime marker is unavailable', () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+    it('should return false when the desktop runtime marker is unavailable', () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
         expect(isNativeProjectRuntimeAvailable()).toBe(false);
-        expect(isTauri).toHaveBeenCalledTimes(1);
+        expect(isDesktopRuntime).toHaveBeenCalledTimes(1);
     });
 });

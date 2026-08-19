@@ -1,7 +1,7 @@
 //! The offline analysis FFT must be the direct DFT it replaced (audit F8).
 //!
 //! `crumbs::analysis` used to transform each STFT frame with a per-bin direct
-//! DFT — O(fft_size × num_bins) per frame, which the calling Tauri command paid
+//! DFT — O(fft_size × num_bins) per frame, which the calling native command paid
 //! synchronously and which took seconds to minutes on realistic sample lengths.
 //! The transform is now an in-crate radix-2 FFT.
 //!

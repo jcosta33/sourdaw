@@ -78,9 +78,8 @@
 /.agents/          @sourdaw/team-platform
 
 # ─── Team 7: Rust Core ────────────────────────────────────────────────────────
-# Rust backend crates: audio engine, DSP, plugin host, I/O, Tauri bridge.
+# Rust backend crates: audio engine, DSP, plugin host, I/O, native addon.
 # RT-thread rules apply strictly — no allocation, no locks, no blocking on the
 # real-time audio path.
 
 /crates/           @sourdaw/team-rust-core
-/src-tauri/        @sourdaw/team-rust-core

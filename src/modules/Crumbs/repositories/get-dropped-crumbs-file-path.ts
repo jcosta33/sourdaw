@@ -1,5 +1,5 @@
 import { basename_from_path } from '#/utils/path-basename';
-import { writeFileBytes } from '#/utils/tauriBridge';
+import { writeFileBytes } from '#/utils/desktopBridge';
 
 const CRUMBS_DROP_TEMP_DIR = 'crumbs-drops';
 const FALLBACK_FILE_NAME = 'audio-file';

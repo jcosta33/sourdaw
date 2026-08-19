@@ -9,7 +9,7 @@ import { serializePluginLifecycle } from './serializePluginLifecycle';
  *
  * Runs on the instance's lifecycle tail so it never races an in-flight load or
  * unload. Returns '' when the instance carries no state — absent from the host,
- * browser dev mode (no Tauri), or an empty chunk — which callers treat as
+ * browser dev mode (no desktop bridge), or an empty chunk — which callers treat as
  * "preserve whatever chunk is already stored" rather than "clear it".
  */
 export function readPluginState(instanceId: string): Promise<string> {

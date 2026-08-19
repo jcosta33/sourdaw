@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 const mocks = vi.hoisted(() => ({
-    is_tauri: vi.fn(() => false),
+    is_desktop: vi.fn(() => false),
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: mocks.is_tauri,
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: mocks.is_desktop,
 }));
 
 import { type CapabilityReport, type InferenceThroughput } from '../../models/CapabilityReport';
@@ -91,7 +91,7 @@ describe('detectCapabilities', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         window.localStorage.clear();
-        mocks.is_tauri.mockReturnValue(false);
+        mocks.is_desktop.mockReturnValue(false);
         injectDependencies(detectCapabilities, {
             logger: create_logger_mock(),
             measureInferenceThroughput: vi
@@ -351,7 +351,7 @@ describe('detectCapabilities', () => {
         expect(measure).not.toHaveBeenCalled();
     });
 
-    it('should mark Tauri on macOS as an unsupported platform without probing', async () => {
+    it('should mark the desktop app on macOS as an unsupported platform without probing', async () => {
         install_supported_browser();
         Object.defineProperty(globalThis, 'navigator', {
             configurable: true,
@@ -362,7 +362,7 @@ describe('detectCapabilities', () => {
                 storage: { getDirectory: vi.fn() },
             },
         });
-        mocks.is_tauri.mockReturnValue(true);
+        mocks.is_desktop.mockReturnValue(true);
         const { measure } = install(measured(3));
 
         const report = await detectCapabilities({ measureInference: true });

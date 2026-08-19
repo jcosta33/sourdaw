@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
+import { writeFileBytes } from '#/utils/desktopBridge';
 
 import { writeNativeAudioMixdownFile } from '../writeNativeAudioMixdownFile';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    writeFileBytes: vi.fn(),
 }));
 
 describe('writeNativeAudioMixdownFile', () => {
     beforeEach(() => {
-        vi.mocked(invoke).mockReset();
+        vi.mocked(writeFileBytes).mockReset();
     });
 
     it('should replace the selected file extension for each native mixdown format write', async () => {
@@ -28,18 +28,13 @@ describe('writeNativeAudioMixdownFile', () => {
             selectedFilePath: '/exports/Sourdaw_Bake_1.wav',
         });
 
-        expect(invoke).toHaveBeenNthCalledWith(1, 'write_file_bytes', expect.any(ArrayBuffer), {
-            headers: { 'x-sourdaw-path': encodeURIComponent('/exports/Sourdaw_Bake_1.wav') },
+        expect(writeFileBytes).toHaveBeenNthCalledWith(1, {
+            bytes: wavBytes,
+            path: '/exports/Sourdaw_Bake_1.wav',
         });
-        expect(invoke).toHaveBeenNthCalledWith(2, 'write_file_bytes', expect.any(ArrayBuffer), {
-            headers: { 'x-sourdaw-path': encodeURIComponent('/exports/Sourdaw_Bake_1.mp3') },
+        expect(writeFileBytes).toHaveBeenNthCalledWith(2, {
+            bytes: mp3Bytes,
+            path: '/exports/Sourdaw_Bake_1.mp3',
         });
-
-        const [firstCall, secondCall] = vi.mocked(invoke).mock.calls as unknown as [string, ArrayBuffer][];
-        if (!firstCall || !secondCall) {
-            throw new Error('Expected two native mixdown writes');
-        }
-        expect(new Uint8Array(firstCall[1])).toEqual(wavBytes);
-        expect(new Uint8Array(secondCall[1])).toEqual(mp3Bytes);
     });
 });

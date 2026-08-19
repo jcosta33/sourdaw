@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invokeWithBinaryBody, isTauri, tauriInvoke, tauriListen } from '#/utils/tauriBridge';
+import { invokeWithBinaryBody, isDesktopRuntime, desktopInvoke, desktopListen } from '#/utils/desktopBridge';
 
 import { pushHardwareTransport } from '../pushHardwareTransport';
 
-vi.mock('#/utils/tauriBridge', () => ({
+vi.mock('#/utils/desktopBridge', () => ({
     invokeWithBinaryBody: vi.fn(),
-    isTauri: vi.fn(),
-    tauriInvoke: vi.fn(),
-    tauriListen: vi.fn(),
+    isDesktopRuntime: vi.fn(),
+    desktopInvoke: vi.fn(),
+    desktopListen: vi.fn(),
 }));
 
 const IDENTITY_REPLY = [
@@ -20,17 +20,17 @@ const MODE_REPLY = [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7] as con
 describe('pushHardwareTransport', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriListen).mockImplementation(() => Promise.resolve(() => undefined));
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopListen).mockImplementation(() => Promise.resolve(() => undefined));
         vi.mocked(invokeWithBinaryBody).mockResolvedValue();
-        vi.mocked(tauriInvoke).mockResolvedValue(undefined);
+        vi.mocked(desktopInvoke).mockResolvedValue(undefined);
         await pushHardwareTransport.disconnect();
         vi.clearAllMocks();
     });
 
     it('opens Push 2, completes identity and Live-mode handshakes, and writes the initial display frame', async () => {
         let receiveMidi: ((event: unknown) => void) | undefined;
-        vi.mocked(tauriListen).mockImplementation((event, handler) => {
+        vi.mocked(desktopListen).mockImplementation((event, handler) => {
             if (event === 'push-midi-message') {
                 receiveMidi = handler;
             }
@@ -65,7 +65,7 @@ describe('pushHardwareTransport', () => {
     it('routes Push 3 pad input and releases native/listener state on disconnect', async () => {
         const onMidiEvent = vi.fn();
         let receiveMidi: ((event: unknown) => void) | undefined;
-        vi.mocked(tauriListen).mockImplementation((event, handler) => {
+        vi.mocked(desktopListen).mockImplementation((event, handler) => {
             if (event === 'push-midi-message') {
                 receiveMidi = handler;
             }
@@ -73,9 +73,9 @@ describe('pushHardwareTransport', () => {
         });
         await pushHardwareTransport.connect({ model: 'push3', onMidiEvent, onDisconnect: vi.fn() });
         receiveMidi?.({ payload: { data: [0x90, 36, 100] } });
-        vi.mocked(tauriInvoke).mockRejectedValueOnce(new Error('close failed'));
+        vi.mocked(desktopInvoke).mockRejectedValueOnce(new Error('close failed'));
         await expect(pushHardwareTransport.disconnect()).rejects.toThrow('close failed');
-        vi.mocked(tauriInvoke).mockResolvedValue(undefined);
+        vi.mocked(desktopInvoke).mockResolvedValue(undefined);
         await pushHardwareTransport.connect({ model: 'push3', onMidiEvent, onDisconnect: vi.fn() });
 
         expect(onMidiEvent).toHaveBeenCalledWith({ kind: 'pad', note: 36, edge: 'pressed', velocity: 100 });
@@ -84,7 +84,7 @@ describe('pushHardwareTransport', () => {
     it('bounds a hung handshake send and still closes native state without a local session', async () => {
         vi.useFakeTimers();
         let receiveMidi: ((event: unknown) => void) | undefined;
-        vi.mocked(tauriListen)
+        vi.mocked(desktopListen)
             .mockImplementationOnce((_event, handler) => {
                 receiveMidi = handler;
                 return Promise.resolve(() => undefined);

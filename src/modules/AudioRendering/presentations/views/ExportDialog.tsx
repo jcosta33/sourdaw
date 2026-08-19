@@ -349,8 +349,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
 
-        let tauriDirPath: string | null = null;
-        let tauriFilePath: string | null = null;
+        let nativeDirPath: string | null = null;
+        let nativeFilePath: string | null = null;
 
         // This Handle uses the new FileSystem Access API
         let webFileHandle: WebFileHandle | null = null;
@@ -360,17 +360,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             try {
                 if (isNativeProjectRuntimeAvailable()) {
                     if (mode === 'stems') {
-                        tauriDirPath = await selectNativeAudioExportDirectory();
-                        if (!tauriDirPath) {
+                        nativeDirPath = await selectNativeAudioExportDirectory();
+                        if (!nativeDirPath) {
                             return;
                         } // User cancelled
                     } else {
                         const primaryExt = Array.from(formats)[0] || 'wav';
-                        tauriFilePath = await selectNativeAudioExportFile({
+                        nativeFilePath = await selectNativeAudioExportFile({
                             formats: Array.from(formats),
                             suggestedName: `${baseName}.${primaryExt}`,
                         });
-                        if (!tauriFilePath) {
+                        if (!nativeFilePath) {
                             return;
                         } // User cancelled
                     }
@@ -501,17 +501,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const finalFileName = `${name}.${freq}`;
 
                     if (isNativeProjectRuntimeAvailable()) {
-                        if (mode === 'stems' && tauriDirPath) {
+                        if (mode === 'stems' && nativeDirPath) {
                             await writeNativeAudioStemFile({
                                 bytes: uint8Data,
-                                directoryPath: tauriDirPath,
+                                directoryPath: nativeDirPath,
                                 fileName: finalFileName,
                             });
-                        } else if (tauriFilePath) {
+                        } else if (nativeFilePath) {
                             await writeNativeAudioMixdownFile({
                                 bytes: uint8Data,
                                 format: freq,
-                                selectedFilePath: tauriFilePath,
+                                selectedFilePath: nativeFilePath,
                             });
                         }
                     } else {

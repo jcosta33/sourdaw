@@ -1,7 +1,7 @@
 import {
     onDictationResult as onVoiceDictationResult,
     type DictationResult as NativeDictationResult,
-} from '../../repositories/voiceTauriAdapter/onDictationResult';
+} from '../../repositories/voiceNativeAdapter/onDictationResult';
 
 export type DictationResult = {
     text: string;

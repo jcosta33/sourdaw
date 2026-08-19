@@ -1,9 +1,9 @@
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type PluginInstance } from './types';
 
 export async function loadPlugin(pluginId: string, instanceId: string): Promise<PluginInstance> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return {
             instance_id: instanceId,
             plugin_id: pluginId,
@@ -15,5 +15,5 @@ export async function loadPlugin(pluginId: string, instanceId: string): Promise<
             engine_plugin_id: null,
         };
     }
-    return tauriInvoke('load_plugin', { pluginId, instanceId }) as Promise<PluginInstance>;
+    return desktopInvoke('load_plugin', { pluginId, instanceId }) as Promise<PluginInstance>;
 }

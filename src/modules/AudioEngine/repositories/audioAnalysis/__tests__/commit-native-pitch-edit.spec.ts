@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 import { commitNativePitchEdit } from '../commit-native-pitch-edit';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(() => true),
-    tauriInvoke: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(() => true),
+    desktopInvoke: vi.fn(),
 }));
 
 describe('commitNativePitchEdit', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
     });
 
     it('should invoke the native commit command with the pitch edit request', async () => {
@@ -26,7 +26,7 @@ describe('commitNativePitchEdit', () => {
             contour,
         });
 
-        expect(tauriInvoke).toHaveBeenCalledWith('commit_pitch_edit', {
+        expect(desktopInvoke).toHaveBeenCalledWith('commit_pitch_edit', {
             request: {
                 inputAudioPath: 'test.wav',
                 outputAudioPath: 'test_pitch.wav',
@@ -37,8 +37,8 @@ describe('commitNativePitchEdit', () => {
         expect(result).toBe(true);
     });
 
-    it('should return false without invoking native commit outside Tauri', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+    it('should return false without invoking native commit outside the desktop runtime', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
         const result = await commitNativePitchEdit({
             inputAudioPath: 'test.wav',
@@ -48,6 +48,6 @@ describe('commitNativePitchEdit', () => {
         });
 
         expect(result).toBe(false);
-        expect(tauriInvoke).not.toHaveBeenCalled();
+        expect(desktopInvoke).not.toHaveBeenCalled();
     });
 });

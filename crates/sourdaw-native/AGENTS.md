@@ -4,8 +4,8 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
 
 ## Shell independence
 
-- Nothing here may name a shell. No `tauri::*`, no `electron`, no IPC transport type. A body that needs to reach the host does it through a trait in `events.rs` or `host/` and the shell supplies the implementation.
-- Bodies take plain owned arguments and return plain owned results. Byte payloads are `&[u8]` / `Vec<u8>`; how they cross a wire is the shell's decision, and the shared validation for that decision lives in `commands/binary_ipc.rs`.
+- Nothing here may name a shell: no Tauri or Electron types, no IPC transport type. A body that needs to reach the host does it through a trait in `events.rs` or `host/` and the shell supplies the implementation.
+- Bodies take plain owned arguments and return plain owned results. Byte payloads are `&[u8]` / `Vec<u8>`; how they cross a wire is the shell's decision.
 - Host seams take **owned** payloads: an implementation may hand the value to another thread and outlive the caller's frame.
 - A shell adds a command by adding a body here and a wrapper there. The wrapper unwraps transport and calls the body; it never holds behaviour, and no command may exist in one shell only.
 - A shell's quit path calls `shutdown::shutdown` and never reassembles the cascade. Its three steps and their order are a contract: a shell that inlines them can silently drop one, and the sweep must follow the editor close because closing an editor is what retires a runtime.

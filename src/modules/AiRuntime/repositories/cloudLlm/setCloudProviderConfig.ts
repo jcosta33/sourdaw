@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type HostedLlmConfiguration } from '../../models/HostedLlmProvider';
 import { openProviderGatewaySession } from '../openProviderGatewaySession';
@@ -18,7 +18,7 @@ export const setCloudProviderConfig = inject({ logger })(
         async function setCloudProviderConfig(configuration: HostedLlmConfiguration): Promise<void> {
             let runtime: CloudProviderRuntime;
             if (configuration.provider === 'anthropic') {
-                if (!isTauri()) {
+                if (!isDesktopRuntime()) {
                     throw new Error('Hosted providers are available in desktop builds only');
                 }
                 runtime = {
@@ -44,7 +44,7 @@ export const setCloudProviderConfig = inject({ logger })(
                           origin: parsedBaseUrl.origin,
                       })
                     : null;
-                if (adapter !== null && !isTauri()) {
+                if (adapter !== null && !isDesktopRuntime()) {
                     throw new Error('Hosted providers are available in desktop builds only');
                 }
                 runtime = {

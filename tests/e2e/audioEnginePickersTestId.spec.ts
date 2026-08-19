@@ -7,9 +7,10 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 //
 // Closes a coverage gap: AudioEngine renders AudioDevicePicker, MidiDevicePicker,
 // PluginScanSettings, and PluginBrowser, but no E2E asserted a state change on
-// any of them. In a plain browser (Playwright Chromium, not Tauri) the
-// plugin-scanning surfaces gate on `hasPluginScanning` / `hasNativePlugins`
-// (Tauri-only) and render a disabled "Plugin scanning unavailable" empty state.
+// any of them. In a plain browser (Playwright Chromium, with no `window.sourdaw`
+// bridge installed) the plugin-scanning surfaces gate on `hasPluginScanning` /
+// `hasNativePlugins` (desktop-only) and render a disabled "Plugin scanning
+// unavailable" empty state.
 // MidiDevicePicker's branch depends on Web MIDI permission, which headless
 // Chromium denies; its render state is indeterminate there (neither the live
 // picker nor the unsupported empty state is reliably reached), so it is not
@@ -58,7 +59,7 @@ test.describe('AudioEngine pickers', () => {
     });
 
     test('Plugin scanning surfaces the desktop-only unavailable state', async ({ page }) => {
-        // hasPluginScanning is Tauri-only, so PluginScanSettings renders its
+        // hasPluginScanning is desktop-only, so PluginScanSettings renders its
         // disabled empty state in-browser. Assert the conditional copy that only
         // renders when scanning is unavailable — the inverse branch (the live
         // scan controls) would never show this title.

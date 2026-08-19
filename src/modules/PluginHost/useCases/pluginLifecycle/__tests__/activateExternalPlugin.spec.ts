@@ -255,7 +255,7 @@ describe('activateExternalPlugin', () => {
         activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-3', onLatencyMs: vi.fn() });
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(3));
 
-        // The Tauri event is a broadcast: one listener per instance would hand
+        // The native event is a broadcast: one listener per instance would hand
         // every listener every other plugin's changes. Counted outside vi.fn so
         // per-test clearAllMocks cannot hide an extra subscription.
         expect(subscribeCount).toBe(1);

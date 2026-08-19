@@ -157,7 +157,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     decodeAudioFile: vi.fn(),
     getCachedAudioBuffer: vi.fn(() => null),
     getCachedAudioBufferWaveformPeaks: vi.fn(() => new Float32Array([0.35, 0.15])),
-    isTauri: vi.fn(() => false),
+    isDesktopRuntime: vi.fn(() => false),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({

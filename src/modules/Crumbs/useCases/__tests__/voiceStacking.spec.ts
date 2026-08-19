@@ -43,7 +43,7 @@ const TRACK = 'track-A';
  * The voice-stack controls used to address the native `CrumbsInstance` only.
  *
  * `setCrumbsParamThrottled` reaches the sample-acquisition and disk-streaming
- * engine behind the `set_crumbs_param` Tauri command; the `crumbs-processor`
+ * engine behind the `set_crumbs_param` native command; the `crumbs-processor`
  * worklet in the track strip is a different object and received nothing. So the
  * assertions below are about **which** engine door each field goes through, and
  * a count of native pushes is deliberately not one of them — the old version of

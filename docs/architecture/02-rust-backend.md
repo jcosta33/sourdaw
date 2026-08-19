@@ -9,7 +9,7 @@ It explains:
 - what belongs in each crate
 - how DDD modules map to Rust modules
 - how the real-time boundary is enforced
-- what belongs in `src-tauri` and what absolutely does not
+- what belongs in `sourdaw-native` and what absolutely does not
 - how commands, relays, plugin hosting, and I/O should be structured
 
 This document is the source of truth for **Rust backend topology and runtime/backend responsibility boundaries**.
@@ -28,11 +28,11 @@ The backend exists to provide **native/runtime capabilities** without becoming t
 The most important rule is:
 
 ```text
-the audio engine knows nothing about Tauri
-and Tauri knows nothing about DSP
+the audio engine knows nothing about the desktop shell
+and the shell knows nothing about DSP
 ```
 
-Tauri is a bridge.
+`sourdaw-native` is a bridge.
 The audio engine is a runtime executor.
 The Rust backend should mirror the system architecture, not replace it.
 
@@ -44,14 +44,19 @@ The Rust backend should mirror the system architecture, not replace it.
 ┌────────────────────────── TypeScript UI ──────────────────────────┐
 │ views, hooks, actions, stores, projections                        │
 └──────────────────────────────┬────────────────────────────────────┘
-                               │ typed commands / channels / events
+                               │ typed commands / streams / events
                                ▼
-┌──────────────────────────── src-tauri ────────────────────────────┐
-│ thin bridge                                                        │
-│ - command handlers                                                 │
-│ - state wiring                                                     │
-│ - payload translation                                              │
-│ - relay of telemetry / progress / native notifications            │
+┌───────────────────── electron/ desktop shell ─────────────────────┐
+│ IPC router, preload bridge, event path, window lifecycle          │
+└──────────────────────────────┬────────────────────────────────────┘
+                               │ Node addon calls
+                               ▼
+┌────────────────────── crates/sourdaw-native ──────────────────────┐
+│ thin bridge                                                       │
+│ - command bodies                                                  │
+│ - singleton wiring and teardown order                             │
+│ - payload translation                                             │
+│ - host seams for events, streams, and plugin windows              │
 └───────────────┬─────────────────────────────┬─────────────────────┘
                 │                             │
                 │ depends on                  │ depends on
@@ -96,7 +101,7 @@ Typical Rust-side responsibilities include:
 - microphone/dictation pipelines when native support is better
 - long-running native tasks
 - native device/platform integration
-- the Tauri bridge
+- the desktop bridge
 - any real-time engine that is actually running in Rust
 
 The backend is **not** automatically the home of:
@@ -105,7 +110,7 @@ The backend is **not** automatically the home of:
 - project ownership semantics
 - arbitrary feature logic
 - UI orchestration
-- mutable project truth as a Tauri-owned singleton
+- mutable project truth as a shell-owned singleton
 
 ---
 
@@ -116,7 +121,7 @@ For a professional DAW backend, the sweet spot is usually **4–6 crates**.
 Not one monolith.
 Not 20 tiny crates.
 
-> **Sourdaw today:** 9 crates + `src-tauri` — the five below plus `daw-collab` (Automerge CRDT + LAN sync), `daw-wasm-decoder` (browser codec decode), `proof-chamber` (reverb), and `scoring` (tuner). The extra four exist to isolate WASM-only build targets and the collaboration stack. See `src-tauri/AGENTS.md` for the command inventory.
+> **Sourdaw today:** the five below plus `sourdaw-native` (the shell-facing command bodies and the Node addon that exposes them), `daw-collab` (Automerge CRDT + LAN sync), `daw-wasm-decoder` (browser codec decode), `proof-chamber` (reverb), and `scoring` (tuner). The extra crates exist to isolate WASM-only build targets, the collaboration stack, and the shell-facing surface. See `crates/sourdaw-native/AGENTS.md` for its boundary rules.
 
 A practical default is:
 
@@ -128,8 +133,9 @@ my-daw/
 │   ├── daw-engine/
 │   ├── daw-dsp/
 │   ├── daw-plugin-host/
-│   └── daw-io/
-└── src-tauri/
+│   ├── daw-io/
+│   └── sourdaw-native/        # command bodies + Node addon
+└── electron/                  # desktop shell
 ```
 
 ## 4.1 Why this is the right size
@@ -138,7 +144,7 @@ Too few crates causes:
 
 - giant compile units
 - poor dependency hygiene
-- Tauri creeping into core logic
+- shell concerns creeping into core logic
 - harder subsystem ownership
 
 Too many crates causes:
@@ -185,7 +191,7 @@ events.rs
 
 ### Bad contents
 
-- Tauri APIs
+- shell/IPC APIs
 - CPAL stream setup
 - plugin scanning
 - filesystem access
@@ -232,7 +238,7 @@ processors/
 
 This is where the hard RT boundary is enforced.
 
-The engine crate must not depend on Tauri.
+The engine crate must not depend on the desktop shell or its IPC.
 
 ---
 
@@ -255,7 +261,7 @@ Examples:
 
 It should not know about:
 
-- Tauri
+- the desktop shell
 - commands
 - UI
 - file dialogs
@@ -283,7 +289,7 @@ It contains:
 ### Rule
 
 Plugin hosting is a subsystem.
-Do not smear it across `src-tauri`, `daw-engine`, and random helpers.
+Do not smear it across `sourdaw-native`, `daw-engine`, and random helpers.
 
 It deserves its own crate because:
 
@@ -314,19 +320,18 @@ It is specifically for external/native I/O concerns that do not belong in the en
 
 ---
 
-## 5.6 `src-tauri`
+## 5.6 `sourdaw-native`
 
-This is the shell bridge.
+This is the shell-facing crate: the command bodies, plus the Node addon — behind the off-by-default
+`napi-addon` feature — that the Electron main process loads.
 
 It contains:
 
-- command handlers
-- Tauri builder setup
-- app state wiring
-- event/channel registration
-- relay code
+- command bodies, taking plain owned arguments and returning plain owned results
+- app state and singleton wiring, whose field order is the teardown order
+- host seams for events, streams, and plugin windows, implemented by the shell
 - API error translation
-- typed binding generation hooks (aspirational — no Specta export pipeline today; TS payload types are hand-maintained)
+- the addon registration that exposes the bodies to a shell
 
 It should not contain:
 
@@ -335,8 +340,11 @@ It should not contain:
 - plugin-host internals
 - engine internals
 - large business workflows
+- the name of any shell — no IPC transport type reaches this crate
 
-`src-tauri` is where the backend becomes a product shell, not where core backend logic should live.
+`sourdaw-native` is where the backend meets a product shell, not where core backend logic should
+live. The shell unwraps transport and calls a body; wire payload types are hand-maintained on both
+sides, because no binding generator runs.
 
 ---
 
@@ -464,7 +472,7 @@ On the RT path, never:
 - block
 - lock mutexes
 - perform filesystem/network I/O
-- call Tauri
+- call into the shell or its IPC
 - call UI code
 - parse/serialize data
 - open plugin windows
@@ -548,9 +556,9 @@ Why:
 
 ---
 
-## 10. Commands, channels, and relays
+## 10. Commands, streams, and relays
 
-## 10.1 Tauri commands
+## 10.1 Commands
 
 Use commands for explicit request/response operations.
 
@@ -566,7 +574,7 @@ Examples:
 
 ### Command rules
 
-Tauri commands should:
+Command bodies should:
 
 - extract typed input
 - access app state
@@ -575,9 +583,9 @@ Tauri commands should:
 
 They should not become the business layer.
 
-## 10.2 Tauri channels and relays
+## 10.2 Streams and relays
 
-Use channels/relays for streamed feedback.
+Use streams/relays for streamed feedback.
 
 Examples:
 
@@ -593,7 +601,7 @@ A relay exists to:
 
 - drain backend/runtime feedback
 - reshape it into frontend-safe payloads
-- push it outward over a Tauri-friendly mechanism
+- push it outward over a shell-friendly mechanism
 
 A relay is not the source of truth.
 
@@ -662,7 +670,7 @@ Project save/load, import/export, codec work, and filesystem integration should 
 
 Do not bury them inside:
 
-- Tauri commands
+- command bodies
 - engine code
 - UI bridge glue
 
@@ -678,7 +686,7 @@ They should be:
 
 ---
 
-## 13. App state in `src-tauri`
+## 13. App state in `sourdaw-native`
 
 The bridge usually needs one application state object.
 
@@ -743,9 +751,9 @@ The shell should translate internal failures into stable frontend-facing errors.
 
 ## 16. Testing strategy
 
-## 16.1 Test core logic outside Tauri
+## 16.1 Test core logic outside the shell
 
-The majority of correctness should be testable without booting Tauri.
+The majority of correctness should be testable without booting a desktop shell.
 
 Test directly in:
 
@@ -768,9 +776,9 @@ Where relevant, include tests/safeguards for:
 
 ## 16.3 Thin shell, thick core
 
-The closer code is to `src-tauri`, the less core correctness should depend on it.
+The closer code is to the shell boundary, the less core correctness should depend on it.
 
-Tauri command tests should mostly verify:
+Shell wrapper tests should mostly verify:
 
 - wiring
 - translation
@@ -823,48 +831,50 @@ my-daw/
 │   │       ├── instance.rs
 │   │       ├── clap_host.rs
 │   │       └── vst3_host.rs
-│   └── daw-io/
+│   ├── daw-io/
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── project_file.rs
+│   │       ├── audio_decode.rs
+│   │       ├── audio_encode.rs
+│   │       ├── midi_io.rs
+│   │       └── dictation.rs
+│   └── sourdaw-native/
 │       └── src/
 │           ├── lib.rs
-│           ├── project_file.rs
-│           ├── audio_decode.rs
-│           ├── audio_encode.rs
-│           ├── midi_io.rs
-│           └── dictation.rs
-└── src-tauri/
-    └── src/
-        ├── main.rs
-        ├── lib.rs
-        ├── state.rs
-        ├── error.rs
-        ├── relay.rs
-        └── commands/
-            ├── mod.rs
-            ├── project.rs
-            ├── transport.rs
-            ├── tracks.rs
-            ├── routing.rs
-            ├── plugins.rs
-            ├── midi.rs
-            └── automation.rs
+│           ├── state.rs
+│           ├── shutdown.rs
+│           ├── events.rs
+│           ├── addon/
+│           ├── host/
+│           └── commands/
+│               ├── mod.rs
+│               ├── plugins.rs
+│               ├── midi.rs
+│               └── filesystem.rs
+└── electron/
+    ├── main.ts
+    ├── preload.ts
+    ├── router.ts
+    └── commands.ts
 ```
 
 ---
 
 ## 18. What belongs where: quick lookup table
 
-| Problem                                        | Put it in            |
-| ---------------------------------------------- | -------------------- |
-| TrackId, ClipId, Beats, Decibels               | `daw-core`           |
-| Project state shape                            | `daw-core`           |
-| Engine handle and RT command protocol          | `daw-engine`         |
-| Audio-thread callback                          | `daw-engine`         |
-| Pure filter/reverb/compressor math             | `daw-dsp`            |
-| Plugin scanning/instantiation/editor lifecycle | `daw-plugin-host`    |
-| MIDI I/O / project files / codecs              | `daw-io`             |
-| Tauri command handlers                         | `src-tauri/commands` |
-| frontend-safe meter stream relay               | `src-tauri/relay`    |
-| app-wide native handles/managers               | `src-tauri/state`    |
+| Problem                                        | Put it in                 |
+| ---------------------------------------------- | ------------------------- |
+| TrackId, ClipId, Beats, Decibels               | `daw-core`                |
+| Project state shape                            | `daw-core`                |
+| Engine handle and RT command protocol          | `daw-engine`              |
+| Audio-thread callback                          | `daw-engine`              |
+| Pure filter/reverb/compressor math             | `daw-dsp`                 |
+| Plugin scanning/instantiation/editor lifecycle | `daw-plugin-host`         |
+| MIDI I/O / project files / codecs              | `daw-io`                  |
+| native command bodies                          | `sourdaw-native/commands` |
+| frontend-safe meter stream relay               | `sourdaw-native/events`   |
+| app-wide native handles/managers               | `sourdaw-native/state`    |
 
 ---
 
@@ -872,8 +882,8 @@ my-daw/
 
 | Anti-pattern                                         | Why it is bad                             | Preferred replacement                   |
 | ---------------------------------------------------- | ----------------------------------------- | --------------------------------------- |
-| Tauri command owns business workflow                 | shell becomes domain layer                | thin command, delegate inward           |
-| engine depends on Tauri                              | shell/runtime coupling                    | engine crate stays Tauri-free           |
+| command body owns business workflow                  | shell becomes domain layer                | thin command, delegate inward           |
+| engine depends on the shell                          | shell/runtime coupling                    | engine crate stays shell-free           |
 | one crate per DDD module                             | over-fragmentation                        | DDD modules as Rust modules, not crates |
 | RT callback allocates/locks/does I/O                 | violates RT boundary                      | precompute and use lock-free paths      |
 | plugin host logic scattered through shell and engine | weak subsystem ownership                  | dedicated plugin-host crate             |
@@ -889,8 +899,8 @@ my-daw/
 Before accepting Rust backend architecture work, verify:
 
 1. Is the crate split justified by runtime/dependency boundaries rather than aesthetics?
-2. Is `src-tauri` staying thin?
-3. Does the engine remain Tauri-free?
+2. Is `sourdaw-native` staying thin?
+3. Does the engine remain shell-free?
 4. Are DDD modules represented as Rust modules rather than too many crates?
 5. Is the RT boundary explicit and respected?
 6. Are commands/channels/relays used for the right kinds of communication?
@@ -907,7 +917,7 @@ The Rust backend should be shaped around a few core truths:
 
 - crates exist for runtime/dependency boundaries, not for every domain concept
 - DDD modules usually map to Rust modules, not separate crates
-- `src-tauri` is a bridge, not the business core
+- `sourdaw-native` is a bridge, not the business core
 - the engine is RT-sensitive and must stay isolated from shell concerns
 - plugin hosting and native I/O are subsystems, not random helpers
 - typed boundaries and narrow public APIs matter

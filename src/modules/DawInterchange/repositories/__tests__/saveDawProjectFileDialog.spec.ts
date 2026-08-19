@@ -1,39 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
+import { desktopSaveDialog, writeFileBytes } from '#/utils/desktopBridge';
 
 import { saveDawProjectFileDialog } from '../saveDawProjectFileDialog';
 import { writeDawProjectFile } from '../writeDawProjectFile';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-    save: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    desktopSaveDialog: vi.fn(),
+    writeFileBytes: vi.fn(),
 }));
 
 describe('DAWproject native repositories', () => {
     beforeEach(() => {
-        vi.mocked(invoke).mockReset();
-        vi.mocked(save).mockReset();
+        vi.mocked(desktopSaveDialog).mockReset();
+        vi.mocked(writeFileBytes).mockReset();
     });
 
     it('should request a DAWproject save path with the suggested file name', async () => {
-        vi.mocked(save).mockResolvedValue('/tmp/session.dawproject');
+        vi.mocked(desktopSaveDialog).mockResolvedValue('/tmp/session.dawproject');
 
         const result = await saveDawProjectFileDialog({ suggestedName: 'session.dawproject' });
 
         expect(result).toBe('/tmp/session.dawproject');
-        expect(save).toHaveBeenCalledWith({
+        expect(desktopSaveDialog).toHaveBeenCalledWith({
             defaultPath: 'session.dawproject',
             filters: [{ name: 'DAWproject', extensions: ['dawproject'] }],
         });
     });
 
     it('should return null when the native save dialog is cancelled', async () => {
-        vi.mocked(save).mockResolvedValue(null);
+        vi.mocked(desktopSaveDialog).mockResolvedValue(null);
 
         const result = await saveDawProjectFileDialog({ suggestedName: 'session.dawproject' });
 
@@ -45,11 +41,6 @@ describe('DAWproject native repositories', () => {
 
         await writeDawProjectFile({ filePath: '/tmp/session.dawproject', bytes });
 
-        expect(invoke).toHaveBeenCalledWith('write_file_bytes', expect.any(ArrayBuffer), {
-            headers: { 'x-sourdaw-path': encodeURIComponent('/tmp/session.dawproject') },
-        });
-
-        const [, body] = vi.mocked(invoke).mock.calls[0] as unknown as [string, ArrayBuffer];
-        expect(new Uint8Array(body)).toEqual(bytes);
+        expect(writeFileBytes).toHaveBeenCalledWith({ path: '/tmp/session.dawproject', bytes });
     });
 });

@@ -1,10 +1,10 @@
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 export async function invokeCommand(command: string, args?: Record<string, unknown>): Promise<unknown> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return null;
     }
 
-    const { tauriInvoke } = await import('#/utils/tauriBridge');
-    return tauriInvoke(command, args);
+    const { desktopInvoke } = await import('#/utils/desktopBridge');
+    return desktopInvoke(command, args);
 }

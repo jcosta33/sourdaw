@@ -39,12 +39,13 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
    folder), `no-models-repos-transformers-in-index`, `no-usecase-type-exports-on-index` (types
    cruise), and ESLint `sourdaw/no-usecase-repository-reexport`.
 
-3. **Adapter / bridge-file laundering.** A rule anchored only to the vendor package
-   (`/@tauri-apps/`) misses callers that reach the same capability _through_ a thin in-repo adapter.
-   → **Closed by** widening the rule's `to` target to the adapter itself: `tauri-ipc-only-in-repositories`
-   (`.dependency-cruiser.shared.cjs`) matches `(/@tauri-apps/ | ^src/utils/tauriBridge.ts$)`, so only
+3. **Adapter / bridge-file laundering.** A rule anchored only to a vendor package misses callers
+   that reach the same capability _through_ a thin in-repo adapter.
+   → **Closed by** widening the rule's `to` target to the adapter itself: `desktop-ipc-only-in-repositories`
+   (`.dependency-cruiser.shared.cjs`) matches `(/@tauri-apps/ | ^src/utils/desktopBridge.ts$)`, so only
    module-root `repositories/` and the exact bridge adapter may originate IPC; every other caller of
-   the bridge is now an error.
+   the bridge is now an error. The `@tauri-apps` half of that pattern outlived the shell it named and
+   stays as a reintroduction guard: the dependency is deleted, so any import of it anywhere is an error.
 
 4. **Rules anchored to a retired file layout.** A rule whose `from`/`to` regex points at a file
    shape that no longer exists (e.g. a module-root `index.ts`) silently never matches the real

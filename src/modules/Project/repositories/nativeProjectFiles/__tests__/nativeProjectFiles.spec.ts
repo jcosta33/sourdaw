@@ -1,21 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { writeFileBytes } from '#/utils/tauriBridge';
+import { writeFileBytes } from '#/utils/desktopBridge';
 
 import { getProjectDirectory } from '../getProjectDirectory';
-import { isTauriAvailable } from '../helpers';
+import { isNativeAvailable } from '../helpers';
 import { isNativeFileSystemAvailable } from '../isNativeFileSystemAvailable';
-import { tauriInvoke } from '../tauriInvoke';
+import { desktopInvoke } from '../desktopInvoke';
 
 vi.mock('../helpers', () => ({
-    isTauriAvailable: vi.fn(),
+    isNativeAvailable: vi.fn(),
 }));
 
-vi.mock('../tauriInvoke', () => ({
-    tauriInvoke: vi.fn(),
+vi.mock('../desktopInvoke', () => ({
+    desktopInvoke: vi.fn(),
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
+vi.mock('#/utils/desktopBridge', () => ({
     writeFileBytes: vi.fn(),
 }));
 
@@ -26,7 +26,7 @@ describe('nativeProjectFiles repository', () => {
 
     describe('getProjectDirectory', () => {
         it('should return the documents path and create the directory when it is absent', async () => {
-            vi.mocked(tauriInvoke).mockImplementation((cmd: string) => {
+            vi.mocked(desktopInvoke).mockImplementation((cmd: string) => {
                 if (cmd === 'get_home_dir') {
                     return Promise.resolve('/home/user');
                 }
@@ -40,8 +40,8 @@ describe('nativeProjectFiles repository', () => {
             const dir = await getProjectDirectory();
 
             expect(dir).toBe('/home/user/Documents/Sourdaw Projects');
-            expect(tauriInvoke).toHaveBeenCalledWith('get_home_dir');
-            expect(tauriInvoke).toHaveBeenCalledWith('list_directory', {
+            expect(desktopInvoke).toHaveBeenCalledWith('get_home_dir');
+            expect(desktopInvoke).toHaveBeenCalledWith('list_directory', {
                 path: '/home/user/Documents/Sourdaw Projects',
             });
             expect(writeFileBytes).toHaveBeenCalledWith({
@@ -54,7 +54,7 @@ describe('nativeProjectFiles repository', () => {
             // Regression: a plain "get" must not write on every call. Previously
             // getProjectDirectory unconditionally wrote a hidden .sourdaw-projects
             // marker as a side effect, mutating read-only / CI temp dirs.
-            vi.mocked(tauriInvoke).mockImplementation((cmd: string) => {
+            vi.mocked(desktopInvoke).mockImplementation((cmd: string) => {
                 if (cmd === 'get_home_dir') {
                     return Promise.resolve('/home/user' as never);
                 }
@@ -68,14 +68,14 @@ describe('nativeProjectFiles repository', () => {
             const dir = await getProjectDirectory();
 
             expect(dir).toBe('/home/user/Documents/Sourdaw Projects');
-            expect(tauriInvoke).toHaveBeenCalledWith('list_directory', {
+            expect(desktopInvoke).toHaveBeenCalledWith('list_directory', {
                 path: '/home/user/Documents/Sourdaw Projects',
             });
             expect(writeFileBytes).not.toHaveBeenCalled();
         });
 
         it('should fallback to /tmp if home dir fails', async () => {
-            vi.mocked(tauriInvoke).mockRejectedValue(new Error('fail'));
+            vi.mocked(desktopInvoke).mockRejectedValue(new Error('fail'));
 
             const dir = await getProjectDirectory();
             expect(dir).toBe('/tmp/Documents/Sourdaw Projects');
@@ -83,13 +83,13 @@ describe('nativeProjectFiles repository', () => {
     });
 
     describe('isNativeFileSystemAvailable', () => {
-        it('should return true if in Tauri', () => {
-            vi.mocked(isTauriAvailable).mockReturnValue(true);
+        it('should return true if in the desktop app', () => {
+            vi.mocked(isNativeAvailable).mockReturnValue(true);
             expect(isNativeFileSystemAvailable()).toBe(true);
         });
 
-        it('should return false if not in Tauri', () => {
-            vi.mocked(isTauriAvailable).mockReturnValue(false);
+        it('should return false if not in the desktop app', () => {
+            vi.mocked(isNativeAvailable).mockReturnValue(false);
             expect(isNativeFileSystemAvailable()).toBe(false);
         });
     });

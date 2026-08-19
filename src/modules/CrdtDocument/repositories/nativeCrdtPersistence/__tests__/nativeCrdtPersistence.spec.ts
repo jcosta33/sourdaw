@@ -17,21 +17,23 @@ describe('nativeCrdtPersistence repository', () => {
         vi.clearAllMocks();
     });
 
-    it('nativeApplyChange should call tauri invoke', async () => {
+    it('nativeApplyChange should pass the change bytes through untouched', async () => {
         vi.mocked(invokeCommand).mockResolvedValue(true);
-        const result = await nativeApplyChange('doc1', new Uint8Array([1, 2, 3]));
-        expect(invokeCommand).toHaveBeenCalledWith('collab_apply_change', { docId: 'doc1', changeBytes: [1, 2, 3] });
+        const changeBytes = new Uint8Array([1, 2, 3]);
+        const result = await nativeApplyChange('doc1', changeBytes);
+        expect(invokeCommand).toHaveBeenCalledWith('collab_apply_change', { docId: 'doc1', changeBytes });
+        expect(vi.mocked(invokeCommand).mock.calls[0]?.[1]?.changeBytes).toBe(changeBytes);
         expect(result).toBe(true);
     });
 
-    it('nativeCreateProject should call tauri invoke', async () => {
+    it('nativeCreateProject should call the desktop invoke seam', async () => {
         vi.mocked(invokeCommand).mockResolvedValue(true);
         const result = await nativeCreateProject('My Project', 48000);
         expect(invokeCommand).toHaveBeenCalledWith('collab_create_project', { name: 'My Project', sampleRate: 48000 });
         expect(result).toBe(true);
     });
 
-    it('nativeGetDocumentState should call tauri invoke', async () => {
+    it('nativeGetDocumentState should call the desktop invoke seam', async () => {
         vi.mocked(invokeCommand).mockResolvedValue({ some: 'data' });
         const result = await nativeGetDocumentState('doc1');
         expect(invokeCommand).toHaveBeenCalledWith('collab_get_document_state', { docId: 'doc1' });
@@ -44,7 +46,7 @@ describe('nativeCrdtPersistence repository', () => {
         expect(result).toBeNull();
     });
 
-    it('nativeLoadBundle should call tauri invoke and map to DocumentBundle', async () => {
+    it('nativeLoadBundle should call the desktop invoke seam and map to DocumentBundle', async () => {
         vi.mocked(invokeCommand).mockResolvedValue({
             doc1: [1, 2],
             doc2: [3, 4],
@@ -61,7 +63,7 @@ describe('nativeCrdtPersistence repository', () => {
         expect(bundle).toBeNull();
     });
 
-    it('nativeMergeBundle should call tauri invoke', async () => {
+    it('nativeMergeBundle should call the desktop invoke seam', async () => {
         const mockResult = { mergedDocIds: ['doc1'], newDocIds: ['doc2'] };
         vi.mocked(invokeCommand).mockResolvedValue(mockResult);
         const bundle = await nativeMergeBundle('/path/test.sdaw');
@@ -69,7 +71,7 @@ describe('nativeCrdtPersistence repository', () => {
         expect(bundle).toEqual(mockResult);
     });
 
-    it('nativeSaveBundle should call tauri invoke', async () => {
+    it('nativeSaveBundle should call the desktop invoke seam', async () => {
         vi.mocked(invokeCommand).mockResolvedValue(true);
         const result = await nativeSaveBundle('/path/test.sdaw');
         expect(invokeCommand).toHaveBeenCalledWith('collab_save_bundle', { path: '/path/test.sdaw' });

@@ -28,14 +28,14 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
  *
  * The document-level directives — `script-src`, `style-src`, `worker-src`,
  * `object-src`, `base-uri`, `frame-src`, `form-action` — are held identical to
- * the ones the Tauri config ships, on purpose: both shells load the same web
- * build, so a difference there is a behavioural difference inside one
- * application. The origin-level and connection-level directives are this
- * shell's own decision, because the two shells do not have the same origins and
- * do not make the same requests.
+ * the ones the Tauri-era config shipped, on purpose: the renderer is the same
+ * web build across the shell change, so a difference there is a behavioural
+ * difference inside one application. The origin-level and connection-level
+ * directives are this shell's own decision, because the two shells did not
+ * have the same origins and did not make the same requests.
  *
- * `ipc:` / `http://ipc.localhost` name Tauri's IPC transport and `asset:` /
- * `http://asset.localhost` name Tauri's asset protocol. Neither exists in the
+ * `ipc:` / `http://ipc.localhost` named Tauri's IPC transport and `asset:` /
+ * `http://asset.localhost` named its asset protocol. Neither exists in the
  * Electron shell — the shell serves everything from this origin, which `'self'`
  * already covers — so carrying them here would widen the policy past what any
  * request can use.

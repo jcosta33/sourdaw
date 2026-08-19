@@ -1,9 +1,8 @@
 /**
  * The webview security boundary of the Electron shell (AC-003).
  *
- * The port of `src/utils/__tests__/agentWebviewSecurity.spec.ts`. That spec
- * pins the Tauri capability; this one pins the four things the Electron shell
- * decides for itself and that are each silent when wrong:
+ * Pins the four things the Electron shell decides for itself and that are
+ * each silent when wrong:
  *
  * - the Content-Security-Policy every `app://` response carries — both the
  *   policy string and its attachment, driven through the registered handler,
@@ -16,7 +15,7 @@
  * The command sets are pinned in `commands.spec.ts`, where they are re-derived
  * from Rust.
  */
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -55,6 +54,25 @@ const parseCsp = (policy: string): Map<string, string[]> => {
     return directives;
 };
 
+/** Every production TypeScript source under a directory, concatenated. */
+const readProductionTypescript = (directory: string): string =>
+    readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.name !== '__tests__')
+        .flatMap((entry) => {
+            const path = join(directory, entry.name);
+            if (entry.isDirectory()) {
+                return [readProductionTypescript(path)];
+            }
+            if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) {
+                return [];
+            }
+            if (entry.name.includes('.spec.') || entry.name.includes('.stories.') || entry.name.includes('.e2e.')) {
+                return [];
+            }
+            return [readFileSync(path, 'utf8')];
+        })
+        .join('\n');
+
 describe('the production Content-Security-Policy', () => {
     const directives = parseCsp(PRODUCTION_CSP);
 
@@ -88,6 +106,10 @@ describe('the production Content-Security-Policy', () => {
         expect([...directives.values()].flat()).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('http:');
         expect([...directives.values()].flat()).not.toContain('ws:');
+        // `worker-src 'self'` refuses a blob: worker at runtime, on a machine
+        // in front of a musician. This scan fails the same mistake at test
+        // time instead.
+        expect(readProductionTypescript('src')).not.toMatch(/new\s+Worker\s*\(\s*URL\.createObjectURL/gu);
     });
 
     it('closes the directives an injected document would reach for', () => {

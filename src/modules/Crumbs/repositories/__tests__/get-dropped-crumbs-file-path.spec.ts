@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     writeFileBytes: vi.fn<(input: { bytes: Uint8Array; path: string }) => Promise<void>>(),
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
+vi.mock('#/utils/desktopBridge', () => ({
     writeFileBytes: mocks.writeFileBytes,
 }));
 

@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type MidiInputInfo, type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
@@ -7,15 +7,15 @@ import { getState } from '../getState';
 import { readPersistedInputId } from '../readPersistedInputId';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
-import { setTauriMode } from '../setTauriMode';
+import { setNativeMode } from '../setNativeMode';
 // Side-effect: registers the store sync subscription before any setState below.
 import '../store';
 
 import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
-import { listTauriMidiInputs } from './listTauriMidiInputs';
-import { resolveTauriMidiPort } from './resolveTauriMidiPort';
-import { selectMidiInputTauri } from './selectMidiInputTauri';
+import { listNativeMidiInputs } from './listNativeMidiInputs';
+import { resolveNativeMidiPort } from './resolveNativeMidiPort';
+import { selectMidiInputNative } from './selectMidiInputNative';
 
 type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
 
@@ -127,14 +127,14 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
 
             return true;
         } catch (error) {
-            logger.warn('[MIDI] Web MIDI failed, trying Tauri fallback:', error);
+            logger.warn('[MIDI] Web MIDI failed, trying native fallback:', error);
         }
     }
 
-    if (isTauri()) {
+    if (isDesktopRuntime()) {
         try {
-            setTauriMode(true);
-            const ports = await listTauriMidiInputs();
+            setNativeMode(true);
+            const ports = await listNativeMidiInputs();
             const inputs: MidiInputInfo[] = ports.map((port) => ({
                 id: port.id,
                 name: port.name,
@@ -145,7 +145,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
             if (ports.length > 0) {
                 // Always (re-)open: covers first load AND re-init after app
                 // restart where selectedInputId is persisted in localStorage but
-                // the Tauri IPC port has NOT been opened yet for this session.
+                // the native IPC port has NOT been opened yet for this session.
                 //
                 // Saved preference first, for the same reason as the Web MIDI
                 // branch: live state can hold an earlier init's stand-in.
@@ -154,9 +154,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 // device is unplugged or the id predates stable identity and is
                 // still a bare enumeration index. Either way it resolves to
                 // nothing rather than to whoever holds that slot now.
-                const targetPort = resolveTauriMidiPort(ports, targetId) ?? ports[0]!;
+                const targetPort = resolveNativeMidiPort(ports, targetId) ?? ports[0]!;
                 try {
-                    await selectMidiInputTauri({
+                    await selectMidiInputNative({
                         portIndex: targetPort.portIndex,
                         portName: targetPort.name,
                         onMidiMessage,
@@ -173,7 +173,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
 
             return true;
         } catch (error) {
-            logger.warn('[MIDI] Tauri MIDI init failed:', error);
+            logger.warn('[MIDI] Native MIDI init failed:', error);
             setState({ isSupported: false });
             return false;
         }

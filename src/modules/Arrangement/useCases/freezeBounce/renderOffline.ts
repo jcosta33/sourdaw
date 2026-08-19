@@ -64,7 +64,7 @@ export type RenderOfflineOptions = {
      * sound, and a bounced buffer becomes a project clip that later enters
      * exports — so a device the chain could not build is baked in as a
      * permanent absence. Freezing a track carrying a third-party plugin, which
-     * is hosted live under Tauri, writes a buffer without it. Every export path
+     * is hosted live in the desktop app, writes a buffer without it. Every export path
      * routes this to the user; before this default, freeze and bounce sent it
      * to `logger.warn` and stopped, because `renderTrackSubgraphOffline` took
      * an `onWarning` no caller here could supply.

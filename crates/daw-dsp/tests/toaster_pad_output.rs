@@ -719,7 +719,8 @@ fn sending_choke_group_zero_clears_an_existing_grouping() {
 /// either lose the hat pair or group every cymbal with it.
 #[test]
 fn the_construction_default_groups_the_hi_hat_pair_and_nothing_else() {
-    let hat_alone = tap_energy_after_second_hit(|engine| engine.set_pad_param(2, "decay", 1.0), 2, None, 16);
+    let hat_alone =
+        tap_energy_after_second_hit(|engine| engine.set_pad_param(2, "decay", 1.0), 2, None, 16);
     let hat_choked = tap_energy_after_second_hit(
         |engine| engine.set_pad_param(2, "decay", 1.0),
         2,
@@ -735,7 +736,12 @@ fn the_construction_default_groups_the_hi_hat_pair_and_nothing_else() {
         if other == 2 || other == 3 {
             continue;
         }
-        let alone = tap_energy_after_second_hit(|engine| engine.set_pad_param(other, "decay", 1.0), other, None, 16);
+        let alone = tap_energy_after_second_hit(
+            |engine| engine.set_pad_param(other, "decay", 1.0),
+            other,
+            None,
+            16,
+        );
         let with_neighbour = tap_energy_after_second_hit(
             |engine| engine.set_pad_param(other, "decay", 1.0),
             other,

@@ -50,8 +50,8 @@ class NativePluginHostProcessor extends AudioWorkletProcessor {
             flatInput.set(inputBuffer[ch], ch * numSamples);
         }
 
-        // Send over the port. Using web workers, we post the message.
-        // We expect the main thread to handle the Tauri IPC call since worklets don't have access to the Tauri API directly.
+        // Send over the port. The main thread owns the desktop IPC hop —
+        // worklets have no access to the desktop bridge.
         this.port.postMessage(
             {
                 type: 'process',

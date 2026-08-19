@@ -2,7 +2,7 @@ import { type LibraryRoot } from '../../models/LibraryTypes';
 
 /**
  * Map a thrown scan error to a library-root status and a user-facing message.
- * The File System Access / Tauri FS layers surface failure modes as DOMException
+ * The File System Access / native FS layers surface failure modes as DOMException
  * names (or plain Errors); we distinguish the actionable ones so a revoked-
  * permission folder is not silently reported as merely "offline".
  */
