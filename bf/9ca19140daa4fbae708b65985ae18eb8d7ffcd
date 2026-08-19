@@ -1,0 +1,65 @@
+crates/proof-chamber/src/decay_eq.rs
+  s_ab5443e65c7fba::t_62041d421634be 140-159
+crates/proof-chamber/src/proof_chamber.rs
+  s_ab5443e65c7fba::t_77d16d1979cfdd 287-290,293-298
+  s_ab5443e65c7fba::t_551456470d316a 265-284
+  s_ab5443e65c7fba::t_c335f063f60ba8 326,330-332
+  s_ab5443e65c7fba::t_3cacd3216a714d 445-454
+  s_ab5443e65c7fba::t_5c8bb957940fbc 385-390
+  s_487e9aa1e46063::t_8745018276857a 458
+  s_ab5443e65c7fba::t_4b10fe67aae518 11
+  s_487e9aa1e46063::t_3815b344a1691a 424-438
+  s_ab5443e65c7fba::t_41ce7aca828280 291-292
+  s_ab5443e65c7fba::t_98f83362c29d57 383-384,391-405
+  s_ab5443e65c7fba::t_1d810a0d9546f6 413-415
+  s_487e9aa1e46063::t_33381c50acfcdb 370-377
+  s_ab5443e65c7fba::t_91c00f1870bcb3 320-323,325,327-329,333,336
+  s_487e9aa1e46063::t_43453a05fe3847 416
+crates/proof-chamber/tests/plate_shimmer_render_contract.rs
+  s_ab5443e65c7fba::t_6b3ae156810d56 255-263
+  s_487e9aa1e46063::t_2cce4591cd8be4 36-39
+  s_ab5443e65c7fba::t_9faa80ed5bd954 165,169,180-181,183-184,187-188
+  s_ab5443e65c7fba::t_57d99e863de681 248,250-254
+  s_ab5443e65c7fba::t_f0a3b59af17f4a 208-209
+  s_ab5443e65c7fba::t_31622452787612 121
+  s_ab5443e65c7fba::t_4c1aeb097926a0 95
+  s_ab5443e65c7fba::t_babf61312cc617 77-86
+  s_ab5443e65c7fba::t_4a83fabe572ae8 204-205
+  s_ab5443e65c7fba::t_419b1834c8ee40 243-247,249,264-286,290-292,297-301
+  s_ab5443e65c7fba::t_be61f820d71ae4 287
+  s_ab5443e65c7fba::t_b8dc1ca8e522b2 288-289,293-296
+  s_ab5443e65c7fba::t_77ec39a471c37c 162-164,166-168,170-179,182,185-186
+  s_487e9aa1e46063::t_e320ba0d23877c 302
+public/wasm/manifest.json
+  s_487e9aa1e46063::t_32e32aff5d5028 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_487e9aa1e46063::t_53519c88cf18a9 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_487e9aa1e46063::t_0667aaf38c108d 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_487e9aa1e46063::t_2dd34eab80febd 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bf9ca19140daa4fbae708b65985ae18eb8d7ffcd",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
