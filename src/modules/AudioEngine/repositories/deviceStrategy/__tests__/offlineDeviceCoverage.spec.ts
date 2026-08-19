@@ -96,11 +96,11 @@ const NO_OFFLINE_IMPLEMENTATION = UNRENDERABLE_CATALOG_DEVICE_TYPES;
  * from a browser build, and the native runtime is the superset.
  */
 function readFullDeviceCatalog(): string[] {
-    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    Object.defineProperty(window, 'sourdaw', { value: {}, configurable: true });
     try {
         return getPlatformPlugins().map((descriptor) => descriptor.id);
     } finally {
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+        Reflect.deleteProperty(window, 'sourdaw');
     }
 }
 

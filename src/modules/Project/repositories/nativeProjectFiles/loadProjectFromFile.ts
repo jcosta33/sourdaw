@@ -1,8 +1,8 @@
-import { readFileBytes } from '#/utils/tauriBridge';
+import { readFileBytes } from '#/utils/desktopBridge';
 
 import { type ProjectData } from '../../models/ProjectData';
 
-import { isTauriAvailable } from './helpers';
+import { isNativeAvailable } from './helpers';
 
 /**
  * Load a project from the native filesystem.
@@ -11,8 +11,8 @@ import { isTauriAvailable } from './helpers';
  * @returns Parsed project state
  */
 export async function loadProjectFromFile(path: string): Promise<ProjectData> {
-    if (!isTauriAvailable()) {
-        throw new Error('Tauri not available');
+    if (!isNativeAvailable()) {
+        throw new Error('Sourdaw desktop bridge is not available');
     }
     const bytes = await readFileBytes({ path });
     const json = new TextDecoder().decode(bytes);

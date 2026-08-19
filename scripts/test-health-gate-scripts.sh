@@ -228,8 +228,8 @@ printf '%s\n' \
     'npm test' \
     'npm run build' \
     'cargo fmt --all --check' \
-    'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
-    'cargo test --workspace --exclude sourdaw --all-features' \
+    'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'cargo test --workspace --exclude sourdaw-native --all-features' \
     > "$temp_root/expected-server-success.log"
 diff -u "$temp_root/expected-server-success.log" "$temp_root/server-success.log"
 
@@ -278,7 +278,7 @@ printf '%s\n' \
     'npm test' \
     'npm run build' \
     'cargo fmt --all --check' \
-    'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
+    'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
     > "$temp_root/expected-cargo-clippy-failure.log"
 diff -u "$temp_root/expected-cargo-clippy-failure.log" "$temp_root/cargo-clippy-failure.log"
 

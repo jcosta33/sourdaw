@@ -10,8 +10,8 @@ const MODULE_ROOT = '^(src/modules/(?:Common/|Supporting/)?)([^/]+)/';
 
 const MODULE_REPOSITORY_ROOT =
     '^src/modules/(?:Common/|Supporting/)?[^/]+/repositories(?:/|$)';
-const TAURI_BRIDGE_PATH = '^src/utils/tauriBridge\\.ts$';
-const TAURI_BRIDGE_TEST_PATH = '^src/utils/__tests__/tauriBridge\\.spec\\.ts$';
+const DESKTOP_BRIDGE_PATH = '^src/utils/desktopBridge\\.ts$';
+const DESKTOP_BRIDGE_TEST_PATH = '^src/utils/__tests__/desktopBridge\\.spec\\.ts$';
 const MODEL_PATH_PREFIX = '^(?:src/modules/(?:Common/|Supporting/)?[^/]+/models/)';
 
 // A model path is valid only when every segment starts with an uppercase
@@ -24,23 +24,24 @@ const MODEL_TEST_SUPPORT_PATH =
     `${MODEL_PATH_PREFIX}(?:__tests__|.*\\/__tests__)(?:/|$)`;
 const MODEL_SUPPORT_BARREL_PATH = `${MODEL_PATH_PREFIX}index\\.ts$`;
 
-const TAURI_IPC_ONLY_IN_REPOSITORIES = {
-    name: 'tauri-ipc-only-in-repositories',
+const DESKTOP_IPC_ONLY_IN_REPOSITORIES = {
+    name: 'desktop-ipc-only-in-repositories',
     severity: 'error',
     comment:
-        'Tauri IPC (invoke, listen, Channel APIs) may only originate from module-root repositories or the exact ' +
-        'src/utils/tauriBridge.ts adapter. All other src/** origins and bridge callers are forbidden, including ' +
-        'nested useCases/repositories and presentations/repositories paths.',
+        'Desktop IPC (invoke, listen, channel APIs) may only originate from module-root repositories or the exact ' +
+        'src/utils/desktopBridge.ts adapter. All other src/** origins and bridge callers are forbidden, including ' +
+        'nested useCases/repositories and presentations/repositories paths. The @tauri-apps pattern stays as a ' +
+        'reintroduction guard: the dependency is deleted, and any import of it anywhere is an error.',
     from: {
         path: '^src/.+' + SOURCE_FILE_RE,
         // The main cruise excludes specs. The test-inclusive cruise permits
         // only this exact adapter spec to mock the adapter's own dependencies;
         // it is not a general test exemption. Other test origins remain
         // constrained.
-        pathNot: [MODULE_REPOSITORY_ROOT, TAURI_BRIDGE_PATH, TAURI_BRIDGE_TEST_PATH],
+        pathNot: [MODULE_REPOSITORY_ROOT, DESKTOP_BRIDGE_PATH, DESKTOP_BRIDGE_TEST_PATH],
     },
     to: {
-        path: `(/@tauri-apps/|${TAURI_BRIDGE_PATH})`,
+        path: `(/@tauri-apps/|${DESKTOP_BRIDGE_PATH})`,
     },
 };
 
@@ -67,5 +68,5 @@ module.exports = {
     SOURCE_FILE_RE,
     SPEC_FILE_RE,
     STORY_FILE_RE,
-    TAURI_IPC_ONLY_IN_REPOSITORIES,
+    DESKTOP_IPC_ONLY_IN_REPOSITORIES,
 };

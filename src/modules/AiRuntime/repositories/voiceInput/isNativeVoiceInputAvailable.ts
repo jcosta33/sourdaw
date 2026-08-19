@@ -1,5 +1,5 @@
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 export function isNativeVoiceInputAvailable(): boolean {
-    return isTauri();
+    return isDesktopRuntime();
 }

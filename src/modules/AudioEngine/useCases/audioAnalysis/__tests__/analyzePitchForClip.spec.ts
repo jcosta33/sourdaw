@@ -63,7 +63,7 @@ describe('analyzePitchForClip', () => {
         expect(onStart).not.toHaveBeenCalled();
     });
 
-    it('analyzes natively and forwards progress in Tauri mode', async () => {
+    it('analyzes natively and forwards progress in desktop mode', async () => {
         const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
 
         let resolveAnalyzeNativePitch: (contour: typeof mockContour) => void = () => {};

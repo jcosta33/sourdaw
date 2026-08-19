@@ -19,7 +19,7 @@ const CRUMBS_DESCRIPTOR_DATA: PluginDescriptor = {
     // graph and an offline export. What remains native is getting a sample into
     // it. Every step of that — the file dialog, `load_sample`, the waveform
     // mipmap, onset detection, pitch detection, threshold recording — is a
-    // `crumbs_*` Tauri command with no browser counterpart, and
+    // `crumbs_*` native command with no browser counterpart, and
     // `isCrumbsNativeAvailable` refuses the drop path outright off desktop.
     // Offering Crumbs in a browser build would offer a sampler that can never be
     // given a sample. Retire this when sample acquisition has a web path, not

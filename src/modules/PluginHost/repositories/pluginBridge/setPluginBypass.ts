@@ -1,4 +1,4 @@
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
 type SetPluginBypassInput = {
     instanceId: string;
@@ -6,8 +6,8 @@ type SetPluginBypassInput = {
 };
 
 export async function setPluginBypass(input: SetPluginBypassInput): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('set_plugin_bypass', input);
+    await desktopInvoke('set_plugin_bypass', input);
 }

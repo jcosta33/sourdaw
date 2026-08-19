@@ -10,8 +10,8 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 // Realism note: unlike the AI sub-tab (which needs a downloaded on-device
 // model), the Patterns sub-tab generates notes from `PATTERN_TEMPLATES` — a set
 // of pure, deterministic JS generators (see PatternBrowser.tsx →
-// `template.generate(genParams)`). No model download, WebGPU, or Tauri IPC is
-// involved, so the insert flow runs identically in the headless browser.
+// `template.generate(genParams)`). No model download, WebGPU, or desktop IPC
+// is involved, so the insert flow runs identically in the headless browser.
 
 test.describe('AiGeneration — pattern insert', () => {
     test('inserting a pattern card raises a success toast and creates a clip', async ({ page }) => {

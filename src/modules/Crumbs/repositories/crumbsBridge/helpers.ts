@@ -1,7 +1,7 @@
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
-export function ensureTauri(command: string): void {
-    if (!isTauri()) {
+export function ensureNative(command: string): void {
+    if (!isDesktopRuntime()) {
         throw new Error(`Crumbs IPC "${command}" is only available in the Sourdaw desktop app`);
     }
 }

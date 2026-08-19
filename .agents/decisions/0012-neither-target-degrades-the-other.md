@@ -90,7 +90,9 @@ the two targets relate, not which shell the desktop build uses.
 
 ## Status
 
-accepted
+accepted — packaging deferral resolved by [ADR 0029](0029-electron-desktop-shell.md) (2026-08-19):
+the desktop shell is Electron, so every shipped renderer is Chromium. The parity principle in this
+ADR stands unchanged.
 
 ## Affected requirements
 

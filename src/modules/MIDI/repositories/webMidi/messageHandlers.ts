@@ -44,7 +44,7 @@ type ParsedWebMidiMessage = ParsedWebMidiMessageBody & {
      * `performance.now()` origin. Carried so a handler can place the event at
      * the instant it was played rather than the instant it was processed
      * (audit MD-1). `undefined` when the source supplies no timestamp — the
-     * Tauri bridge forwards raw bytes only.
+     * native bridge forwards raw bytes only.
      */
     timeStamp: number | undefined;
 };

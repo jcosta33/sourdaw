@@ -44,7 +44,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import {
     type BrowserAiCapability,
@@ -64,14 +64,15 @@ const FAST_REALTIME_FACTOR = 1;
 const USABLE_REALTIME_FACTOR = 0.2;
 
 /**
- * Determine if we're running in Tauri on macOS or Linux,
- * where WKWebView/WebKitGTK doesn't support WebGPU.
+ * Determine if we're running in the desktop app on macOS or Linux. The gate was
+ * introduced for the old Tauri shell, whose WKWebView/WebKitGTK webviews had no
+ * WebGPU.
  */
-function isTauriNonWindowsPlatform(): boolean {
-    if (!isTauri()) {
+function isDesktopNonWindowsPlatform(): boolean {
+    if (!isDesktopRuntime()) {
         return false;
     }
-    // In Tauri, navigator.platform reports the OS
+    // In the desktop app, navigator.platform reports the host OS
     const platform = navigator.platform.toLowerCase();
     return platform.includes('mac') || platform.includes('linux');
 }
@@ -255,9 +256,9 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
             let capability: BrowserAiCapability;
             let inference: InferenceThroughput = { status: 'not-measured', reason: 'not-requested' };
 
-            if (isTauriNonWindowsPlatform()) {
+            if (isDesktopNonWindowsPlatform()) {
                 capability = 'unsupported-platform';
-                logger.info('[BrowserAi] Running in Tauri on macOS/Linux — browser AI disabled');
+                logger.info('[BrowserAi] Running in the desktop app on macOS/Linux — browser AI disabled');
             } else if (!chromeVersion) {
                 capability = 'unsupported-browser';
                 logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');

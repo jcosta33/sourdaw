@@ -51,7 +51,7 @@ const {
     SOURCE_FILE_RE,
     SPEC_FILE_RE,
     STORY_FILE_RE,
-    TAURI_IPC_ONLY_IN_REPOSITORIES,
+    DESKTOP_IPC_ONLY_IN_REPOSITORIES,
 } = require('./.dependency-cruiser.shared.cjs');
 
 // Private presentation subfolders
@@ -600,14 +600,14 @@ module.exports = {
         },
 
         {
-            name: 'worklets-no-app-helper-or-tauri',
+            name: 'worklets-no-app-helper-or-desktop-ipc',
             severity: 'error',
-            comment: 'Worklets must not depend on application/, src/helpers/, or Tauri APIs.',
+            comment: 'Worklets must not depend on application/, src/helpers/, or desktop IPC.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^(application/|src/helpers/)|/@tauri-apps/',
+                path: '^(application/|src/helpers/|src/utils/desktopBridge\\.ts$)|/@tauri-apps/',
             },
         },
 
@@ -644,14 +644,14 @@ module.exports = {
         },
 
         {
-            name: 'workers-no-app-helper-or-tauri',
+            name: 'workers-no-app-helper-or-desktop-ipc',
             severity: 'error',
-            comment: 'Dedicated Workers must not depend on application/, src/helpers/, or Tauri APIs.',
+            comment: 'Dedicated Workers must not depend on application/, src/helpers/, or desktop IPC.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'workers/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^(application/|src/helpers/)|/@tauri-apps/',
+                path: '^(application/|src/helpers/|src/utils/desktopBridge\\.ts$)|/@tauri-apps/',
             },
         },
 
@@ -730,9 +730,9 @@ module.exports = {
         },
 
         // --------------------------------------------------------------------
-        // Tauri confinement
+        // Desktop IPC confinement
         // --------------------------------------------------------------------
-        TAURI_IPC_ONLY_IN_REPOSITORIES,
+        DESKTOP_IPC_ONLY_IN_REPOSITORIES,
 
         {
             name: 'app-to-modules-public-surface-only',
@@ -939,7 +939,7 @@ module.exports = {
         },
         // includeOnly intentionally removed (Tier 2/3 hardening): scoping the graph
         // to src/application pruned the leaf node_modules edge, which made the
-        // React/react-dom/Tauri confinement rules silently never match the
+        // React/react-dom/desktop-IPC confinement rules silently never match the
         // pnpm-resolved package path. doNotFollow (below) still prevents traversal
         // *into* node_modules while keeping the from→package leaf edge visible.
         // Emit type-only edges (import type / type-position references) into the

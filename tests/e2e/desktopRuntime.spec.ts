@@ -4,13 +4,13 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
-    '[MIDI] Web MIDI failed, trying Tauri fallback',
+    '[MIDI] Web MIDI failed',
     'No available adapters.',
 ] as const;
 
 type RuntimeCall = { command: string; args: unknown };
 
-test('launches a project through the Tauri v2 desktop-runtime contract', async ({ page }, testInfo) => {
+test('launches a project through the window.sourdaw desktop-runtime contract', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
@@ -52,53 +52,73 @@ test('launches a project through the Tauri v2 desktop-runtime contract', async (
         }
     });
 
+    // Stand in for the Electron preload: publish `window.sourdaw` with the
+    // exact `SourdawDesktopBridge` surface, so every desktop capability gate
+    // (`'sourdaw' in window`) takes its native branch. Every command path
+    // records what crossed the seam and then refuses, so an unexpected native
+    // call is visible in the log below instead of silently succeeding.
     await page.addInitScript(() => {
-        type RuntimeCallback = (payload: unknown) => unknown;
         const calls: RuntimeCall[] = [];
-        const callbacks = new Map<number, RuntimeCallback>();
-        let nextCallbackId = 1;
+        const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
 
-        Reflect.set(window, '__SOURDAW_TAURI_CALLS__', calls);
-        Reflect.deleteProperty(window, '__TAURI__');
-        Reflect.set(window, '__TAURI_INTERNALS__', {
-            callbacks,
-            convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
-            invoke: (command: string, args: unknown) => {
+        const refuseCommand = (command: string, args: unknown): Promise<never> => {
+            calls.push({ command, args });
+            return Promise.reject(new Error(`Unexpected native command: ${command}`));
+        };
+
+        const bridge: SourdawDesktopBridge = {
+            invoke: (command, args = []) => {
                 calls.push({ command, args });
                 if (command === 'list_midi_inputs') {
                     return Promise.resolve([]);
                 }
+                if (command === 'unload_plugin') {
+                    // Project activation clears plugin state; nothing is
+                    // loaded here, so report zero unloads and zero errors.
+                    return Promise.resolve([[], []]);
+                }
+                if (command === 'engine_rt_diagnostics') {
+                    // The diagnostics poll reads this every second; the
+                    // stubbed engine is simply not running.
+                    return Promise.resolve({ running: false, events: [] });
+                }
                 return Promise.reject(new Error(`Unexpected native command: ${command}`));
             },
-            metadata: {
-                currentWindow: { label: 'main' },
-                currentWebview: { label: 'main', windowLabel: 'main' },
+            invokeBinary: (command, meta, bytes) => refuseCommand(command, [...meta, bytes]),
+            invokeBinaryResponse: (command, args = []) => refuseCommand(command, args),
+            // Subscribing crosses no IPC in the real bridge either — the
+            // preload keeps one process-wide listener and dispatches by name.
+            listen: (event, callback) => {
+                const listeners = eventListeners.get(event) ?? new Set<(payload: unknown) => void>();
+                listeners.add(callback);
+                eventListeners.set(event, listeners);
+                return () => {
+                    listeners.delete(callback);
+                };
             },
-            runCallback: (id: number, payload: unknown) => callbacks.get(id)?.(payload),
-            transformCallback: (callback: RuntimeCallback, once = false) => {
-                const id = nextCallbackId;
-                nextCallbackId += 1;
-                callbacks.set(id, (payload) => {
-                    const result = callback(payload);
-                    if (once) {
-                        callbacks.delete(id);
-                    }
-                    return result;
-                });
-                return id;
+            stream: (command, args) => refuseCommand(command, args),
+            dialog: {
+                open: () => Promise.reject(new Error('Unexpected native dialog: open')),
+                save: () => Promise.reject(new Error('Unexpected native dialog: save')),
+                message: () => Promise.reject(new Error('Unexpected native dialog: message')),
             },
-            unregisterCallback: (id: number) => callbacks.delete(id),
-        });
+            paths: {
+                samplesBase: () => Promise.reject(new Error('Unexpected native path call: samplesBase')),
+                join: () => Promise.reject(new Error('Unexpected native path call: join')),
+            },
+        };
+
+        Reflect.set(window, '__SOURDAW_BRIDGE_CALLS__', calls);
+        Reflect.set(window, 'sourdaw', bridge);
     });
 
     await setupWorkspace(page);
-    expect(await page.evaluate(() => Reflect.has(window, '__TAURI_INTERNALS__'))).toBe(true);
-    expect(await page.evaluate(() => Reflect.has(window, '__TAURI__'))).toBe(false);
+    expect(await page.evaluate(() => 'sourdaw' in window)).toBe(true);
     await launch_new_project(page);
     await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
 
     const runtimeCalls = await page.evaluate(() => {
-        const calls: unknown = Reflect.get(window, '__SOURDAW_TAURI_CALLS__');
+        const calls: unknown = Reflect.get(window, '__SOURDAW_BRIDGE_CALLS__');
         if (!Array.isArray(calls)) {
             return [];
         }
@@ -112,7 +132,23 @@ test('launches a project through the Tauri v2 desktop-runtime contract', async (
         contentType: 'application/json',
     });
 
-    expect(runtimeCalls).toEqual([{ command: 'list_midi_inputs', args: {} }]);
+    // The diagnostics poll fires every second, so its call count depends on
+    // how long the launch took — assert its shape, not its cardinality.
+    const diagnosticsCalls = runtimeCalls.filter((call) => call.command === 'engine_rt_diagnostics');
+    expect(diagnosticsCalls.length).toBeGreaterThan(0);
+    for (const call of diagnosticsCalls) {
+        expect(call.args).toEqual([]);
+    }
+
+    // Beyond the poll, exactly two native crossings: the MIDI fallback
+    // enumerating input ports, then project activation clearing plugin state
+    // (its optional instance id crosses as an undefined positional slot). The
+    // bridge takes positional arguments, so a no-argument command arrives as
+    // an empty array.
+    expect(runtimeCalls.filter((call) => call.command !== 'engine_rt_diagnostics')).toEqual([
+        { command: 'list_midi_inputs', args: [] },
+        { command: 'unload_plugin', args: [undefined] },
+    ]);
     expect(consoleErrors).toEqual([]);
     expect(unexpectedWarnings).toEqual([]);
     expect(pageErrors).toEqual([]);

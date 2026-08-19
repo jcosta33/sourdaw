@@ -1,11 +1,11 @@
 //! Sourdaw's native audio, DSP and plugin-hosting bodies.
 //!
-//! Every body here was previously a `#[tauri::command]` in `src-tauri`. Nothing
-//! in this crate knows what a Tauri command, an `AppHandle` or an IPC request
-//! is: a shell supplies the managed singletons ([`NativeSingletons`]), an event
-//! sink ([`events::EventSink`]) and plain owned arguments, and gets plain owned
-//! results back. Two shells consume it — the Tauri shell in `src-tauri` and the
-//! Node addon in [`addon`].
+//! Nothing in this crate knows what a shell command, a window or an IPC
+//! request is: a shell supplies the managed singletons ([`NativeSingletons`]),
+//! an event sink ([`events::EventSink`]) and plain owned arguments, and gets
+//! plain owned results back. The Node addon in [`addon`] is the one consumer
+//! today; the seam stays shell-agnostic so a second shell would link these
+//! same bodies rather than re-implement them.
 
 pub mod commands;
 pub mod events;
@@ -29,8 +29,8 @@ use crate::state::AppState;
 
 /// Every long-lived singleton the command bodies address.
 ///
-/// Field order is the registration order the Tauri shell used, and it is load
-/// bearing for the same reason `AppState`'s own field order is: drop runs
+/// Field order is load bearing for the same reason `AppState`'s own field
+/// order is: drop runs
 /// top-to-bottom, so `app_state` — which owns the CPAL stream and, after it, the
 /// retired CLAP runtimes — is released before any state that can still be
 /// holding a ring the audio thread reads. Reordering these fields reorders
@@ -79,11 +79,11 @@ impl NativeSingletons {
 
 /// Run the bounded CLAP descriptor-extraction worker.
 ///
-/// The Tauri binary reached this through an argv scan in `main.rs`; the Node
-/// addon reaches it through `#[napi] run_plugin_scan_worker`. Both hand it the
-/// same process-argument contract, so the scan policy — bounded child process,
-/// absolute paths, no entry point loaded in the application process — is
-/// unchanged by which shell started the process.
+/// The Node addon reaches this through `#[napi] run_plugin_scan_worker`,
+/// handing it the same process-argument contract every shell has used, so the
+/// scan policy — bounded child process, absolute paths, no entry point loaded
+/// in the application process — is independent of which shell started the
+/// process.
 ///
 /// Returns the exit code the worker process must terminate with, or `None` when
 /// this process was not started as a scan worker.

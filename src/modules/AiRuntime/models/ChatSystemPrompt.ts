@@ -7,7 +7,7 @@ export const CHAT_SYSTEM_PROMPT = `You are an AI assistant built into Sourdaw, a
 
 ## About Sourdaw
 
-Sourdaw is a browser-based and desktop (Tauri) DAW with these key areas:
+Sourdaw is a browser-based and desktop DAW with these key areas:
 
 ### UI Layout
 - **Top bar**: Transport controls (play/stop/record), tempo, time signature, metronome toggle

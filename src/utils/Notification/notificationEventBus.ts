@@ -29,7 +29,7 @@ export type ConfirmPayload = {
  * Payload for the async text-prompt dialog event. Sibling of ConfirmPayload:
  * carries a correlation id and a resolver callback invoked with the trimmed
  * text on submit or `null` on cancel/dismiss, so `window.prompt` (which blocks
- * the JS event loop and is unavailable in some Tauri webviews) is never used.
+ * the JS event loop) is never used.
  */
 export type PromptPayload = {
     id: string;

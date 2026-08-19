@@ -75,6 +75,16 @@ Native plugin hosting uses explicit security policy:
 
 accepted
 
+Reviewed at the Electron cutover (ADR 0029, 2026-08-19): the policy stands
+unchanged. Decision item 3's "Tauri command layer" is now the native command
+layer in `crates/sourdaw-native` fronted by the Electron IPC surface
+(`electron/commands.ts`); scan-root authority and DTO-only exposure are
+shell-independent and carried over verbatim. The packaged entitlements
+narrowed at the cutover — `allow-jit` replaces
+`allow-unsigned-executable-memory` and `allow-dyld-environment-variables` is
+dropped — as recorded in `build/entitlements.mac.plist`; the plugin-hosting
+posture this ADR governs is otherwise unchanged.
+
 ## Follow-up work
 
 Future implementation work should move scan-root authority into native-owned

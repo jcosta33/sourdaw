@@ -50,7 +50,7 @@ pub struct ScanWorkerCommand {
 }
 
 impl ScanWorkerCommand {
-    /// Re-execute this process. The contract the Tauri binary always used.
+    /// Re-execute this process: the application binary scans its own argv.
     fn from_current_exe() -> Result<Self, String> {
         Ok(Self {
             program: std::env::current_exe().map_err(|error| {
@@ -320,7 +320,7 @@ mod tests {
         values.iter().map(OsString::from).collect()
     }
 
-    /// The Tauri form: the application binary scanning its own argv.
+    /// The direct form: the application binary scanning its own argv.
     #[test]
     fn the_marker_is_found_directly_after_the_executable() {
         assert_eq!(

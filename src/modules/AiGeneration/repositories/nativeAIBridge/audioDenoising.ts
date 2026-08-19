@@ -7,7 +7,7 @@ export type DenoiseResult = {
 };
 
 /**
- * Denoise audio via native Tauri sidecar.
+ * Denoise audio through the native desktop command bridge.
  *
  * TODO: `Array.from(samples)` converts Float32Array to number[] for JSON
  * serialization over IPC — performance concern for large buffers.

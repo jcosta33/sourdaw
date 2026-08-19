@@ -6,12 +6,12 @@ const mocks = vi.hoisted(() => ({
     onVoiceDictationError: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/repositories/voiceTauriAdapter/onDictationError', () => ({
+vi.mock('#/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationError', () => ({
     onDictationError: mocks.onVoiceDictationError,
 }));
 
 describe('onDictationError (useCase)', () => {
-    it('forwards to the voiceTauriAdapter', async () => {
+    it('forwards to the voiceNativeAdapter', async () => {
         mocks.onVoiceDictationError.mockImplementation((handler: (payload: { message: string }) => void) => {
             handler({ message: 'Transcription failed: whisper state error' });
             return Promise.resolve(vi.fn()); // unlisten function

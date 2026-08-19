@@ -5,9 +5,9 @@
  * plus the persisted input id) and ongoing sync from the repository's internal
  * mutable state are wired in `repositories/webMidi/store.ts`, which runs when
  * the Web MIDI init path loads. The store stays pure here because `stores/`
- * may not import `repositories/` or the Tauri bridge (dependency-boundary
+ * may not import `repositories/` or the desktop bridge (dependency-boundary
  * rules `usecases-only-write-boundary-to-repositories` and
- * `tauri-ipc-only-in-repositories`).
+ * `desktop-ipc-only-in-repositories`).
  */
 import { createStore } from '#/infra/store/createStore';
 

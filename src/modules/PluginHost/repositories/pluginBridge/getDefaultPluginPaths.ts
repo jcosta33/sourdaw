@@ -1,8 +1,8 @@
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
 export async function getDefaultPluginPaths(): Promise<string[]> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return [];
     }
-    return tauriInvoke('get_default_plugin_paths') as Promise<string[]>;
+    return desktopInvoke('get_default_plugin_paths') as Promise<string[]>;
 }

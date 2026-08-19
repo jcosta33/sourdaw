@@ -1,4 +1,4 @@
-import { readFileBytes } from '#/utils/tauriBridge';
+import { readFileBytes } from '#/utils/desktopBridge';
 
 import { getCrumbsDecodeContext } from './getCrumbsDecodeContext';
 
@@ -22,7 +22,7 @@ type DecodeCrumbsSampleFileOutput = Promise<{
  * The wasm engine cannot do either half itself — a worklet has no filesystem
  * and no decoder — so the bytes are read over the native bridge here and
  * decoded on the main thread, then transferred in. That is why this is a
- * repository: it is the only Tauri touch in the path.
+ * repository: it is the only desktop-bridge touch in the path.
  */
 export async function decodeCrumbsSampleFile({ filePath }: DecodeCrumbsSampleFileInput): DecodeCrumbsSampleFileOutput {
     const bytes = await readFileBytes({ path: filePath });

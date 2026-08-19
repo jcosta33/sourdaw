@@ -6,19 +6,19 @@ type TestMidiInput = Pick<MIDIInput, 'removeEventListener'> & {
 
 const getActiveInputMock = vi.hoisted(() => vi.fn<() => TestMidiInput | null>());
 const getMidiAccessMock = vi.hoisted(() => vi.fn<() => MIDIAccess | null>());
-const getTauriEventUnlistenMock = vi.hoisted(() => vi.fn<() => (() => void) | null>());
-const getTauriModeMock = vi.hoisted(() => vi.fn<() => boolean>());
+const getNativeEventUnlistenMock = vi.hoisted(() => vi.fn<() => (() => void) | null>());
+const getNativeModeMock = vi.hoisted(() => vi.fn<() => boolean>());
 const setActiveInputMock = vi.hoisted(() => vi.fn<(input: TestMidiInput | null) => void>());
 const setMidiAccessMock = vi.hoisted(() => vi.fn<(access: MIDIAccess | null) => void>());
 const setStateMock = vi.hoisted(() => vi.fn<(next: Record<string, unknown>) => void>());
 const setTargetTrackIdMock = vi.hoisted(() => vi.fn<(trackId: string | null) => void>());
-const setTauriEventUnlistenMock = vi.hoisted(() => vi.fn<(unlisten: (() => void) | null) => void>());
-const setTauriModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
-const tauriInvokeMock = vi.hoisted(() => vi.fn<(command: string) => Promise<unknown>>());
+const setNativeEventUnlistenMock = vi.hoisted(() => vi.fn<(unlisten: (() => void) | null) => void>());
+const setNativeModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
+const desktopInvokeMock = vi.hoisted(() => vi.fn<(command: string) => Promise<unknown>>());
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: () => false,
-    tauriInvoke: tauriInvokeMock,
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
+    desktopInvoke: desktopInvokeMock,
 }));
 
 vi.mock('../../getActiveInput', () => ({
@@ -29,12 +29,12 @@ vi.mock('../../getMidiAccess', () => ({
     getMidiAccess: () => getMidiAccessMock(),
 }));
 
-vi.mock('../../getTauriEventUnlisten', () => ({
-    getTauriEventUnlisten: () => getTauriEventUnlistenMock(),
+vi.mock('../../getNativeEventUnlisten', () => ({
+    getNativeEventUnlisten: () => getNativeEventUnlistenMock(),
 }));
 
-vi.mock('../../getTauriMode', () => ({
-    getTauriMode: () => getTauriModeMock(),
+vi.mock('../../getNativeMode', () => ({
+    getNativeMode: () => getNativeModeMock(),
 }));
 
 vi.mock('../../setActiveInput', () => ({
@@ -53,12 +53,12 @@ vi.mock('../../setTargetTrackId', () => ({
     setTargetTrackId: (trackId: string | null) => setTargetTrackIdMock(trackId),
 }));
 
-vi.mock('../../setTauriEventUnlisten', () => ({
-    setTauriEventUnlisten: (unlisten: (() => void) | null) => setTauriEventUnlistenMock(unlisten),
+vi.mock('../../setNativeEventUnlisten', () => ({
+    setNativeEventUnlisten: (unlisten: (() => void) | null) => setNativeEventUnlistenMock(unlisten),
 }));
 
-vi.mock('../../setTauriMode', () => ({
-    setTauriMode: (enabled: boolean) => setTauriModeMock(enabled),
+vi.mock('../../setNativeMode', () => ({
+    setNativeMode: (enabled: boolean) => setNativeModeMock(enabled),
 }));
 
 const { destroyWebMidi } = await import('../destroyWebMidi');
@@ -74,9 +74,9 @@ describe('destroyWebMidi', () => {
         webMidiRuntime.midiMessageListener = null;
         getActiveInputMock.mockReturnValue(null);
         getMidiAccessMock.mockReturnValue(null);
-        getTauriEventUnlistenMock.mockReturnValue(null);
-        getTauriModeMock.mockReturnValue(false);
-        tauriInvokeMock.mockResolvedValue(undefined);
+        getNativeEventUnlistenMock.mockReturnValue(null);
+        getNativeModeMock.mockReturnValue(false);
+        desktopInvokeMock.mockResolvedValue(undefined);
     });
 
     it('should remove the installed browser MIDI event listener', () => {
@@ -95,27 +95,27 @@ describe('destroyWebMidi', () => {
         expect(setActiveInputMock).toHaveBeenCalledWith(null);
     });
 
-    it('should tear down the Tauri MIDI port when running in Tauri mode', () => {
+    it('should tear down the native MIDI port when running in native mode', () => {
         const unlisten = vi.fn();
-        getTauriModeMock.mockReturnValue(true);
-        getTauriEventUnlistenMock.mockReturnValue(unlisten);
+        getNativeModeMock.mockReturnValue(true);
+        getNativeEventUnlistenMock.mockReturnValue(unlisten);
 
         destroyWebMidi(() => undefined);
 
         expect(unlisten).toHaveBeenCalledOnce();
-        expect(setTauriEventUnlistenMock).toHaveBeenCalledWith(null);
-        expect(tauriInvokeMock).toHaveBeenCalledWith('close_midi_input');
-        expect(setTauriModeMock).toHaveBeenCalledWith(false);
+        expect(setNativeEventUnlistenMock).toHaveBeenCalledWith(null);
+        expect(desktopInvokeMock).toHaveBeenCalledWith('close_midi_input');
+        expect(setNativeModeMock).toHaveBeenCalledWith(false);
     });
 
-    it('should leave the Tauri unlisten hook untouched when none is registered', () => {
-        getTauriModeMock.mockReturnValue(true);
-        getTauriEventUnlistenMock.mockReturnValue(null);
+    it('should leave the native unlisten hook untouched when none is registered', () => {
+        getNativeModeMock.mockReturnValue(true);
+        getNativeEventUnlistenMock.mockReturnValue(null);
 
         destroyWebMidi(() => undefined);
 
-        expect(setTauriEventUnlistenMock).not.toHaveBeenCalled();
-        expect(setTauriModeMock).toHaveBeenCalledWith(false);
+        expect(setNativeEventUnlistenMock).not.toHaveBeenCalled();
+        expect(setNativeModeMock).toHaveBeenCalledWith(false);
     });
 
     it('should release active Toaster notes and stop their oscillators on destroy', () => {
@@ -171,7 +171,7 @@ describe('destroyWebMidi', () => {
     it('should reset midi learn, target track, and the inputs state on destroy', () => {
         midiLearn.active = true;
         midiLearn.callback = vi.fn();
-        getTauriModeMock.mockReturnValue(false);
+        getNativeModeMock.mockReturnValue(false);
 
         destroyWebMidi(() => undefined);
 

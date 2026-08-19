@@ -28,8 +28,8 @@ native-owned root set.
 
 ## 2. IPC boundary
 
-Tauri commands expose DTOs and delegate policy decisions to native/plugin-host services. Commands must not
-leak live plugin handles, runtime owners, library handles, or editor-window handles across IPC.
+Native command bodies expose DTOs and delegate policy decisions to native/plugin-host services. Bodies must
+not leak live plugin handles, runtime owners, library handles, or editor-window handles across IPC.
 
 `scan_plugins(paths, state)` accepts string DTOs because IPC payloads are serialized, but the command must
 validate each path against the native scan policy before touching the filesystem or mutating the plugin
@@ -37,11 +37,10 @@ registry.
 
 ## 3. macOS entitlements
 
-`src-tauri/Entitlements.plist` currently contains broad plugin-hosting entitlements:
+`build/entitlements.mac.plist` currently contains broad plugin-hosting entitlements:
 
 - disabled library validation
-- unsigned executable memory
-- dyld environment variables
+- JIT-mapped executable memory
 - App Sandbox disabled
 
 These are allowed only for plugin-host-capable desktop builds. They are not the default policy for a
@@ -61,4 +60,4 @@ Each release channel must choose one of these profiles explicitly:
   removed, and scan/load UI paths are not exposed.
 
 No release should accidentally ship plugin-hosting entitlements without also shipping the native policy
-that constrains scan roots and keeps runtime handles behind the Tauri boundary.
+that constrains scan roots and keeps runtime handles behind the native boundary.

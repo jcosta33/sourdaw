@@ -11,8 +11,8 @@ slower, allocation-heavy, or thermally wasteful implementation on the audio thre
 or interop boundary.
 
 Use these to improve performance, memory safety, and ergonomics in audio DSP,
-AudioWorklet/Worker code, WASM memory handling, Tauri interop, and memory-efficient
-DAW state.
+AudioWorklet/Worker code, WASM memory handling, native addon interop, and
+memory-efficient DAW state.
 
 ## Version floor
 
@@ -120,7 +120,7 @@ escape hatch for the rare kernel where even the prologue/epilogue is too much.
 SIMD rewrite can compile and still change numeric output — verify with the test
 suite.
 
-### Async ergonomics for Tauri interop
+### Async ergonomics for native addon interop
 
 - **Async closures (`async || {}`):** simplified callbacks for UI-to-Engine events
   without lifetime "gymnastics."

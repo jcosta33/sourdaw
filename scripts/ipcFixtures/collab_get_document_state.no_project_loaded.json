@@ -1,9 +1,0 @@
-{
-    "args": {
-        "docId": "project"
-    },
-    "case": "no_project_loaded",
-    "command": "collab_get_document_state",
-    "outcome": "error",
-    "payload": "No CRDT project loaded"
-}

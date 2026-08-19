@@ -49,7 +49,7 @@ impl Default for LoopPointConfig {
 /// The pairing is O(crossings²) and every pair costs a normalized correlation
 /// over `correlation_window` samples. A bright multi-second sample yields tens
 /// of thousands of zero crossings on each side of the midpoint, so the raw
-/// pairing runs to hundreds of millions of correlations — and the Tauri command
+/// pairing runs to hundreds of millions of correlations — and the native command
 /// that asks for loop points waits for all of them.
 ///
 /// The value is a budget, not a measurement: it is the work the offline search

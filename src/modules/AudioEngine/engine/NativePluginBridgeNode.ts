@@ -1,6 +1,6 @@
 /**
  * NativePluginBridgeNode — relays Web Audio blocks to the Rust plugin host and
- * back, over a MessagePort hop plus Tauri IPC.
+ * back, over a MessagePort hop plus desktop IPC.
  *
  * Audio crosses as raw IEEE 754 little-endian interleaved pairs, not JSON
  * numbers.

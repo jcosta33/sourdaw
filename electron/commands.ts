@@ -8,24 +8,23 @@
  *
  * ## Where these names come from
  *
- * They are not invented here. The authoritative surface is derived from the
- * Rust side and mirrored into this file:
+ * - **Registered** — every renderer-invokable `#[napi]` item in
+ *   `crates/sourdaw-native/src/addon/mod.rs`, minus the shell-plumbing methods
+ *   the spec pins by name. That is the set of command bodies the product
+ *   ships.
+ * - **Exposed** — the product's decision about what a renderer may invoke.
+ *   This list is that decision's record: exposing a command means reviewing
+ *   its body as renderer-reachable attack surface, and every entry must have a
+ *   production caller in `src/`.
+ * - **Denied** — registered minus exposed. They keep their bodies and stay
+ *   reachable in-process (the exit cascade closes plugin editors through one
+ *   of them), but no renderer may ask for them.
  *
- * - **Registered** — every `commands::*::name` in `src-tauri/src/lib.rs`'s
- *   `generate_handler!`. That is the set of command bodies the product ships.
- * - **Exposed** — registered minus denied, which is exactly the allow-list in
- *   `src-tauri/permissions/sourdaw-commands.toml`. The Tauri webview may invoke
- *   precisely these, so the Electron webview may invoke precisely these; a
- *   shell that widened the set would be a different product on one platform.
- * - **Denied** — the commands the Tauri capability withholds from the main
- *   webview. They keep their bodies and stay reachable in-process (the exit
- *   cascade closes plugin editors through one of them), but no renderer may ask
- *   for them.
- *
- * `commands.spec.ts` re-derives all three sets from those Rust files at test
- * time and fails on any divergence, so adding a Rust command without deciding
- * which side of this boundary it falls on cannot pass silently. A list pinned
- * by a hand-copied count instead would pass while blind to exactly that.
+ * `commands.spec.ts` re-derives the registered set from the Rust source at
+ * test time and fails unless these two lists partition it exactly, so adding
+ * a Rust command without deciding which side of this boundary it falls on
+ * cannot pass silently. A list pinned by a hand-copied count instead would
+ * pass while blind to exactly that.
  */
 
 /**
@@ -101,11 +100,11 @@ export const EXPOSED_COMMANDS = [
 /**
  * Commands with no handler and no preload path.
  *
- * Each is withheld from the Tauri main webview today, and for a reason that
- * survives the shell change: a bulk plugin-GUI operation belongs to the exit
- * cascade rather than to a page, LAN discovery is not renderer-driven, and the
- * raw audio-file and whisper-model paths are reachable only through the
- * narrower commands that wrap them.
+ * Each was already withheld from the renderer under the Tauri shell, and for
+ * a reason that survived the shell change: a bulk plugin-GUI operation belongs
+ * to the exit cascade rather than to a page, LAN discovery is not
+ * renderer-driven, and the raw audio-file and whisper-model paths are
+ * reachable only through the narrower commands that wrap them.
  */
 export const DENIED_COMMANDS = [
     'close_all_plugin_guis',
@@ -149,9 +148,9 @@ export const commandChannel = (command: string): string => `sourdaw:invoke:${com
  *
  * `#[napi]` publishes Rust `snake_case` items under `camelCase` JS names, so the
  * wire name and the method name differ by convention alone. Translating here
- * keeps the wire in the product's own vocabulary — the renderer, the Tauri
- * capability and the fixtures all say `get_plugin_state_bytes` — while calling
- * the addon by the name it actually exports.
+ * keeps the wire in the product's own vocabulary — the renderer and the
+ * fixtures all say `get_plugin_state_bytes` — while calling the addon by the
+ * name it actually exports.
  */
 export const addonMethodName = (command: string): string =>
     command.replaceAll(/_([a-z0-9])/gu, (_match, character: string) => character.toUpperCase());

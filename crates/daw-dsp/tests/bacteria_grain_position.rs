@@ -214,8 +214,7 @@ fn the_wet_onset_lands_where_position_put_it() {
                 });
 
                 let expected = (position_ms * 0.001 * sample_rate) as usize;
-                let error_ms =
-                    (measured as f32 - expected as f32).abs() / sample_rate * 1000.0;
+                let error_ms = (measured as f32 - expected as f32).abs() / sample_rate * 1000.0;
                 assert!(
                     error_ms <= TOLERANCE_MS,
                     "{sample_rate} Hz, Position {position_ms} ms, {} ms grains at {} g/s: \

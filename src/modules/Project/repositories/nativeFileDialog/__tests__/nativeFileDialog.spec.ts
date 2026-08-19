@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { desktopSaveDialog, isTauri, readFileBytes } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isDesktopRuntime, readFileBytes } from '#/utils/desktopBridge';
 
 import { openViaBrowser } from '../helpers';
 import { openFileDialog } from '../openFileDialog';
-import { openViaTauri } from '../openViaTauri';
+import { openViaNative } from '../openViaNative';
 import { pickFiles } from '../pickFiles';
 import { saveFileDialog } from '../saveFileDialog';
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(),
     readFileBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
     desktopSaveDialog: vi.fn().mockResolvedValue('/save/path.wav'),
 }));
@@ -18,16 +18,8 @@ vi.mock('../helpers', () => ({
     openViaBrowser: vi.fn(),
 }));
 
-vi.mock('../openViaTauri', () => ({
-    openViaTauri: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn().mockResolvedValue([1, 2, 3]),
-}));
-
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-    save: vi.fn().mockResolvedValue('/save/path.wav'),
+vi.mock('../openViaNative', () => ({
+    openViaNative: vi.fn(),
 }));
 
 describe('nativeFileDialog', () => {
@@ -36,17 +28,17 @@ describe('nativeFileDialog', () => {
     });
 
     describe('openFileDialog', () => {
-        it('should use openViaTauri when in Tauri', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(openViaTauri).mockResolvedValue(['/path/file.wav']);
+        it('should use openViaNative on desktop', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(openViaNative).mockResolvedValue(['/path/file.wav']);
 
             const result = await openFileDialog();
             expect(result).toEqual(['/path/file.wav']);
-            expect(openViaTauri).toHaveBeenCalled();
+            expect(openViaNative).toHaveBeenCalled();
         });
 
-        it('should use openViaBrowser when not in Tauri', async () => {
-            vi.mocked(isTauri).mockReturnValue(false);
+        it('should use openViaBrowser in the browser', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
             vi.mocked(openViaBrowser).mockResolvedValue(['file.wav']);
 
             const result = await openFileDialog();
@@ -56,14 +48,14 @@ describe('nativeFileDialog', () => {
     });
 
     describe('saveFileDialog', () => {
-        it('should return null when not in Tauri', async () => {
-            vi.mocked(isTauri).mockReturnValue(false);
+        it('should return null in the browser', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
             const result = await saveFileDialog();
             expect(result).toBeNull();
         });
 
-        it('should use native save dialog in Tauri', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
+        it('should use the native save dialog on desktop', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
             vi.mocked(desktopSaveDialog).mockResolvedValue('/save/path.wav');
 
             const result = await saveFileDialog({ defaultPath: 'test.wav' });
@@ -72,9 +64,9 @@ describe('nativeFileDialog', () => {
     });
 
     describe('pickFiles', () => {
-        it('should return File objects in Tauri', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(openViaTauri).mockResolvedValue(['/path/test.wav']);
+        it('should return File objects on desktop', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(openViaNative).mockResolvedValue(['/path/test.wav']);
 
             vi.mocked(readFileBytes).mockResolvedValue(new Uint8Array([1, 2, 3]));
 
@@ -86,9 +78,9 @@ describe('nativeFileDialog', () => {
             expect(readFileBytes).toHaveBeenCalledWith({ path: '/path/test.wav' });
         });
 
-        it('should derive File names from native Windows Tauri paths', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(openViaTauri).mockResolvedValue(['C:\\Users\\jose\\Samples\\kick.wav']);
+        it('should derive File names from native Windows paths', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(openViaNative).mockResolvedValue(['C:\\Users\\jose\\Samples\\kick.wav']);
 
             const result = await pickFiles();
 
@@ -97,9 +89,9 @@ describe('nativeFileDialog', () => {
             expect(readFileBytes).toHaveBeenCalledWith({ path: 'C:\\Users\\jose\\Samples\\kick.wav' });
         });
 
-        it('should reject native read failures after a Tauri selection without opening a browser picker', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(openViaTauri).mockResolvedValue(['/path/test.wav']);
+        it('should reject native read failures after a native selection without opening a browser picker', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(openViaNative).mockResolvedValue(['/path/test.wav']);
             vi.mocked(readFileBytes).mockRejectedValue(new Error('native read denied'));
             const createElementSpy = vi.spyOn(document, 'createElement');
 
@@ -111,8 +103,8 @@ describe('nativeFileDialog', () => {
             }
         });
 
-        it('should use browser fallback when not in Tauri', () => {
-            vi.mocked(isTauri).mockReturnValue(false);
+        it('should use browser fallback in the browser', () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
             const mockInput = {
                 click: vi.fn(),
                 addEventListener: vi.fn(),
@@ -136,7 +128,7 @@ describe('nativeFileDialog', () => {
             // pending forever. A window-focus fallback must resolve it to null.
             vi.useFakeTimers();
             try {
-                vi.mocked(isTauri).mockReturnValue(false);
+                vi.mocked(isDesktopRuntime).mockReturnValue(false);
                 // Use a real <input> so the focus listener binds to the real window,
                 // and suppress the native picker.
                 vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);

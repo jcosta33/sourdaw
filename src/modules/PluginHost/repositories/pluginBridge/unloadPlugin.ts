@@ -1,4 +1,4 @@
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
 type PluginUnloadResult = [unloadedInstanceIds: string[], errors: string[]];
 function isStringArray(value: unknown): value is string[] {
@@ -11,8 +11,8 @@ function parsePluginUnloadResult(value: unknown): PluginUnloadResult {
     return [value[0], value[1]];
 }
 export async function unloadPlugin(instanceId?: string): Promise<PluginUnloadResult> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return [instanceId ? [instanceId] : [], []];
     }
-    return parsePluginUnloadResult(await tauriInvoke('unload_plugin', instanceId === undefined ? {} : { instanceId }));
+    return parsePluginUnloadResult(await desktopInvoke('unload_plugin', instanceId === undefined ? {} : { instanceId }));
 }

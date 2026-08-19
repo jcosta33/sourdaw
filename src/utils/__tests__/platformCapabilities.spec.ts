@@ -14,9 +14,9 @@ describe('getPlatformCapabilities', () => {
         expect(a).toBe(b);
     });
 
-    it('should expose browser capability flags when isTauri is false', async () => {
-        vi.doMock('../tauriRuntime', () => ({
-            isTauri: () => false,
+    it('should expose browser capability flags when isDesktopRuntime is false', async () => {
+        vi.doMock('../desktopRuntime', () => ({
+            isDesktopRuntime: () => false,
         }));
         const { getPlatformCapabilities: getCaps } = await import('../platformCapabilities');
         const caps = getCaps();
@@ -29,9 +29,9 @@ describe('getPlatformCapabilities', () => {
         expect(typeof caps.hasVoiceCommands).toBe('boolean');
     });
 
-    it('should expose desktop capability flags when isTauri is true', async () => {
-        vi.doMock('../tauriRuntime', () => ({
-            isTauri: () => true,
+    it('should expose desktop capability flags when isDesktopRuntime is true', async () => {
+        vi.doMock('../desktopRuntime', () => ({
+            isDesktopRuntime: () => true,
         }));
         const { getPlatformCapabilities: getCaps } = await import('../platformCapabilities');
         const caps = getCaps();

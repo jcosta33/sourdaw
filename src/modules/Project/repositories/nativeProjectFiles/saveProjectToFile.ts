@@ -1,8 +1,8 @@
-import { writeFileBytes } from '#/utils/tauriBridge';
+import { writeFileBytes } from '#/utils/desktopBridge';
 
 import { type ProjectData } from '../../models/ProjectData';
 
-import { isTauriAvailable } from './helpers';
+import { isNativeAvailable } from './helpers';
 
 /**
  * Save a project to the native filesystem.
@@ -11,8 +11,8 @@ import { isTauriAvailable } from './helpers';
  * @param projectData - Serialized project state (the same JSON structure used by localStorage)
  */
 export async function saveProjectToFile(path: string, projectData: ProjectData): Promise<void> {
-    if (!isTauriAvailable()) {
-        throw new Error('Tauri not available');
+    if (!isNativeAvailable()) {
+        throw new Error('Sourdaw desktop bridge is not available');
     }
     const json = JSON.stringify(projectData, null, 2);
     const bytes = new TextEncoder().encode(json);

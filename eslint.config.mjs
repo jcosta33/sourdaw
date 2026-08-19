@@ -2439,7 +2439,6 @@ export default defineConfig(
                     groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'object', 'type'],
                     pathGroups: [
                         { pattern: 'react', group: 'external', position: 'before' },
-                        { pattern: '@tauri-apps/**', group: 'external', position: 'after' },
                         { pattern: 'src/**', group: 'internal', position: 'before' },
                     ],
                     pathGroupsExcludedImportTypes: ['react'],

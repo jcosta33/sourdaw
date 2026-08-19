@@ -29,16 +29,15 @@ fi
 
 # Rust workspace gate.
 #
-# Scope: `--workspace --exclude sourdaw` — the nine library crates under
-# `crates/`. `sourdaw` (src-tauri) is excluded because it cannot build on the
+# Scope: `--workspace --exclude sourdaw-native` — the library crates under
+# `crates/`. `sourdaw-native` is excluded because it cannot build on the
 # Linux runner this job uses: its manifest enables `whisper-rs`'s `metal`
-# feature unconditionally,
-# and Tauri itself needs the webkit2gtk stack. Gating it needs a macOS runner;
-# that is left out deliberately rather than silently half-done.
+# feature unconditionally. Gating it needs a macOS runner; that is left out
+# deliberately rather than silently half-done.
 #
 # `--all-features` exists to compile daw-plugin-host's
 # `engine-owned-command-fixture` feature, which is otherwise only reachable
-# through src-tauri's dev-dependencies and would go ungated here.
+# through sourdaw-native's dev-dependencies and would go ungated here.
 #
 # DEBUG ON PURPOSE — do not add `--release`. `assert_no_alloc`'s
 # `disable_release` feature is on by default, so in a release build
@@ -64,10 +63,10 @@ fi
 # needs no build at all. It was held back until the tree-wide reformat landed
 # separately in #1098 (96 files) — a reformat buried inside a CI-config change
 # would not have been a reviewable diff. It covers the whole workspace,
-# `src-tauri` included, even though the two build legs exclude it: formatting
-# needs no toolchain features, and `src-tauri` cannot build on ubuntu-latest
-# because its manifest unconditionally enables whisper-rs's `metal`, and
-# Tauri needs webkit2gtk.
+# `sourdaw-native` included, even though the two build legs exclude it:
+# formatting needs no toolchain features, and `sourdaw-native` cannot build on
+# ubuntu-latest because its manifest unconditionally enables whisper-rs's
+# `metal`.
 cargo fmt --all --check
-cargo clippy --workspace --exclude sourdaw --all-targets --all-features
-cargo test --workspace --exclude sourdaw --all-features
+cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features
+cargo test --workspace --exclude sourdaw-native --all-features
