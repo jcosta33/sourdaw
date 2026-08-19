@@ -2,6 +2,7 @@ import { type DragEvent, useState } from 'react';
 
 import { decodeAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -9,7 +10,7 @@ import { trackStore } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { addClip } from '../../useCases/clip/addClip';
-import { addDevice } from '../../useCases/device/addDevice';
+import { compileAddDeviceAction } from '../../useCases/device/compileAddDeviceAction';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 
@@ -237,11 +238,14 @@ export const useTimelineFileDrop = ({
                     notifyUser('Drop the plugin onto a track to add it.', 'warning');
                     return;
                 }
-                // The payload carries both, and `addDevice` matches on name *or*
+                // The payload carries both, and the action compiler receives the stable id,
                 // id. `De-esser`, `LUFS Meter` and `Stereo Widener` each name two
                 // catalog plugins, so a name lookup returns whichever the registry
                 // lists first rather than the card that was dragged.
-                addDevice(targetTrackId, plugin.id);
+                const action = compileAddDeviceAction(targetTrackId, plugin.id);
+                if (action) {
+                    void executeAppAction(action);
+                }
             } catch {
                 notifyUser('Could not add the dropped plugin — its data was malformed.', 'error');
             }

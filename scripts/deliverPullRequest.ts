@@ -1,7 +1,22 @@
 #!/usr/bin/env node
-
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+import {
+    AUTHOR_BOT_LOGIN,
+    REVIEWER_BOT_LOGIN,
+    assertRequiredRepository,
+    assertTrustedExecutingBlob,
+    authenticateRole,
+    gitAuthenticatedArgs,
+    GITHUB_HTTPS_REMOTE,
+    isReviewerBotLogin,
+    originMainBlob,
+    resolvePrimaryRoot,
+    spawnCapture,
+    spawnRun,
+} from './githubAppIdentity.ts';
+import { TITLE_PATTERN, assertPullRequestBody, fail } from './prContract.ts';
 
 export type PullRequestSnapshot = {
     number: number;
@@ -21,7 +36,7 @@ export type PullRequestSnapshot = {
 };
 
 export type ReviewState = {
-    currentHeadReviews: number;
+    latestReviewerStateOnHead: string | null;
     unresolvedThreads: number;
 };
 
@@ -36,10 +51,8 @@ export type DeliveryPort = {
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    localHead: () => string;
-    localDirty: () => boolean;
     remoteBranchHead: (branch: string) => string;
-    merge: (number: number, expectedHead: string) => void;
+    merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
     retarget: (number: number, baseBranch: string) => void;
     log: (message: string) => void;
 };
@@ -49,18 +62,6 @@ export type ShellRunner = {
     run: (command: string, args: string[]) => void;
 };
 
-const titlePattern = /^(?:feat|fix|chore|docs|test|refactor|perf|build|ci)(?:\([^)]+\))?!?: .+/;
-const requiredBodyHeadings = [
-    '### 🎯 What does this PR do?',
-    '### 🧪 How to test',
-    '### 🖼️ Screenshots',
-    '### 📌 Related tickets & additional notes',
-];
-
-function fail(message: string): never {
-    throw new Error(message);
-}
-
 function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (pullRequest.state !== 'OPEN') {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
@@ -68,37 +69,10 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
     if (pullRequest.isDraft) {
         fail(`PR #${pullRequest.number} is still a draft`);
     }
-    if (!titlePattern.test(pullRequest.title)) {
+    if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    const body = pullRequest.body ?? '';
-    if (Buffer.byteLength(body, 'utf8') > 4_000) {
-        fail(`PR #${pullRequest.number} body exceeds 4000 bytes`);
-    }
-    let previousHeading = -1;
-    for (let index = 0; index < requiredBodyHeadings.length; index += 1) {
-        const heading = requiredBodyHeadings[index];
-        if (heading === undefined) {
-            continue;
-        }
-        const headingIndex = body.indexOf(heading);
-        if (headingIndex < 0) {
-            fail(`PR #${pullRequest.number} body is missing: ${heading}`);
-        }
-        if (headingIndex <= previousHeading) {
-            fail(`PR #${pullRequest.number} body sections are out of order`);
-        }
-        if (body.includes(heading, headingIndex + heading.length)) {
-            fail(`PR #${pullRequest.number} body duplicates: ${heading}`);
-        }
-        const nextHeading = requiredBodyHeadings[index + 1];
-        const contentEnd =
-            nextHeading === undefined ? body.length : body.indexOf(nextHeading, headingIndex + heading.length);
-        if (contentEnd < 0 || body.slice(headingIndex + heading.length, contentEnd).trim() === '') {
-            fail(`PR #${pullRequest.number} body section is empty: ${heading}`);
-        }
-        previousHeading = headingIndex;
-    }
+    assertPullRequestBody(pullRequest.body ?? '', `PR #${pullRequest.number} body`);
     if (pullRequest.mergeStateStatus !== 'CLEAN') {
         fail(`PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`);
     }
@@ -108,22 +82,15 @@ function validatePullRequest(pullRequest: PullRequestSnapshot): void {
 }
 
 function validateReview(number: number, review: ReviewState): void {
-    if (review.currentHeadReviews === 0) {
-        fail(`PR #${number} has no current-head review activity`);
+    if (review.latestReviewerStateOnHead !== 'APPROVED') {
+        fail(`PR #${number} is not approved by ${REVIEWER_BOT_LOGIN} on the current head`);
     }
     if (review.unresolvedThreads > 0) {
         fail(`PR #${number} has ${review.unresolvedThreads} unresolved review thread(s)`);
     }
 }
 
-function validateLocalState(port: DeliveryPort, pullRequest: PullRequestSnapshot): void {
-    if (port.localDirty()) {
-        fail('working tree is dirty');
-    }
-    const localHead = port.localHead();
-    if (localHead !== pullRequest.headRefOid) {
-        fail(`local HEAD ${localHead} does not match PR head ${pullRequest.headRefOid}`);
-    }
+function validateRemoteBase(port: DeliveryPort, pullRequest: PullRequestSnapshot): void {
     const remoteBase = port.remoteBranchHead(pullRequest.baseRefName);
     if (remoteBase !== pullRequest.baseRefOid) {
         fail(`origin/${pullRequest.baseRefName} ${remoteBase} does not match PR base ${pullRequest.baseRefOid}`);
@@ -194,7 +161,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
         return;
     }
     validatePullRequest(initial);
-    validateLocalState(port, initial);
+    validateRemoteBase(port, initial);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -207,7 +174,7 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
     const current = port.pullRequest(number);
     validatePullRequest(current);
     validateStablePullRequest(initial, current);
-    validateLocalState(port, current);
+    validateRemoteBase(port, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
     const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
     validateDependentSet(dependents, currentDependents);
@@ -215,12 +182,12 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
         validateDependent(port.pullRequest(dependent.number), dependent);
     }
 
-    port.merge(number, current.headRefOid);
+    port.merge(number, current.headRefOid, currentDependents.length > 0);
     retargetDependents(currentDependents, current.baseRefName, port);
 }
 
 function capture(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8' });
+    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -231,7 +198,7 @@ function capture(command: string, args: string[]): string {
 }
 
 function run(command: string, args: string[]): void {
-    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit' });
+    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit', shell: false });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -248,7 +215,48 @@ function parseJson<Value>(value: string, label: string): Value {
     }
 }
 
-export function shellPort(repository: string, shell: ShellRunner = { capture, run }): DeliveryPort {
+type RepositoryMergeSettings = {
+    allow_merge_commit?: unknown;
+    allow_rebase_merge?: unknown;
+    allow_squash_merge?: unknown;
+    delete_branch_on_merge?: unknown;
+};
+
+type RepositoryMergePolicy = {
+    method: 'squash';
+    deletesMergedBranches: boolean;
+};
+
+function repositoryMergePolicy(repository: string, shell: ShellRunner): RepositoryMergePolicy {
+    let settings: RepositoryMergeSettings;
+    try {
+        settings = parseJson<RepositoryMergeSettings>(
+            shell.capture('gh', ['api', `repos/${repository}`]),
+            'repository merge settings'
+        );
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`cannot determine repository merge settings: ${detail}`, { cause: error });
+    }
+    if (
+        typeof settings.allow_merge_commit !== 'boolean' ||
+        typeof settings.allow_squash_merge !== 'boolean' ||
+        typeof settings.allow_rebase_merge !== 'boolean' ||
+        typeof settings.delete_branch_on_merge !== 'boolean'
+    ) {
+        throw new TypeError('cannot prove repository merge settings');
+    }
+    if (!settings.allow_squash_merge) {
+        throw new Error('squash merge is not enabled for this repository');
+    }
+    return { method: 'squash', deletesMergedBranches: settings.delete_branch_on_merge };
+}
+
+export function shellPort(
+    repository: string,
+    shell: ShellRunner = { capture, run },
+    options: { gitToken?: string; helperDir?: string } = {}
+): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
         fail(`invalid GitHub repository: ${repository}`);
@@ -271,20 +279,41 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
     ].join(',');
 
     return {
-        fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
+        fetch: () => {
+            if (options.gitToken !== undefined) {
+                const helperDir =
+                    options.helperDir ?? fail('authenticated git fetch requires a credential helper directory');
+                shell.run(
+                    'git',
+                    gitAuthenticatedArgs(options.gitToken, helperDir, [
+                        'fetch',
+                        '--prune',
+                        GITHUB_HTTPS_REMOTE,
+                        '+refs/heads/*:refs/remotes/origin/*',
+                    ])
+                );
+                return;
+            }
+            shell.run('git', ['fetch', '--prune', 'origin']);
+        },
         pullRequest: (number) =>
             parseJson<PullRequestSnapshot>(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 `PR #${number}`
             ),
         reviewState: (number, expectedHead) => {
-            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
+            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
             const response = parseJson<{
                 data?: {
                     repository?: {
                         pullRequest?: {
                             reviews: {
-                                nodes: Array<{ state: string; commit: { oid: string } | null }>;
+                                nodes: Array<{
+                                    state: string;
+                                    submittedAt?: string | null;
+                                    author: { login: string } | null;
+                                    commit: { oid: string } | null;
+                                }>;
                                 pageInfo: { hasPreviousPage: boolean };
                             };
                             reviewThreads: {
@@ -317,10 +346,16 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
             ) {
                 fail(`cannot prove complete review state for PR #${number}`);
             }
+            const onHead = review.reviews.nodes.filter(
+                (candidate) =>
+                    candidate.state !== 'DISMISSED' &&
+                    candidate.state !== 'PENDING' &&
+                    candidate.commit?.oid === expectedHead &&
+                    isReviewerBotLogin(candidate.author?.login)
+            );
+            onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
             return {
-                currentHeadReviews: review.reviews.nodes.filter(
-                    (candidate) => candidate.state !== 'DISMISSED' && candidate.commit?.oid === expectedHead
-                ).length,
+                latestReviewerStateOnHead: onHead.at(-1)?.state ?? null,
                 unresolvedThreads: review.reviewThreads.nodes.filter((thread) => !thread.isResolved).length,
             };
         },
@@ -353,10 +388,12 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        localHead: () => shell.capture('git', ['rev-parse', 'HEAD']),
-        localDirty: () => shell.capture('git', ['status', '--porcelain=v1']) !== '',
         remoteBranchHead: (branch) => shell.capture('git', ['rev-parse', `refs/remotes/origin/${branch}`]),
-        merge: (number, expectedHead) => {
+        merge: (number, expectedHead, hasDependents) => {
+            const policy = repositoryMergePolicy(repository, shell);
+            if (hasDependents && policy.deletesMergedBranches) {
+                fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
+            }
             const result = parseJson<{ merged: boolean; message: string }>(
                 shell.capture('gh', [
                     'api',
@@ -366,7 +403,7 @@ export function shellPort(repository: string, shell: ShellRunner = { capture, ru
                     '-f',
                     `sha=${expectedHead}`,
                     '-f',
-                    'merge_method=merge',
+                    `merge_method=${policy.method}`,
                 ]),
                 'merge request'
             );
@@ -405,25 +442,53 @@ export function parseCliArgs(args: string[]): { number?: number; help: boolean }
     return { number, help: false };
 }
 
-function main(): number {
-    try {
-        const parsed = parseCliArgs(process.argv.slice(2));
-        if (parsed.help) {
-            console.log('Usage: pnpm deliver <pr-number>');
-            return 0;
-        }
-        if (parsed.number === undefined) {
-            fail('usage: pnpm deliver <pr-number>');
-        }
-        const repository = capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
-        deliverPullRequest(parsed.number, shellPort(repository));
+async function main(): Promise<number> {
+    const parsed = parseCliArgs(process.argv.slice(2));
+    if (parsed.help) {
+        console.log('Usage: pnpm deliver <pr-number>');
         return 0;
-    } catch (error) {
-        console.error(error instanceof Error ? error.message : error);
-        return 1;
+    }
+    if (parsed.number === undefined) {
+        fail('usage: pnpm deliver <pr-number>');
+    }
+    const executingFile = fileURLToPath(import.meta.url);
+    const cwd = process.cwd();
+    assertTrustedExecutingBlob(
+        'scripts/deliverPullRequest.ts',
+        executingFile,
+        originMainBlob('scripts/deliverPullRequest.ts', cwd)
+    );
+    const primaryRoot = resolvePrimaryRoot();
+    const auth = await authenticateRole({ primaryRoot, role: 'author' });
+    try {
+        if (auth.minted.login !== AUTHOR_BOT_LOGIN) {
+            fail(`minted login ${auth.minted.login} is not ${AUTHOR_BOT_LOGIN}`);
+        }
+        const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+            env: auth.session.env,
+            cwd: primaryRoot,
+        });
+        assertRequiredRepository(repository);
+        const shell: ShellRunner = {
+            capture: (command, args) => spawnCapture(command, args, { env: auth.session.env, cwd: primaryRoot }),
+            run: (command, args) => spawnRun(command, args, { env: auth.session.env, cwd: primaryRoot }),
+        };
+        deliverPullRequest(
+            parsed.number,
+            shellPort(repository, shell, { gitToken: auth.minted.token, helperDir: auth.session.configDir })
+        );
+        return 0;
+    } finally {
+        auth.session.dispose();
     }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    process.exit(main());
+    void main().then(
+        (code) => process.exit(code),
+        (error: unknown) => {
+            console.error(error instanceof Error ? error.message : error);
+            process.exit(1);
+        }
+    );
 }

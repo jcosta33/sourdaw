@@ -1,41 +1,24 @@
-import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { isDeviceSupportedOnCurrentPlatform } from '../../models/DeviceParameter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 import { getPlatformPlugins } from '../getPlatformPlugins';
-import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 
-function nextDeviceIdStr(): string {
+function nextDeviceId(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-/**
- * `deviceType` must be a catalog **id**. The lookup below also accepts a display
- * name, which is a trap: `De-esser`, `LUFS Meter` and `Stereo Widener` each name
- * two catalog plugins, and a name that matches nothing at all is stored verbatim
- * as the device type, producing a device no descriptor matches.
- *
- * `displayName` overrides the label this would otherwise take from the resolved
- * plugin. Presets need it — the type picks the device, the preset picks the
- * label — and it belongs in this call so the device is written once.
- *
- * Serialized preset callers supply their saved internal parameter subset.
- * Omitting it applies current defaults for a newly created device; passing an
- * empty object preserves legacy semantics for an unversioned preset.
- */
-export function addDevice(
+/** Internal project writer for registered Arrangement handlers. It has no runtime effects. */
+export function writeDeviceToProject(
     trackId: string,
     deviceType: string,
     displayName?: string,
     deviceId?: string,
     deviceIndex?: number,
-    initialInternalParameterValues?: Readonly<Record<string, number>>,
-    options: { projectOnly?: boolean } = {}
+    initialInternalParameterValues?: Readonly<Record<string, number>>
 ): Device | null {
     const state = getTrackState();
     if (!state) {
@@ -45,7 +28,7 @@ export function addDevice(
     if (matchingTracks.length !== 1) {
         return null;
     }
-    const resolvedDeviceId = deviceId ?? nextDeviceIdStr();
+    const resolvedDeviceId = deviceId ?? nextDeviceId();
     if (state.tracks.some((candidate) => candidate.devices.some((device) => device.id === resolvedDeviceId))) {
         return null;
     }
@@ -57,31 +40,20 @@ export function addDevice(
     if (!Number.isInteger(insertionIndex) || insertionIndex < 0 || insertionIndex > track.devices.length) {
         return null;
     }
-
-    // A device this runtime cannot host must not be half-placed.
-    // `getPlatformPlugins()` below is platform-filtered, so in a
-    // browser build a native-only id resolves to no plugin and falls into the
-    // generic branch, writing a device with no parameters whose type is on the
-    // export refusal table — the project then refuses to export over a device
-    // that was never properly added. The helper passes unknown types through, so
-    // external plugins and older projects' device strings are unaffected.
     if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
         notifyUser(`"${deviceType}" is not available on this platform and was not added.`, 'error');
         return null;
     }
-
-    // Search by name first, then by ID — callers may pass either
     const plugin = getPlatformPlugins().find(
-        (param1) => param1.name.toLowerCase() === deviceType.toLowerCase() || param1.id === deviceType
+        (candidate) => candidate.name.toLowerCase() === deviceType.toLowerCase() || candidate.id === deviceType
     );
     const internalParameterValues = initialInternalParameterValues ?? plugin?.internalParameterValues ?? {};
     const parameterValues: Record<string, number> = { ...internalParameterValues };
     if (plugin) {
-        for (const param of plugin.parameters) {
-            parameterValues[param.id] = param.value;
+        for (const parameter of plugin.parameters) {
+            parameterValues[parameter.id] = parameter.value;
         }
     }
-
     const device: Device = {
         id: resolvedDeviceId,
         name: displayName ?? (plugin ? plugin.name : deviceType),
@@ -89,51 +61,10 @@ export function addDevice(
         bypassed: false,
         parameterValues,
     };
-
-    const hadLiveStrip = shouldCreateLiveTrackStrip(track);
-    const activatesFolderStrip = !hadLiveStrip && track.kind === 'folder' && device.type === 'toaster';
-    const precedingDeviceIds = track.devices.slice(0, insertionIndex).map((candidate) => candidate.id);
-    updateTrack(trackId, (time) => ({
-        ...time,
-        devices: [...time.devices.slice(0, insertionIndex), device, ...time.devices.slice(insertionIndex)],
-    }));
-
-    if (options.projectOnly) {
-        return device;
-    }
-
-    if (!plugin) {
-        return device;
-    }
-
-    if (activatesFolderStrip) {
-        projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
-        for (const child of state.tracks) {
-            if (child.parentId === trackId && shouldCreateLiveTrackStrip(child)) {
-                projectTrackToLiveStrip({ trackId: child.id, activateDormantExternalPlugins: true });
-            }
-        }
-        return device;
-    }
-
-    if (hadLiveStrip) {
-        if (plugin.id.startsWith('faust-')) {
-            Promise.resolve()
-                .then(() => compileFaustDSP(plugin.id))
-                .catch(() => {
-                    // Faust compilation is best-effort — device falls back to passthrough
-                });
-        }
-        const stripArguments: [string, string, string, undefined?, string[]?] = [trackId, device.id, plugin.id];
-        if (deviceIndex !== undefined) {
-            stripArguments[3] = undefined;
-            stripArguments[4] = precedingDeviceIds;
-        }
-        addDeviceToStrip(...stripArguments);
-        for (const [paramId, value] of Object.entries(device.parameterValues)) {
-            updateDeviceParam(trackId, device.id, paramId, value);
-        }
-    }
-
+    const afterTrack = {
+        ...track,
+        devices: [...track.devices.slice(0, insertionIndex), device, ...track.devices.slice(insertionIndex)],
+    };
+    updateTrack(trackId, () => afterTrack);
     return device;
 }

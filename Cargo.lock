@@ -2626,6 +2626,7 @@ dependencies = [
  "dirs",
  "futures-util",
  "hound",
+ "libc",
  "midir",
  "napi",
  "napi-build",

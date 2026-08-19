@@ -1,10 +1,7 @@
 import {
-    addDeviceToStrip,
-    ensureTrackStrip,
+    initializeTrackStripFromSnapshot,
     reportLatency,
-    resolveToasterPadBinding,
     setTrackGain,
-    setTrackOutput,
     setTrackPan,
     updateDeviceBypass,
     updateDeviceParam,
@@ -16,6 +13,7 @@ import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDevic
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { trackStore } from '../stores/trackStore';
 
+import { compileTrackStripInitializationSnapshot } from './compileTrackStripInitializationSnapshot';
 import { applySoloLogic } from './toggleTrackState/applySoloLogic';
 
 import type { Track } from '../stores/trackStore';
@@ -50,41 +48,44 @@ export function projectTrackToLiveStrip({
     trackId,
     deferSidechainWiring = false,
     activateDormantExternalPlugins = false,
-}: ProjectTrackToLiveStripInput): void {
+}: ProjectTrackToLiveStripInput): ReturnType<typeof initializeTrackStripFromSnapshot> | undefined {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
-        return;
+        return undefined;
     }
     const track = findUniqueTrack(tracks, trackId);
     if (!track || !shouldCreateLiveTrackStrip(track)) {
-        return;
+        return undefined;
     }
 
-    ensureTrackStrip(track.id);
-    if (acceptsRoutingEndpoint(tracks, track.outputId)) {
-        const padBinding = resolveToasterPadBinding(tracks, track.id);
-        if (padBinding) {
-            setTrackOutput(track.id, track.outputId, padBinding);
-        } else {
-            setTrackOutput(track.id, track.outputId);
+    const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
+    for (const device of audioDevices) {
+        const target = resolveEligibleDeviceWriteTarget(device.id);
+        if (target.status !== 'eligible' || target.trackId !== track.id || target.deviceId !== device.id) {
+            return undefined;
         }
     }
+    if (!acceptsRoutingEndpoint(tracks, track.outputId)) {
+        return undefined;
+    }
+    const snapshot = compileTrackStripInitializationSnapshot(track, tracks);
+    if (!snapshot) {
+        return undefined;
+    }
+    const initialization = initializeTrackStripFromSnapshot(snapshot);
+    if (initialization.acceptance === 'rejected' || initialization.application === 'needs-reconcile') {
+        return initialization;
+    }
+
     setTrackGain(track.id, track.gain);
     setTrackPan(track.id, track.pan);
     applySoloLogic({ trackId: track.id });
 
-    const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
-    for (const [deviceIndex, device] of audioDevices.entries()) {
-        const target = resolveEligibleDeviceWriteTarget(device.id);
-        if (target.status !== 'eligible' || target.trackId !== track.id) {
-            continue;
-        }
+    for (const device of audioDevices) {
         let instanceId: string | undefined;
         if (activateDormantExternalPlugins && device.type === 'external-plugin' && device.externalInstanceId) {
             instanceId = device.externalInstanceId;
         }
-        const precedingDeviceIds = audioDevices.slice(0, deviceIndex).map((candidate) => candidate.id);
-        addDeviceToStrip(target.trackId, target.deviceId, device.type, instanceId, precedingDeviceIds);
         const pluginId = device.externalPluginId;
         if (instanceId && pluginId) {
             // Idempotent load + state restore; skips if the instance is already live,
@@ -93,15 +94,15 @@ export function projectTrackToLiveStrip({
                 pluginId,
                 instanceId,
                 stateChunk: device.externalStateChunk,
-                onLatencyMs: (latencyMs) => reportLatency(target.deviceId, latencyMs),
+                onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
             });
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {
-                updateDeviceParam(target.trackId, target.deviceId, parameterId, value);
+                updateDeviceParam(track.id, device.id, parameterId, value);
             }
         }
-        updateDeviceBypass(target.trackId, target.deviceId, device.bypassed);
+        updateDeviceBypass(track.id, device.id, device.bypassed);
     }
 
     for (const send of track.sends) {
@@ -112,4 +113,5 @@ export function projectTrackToLiveStrip({
     if (!deferSidechainWiring) {
         wireSidechainRoutes();
     }
+    return initialization;
 }

@@ -93,9 +93,12 @@ pub fn run_plugin_scan_worker_from_process_args() -> Option<i32> {
 
 /// Drive one `async` command body to completion from a synchronous test.
 ///
-/// The bodies are `async` because their shells call them that way, not because
-/// they await inside a lock; a current-thread runtime is therefore the honest
-/// harness. Shared across the crate's test modules so no module invents its own.
+/// The bodies are `async` because their shells call them that way; a
+/// current-thread runtime is an honest harness because each test drives a
+/// single task, and a single task cannot contend on the async locks a body
+/// holds across its awaits. Tests that need real contention spawn their own
+/// multi-thread runtime. Shared across the crate's test modules so no module
+/// invents its own.
 #[cfg(test)]
 pub(crate) fn block_on_test<Fut: std::future::Future>(future: Fut) -> Fut::Output {
     tokio::runtime::Builder::new_current_thread()

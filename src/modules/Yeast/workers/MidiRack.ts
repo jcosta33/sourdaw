@@ -134,25 +134,6 @@ export class MidiRack {
         return hangingOffs;
     }
 
-    /** Reorder: move processor from fromIdx to toIdx. */
-    reorder(fromIdx: number, toIdx: number, nowSamples = 0): MidiEvent[] {
-        const output: MidiEvent[] = [];
-        if (fromIdx < 0 || fromIdx >= this.processors.length) {
-            return output;
-        }
-        if (toIdx < 0 || toIdx >= this.processors.length) {
-            return output;
-        }
-        if (fromIdx === toIdx) {
-            return output;
-        }
-        this.settleGeneration(output, nowSamples);
-        const [proc] = this.processors.splice(fromIdx, 1);
-        this.processors.splice(toIdx, 0, proc!);
-        this.markTopologyChanged();
-        return output;
-    }
-
     /** Process a block of MIDI events through the chain. */
     processOfflineBlock(
         inputEvents: readonly MidiEvent[],
@@ -437,12 +418,6 @@ export class MidiRack {
             name: param.name,
             bypassed: param.isBypassed(),
         }));
-    }
-
-    /** Set a parameter on a specific processor. */
-    setProcessorParam(processorId: string, name: string, value: number): void {
-        const proc = this.processors.find((param) => param.id === processorId);
-        proc?.setParam(name, value);
     }
 
     /** Execute one typed command on the Worker-owned processor instance. */

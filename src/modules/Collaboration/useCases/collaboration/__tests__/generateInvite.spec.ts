@@ -49,6 +49,41 @@ describe('generateInvite', () => {
         await expect(generateInvite()).rejects.toThrow('No active session');
     });
 
+    it('surfaces a missing-session failure in the store', async () => {
+        mockRuntime.state.peerManager = null;
+
+        await expect(generateInvite()).rejects.toThrow('No active session');
+
+        expect(collaborationStore.value?.error).toBe('No active session');
+    });
+
+    it('surfaces an offer-creation failure in the store while preserving the session state', async () => {
+        createOffer.mockRejectedValueOnce(new Error('WebRTC offer failed'));
+
+        await expect(generateInvite()).rejects.toThrow('WebRTC offer failed');
+
+        expect(collaborationStore.value?.error).toBe('WebRTC offer failed');
+        expect(collaborationStore.value?.isEnabled).toBe(true);
+        expect(collaborationStore.value?.connectionStatus).toBe('disconnected');
+    });
+
+    it('surfaces a compression failure in the store', async () => {
+        mockRuntime.compressInvite.mockRejectedValueOnce(new Error('Compression stream failed'));
+
+        await expect(generateInvite()).rejects.toThrow('Compression stream failed');
+
+        expect(collaborationStore.value?.error).toBe('Compression stream failed');
+    });
+
+    it('clears a previously surfaced failure when a new attempt succeeds', async () => {
+        const state = collaborationStore.value!;
+        collaborationStore.set({ ...state, error: 'WebRTC offer failed' });
+
+        await generateInvite();
+
+        expect(collaborationStore.value?.error).toBeNull();
+    });
+
     it('does not remove any peer when there is no stale pending invite', async () => {
         await generateInvite();
         expect(removePeer).not.toHaveBeenCalled();

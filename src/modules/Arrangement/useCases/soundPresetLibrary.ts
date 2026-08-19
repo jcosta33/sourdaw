@@ -5,6 +5,8 @@ import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
 import { type SoundPreset } from '../models/SoundPreset';
 import { FACTORY_PRESETS } from '../repositories/presets/factoryPresets';
 
+import { SIDEBAR_INSTRUMENT_PRESETS } from './preset/sidebarInstrumentPresets';
+
 export type GetFactoryPresetsOutput = SoundPreset[];
 
 type PresetCacheEntry = {
@@ -49,7 +51,9 @@ export function getFactoryPresets(): GetFactoryPresetsOutput {
             // FACTORY_PRESETS already contains the drum-kit presets; spreading
             // them again here doubled the four factory-drumkit-* entries — and
             // their ids — in the preset browser (audit M-020).
-            presets: [...FACTORY_PRESETS, ...getFermenterFactoryPresets()].filter(isPresetCompatible),
+            presets: [...FACTORY_PRESETS, ...getFermenterFactoryPresets(), ...SIDEBAR_INSTRUMENT_PRESETS].filter(
+                isPresetCompatible
+            ),
             platformKey: key,
         };
     }

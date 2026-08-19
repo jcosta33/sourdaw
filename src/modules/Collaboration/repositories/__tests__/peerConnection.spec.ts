@@ -265,6 +265,39 @@ describe('PeerConnectionManager', () => {
         expect(noopCallbacks.onDisconnected).toHaveBeenCalledWith('alice');
     });
 
+    it('re-announces a peer whose transient ICE disconnect recovers to connected', async () => {
+        const alice = await addReadyPeer(manager, 'alice');
+        // The initial channel open already announced it once.
+        expect(noopCallbacks.onConnected).toHaveBeenCalledTimes(1);
+
+        alice.connectionState = 'disconnected';
+        alice.onconnectionstatechange?.();
+        expect(noopCallbacks.onDisconnected).toHaveBeenCalledTimes(1);
+
+        // W3C: `disconnected` is transient. ICE recovers with the data channel
+        // never closing, so `onopen` can't re-fire — this is the only signal.
+        alice.connectionState = 'connected';
+        alice.onconnectionstatechange?.();
+
+        expect(noopCallbacks.onConnected).toHaveBeenCalledTimes(2);
+        expect(noopCallbacks.onConnected).toHaveBeenLastCalledWith('alice');
+
+        // Already connected: a repeated state change must not announce again.
+        alice.onconnectionstatechange?.();
+        expect(noopCallbacks.onConnected).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not announce a connected RTC state while the CRDT channel is not open', async () => {
+        const peer = manager.createPeer('alice');
+        await peer.createOffer();
+        const rtc = peer.rtc as unknown as FakeRTCPeerConnection;
+
+        rtc.connectionState = 'connected';
+        rtc.onconnectionstatechange?.();
+
+        expect(noopCallbacks.onConnected).not.toHaveBeenCalled();
+    });
+
     it('wires an inbound (joiner-side) data channel via ondatachannel, tracking connect/disconnect', () => {
         const peer = manager.createPeer('joiner');
         const rtc = peer.rtc as unknown as FakeRTCPeerConnection;

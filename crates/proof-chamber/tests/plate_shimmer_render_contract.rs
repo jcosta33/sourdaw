@@ -4,9 +4,9 @@
 //! output stays finite, stays under a ceiling, and settles. All three hold for
 //! a stage that emits broadband hiss, and all three hold for a stage that emits
 //! nothing at all — `plate_shimmer_stability.rs` passes with the granular
-//! shifter deleted. What the control claims on the panel is narrower and is not
-//! covered anywhere: Shimmer Pitch offers a **fifth up** and an **octave up**,
-//! and the tail is supposed to come back carrying that interval.
+//! shifter deleted. What the control claims on the panel is narrower, and this
+//! file is where it is covered: Shimmer Pitch offers a **fifth up** and an
+//! **octave up**, and the tail has to come back carrying that interval.
 //!
 //! So the measurement is a spectral one, taken on a sustained tone rather than
 //! a burst: with the shifter inside the tank feedback and Amount at full, the
@@ -16,32 +16,31 @@
 //! Both rates, because the grain length is derived from the sample rate
 //! (`GranularShifter::new`) and a rate-dependent error is invisible at one.
 //!
-//! # Why this test is `#[ignore]`d
+//! # What this holds the shifter to
 //!
-//! It is red against the shipped engine, and it pins two defects in
-//! `src/proof_chamber.rs` that both have to be repaired before it can go green:
+//! Three properties of `GranularShifter` have to hold together for the measured
+//! partial to exist at all, and each of them is a way the stage has been broken
+//! before:
 //!
-//! * **The phase increment runs the read pointer the wrong way** (`:320`-`:324`).
-//!   `read = write_pos - grain_size * phase` with `phase += (ratio - 1) / gs`
-//!   walks the read pointer *backwards* relative to the write pointer, so the
-//!   grain plays slower than real time. A ratio of 1.5 resamples at 0.5x — an
-//!   octave **down**, not a fifth up — and a ratio of 2.0 pins the pointer
-//!   still, which is not a pitch shift in either direction.
-//! * **One `GranularShifter` is shared by both tank halves** (`:454` declares
-//!   it, `:653` builds one, `:906` and `:936` step it once for the left half
-//!   and once for the right). Its delay line therefore holds the two halves
-//!   *interleaved*, one sample each, and the `±8`-sample read jitter (`:318`
-//!   -`:319`) is redrawn per sample, so consecutive grain reads land on
-//!   alternating channels at random. The shifted signal that comes back is a
-//!   per-sample scramble of two unrelated tank signals, which is why the
-//!   measured tail carries a flat noise floor from 1 kHz to Nyquist and no
-//!   pitched partial anywhere.
+//! * **The read pointer has to advance faster than the write pointer.** A grain
+//!   that trails by a *growing* delay plays slower than real time and transposes
+//!   down; at a ratio of 2.0 it stands still.
+//! * **Each tank half needs its own shifter.** One shifter fed both halves holds
+//!   them interleaved a sample apiece in a single delay line, and grain reads
+//!   land on alternating channels — the tail comes back as a scramble of two
+//!   unrelated signals with a flat noise floor and no partial anywhere.
+//! * **Grains have to be placed randomly, and placement drawn per grain.** A
+//!   read offset redrawn every sample is audio-rate noise, not placement. And
+//!   grains that all start from the same point in history make the shifter a
+//!   linear periodically time-varying system, whose output for a partial at `f`
+//!   can only land on the grid `f + k / grain_period` — a grid that does not in
+//!   general contain `f * ratio` (only when a grain holds a whole number of
+//!   input cycles), so the one frequency it cannot produce is the one it exists
+//!   to produce.
 //!
-//! Un-ignore this when the shifter is repaired. The `10x` floor margin below is
-//! deliberately far under what a working shifter should deliver — the
-//! fundamental sits some 300x over the same floor — so a repair that lands
-//! under it has not made Shimmer audible and the number is not the thing to
-//! move.
+//! The floor margin below sits between what a working shifter delivers and what
+//! each of those defects leaves behind, so a change that lands under it has
+//! stopped Shimmer being audible and the number is not the thing to move.
 
 use proof_chamber::ProofChamberInstance;
 
@@ -60,9 +59,22 @@ const SUSTAIN_SECONDS: f32 = 2.0;
 /// below 0.5 selects the 1.5 ratio, at or above selects 2.0.
 const PITCH_SETTINGS: [(f32, f32, &str); 2] = [(0.0, 1.5, "fifth up"), (1.0, 2.0, "octave up")];
 
-/// How far over the surrounding spectral floor the shifted partial has to
-/// stand before it counts as present rather than as part of the noise.
-const FLOOR_MARGIN: f32 = 10.0;
+/// How far over the surrounding spectral floor the shifted band has to stand
+/// before it counts as an interval rather than as noise.
+///
+/// Set by the defects it has to reject, measured on the band metric below.
+/// Grains read backwards put the band at 2.4x the floor. One shifter serving
+/// both tank halves scrambles them into broadband noise that still reads 33.5x,
+/// over a floor it has itself raised some ninefold — a single bin at `f * ratio`
+/// caught that case at 6.8x, but integrating the band collects the scramble's
+/// noise along with it, so the bar has to clear the noise rather than sit under
+/// it. A working shifter reads 115x at its weakest cell, so this sits between
+/// the two with about a factor of two on either side.
+///
+/// That headroom is affordable only because the band metric holds the four cells
+/// inside a 1.8x spread. The single-bin reading it replaced swung 8.5x across the
+/// same cells, and no threshold in this range would have survived it.
+const FLOOR_MARGIN: f32 = 60.0;
 
 /// How far the up-shifted partial has to stand over its downward mirror. This
 /// is the direction claim on its own: a shifter running backwards puts its
@@ -74,6 +86,16 @@ const DIRECTION_MARGIN: f32 = 4.0;
 /// their magnitudes describes the noise between the partials.
 const FLOOR_PROBES: [f32; 6] = [1.15, 1.31, 1.72, 2.6, 3.9, 5.3];
 
+/// The grain length `GranularShifter::new` derives from the sample rate.
+const GRAIN_SECONDS: f32 = 0.030;
+
+/// How often a grain restarts, in Hz. It falls out of the grain length and the
+/// ratio alone — the sample rate cancels, because the grain is derived from it —
+/// and it is the width of the band the shifted energy arrives in.
+fn grain_rate(ratio: f32) -> f32 {
+    (ratio - 1.0) / GRAIN_SECONDS
+}
+
 /// Render a sustained tone through the plate with Shimmer engaged, returning
 /// the left channel of the second half of the tone.
 ///
@@ -82,7 +104,7 @@ const FLOOR_PROBES: [f32; 6] = [1.15, 1.31, 1.72, 2.6, 3.9, 5.3];
 /// attenuate the upper partials the measurement is looking for before they
 /// reached the output. `mod_depth` is 0 so the only thing modulating the tail
 /// is the shifter itself.
-fn render_shimmer_tail(sample_rate: f32, pitch_setting: f32) -> Vec<f32> {
+fn render_shimmer_tail(sample_rate: f32, pitch_setting: f32, tone_hz: f32) -> Vec<f32> {
     let mut instance = ProofChamberInstance::new(sample_rate);
     for (name, value) in [
         ("algorithm", 0.0),
@@ -108,7 +130,7 @@ fn render_shimmer_tail(sample_rate: f32, pitch_setting: f32) -> Vec<f32> {
         let block = (frames - index).min(BLOCK);
         let input: Vec<f32> = (0..block)
             .map(|offset| {
-                let phase = (index + offset) as f32 / sample_rate * TONE_HZ * std::f32::consts::TAU;
+                let phase = (index + offset) as f32 / sample_rate * tone_hz * std::f32::consts::TAU;
                 0.4 * phase.sin()
             })
             .collect();
@@ -149,6 +171,33 @@ fn bin_magnitude(samples: &[f32], sample_rate: f32, freq: f32) -> f32 {
     ((real * real + imaginary * imaginary).sqrt() / len as f64) as f32
 }
 
+/// Mean bin magnitude across `centre ± half_width`, on the analysis window's own
+/// 1 Hz bin spacing — the spectral density of a band rather than the height of
+/// one bin in it.
+///
+/// A single bin is the wrong instrument for what this shifter emits. Every grain
+/// starts from an independently drawn point in history, so the transposed energy
+/// arrives phase-randomised across a band about one grain rate wide instead of
+/// as a line: the band's centroid is what sits exactly at `f * ratio`, while its
+/// tallest single bin wanders with the jitter seed. Probing one bin measures an
+/// arbitrary slice of that band, so a grain-size, scatter-range or seed change
+/// that leaves Shimmer just as audible can move the reading by an order of
+/// magnitude in either direction.
+///
+/// A mean rather than a sum, because what it is compared against is a spectral
+/// floor read one bin at a time. Both sides are then a magnitude per bin, the
+/// thresholds below keep the meaning they were calibrated with, and a stage that
+/// fills the band with noise instead of a partial still reads as the floor.
+fn band_density(samples: &[f32], sample_rate: f32, centre: f32, half_width: f32) -> f32 {
+    let lowest = (centre - half_width).max(1.0).round() as i32;
+    let highest = (centre + half_width).min(sample_rate * 0.5 - 1.0).round() as i32;
+    let bins = highest - lowest + 1;
+    (lowest..=highest)
+        .map(|freq| bin_magnitude(samples, sample_rate, freq as f32))
+        .sum::<f32>()
+        / bins as f32
+}
+
 /// Median magnitude across `FLOOR_PROBES`: what the spectrum reads between the
 /// partials, which is what a partial has to stand above to be one.
 fn spectral_floor(samples: &[f32], sample_rate: f32) -> f32 {
@@ -161,15 +210,15 @@ fn spectral_floor(samples: &[f32], sample_rate: f32) -> f32 {
 }
 
 #[test]
-#[ignore = "pins the plate's dead Shimmer path — the inverted grain phase increment (src/proof_chamber.rs:320-324) and the single GranularShifter shared across both tank halves (src/proof_chamber.rs:454, :653, :906, :936). Red until the shimmer repair lane lands."]
 fn shimmer_puts_its_selected_interval_into_the_tail() {
     for sample_rate in SAMPLE_RATES {
         for (setting, ratio, label) in PITCH_SETTINGS {
-            let tail = render_shimmer_tail(sample_rate, setting);
+            let tail = render_shimmer_tail(sample_rate, setting, TONE_HZ);
+            let band = grain_rate(ratio);
 
             let fundamental = bin_magnitude(&tail, sample_rate, TONE_HZ);
-            let shifted = bin_magnitude(&tail, sample_rate, TONE_HZ * ratio);
-            let mirror = bin_magnitude(&tail, sample_rate, TONE_HZ / ratio);
+            let shifted = band_density(&tail, sample_rate, TONE_HZ * ratio, band);
+            let mirror = band_density(&tail, sample_rate, TONE_HZ / ratio, band);
             let floor = spectral_floor(&tail, sample_rate);
 
             assert!(
@@ -199,6 +248,66 @@ fn shimmer_puts_its_selected_interval_into_the_tail() {
                 TONE_HZ * ratio,
                 TONE_HZ / ratio,
                 shifted / mirror.max(1e-12)
+            );
+        }
+    }
+}
+
+/// High enough that both ratios image it past Nyquist at both rates, and not a
+/// divisor of either rate.
+const FOLD_TONE_HZ: f32 = 18_000.0;
+
+/// How far under the partial that produces it a folded image has to sit.
+///
+/// Measured against the stimulus rather than against the noise around the image,
+/// because the tank's own floor is not flat: at 17 kHz it reads several times
+/// what it reads an octave down, so a neighbourhood estimate charges the shifter
+/// for a tilt it did not cause. The stimulus is what the fold is made from, so
+/// the ratio between them is the rejection the feed filter achieves and nothing
+/// else.
+///
+/// An unfiltered feed manages between 5 dB and *less than nothing* across the
+/// four cells below — at 48 kHz the alias comes back louder than the partial
+/// that made it. The shipped fourth-order feed filter reaches 55 dB at worst.
+/// This bar sits between the two with room on both sides, so it fails on a feed
+/// that stops being band-limited rather than on one whose filter was retuned; it
+/// is not a rejection figure to design a filter down to.
+const FOLD_REJECTION_DB: f32 = 40.0;
+
+#[test]
+fn shimmer_does_not_fold_the_tank_back_under_its_own_shift() {
+    for sample_rate in SAMPLE_RATES {
+        for (setting, ratio, label) in PITCH_SETTINGS {
+            // Reading the grain faster than it was written is resampling, and
+            // resampling images: anything the tank carries above
+            // `sample_rate / (2 * ratio)` transposes past Nyquist and comes back
+            // down the spectrum as an alias. Unlike the partials above, that
+            // alias is not a pitch anyone selected, and it recirculates through
+            // the tank feedback and folds again.
+            let image = FOLD_TONE_HZ * ratio;
+            assert!(
+                image > sample_rate * 0.5,
+                "{label} at {sample_rate:.0} Hz: the stimulus images to {image:.0} Hz, which is \
+                 inside the band — this cell cannot say anything about folding unless the \
+                 stimulus transposes past Nyquist"
+            );
+            let folded = sample_rate - image;
+
+            let tail = render_shimmer_tail(sample_rate, setting, FOLD_TONE_HZ);
+            let band = grain_rate(ratio);
+
+            let alias = band_density(&tail, sample_rate, folded, band);
+            let stimulus = band_density(&tail, sample_rate, FOLD_TONE_HZ, band);
+            let rejection_db = 20.0 * (stimulus / alias.max(1e-12)).log10();
+
+            assert!(
+                rejection_db > FOLD_REJECTION_DB,
+                "{label} at {sample_rate:.0} Hz: a {FOLD_TONE_HZ:.0} Hz partial is folding back \
+                 to {folded:.0} Hz. The alias measures {alias:e} against a stimulus of \
+                 {stimulus:e} — only {rejection_db:.1} dB of rejection, and this file wants \
+                 {FOLD_REJECTION_DB:.0} dB. Shimmer up-samples whatever the tank hands it, so the \
+                 feed has to be band-limited well below {:.0} Hz before the grains read it.",
+                sample_rate / (2.0 * ratio)
             );
         }
     }

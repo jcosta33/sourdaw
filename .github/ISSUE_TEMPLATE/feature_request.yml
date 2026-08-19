@@ -1,0 +1,57 @@
+name: Feature
+description: Small enhancement that does not change a public contract. Consequential behavior is a Spec.
+title: "feat(scope): "
+labels: ["enhancement", "status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Consequential behavior is a Spec. Secrets stay in `~/.agents/artifacts`.
+
+        After create, add `priority:P*`.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine (Realtime scheduling, offline render, backends)
+        - daw-dsp (Synthesizers, modular DSP, audio effects)
+        - electron (Desktop shell, IPC, window management)
+        - native (Rust native addons, platform audio device layers)
+        - plugin-host (CLAP/VST3 hosting, scanning, isolation)
+        - midi (MPE, MIDI 2.0, controller mapping)
+        - arrangement (Timeline, clips, automation, composition)
+        - yeast / bacteria / knead / levain / crumbs (Instruments & processors)
+        - ai / airuntime (AI agentic workflows & tooling)
+        - workspace-shell / ui (Presentation components, mixer, meters)
+        - build (Tooling, build scripts, packaging)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: What becomes true, for whom. No API. No AC-NNN.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done_when
+    attributes:
+      label: Done when
+      description: Observable finish. Not an AC.
+    validations:
+      required: true

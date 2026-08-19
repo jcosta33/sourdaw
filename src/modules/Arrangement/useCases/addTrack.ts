@@ -15,8 +15,11 @@ type AddTrackInput = {
     initialDeviceId?: string;
     name: string;
     kind: TrackKind;
+    parentId?: string;
+    outputId?: string;
     select?: boolean;
     suppressAddedEvent?: boolean;
+    withoutDefaultDevice?: boolean;
 };
 
 export const addTrack = inject({ eventBus: ArrangementEventBus })(

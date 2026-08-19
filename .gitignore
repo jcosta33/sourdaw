@@ -24,6 +24,9 @@ target/
 # Agent worktrees
 .agents/worktrees/
 
+# Review bundles produced by `pnpm review:prepare`
+.agents/review-bundles/
+
 # Agent campaign artifacts live in the global workspace (~/.agents/artifacts/<project>/),
 # never in the repo. Promotion to repo-owned docs happens deliberately via the promote flow.
 .agents/artifacts/

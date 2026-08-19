@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
-import { addDeviceToStrip } from '../addDeviceToStrip';
 import { addMidiFxToStrip } from '../addMidiFxToStrip';
-import { removeDeviceFromStrip } from '../removeDeviceFromStrip';
 import { removeMidiFxFromStrip } from '../removeMidiFxFromStrip';
 import { scheduleDeviceKeyOff } from '../scheduleDeviceKeyOff';
 import { scheduleDeviceKeyOn } from '../scheduleDeviceKeyOn';
@@ -25,22 +23,10 @@ describe('deviceControls delegators', () => {
         vi.restoreAllMocks();
     });
 
-    it('addDeviceToStrip forwards to audioEngine.addDeviceToStrip', () => {
-        const spy = vi.spyOn(audioEngine, 'addDeviceToStrip').mockImplementation(() => undefined);
-        addDeviceToStrip('t1', 'd1', 'grinder', 'ext-1', ['earlier']);
-        expect(spy).toHaveBeenCalledWith('t1', 'd1', 'grinder', 'ext-1', ['earlier']);
-    });
-
     it('addMidiFxToStrip forwards to audioEngine.addMidiFxToStrip', () => {
         const spy = vi.spyOn(audioEngine, 'addMidiFxToStrip').mockImplementation(() => undefined);
         addMidiFxToStrip('t1', 'fx1', 'arp');
         expect(spy).toHaveBeenCalledWith('t1', 'fx1', 'arp');
-    });
-
-    it('removeDeviceFromStrip forwards to audioEngine.removeDeviceFromStrip', () => {
-        const spy = vi.spyOn(audioEngine, 'removeDeviceFromStrip').mockImplementation(() => undefined);
-        removeDeviceFromStrip('t1', 'd1');
-        expect(spy).toHaveBeenCalledWith('t1', 'd1');
     });
 
     it('removeMidiFxFromStrip forwards to audioEngine.removeMidiFxFromStrip', () => {

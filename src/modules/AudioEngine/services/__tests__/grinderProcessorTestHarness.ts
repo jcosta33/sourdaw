@@ -57,6 +57,8 @@ export const grinderSetParamCalls: Array<{ name: string; value: number }> = [];
 export const grinderProcessSizes: number[] = [];
 export const grinderAutomatedProcessSizes: number[] = [];
 export let grinderRightPtrCalls = 0;
+let grinderLatencySamples = 0;
+let grinderLatencySamplesAfterSetParam: number | null = null;
 
 class GrinderInstanceMock {
     get_input_left_ptr(): number {
@@ -82,6 +84,9 @@ class GrinderInstanceMock {
 
     set_param(name: string, value: number): void {
         grinderSetParamCalls.push({ name, value });
+        if (grinderLatencySamplesAfterSetParam !== null) {
+            grinderLatencySamples = grinderLatencySamplesAfterSetParam;
+        }
     }
 
     process(frames: number): number {
@@ -103,7 +108,7 @@ class GrinderInstanceMock {
     }
 
     get_latency_samples(): number {
-        return 0;
+        return grinderLatencySamples;
     }
 
     get_input_db(): number {
@@ -171,6 +176,12 @@ export function resetGrinderProcessorCalls(): void {
     grinderProcessSizes.length = 0;
     grinderAutomatedProcessSizes.length = 0;
     grinderRightPtrCalls = 0;
+    grinderLatencySamples = 0;
+    grinderLatencySamplesAfterSetParam = null;
+}
+
+export function setGrinderLatencySamplesAfterSetParam(latency: number): void {
+    grinderLatencySamplesAfterSetParam = latency;
 }
 
 export function getGrinderAutomationHeader(paramIndex: number): number {

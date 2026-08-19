@@ -9,7 +9,11 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { logger } from '#/infra/logger/appLogger';
 
+import { createGlutenRuntimeParameterIds } from '../models/GlutenRuntimeControl';
+import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -19,6 +23,15 @@ import { telemetryAllocator, createTelemetryReader, GLUTEN_IDX, type TelemetrySl
 // on every daw-dsp rebuild and its wasm-bindgen symbols stop matching the
 // generated glue (initSync then throws "function import requires a callable").
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+let nextWorkletControlGeneration = 1;
+function allocateWorkletControlGeneration(): number {
+    const generation = nextWorkletControlGeneration;
+    nextWorkletControlGeneration = generation >= Number.MAX_SAFE_INTEGER ? 1 : generation + 1;
+    return generation;
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export type GlutenMeterData = {
     grDb: number;
@@ -43,7 +56,7 @@ function projectGlutenMeter(view: Float32Array): GlutenMeterData {
 
 export type GlutenNodeResult = {
     workletNode: AudioWorkletNode;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number, sampleFrame?: number) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GlutenMeterData) => void) => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
@@ -60,7 +73,9 @@ export function isGlutenDevice(deviceType: string): boolean {
 export async function createGlutenNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    controlTarget?: RuntimeDeviceControlTarget,
+    onRuntimeFailure?: (message: string) => void
 ): Promise<GlutenNodeResult> {
     // Gluten's meter readout lives in a SAB telemetry slot; without SAB the
     // worklet still runs but the UI silently freezes at the default values.
@@ -98,6 +113,53 @@ export async function createGlutenNode(
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
+    const workletGeneration = allocateWorkletControlGeneration();
+    const target = controlTarget ?? {
+        trackId: 'offline-gluten-track',
+        deviceId: 'offline-gluten-device',
+        deviceType: 'gluten',
+        parameterIds: [],
+    };
+    const fallbackControlTarget = Object.freeze({
+        trackId: target.trackId,
+        deviceId: target.deviceId,
+        deviceType: target.deviceType,
+        parameterIds: createGlutenRuntimeParameterIds(),
+    });
+    let nextControlSequence = 1;
+    let destroyed = false;
+    const postFallbackControl = (name: string, value: number, sampleFrame?: number): void => {
+        // Gluten has no device-level scheduled-control contract. Reject a frame
+        // instead of silently turning a scheduled write into an immediate one.
+        if (
+            destroyed ||
+            sampleFrame !== undefined ||
+            !Number.isFinite(value) ||
+            nextControlSequence > Number.MAX_SAFE_INTEGER
+        ) {
+            return;
+        }
+        const compilation = compileRuntimeDeviceControl(
+            {
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
+                    parameterId: name,
+                },
+                value,
+                correlation: { workletGeneration, controlSequence: nextControlSequence },
+                scheduling: { targetFrame: null, deadlineFrame: null },
+            },
+            fallbackControlTarget.parameterIds
+        );
+        if (compilation.status === 'compiled') {
+            nextControlSequence++;
+            node.port.postMessage(compilation.control);
+        }
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
@@ -107,26 +169,37 @@ export async function createGlutenNode(
     node.port.onmessage = (event: MessageEvent) => {
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
-            const data = event.data as Record<string, unknown>;
-            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
+            const data: unknown = event.data;
+            if (isRecord(data) && data.type === 'latency-changed' && typeof data.latency === 'number') {
                 latencyCallback?.(data.latency);
             }
             return;
         }
+        if (outcome === 'late' && isRecord(event.data) && event.data.type === 'error') {
+            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+            logger.warn('GlutenNode runtime fault (processor faulted):', message);
+            onRuntimeFailure?.(message);
+        }
     };
     const readyPromise = handshake.promise;
 
+    node.port.postMessage(
+        Object.freeze({
+            schemaVersion: 1,
+            command: 'initialize-fallback-control',
+            target: fallbackControlTarget,
+            correlation: Object.freeze({ workletGeneration }),
+        })
+    );
     node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,
-        setParam(name: string, value: number) {
-            if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
-            }
+        setParam(name: string, value: number, sampleFrame?: number) {
+            postFallbackControl(name, value, sampleFrame);
         },
         setBypass(state: boolean) {
-            node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
+            postFallbackControl('bypass', state ? 1 : 0);
         },
         onMeterData(cb: (data: GlutenMeterData) => void) {
             if (meterRafId !== null) {
@@ -161,6 +234,10 @@ export async function createGlutenNode(
             }
         },
         destroy() {
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
             if (meterRafId !== null) {
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;

@@ -13,7 +13,7 @@ export type SoundPreset = {
     category: SoundPresetCategory;
     subcategory?: string;
     description: string;
-    trackKind: 'midi' | 'audio';
+    trackKind: 'midi' | 'audio' | 'folder';
     devices: DevicePreset[];
     tags: string[];
     author: string;

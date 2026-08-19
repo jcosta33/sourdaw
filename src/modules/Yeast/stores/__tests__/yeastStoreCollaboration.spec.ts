@@ -150,4 +150,138 @@ describe('Yeast collaboration storage', () => {
         flushAutomergeStorageWrites();
         expect(localStorage.get()?.processors.map((processor) => processor.id)).toEqual(['local', 'remote']);
     });
+
+    it('round-trips a reorder of the processor list through storage', () => {
+        // Mirrors what reorderYeastProcessor commits: the same three entities,
+        // written back in a new order. A peer that hydrates afterward must see
+        // the new order, not a merge that keeps the original positions.
+        const baseline = createBaseline(
+            createState([createProcessor('a'), createProcessor('b'), createProcessor('c')])
+        );
+        const peer = createPeer(clone(baseline));
+        const storage = createStorage();
+        configureAutomergeStoragePort(peer.port);
+        storage.hydrate();
+
+        storage.set(createState([createProcessor('b'), createProcessor('c'), createProcessor('a')]));
+        flushAutomergeStorageWrites();
+
+        const freshPeer = createPeer(clone(peer.getDoc()));
+        const freshStorage = createStorage();
+        configureAutomergeStoragePort(freshPeer.port);
+
+        expect(freshStorage.hydrate()).toBe(true);
+        expect(freshStorage.get()?.processors.map((processor) => processor.id)).toEqual(['b', 'c', 'a']);
+    });
+
+    it('migrates a v1 document (no explicit order) and then preserves a reorder written on top of it', () => {
+        // v1 stored no `order` field and decodeProcessors always sorted by id
+        // — this is the shape every already-persisted Yeast document has.
+        // decodeProcessors must still read it (falling back to id order, the
+        // only order v1 ever had), and the next local mutation must migrate
+        // it so a SUBSEQUENT reorder actually sticks.
+        //
+        // Built as TWO changes, not one bulk-assign of `{ b, a }`: assigning
+        // a whole object literal in one Automerge change materializes its
+        // keys sorted, so a single-change fixture would pass on id order
+        // whether or not the entityOrder comparator falls through to the id
+        // tiebreak correctly — it could not catch a NaN-from-Infinity bug in
+        // that comparator (two order-less entities produce
+        // `Infinity - Infinity = NaN`, which `NaN !== 0` sends down the
+        // "changed" branch of a delta-based comparator, letting SortCompare
+        // coerce it to +0 and never reach the tiebreak). Writing `b` first
+        // and appending `a` in a second change instead reproduces how a real
+        // v1 document was actually built — add order `b`, then `a` — which
+        // is the opposite of id order, so only a comparator that truly falls
+        // through to `compareEntityKeys` on a tie decodes it as `['a', 'b']`.
+        const v1Doc = from<RootDocument>({});
+        const withFirstEntity = change(v1Doc, (draft) => {
+            (draft as unknown as { yeast: unknown }).yeast = {
+                schemaVersion: 1,
+                processors: {
+                    b: { deleted: false, value: createProcessor('b') },
+                },
+            };
+        });
+        const migrated = change(withFirstEntity, (draft) => {
+            const yeast = (draft as unknown as { yeast: { processors: Record<string, unknown> } }).yeast;
+            yeast.processors.a = { deleted: false, value: createProcessor('a') };
+        });
+        const peer = createPeer(clone(migrated));
+        const storage = createStorage();
+        configureAutomergeStoragePort(peer.port);
+
+        // Read: v1 has no order, so decode falls back to id order.
+        expect(storage.hydrate()).toBe(true);
+        expect(storage.get()?.processors.map((processor) => processor.id)).toEqual(['a', 'b']);
+
+        // Write: reorder on top of the migrated-in-memory state.
+        storage.set(createState([createProcessor('b'), createProcessor('a')]));
+        flushAutomergeStorageWrites();
+
+        const freshPeer = createPeer(clone(peer.getDoc()));
+        const freshStorage = createStorage();
+        configureAutomergeStoragePort(freshPeer.port);
+        expect(freshStorage.hydrate()).toBe(true);
+        expect(freshStorage.get()?.processors.map((processor) => processor.id)).toEqual(['b', 'a']);
+    });
+
+    it('converges a concurrent reorder and a same-row param edit from either merge direction, losing no processor', () => {
+        // The generic Automerge-list reconciler cannot survive this shape —
+        // see createAutomergeStorage.concurrentReorder.spec.ts's "loses a
+        // concurrent edit to the one row a peer actually moves": a list
+        // reorder removes and re-inserts the moved element, colliding with a
+        // concurrent field write to that same element. The Yeast slot is an
+        // id-keyed map with an explicit `order` field instead: a reorder
+        // writes only `order`, a param edit writes only `value.params`, and
+        // those are different fields on the same map entry, so both survive
+        // regardless of merge direction — the property this test pins.
+        const baseline = createBaseline(
+            createState([createProcessor('a'), createProcessor('b'), createProcessor('c')])
+        );
+
+        const reordererPeer = createPeer(clone(baseline));
+        const reordererStorage = createStorage();
+        configureAutomergeStoragePort(reordererPeer.port);
+        reordererStorage.hydrate();
+        // A drags `c` to the front of the chain.
+        reordererStorage.set(createState([createProcessor('c'), createProcessor('a'), createProcessor('b')]));
+        flushAutomergeStorageWrites();
+
+        const tweakerPeer = createPeer(clone(baseline));
+        const tweakerStorage = createStorage();
+        configureAutomergeStoragePort(tweakerPeer.port);
+        tweakerStorage.hydrate();
+        // B, concurrently, turns a knob on `c` — the very row A is moving —
+        // without reordering anything.
+        tweakerStorage.set(
+            createState([
+                createProcessor('a'),
+                createProcessor('b'),
+                { ...createProcessor('c'), params: { depth: 0.75 } },
+            ])
+        );
+        flushAutomergeStorageWrites();
+
+        function projectMerged(left: Doc<RootDocument>, right: Doc<RootDocument>): YeastState | undefined {
+            const mergedPeer = createPeer(merge(clone(left), right));
+            const mergedStorage = createStorage();
+            configureAutomergeStoragePort(mergedPeer.port);
+            mergedStorage.hydrate();
+            return mergedStorage.get() ?? undefined;
+        }
+
+        const mergedForward = projectMerged(reordererPeer.getDoc(), tweakerPeer.getDoc());
+        const mergedBackward = projectMerged(tweakerPeer.getDoc(), reordererPeer.getDoc());
+
+        for (const merged of [mergedForward, mergedBackward]) {
+            // Convergence: both merge directions land on the same order.
+            expect(merged?.processors.map((processor) => processor.id)).toEqual(['c', 'a', 'b']);
+            // Permutation completeness: exactly the three original ids, no
+            // duplicate and none lost.
+            expect(new Set(merged?.processors.map((processor) => processor.id)).size).toBe(3);
+            // The concurrent param edit on the moved row survives.
+            expect(merged?.processors.find((processor) => processor.id === 'c')?.params).toEqual({ depth: 0.75 });
+        }
+    });
 });
