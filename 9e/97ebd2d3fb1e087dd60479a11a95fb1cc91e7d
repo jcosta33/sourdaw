@@ -1,0 +1,21 @@
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_8ddfabd1166b5d::t_bb7f46c49e9f9e 425,429
+scripts/githubAppIdentity.ts
+  s_8ddfabd1166b5d::t_acd48360581485 414-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9e97ebd2d3fb1e087dd60479a11a95fb1cc91e7d",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

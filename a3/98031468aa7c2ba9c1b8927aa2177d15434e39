@@ -1,0 +1,111 @@
+scripts/prContract.ts
+  s_8ddfabd1166b5d::t_1c458869c298da 1-105
+scripts/__tests__/removeLane.spec.ts
+  s_8ddfabd1166b5d::t_412414dba6f4c5 11
+  s_8ddfabd1166b5d::t_908f57991f98ac 143-157
+  s_8ddfabd1166b5d::t_edea0b6fdfc5a2 160-161,170
+  s_8ddfabd1166b5d::t_9afef4aafba93e 162-169
+  s_8ddfabd1166b5d::t_2e4449bce2f627 158-159,171-177
+scripts/__tests__/publishLane.spec.ts
+  s_8ddfabd1166b5d::t_8169435c180994 1-131
+  s_8ddfabd1166b5d::t_77553914bb0e18 132-140
+scripts/__tests__/prepareReview.spec.ts
+  s_8ddfabd1166b5d::t_d7c491d3170e19 4
+  s_8ddfabd1166b5d::t_8a0fc8528de5d4 1-3,5-100,102-114
+  s_487e9aa1e46063::t_a483ff17e2795a 101
+scripts/publishReview.ts
+  s_8ddfabd1166b5d::t_260055f45a9e15 1-166,172-173,175-176,178-179,181-182,185-201,203-230
+  s_8ddfabd1166b5d::t_2ee691db9ed724 202
+  s_8ddfabd1166b5d::t_d89ec63727555b 167-171,174,177,180,183-184
+  s_8ddfabd1166b5d::t_28f4372905d65a 231-243
+scripts/githubAppIdentity.ts
+  s_8ddfabd1166b5d::t_e6ca332437dcc1 263,278
+  s_8ddfabd1166b5d::t_62b75a9eb7873a 1-262,264-277,279-302,305-307,309-310,312,314-316,318-410
+  s_8ddfabd1166b5d::t_88cb66468b0516 311,313,317
+  s_8ddfabd1166b5d::t_446356d94c1ef4 303-304,308
+  s_8ddfabd1166b5d::t_fc1dca25e1d435 411-414
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_8ddfabd1166b5d::t_4ce38eb433a3dd 3
+  s_8ddfabd1166b5d::t_e3a05c6cbf307c 1-2,4-42
+scripts/deliverPullRequest.ts
+  s_8ddfabd1166b5d::t_86d0d087a57edd 456
+  s_8ddfabd1166b5d::t_f061fb51e736b5 470-471
+  s_8ddfabd1166b5d::t_8205b2d287233f 5-17,19,38,71,74,84-85,92,163,176,189,200,225,248-249,251,254-258,281-295,302,308-313,346-353,355,442-455,457-459,461-462,464-469,472-473,475-476,481-487
+  s_8ddfabd1166b5d::t_e0ca3d93fe52b8 18
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_8ddfabd1166b5d::t_1ceef9bf818caa 2
+  s_8ddfabd1166b5d::t_841cef5b97272d 93,113-115,117-135
+  s_8ddfabd1166b5d::t_67c67b9ea58c94 316-321
+  s_8ddfabd1166b5d::t_fffc345d7303c9 1,3-7,9-14,16-19,22-57,59-92,94-112,116,136-284,300-315,322-323
+  s_8ddfabd1166b5d::t_58abfc4df90132 285-299
+  s_8ddfabd1166b5d::t_94e867f18c31ef 8,15,20-21
+  s_487e9aa1e46063::t_30ace06dc763ec 58
+scripts/publishLane.ts
+  s_8ddfabd1166b5d::t_afe4088193c25d 1,3-65,67-68,70-145,147-192,194-198,206-241,243-270
+  s_8ddfabd1166b5d::t_9e6cb41a7e44c5 66
+  s_8ddfabd1166b5d::t_805f74183e4d36 193,199-205
+  s_8ddfabd1166b5d::t_6093fc8e16f302 69
+  s_8ddfabd1166b5d::t_4c9a093415b64c 242
+  s_8ddfabd1166b5d::t_65ad1184304d56 146
+  s_8ddfabd1166b5d::t_dbfd1912a21308 2
+  s_8ddfabd1166b5d::t_3990416c378c13 271-287
+scripts/__tests__/publishReview.spec.ts
+  s_8ddfabd1166b5d::t_42c1e9c33fdc44 1-99
+  s_8ddfabd1166b5d::t_f3d648556f14db 100-106
+.gitignore
+  s_8ddfabd1166b5d::t_359a23ac6549d0 27-29
+scripts/openLane.ts
+  s_8ddfabd1166b5d::t_3479b07b6ece56 102
+  s_8ddfabd1166b5d::t_dfa4b1d66eaa9c 1-101,103-113
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_8ddfabd1166b5d::t_71d357d907c60d 253-254,256,260-261,263-273,281-282,290
+  s_8ddfabd1166b5d::t_9a59187b4a49d3 80-87,385-388
+  s_8ddfabd1166b5d::t_0dde40b7a317c9 202
+  s_8ddfabd1166b5d::t_b695af9aa37b2d 247,274-280,283-289,291-292,389-392,436,457,478,485,521
+scripts/__tests__/prContract.spec.ts
+  s_8ddfabd1166b5d::t_68432cb5eb86cf 1-50
+scripts/removeLane.ts
+  s_8ddfabd1166b5d::t_a6f4d9654d601a 404
+  s_8ddfabd1166b5d::t_f2e674c772d395 248-251,253
+  s_8ddfabd1166b5d::t_77c2d7f36658b3 380-381
+  s_8ddfabd1166b5d::t_4a286822907408 48
+  s_8ddfabd1166b5d::t_d0e03b5caa851d 8-14
+  s_8ddfabd1166b5d::t_46080caf6be99a 407-408
+  s_8ddfabd1166b5d::t_10d5a224377e01 264
+  s_8ddfabd1166b5d::t_5a03f81ab3e022 135-137
+  s_8ddfabd1166b5d::t_7f7ef76d2c6db2 400-403,405-406
+  s_8ddfabd1166b5d::t_284343082787e5 227-231,239,242
+scripts/prepareReview.ts
+  s_8ddfabd1166b5d::t_02e55ee31d1042 1-138,142-174,176-203
+  s_8ddfabd1166b5d::t_8455a8bbc19faf 139-141
+  s_8ddfabd1166b5d::t_f3bc82ca4341f5 175
+  s_8ddfabd1166b5d::t_9153e7b880afe0 204-210
+scripts/__tests__/openLane.spec.ts
+  s_8ddfabd1166b5d::t_5452ceda35e720 1-62
+package.json
+  s_8ddfabd1166b5d::t_5f8142e7924f64 29-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a398031468aa7c2ba9c1b8927aa2177d15434e39",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
