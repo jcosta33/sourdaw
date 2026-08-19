@@ -7,8 +7,41 @@ import { clearCollaborationFailure } from './clearCollaborationFailure';
 import { recordCollaborationFailure } from './recordCollaborationFailure';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
+/**
+ * Pins a surfaced failure to the accept attempt that is still live.
+ *
+ * The panel's accept button carries no in-flight guard, so a double-click runs
+ * two `acceptAnswer` calls against the same pending peer. The first applies the
+ * remote description and connects the joiner; the second then rejects, because
+ * the peer connection has already left the signaling state that accepts an
+ * answer. Reporting that rejection would tell the host the join failed while
+ * the joiner is connected, so only an attempt that is still current when it
+ * fails may write the error row. Both beginning a newer attempt and settling
+ * one successfully retire every attempt already in flight. The rejection still
+ * reaches the caller either way — this gates the store write, not the throw.
+ *
+ * Mirrors `joinAttemptAuthority`, which gates `joinSession`'s failure write the
+ * same way; that one is shared because session lifecycle use cases invalidate
+ * it, while accept attempts are only ever superseded from here.
+ */
+let currentAcceptAttempt = 0;
+
+const acceptAttemptAuthority = {
+    begin(): number {
+        currentAcceptAttempt += 1;
+        return currentAcceptAttempt;
+    },
+    settle(): void {
+        currentAcceptAttempt += 1;
+    },
+    isCurrent(attempt: number): boolean {
+        return attempt === currentAcceptAttempt;
+    },
+};
+
 export async function acceptAnswer(answerString: string): Promise<void> {
     clearCollaborationFailure();
+    const acceptAttempt = acceptAttemptAuthority.begin();
     try {
         let json: string;
         try {
@@ -60,8 +93,11 @@ export async function acceptAnswer(answerString: string): Promise<void> {
                 peers: [...state.peers, joinerInfo],
             });
         }
+        acceptAttemptAuthority.settle();
     } catch (error) {
-        recordCollaborationFailure(error);
+        if (acceptAttemptAuthority.isCurrent(acceptAttempt)) {
+            recordCollaborationFailure(error);
+        }
         throw error;
     }
 }

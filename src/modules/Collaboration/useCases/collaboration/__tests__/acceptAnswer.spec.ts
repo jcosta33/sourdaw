@@ -85,6 +85,26 @@ describe('acceptAnswer', () => {
         expect(collaborationStore.value?.isEnabled).toBe(true);
     });
 
+    it('keeps the store clean when a duplicate concurrent accept rejects after the first succeeded', async () => {
+        // A double-clicked accept button: both calls target the same pending
+        // peer, the first applies the answer, the second rejects because the
+        // connection has left the state that accepts one. The host is connected
+        // — nothing may claim the join failed.
+        acceptAnswerOnPeer
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new Error('Failed to set remote answer sdp: Called in wrong state: stable'));
+        const answer = JSON.stringify(makeAnswer());
+
+        const outcomes = await Promise.allSettled([acceptAnswer(answer), acceptAnswer(answer)]);
+
+        expect(outcomes[0]?.status).toBe('fulfilled');
+        expect(outcomes[1]).toMatchObject({
+            status: 'rejected',
+            reason: expect.objectContaining({ message: expect.stringContaining('Called in wrong state') }),
+        });
+        expect(collaborationStore.value?.error).toBeNull();
+    });
+
     it('clears a previously surfaced failure when a new attempt succeeds', async () => {
         collaborationStore.set({ ...baseState, error: 'Invalid answer — must be a valid answer string' });
         mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
