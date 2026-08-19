@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { logger } from '#/infra/logger/appLogger';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
-import { createAudioEngine } from '../createWebAudioEngine';
+
+import {
+    createAudioEngineTopologyTestHarness as createAudioEngine,
+    type AudioEngineTopologyTestHarness,
+} from './createAudioEngineTopologyTestHarness';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
 
@@ -139,7 +143,7 @@ function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
 
 describe('AudioEngineImpl — residual branch coverage', () => {
     let mockCtx: MockAudioContext;
-    let engine: AudioEngine;
+    let engine: AudioEngineTopologyTestHarness;
 
     class FakeWorkletNode {
         port = { postMessage: vi.fn() };
@@ -495,12 +499,15 @@ describe('AudioEngineImpl — residual branch coverage', () => {
     // ── ensureBusStrip: throws when the underlying track strip cannot be created.
     describe('ensureBusStrip failure', () => {
         it('throws when the track strip for the bus cannot be created', () => {
-            // The guard at L663 fires when ensureTrackStrip runs but the node
-            // is absent from trackNodes afterwards. Spy on ensureTrackStrip to
-            // make it a no-op (it neither creates nor inserts), so the
+            // The guard fires when ensureTrackStripInGraph runs but the node
+            // is absent from trackNodes afterwards. Spy on the graph-local
+            // helper to make it a no-op (it neither creates nor inserts), so the
             // subsequent trackNodes.get(busId) returns undefined and the guard
             // throws its descriptive error.
-            const spy = vi.spyOn(engine, 'ensureTrackStrip').mockImplementation(() => undefined as never);
+            const graphEngine = engine as unknown as {
+                ensureTrackStripInGraph(trackId: string): unknown;
+            };
+            const spy = vi.spyOn(graphEngine, 'ensureTrackStripInGraph').mockImplementation(() => undefined);
             expect(() => engine.ensureBusStrip('orphan-bus')).toThrow(
                 /Failed to create track strip for bus orphan-bus/
             );

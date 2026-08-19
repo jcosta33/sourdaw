@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn(),
     resolveDroppedSampleFile: vi.fn(),
     addClip: vi.fn(),
-    addDevice: vi.fn(),
+    compileAddDeviceAction: vi.fn(),
+    executeAppAction: vi.fn(),
     addTrack: vi.fn(),
     importMidiFile: vi.fn(),
 }));
@@ -58,8 +59,12 @@ vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: mocks.addClip,
 }));
 
-vi.mock('../../../useCases/device/addDevice', () => ({
-    addDevice: mocks.addDevice,
+vi.mock('../../../useCases/device/compileAddDeviceAction', () => ({
+    compileAddDeviceAction: mocks.compileAddDeviceAction,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
 }));
 
 vi.mock('../../../useCases/addTrack', () => ({
@@ -83,6 +88,11 @@ describe('useTimelineFileDrop', () => {
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
         mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
+        mocks.compileAddDeviceAction.mockImplementation((trackId: string, deviceType: string) => ({
+            type: 'addDevice',
+            payload: { trackId, deviceType, deviceId: 'device-1', expectedDeviceIds: [] },
+        }));
+        mocks.executeAppAction.mockResolvedValue(undefined);
     });
 
     it('handles plugin drop', async () => {
@@ -108,11 +118,15 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'p1');
+            expect(mocks.compileAddDeviceAction).toHaveBeenCalledWith('t1', 'p1');
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'p1', deviceId: 'device-1', expectedDeviceIds: [] },
+            });
         });
     });
 
-    // The drag payload carries both, and `addDevice` matches on name *or* id.
+    // The drag payload carries both, and the command receives the stable id.
     // `De-esser`, `LUFS Meter` and `Stereo Widener` each name two catalog
     // plugins — a builtin and a Faust one — so a name lookup returns whichever
     // the registry lists first, not the card the user actually dragged.
@@ -139,7 +153,11 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'faust-de-esser');
+            expect(mocks.compileAddDeviceAction).toHaveBeenCalledWith('t1', 'faust-de-esser');
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'addDevice',
+                payload: { trackId: 't1', deviceType: 'faust-de-esser', deviceId: 'device-1', expectedDeviceIds: [] },
+            });
         });
     });
 

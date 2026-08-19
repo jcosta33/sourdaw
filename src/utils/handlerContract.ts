@@ -32,6 +32,16 @@ export type DeviceSnapshot = {
     readonly externalStateChunk?: string;
     readonly deviceState?: DeviceStateChunkSnapshot;
 };
+export type DeviceChainTopologySnapshot = {
+    readonly id: string;
+    readonly kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+    readonly devices: readonly {
+        readonly id: string;
+        readonly type: string;
+        readonly externalInstanceId?: string;
+        readonly parameterIds: readonly string[];
+    }[];
+};
 export type BatchRestoreDeviceSnapshot = {
     readonly trackId: string;
     readonly deviceId: string;
@@ -638,6 +648,12 @@ export type AppAction =
               initialAlternativeId?: string;
               /** Internal replay metadata; provider payloads cannot set this field. */
               initialDeviceId?: string;
+              /** Internal arrangement composition metadata; provider payloads cannot set this field. */
+              parentId?: string;
+              /** Internal arrangement composition metadata; provider payloads cannot set this field. */
+              outputId?: string;
+              /** Internal arrangement composition metadata; provider payloads cannot set this field. */
+              withoutDefaultDevice?: boolean;
           };
       }
     | {
@@ -882,6 +898,31 @@ export type AppAction =
               expectedDeviceIds?: readonly string[];
               /** Internal grouped-history context for compositionally restoring sibling devices. */
               batchRestoreDevices?: readonly BatchRestoreDeviceSnapshot[];
+          };
+      }
+    | {
+          /**
+           * Application-compiled device-chain move. The provider and presentation layers
+           * supply only device identities; the Arrangement compiler owns this exact
+           * project/topology binding and the handler retains it for undo/redo.
+           */
+          type: 'reorderDevices';
+          payload: {
+              trackId: string;
+              deviceId: string;
+              targetIndex: number;
+              expectedBefore: {
+                  id: string;
+                  kind: TrackKind;
+                  devices: readonly {
+                      id: string;
+                      type: string;
+                      externalInstanceId?: string;
+                      parameterIds: readonly string[];
+                  }[];
+              };
+              /** Present on the initial application-issued command; replay uses topology guards. */
+              expectedProjectRevision?: string;
           };
       }
     | {
@@ -1332,7 +1373,32 @@ export type AppAction =
               expectedPoints?: readonly AutomationPointSnapshot[];
           };
       }
-    | { type: 'loadPreset'; payload: { presetId: string; trackId?: string } }
+    | {
+          type: 'loadPreset';
+          payload: {
+              /** Preset-catalog identity retained for an execution-time authority check. */
+              presetId: string;
+              /** Application-owned target; omitted only before the preset compiler expands a new-track batch. */
+              trackId: string;
+              /** Captured ordered live/project chain before the one preset replacement. */
+              expectedBefore: DeviceChainTopologySnapshot;
+              /** Rejects a collaborator change before the project write. Consumed on first application. */
+              expectedProjectRevision?: string;
+              expectedFrozen: boolean;
+              /** Exact app-materialized chain: ids, order, type, parameter schema and values. */
+              devices: readonly DeviceSnapshot[];
+          };
+      }
+    | {
+          /** Internal guarded inverse emitted by `loadPreset`; never a presentation or provider command. */
+          type: 'restorePresetDeviceChain';
+          payload: {
+              trackId: string;
+              expectedBefore: DeviceChainTopologySnapshot;
+              expectedFrozen: boolean;
+              replacementDevices: readonly DeviceSnapshot[];
+          };
+      }
     | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }
     | {
           type: 'generateDrumPattern';

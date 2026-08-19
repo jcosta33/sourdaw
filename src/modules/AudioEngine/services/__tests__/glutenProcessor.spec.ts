@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createGlutenRuntimeParameterIds } from '../../models/GlutenRuntimeControl';
+
 import {
     RealFloat32Array,
     installWorkletGlobals,
@@ -115,6 +117,36 @@ function send(proc: GlutenProcessorLike, data: unknown): void {
     proc.port.onmessage?.({ data });
 }
 
+function initializeControl(proc: GlutenProcessorLike): void {
+    send(proc, {
+        schemaVersion: 1,
+        command: 'initialize-fallback-control',
+        target: {
+            trackId: 'track-1',
+            deviceId: 'gluten-1',
+            deviceType: 'gluten',
+            parameterIds: createGlutenRuntimeParameterIds(),
+        },
+        correlation: { workletGeneration: 1 },
+    });
+}
+
+function control(parameterId: string, value: number, controlSequence: number): Record<string, unknown> {
+    return {
+        schemaVersion: 1,
+        command: 'set-fallback-param',
+        target: {
+            trackId: 'track-1',
+            deviceId: 'gluten-1',
+            deviceType: 'gluten',
+            parameterId,
+        },
+        value,
+        correlation: { workletGeneration: 1, controlSequence },
+        scheduling: { targetFrame: null, deadlineFrame: null },
+    };
+}
+
 function stereo(frames: number, fill: number): Float32Array[] {
     return [new Float32Array(frames).fill(fill), new Float32Array(frames).fill(fill)];
 }
@@ -144,6 +176,17 @@ describe('GlutenProcessor message handling', () => {
         expect((ready[0]![0] as { latency: number }).latency).toBe(64);
     });
 
+    it('rejects the legacy raw parameter message before it reaches WASM', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init' });
+        initializeControl(proc);
+        paramCalls.length = 0;
+
+        send(proc, { type: 'param', name: 'threshold', value: -12 });
+
+        expect(paramCalls).toEqual([]);
+    });
+
     it('reports an init error when WASM instantiation throws', async () => {
         const proc = await loadProcessor();
         initShouldThrow = new Error('WASM instantiation failed');
@@ -155,6 +198,7 @@ describe('GlutenProcessor message handling', () => {
     it('maps known params and reports a latency-changed event when latency shifts', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
         resetRecording();
 
         // First get_latency_samples() returns 0; bump to 32 before the second call
@@ -168,7 +212,8 @@ describe('GlutenProcessor message handling', () => {
             return latencyBumpCount === 1 ? 0 : 32;
         };
         try {
-            send(proc, { type: 'param', name: 'lookahead', value: 5 });
+            initializeControl(proc);
+            send(proc, control('lookahead', 5, 1));
         } finally {
             GlutenInstanceMock.prototype.get_latency_samples = orig;
         }
@@ -186,24 +231,36 @@ describe('GlutenProcessor message handling', () => {
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         // nextLatency stays 0 for both calls ⇒ no change.
-        send(proc, { type: 'param', name: 'ratio', value: 4 });
+        initializeControl(proc);
+        send(proc, control('ratio', 4, 1));
         const changed = proc.port.postMessage.mock.calls
             .map((c) => c[0] as { type?: string })
             .find((m) => m.type === 'latency-changed');
         expect(changed).toBeUndefined();
     });
 
-    it('falls back to the raw name for unmapped params', async () => {
+    it('rejects an unknown parameter name', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
-        send(proc, { type: 'param', name: 'futureKnob', value: 9 });
-        expect(paramCalls).toContainEqual({ name: 'futureKnob', value: 9 });
+        initializeControl(proc);
+        send(proc, control('futureKnob', 9, 1));
+        expect(paramCalls).toEqual([]);
+    });
+
+    it('accepts the GlutenPanel knee wire control', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        resetRecording();
+        initializeControl(proc);
+        send(proc, control('knee', 6, 1));
+        expect(paramCalls).toEqual([{ name: 'knee', value: 6 }]);
     });
 
     it('ignores param messages before init (no instance)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'param', name: 'ratio', value: 4 });
+        initializeControl(proc);
+        send(proc, control('ratio', 4, 1));
         expect(paramCalls).toEqual([]);
     });
 
@@ -222,13 +279,14 @@ describe('GlutenProcessor message handling', () => {
     it('posts an error and stops taking work when set_param throws while already ready', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
         resetRecording();
         proc.port.postMessage.mockClear();
 
         const spy = vi.spyOn(GlutenInstanceMock.prototype, 'set_param').mockImplementation(() => {
             throw new Error('param trap while ready');
         });
-        send(proc, { type: 'param', name: 'ratio', value: 4 });
+        send(proc, control('ratio', 4, 1));
         spy.mockRestore();
 
         const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
@@ -236,7 +294,7 @@ describe('GlutenProcessor message handling', () => {
         expect((errors[0]![0] as { message: string }).message).toBe('param trap while ready');
 
         // A throw here may mean the instance is trapped, so it stops being fed.
-        send(proc, { type: 'param', name: 'ratio', value: 8 });
+        send(proc, control('ratio', 8, 2));
         expect(paramCalls).toEqual([]);
     });
 });

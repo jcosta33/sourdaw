@@ -21,7 +21,7 @@ export type SoundPresetView = {
     category: SoundPresetCategory;
     subcategory?: string;
     description: string;
-    trackKind: 'midi' | 'audio';
+    trackKind: 'midi' | 'audio' | 'folder';
     devices: DevicePresetView[];
     tags: string[];
     author: string;

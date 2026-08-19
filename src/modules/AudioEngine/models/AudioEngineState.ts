@@ -226,6 +226,10 @@ export type DeviceController = {
 export type BuiltinDeviceNode = {
     deviceId: string;
     type: string;
+    /** Native-host instance identity, retained so the runtime can reject ABA replacement. */
+    externalInstanceId?: string;
+    /** Immutable project-declared control schema captured with a topology delta. */
+    parameterIds?: readonly string[];
     nodes: AudioNode[];
     inputNode: AudioNode;
     outputNode: AudioNode;
@@ -474,6 +478,8 @@ export type AudioEngine = {
     setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator): void;
     /** Validated, immutable graph command applied only at the main-thread graph boundary. */
     applyRuntimeGraphDelta(delta: unknown): RuntimeGraphDeltaResult;
+    /** Rehydration-only baseline; validates one complete strip before publishing it. */
+    initializeTrackStripFromSnapshot(snapshot: unknown): RuntimeGraphDeltaResult;
     ensureTrackStrip(trackId: string): TrackChannelStrip;
     removeTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;
@@ -497,14 +503,6 @@ export type AudioEngine = {
      *  implementation for why "unavailable" must not collapse into `0`. */
     getMasterPeakLevel(): number | null;
     getBusPeakLevel(busId: string): number;
-    addDeviceToStrip(
-        trackId: string,
-        deviceId: string,
-        deviceType: string,
-        externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[]
-    ): void;
-    removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;

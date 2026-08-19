@@ -24,13 +24,21 @@ import { type LucideIcon } from 'lucide-react';
 
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
-import { addDevice } from '#/modules/Arrangement/useCases';
+import { compileAddDeviceAction } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type EffectPlugin = PluginDescriptor;
+
+function addDeviceThroughAction(trackId: string, deviceType: string): void {
+    const action = compileAddDeviceAction(trackId, deviceType);
+    if (action) {
+        void executeAppAction(action);
+    }
+}
 
 export type EffectGroup = {
     id: string;
@@ -199,7 +207,7 @@ export const EffectItem = ({
         }}
         onClick={() => {
             if (selectedTrackId) {
-                addDevice(selectedTrackId, plugin.id);
+                addDeviceThroughAction(selectedTrackId, plugin.id);
             }
         }}
         title={selectedTrackId ? `Add "${plugin.name}" to selected track` : 'Drag to a track or select a track first'}
@@ -207,7 +215,7 @@ export const EffectItem = ({
         tabIndex={0}
         onKeyDown={(event) => {
             if ((event.key === 'Enter' || event.key === ' ') && selectedTrackId) {
-                addDevice(selectedTrackId, plugin.id);
+                addDeviceThroughAction(selectedTrackId, plugin.id);
             }
         }}
     >

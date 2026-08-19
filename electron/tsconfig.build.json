@@ -1,0 +1,19 @@
+{
+    // Emit project for the packaged shell (`pnpm desktop:build`).
+    //
+    // Identical to `tsconfig.json` except that the specs are out of scope. A
+    // packaging build compiles what ships, and a spec has no business being
+    // emitted into `electron/out/` and then filtered back out at asar time —
+    // the filter is a second place to be wrong about the same thing.
+    //
+    // Type coverage of the specs is not weakened by this: `pnpm
+    // typecheck:electron` still runs the sibling project, which includes them.
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        // A packaged main process is not a debugging surface; maps in the
+        // asar are source disclosure plus weight.
+        "sourceMap": false
+    },
+    "include": ["."],
+    "exclude": ["out", "**/__tests__"]
+}

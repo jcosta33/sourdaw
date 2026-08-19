@@ -6,6 +6,7 @@
  * slot. Effect processor — reads `inputs[0]`, writes `outputs[0]`.
  */
 
+import { CRUST_RUNTIME_PARAMETER_COUNT, isCrustRuntimeParameterId } from '../models/CrustRuntimeControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, CrustInstance } from '../wasm/daw_dsp.js';
 
@@ -49,11 +50,30 @@ const PARAM_MAP: Record<string, string> = {
     resetTruePeak: 'reset_true_peak',
 };
 
-type CrustMsg =
-    | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
-    | { type: 'param'; name: string; value: number }
-    | { type: 'reset-true-peak' };
+type UnknownRecord = Record<string, unknown>;
+
+const MAX_ID_LENGTH = 128;
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: UnknownRecord, keys: readonly string[]): boolean {
+    const actual = Object.keys(value);
+    return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+
+function isBoundedId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
 
 class CrustProcessor extends AudioWorkletProcessor {
     _instance: CrustInstance | null = null;
@@ -64,6 +84,14 @@ class CrustProcessor extends AudioWorkletProcessor {
     _sabView: Float32Array | null = null;
     /** Int32 view over the same slot bytes — carries the seqlock counter. */
     _sabSeqView: Int32Array | null = null;
+    _fallbackControlGeneration: number | null = null;
+    _fallbackControlTarget: {
+        trackId: string;
+        deviceId: string;
+        deviceType: string;
+        parameterIds: readonly string[];
+    } | null = null;
+    _lastFallbackControlSequence = 0;
     // Cached WASM linear-memory views, reused across render quanta so process()
     // performs no per-block Float32Array allocation; each revalidates on a
     // memory.grow() buffer-identity change. See wasmView.ts.
@@ -75,9 +103,12 @@ class CrustProcessor extends AudioWorkletProcessor {
     constructor(...args: unknown[]) {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
-        this.port.onmessage = (event: MessageEvent<CrustMsg>) => {
+        this.port.onmessage = (event: MessageEvent<unknown>) => {
             const msg = event.data;
             try {
+                if (!isRecord(msg)) {
+                    return;
+                }
                 if (msg.type === 'init') {
                     if (this._ready) {
                         return;
@@ -87,22 +118,17 @@ class CrustProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (
+                    msg.type === 'init-sab' &&
+                    msg.sab instanceof SharedArrayBuffer &&
+                    isNonNegativeSafeInteger(msg.byteOffset)
+                ) {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
-                } else if (msg.type === 'reset-true-peak' && this._instance !== null && !this._faulted) {
-                    this._instance.reset_true_peak();
-                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
-                    const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                    // The look-ahead, the true-peak switch and the ceiling all
-                    // move the delay line, so latency is re-read after every
-                    // parameter rather than only after the obvious ones.
-                    const oldLatency = this._instance.get_latency_samples();
-                    this._instance.set_param(rustName, msg.value);
-                    const newLatency = this._instance.get_latency_samples();
-                    if (newLatency !== oldLatency) {
-                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
-                    }
+                } else if (this._initializeFallbackControl(msg)) {
+                    return;
+                } else {
+                    this._handleFallbackControl(msg);
                 }
             } catch (error) {
                 // A throw at the wasm boundary may leave the instance trapped,
@@ -117,6 +143,93 @@ class CrustProcessor extends AudioWorkletProcessor {
                 });
             }
         };
+    }
+
+    _initializeFallbackControl(message: UnknownRecord): boolean {
+        if (
+            this._fallbackControlGeneration !== null ||
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'correlation']) ||
+            message.schemaVersion !== 1 ||
+            message.command !== 'initialize-fallback-control' ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            message.target.deviceType !== 'crust' ||
+            !Array.isArray(message.target.parameterIds) ||
+            message.target.parameterIds.length !== CRUST_RUNTIME_PARAMETER_COUNT ||
+            !message.target.parameterIds.every(isCrustRuntimeParameterId) ||
+            new Set(message.target.parameterIds).size !== message.target.parameterIds.length ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration)
+        ) {
+            return false;
+        }
+        this._fallbackControlTarget = Object.freeze({
+            trackId: message.target.trackId,
+            deviceId: message.target.deviceId,
+            deviceType: message.target.deviceType,
+            parameterIds: Object.freeze([...message.target.parameterIds]),
+        });
+        this._fallbackControlGeneration = message.correlation.workletGeneration;
+        this._lastFallbackControlSequence = 0;
+        return true;
+    }
+
+    _handleFallbackControl(message: UnknownRecord): void {
+        if (
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
+            message.schemaVersion !== 1 ||
+            message.command !== 'set-fallback-param' ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            message.target.deviceType !== 'crust' ||
+            !isCrustRuntimeParameterId(message.target.parameterId) ||
+            typeof message.value !== 'number' ||
+            !Number.isFinite(message.value) ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration', 'controlSequence']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration) ||
+            !isPositiveSafeInteger(message.correlation.controlSequence) ||
+            !isRecord(message.scheduling) ||
+            !hasOnlyKeys(message.scheduling, ['targetFrame', 'deadlineFrame']) ||
+            message.scheduling.targetFrame !== null ||
+            message.scheduling.deadlineFrame !== null
+        ) {
+            return;
+        }
+        const target = this._fallbackControlTarget;
+        if (
+            !target ||
+            this._fallbackControlGeneration === null ||
+            message.correlation.workletGeneration !== this._fallbackControlGeneration ||
+            message.correlation.controlSequence <= this._lastFallbackControlSequence ||
+            message.target.trackId !== target.trackId ||
+            message.target.deviceId !== target.deviceId ||
+            message.target.deviceType !== target.deviceType ||
+            !target.parameterIds.includes(message.target.parameterId)
+        ) {
+            return;
+        }
+        this._lastFallbackControlSequence = message.correlation.controlSequence;
+        this._applyFallbackControl(message.target.parameterId, message.value);
+    }
+
+    _applyFallbackControl(parameterId: string, value: number): void {
+        if (!this._instance || this._faulted) {
+            return;
+        }
+        // The look-ahead, true-peak switch and ceiling can move the delay line,
+        // so latency is re-read after every accepted control.
+        const oldLatency = this._instance.get_latency_samples();
+        this._instance.set_param(PARAM_MAP[parameterId] ?? parameterId, value);
+        const newLatency = this._instance.get_latency_samples();
+        if (newLatency !== oldLatency) {
+            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+        }
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {
