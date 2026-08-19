@@ -1,0 +1,59 @@
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_487e9aa1e46063::t_805208af368ee4 256,506-526,528-529,538-543,545,550-553,555,557-560
+  s_487e9aa1e46063::t_b3bce25d2618f2 486
+  s_487e9aa1e46063::t_30fb2bb2e8ffdc 670-672
+  s_487e9aa1e46063::t_d76bc62ef4cd0c 698-699
+  s_487e9aa1e46063::t_d6fad77b9c9f52 160-163
+  s_487e9aa1e46063::t_1fe133577af1c2 257,566-567,569-576,584-608,612-625,627-628,630-633,635-642,644-662,664,667-668,697
+  s_487e9aa1e46063::t_36f32e259e344b 327-331,340-349
+  s_487e9aa1e46063::t_feeab386ad573d 112-140
+  s_487e9aa1e46063::t_c16ac29accc7ca 241-245,251-255
+  s_487e9aa1e46063::t_2af4fa88480c76 360-387
+  s_487e9aa1e46063::t_3ce45f58adbbb9 104-108
+  s_487e9aa1e46063::t_0cd77859d6f523 6-7,12
+  s_487e9aa1e46063::t_d164598ac9f310 413-415,417
+  s_487e9aa1e46063::t_ebbc78a03be1ef 568,669,695-696,708
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_487e9aa1e46063::t_8bc9ac7e3ce314 201-243
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_487e9aa1e46063::t_06cc890854a06d 5-6,11
+  s_487e9aa1e46063::t_b42fce76fb14e2 553-774,783-795
+  s_487e9aa1e46063::t_386af153e4b21c 517-519
+  s_487e9aa1e46063::t_c7ba012a9600bc 470,481-484
+  s_487e9aa1e46063::t_0c52d8c9554c59 775-782
+  s_487e9aa1e46063::t_8e90a963f2b95d 65-87
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_38038476187581 521-526
+  s_487e9aa1e46063::t_7620c2741a6806 41-42
+  s_487e9aa1e46063::t_41a5e1bc46e59c 429-432,435-437
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_487e9aa1e46063::t_39a0f0fb17eee2 114-122
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_9b83b0e2c6c683 1115,1180-1200
+  s_487e9aa1e46063::t_fe20b34985be03 1100,1104-1114
+  s_42d78e0bb71895::t_a0643daaf864e2 1116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "79e71da4e2d91132445f1f7e2b35969f8d9d6111",
+  "prompts": {},
+  "sessions": {
+    "s_42d78e0bb71895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5db0d749-ff23-4f4c-8e27-17b7e9b2a62c",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
