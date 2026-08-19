@@ -1,0 +1,38 @@
+electron/main.ts
+  s_e5dc9dd18205df::t_259d3ea9301bd5 31-36
+  s_e5dc9dd18205df::t_a9fa95e3d5f771 336-339
+  s_e5dc9dd18205df::t_1ffa475a382bb9 354-359
+scripts/buildNativeAddon.ts
+  s_e5dc9dd18205df::t_c2b2986b287d53 1-60
+electron/__tests__/protocol.spec.ts
+  s_e5dc9dd18205df::t_8b0b1bed357ff7 15
+  s_e5dc9dd18205df::t_39f78026c760b0 37-44
+electron/protocol.ts
+  s_e5dc9dd18205df::t_5db23a8e8cf216 24-27
+.gitignore
+  s_e5dc9dd18205df::t_8e8770d098de13 45-47
+scripts/__tests__/buildNativeAddon.spec.ts
+  s_e5dc9dd18205df::t_ae27667cadf286 1-24
+docs/architecture/10-desktop-packaging.md
+  s_e5dc9dd18205df::t_39881b4fe07acd 32-37
+package.json
+  s_e5dc9dd18205df::t_aeb12101931a20 51-52
+release/open-source-inventory.json
+  s_e5dc9dd18205df::t_ba94ab459b9bd0 616
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c2ea38444b9a11a4752b9e93566ac494eefabcef",
+  "prompts": {},
+  "sessions": {
+    "s_e5dc9dd18205df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a37ffa7-7101-4283-a659-33c2b4931396",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
