@@ -265,7 +265,8 @@ export function githubChildEnv(
 }
 
 export function gitAuthenticatedArgs(token: string, args: string[]): string[] {
-    return ['-c', 'credential.helper=', '-c', `http.extraHeader=Authorization: Bearer ${token}`, ...args];
+    const helper = `!f() { echo username=x-access-token; echo password=${token}; }; f`;
+    return ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, ...args];
 }
 
 export function spawnCapture(

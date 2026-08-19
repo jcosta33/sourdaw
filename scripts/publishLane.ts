@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
     AUTHOR_BOT_LOGIN,
     AUTHOR_LOCK_REASON,
-    githubAuthenticatedRemote,
+    GITHUB_HTTPS_REMOTE,
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
@@ -122,7 +122,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
                 'git',
                 gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', [
                     'fetch',
-                    githubAuthenticatedRemote(session.env.GH_TOKEN ?? ''),
+                    GITHUB_HTTPS_REMOTE,
                     '+refs/heads/main:refs/remotes/origin/main',
                 ]),
                 { cwd: primaryRoot, env: session.env }
@@ -151,7 +151,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             spawnRun('git', ['commit', '-m', subject], { cwd: lane });
         },
         remoteBranchSha: (branch) => {
-            const output = git(['ls-remote', githubAuthenticatedRemote(session.env.GH_TOKEN ?? ''), `refs/heads/${branch}`], primaryRoot);
+            const output = git(['ls-remote', GITHUB_HTTPS_REMOTE, `refs/heads/${branch}`], primaryRoot);
             if (output === '') {
                 return undefined;
             }
@@ -164,7 +164,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
                 'git',
                 gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', [
                     'push',
-                    githubAuthenticatedRemote(session.env.GH_TOKEN ?? ''),
+                    GITHUB_HTTPS_REMOTE,
                     `HEAD:refs/heads/${branch}`,
                 ]),
                 {

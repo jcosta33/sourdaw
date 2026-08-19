@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-    githubAuthenticatedRemote,
+    GITHUB_HTTPS_REMOTE,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_LOGIN,
     assertRequiredRepository,
@@ -136,7 +136,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
                 `PR #${number}`
             ),
         fetchShas: (baseSha, headSha) => {
-            git(['fetch', '--no-write-fetch-head', githubAuthenticatedRemote(token), baseSha, headSha]);
+            git(['fetch', '--no-write-fetch-head', GITHUB_HTTPS_REMOTE, baseSha, headSha]);
         },
         diff: (baseSha, headSha) =>
             spawnCapture('git', ['diff', `${baseSha}...${headSha}`], {

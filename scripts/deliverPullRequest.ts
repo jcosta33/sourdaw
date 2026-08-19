@@ -9,7 +9,7 @@ import {
     assertTrustedExecutingBlob,
     authenticateRole,
     gitAuthenticatedArgs,
-    githubAuthenticatedRemote,
+    GITHUB_HTTPS_REMOTE,
     originMainBlob,
     resolvePrimaryRoot,
     spawnCapture,
@@ -285,7 +285,7 @@ export function shellPort(
                     gitAuthenticatedArgs(options.gitToken, [
                         'fetch',
                         '--prune',
-                        githubAuthenticatedRemote(options.gitToken),
+                        GITHUB_HTTPS_REMOTE,
                         '+refs/heads/main:refs/remotes/origin/main',
                     ])
                 );
