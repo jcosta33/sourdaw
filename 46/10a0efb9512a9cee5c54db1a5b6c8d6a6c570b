@@ -1,0 +1,27 @@
+scripts/githubAppIdentity.ts
+  s_8ddfabd1166b5d::t_1db8de192b0625 11-15
+scripts/deliverPullRequest.ts
+  s_8ddfabd1166b5d::t_e5cf4691f54e16 354
+  s_8ddfabd1166b5d::t_6f72b1765b9cf2 13
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_8ddfabd1166b5d::t_32c3afd7776838 458-465
+  s_8ddfabd1166b5d::t_132cc183255c76 22
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_8ddfabd1166b5d::t_ebb35141bd4ed9 597-634
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4610a0efb9512a9cee5c54db1a5b6c8d6a6c570b",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
