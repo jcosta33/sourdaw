@@ -1,0 +1,45 @@
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_8ddfabd1166b5d::t_01ba86c995596c 292
+scripts/__tests__/publishLane.spec.ts
+  s_8ddfabd1166b5d::t_619e3423810935 90-91
+  s_8ddfabd1166b5d::t_cc2f8cf6d34021 39
+scripts/prepareReview.ts
+  s_8ddfabd1166b5d::t_e8a13df897bd2a 139
+  s_8ddfabd1166b5d::t_7c5e5e20120529 7
+scripts/deliverPullRequest.ts
+  s_8ddfabd1166b5d::t_ab204cd471595e 288
+  s_8ddfabd1166b5d::t_47c19da6f16bb6 12
+scripts/githubAppIdentity.ts
+  s_8ddfabd1166b5d::t_11766d2c605950 13-15
+  s_8ddfabd1166b5d::t_d049ef4ae30e76 268
+scripts/publishLane.ts
+  s_8ddfabd1166b5d::t_7f0a53b8e680d2 120-124,126-130
+  s_8ddfabd1166b5d::t_e7d42e3505437c 8
+  s_8ddfabd1166b5d::t_4d28a6a599d0ad 31
+  s_8ddfabd1166b5d::t_24fb84cb4e5797 62
+  s_487e9aa1e46063::t_1952c2fc3de15a 125,154,167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d0c77d8bf7fdcae7c855421078308a569072554c",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

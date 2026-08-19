@@ -1,0 +1,46 @@
+scripts/githubAppIdentity.ts
+  s_8ddfabd1166b5d::t_ac579e23cea25e 268-269
+scripts/prepareReview.ts
+  s_8ddfabd1166b5d::t_79109e46b72853 7
+  s_58c8be37b56eda::t_9eefe185b92b78 139
+scripts/publishLane.ts
+  s_8ddfabd1166b5d::t_7bacbabd6d73b3 8
+  s_58c8be37b56eda::t_cadd2ab62318d8 125,154,167
+scripts/deliverPullRequest.ts
+  s_8ddfabd1166b5d::t_379cc2e4402c1f 12
+  s_7a60fcb1666054::t_aa2aed4d9c0c77 288
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_8ddfabd1166b5d::t_fb9f5364e7551f 292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "afd61c417d8713aa4cbe06dc7d048de22748a245",
+  "prompts": {},
+  "sessions": {
+    "s_58c8be37b56eda": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a984d821648bf01a4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7a60fcb1666054": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-abff62c5d95061d7e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
