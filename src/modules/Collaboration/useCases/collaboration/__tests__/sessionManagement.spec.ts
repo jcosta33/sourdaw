@@ -1097,8 +1097,21 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestAssetTransfer().options.onTransferFailed('sha256:abc', 'the sending peer stopped responding');
 
             expect(collaborationStore.value?.error).toBe(
-                'Could not receive shared audio from a peer — the sending peer stopped responding. It will be retried.'
+                'Could not receive shared audio from a peer — the sending peer stopped responding. Playing over the affected clips asks again.'
             );
+        });
+
+        // The retry driver is the scheduler tick, so the message must name that
+        // condition rather than promise an unconditional retry: with playback
+        // stopped, nothing re-asks for the asset.
+        it('states the condition under which the asset is asked for again', () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+
+            expect(collaborationStore.value?.error).not.toContain('It will be retried');
+            expect(collaborationStore.value?.error).toContain('Playing over the affected clips');
         });
 
         it('leaves the live session state alone — a failed asset is not a failed session', () => {
@@ -1162,6 +1175,27 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(decodeAudioData).toHaveBeenCalledWith(arrayBuffer);
             expect(audioEngineMock.cacheAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1', buffer: decodedBuffer });
+        });
+
+        // The transfer-failure row is only otherwise cleared by session
+        // lifecycle use cases, so a message about an asset that has since
+        // arrived outlived its own successful retry for the whole session.
+        it('clears a previous transfer failure once the asset resolves', async () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+            latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding');
+            expect(collaborationStore.value?.error).not.toBeNull();
+
+            const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };
+            latestAssetTransfer().getAsset.mockReturnValue(blob);
+            audioEngineMock.getAudioContext.mockReturnValue({
+                decodeAudioData: vi.fn().mockResolvedValue(makeAudioBuffer()),
+            });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(null);
+            trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
+
+            latestAssetTransfer().options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
         });
 
         it('skips a clip whose asset hash does not match', async () => {

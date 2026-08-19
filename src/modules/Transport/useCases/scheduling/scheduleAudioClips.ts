@@ -111,14 +111,15 @@ export function scheduleAudioClips(
                 if (!isRecordingClip) {
                     const inSession = collaborationStore.value?.isEnabled ?? false;
                     if (inSession && clip.assetHash) {
-                        // Deliberately unconditional. `requestAsset` is idempotent
-                        // while a request is outstanding or a transfer is in
-                        // flight, and it becomes requestable again once one is
-                        // abandoned. A dedup Set here instead recorded "asked
-                        // once, ever": after a corrupt chunk or a dead sender
-                        // aborted the transfer, the asset could never be
-                        // re-requested for the rest of the session and the clip
-                        // stayed silent forever.
+                        // Deliberately unconditional: AssetTransfer owns both the
+                        // dedup and the retry policy, because only it knows
+                        // whether a request is still alive. It drops calls while
+                        // one is outstanding or in flight, holds a cooldown after
+                        // an abort, and abandons a hash that keeps failing. A
+                        // dedup Set here instead recorded "asked once, ever":
+                        // after a corrupt chunk or a dead sender aborted the
+                        // transfer, the asset could never be re-requested for the
+                        // rest of the session and the clip stayed silent forever.
                         getAssetTransfer()?.requestAsset(clip.assetHash);
                     } else {
                         notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');

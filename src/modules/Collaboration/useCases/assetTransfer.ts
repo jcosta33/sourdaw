@@ -3,10 +3,13 @@ import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import {
     ASSET_CHUNK_SIZE,
+    ASSET_REQUEST_MAX_ATTEMPTS,
+    ASSET_REQUEST_RETRY_COOLDOWN_MS,
     MAX_ASSET_CHUNK_SIZE,
     MAX_ASSET_MIME_LEN,
     MAX_ASSET_NAME_LEN,
     MAX_ASSET_SIZE,
+    MAX_CONCURRENT_ASSET_RESPONSES_PER_PEER,
     MIN_ASSET_CHUNK_SIZE,
     type PeerId,
     type PeerMessage,
@@ -98,11 +101,42 @@ export class AssetTransfer {
     private requestedHashes = new Set<string>();
 
     /**
-     * Per-hash stall deadline. Armed when a hash is requested and re-armed on
-     * every accepted manifest or chunk, so the timer measures time since the
-     * last observable progress rather than total transfer duration.
+     * Per-hash stall deadline. Armed when a hash is requested, re-armed on an
+     * accepted manifest and on any chunk that added an index the transfer did
+     * not already hold, so the timer measures time since the last observable
+     * progress rather than total transfer duration. A re-delivered chunk is not
+     * progress and deliberately does not restart it.
      */
     private stallTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    /**
+     * Earliest wall-clock time each aborted hash may be re-requested.
+     *
+     * The scheduler calls `requestAsset` on every tick for every missing clip,
+     * so the request path has no memory of its own; this is that memory. An
+     * entry is written on abort and dropped once the asset resolves.
+     */
+    private retryNotBefore = new Map<string, number>();
+
+    /** Aborted attempts per hash, counted toward {@link ASSET_REQUEST_MAX_ATTEMPTS}. */
+    private failedAttempts = new Map<string, number>();
+
+    /**
+     * Hashes abandoned for the rest of the session after too many aborts. A
+     * peer can write any string into `clip.assetHash`, so without a terminal
+     * state a hash no peer holds re-broadcasts forever.
+     */
+    private abandonedHashes = new Set<string>();
+
+    /**
+     * Hashes this host is currently serving, per requesting peer.
+     *
+     * A request is cheap to send and expensive to answer, so identical requests
+     * arriving while one is being served are dropped rather than served
+     * concurrently, and the number of distinct assets one peer may pull at once
+     * is capped.
+     */
+    private servingHashesByPeer = new Map<PeerId, Set<string>>();
 
     constructor(peerManager: PeerConnectionManager, callbacks: AssetTransferCallbacks) {
         this.peerManager = peerManager;
@@ -123,6 +157,10 @@ export class AssetTransfer {
         this.stallTimers.clear();
         this.incomingTransfers.clear();
         this.requestedHashes.clear();
+        this.retryNotBefore.clear();
+        this.failedAttempts.clear();
+        this.abandonedHashes.clear();
+        this.servingHashesByPeer.clear();
     }
 
     /** Register a local asset (e.g. after recording or importing). */
@@ -200,10 +238,21 @@ export class AssetTransfer {
      * already held, already in flight, or still outstanding are dropped, so a
      * per-tick caller cannot flood the channel. Once a transfer aborts, the
      * hash becomes requestable again — that is what makes an interrupted asset
-     * recoverable inside the same session.
+     * recoverable inside the same session — but only after
+     * {@link ASSET_REQUEST_RETRY_COOLDOWN_MS}, and only for
+     * {@link ASSET_REQUEST_MAX_ATTEMPTS} attempts in total. The caller is the
+     * scheduler tick (~100/s), so this method owns the whole retry policy and
+     * must stay a handful of lookups.
      */
     requestAsset(hash: string): void {
         if (this.localAssets.has(hash) || this.incomingTransfers.has(hash) || this.requestedHashes.has(hash)) {
+            return;
+        }
+        if (this.abandonedHashes.has(hash)) {
+            return;
+        }
+        const notBefore = this.retryNotBefore.get(hash);
+        if (notBefore !== undefined && Date.now() < notBefore) {
             return;
         }
 
@@ -275,6 +324,11 @@ export class AssetTransfer {
      * permanently unfetchable for the rest of the session. Reporting is the
      * user-facing seam: an abandoned transfer used to be a `logger.warn` and
      * nothing else, leaving clips silently unplayable.
+     *
+     * Recovery is rate-limited, not free: the abort arms a cooldown and spends
+     * one of the hash's attempts. Its caller is the per-tick scheduler, so an
+     * uncooled re-open turns every immediately-aborting failure class into a
+     * request/abort loop at peer-RTT speed.
      */
     private abortTransfer(hash: string, reason: string): void {
         this.clearStallTimer(hash);
@@ -283,6 +337,16 @@ export class AssetTransfer {
         if (!wasOutstanding && !wasInFlight) {
             return;
         }
+
+        const attempts = (this.failedAttempts.get(hash) ?? 0) + 1;
+        this.failedAttempts.set(hash, attempts);
+        if (attempts >= ASSET_REQUEST_MAX_ATTEMPTS) {
+            this.abandonedHashes.add(hash);
+            this.retryNotBefore.delete(hash);
+        } else {
+            this.retryNotBefore.set(hash, Date.now() + ASSET_REQUEST_RETRY_COOLDOWN_MS);
+        }
+
         logger.warn(`[AssetTransfer] Transfer for ${hash} aborted: ${reason}`);
         this.callbacks.onTransferFailed(hash, reason);
     }
@@ -293,6 +357,34 @@ export class AssetTransfer {
             return;
         }
 
+        // A request is a ~100-byte message; answering one slices, base64-encodes
+        // and buffers the whole asset. Without an in-flight marker, N identical
+        // requests are served N times concurrently, so the responder multiplies
+        // the sender's cost by N — a bound on any single response cannot help.
+        // Identical requests are dropped while one is serving (the response the
+        // peer is already receiving is the answer); distinct hashes are capped.
+        const serving = this.servingHashesByPeer.get(peerId) ?? new Set<string>();
+        if (serving.has(hash) || serving.size >= MAX_CONCURRENT_ASSET_RESPONSES_PER_PEER) {
+            return;
+        }
+        serving.add(hash);
+        this.servingHashesByPeer.set(peerId, serving);
+        try {
+            await this.sendAssetResponse(peerId, hash, entry, missingChunks);
+        } finally {
+            serving.delete(hash);
+            if (serving.size === 0) {
+                this.servingHashesByPeer.delete(peerId);
+            }
+        }
+    }
+
+    private async sendAssetResponse(
+        peerId: PeerId,
+        hash: string,
+        entry: LocalAssetEntry,
+        missingChunks: unknown
+    ): Promise<void> {
         const { blob, name } = entry;
         const chunkCount = Math.ceil(blob.size / ASSET_CHUNK_SIZE);
         const manifest: AssetManifest = {
@@ -318,10 +410,11 @@ export class AssetTransfer {
         // Send requested chunks (or all if none specified). `missingChunks` is
         // remote input: an unbounded, duplicate-laden or out-of-range list would
         // otherwise drive an arbitrarily long slice-encode-send loop on this
-        // peer. Deduplicate and keep only indices this asset actually has, which
-        // caps the work at one pass over the asset.
+        // peer. Bound while filtering, never before: deduplicating first would
+        // materialize a `Set` at the sender's declared cardinality, which the
+        // CRDT framing lets reach tens of millions of elements.
         const chunksToSend = isNonEmptyIndexList(missingChunks)
-            ? [...new Set(missingChunks)].filter((index) => Number.isInteger(index) && index >= 0 && index < chunkCount)
+            ? boundedChunkIndices(missingChunks, chunkCount)
             : Array.from({ length: chunkCount }, (_, index1) => index1);
 
         for (const index of chunksToSend) {
@@ -390,7 +483,7 @@ export class AssetTransfer {
         this.armStallTimer(manifest.hash);
     }
 
-    private handleChunk(hash: string, index: number, base64Data: string): void {
+    private handleChunk(hash: string, index: number, base64Data: unknown): void {
         // Reject chunks for a hash with no in-flight (requested) transfer. This
         // covers chunks arriving before/without a manifest, chunks from peers
         // that lost the first-responder race, and chunks for assets we already
@@ -410,11 +503,30 @@ export class AssetTransfer {
             return;
         }
 
-        const data = base64ToArrayBuffer(base64Data);
+        // Bound the payload before decoding it, not after. Decoding allocates
+        // the full chunk, so a payload that is certain to be refused still costs
+        // its own decoded size first — repeatable at line rate. The encoded
+        // length is an exact function of the decoded length, so the declared
+        // chunk size can be enforced on the string itself.
+        if (typeof base64Data !== 'string') {
+            this.abortTransfer(hash, `chunk ${index} payload is not a string`);
+            return;
+        }
+        if (base64Data.length > base64LengthFor(manifest.chunkSize)) {
+            this.abortTransfer(hash, `chunk ${index} encodes more than the declared chunk size ${manifest.chunkSize}`);
+            return;
+        }
 
-        // Bound the decoded chunk size against the manifest's declared chunk
-        // size. The manifest fixes chunkSize as the per-chunk maximum; any chunk
-        // larger than that is oversized data the sender should never produce.
+        let data: Uint8Array;
+        try {
+            data = base64ToBytes(base64Data);
+        } catch {
+            this.abortTransfer(hash, `chunk ${index} is not valid base64`);
+            return;
+        }
+
+        // The encoded bound admits one trailing padding group, so the decoded
+        // length is still checked exactly against the manifest.
         if (data.byteLength > manifest.chunkSize) {
             this.abortTransfer(
                 hash,
@@ -423,21 +535,45 @@ export class AssetTransfer {
             return;
         }
 
-        transfer.chunks.set(index, new Uint8Array(data));
+        // Whether this chunk is new decides whether the stall clock restarts: a
+        // duplicate is not progress, and re-arming on one lets a peer replaying
+        // a single already-received index below the deadline pin the transfer —
+        // and with it the hash's outstanding marker — for the whole session.
+        const receivedBefore = transfer.receivedBitmap.size;
+        transfer.chunks.set(index, data);
         transfer.receivedBitmap.add(index);
+        const progressed = transfer.receivedBitmap.size > receivedBefore;
 
         this.callbacks.onProgress(hash, transfer.receivedBitmap.size, manifest.chunkCount);
 
-        // Check if all chunks received
         if (transfer.receivedBitmap.size === manifest.chunkCount) {
+            // Completion is single-shot: the slot is released before the async
+            // assembly is dispatched, so a duplicate completing chunk arriving
+            // during the digest finds no transfer instead of launching a second
+            // full-size reassembly. The captured `transfer` carries the chunks.
             this.clearStallTimer(hash);
+            this.incomingTransfers.delete(hash);
             void this.assembleAsset(hash, transfer);
-        } else {
+            return;
+        }
+
+        if (progressed) {
             // Progress: restart the no-progress clock against the next chunk.
             this.armStallTimer(hash);
         }
     }
 
+    /**
+     * Turn a fully-received transfer into a verified local asset.
+     *
+     * The caller has already released the transfer slot and cleared the stall
+     * timer, so nothing else will ever end this hash: every exit here must be
+     * terminal *and* reported. A silent return would leave the hash outstanding
+     * with no timer armed — unrecoverable even by the stall path — which is why
+     * the missing-chunk case and every rejection (a digest or `arrayBuffer` over
+     * a half-gigabyte blob can fail on memory alone) route through
+     * `abortTransfer` rather than escaping under the caller's `void`.
+     */
     private async assembleAsset(
         hash: string,
         transfer: {
@@ -445,47 +581,95 @@ export class AssetTransfer {
             chunks: Map<number, Uint8Array>;
         }
     ): Promise<void> {
-        const sortedChunks: Uint8Array[] = [];
-        for (let index = 0; index < transfer.manifest.chunkCount; index++) {
-            const chunk = transfer.chunks.get(index);
-            if (!chunk) {
+        try {
+            const sortedChunks: Uint8Array[] = [];
+            for (let index = 0; index < transfer.manifest.chunkCount; index++) {
+                const chunk = transfer.chunks.get(index);
+                if (!chunk) {
+                    this.abortTransfer(hash, `chunk ${index} was missing at assembly`);
+                    return;
+                }
+                sortedChunks.push(chunk);
+            }
+
+            const totalSize = sortedChunks.reduce((sum, context) => sum + context.length, 0);
+            const assembled = new Uint8Array(totalSize);
+            let offset = 0;
+            for (const chunk of sortedChunks) {
+                assembled.set(chunk, offset);
+                offset += chunk.length;
+            }
+
+            const blob = new Blob([assembled], { type: transfer.manifest.mime });
+
+            // Verify integrity before accepting the asset.
+            const actualHash = await hashBlob(blob);
+            if (actualHash !== hash) {
+                this.abortTransfer(hash, `integrity check failed (received ${actualHash})`);
                 return;
             }
-            sortedChunks.push(chunk);
+
+            this.localAssets.set(hash, {
+                blob,
+                name: transfer.manifest.name,
+                durable: true,
+                stagingLeaseIds: new Set(),
+            });
+            this.clearStallTimer(hash);
+            this.requestedHashes.delete(hash);
+            // The asset resolved, so the hash owes nothing to the retry policy.
+            this.retryNotBefore.delete(hash);
+            this.failedAttempts.delete(hash);
+            this.callbacks.onAssetAvailable(hash);
+        } catch (error) {
+            this.abortTransfer(hash, `assembly failed (${describeError(error)})`);
         }
-
-        const totalSize = sortedChunks.reduce((sum, context) => sum + context.length, 0);
-        const assembled = new Uint8Array(totalSize);
-        let offset = 0;
-        for (const chunk of sortedChunks) {
-            assembled.set(chunk, offset);
-            offset += chunk.length;
-        }
-
-        const blob = new Blob([assembled], { type: transfer.manifest.mime });
-
-        // Verify integrity before accepting the asset.
-        const actualHash = await hashBlob(blob);
-        if (actualHash !== hash) {
-            this.abortTransfer(hash, `integrity check failed (received ${actualHash})`);
-            return;
-        }
-
-        this.localAssets.set(hash, {
-            blob,
-            name: transfer.manifest.name,
-            durable: true,
-            stagingLeaseIds: new Set(),
-        });
-        this.clearStallTimer(hash);
-        this.requestedHashes.delete(hash);
-        this.incomingTransfers.delete(hash);
-        this.callbacks.onAssetAvailable(hash);
     }
 }
 
-/** Whether a remote-supplied `missingChunks` field is a usable index list. */
-function isNonEmptyIndexList(value: unknown): value is number[] {
+/** Message text for a caught unknown, without laundering it through a cast. */
+function describeError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Encoded length of `byteLength` bytes of base64: four characters per
+ * three-byte group, the last group padded. Exact, so it bounds a chunk payload
+ * before decoding without refusing any legally-sized one.
+ */
+function base64LengthFor(byteLength: number): number {
+    return 4 * Math.ceil(byteLength / 3);
+}
+
+/**
+ * Collect the chunk indices a requester actually asked for, bounded as they are
+ * read.
+ *
+ * The input is remote and its length is only bounded by the CRDT channel's
+ * reassembly ceiling — tens of millions of elements. Retention is therefore
+ * capped at `chunkCount` entries regardless of input length, and the pass stops
+ * as soon as the whole asset is covered.
+ */
+function boundedChunkIndices(requested: readonly unknown[], chunkCount: number): number[] {
+    const selected = new Set<number>();
+    for (const value of requested) {
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value >= chunkCount) {
+            continue;
+        }
+        selected.add(value);
+        if (selected.size === chunkCount) {
+            break;
+        }
+    }
+    return [...selected];
+}
+
+/**
+ * Whether a remote-supplied `missingChunks` field is a list worth reading. Its
+ * elements stay `unknown`: they are validated one at a time in
+ * {@link boundedChunkIndices}, never trusted in bulk.
+ */
+function isNonEmptyIndexList(value: unknown): value is readonly unknown[] {
     return Array.isArray(value) && value.length > 0;
 }
 
@@ -508,7 +692,11 @@ function isManifestSane(manifest: AssetManifest): boolean {
     if (typeof mime !== 'string' || mime.length > MAX_ASSET_MIME_LEN) {
         return false;
     }
-    if (!Number.isInteger(size) || size < 0 || size > MAX_ASSET_SIZE) {
+    // Size 0 is refused rather than accepted: a zero-byte asset yields
+    // `chunkCount: 0`, and completion is only ever evaluated when a chunk lands,
+    // so such a transfer could not finish — it would occupy a slot until the
+    // stall deadline and then abort. No sender this app runs mints one.
+    if (!Number.isInteger(size) || size <= 0 || size > MAX_ASSET_SIZE) {
         return false;
     }
     // Bounded from both ends: the ceiling stops one chunk from claiming the
@@ -517,7 +705,7 @@ function isManifestSane(manifest: AssetManifest): boolean {
     if (!Number.isInteger(chunkSize) || chunkSize < MIN_ASSET_CHUNK_SIZE || chunkSize > MAX_ASSET_CHUNK_SIZE) {
         return false;
     }
-    if (!Number.isInteger(chunkCount) || chunkCount < 0) {
+    if (!Number.isInteger(chunkCount) || chunkCount < 1) {
         return false;
     }
     // chunkCount must be exactly the number of chunkSize-sized pieces that
@@ -538,9 +726,4 @@ async function hashBlob(blob: Blob): Promise<string> {
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
     return bytesToBase64(new Uint8Array(buffer));
-}
-
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const bytes = base64ToBytes(base64);
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
