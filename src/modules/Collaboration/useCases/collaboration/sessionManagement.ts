@@ -27,6 +27,8 @@ import {
     PEER_COLORS,
     peerColorForIndex,
     type PresenceDelta,
+    sanitizePeerColor,
+    sanitizePeerName,
 } from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
@@ -53,7 +55,6 @@ const sessionState: {
     automergeSync: AutomergeSync | null;
     assetTransfer: AssetTransfer | null;
     cleanupProjectionBridge: (() => void) | null;
-    presenceListeners: Set<(data: PresenceDelta) => void>;
     playheadBroadcastInterval: ReturnType<typeof setInterval> | null;
     /** Host-assigned peer slot ID for the in-flight invite, if any. */
     pendingInviteId: PeerId | null;
@@ -75,7 +76,6 @@ const sessionState: {
     automergeSync: null,
     assetTransfer: null,
     cleanupProjectionBridge: null,
-    presenceListeners: new Set(),
     playheadBroadcastInterval: null,
     pendingInviteId: null,
     hasBranchStateBackup: false,
@@ -85,6 +85,18 @@ const sessionState: {
     lastProjectedBranchesJson: null,
 };
 
+/**
+ * App-lifetime presence observers — deliberately OUTSIDE `sessionState`.
+ *
+ * Subscribers (the presence overlay hook mounts with the timeline surface,
+ * independently of any session, and subscribes exactly once) own their
+ * subscription lifetime through the disposer returned by `onPresence`.
+ * Session teardown owns session state only: clearing this set in
+ * `cleanupSubsystems` silenced presence for every session after the first,
+ * because the long-lived subscriber never re-registers.
+ */
+const presenceListeners = new Set<(data: PresenceDelta) => void>();
+
 /** Cleanup timers for peers that disconnected without sending peer-leave. */
 const peerCleanupTimers = new Map<PeerId, ReturnType<typeof setTimeout>>();
 
@@ -92,39 +104,16 @@ const PEER_CLEANUP_DELAY_MS = 15_000;
 
 const PLAYHEAD_BROADCAST_HZ = 4;
 
-/** Max accepted length for sender-supplied presence display fields. */
-const MAX_PRESENCE_NAME_LEN = 64;
-const MAX_PRESENCE_COLOR_LEN = 32;
-
-/** Fallback applied when a peer's presence color is not a well-formed CSS color. */
-const FALLBACK_PRESENCE_COLOR = '#888888';
-
-/**
- * Accept only the CSS color formats this app actually mints for peers — hex
- * (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`) and the functional `hsl()/hsla()/
- * rgb()/rgba()` forms (see PEER_COLORS and peerColorForIndex). Anything else is
- * rejected so a sender-supplied string can't break out of the CSS gradient
- * value it is interpolated into at PresenceMarker.tsx (`repeating-linear-gradient
- * (..., ${color}, ...)`).
- */
-const SAFE_CSS_COLOR_RE =
-    /^(#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgb|rgba|hsl|hsla)\([0-9.,%/\s]+\))$/;
-
-function isSafeCssColor(color: string): boolean {
-    return SAFE_CSS_COLOR_RE.test(color);
-}
-
 /**
  * Bound and validate the sender-controlled display fields on incoming presence
  * so a hostile peer can't supply an unbounded name string or an arbitrary color
  * value (both rendered in the presence overlay; the color is interpolated into
- * a CSS gradient). Behaviour-preserving for well-formed presence.
+ * a CSS gradient). Behaviour-preserving for well-formed presence. The same
+ * shared bounds apply at every identity ingress — see CollaborationTypes.
  */
 function sanitizePresence(data: PresenceDelta): PresenceDelta {
-    const name = data.name.length <= MAX_PRESENCE_NAME_LEN ? data.name : data.name.slice(0, MAX_PRESENCE_NAME_LEN);
-    const boundedColor =
-        data.color.length <= MAX_PRESENCE_COLOR_LEN ? data.color : data.color.slice(0, MAX_PRESENCE_COLOR_LEN);
-    const color = isSafeCssColor(boundedColor) ? boundedColor : FALLBACK_PRESENCE_COLOR;
+    const name = sanitizePeerName(data.name);
+    const color = sanitizePeerColor(data.color);
     if (name === data.name && color === data.color) {
         return data;
     }
@@ -446,7 +435,8 @@ function cleanupSubsystems(): void {
         sessionState.peerManager.closeAll();
         sessionState.peerManager = null;
     }
-    sessionState.presenceListeners.clear();
+    // `presenceListeners` is deliberately NOT cleared here: it holds
+    // app-lifetime observers owned by their subscribers, not session state.
 
     // Last, deliberately. Reporting must not be able to unwind teardown: a
     // throw from `notifyUser` used to skip `automergeSync.stop()`, the peer
@@ -553,7 +543,7 @@ function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
         const known = collaborationStore.value?.peers.some((param) => param.id === message.data.peerId);
         if (message.data.peerId === peerId && known) {
             const sanitized = sanitizePresence(message.data);
-            for (const listener of sessionState.presenceListeners) {
+            for (const listener of presenceListeners) {
                 listener(sanitized);
             }
         }
@@ -633,11 +623,33 @@ function handlePeerDisconnected(peerId: PeerId): void {
     peerCleanupTimers.set(peerId, timer);
 
     const state = collaborationStore.value;
-    if (state) {
-        const anyConnected = state.peers.some((param) => param.isConnected && param.id !== peerId);
-        if (!anyConnected && state.peers.length > 0) {
-            collaborationStore.set({ ...state, connectionStatus: 'disconnected' });
-        }
+    if (!state) {
+        return;
+    }
+
+    // Host departure on a joiner ends the session as a matter of fact, not
+    // policy: the topology is host-relayed — every joiner's only connection is
+    // to the host, so with the host gone no data, presence, or sync can flow
+    // and manual SDP signaling offers no rejoin path. Host-relayed
+    // collaboration tools surface this as an explicit session-ended state
+    // rather than continuing masterless (that is Ableton-Link-style topology,
+    // which this is not). Deliberately NOT an auto-leave: the local CRDT copy
+    // of the project stays intact (non-destructive) and the user gets an
+    // explicit signal instead of a session that silently looks alive.
+    const hostDeparted = !state.isHost && state.peers.some((param) => param.id === peerId && param.isHost);
+    if (hostDeparted) {
+        stopPlayheadBroadcast();
+        collaborationStore.set({
+            ...state,
+            connectionStatus: 'disconnected',
+            error: 'The session host disconnected — this session has ended. Your local copy of the project is intact; leave the session to continue working on it.',
+        });
+        return;
+    }
+
+    const anyConnected = state.peers.some((param) => param.isConnected && param.id !== peerId);
+    if (!anyConnected && state.peers.length > 0) {
+        collaborationStore.set({ ...state, connectionStatus: 'disconnected' });
     }
 }
 
@@ -655,8 +667,11 @@ function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
     // the peer list.
     if (peer.id === current.localPeerId) {
         const senderIsHost = current.peers.some((param) => param.id === senderPeerId && param.isHost);
-        if (!current.isHost && senderIsHost && peer.color && peer.color !== current.localColor) {
-            collaborationStore.set({ ...current, localColor: peer.color });
+        if (!current.isHost && senderIsHost && peer.color) {
+            const assignedColor = sanitizePeerColor(peer.color);
+            if (assignedColor !== current.localColor) {
+                collaborationStore.set({ ...current, localColor: assignedColor });
+            }
         }
         return;
     }
@@ -672,8 +687,13 @@ function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
         }
         const existingIndex = state.peers.findIndex((param) => param.id === peer.id);
         const trustedIsHost = existingIndex >= 0 ? state.peers[existingIndex]!.isHost : false;
+        // Bound the sender-controlled display fields with the same limits
+        // presence uses — peer-info is just another identity ingress, and this
+        // record renders in the peer list and presence overlay.
         const merged: CollaborationPeer = {
             ...peer,
+            name: sanitizePeerName(peer.name),
+            color: sanitizePeerColor(peer.color),
             isHost: trustedIsHost,
             isConnected: true,
             lastSeen: Date.now(),
@@ -761,8 +781,13 @@ async function compressInvite(json: string): Promise<string> {
 
 async function decompressInvite(raw: string): Promise<string> {
     if (!raw.startsWith('z:')) {
-        // Legacy uncompressed invite: plain base64 JSON.
-        return atob(raw);
+        // Legacy uncompressed invite: plain base64 of UTF-8 JSON. `atob`
+        // yields one char per byte (Latin-1), so the bytes must still be
+        // UTF-8-decoded — returning `atob(raw)` directly mangles any
+        // non-ASCII name (e.g. "José") embedded in the invite.
+        const legacyBinary = atob(raw);
+        const legacyBytes = Uint8Array.from(legacyBinary, (context) => context.charCodeAt(0));
+        return new TextDecoder().decode(legacyBytes);
     }
     const binary = atob(raw.slice(2));
     const bytes = Uint8Array.from(binary, (context) => context.charCodeAt(0));
@@ -777,6 +802,7 @@ async function decompressInvite(raw: string): Promise<string> {
 /** Shared state and runtime primitives used by the focused use cases. */
 export const sessionRuntimePrimitives = {
     state: sessionState,
+    presenceListeners,
     initialize: initializeSessionRuntime,
     cleanup: cleanupSubsystems,
     startBranchSync,

@@ -9,6 +9,7 @@ import {
 } from '../../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../../models/SyncChannelConstants';
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { onPresence } from '../onPresence';
 import { sessionRuntimePrimitives } from '../sessionManagement';
 
 /**
@@ -294,6 +295,17 @@ describe('sessionRuntimePrimitives', () => {
 
             expect(decompressed).toBe(payload);
         });
+
+        it('UTF-8-decodes a legacy invite embedding non-ASCII (regression: atob alone yields Latin-1)', async () => {
+            const payload = JSON.stringify({ type: 'offer', peerId: 'legacy', name: 'José' });
+            const utf8Bytes = new TextEncoder().encode(payload);
+            const legacyInvite = btoa(String.fromCharCode(...utf8Bytes));
+
+            const decompressed = await sessionRuntimePrimitives.decompressInvite(legacyInvite);
+
+            expect(decompressed).toBe(payload);
+            expect((JSON.parse(decompressed) as { name: string }).name).toBe('José');
+        });
     });
 
     describe('state', () => {
@@ -311,6 +323,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         peerConnectionMock.instances.length = 0;
         automergeSyncMock.instances.length = 0;
         assetTransferMock.instances.length = 0;
+        sessionRuntimePrimitives.presenceListeners.clear();
         collaborationStore.set(null);
         branchStoreMock.value = null;
         trackStoreMock.value = null;
@@ -442,7 +455,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1', lastSeen: 0 })] }));
             const listener = vi.fn();
-            sessionRuntimePrimitives.state.presenceListeners.add(listener);
+            sessionRuntimePrimitives.presenceListeners.add(listener);
 
             const longName = 'x'.repeat(100);
             const message: PeerMessage = {
@@ -463,7 +476,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(makeState({ peers: [] }));
             const listener = vi.fn();
-            sessionRuntimePrimitives.state.presenceListeners.add(listener);
+            sessionRuntimePrimitives.presenceListeners.add(listener);
 
             const message: PeerMessage = {
                 type: 'presence',
@@ -473,6 +486,34 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
 
             expect(listener).not.toHaveBeenCalled();
+        });
+
+        it('keeps a mounted presence subscriber alive across a leave→rejoin cycle (regression: cleanup cleared app-lifetime listeners)', () => {
+            const listener = vi.fn();
+            const unsubscribe = onPresence(listener);
+
+            // Session 1 ends: leave/create/join all run cleanup().
+            sessionRuntimePrimitives.initialize();
+            sessionRuntimePrimitives.cleanup();
+
+            // Session 2: the overlay hook never re-subscribes — the same
+            // registration must still receive presence.
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1' })] }));
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'peer-1',
+                message: { type: 'presence', data: { peerId: 'peer-1', name: 'Bob', color: '#3b82f6' } },
+            });
+
+            expect(listener).toHaveBeenCalledTimes(1);
+
+            // The subscriber still owns its registration: disposing works.
+            unsubscribe();
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'peer-1',
+                message: { type: 'presence', data: { peerId: 'peer-1', name: 'Bob', color: '#3b82f6' } },
+            });
+            expect(listener).toHaveBeenCalledTimes(1);
         });
 
         it('adds a newly seen peer from a peer-info message without trusting its self-claimed host flag', () => {
@@ -486,6 +527,22 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(collaborationStore.value?.peers).toHaveLength(1);
             expect(collaborationStore.value?.peers[0]?.isHost).toBe(false);
+        });
+
+        it('bounds sender-controlled identity fields from a peer-info message with the presence limits', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'peer-2',
+                message: {
+                    type: 'peer-info',
+                    peer: makePeer({ id: 'peer-2', name: 'x'.repeat(100), color: 'javascript:alert(1)' }),
+                },
+            });
+
+            expect(collaborationStore.value?.peers[0]?.name).toHaveLength(64);
+            expect(collaborationStore.value?.peers[0]?.color).toBe('#888888');
         });
 
         it('adopts a host-assigned color from a peer-info message describing ourselves', () => {
@@ -506,6 +563,25 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(collaborationStore.value?.localColor).toBe('#ef4444');
             expect(collaborationStore.value?.peers).toHaveLength(1);
+        });
+
+        it('sanitizes a host-assigned color before adopting it as localColor', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    localColor: '#3b82f6',
+                    isHost: false,
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'host-1',
+                message: { type: 'peer-info', peer: makePeer({ id: 'local-1', color: 'url(javascript:alert(1))' }) },
+            });
+
+            expect(collaborationStore.value?.localColor).toBe('#888888');
         });
 
         it('removes a peer on a self-issued peer-leave message', () => {
@@ -628,6 +704,55 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestPeerManager().callbacks.onDisconnected('peer-1');
 
             expect(collaborationStore.value?.connectionStatus).toBe('connected');
+        });
+
+        it('surfaces session end and stops the playhead broadcast when the HOST disconnects on a joiner', () => {
+            vi.useFakeTimers();
+            sessionRuntimePrimitives.initialize();
+            latestPeerManager().getConnectedPeerIds.mockReturnValue(['host-1']);
+            collaborationStore.set(
+                makeState({
+                    isHost: false,
+                    localPeerId: 'local-1',
+                    connectionStatus: 'connected',
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                })
+            );
+            sessionRuntimePrimitives.startPlayheadBroadcast();
+            vi.advanceTimersByTime(250);
+            const callsBefore = latestPeerManager().broadcastPresence.mock.calls.length;
+            expect(callsBefore).toBeGreaterThan(0);
+
+            latestPeerManager().callbacks.onDisconnected('host-1');
+
+            expect(collaborationStore.value?.connectionStatus).toBe('disconnected');
+            expect(collaborationStore.value?.error).toMatch(/host disconnected/i);
+            expect(collaborationStore.value?.error).toMatch(/session has ended/i);
+            // No silent auto-leave: the session state (and the local project
+            // copy) stays until the user explicitly leaves.
+            expect(collaborationStore.value?.isEnabled).toBe(true);
+
+            // The playhead broadcast interval is stopped, not left ticking
+            // into a dead session.
+            vi.advanceTimersByTime(1000);
+            expect(latestPeerManager().broadcastPresence).toHaveBeenCalledTimes(callsBefore);
+        });
+
+        it('does not declare the session ended when a non-host peer disconnects', () => {
+            vi.useFakeTimers();
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(
+                makeState({
+                    isHost: false,
+                    connectionStatus: 'connected',
+                    peers: [makePeer({ id: 'host-1', isHost: true }), makePeer({ id: 'peer-2' })],
+                })
+            );
+
+            latestPeerManager().callbacks.onDisconnected('peer-2');
+
+            expect(collaborationStore.value?.connectionStatus).toBe('connected');
+            expect(collaborationStore.value?.error).toBeNull();
         });
     });
 
