@@ -58,9 +58,27 @@ describe('the production Content-Security-Policy', () => {
         expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
     });
 
-    it('admits only bundled workers and secure provider connections', () => {
+    it('admits only bundled workers and the enumerated provider and model hosts', () => {
         expect(directives.get('worker-src')).toEqual(["'self'"]);
-        expect(directives.get('connect-src')).toEqual(["'self'", 'http://localhost:*', 'http://127.0.0.1:*', 'https:']);
+        // The enumerated production connection surface, and nothing wider,
+        // mirroring the Tauri policy (#2171): loopback HTTP for user-run
+        // OpenAI-compatible LLM servers, Hugging Face plus its CDN redirect
+        // hosts for Kokoro/WebLLM model artifacts, the MLC wasm runtime on
+        // raw.githubusercontent.com, and DDSP checkpoints on
+        // storage.googleapis.com. A bare `https:` is an open exfiltration
+        // channel and must never return.
+        expect(directives.get('connect-src')).toEqual([
+            "'self'",
+            'http://localhost:*',
+            'http://127.0.0.1:*',
+            'https://huggingface.co',
+            'https://*.huggingface.co',
+            'https://*.hf.co',
+            'https://raw.githubusercontent.com',
+            'https://storage.googleapis.com',
+        ]);
+        expect(directives.get('connect-src')).not.toContain('https:');
+        expect([...directives.values()].flat()).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('http:');
         expect([...directives.values()].flat()).not.toContain('ws:');
     });

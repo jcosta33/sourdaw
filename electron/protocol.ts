@@ -40,13 +40,21 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
  * place a real policy violation shows up. (The Tauri config still carries the
  * token; that is a defect in the shipped policy, filed separately.)
  *
+ * `connect-src` enumerates the production connection surface, and nothing
+ * wider, mirroring the Tauri policy (#2171): loopback HTTP for user-run
+ * OpenAI-compatible LLM servers (`configureCloudProvider` admits http on
+ * loopback only), Hugging Face plus its CDN redirect hosts for Kokoro/WebLLM
+ * model artifacts, the MLC wasm runtime on raw.githubusercontent.com, and DDSP
+ * checkpoints on storage.googleapis.com. A bare `https:` here is an open
+ * exfiltration channel and must never return.
+ *
  * Every other directive is byte-identical to the Tauri policy on purpose: the
  * renderer is the same build, so a directive that differs is a behavioural
  * difference between the two shells.
  */
 export const PRODUCTION_CSP = [
     "default-src 'self'",
-    "connect-src 'self' http://localhost:* http://127.0.0.1:* https:",
+    "connect-src 'self' http://localhost:* http://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://storage.googleapis.com",
     "img-src 'self' data: blob:",
     "media-src 'self' data: blob:",
     "style-src 'self' 'unsafe-inline'",
