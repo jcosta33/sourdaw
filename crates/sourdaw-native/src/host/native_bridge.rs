@@ -52,23 +52,26 @@ const PLUGIN_LIFECYCLE_ACTIVE: u8 = 0;
 const PLUGIN_LIFECYCLE_UNLOADING: u8 = 1;
 const PLUGIN_LIFECYCLE_RETIRED: u8 = 2;
 
-/// Run one of the non-RT control path's blocking waits without parking an async
-/// worker thread.
+/// Run one of the non-RT control path's blocking bodies — lock acquisition,
+/// seam wait, or the plugin operation itself — without parking an async worker
+/// thread.
 ///
 /// The control path is blocking by construction: the operation it guards reaches
 /// CLAP entry points, so it has to run on the caller's own thread rather than be
 /// handed to a pool. Every public control entry point is reached from an async
-/// command body, and parking that body's worker for the control timeout parks
-/// every other command queued behind it on the same worker — including the
+/// command body, and parking that body's worker — for a contended wait or for
+/// the plugin call itself, third-party code of unbounded duration — parks
+/// every other command queued behind it on the same worker, including the
 /// worklet audio relay, which runs once per render quantum. `block_in_place`
 /// releases the worker's run queue to another thread for the duration of the
-/// wait, so unrelated IPC keeps moving while this thread waits, and the caller
+/// body, so unrelated IPC keeps moving while this thread blocks, and the caller
 /// still gets the wrapper on the thread it asked from.
 ///
 /// Off a multi-threaded runtime — the shell's window-event thread, the app-exit
 /// path, the plugin scan worker, tests — there is no worker to release and the
-/// wait runs exactly as it always has. The flavour is checked rather than
-/// assumed because `block_in_place` panics on a current-thread runtime.
+/// body runs exactly as it always has. The flavour is checked rather than
+/// assumed because `block_in_place` panics on a current-thread runtime or
+/// inside a `LocalSet`, neither of which this crate is reached from.
 fn without_stalling_async_worker<ResultValue>(wait: impl FnOnce() -> ResultValue) -> ResultValue {
     let on_multi_thread_worker = matches!(
         tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor()),
@@ -534,16 +537,21 @@ impl SharedClapPlugin {
 
     /// Take the gate that serializes this instance's non-RT control operations.
     ///
-    /// Uncontended — the ordinary case — this is one atomic and touches no
-    /// scheduler. Contended it waits for however long the operation holding the
-    /// gate takes, which is bounded only by *that* operation's control timeout,
-    /// so the wait is handed to `without_stalling_async_worker`.
+    /// The whole acquisition runs under the async-worker hand-off: uncontended —
+    /// the ordinary case — it is one `try_lock`, and contended it waits for
+    /// however long the operation holding the gate takes, bounded only by *that*
+    /// operation's control timeout. Only the acquisition is handed off — the
+    /// guard comes back to the caller — which is sound because `block_in_place`
+    /// runs its closure on the calling thread.
     fn lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
-        if let Ok(guard) = self.non_rt_control_lock.try_lock() {
-            return Ok(guard);
-        }
+        without_stalling_async_worker(|| {
+            if let Ok(guard) = self.non_rt_control_lock.try_lock() {
+                return Ok(guard);
+            }
 
-        without_stalling_async_worker(|| self.non_rt_control_lock.lock()).map_err(|error| {
+            self.non_rt_control_lock.lock()
+        })
+        .map_err(|error| {
             format!(
                 "Failed to lock plugin non-RT control path for '{}': {}",
                 self.name, error
@@ -560,14 +568,19 @@ impl SharedClapPlugin {
         timeout: Duration,
         operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
     ) -> Result<ResultValue, String> {
-        // The seam is free unless the audio thread is inside a block for this
-        // instance, so the ordinary control operation takes it on the first CAS
-        // and never reaches the scheduler at all.
-        if let Some(_guard) = self.try_claim_control() {
-            return operation(unsafe { &mut *self.wrapper.get() });
-        }
+        // The whole body runs under the hand-off, not just the contended wait:
+        // `operation` is third-party CLAP code of unbounded duration (`set_state`
+        // on a large preset, `open_gui`), so the ordinary uncontended claim —
+        // the seam is free unless the audio thread is inside a block for this
+        // instance, so the first CAS normally takes it — would otherwise still
+        // park the worker for the whole plugin call.
+        without_stalling_async_worker(|| {
+            if let Some(_guard) = self.try_claim_control() {
+                return operation(unsafe { &mut *self.wrapper.get() });
+            }
 
-        without_stalling_async_worker(|| self.spin_for_control(timeout, operation))
+            self.spin_for_control(timeout, operation)
+        })
     }
 
     /// Take the control side of the RT/control access seam, or `None` when the
@@ -1173,8 +1186,15 @@ mod tests {
 
             // The waiter holds the non-RT gate for as long as it is spinning, so
             // a refused try_lock is the signal that it has reached the wait on
-            // the runtime's only worker.
+            // the runtime's only worker. Bounded: an unreached gate must name
+            // the waiter instead of dying by harness timeout.
+            let probe_deadline = Instant::now() + Duration::from_secs(5);
             while shared.non_rt_control_lock.try_lock().is_ok() {
+                if Instant::now() >= probe_deadline {
+                    panic!(
+                        "the contended control waiter never reached its wait on the runtime's only worker"
+                    );
+                }
                 thread::sleep(Duration::from_millis(2));
             }
 
@@ -1198,6 +1218,69 @@ mod tests {
                 .access_state
                 .store(PLUGIN_ACCESS_IDLE, Ordering::Release);
             let _ = waiter.await;
+        });
+    }
+
+    /// The companion to the contended test above: the *uncontended* claim is
+    /// the ordinary case, and `operation` is third-party CLAP code of unbounded
+    /// duration (`set_state` on a large preset, `open_gui`). The whole control
+    /// body must be handed over, not just the contended wait — otherwise an
+    /// ordinary uncontended call still parks the worker for the entire plugin
+    /// call.
+    #[test]
+    fn an_uncontended_control_operation_does_not_park_unrelated_work_on_the_runtime() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .build()
+            .expect("multi-threaded test runtime");
+
+        runtime.block_on(async {
+            let wrapper =
+                ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+            let shared = Arc::new(SharedClapPlugin::new(wrapper));
+
+            let operating_plugin = Arc::clone(&shared);
+            let operation = tokio::spawn(async move {
+                operating_plugin.with_control(Duration::from_secs(2), |_| {
+                    thread::sleep(Duration::from_millis(600));
+                    Ok(())
+                })
+            });
+
+            // The operation holds the non-RT gate while its body blocks, so a
+            // refused try_lock is the signal that the body is running on the
+            // runtime's only worker. Bounded: an unreached gate must name the
+            // operation instead of dying by harness timeout.
+            let probe_deadline = Instant::now() + Duration::from_secs(5);
+            while shared.non_rt_control_lock.try_lock().is_ok() {
+                if Instant::now() >= probe_deadline {
+                    panic!(
+                        "the uncontended control operation never reached its body on the runtime's only worker"
+                    );
+                }
+                thread::sleep(Duration::from_millis(2));
+            }
+
+            let progressed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let unrelated_flag = Arc::clone(&progressed);
+            let started = Instant::now();
+            tokio::spawn(async move {
+                unrelated_flag.store(true, Ordering::Release);
+            })
+            .await
+            .expect("unrelated task must not be cancelled");
+
+            assert!(progressed.load(Ordering::Acquire));
+            assert!(
+                started.elapsed() < Duration::from_millis(200),
+                "unrelated runtime work waited {:?} behind an uncontended plugin control operation",
+                started.elapsed()
+            );
+
+            operation
+                .await
+                .expect("control operation task must not be cancelled")
+                .expect("an uncontended control operation must succeed");
         });
     }
 
