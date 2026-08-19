@@ -1,0 +1,31 @@
+src/modules/Collaboration/useCases/collaboration/generateInvite.ts
+  s_487e9aa1e46063::t_b599c906a7982a 5-6
+  s_487e9aa1e46063::t_6d06ffdee706d5 28-33,35-39,41-44,46-54,56-60
+src/modules/Collaboration/useCases/collaboration/__tests__/generateInvite.spec.ts
+  s_487e9aa1e46063::t_91db8601ef560b 52-86
+src/modules/Collaboration/useCases/collaboration/clearCollaborationFailure.ts
+  s_487e9aa1e46063::t_c1876f7e9058ee 1-13
+src/modules/Collaboration/useCases/collaboration/acceptAnswer.ts
+  s_487e9aa1e46063::t_e7bbd4f388f8cb 6-7
+  s_487e9aa1e46063::t_fde440f5b955b1 11-18,20-25,27-44,46-65
+src/modules/Collaboration/useCases/collaboration/recordCollaborationFailure.ts
+  s_487e9aa1e46063::t_e283926e96671a 1-19
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_487e9aa1e46063::t_f78eee63982e80 57-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6bcbf77498c40dcb39b3cef1dd653442154a1525",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
