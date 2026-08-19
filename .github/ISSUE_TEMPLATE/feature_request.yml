@@ -1,18 +1,19 @@
-name: 💡 Feature or Improvement Request
-description: Propose a new capability, architectural refactor, or optimization.
+name: Feature
+description: Small enhancement that does not change a public contract. Consequential behavior is a Spec.
 title: "feat(scope): "
 labels: ["enhancement", "status:ready"]
 body:
   - type: markdown
     attributes:
       value: |
-        Please outline the proposed capability and its architectural boundary. Titles must follow `feat(scope): description` or `refactor(scope): description`.
+        Consequential behavior is a Spec. Secrets stay in `~/.agents/artifacts`.
+
+        After create, add `priority:P*`.
 
   - type: dropdown
     id: scope
     attributes:
-      label: Subsystem Scope
-      description: What subsystem or bounded context will own this capability?
+      label: Subsystem
       options:
         - audio-engine (Realtime scheduling, offline render, backends)
         - daw-dsp (Synthesizers, modular DSP, audio effects)
@@ -33,26 +34,24 @@ body:
     attributes:
       label: Priority
       options:
-        - "priority:P2 (Medium: valuable enhancement or cleanup)"
-        - "priority:P1 (High: key architectural milestone or blocker)"
-        - "priority:P3 (Low: nice-to-have / exploratory)"
+        - P1
+        - P2
+        - P3
     validations:
       required: true
 
   - type: textarea
-    id: proposal
+    id: intent
     attributes:
-      label: Proposed Solution / Contract
-      description: Detailed description of the feature, proposed API/contract, and design decisions.
-      placeholder: "Describe the behavior, data flow, and public interface."
+      label: Intent
+      description: What becomes true, for whom. No API. No AC-NNN.
     validations:
       required: true
 
   - type: textarea
-    id: verification
+    id: done_when
     attributes:
-      label: Acceptance Criteria / Verification Plan
-      description: How will this feature be verified (unit tests, null tests, e2e, manual)?
-      placeholder: "- [ ] Unit test proving...\n- [ ] Parity assertion between..."
+      label: Done when
+      description: Observable finish. Not an AC.
     validations:
       required: true

@@ -1,18 +1,19 @@
-name: 🐛 Bug Report
-description: Report a defect, audio glitch, crash, or regression.
+name: Bug report
+description: Unspecced defect, crash, or audit finding. Spec-governed work is a Task.
 title: "fix(scope): "
 labels: ["bug", "status:ready"]
 body:
   - type: markdown
     attributes:
       value: |
-        Please provide a concise, factual description of the issue. Titles must follow the format `fix(scope): description`.
+        Spec-governed work is a Task. Secrets stay in `~/.agents/artifacts`.
+
+        After create, add `priority:P*`.
 
   - type: dropdown
     id: scope
     attributes:
-      label: Subsystem Scope
-      description: What subsystem or bounded context is affected?
+      label: Subsystem
       options:
         - audio-engine (Realtime scheduling, offline render, buffers)
         - daw-dsp (Synthesizers, filters, delay, reverbs, saturation)
@@ -32,30 +33,28 @@ body:
   - type: dropdown
     id: priority
     attributes:
-      label: Severity / Priority
-      description: Select the appropriate severity level.
+      label: Priority
       options:
-        - "priority:P1 (High: audio fidelity corruption, panic, or broken core workflow)"
-        - "priority:P2 (Medium: important functional bug, UI defect, or edge-case)"
-        - "priority:P3 (Low: minor cosmetic or non-critical quirk)"
-        - "priority:P0 (Critical: security vulnerability or catastrophic data loss)"
+        - P0
+        - P1
+        - P2
+        - P3
     validations:
       required: true
 
   - type: textarea
     id: description
     attributes:
-      label: Defect Description
-      description: What is happening versus what is expected?
-      placeholder: "Clear description of the observed behavior and the expected contract."
+      label: Defect
+      description: Observed versus expected.
     validations:
       required: true
 
   - type: textarea
     id: reproduction
     attributes:
-      label: Steps to Reproduce
-      description: Minimal steps, code snippets, or test commands to reproduce the issue.
+      label: Reproduce
+      description: Minimal steps, snippet, or command.
       placeholder: "1. Open project...\n2. Route track...\n3. Observe..."
     validations:
       required: true
@@ -63,8 +62,8 @@ body:
   - type: textarea
     id: context
     attributes:
-      label: Architectural Context & References
-      description: Relevant ADRs, spec files, or related issues (if known).
-      placeholder: "ADR 0020, Related to #2037, etc."
+      label: References
+      description: ADRs or related issues.
+      placeholder: "ADR 0020, #2037"
     validations:
       required: false

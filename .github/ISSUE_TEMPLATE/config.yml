@@ -2,4 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Architecture & Decisions
     url: https://github.com/jcosta33/sourdaw/tree/main/.agents/decisions
-    about: Read accepted Architecture Decision Records (ADRs) and design contracts.
+    about: Frozen law. Cite from issues. Do not file ADRs as issues.
+  - name: Roadmap
+    url: https://github.com/users/jcosta33/projects/1
+    about: Mirrors issues. File with a form, not a card.
