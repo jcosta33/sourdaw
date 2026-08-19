@@ -25,13 +25,16 @@ struct LoadedModel {
 
 pub struct DictationState {
     loaded: Mutex<Option<LoadedModel>>,
-    /// Serializes every transition of `loaded` — `ensure_whisper_ready`'s
-    /// check→download→build→store and `load_whisper_model`'s build→store.
-    /// The `loaded` mutex alone cannot provide this: it must not be held
-    /// across the download's await points, so without this guard two
-    /// concurrent `ensure_whisper_ready` calls both observe not-loaded and
-    /// both download and build the ~142 MB model, the loser's context being
+    /// Serializes `ensure_whisper_ready`'s check→download→build→store. The
+    /// `loaded` mutex alone cannot provide this: it must not be held across
+    /// the download's await points, so without this guard two concurrent
+    /// `ensure_whisper_ready` calls both observe not-loaded and both
+    /// download and build the ~142 MB model, the loser's context being
     /// dropped on overwrite. Async so the second caller awaits the first.
+    /// `load_whisper_model` deliberately does *not* take this guard — the
+    /// explicit local-load entry point must never queue behind an
+    /// auto-download; explicit-load-wins is preserved by the re-check after
+    /// `produce` in `ensure_loaded_exclusively`.
     load_guard: tokio::sync::Mutex<()>,
     stop_flag: Arc<AtomicBool>,
     /// Set for the lifetime of one record-then-transcribe session so a
@@ -192,6 +195,13 @@ fn try_begin_dictation_session(session_active: &AtomicBool) -> Result<(), String
 /// caller awaits the first and receives its value instead of repeating the
 /// production. The already-loaded check runs *under* `load_guard`: checking
 /// before acquiring is exactly the check-then-act race this exists to close.
+///
+/// The slot is re-checked *after* `produce` as well: `load_whisper_model`
+/// writes the slot without taking `load_guard` (so an explicit local load
+/// never queues behind an in-flight auto-download), and an explicit load
+/// that lands mid-produce must win — the produced value is discarded and the
+/// explicitly loaded one returned, never overwritten.
+///
 /// Generic so the exclusion contract is testable without a real
 /// `WhisperContext` — see the `#[cfg(test)]` module.
 async fn ensure_loaded_exclusively<T, Fut>(
@@ -215,6 +225,10 @@ where
     let value = produce().await?;
 
     let mut guard = loaded.lock().map_err(|e| format!("Lock error: {e}"))?;
+    if let Some(existing) = guard.as_ref() {
+        // An explicit load landed while we were producing: it wins.
+        return Ok(existing.clone());
+    }
     *guard = Some(value.clone());
     Ok(value)
 }
@@ -224,16 +238,18 @@ where
 /// Load a Whisper GGML model from disk. Call once on startup or
 /// lazily before the first dictation session.
 ///
-/// Deliberately replaces whatever is loaded, but under `load_guard` so the
-/// build→store cannot interleave with an in-flight `ensure_whisper_ready`.
+/// Deliberately replaces whatever is loaded, and deliberately does *not*
+/// take `load_guard`: this is the entry point a user reaches for when the
+/// auto-download is slow, so it must never queue behind one (the download is
+/// bounded only by a 3600 s HTTP timeout). An `ensure_whisper_ready` that
+/// finishes later will not overwrite this explicit load — its post-produce
+/// re-check in `ensure_loaded_exclusively` yields to the value stored here.
 pub async fn load_whisper_model(
     model_path: String,
     state: &DictationState,
 ) -> Result<AsrStatus, String> {
     let model_path = filesystem::resolve_existing_file_path(&model_path)?;
     let model_path_str = model_path.to_string_lossy().to_string();
-
-    let _exclusive = state.load_guard.lock().await;
 
     let ctx = WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
         .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
@@ -776,6 +792,48 @@ mod tests {
             builds.load(Ordering::SeqCst),
             1,
             "exactly one build may run"
+        );
+    }
+
+    /// `load_whisper_model` writes the slot directly, without taking
+    /// `load_guard`, so an explicit load can land while
+    /// `ensure_loaded_exclusively` is mid-produce. The explicit load must
+    /// win: the produced value is discarded, and the slot is never
+    /// overwritten with it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_explicit_load_landing_mid_produce_wins_over_the_produced_value() {
+        let loaded = Arc::new(Mutex::new(None::<u32>));
+        let load_guard = Arc::new(tokio::sync::Mutex::new(()));
+        let produce_entered = Arc::new(tokio::sync::Notify::new());
+        let release_produce = Arc::new(tokio::sync::Notify::new());
+
+        let ensure = {
+            let loaded = loaded.clone();
+            let load_guard = load_guard.clone();
+            let produce_entered = produce_entered.clone();
+            let release_produce = release_produce.clone();
+            tokio::spawn(async move {
+                ensure_loaded_exclusively(&loaded, &load_guard, || async {
+                    produce_entered.notify_one();
+                    release_produce.notified().await;
+                    Ok(7_u32)
+                })
+                .await
+            })
+        };
+        produce_entered.notified().await;
+
+        // Simulates load_whisper_model: store the explicit value under the
+        // `loaded` mutex alone, while the producer is parked mid-produce.
+        *loaded.lock().unwrap() = Some(42);
+        release_produce.notify_one();
+
+        let result = ensure.await.expect("ensure task must not panic");
+        assert_eq!(result, Ok(42), "the explicit load must win");
+        assert_eq!(
+            *loaded.lock().unwrap(),
+            Some(42),
+            "the produced value must never overwrite the explicit load"
         );
     }
 

@@ -34,7 +34,7 @@ dirs = "6"
 raw-window-handle = "0.6"
 midir = "0.11"
 rusb = { version = "0.9", features = ["vendored"] }
-tokio = { version = "1", features = ["macros", "time", "net", "rt", "rt-multi-thread", "sync"] }
+tokio = { version = "1", features = ["macros", "time", "net", "rt", "rt-multi-thread", "sync", "fs", "io-util"] }
 reqwest = { version = "0.13", features = ["json", "stream"] }
 futures-util = "0.3"
 whisper-rs = { version = "0.16", features = ["metal"] }
@@ -54,8 +54,8 @@ daw-dsp = { path = "../daw-dsp" }
 daw-io = { path = "../daw-io" }
 
 [target.'cfg(unix)'.dependencies]
-# Already in the dependency tree transitively; declared here for the statvfs
-# free-space measurement in commands/model_download.rs.
+# Already in the dependency tree transitively; declared here for the
+# free-space measurement (statfs/statvfs) in commands/model_download.rs.
 libc = "0.2"
 
 [dev-dependencies]

@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::Mutex as AsyncMutex;
@@ -48,7 +48,11 @@ fn model_lock(filename: &str) -> Arc<AsyncMutex<()>> {
 /// Concurrent calls for the same model serialize on `model_lock`, so the
 /// download happens at most once per process at a time and a caller that
 /// arrives mid-download awaits it instead of starting a duplicate.
-pub async fn ensure_model(model: &ModelDownload) -> Result<PathBuf, String> {
+///
+/// Takes `&'static ModelDownload` so the full-file hash verifications can
+/// move whole to the blocking pool without cloning the spec — model specs
+/// are process-lifetime constants.
+pub async fn ensure_model(model: &'static ModelDownload) -> Result<PathBuf, String> {
     validate_model_spec(model)?;
     let lock = model_lock(model.filename);
     let _exclusive = lock.lock().await;
@@ -56,7 +60,7 @@ pub async fn ensure_model(model: &ModelDownload) -> Result<PathBuf, String> {
     let path = dir.join(model.filename);
 
     if path.exists() {
-        if model_file_matches(&path, model)? {
+        if model_file_matches_off_thread(path.clone(), model).await? {
             return Ok(path);
         } else {
             eprintln!(
@@ -90,10 +94,12 @@ pub async fn ensure_model(model: &ModelDownload) -> Result<PathBuf, String> {
     eprintln!("[Model] Downloading {}...", model.filename);
     download_with_progress(model, &tmp).await?;
 
-    verify_model_file(&tmp, model)?;
+    verify_model_file_off_thread(tmp.clone(), model).await?;
 
     // Rename to final path
-    std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to finalize model file: {e}"))?;
+    tokio::fs::rename(&tmp, &path)
+        .await
+        .map_err(|e| format!("Failed to finalize model file: {e}"))?;
 
     eprintln!("[Model] {} ready", model.filename);
     Ok(path)
@@ -129,17 +135,23 @@ async fn download_with_progress(model: &ModelDownload, dest: &PathBuf) -> Result
         eprintln!("[Model] {}: {total_mb:.1} MB", model.filename);
     }
 
-    let mut file =
-        std::fs::File::create(dest).map_err(|e| format!("Failed to create file: {e}"))?;
+    // `tokio::fs`, not `std::fs`: each chunk write would otherwise block a
+    // tokio worker while `model_lock` (and the caller's `load_guard`) are
+    // held for the whole download.
+    let mut file = tokio::fs::File::create(dest)
+        .await
+        .map_err(|e| format!("Failed to create file: {e}"))?;
 
     let mut downloaded: u64 = 0;
     let mut last_report = 0u64;
     let mut stream = response.bytes_stream();
 
     use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
         file.write_all(&chunk)
+            .await
             .map_err(|e| format!("File write error: {e}"))?;
 
         downloaded += chunk.len() as u64;
@@ -156,7 +168,9 @@ async fn download_with_progress(model: &ModelDownload, dest: &PathBuf) -> Result
         }
     }
 
-    file.flush().map_err(|e| format!("File flush error: {e}"))?;
+    file.flush()
+        .await
+        .map_err(|e| format!("File flush error: {e}"))?;
     drop(file);
 
     eprintln!(
@@ -209,6 +223,29 @@ fn validate_sha256(expected: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `model_file_matches` on the blocking pool: hashing the ~148 MB file is
+/// seconds of uninterruptible CPU and I/O, and `ensure_model` holds
+/// `model_lock` (and its caller may hold a load guard) across this await —
+/// that exclusion must not also occupy a tokio worker for the duration.
+async fn model_file_matches_off_thread(
+    path: PathBuf,
+    model: &'static ModelDownload,
+) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || model_file_matches(&path, model))
+        .await
+        .map_err(|e| format!("Model integrity check task failed: {e}"))?
+}
+
+/// `verify_model_file` on the blocking pool — see `model_file_matches_off_thread`.
+async fn verify_model_file_off_thread(
+    path: PathBuf,
+    model: &'static ModelDownload,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || verify_model_file(&path, model))
+        .await
+        .map_err(|e| format!("Model verification task failed: {e}"))?
+}
+
 fn model_file_matches(path: &PathBuf, model: &ModelDownload) -> Result<bool, String> {
     match verify_model_file(path, model) {
         Ok(()) => Ok(true),
@@ -250,21 +287,16 @@ const DISK_SPACE_MARGIN_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Pre-download destination check.
 ///
-/// On unix (every platform the desktop shells ship) this measures actual
-/// free space via `statvfs` and rejects the download when `required_bytes`
-/// does not fit, so a 142 MB+ stream does not discover a full disk as a
-/// mid-stream write error. On other platforms only the writability probe
-/// below runs — it verifies permissions, not space.
+/// On unix this measures actual free space (`statfs` on Apple targets,
+/// `statvfs` elsewhere — see `free_disk_space_bytes`) and rejects the
+/// download when `required_bytes` does not fit, so a 142 MB+ stream does not
+/// discover a full disk as a mid-stream write error. Windows is a bundled
+/// shell target and currently gets no space check at all: only the
+/// writability probe below runs there, and it verifies permissions, not
+/// space.
 fn check_disk_space(dir: &Path, filename: &str, required_bytes: u64) -> Result<(), String> {
     #[cfg(unix)]
-    {
-        let free = free_disk_space_bytes(dir)?;
-        if free < required_bytes {
-            return Err(format!(
-                "Not enough disk space for {filename}: {free} bytes free, {required_bytes} bytes required (model plus margin). Free up space and retry."
-            ));
-        }
-    }
+    require_free_space(free_disk_space_bytes(dir)?, filename, required_bytes)?;
 
     // Writability probe: catches a read-only or permission-broken model
     // directory before the download starts. Named per model so probes for
@@ -280,23 +312,70 @@ fn check_disk_space(dir: &Path, filename: &str, required_bytes: u64) -> Result<(
     Ok(())
 }
 
-/// Free space in bytes available to an unprivileged process on the
-/// filesystem holding `dir`, via `statvfs`.
+/// The space decision itself, split from the syscall so its exact boundary
+/// is hermetically testable: a byte-exact fit passes, one byte short fails.
 #[cfg(unix)]
-fn free_disk_space_bytes(dir: &Path) -> Result<u64, String> {
+fn require_free_space(free: u64, filename: &str, required_bytes: u64) -> Result<(), String> {
+    if free < required_bytes {
+        return Err(format!(
+            "Not enough disk space for {filename}: {free} bytes free, {required_bytes} bytes required (model plus margin). Free up space and retry."
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn dir_c_path(dir: &Path) -> Result<std::ffi::CString, String> {
     use std::os::unix::ffi::OsStrExt;
 
-    let c_path = std::ffi::CString::new(dir.as_os_str().as_bytes())
-        .map_err(|_| "Model directory path contains a NUL byte".to_string())?;
+    std::ffi::CString::new(dir.as_os_str().as_bytes())
+        .map_err(|_| "Model directory path contains a NUL byte".to_string())
+}
+
+#[cfg(unix)]
+fn free_space_query_error() -> String {
+    format!(
+        "Failed to query free disk space for the model directory: {}",
+        std::io::Error::last_os_error()
+    )
+}
+
+/// Free space in bytes available to an unprivileged process on the
+/// filesystem holding `dir`, via `statfs`.
+///
+/// Apple targets must not use `statvfs`: `libc::fsblkcnt_t` is `c_uint`
+/// there and Darwin's statvfs is a compatibility shim that casts statfs's
+/// 64-bit counts down to it, so block counts wrap modulo 2^32 — about
+/// 16 TiB of 4096-byte fragments — and a large volume can report a tiny
+/// remainder, spuriously hard-rejecting the download. statfs's `f_bavail`
+/// is a full `u64`, untruncated.
+#[cfg(all(unix, target_vendor = "apple"))]
+fn free_disk_space_bytes(dir: &Path) -> Result<u64, String> {
+    let c_path = dir_c_path(dir)?;
+    let mut stats: libc::statfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `c_path` is a valid NUL-terminated path and `stats` is a valid
+    // out-pointer for the duration of the call.
+    let rc = unsafe { libc::statfs(c_path.as_ptr(), &mut stats) };
+    if rc != 0 {
+        return Err(free_space_query_error());
+    }
+    // `f_bavail` counts blocks available to unprivileged callers; `f_bsize`
+    // is the block size.
+    Ok(stats.f_bavail.saturating_mul(u64::from(stats.f_bsize)))
+}
+
+/// Free space in bytes available to an unprivileged process on the
+/// filesystem holding `dir`, via `statvfs`. Apple targets use `statfs`
+/// instead — see above.
+#[cfg(all(unix, not(target_vendor = "apple")))]
+fn free_disk_space_bytes(dir: &Path) -> Result<u64, String> {
+    let c_path = dir_c_path(dir)?;
     let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: `c_path` is a valid NUL-terminated path and `stats` is a valid
     // out-pointer for the duration of the call.
     let rc = unsafe { libc::statvfs(c_path.as_ptr(), &mut stats) };
     if rc != 0 {
-        return Err(format!(
-            "Failed to query free disk space for the model directory: {}",
-            std::io::Error::last_os_error()
-        ));
+        return Err(free_space_query_error());
     }
     // `f_bavail` counts fragments available to unprivileged callers;
     // `f_frsize` is the fragment size.
@@ -376,9 +455,26 @@ mod tests {
         assert_eq!(max_seen.load(Ordering::SeqCst), 1);
     }
 
-    /// The disk check measures real free space, not mere writability: an
-    /// impossible requirement fails before any download, a trivial one
-    /// passes.
+    /// The space decision boundary is exact: a byte-exact fit passes and one
+    /// byte short fails. Hermetic — the free value is injected, so a broken
+    /// or inverted comparison cannot hide behind whatever the host disk
+    /// happens to hold.
+    #[cfg(unix)]
+    #[test]
+    fn space_requirement_boundary_is_byte_exact() {
+        require_free_space(100, "boundary-model.bin", 100).expect("free == required must fit");
+
+        let error = require_free_space(99, "boundary-model.bin", 100)
+            .expect_err("free == required - 1 must not fit");
+        assert!(
+            error.contains("Not enough disk space"),
+            "error must name the space shortfall, got: {error}"
+        );
+    }
+
+    /// Live-syscall smoke test: the real measurement wired through
+    /// `check_disk_space` returns a plausible value on the host filesystem.
+    /// The exact comparison boundary is covered hermetically above.
     #[cfg(unix)]
     #[test]
     fn disk_check_rejects_a_download_larger_than_free_space() {
