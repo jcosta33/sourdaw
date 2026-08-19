@@ -68,7 +68,7 @@ function mintClient(input: { login: string; permissions: Record<string, string>;
                     body: { token: input.token ?? 'ghs_minted', permissions: input.permissions },
                 };
             }
-            return { status: 200, body: { login: input.login } };
+            return { status: 200, body: { slug: input.login.replace('[bot]', '') } };
         },
     };
 }
@@ -170,7 +170,7 @@ describe('installation mint', () => {
                 request,
             })
         ).rejects.toThrow(/contents: write/);
-        expect(requests.filter((entry) => entry.url.endsWith('/user'))).toHaveLength(0);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
     it('requests only author contents write and pull_requests write', async () => {

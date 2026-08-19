@@ -181,15 +181,19 @@ export async function mintInstallationToken(input: {
     if (input.permissions.contents === 'read' && permissions.contents === 'write') {
         fail('reviewer installation token granted contents: write');
     }
-    const user = await request('https://api.github.com/user', {
+    const app = await request('https://api.github.com/app', {
         method: 'GET',
         headers: {
-            Authorization: `Bearer ${payload.token}`,
+            Authorization: `Bearer ${jwt}`,
             Accept: 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28',
         },
     });
-    const login = loginFrom(user.body);
+    const slug =
+        app.body !== null && typeof app.body === 'object' && 'slug' in app.body && typeof app.body.slug === 'string'
+            ? app.body.slug
+            : undefined;
+    const login = slug === undefined ? undefined : `${slug}[bot]`;
     if (login !== input.expectedLogin) {
         fail(`minted login ${login ?? '<missing>'} is not ${input.expectedLogin}`);
     }
@@ -399,14 +403,6 @@ function stringRecord(value: unknown): Record<string, string> {
         }
     }
     return result;
-}
-
-function loginFrom(body: unknown): string | undefined {
-    if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-        return undefined;
-    }
-    const login = (body as { login?: unknown }).login;
-    return typeof login === 'string' ? login : undefined;
 }
 
 function base64Url(value: string): string {
