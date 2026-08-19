@@ -8,6 +8,15 @@ import { denoiseAudio } from '../nativeAiBridge/denoiseAudio';
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
+// The browser-fallback expander below is mirrored sample-for-sample by the
+// native implementation in crates/sourdaw-native/src/commands/ai_audio.rs:
+// the same Denoise action must render the same audio in every runtime.
+// Change the two in lockstep. The curve, its invariants, and the pinned
+// depth/THD numbers are documented there.
+const EXPANSION_EXPONENT_SCALE = 5;
+const ENVELOPE_ATTACK_SECONDS = 0.002;
+const ENVELOPE_RELEASE_SECONDS = 0.1;
+
 export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7) {
     const taskId = addTask({ type: 'denoise', status: 'processing' });
     try {
@@ -40,22 +49,28 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
             noisePower /= Math.max(noiseSamples, 1);
             outNoiseFloor = 10 * Math.log10(Math.max(noisePower, 1e-12));
 
-            const threshold = Math.sqrt(noisePower * (1 + strength * 3));
-            // Below-threshold expansion gain. At ratio = 0 the gain is `floorGain`
-            // (deeper suppression as strength rises); it ramps linearly to exactly
-            // 1.0 at ratio = 1, which is continuous with the unity passthrough above
-            // the threshold — no gain step at the boundary (the old branch jumped
-            // from state*(1 - strength) to state, an audible click).
-            const floorGain = 1 - strength * 0.95;
-            const output = new Float32Array(mono.length);
-            for (let index = 0; index < mono.length; index++) {
-                const state = mono[index]!;
-                const abs = Math.abs(state);
-                if (abs < threshold) {
-                    const ratio = abs / threshold;
-                    output[index] = state * (floorGain + (1 - floorGain) * ratio);
-                } else {
-                    output[index] = state;
+            const output = new Float32Array(mono);
+            const clampedStrength = Math.min(Math.max(strength, 0), 1);
+            // Strength 0 is a bit-exact pass-through: the loop is skipped
+            // rather than multiplying by a computed gain of 1.
+            if (clampedStrength > 0) {
+                const threshold = Math.sqrt(noisePower * (1 + clampedStrength * 3));
+                const exponent = clampedStrength * EXPANSION_EXPONENT_SCALE;
+                const attack = Math.exp(-1 / (ENVELOPE_ATTACK_SECONDS * buffer.sampleRate));
+                const release = Math.exp(-1 / (ENVELOPE_RELEASE_SECONDS * buffer.sampleRate));
+                // Gain is keyed by a smoothed level, not the instantaneous
+                // sample, so sub-threshold material is attenuated rather
+                // than waveshaped into harmonic distortion.
+                let envelope = 0;
+                for (let index = 0; index < output.length; index++) {
+                    const abs = Math.abs(output[index]!);
+                    const coefficient = abs > envelope ? attack : release;
+                    envelope = abs + coefficient * (envelope - abs);
+                    // False when the threshold is 0 (digitally silent
+                    // analysis window), so silence passes through.
+                    if (envelope < threshold) {
+                        output[index] = output[index]! * (envelope / threshold) ** exponent;
+                    }
                 }
             }
 

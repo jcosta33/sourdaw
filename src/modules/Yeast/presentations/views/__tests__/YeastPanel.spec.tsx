@@ -294,6 +294,79 @@ describe('YeastPanel', () => {
         expect(rack_read_scope.getByText('Live')).toBeInTheDocument();
     });
 
+    describe('processor rack reorder controls', () => {
+        const rackState = (uiLevel: 3 | 4 | 5): YeastState => ({
+            processors: [
+                { id: 'arp-1', type: 'arpeggiator', name: 'Arpeggiator', bypassed: false, params: {} },
+                { id: 'filter-1', type: 'filter', name: 'Note Filter', bypassed: false, params: {} },
+                { id: 'transpose-1', type: 'transposer', name: 'Transposer', bypassed: false, params: {} },
+            ],
+            uiLevel,
+        });
+
+        it.each([
+            ['Build', 3 as const],
+            ['Route', 4 as const],
+            ['Lab', 5 as const],
+        ])('moves a processor down and commits the new order on the %s deck', (_deck, uiLevel) => {
+            storeMock.yeastState = rackState(uiLevel);
+            render(<YeastPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Move Arpeggiator down' }));
+
+            expect(storeMock.yeastState?.processors.map((processor) => processor.id)).toEqual([
+                'filter-1',
+                'arp-1',
+                'transpose-1',
+            ]);
+        });
+
+        it('moves a processor up and commits the new order', () => {
+            storeMock.yeastState = rackState(3);
+            render(<YeastPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Move Note Filter up' }));
+
+            expect(storeMock.yeastState?.processors.map((processor) => processor.id)).toEqual([
+                'filter-1',
+                'arp-1',
+                'transpose-1',
+            ]);
+        });
+
+        it('disables Up on the first row and Down on the last row', () => {
+            storeMock.yeastState = rackState(3);
+            render(<YeastPanel />);
+
+            expect(screen.getByRole('button', { name: 'Move Arpeggiator up' })).toBeDisabled();
+            expect(screen.getByRole('button', { name: 'Move Transposer down' })).toBeDisabled();
+            expect(screen.getByRole('button', { name: 'Move Arpeggiator down' })).toBeEnabled();
+            expect(screen.getByRole('button', { name: 'Move Transposer up' })).toBeEnabled();
+        });
+
+        it('does not toggle the row expansion when a reorder button is clicked', () => {
+            storeMock.yeastState = rackState(3);
+            render(<YeastPanel />);
+
+            const downButton = screen.getByRole('button', { name: 'Move Note Filter down' });
+            // The reorder button itself also carries a `cursor-pointer` class
+            // (its hover affordance), so `.closest()` from the button would
+            // match the button before its Row ancestor — start from the
+            // parent instead.
+            const headerRow = downButton.parentElement?.closest('.cursor-pointer');
+            if (!headerRow) {
+                throw new Error('processor row header not found');
+            }
+
+            fireEvent.click(downButton);
+
+            // Clicking the row header (not a control) is what opens the params
+            // panel; the reorder click must not also open it via bubbling — the
+            // expand caret in this same row stays "▶", not "▼".
+            expect(within(headerRow as HTMLElement).getByText('▶')).toBeInTheDocument();
+        });
+    });
+
     it('should bind a groove processor to the MIDI-owned template library', () => {
         storeMock.yeastState = {
             processors: [{ id: 'groove-1', type: 'groove', name: 'Groove', bypassed: false }],

@@ -1,0 +1,119 @@
+name: Task
+description: One write-disjoint slice of a ready Spec. A Change plan cannot replace the Spec.
+title: "task(scope): "
+labels: ["status:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Parent Spec must already be open. One-shot work is Bug or Feature. Secrets stay in `~/.agents/artifacts`.
+
+        After create: attach as sub-issue of the Spec; add `priority:P*`.
+
+  - type: input
+    id: parent_spec
+    attributes:
+      label: Parent Spec
+      description: Ready Spec issue number.
+      placeholder: "2037"
+    validations:
+      required: true
+
+  - type: input
+    id: change_plan
+    attributes:
+      label: Change plan
+      description: Change plan issue number, if any.
+      placeholder: "2040"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Assigned requirements
+      description: Paste each assigned Spec AC block verbatim. Preservation guarantees go under Preservation scope.
+      placeholder: |
+        ### AC-001
+        - When:
+        - Then:
+        - Verify with:
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected_areas
+    attributes:
+      label: Affected areas
+      description: Every path this packet may write. Unknown scope conflicts with every other Task.
+    validations:
+      required: true
+
+  - type: textarea
+    id: do_not_change
+    attributes:
+      label: Do not change
+      description: Excluded paths, contracts, and behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: siblings
+    attributes:
+      label: May run with
+      description: Write-disjoint Task numbers, or None.
+      placeholder: "None"
+    validations:
+      required: true
+
+  - type: textarea
+    id: preservation
+    attributes:
+      label: Preservation scope
+      description: Every preservation guarantee this packet could violate, with its check. Else None.
+      placeholder: "None"
+    validations:
+      required: true
+
+  - type: textarea
+    id: verify
+    attributes:
+      label: Verify
+      description: One command or n/a per assigned AC and preservation guarantee. Evidence goes on the PR.
+      placeholder: "pnpm test:run path/to/spec.ts"
+    validations:
+      required: true

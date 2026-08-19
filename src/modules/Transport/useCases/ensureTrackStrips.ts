@@ -9,13 +9,44 @@
 
 import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/stores';
 import { applySoloLogic, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 import { ensureBusStrip, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['tracks']): boolean {
     return tracks.some(
         (track) => track.kind === 'bus' && tracks.filter((candidate) => candidate.id === track.id).length !== 1
     );
+}
+
+/** Initializes output owners before their sources without publishing empty strips first. */
+function orderLiveTracksForInitialization<TTrack extends { id: string; outputId: string }>(
+    liveTracks: readonly TTrack[]
+): TTrack[] {
+    const tracksById = new Map<string, TTrack>();
+    for (const track of liveTracks) {
+        if (liveTracks.filter((candidate) => candidate.id === track.id).length === 1) {
+            tracksById.set(track.id, track);
+        }
+    }
+    const ordered: TTrack[] = [];
+    const visited = new Set<string>();
+    const visiting = new Set<string>();
+    const visit = (track: TTrack): void => {
+        if (visited.has(track.id) || visiting.has(track.id)) {
+            return;
+        }
+        visiting.add(track.id);
+        const target = tracksById.get(track.outputId);
+        if (target) {
+            visit(target);
+        }
+        visiting.delete(track.id);
+        visited.add(track.id);
+        ordered.push(track);
+    };
+    for (const track of liveTracks) {
+        visit(track);
+    }
+    return ordered;
 }
 
 export function ensureTrackStrips(): void {
@@ -31,15 +62,11 @@ export function ensureTrackStrips(): void {
         ensureBusStrip(bus.id);
     }
 
-    for (const track of liveTracks) {
-        ensureTrackStrip(track.id);
-    }
-
     for (const bus of busTracks) {
         setBusGain(bus.id, bus.gain);
     }
 
-    for (const track of liveTracks) {
+    for (const track of orderLiveTracksForInitialization(liveTracks)) {
         projectTrackToLiveStrip({
             trackId: track.id,
             deferSidechainWiring: true,

@@ -739,4 +739,44 @@ describe('usePianoRollInteractions', () => {
             expect(latest.current?.ctxMenu).toEqual({ x: 100, y: 200, beat: 2.5 });
         });
     });
+
+    describe('cross-clip hit-test z-order', () => {
+        // The renderer paints secondary opened clips in openedClipIds order
+        // (later clip on top) and the primary clip's notes last of all, so the
+        // primary is always topmost. Hit-testing must resolve overlap the same
+        // way: the topmost visibly painted note wins the click.
+        const overlappingSecondaries = {
+            openedClipNotes: {
+                'clip-2': [makeNote('under', 55, 2, 2)],
+                'clip-3': [makeNote('over', 55, 2, 2)],
+            },
+        };
+
+        it('a primary-clip note painted over a secondary note receives the click', () => {
+            const { canvas } = renderRoll({
+                openedClipNotes: { 'clip-2': [makeNote('n2', 60, 2, 2)] },
+            });
+
+            fireEvent.mouseDown(canvas, { clientX: 100, clientY: yForPitch(60) });
+
+            expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['n1']));
+        });
+
+        it('the topmost-painted secondary note receives the click, not the hidden one', () => {
+            const { canvas } = renderRoll(overlappingSecondaries);
+
+            fireEvent.mouseDown(canvas, { clientX: 100, clientY: yForPitch(55) });
+
+            expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['over']));
+        });
+
+        it('double-click deletes the topmost-painted secondary note from its owner clip', () => {
+            const { canvas } = renderRoll(overlappingSecondaries);
+
+            fireEvent.doubleClick(canvas, { clientX: 100, clientY: yForPitch(55) });
+
+            expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-3', 'over');
+            expect(mocks.removeMidiNote).not.toHaveBeenCalledWith('clip-2', 'under');
+        });
+    });
 });

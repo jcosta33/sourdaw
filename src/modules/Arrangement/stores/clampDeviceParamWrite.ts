@@ -59,7 +59,7 @@ function deviceTypeIndex(tracks: TrackList): Map<string, string> {
  * Colocated with the store instance rather than `useCases/` for the same reason
  * `persistDeviceParam` is: `AudioEngine/useCases` already depends on
  * `Arrangement/stores`, while reaching `Arrangement/useCases` from there would
- * close a module cycle through `loadPresetToTrack`.
+ * close a module cycle through preset command compilation.
  *
  * Fails open. A device the store does not know — one mid-attach, an offline
  * render strip, a test double — has no reachable declared contract, and

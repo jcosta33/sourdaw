@@ -1,91 +1,378 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
+import { type AppAction, type DeviceSnapshot, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { handleLoadPreset } from '../handleLoadPreset';
 
 const mocks = vi.hoisted(() => ({
-    getUserPresets: vi.fn(),
-    loadPresetToTrack: vi.fn(),
-    createTrackFromPreset: vi.fn(),
+    applyDeviceChainRuntimeDelta: vi.fn(),
+    captureProjectRevision: vi.fn(() => 'project-1'),
+    findPresetById: vi.fn(),
+    getTrackStrip: vi.fn<() => unknown>(() => ({})),
+    getTrackStoreState: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesMaterializedPresetDevices: vi.fn(() => true),
+    updateDeviceParam: vi.fn(),
+    updateTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/preset/presetStorage/getUserPresets', () => ({
-    getUserPresets: mocks.getUserPresets,
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
+    getRuntimeGraphRevision: vi.fn(() => 4),
+    getTrackStrip: mocks.getTrackStrip,
+    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
+    resolveToasterPadBinding: vi.fn(() => undefined),
+    updateDeviceParam: mocks.updateDeviceParam,
 }));
 
-vi.mock('../../../useCases/preset/presetLoading', () => ({
-    loadPresetToTrack: mocks.loadPresetToTrack,
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureProjectRevision,
 }));
 
-vi.mock('../../../useCases/preset/createTrackFromPreset', () => ({
-    createTrackFromPreset: mocks.createTrackFromPreset,
+vi.mock('../../../useCases/device/applyDeviceChainRuntimeDelta', () => ({
+    applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('../../../useCases/preset/findPresetById', () => ({
+    findPresetById: mocks.findPresetById,
+}));
+
+vi.mock('../../../useCases/preset/matchesMaterializedPresetDevices', () => ({
+    matchesMaterializedPresetDevices: mocks.matchesMaterializedPresetDevices,
+}));
+
+vi.mock('../../../useCases/updateTrack', () => ({
+    updateTrack: mocks.updateTrack,
+}));
+
+type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
+
+const oldDevice: DeviceSnapshot = {
+    id: 'old-device',
+    name: 'Old',
+    type: 'builtin-synth',
+    bypassed: false,
+    parameterValues: {},
+};
+const newDevice: DeviceSnapshot = {
+    id: 'preset-device-1',
+    name: 'Poly',
+    type: 'builtin-synth',
+    bypassed: false,
+    parameterValues: { cutoff: 0.6 },
+};
+
+function action(overrides: Partial<LoadPresetAction['payload']> = {}): LoadPresetAction {
+    return {
+        type: 'loadPreset' as const,
+        payload: {
+            presetId: 'preset-1',
+            trackId: 'track-1',
+            expectedBefore: {
+                id: 'track-1',
+                kind: 'midi' as const,
+                devices: [{ id: 'old-device', type: 'builtin-synth', parameterIds: [] }],
+            },
+            expectedProjectRevision: 'project-1',
+            expectedFrozen: false,
+            devices: [newDevice],
+            ...overrides,
+        },
+    };
+}
+
+function validate(actionToValidate: LoadPresetAction, context?: HandlerValidationContext): boolean {
+    const handlerValidate = handleLoadPreset.validate;
+    if (!handlerValidate) {
+        throw new Error('loadPreset handler is missing authoritative validation');
+    }
+    return handlerValidate(actionToValidate, context ?? { actions: [actionToValidate], actionIndex: 0 });
+}
 
 describe('handleLoadPreset', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        clearUndoHistory();
+        mocks.captureProjectRevision.mockReturnValue('project-1');
+        mocks.getTrackStrip.mockReturnValue({});
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }],
+        });
+        mocks.findPresetById.mockReturnValue({ id: 'preset-1', name: 'Glass Pad' });
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 4, projectRevision: 'project-2' },
+            runtimeRevision: 5,
+        });
+        mocks.initializeTrackStripFromSnapshot.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 4, projectRevision: 'project-2' },
+            runtimeRevision: 5,
+        });
     });
 
-    it('reports no-write if preset cannot be found', () => {
-        mocks.getUserPresets.mockReturnValue([]);
+    it('writes the catalog-owned project chain before applying its runtime delta and parameters', async () => {
+        const result = await handleLoadPreset.execute(action());
 
-        const result = handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
+        expect(result).toMatchObject({ status: 'written' });
+        expect(mocks.updateTrack).toHaveBeenCalledOnce();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        if (!result || result.status !== 'written') {
+            throw new Error('Preset load did not produce a project write');
+        }
 
-        expect(result).toEqual({ status: 'no-write' });
-        expect(mocks.loadPresetToTrack).not.toHaveBeenCalled();
-        expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
+        const afterCommit = result.afterCommit;
+        if (!afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+        await afterCommit();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith({
+            before: expect.objectContaining({ id: 'track-1', devices: [oldDevice] }),
+            after: expect.objectContaining({ id: 'track-1', devices: [newDevice] }),
+            operation: 'replace-device-chain',
+        });
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
+        expect(mocks.applyDeviceChainRuntimeDelta.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.updateDeviceParam.mock.invocationCallOrder[0]!
+        );
     });
 
-    it('loads preset to track if trackId is provided', () => {
-        const preset = { id: 'p1', name: 'Cool Synth' };
-        mocks.getUserPresets.mockReturnValue([preset]);
-        mocks.loadPresetToTrack.mockReturnValue(true);
+    it('surfaces a rejected post-commit runtime receipt and does not apply parameters', async () => {
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'runtime revision stale',
+        });
+        const result = await handleLoadPreset.execute(action());
+        if (!result || result.status !== 'written') {
+            throw new Error('Preset load did not produce a project write');
+        }
 
-        const result = handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1', trackId: 't1' } });
-
-        expect(result).toEqual({ status: 'written' });
-        expect(mocks.loadPresetToTrack).toHaveBeenCalledWith('t1', preset);
-        expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
+        const afterCommit = result.afterCommit;
+        if (!afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+        await expect(Promise.resolve().then(() => afterCommit())).rejects.toThrow(/requires retry/);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('reports no-write when loading onto a track is rejected', () => {
-        const preset = { id: 'p1', name: 'Cool Synth' };
-        mocks.getUserPresets.mockReturnValue([preset]);
-        mocks.loadPresetToTrack.mockReturnValue(false);
+    it('surfaces a needs-reconcile receipt and does not apply parameters', async () => {
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'needs-reconcile',
+            compensation: 'failed',
+            correlation: { appRevision: 4, projectRevision: 'project-2' },
+            runtimeRevision: 5,
+            reason: 'graph rebuild failed',
+        });
+        const result = await handleLoadPreset.execute(action());
+        if (!result || result.status !== 'written') {
+            throw new Error('Preset load did not produce a project write');
+        }
 
-        const result = handleLoadPreset.execute({
-            type: 'loadPreset',
-            payload: { presetId: 'p1', trackId: 'vca-1' },
+        const afterCommit = result.afterCommit;
+        if (!afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+        await expect(Promise.resolve().then(() => afterCommit())).rejects.toThrow(/requires repair/);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('initializes a missing live strip from the committed replacement snapshot before applying parameters', async () => {
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        const result = await handleLoadPreset.execute(action());
+        if (!result || result.status !== 'written') {
+            throw new Error('Preset load did not produce a project write');
+        }
+        const afterCommit = result.afterCommit;
+        if (!afterCommit) {
+            throw new Error('Preset load did not schedule a post-commit runtime effect');
+        }
+
+        await afterCommit();
+
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'initialize-track-strip',
+                nodes: [
+                    expect.objectContaining({
+                        id: 'track-1',
+                        devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                    }),
+                ],
+            })
+        );
+        expect(mocks.initializeTrackStripFromSnapshot.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.updateDeviceParam.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('initializes a newly created Toaster folder from its committed after-state, not its empty before-state', async () => {
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }],
+        });
+        const toasterDevice: DeviceSnapshot = {
+            id: 'toaster-device',
+            name: 'Toaster',
+            type: 'toaster',
+            bypassed: false,
+            parameterValues: { masterGain: 1.2 },
+        };
+        const toasterAction = action({
+            trackId: 'toaster-folder',
+            expectedProjectRevision: undefined,
+            expectedBefore: { id: 'toaster-folder', kind: 'folder', devices: [] },
+            devices: [toasterDevice],
         });
 
-        expect(result).toEqual({ status: 'no-write' });
-        expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
+        const result = await handleLoadPreset.execute(toasterAction);
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Toaster preset load did not schedule its post-commit runtime effect');
+        }
+        await result.afterCommit();
+
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    expect.objectContaining({
+                        id: 'toaster-folder',
+                        kind: 'folder',
+                        devices: [{ id: 'toaster-device', type: 'toaster', parameterIds: ['masterGain'] }],
+                    }),
+                ],
+            })
+        );
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('toaster-folder', 'toaster-device', 'masterGain', 1.2);
     });
 
-    it('creates track from preset if trackId is not provided', () => {
-        const preset = { id: 'p1', name: 'Cool Synth' };
-        mocks.getUserPresets.mockReturnValue([preset]);
+    it('rejects a stale collaborator revision before the project write or runtime effect', async () => {
+        mocks.captureProjectRevision.mockReturnValue('project-2');
 
-        void handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
-
-        expect(mocks.createTrackFromPreset).toHaveBeenCalledWith(preset);
-        expect(mocks.loadPresetToTrack).not.toHaveBeenCalled();
+        expect(validate(action())).toBe(false);
+        await expect(Promise.resolve(handleLoadPreset.execute(action()))).resolves.toEqual({ status: 'conflict' });
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
     });
 
-    it('provides a description reflecting the preset name if found', () => {
-        mocks.getUserPresets.mockReturnValue([{ id: 'p1', name: 'Cool Synth' }]);
+    it('rejects a malformed duplicate device snapshot before the project write', async () => {
+        const malformed = action({ devices: [newDevice, { ...newDevice }] });
 
-        const desc = handleLoadPreset.describe({ type: 'loadPreset', payload: { presetId: 'p1' } });
-        expect(desc.label).toBe('Load preset "Cool Synth"');
+        expect(validate(malformed)).toBe(false);
+        await expect(Promise.resolve(handleLoadPreset.execute(malformed))).resolves.toEqual({ status: 'conflict' });
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
-    it('provides a description reflecting presetId if not found', () => {
-        mocks.getUserPresets.mockReturnValue([]);
+    it('validates the load action against an earlier addTrack in the same guarded batch', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const planned = action({
+            trackId: 'preset-track-1',
+            expectedProjectRevision: undefined,
+            expectedBefore: {
+                id: 'preset-track-1',
+                kind: 'midi',
+                devices: [{ id: 'preset-initial-device-1', type: 'builtin-synth', parameterIds: [] }],
+            },
+        });
+        const add = {
+            type: 'addTrack' as const,
+            payload: {
+                id: 'preset-track-1',
+                initialAlternativeId: 'preset-alternative-1',
+                initialDeviceId: 'preset-initial-device-1',
+                name: 'Glass Pad',
+                kind: 'midi' as const,
+            },
+        };
 
-        const desc = handleLoadPreset.describe({ type: 'loadPreset', payload: { presetId: 'p1' } });
-        expect(desc.label).toBe('Load preset p1');
+        expect(validate(planned, { actions: [add, planned], actionIndex: 1 })).toBe(true);
     });
 
-    it('is undoable', () => {
-        expect(handleLoadPreset.undoable).toBe(true);
+    it('captures an exact guarded inverse for undo/redo rather than reloading the mutable catalog', () => {
+        const description = handleLoadPreset.describe(action());
+
+        expect(description.inverseAction).toMatchObject({
+            type: 'restorePresetDeviceChain',
+            payload: {
+                trackId: 'track-1',
+                expectedBefore: {
+                    id: 'track-1',
+                    kind: 'midi',
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                replacementDevices: [oldDevice],
+            },
+        });
+    });
+
+    it.each([
+        ['rejected', { acceptance: 'rejected', application: 'not-applied', reason: 'runtime revision stale' }, 'retry'],
+        [
+            'needs-reconcile',
+            {
+                acceptance: 'accepted',
+                application: 'needs-reconcile',
+                compensation: 'failed',
+                correlation: { appRevision: 4, projectRevision: 'project-2' },
+                runtimeRevision: 5,
+                reason: 'partial graph replacement',
+            },
+            'repair',
+        ],
+    ])(
+        'does not return clean Command success after a %s runtime receipt',
+        async (_label, runtimeResult, remediation) => {
+            mocks.applyDeviceChainRuntimeDelta.mockReturnValue(runtimeResult);
+            registerHandlerMap({ loadPreset: handleLoadPreset });
+
+            const committedError = await executeAppAction(action()).then(
+                () => {
+                    throw new Error('Expected committed preset runtime failure');
+                },
+                (error: unknown) => error
+            );
+
+            expect(isAppActionCommittedError(committedError)).toBe(true);
+            expect(committedError).toMatchObject({
+                cause: expect.any(AggregateError),
+            });
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+            expect(committedError).toMatchObject({
+                message: 'Action committed but post-commit processing failed: loadPreset',
+            });
+            if (!(committedError instanceof Error) || !(committedError.cause instanceof AggregateError)) {
+                throw new Error('Expected the Command receipt to preserve the post-commit failure');
+            }
+            for (const runtimeFailure of committedError.cause.errors) {
+                expect(runtimeFailure).toMatchObject({
+                    name: 'RuntimePresetDeltaPostCommitError',
+                    outcome: runtimeResult,
+                    remediation,
+                });
+            }
+        }
+    );
+
+    it('returns clean Command success only after the runtime replacement applies and parameters follow', async () => {
+        registerHandlerMap({ loadPreset: handleLoadPreset });
+
+        await expect(executeAppAction(action())).resolves.toBeUndefined();
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('track-1', 'preset-device-1', 'cutoff', 0.6);
     });
 });

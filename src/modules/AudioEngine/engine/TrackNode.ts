@@ -15,6 +15,7 @@ import type {
     DeviceReadinessToken,
 } from './deviceReadinessDiagnostics';
 import type { TrackChannelStrip, BuiltinDeviceNode, DeviceController, SendNode } from '../models/AudioEngineState';
+import type { RuntimeGraphDeviceChainDelta } from '../models/RuntimeGraphDelta';
 
 /**
  * Minimum a-rate ramp span, in seconds, for a compensation-aligned automation
@@ -85,10 +86,16 @@ export class RuntimeGraphMutationRejected extends Error {
     }
 }
 
+type PendingParameterWrite =
+    | Readonly<{ kind: 'immediate'; name: string; value: number }>
+    | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
+
 type PendingDeviceLoad = {
     abortController: AbortController;
+    externalInstanceId?: string;
     bypassed?: boolean;
-    parameterWrites: Array<[string, number]>;
+    parameterIds: readonly string[];
+    parameterWrites: PendingParameterWrite[];
     loadPromise?: Promise<unknown>;
     placeholder?: BuiltinDeviceNode;
     readinessToken: DeviceReadinessToken;
@@ -628,11 +635,24 @@ export class TrackNode {
         return {
             ...controller,
             ready: false,
-            setParam: (name, value) => {
+            setParam: (name, value, sampleFrame) => {
                 if (this._disposed || pendingLoad.resolved || this._pendingDeviceLoads.get(deviceId) !== pendingLoad) {
                     return;
                 }
-                pendingLoad.parameterWrites.push([name, value]);
+                if (sampleFrame !== undefined && Number.isSafeInteger(sampleFrame) && sampleFrame >= 0) {
+                    pendingLoad.parameterWrites.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
+                    return;
+                }
+                const previous = pendingLoad.parameterWrites.at(-1);
+                if (previous?.kind === 'immediate' && previous.name === name) {
+                    pendingLoad.parameterWrites[pendingLoad.parameterWrites.length - 1] = Object.freeze({
+                        kind: 'immediate',
+                        name,
+                        value,
+                    });
+                    return;
+                }
+                pendingLoad.parameterWrites.push(Object.freeze({ kind: 'immediate', name, value }));
             },
         };
     }
@@ -706,8 +726,14 @@ export class TrackNode {
         let deviceLoadNotificationStarted = false;
         let promotionPublished = false;
         try {
-            for (const [name, value] of pendingLoad.parameterWrites) {
-                finalDn.controller?.setParam(name, value);
+            finalDn.parameterIds = pendingLoad.parameterIds;
+            finalDn.externalInstanceId = pendingLoad.externalInstanceId;
+            for (const pending of pendingLoad.parameterWrites) {
+                if (pending.kind === 'scheduled') {
+                    finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
+                } else {
+                    finalDn.controller?.setParam(pending.name, pending.value);
+                }
             }
             if (pendingLoad.bypassed !== undefined) {
                 finalDn.controller?.setBypass?.(pendingLoad.bypassed);
@@ -797,7 +823,7 @@ export class TrackNode {
             }
 
             const precedingDeviceIds = this.strip.deviceNodes.slice(0, index).map((device) => device.deviceId);
-            const { bypassed, type } = replacementDn;
+            const { bypassed, type, parameterIds } = replacementDn;
             this.reportAsyncRuntimeGraphMutation(
                 'needs-reconcile',
                 `Recovered device ${deviceId} is rebuilding its live graph slot`
@@ -805,7 +831,7 @@ export class TrackNode {
             this.invalidatePendingDeviceLoad({ deviceId });
             this.strip.deviceNodes.splice(index, 1);
             this.destroyRejectedDeviceNode(replacementDn);
-            this.addDevice(deviceId, type, undefined, precedingDeviceIds);
+            this.addDevice(deviceId, type, undefined, precedingDeviceIds, parameterIds);
             if (bypassed !== undefined) {
                 this.updateBypass(deviceId, bypassed);
             }
@@ -900,7 +926,8 @@ export class TrackNode {
         deviceId: string,
         deviceType: string,
         externalInstanceId?: string,
-        precedingDeviceIds?: readonly string[]
+        precedingDeviceIds?: readonly string[],
+        parameterIds: readonly string[] = []
     ): boolean {
         if (this._disposed) {
             return false;
@@ -962,6 +989,8 @@ export class TrackNode {
             }
             const pendingLoad: PendingDeviceLoad = {
                 abortController: new AbortController(),
+                ...(externalInstanceId !== undefined ? { externalInstanceId } : {}),
+                parameterIds: Object.freeze([...parameterIds]),
                 parameterWrites: [],
                 readinessToken,
                 resolved: false,
@@ -1049,6 +1078,7 @@ export class TrackNode {
                 }
                 const pendingLoad: PendingDeviceLoad = {
                     abortController: new AbortController(),
+                    parameterIds: Object.freeze([...parameterIds]),
                     parameterWrites: [],
                     readinessToken,
                     resolved: false,
@@ -1058,8 +1088,10 @@ export class TrackNode {
                 try {
                     created = descriptor.create({
                         context,
+                        trackId: this.trackId,
                         deviceId,
                         deviceType,
+                        parameterIds: pendingLoad.parameterIds,
                         transportSAB: this.deps.transportSAB,
                         isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                         signal: pendingLoad.abortController.signal,
@@ -1088,6 +1120,8 @@ export class TrackNode {
             }
         }
 
+        dn.parameterIds = Object.freeze([...parameterIds]);
+        dn.externalInstanceId = externalInstanceId;
         let targetIndex = this.strip.deviceNodes.length;
         if (precedingDeviceIds !== undefined) {
             const precedingIds = new Set(precedingDeviceIds);
@@ -1159,6 +1193,107 @@ export class TrackNode {
                     application: 'needs-reconcile',
                     reason: `Device ${deviceId} was removed before its live graph rebuild failed`,
                 }),
+                error
+            );
+        }
+        return true;
+    }
+
+    /** Applies one compiler-validated, ordered device-chain transition. */
+    public applyDeviceChain(delta: RuntimeGraphDeviceChainDelta): boolean {
+        const beforeIds = new Set(delta.before.devices.map((device) => device.id));
+        const afterIds = new Set(delta.after.devices.map((device) => device.id));
+        if (delta.operation === 'add-device') {
+            const added = delta.after.devices.find((device) => !beforeIds.has(device.id));
+            if (!added) {
+                throw new RuntimeGraphMutationRejected('Compiled device add has no inserted device', delta);
+            }
+            const insertionIndex = delta.after.devices.findIndex((device) => device.id === added.id);
+            return this.addDevice(
+                added.id,
+                added.type,
+                added.externalInstanceId,
+                delta.after.devices.slice(0, insertionIndex).map((device) => device.id),
+                added.parameterIds
+            );
+        }
+        if (delta.operation === 'remove-device') {
+            const removed = delta.before.devices.find((device) => !afterIds.has(device.id));
+            if (!removed) {
+                throw new RuntimeGraphMutationRejected('Compiled device removal has no removed device', delta);
+            }
+            return this.removeDevice(removed.id);
+        }
+
+        if (delta.operation === 'replace-device-chain') {
+            let changed = false;
+            try {
+                for (const device of [...this.strip.deviceNodes]) {
+                    changed = this.removeDevice(device.deviceId) || changed;
+                }
+                for (const device of delta.after.devices) {
+                    const added = this.addDevice(
+                        device.id,
+                        device.type,
+                        device.externalInstanceId,
+                        undefined,
+                        device.parameterIds
+                    );
+                    if (!added) {
+                        throw new RuntimeGraphMutationRejected(
+                            `Compiled device-chain replacement could not add ${device.id}`,
+                            delta
+                        );
+                    }
+                    changed = true;
+                }
+                return changed;
+            } catch (error) {
+                // Once an old slot has been disposed or a new slot published, a
+                // restoration would need fresh host/worklet resources. Report
+                // that truthfully instead of claiming the CRDT commit was undone.
+                if (changed) {
+                    throw new RuntimeGraphMutationFailure(
+                        Object.freeze({
+                            application: 'needs-reconcile',
+                            reason: `Device-chain replacement on track ${this.trackId} partially changed the live graph`,
+                        }),
+                        error
+                    );
+                }
+                throw error;
+            }
+        }
+
+        const currentNodes = [...this.strip.deviceNodes];
+        const nodesById = new Map(currentNodes.map((device) => [device.deviceId, device]));
+        const orderedNodes: BuiltinDeviceNode[] = [];
+        for (const device of delta.after.devices) {
+            const liveDevice = nodesById.get(device.id);
+            if (!liveDevice) {
+                throw new RuntimeGraphMutationRejected('Compiled device reorder has no live device', delta);
+            }
+            orderedNodes.push(liveDevice);
+        }
+        this.strip.deviceNodes = orderedNodes;
+        try {
+            this.rebuildChain();
+        } catch (error) {
+            this.strip.deviceNodes = currentNodes;
+            try {
+                this.rebuildChain();
+            } catch (rollbackError) {
+                throw new RuntimeGraphMutationFailure(
+                    Object.freeze({
+                        application: 'needs-reconcile',
+                        reason: `Device-chain reorder on track ${this.trackId} changed before graph restoration failed`,
+                    }),
+                    error,
+                    rollbackError
+                );
+            }
+            throw new RuntimeGraphMutationRejected(
+                `Device-chain reorder on track ${this.trackId} was restored after a live graph failure`,
                 error
             );
         }

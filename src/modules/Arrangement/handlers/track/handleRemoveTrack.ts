@@ -118,12 +118,12 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                     () => wireSidechainRoutes(),
                 ];
                 if (committedTrack) {
-                    effects.unshift(() =>
+                    effects.unshift(() => {
                         projectTrackToLiveStrip({
                             trackId: committedTrack.id,
                             activateDormantExternalPlugins: true,
-                        })
-                    );
+                        });
+                    });
                 } else {
                     effects.unshift(result.finalizeRuntimeRemoval, () =>
                         publishTrackRemoved({ trackId: action.payload.trackId })

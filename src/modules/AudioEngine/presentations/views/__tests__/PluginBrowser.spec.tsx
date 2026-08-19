@@ -29,10 +29,9 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     startPluginScan: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    addTrack: vi.fn(() => ({ id: 'track1', name: 'Plugin', kind: 'midi' })),
-    addExternalDevice: vi.fn(),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: vi.fn(),
 }));
 
 vi.mock('#/utils/platformCapabilities', () => ({
@@ -49,7 +48,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 
 const { useStore } = await import('#/infra/store/useStore');
 const { startPluginScan } = await import('#/modules/PluginHost/useCases');
-const { addTrack, addExternalDevice } = await import('#/modules/Arrangement/useCases');
+const { executeAppAction } = await import('#/modules/Command/useCases');
 const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 
 const mockPlugins = [
@@ -183,7 +182,7 @@ describe('PluginBrowser', () => {
         expect(formatBadges.length).toBeGreaterThan(0);
     });
 
-    it('should call addExternalDevice when plugin is clicked', () => {
+    it('dispatches the external-plugin command for a selected track', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             scannedPlugins: mockPlugins,
             isScanning: false,
@@ -192,50 +191,42 @@ describe('PluginBrowser', () => {
         render(<PluginBrowser selectedTrackId="track1" searchQuery="" />);
         const plugin = screen.getByText('CLAP Filter');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(addExternalDevice).toHaveBeenCalledWith('track1', 'p3', 'CLAP Filter');
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'p3', trackId: 'track1' },
+        });
     });
 
-    // ── handleLoadPlugin: no selected track ⇒ creates a track of the right kind ─
+    // ── handleLoadPlugin: no selected track ⇒ handler owns materialization ─
 
-    it('creates an instrument track when loading an instrument plugin with no selected track', () => {
+    it('dispatches an unbound external-plugin command for an instrument with no selected track', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        const plugin = screen.getByText('CLAP Synth'); // category: 'Instrument'
+        const plugin = screen.getByText('CLAP Synth');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        // Instrument ⇒ new midi track created, then device added to it.
-        expect(addTrack).toHaveBeenCalledWith({ name: 'CLAP Synth', kind: 'midi' });
-        expect(addExternalDevice).toHaveBeenCalledWith('track1', 'p2', 'CLAP Synth');
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'p2' },
+        });
     });
 
-    it('creates an audio track when loading a non-instrument plugin with no selected track', () => {
+    it('leaves track-kind materialization to the command handler for an effect', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
         });
-        render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        const plugin = screen.getByText('CLAP Filter'); // category: 'Effect'
-        fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(addTrack).toHaveBeenCalledWith({ name: 'CLAP Filter', kind: 'audio' });
-    });
-
-    it('aborts the load when addTrack returns null and there is no selected track', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
-            scannedPlugins: mockPlugins,
-            isScanning: false,
-            errors: [],
-        });
-        vi.mocked(addTrack).mockReturnValueOnce(null);
-
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const plugin = screen.getByText('CLAP Filter');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        // Track creation failed ⇒ addExternalDevice never called.
-        expect(addExternalDevice).not.toHaveBeenCalled();
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'p3' },
+        });
     });
 
     // ── collapse/expand toggle (exercises the else/add arm) ────────────────────

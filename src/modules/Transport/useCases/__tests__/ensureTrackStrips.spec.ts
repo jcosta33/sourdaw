@@ -59,6 +59,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     chordTrackStore: { value: {} },
     scratchPadStore: { value: {} },
     takeLaneStore: { value: {} },
+    persistDeviceParam: vi.fn(),
 }));
 
 // Mock AudioEngine use cases
@@ -138,7 +139,7 @@ describe('ensureTrackStrips', () => {
         });
     });
 
-    it('delegates reverse-ordered Toaster reconstruction only after every eligible strip exists', () => {
+    it('initializes output owners before their dependent Toaster strips without empty-strip publication', () => {
         const toasterFolder = createTrack({ id: 'toaster-folder', name: 'Toaster Kit', kind: 'folder' });
         const ordinaryFolder = createTrack({ id: 'ordinary-folder', name: 'Group', kind: 'folder' });
         const effectsBus = createTrack({ id: 'effects-bus', name: 'Effects', kind: 'bus' });
@@ -171,25 +172,23 @@ describe('ensureTrackStrips', () => {
             selectedTrackId: toasterFolder.id,
             tracks: [...children, ordinaryFolder, toasterFolder, effectsBus, masterTrack],
         };
-        const liveTrackIds = [...children.map((child) => child.id), toasterFolder.id, effectsBus.id, masterTrack.id];
+        const initializationTrackIds = [
+            masterTrack.id,
+            toasterFolder.id,
+            ...children.map((child) => child.id),
+            effectsBus.id,
+        ];
 
         function expectReconstruction(): void {
-            for (const trackId of liveTrackIds) {
-                expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(trackId);
-            }
-            expect(mocks.ensureTrackStrip).not.toHaveBeenCalledWith(ordinaryFolder.id);
+            expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
             expect(mocks.projectTrackToLiveStrip.mock.calls).toEqual(
-                liveTrackIds.map((trackId) => [
+                initializationTrackIds.map((trackId) => [
                     { trackId, deferSidechainWiring: true, activateDormantExternalPlugins: true },
                 ])
             );
             expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
 
-            const allocationCalls = [
-                ...mocks.ensureBusStrip.mock.invocationCallOrder,
-                ...mocks.ensureTrackStrip.mock.invocationCallOrder,
-            ];
-            expect(Math.max(...allocationCalls)).toBeLessThan(
+            expect(Math.max(...mocks.ensureBusStrip.mock.invocationCallOrder)).toBeLessThan(
                 Math.min(...mocks.projectTrackToLiveStrip.mock.invocationCallOrder)
             );
             expect(Math.max(...mocks.projectTrackToLiveStrip.mock.invocationCallOrder)).toBeLessThan(

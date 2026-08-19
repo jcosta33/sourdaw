@@ -9,12 +9,34 @@ import {
 
 // grinderProcessor.applyNeuralPatch is the densest branch surface in the file
 // (optional profile fields, finite-number coercion, tier mapping, conv-weight
-// validation). Drive it through the `patch` message and assert which params the
+// validation). Drive it through the versioned patch message and assert which params the
 // instance received — deriving expected values from the documented neural patch
 // contract, never from implementation output.
 
 function patch(processor: GrinderProcessorLike, neural: Record<string, unknown>): void {
-    processor.port.onmessage?.({ data: { type: 'patch', patch: neural } });
+    processor.port.onmessage?.({
+        data: {
+            schemaVersion: 1,
+            command: 'initialize-fallback-control',
+            target: {
+                trackId: 'track-1',
+                deviceId: 'grinder-1',
+                deviceType: 'grinder',
+                parameterIds: ['sag', 'bypass'],
+            },
+            correlation: { workletGeneration: 7 },
+        },
+    });
+    processor.port.onmessage?.({
+        data: {
+            schemaVersion: 1,
+            command: 'apply-grinder-neural-patch',
+            target: { trackId: 'track-1', deviceId: 'grinder-1', deviceType: 'grinder' },
+            patch: neural,
+            correlation: { workletGeneration: 7, controlSequence: 1 },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        },
+    });
 }
 
 function paramMap(calls: typeof grinderSetParamCalls): Record<string, number> {
@@ -26,9 +48,9 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
         resetGrinderProcessorCalls();
     });
 
-    it('selects the builtin model (mode 0) and ignores any profile when neuralModelMode is "builtin"', async () => {
+    it('selects the builtin model (mode 0)', async () => {
         const processor = await createReadyGrinderProcessor();
-        patch(processor, { neuralModelMode: 'builtin', profile: { inputDrive: 2 } });
+        patch(processor, { neuralModelMode: 'builtin' });
 
         const m = paramMap(grinderSetParamCalls);
         expect(m.neuralModelMode).toBe(0);
@@ -49,7 +71,7 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
         expect(grinderSetParamCalls).toEqual([]);
     });
 
-    it('maps the preferredTier string to its neuralCustomTier index, defaulting unknown tiers to 0', async () => {
+    it('maps the preferredTier string to its neuralCustomTier index', async () => {
         const processor = await createReadyGrinderProcessor();
         patch(processor, {
             neuralModelMode: 'imported',
@@ -59,13 +81,7 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
 
         resetGrinderProcessorCalls();
         const p2 = await createReadyGrinderProcessor();
-        patch(p2, { neuralModelMode: 'imported', profile: { preferredTier: 'nope' } });
-        expect(paramMap(grinderSetParamCalls).neuralCustomTier).toBe(0);
-
-        resetGrinderProcessorCalls();
-        const p3 = await createReadyGrinderProcessor();
-        patch(p3, { neuralModelMode: 'imported', profile: {} });
-        // preferredTier non-string ⇒ default 0
+        patch(p2, { neuralModelMode: 'imported', profile: {} });
         expect(paramMap(grinderSetParamCalls).neuralCustomTier).toBe(0);
     });
 
@@ -79,8 +95,6 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
                 outputTrim: -3,
                 contourMix: 0.7,
                 recurrentBias: 0.1,
-                // non-numbers are dropped
-                badField: 'x' as unknown as number,
             },
         });
         const m = paramMap(grinderSetParamCalls);
@@ -92,7 +106,7 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
         expect(m.neuralModelMode).toBe(1); // imported ⇒ 1 at the end
     });
 
-    it('drops profile fields that are not finite numbers', async () => {
+    it('drops an imported patch that contains a non-finite profile field', async () => {
         const processor = await createReadyGrinderProcessor();
         patch(processor, {
             neuralModelMode: 'imported',
@@ -102,15 +116,10 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
                 outputTrim: 'loud' as unknown as number,
             },
         });
-        const m = paramMap(grinderSetParamCalls);
-        expect(m.neuralCustomInputDrive).toBeUndefined();
-        expect(m.neuralCustomAsymmetry).toBeUndefined();
-        expect(m.neuralCustomOutputTrim).toBeUndefined();
-        // neuralModelMode is still written at the end of the imported path
-        expect(m.neuralModelMode).toBe(1);
+        expect(grinderSetParamCalls).toEqual([]);
     });
 
-    it('writes conv weights for well-formed layers (3 finite values) and skips malformed ones', async () => {
+    it('drops an imported patch that contains a malformed conv-weight layer', async () => {
         const processor = await createReadyGrinderProcessor();
         patch(processor, {
             neuralModelMode: 'imported',
@@ -123,16 +132,7 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
                 ],
             },
         });
-        const m = paramMap(grinderSetParamCalls);
-        expect(m.neuralCustomConvWeight0_0).toBe(0.1);
-        expect(m.neuralCustomConvWeight0_1).toBe(0.2);
-        expect(m.neuralCustomConvWeight0_2).toBe(0.3);
-        expect(m.neuralCustomConvWeight3_0).toBe(0.4);
-        expect(m.neuralCustomConvWeight3_1).toBeUndefined(); // NaN dropped
-        expect(m.neuralCustomConvWeight3_2).toBe(0.6);
-        // layer 1 (too short) and layer 2 (not array) produced nothing
-        expect(m.neuralCustomConvWeight1_0).toBeUndefined();
-        expect(m.neuralCustomConvWeight2_0).toBeUndefined();
+        expect(grinderSetParamCalls).toEqual([]);
     });
 
     it('defaults convWeights to an empty array when absent, writing no conv-weight params', async () => {
@@ -155,21 +155,16 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
     });
 });
 
-describe('GrinderProcessor param message', () => {
+describe('GrinderProcessor legacy param message', () => {
     beforeEach(() => {
         resetGrinderProcessorCalls();
     });
 
-    it('maps known param names through PARAM_MAP and writes the value', async () => {
+    it('drops legacy raw parameter messages', async () => {
         const processor = await createReadyGrinderProcessor();
         processor.port.onmessage?.({ data: { type: 'param', name: 'bass', value: 7 } });
-        expect(grinderSetParamCalls).toContainEqual({ name: 'bass', value: 7 });
-    });
-
-    it('falls back to the raw name when the param is not in PARAM_MAP', async () => {
-        const processor = await createReadyGrinderProcessor();
         processor.port.onmessage?.({ data: { type: 'param', name: 'unknownParam', value: 3 } });
-        expect(grinderSetParamCalls).toContainEqual({ name: 'unknownParam', value: 3 });
+        expect(grinderSetParamCalls).toEqual([]);
     });
 
     it('ignores param and patch messages before init (no instance)', async () => {

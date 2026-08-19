@@ -37,6 +37,7 @@ import { yeastStore, type YeastProcessorInfo, type YeastState } from '../../stor
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
 import { YEAST_GROOVE_OWNER_ID } from '../../useCases/getYeastGrooveAssignment';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
+import { reorderYeastProcessor } from '../../useCases/reorderYeastProcessor';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
 import { setYeastArpPattern } from '../../useCases/setYeastArpPattern';
 import { setYeastGrooveTemplate } from '../../useCases/setYeastGrooveTemplate';
@@ -278,6 +279,103 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
         </>
     );
 };
+
+/**
+ * Rack chain row list — shared by every deck (Build, Route, Lab) that shows the
+ * processor chain, so the header row, expand/collapse, bypass, remove, and
+ * reorder controls stay defined once instead of drifting across three copies.
+ *
+ * Reorder is a pair of Up/Down buttons rather than drag-to-reorder: the rack is
+ * a compact vertical list (not a wide drag surface), and buttons stay reachable
+ * from the keyboard, matching how Sourdaw already exposes bypass and remove as
+ * discrete controls on the same row instead of a gesture.
+ */
+const ProcessorRackChain = ({
+    processors,
+    expandedId,
+    onToggleExpanded,
+}: {
+    processors: readonly YeastProcessorInfo[];
+    expandedId: string | null;
+    onToggleExpanded: (id: string) => void;
+}): ReactElement => (
+    <Stack gap={1}>
+        {processors.map((proc, index) => (
+            <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
+                <Row
+                    align="center"
+                    gap={2}
+                    className="px-2 py-1.5 cursor-pointer"
+                    onClick={() => onToggleExpanded(proc.id)}
+                >
+                    <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
+                    <span
+                        className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
+                    >
+                        {expandedId === proc.id ? '▼' : '▶'}
+                    </span>
+                    <span
+                        className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
+                    >
+                        {proc.name}
+                    </span>
+                    <button
+                        type="button"
+                        aria-label={`Move ${proc.name} up`}
+                        disabled={index === 0}
+                        className="text-[8px] leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            reorderYeastProcessor(index, index - 1);
+                        }}
+                    >
+                        ↑
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={`Move ${proc.name} down`}
+                        disabled={index === processors.length - 1}
+                        className="text-[8px] leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            reorderYeastProcessor(index, index + 1);
+                        }}
+                    >
+                        ↓
+                    </button>
+                    <DawPluginToggle
+                        pressed={!proc.bypassed}
+                        tone="peach"
+                        size="xs"
+                        shape="soft"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setYeastProcessorBypass(proc.id, !proc.bypassed);
+                        }}
+                    >
+                        {proc.bypassed ? 'Off' : 'On'}
+                    </DawPluginToggle>
+                    <button
+                        type="button"
+                        className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            removeYeastProcessor(proc.id);
+                        }}
+                    >
+                        ✕
+                    </button>
+                </Row>
+
+                {expandedId === proc.id ? (
+                    <div className="border-t border-border/10 bg-surface-app/30">
+                        <GrooveAwareProcessorParams processor={proc} />
+                    </div>
+                ) : null}
+            </div>
+        ))}
+    </Stack>
+);
 
 /**
  * Arp pattern editor bound to the stored pattern.
@@ -653,60 +751,11 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
     return (
         <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
             {/* Rack chain with expandable params */}
-            <Stack gap={1}>
-                {state.processors.map((proc, index) => (
-                    <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
-                        {/* Header row */}
-                        <Row
-                            align="center"
-                            gap={2}
-                            className="px-2 py-1.5 cursor-pointer"
-                            onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
-                        >
-                            <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
-                            <span
-                                className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
-                            >
-                                {expandedId === proc.id ? '▼' : '▶'}
-                            </span>
-                            <span
-                                className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
-                            >
-                                {proc.name}
-                            </span>
-                            <DawPluginToggle
-                                pressed={!proc.bypassed}
-                                tone="peach"
-                                size="xs"
-                                shape="soft"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    setYeastProcessorBypass(proc.id, !proc.bypassed);
-                                }}
-                            >
-                                {proc.bypassed ? 'Off' : 'On'}
-                            </DawPluginToggle>
-                            <button
-                                type="button"
-                                className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    removeYeastProcessor(proc.id);
-                                }}
-                            >
-                                ✕
-                            </button>
-                        </Row>
-
-                        {/* Expanded parameter panel */}
-                        {expandedId === proc.id ? (
-                            <div className="border-t border-border/10 bg-surface-app/30">
-                                <GrooveAwareProcessorParams processor={proc} />
-                            </div>
-                        ) : null}
-                    </div>
-                ))}
-            </Stack>
+            <ProcessorRackChain
+                processors={state.processors}
+                expandedId={expandedId}
+                onToggleExpanded={(id) => setExpandedId(expandedId === id ? null : id)}
+            />
             {/* Arp pattern editor (when arp is present) */}
             {hasArpPattern ? (
                 <Stack gap={1} className="border-t border-border/20 pt-2">
@@ -747,57 +796,11 @@ const Level4Route = ({
                 <KeyboardSplit width={500} height={32} soundingNotes={soundingNotes} />
             </Stack>
             {/* Rack chain with params */}
-            <Stack gap={1}>
-                {state.processors.map((proc, index) => (
-                    <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
-                        <Row
-                            align="center"
-                            gap={2}
-                            className="px-2 py-1.5 cursor-pointer"
-                            onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
-                        >
-                            <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
-                            <span
-                                className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
-                            >
-                                {expandedId === proc.id ? '▼' : '▶'}
-                            </span>
-                            <span
-                                className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
-                            >
-                                {proc.name}
-                            </span>
-                            <DawPluginToggle
-                                pressed={!proc.bypassed}
-                                tone="peach"
-                                size="xs"
-                                shape="soft"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    setYeastProcessorBypass(proc.id, !proc.bypassed);
-                                }}
-                            >
-                                {proc.bypassed ? 'Off' : 'On'}
-                            </DawPluginToggle>
-                            <button
-                                type="button"
-                                className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    removeYeastProcessor(proc.id);
-                                }}
-                            >
-                                ✕
-                            </button>
-                        </Row>
-                        {expandedId === proc.id ? (
-                            <div className="border-t border-border/10 bg-surface-app/30">
-                                <GrooveAwareProcessorParams processor={proc} />
-                            </div>
-                        ) : null}
-                    </div>
-                ))}
-            </Stack>
+            <ProcessorRackChain
+                processors={state.processors}
+                expandedId={expandedId}
+                onToggleExpanded={(id) => setExpandedId(expandedId === id ? null : id)}
+            />
             {/* Add — includes Route-level processors */}
             <Row wrap gap={1} className="pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
@@ -820,60 +823,11 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
             {/* Left: Rack + generative tools */}
             <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
                 {/* Rack chain with params */}
-                <Stack gap={1}>
-                    {state.processors.map((proc, index) => (
-                        <div
-                            key={proc.id}
-                            className="rounded bg-surface-base/50 border border-border/20 overflow-hidden"
-                        >
-                            <Row
-                                align="center"
-                                gap={2}
-                                className="px-2 py-1.5 cursor-pointer"
-                                onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
-                            >
-                                <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
-                                <span
-                                    className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
-                                >
-                                    {expandedId === proc.id ? '▼' : '▶'}
-                                </span>
-                                <span
-                                    className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
-                                >
-                                    {proc.name}
-                                </span>
-                                <DawPluginToggle
-                                    pressed={!proc.bypassed}
-                                    tone="peach"
-                                    size="xs"
-                                    shape="soft"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setYeastProcessorBypass(proc.id, !proc.bypassed);
-                                    }}
-                                >
-                                    {proc.bypassed ? 'Off' : 'On'}
-                                </DawPluginToggle>
-                                <button
-                                    type="button"
-                                    className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        removeYeastProcessor(proc.id);
-                                    }}
-                                >
-                                    ✕
-                                </button>
-                            </Row>
-                            {expandedId === proc.id ? (
-                                <div className="border-t border-border/10 bg-surface-app/30">
-                                    <GrooveAwareProcessorParams processor={proc} />
-                                </div>
-                            ) : null}
-                        </div>
-                    ))}
-                </Stack>
+                <ProcessorRackChain
+                    processors={state.processors}
+                    expandedId={expandedId}
+                    onToggleExpanded={(id) => setExpandedId(expandedId === id ? null : id)}
+                />
 
                 {/* All processors */}
                 <Stack gap={1} className="pt-1 border-t border-border/20">

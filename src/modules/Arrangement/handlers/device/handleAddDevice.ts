@@ -1,14 +1,87 @@
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { abortAddedDeviceRuntime } from '../../useCases/device/abortAddedDeviceRuntime';
-import { addDevice } from '../../useCases/device/addDevice';
+import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+import { type Device } from '../../stores/trackStore';
+import { writeDeviceToProject } from '../../useCases/device/addDevice';
+import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
 type DeviceIndexResolution = { status: 'resolved'; deviceIndex?: number } | { status: 'conflict' };
+type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
+type RuntimeDeviceDeltaFailure = Exclude<
+    RuntimeDeviceDeltaResult,
+    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
+>;
+type RuntimeTrackStripInitializationResult = Exclude<ReturnType<typeof projectTrackToLiveStrip>, undefined>;
+type RuntimeTrackStripInitializationFailure = Exclude<
+    RuntimeTrackStripInitializationResult,
+    Readonly<{ acceptance: 'accepted'; application: 'applied' }>
+>;
+
+class RuntimeDeviceDeltaPostCommitError extends Error {
+    public readonly outcome: RuntimeDeviceDeltaFailure;
+    public readonly remediation: 'retry' | 'repair';
+
+    constructor(outcome: RuntimeDeviceDeltaFailure) {
+        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
+        super(
+            outcome.acceptance === 'rejected'
+                ? `Device runtime delta was rejected after project commit and requires ${remediation}: ${outcome.reason}`
+                : `Device runtime delta requires ${remediation} after project commit: ${outcome.reason}`
+        );
+        this.name = 'RuntimeDeviceDeltaPostCommitError';
+        this.outcome = outcome;
+        this.remediation = remediation;
+    }
+}
+
+function getRuntimeDeviceDeltaPostCommitFailure(
+    result: RuntimeDeviceDeltaResult
+): RuntimeDeviceDeltaPostCommitError | undefined {
+    if (result.acceptance === 'accepted' && result.application === 'applied') {
+        return undefined;
+    }
+    return new RuntimeDeviceDeltaPostCommitError(result);
+}
+
+class RuntimeTrackStripInitializationPostCommitError extends Error {
+    public readonly outcome: RuntimeTrackStripInitializationFailure;
+    public readonly remediation: 'retry' | 'repair';
+
+    constructor(outcome: RuntimeTrackStripInitializationFailure) {
+        const remediation = outcome.acceptance === 'rejected' ? 'retry' : 'repair';
+        super(
+            outcome.acceptance === 'rejected'
+                ? `Track strip initialization was rejected after project commit and requires ${remediation}: ${outcome.reason}`
+                : `Track strip initialization requires ${remediation} after project commit: ${outcome.reason}`
+        );
+        this.name = 'RuntimeTrackStripInitializationPostCommitError';
+        this.outcome = outcome;
+        this.remediation = remediation;
+    }
+}
+
+function getRuntimeTrackStripInitializationPostCommitFailure(
+    result: ReturnType<typeof projectTrackToLiveStrip>,
+    trackId: string
+): RuntimeTrackStripInitializationPostCommitError | undefined {
+    if (result?.acceptance === 'accepted' && result.application === 'applied') {
+        return undefined;
+    }
+    return new RuntimeTrackStripInitializationPostCommitError(
+        result ?? {
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: `Track strip initialization did not produce a runtime outcome for ${trackId}`,
+        }
+    );
+}
 
 function ensureDeviceId(action: AddDeviceAction): string {
     if (action.payload.deviceId) {
@@ -82,32 +155,98 @@ export const handleAddDevice = createHandler<'addDevice'>({
             return { status: 'conflict' };
         }
         const deviceId = ensureDeviceId(action);
-        let addedDevice;
+        const beforeTrack = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId);
+        const before = beforeTrack ? structuredClone(beforeTrack) : null;
+        let addedDevice: Device | null;
         if (context?.executionMode === 'isolated-preview') {
-            addedDevice = addDevice(
+            addedDevice = writeDeviceToProject(
                 action.payload.trackId,
                 action.payload.deviceType,
                 undefined,
                 deviceId,
                 resolution.deviceIndex,
-                undefined,
-                { projectOnly: true }
+                undefined
             );
         } else if (resolution.deviceIndex !== undefined) {
-            addedDevice = addDevice(
+            addedDevice = writeDeviceToProject(
                 action.payload.trackId,
                 action.payload.deviceType,
                 undefined,
                 deviceId,
-                resolution.deviceIndex
+                resolution.deviceIndex,
+                undefined
             );
         } else {
-            addedDevice = addDevice(action.payload.trackId, action.payload.deviceType, undefined, deviceId);
+            addedDevice = writeDeviceToProject(
+                action.payload.trackId,
+                action.payload.deviceType,
+                undefined,
+                deviceId,
+                undefined,
+                undefined
+            );
         }
         if (addedDevice !== null) {
             finalizeBareChain(action);
         }
-        return toHandlerExecutionResult(addedDevice !== null);
+        if (addedDevice === null || context?.executionMode === 'isolated-preview' || !before) {
+            return toHandlerExecutionResult(addedDevice !== null);
+        }
+        const committedDevice = addedDevice;
+        const committedBefore = before;
+        const insertionIndex = resolution.deviceIndex ?? committedBefore.devices.length;
+        const after = {
+            ...committedBefore,
+            devices: [
+                ...committedBefore.devices.slice(0, insertionIndex),
+                committedDevice,
+                ...committedBefore.devices.slice(insertionIndex),
+            ],
+        };
+        let postCommitFailure:
+            RuntimeDeviceDeltaPostCommitError | RuntimeTrackStripInitializationPostCommitError | undefined;
+        function applyRuntimeEffect(): void {
+            if (postCommitFailure) {
+                throw postCommitFailure;
+            }
+            const wasLive = shouldCreateLiveTrackStrip(committedBefore);
+            const activatesFolderStrip = !wasLive && after.kind === 'folder' && shouldCreateLiveTrackStrip(after);
+            if (!wasLive) {
+                if (activatesFolderStrip) {
+                    const promotedTrackIds = [
+                        after.id,
+                        ...(getTrackStoreState()?.tracks ?? []).flatMap((child) =>
+                            child.parentId === after.id && shouldCreateLiveTrackStrip(child) ? [child.id] : []
+                        ),
+                    ];
+                    for (const trackId of promotedTrackIds) {
+                        const initializationFailure = getRuntimeTrackStripInitializationPostCommitFailure(
+                            projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true }),
+                            trackId
+                        );
+                        if (initializationFailure) {
+                            postCommitFailure = initializationFailure;
+                            throw postCommitFailure;
+                        }
+                    }
+                }
+                return;
+            }
+            const result = applyDeviceChainRuntimeDelta({ before: committedBefore, after, operation: 'add-device' });
+            const runtimeFailure = getRuntimeDeviceDeltaPostCommitFailure(result);
+            if (runtimeFailure) {
+                postCommitFailure = runtimeFailure;
+                throw postCommitFailure;
+            }
+            for (const [parameterId, value] of Object.entries(committedDevice.parameterValues)) {
+                updateDeviceParam(after.id, committedDevice.id, parameterId, value);
+            }
+        }
+        return {
+            status: 'written' as const,
+            afterCommit: applyRuntimeEffect,
+            afterAmbiguousCommit: applyRuntimeEffect,
+        };
     },
     describe: (action) => {
         const deviceId = ensureDeviceId(action);
@@ -145,12 +284,6 @@ export const handleAddDevice = createHandler<'addDevice'>({
         return {
             label: `Add ${action.payload.deviceType}`,
             inverseAction: { type: 'removeDevice', payload: inversePayload },
-        };
-    },
-    prepareAbort: (action) => {
-        const deviceId = ensureDeviceId(action);
-        return () => {
-            abortAddedDeviceRuntime({ trackId: action.payload.trackId, deviceId });
         };
     },
     previewExecution: 'isolated-project',

@@ -133,15 +133,13 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 
 // ── Device ────────────────────────────────────────────────────────────────────
 
-export { addDevice } from './device/addDevice';
+export { compileAddDeviceAction } from './device/compileAddDeviceAction';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
 export { bypassMidiFx } from './device/bypassMidiFx';
 export { updateMidiFxParam } from './device/updateMidiFxParam';
-export { addExternalDevice } from './device/addExternalDevice';
 export { bypassDevice } from './device/bypassDevice';
-export { removeDevice } from './device/removeDevice';
-export { reorderDevices } from './device/reorderDevices';
+export { compileReorderDevicesAction } from './device/compileReorderDevicesAction';
 export { setSend } from './device/sendManagement/setSend';
 export { removeSend } from './device/sendManagement/removeSend';
 export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
@@ -172,8 +170,7 @@ export { renameMixerSnapshot } from './mixerSnapshot/operations/renameMixerSnaps
 
 // ── Preset ────────────────────────────────────────────────────────────────────
 
-export { createTrackFromPreset } from './preset/createTrackFromPreset';
-export { loadPresetToTrack } from './preset/presetLoading';
+export { compileLoadPresetActions } from './preset/compileLoadPresetActions';
 export { getUserPresets } from './preset/presetStorage/getUserPresets';
 export { saveCurrentAsPreset } from './preset/presetStorage/saveCurrentAsPreset';
 export { deleteUserPreset } from './preset/presetStorage/deleteUserPreset';

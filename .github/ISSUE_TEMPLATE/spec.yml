@@ -1,0 +1,83 @@
+name: Spec
+description: Decided intent, as acceptance criteria. Not trivial work.
+title: "spec(scope): "
+labels: ["status:tracking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        File when every blocking choice is resolved. Secrets stay in `~/.agents/artifacts`.
+
+        Slices are Tasks. After create, add `priority:P*`.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: What must become true, for whom, and where it stops. No implementation plan.
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: "One independently failing AC. Lines, in order: When, Then, Verify with. Exactly one MUST / MUST NOT / SHOULD / SHOULD NOT / MAY in Then."
+      placeholder: |
+        ### AC-001
+        - When:
+        - Then:
+        - Verify with:
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Boundary
+      description: Only if Intent does not already bound the work.
+    validations:
+      required: false
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: ADRs and GitHub URLs. No local paths.
+      placeholder: "ADR 0021, #2037"
+    validations:
+      required: false
