@@ -121,11 +121,23 @@ class PeerConnection {
         this.rtc = new RTCPeerConnection(getIceConfig());
 
         this.rtc.onconnectionstatechange = () => {
-            if (this.rtc.connectionState === 'disconnected' || this.rtc.connectionState === 'failed') {
+            const state = this.rtc.connectionState;
+            if (state === 'disconnected' || state === 'failed') {
                 if (this.connected) {
                     this.connected = false;
                     this.callbacks.onDisconnected(this.peerId);
                 }
+                return;
+            }
+
+            // W3C WebRTC defines `disconnected` as transient: ICE can recover
+            // to `connected` with the data channels never closing, so
+            // `onopen` — the only other path to `onConnected` — cannot fire
+            // again. Without this the recovery is invisible and the peer stays
+            // disconnected forever while its channels keep carrying traffic.
+            if (state === 'connected' && !this.connected && this.isReady()) {
+                this.connected = true;
+                this.callbacks.onConnected(this.peerId);
             }
         };
 

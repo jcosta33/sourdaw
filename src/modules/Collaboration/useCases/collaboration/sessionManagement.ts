@@ -22,6 +22,7 @@ import { bytesToBase64 } from '#/utils/base64';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
+    isAcceptablePeerId,
     type PeerId,
     type PeerMessage,
     PEER_COLORS,
@@ -71,6 +72,12 @@ const sessionState: {
     isProjectingBranches: boolean;
     /** Canonical JSON for the latest successfully projected branch list. */
     lastProjectedBranchesJson: string | null;
+    /**
+     * Set once host departure has ended the session for this joiner, so a
+     * later reconnect knows it must undo that state rather than guess from
+     * the store's error text.
+     */
+    sessionEndedByHostDeparture: boolean;
 } = {
     peerManager: null,
     automergeSync: null,
@@ -83,7 +90,12 @@ const sessionState: {
     unsubscribeAutomergeChanges: null,
     isProjectingBranches: false,
     lastProjectedBranchesJson: null,
+    sessionEndedByHostDeparture: false,
 };
+
+/** Shown to a joiner once the host has really gone — see the cleanup timer. */
+const HOST_DEPARTED_MESSAGE =
+    'The session host disconnected — this session has ended. Your local copy of the project is intact; leave the session to continue working on it.';
 
 /**
  * App-lifetime presence observers — deliberately OUTSIDE `sessionState`.
@@ -416,6 +428,7 @@ function initializeSessionRuntime(): PeerConnectionManager {
 /** Tear down all subsystems without changing store state. */
 function cleanupSubsystems(): void {
     sessionState.pendingInviteId = null;
+    sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();
     const branchRestoreOutcome = stopBranchSync();
     for (const timer of peerCleanupTimers.values()) {
@@ -605,9 +618,47 @@ function handlePeerConnected(peerId: PeerId): void {
     // anyone — deleted per ADR 0016 ruling 4.
     updatePeerConnectionState(peerId, true);
 
+    // A reconnect must undo the session-ended state, not just paint over it:
+    // the error tells the user the session is finished, and the joiner's
+    // playhead is missing from every other peer until its broadcast is
+    // restarted. `stopPlayheadBroadcast` first so a live interval can never be
+    // orphaned by overwriting its handle.
+    const recovered = sessionState.sessionEndedByHostDeparture;
+    if (recovered) {
+        sessionState.sessionEndedByHostDeparture = false;
+        stopPlayheadBroadcast();
+        startPlayheadBroadcast();
+    }
+
     const state = collaborationStore.value;
     if (state) {
-        collaborationStore.set({ ...state, connectionStatus: 'connected' });
+        collaborationStore.set({
+            ...state,
+            connectionStatus: 'connected',
+            error: recovered && state.error === HOST_DEPARTED_MESSAGE ? null : state.error,
+        });
+    }
+}
+
+/**
+ * Declare the session over for a joiner whose host has gone for good.
+ *
+ * Host departure on a joiner ends the session as a matter of fact, not policy:
+ * the topology is host-relayed — every joiner's only connection is to the
+ * host, so with the host gone no data, presence, or sync can flow and manual
+ * SDP signaling offers no rejoin path. Host-relayed collaboration tools
+ * surface this as an explicit session-ended state rather than continuing
+ * masterless (that is Ableton-Link-style topology, which this is not).
+ * Deliberately NOT an auto-leave: the local CRDT copy of the project stays
+ * intact (non-destructive) and the user gets an explicit signal instead of a
+ * session that silently looks alive.
+ */
+function endSessionAfterHostDeparture(): void {
+    sessionState.sessionEndedByHostDeparture = true;
+    stopPlayheadBroadcast();
+    const state = collaborationStore.value;
+    if (state) {
+        collaborationStore.set({ ...state, connectionStatus: 'disconnected', error: HOST_DEPARTED_MESSAGE });
     }
 }
 
@@ -616,34 +667,27 @@ function handlePeerDisconnected(peerId: PeerId): void {
     updatePeerConnectionState(peerId, false);
 
     // Schedule removal in case the peer never sends peer-leave (tab crash, etc.).
+    //
+    // Everything that treats the peer as permanently gone belongs in this
+    // callback, not in the immediate path. `onDisconnected` also fires on
+    // `connectionState === 'disconnected'`, which W3C WebRTC defines as
+    // transient — ICE recovers from it without the data channel ever closing.
+    // This timer is what encodes "the peer really went away": it is cancelled
+    // in handlePeerConnected the moment the peer comes back.
     const timer = setTimeout(() => {
         peerCleanupTimers.delete(peerId);
+        const current = collaborationStore.value;
+        const hostDeparted =
+            current !== null && !current.isHost && current.peers.some((param) => param.id === peerId && param.isHost);
         removePeer(peerId);
+        if (hostDeparted) {
+            endSessionAfterHostDeparture();
+        }
     }, PEER_CLEANUP_DELAY_MS);
     peerCleanupTimers.set(peerId, timer);
 
     const state = collaborationStore.value;
     if (!state) {
-        return;
-    }
-
-    // Host departure on a joiner ends the session as a matter of fact, not
-    // policy: the topology is host-relayed — every joiner's only connection is
-    // to the host, so with the host gone no data, presence, or sync can flow
-    // and manual SDP signaling offers no rejoin path. Host-relayed
-    // collaboration tools surface this as an explicit session-ended state
-    // rather than continuing masterless (that is Ableton-Link-style topology,
-    // which this is not). Deliberately NOT an auto-leave: the local CRDT copy
-    // of the project stays intact (non-destructive) and the user gets an
-    // explicit signal instead of a session that silently looks alive.
-    const hostDeparted = !state.isHost && state.peers.some((param) => param.id === peerId && param.isHost);
-    if (hostDeparted) {
-        stopPlayheadBroadcast();
-        collaborationStore.set({
-            ...state,
-            connectionStatus: 'disconnected',
-            error: 'The session host disconnected — this session has ended. Your local copy of the project is intact; leave the session to continue working on it.',
-        });
         return;
     }
 
@@ -658,6 +702,15 @@ type AddOrUpdatePeerInput = { senderPeerId: PeerId; peer: CollaborationPeer };
 function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
     const current = collaborationStore.value;
     if (!current) {
+        return;
+    }
+
+    // The id is sender-controlled and is stored, keyed on, and rendered
+    // downstream. Refuse an over-length one outright rather than truncating
+    // it: an id is an identity key, and a cut id would collide with another
+    // peer's record. See isAcceptablePeerId.
+    if (!isAcceptablePeerId(peer.id)) {
+        logger.warn('[Collaboration] Ignoring a peer-info with an over-length peer id from', senderPeerId);
         return;
     }
 
@@ -781,13 +834,14 @@ async function compressInvite(json: string): Promise<string> {
 
 async function decompressInvite(raw: string): Promise<string> {
     if (!raw.startsWith('z:')) {
-        // Legacy uncompressed invite: plain base64 of UTF-8 JSON. `atob`
-        // yields one char per byte (Latin-1), so the bytes must still be
-        // UTF-8-decoded — returning `atob(raw)` directly mangles any
-        // non-ASCII name (e.g. "José") embedded in the invite.
-        const legacyBinary = atob(raw);
-        const legacyBytes = Uint8Array.from(legacyBinary, (context) => context.charCodeAt(0));
-        return new TextDecoder().decode(legacyBytes);
+        // Legacy uncompressed invite. The encoder this replaced was
+        // `btoa(JSON.stringify(invite))`, and `btoa` takes a binary string —
+        // one code unit per byte — so a legacy invite is base64 of Latin-1,
+        // not of UTF-8. `atob` is its exact inverse. UTF-8-decoding these
+        // bytes instead would mangle every Latin-1-range name (e.g. "José"),
+        // and no other non-ASCII class exists here: `btoa` threw at encode
+        // time on anything above U+00FF, so such an invite was never minted.
+        return atob(raw);
     }
     const binary = atob(raw.slice(2));
     const bytes = Uint8Array.from(binary, (context) => context.charCodeAt(0));
