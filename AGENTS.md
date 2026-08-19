@@ -175,22 +175,48 @@ review.
 head. A reviewer agent gets that bundle, not the author transcript. `review:publish` prints the
 review id and posts as `jcosta33-reviewer[bot]` only when GitHub's head still matches the bundle.
 
-The GitHub review is the review a teammate would leave on this PR. `REQUEST_CHANGES` means line
-comments on the diff, posted now, each one paragraph: defect, consequence, required outcome. The
-author answers by pushing a new head. `APPROVE` means this head is acceptable. Do not approve with
-a diary of unpublished internal rounds, stance names, or repairs that never appeared as review
-comments. Scrutiny inside the session is not a GitHub review: put the finding on the diff, or fix
-the code before asking for review.
+The GitHub pull request is the team's review of this head: what changed and why, comments on the
+diff, a merge decision. Session logs, stance names, unpublished rounds, and repair diaries stay
+off GitHub.
+
+Approve when the change improves code health, even if it is not perfect. Do not approve a change
+that makes the system worse. Style-guide violations block; personal style does not.
+([Google: standard of code review](https://google.github.io/eng-practices/review/reviewer/standard.html))
+
+`review.json` is that public review.
+[GitHub review events](https://docs.github.com/en/pull-requests/reference/pull-request-reviews):
+
+| Event             | Meaning                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `REQUEST_CHANGES` | This head must not merge. Every blocking finding is a line comment posted now. Body: a short pointer.                   |
+| `APPROVE`         | This head may merge. Body empty or one sentence about the code. Non-blocking notes: `Nit:` / `Optional:` line comments. |
+
+`review:publish` accepts only those two events.
+
+Line comments sit on the changed line, one finding, one paragraph: what is wrong, why it matters,
+what done looks like. Comment on the code, never the author. Explain why
+([Google: how to write comments](https://google.github.io/eng-practices/review/reviewer/comments.html)).
+
+The author answers on the branch, then on the thread
+([Google: handling comments](https://google.github.io/eng-practices/review/developer/handling-comments.html);
+[GitHub: resolving reviews](https://docs.github.com/en/pull-requests/concepts/resolving-reviews)):
+
+- Push the fix. Reply `Done` plus where, or why not, in one sentence.
+- Clarify the code. Do not leave the explanation only in the thread.
+- File out-of-scope feedback. Do not grow the PR.
+- Resolve a conversation only after that reply is true of the current head.
+- A new head needs a new review of that SHA. `REQUEST_CHANGES` is closed by `APPROVE` of the
+  current head, not by a private recap.
+
+Owner proof of delegated work (a test that fails when reverted, a measurement at the user
+boundary) stays in the session. It is not the GitHub review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
 PR is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any other way.
 Run affected checks first.
 
 Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
-review. Owner scrutiny of delegated work uses three stances by default, five at most; split the PR
-when five cannot cover it. At ten subagents or one hour, stop expanding. Those findings become code
-or GitHub line comments, never the `APPROVE` body. Enable hooks:
-`git config core.hooksPath .githooks`.
+review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety
 
