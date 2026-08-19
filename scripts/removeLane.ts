@@ -5,6 +5,13 @@ import { existsSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    AUTHOR_LOCK_REASON,
+    assertTrustedExecutingBlob,
+    originMainBlob,
+    resolvePrimaryRoot,
+} from './githubAppIdentity.ts';
+
 export type Worktree = {
     path: string;
     head: string;
@@ -38,7 +45,7 @@ export type LaneRemovalPort = {
     operation: (path: string) => string | undefined;
     remoteHead: (branch: string) => string | undefined;
     pullRequests: (branch: string) => PullRequest[];
-    lock: (path: string) => void;
+    lock: (path: string, reason?: string) => void;
     unlock: (path: string) => void;
     remove: (path: string) => void;
 };
@@ -124,6 +131,9 @@ function identifyLane(target: string, port: LaneRemovalPort): Worktree {
         if (stalePid !== undefined && !port.processAlive(Number(stalePid))) {
             port.unlock(target);
             return identifyLane(target, port);
+        }
+        if (lane.lockReason === AUTHOR_LOCK_REASON) {
+            return lane;
         }
         fail('worktree is locked or shared');
     }
@@ -214,8 +224,11 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
     port.fetch();
     const repository = port.repository();
     const lane = identifyLane(target, port);
-    port.lock(target);
-    let locked = true;
+    const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
+    if (!authorLocked) {
+        port.lock(target);
+    }
+    let releaseOnFailure = !authorLocked;
     try {
         const initial = validateOwnership(target, lane, repository, port);
         const final = validateOwnership(target, lane, repository, port);
@@ -223,17 +236,21 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
             fail('worktree authority changed during removal');
         }
         port.unlock(target);
-        locked = false;
+        releaseOnFailure = false;
         port.remove(target);
     } finally {
-        if (locked) {
+        if (releaseOnFailure) {
             port.unlock(target);
         }
     }
 }
 
+export function resolveLaneTarget(arg: string, primaryRoot: string): string {
+    return realpathSync(isAbsolute(arg) ? arg : resolve(primaryRoot, arg));
+}
+
 function capture(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8' });
+    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -244,7 +261,7 @@ function capture(command: string, args: string[]): string {
 }
 
 function run(command: string, args: string[]): void {
-    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit' });
+    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit', shell: false });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -360,7 +377,8 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                 mergedAt: pullRequest.merged_at,
             }));
         },
-        lock: (path) => shell.run('git', ['worktree', 'lock', '--reason', `lane-remove:${process.pid}`, path]),
+        lock: (path, reason = `lane-remove:${process.pid}`) =>
+            shell.run('git', ['worktree', 'lock', '--reason', reason, path]),
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
     };
@@ -379,7 +397,15 @@ function main(): number {
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
             fail('usage: node --experimental-strip-types scripts/removeLane.ts <worktree-path>');
         }
-        removeLane(realpathSync(resolve(process.cwd(), args[0])), shellPort());
+        const cwd = process.cwd();
+        assertTrustedExecutingBlob(
+            'scripts/removeLane.ts',
+            fileURLToPath(import.meta.url),
+            originMainBlob('scripts/removeLane.ts', cwd)
+        );
+        const primaryRoot = resolvePrimaryRoot();
+        const target = resolveLaneTarget(args[0], primaryRoot);
+        removeLane(target, shellPort());
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
