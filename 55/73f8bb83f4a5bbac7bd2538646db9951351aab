@@ -1,0 +1,19 @@
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_487e9aa1e46063::t_ee124aee8503d1 55-57,62-64,67,72-74,540-545,547-550,552-554,571-580,582-583,1189-1191,1193-1197,1222-1284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5573f8bb83f4a5bbac7bd2538646db9951351aab",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
