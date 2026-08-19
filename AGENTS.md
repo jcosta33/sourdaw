@@ -52,8 +52,10 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 - Run repository commands sequentially. Never overlap tests, lint, typechecks, builds, Cargo,
   Playwright, WASM, or measurements.
-- Use guarded `package.json` scripts. A busy lock, memory refusal, timeout, or RSS kill is a stop.
-  Never bypass it with raw tool commands.
+- `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy
+  runs (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
+  `pnpm guard --profile <focused|broad|extended> [--require-target] -- <command>`. A busy lock,
+  memory refusal, timeout, or RSS kill is a stop — never bypass it by rerunning unguarded.
 - Run only checks that can fail because of the changed files. Never expand to repository-wide
   tests, lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
@@ -188,6 +190,7 @@ subagents or one hour, stop expanding review. Enable hooks: `git config core.hoo
 - Never run destructive git, force-push, amend published history, or delete branches without
   explicit authority.
 - Never install packages or edit CI/build controls unless the task requires it.
-- Never widen a formatter, codemod, or autofix past the files your change owns. `pnpm format`
-  requires a target; never route around it with a raw `prettier --write` or `cargo fmt --all`.
+- Never widen a formatter, codemod, or autofix past the files your change owns. Always pass
+  explicit file targets to `pnpm format` and `pnpm cargo:fmt`; repository-wide formatting is
+  `format:full` and runs only when explicitly requested.
 - Reproduce behavioral defects before repair. After three failed attempts, stop and change strategy.

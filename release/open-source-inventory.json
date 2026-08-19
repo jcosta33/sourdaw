@@ -613,7 +613,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "ea507dad9cd930681a474cf81ca925feb97109cefd63220a13e57472f241bccc"
+            "sha256": "252cfb9b097a096c5d873bd3d0cfe29dc49eec802237ae64124066a428ae40c2"
         },
         {
             "path": "server/package.json",

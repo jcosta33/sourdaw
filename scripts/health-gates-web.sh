@@ -16,5 +16,5 @@ pnpm test:command-schema
 pnpm test:release-inventory
 pnpm test:collection-scope
 pnpm test:barrel-mocks
-pnpm test:full
+pnpm test:run
 pnpm build
