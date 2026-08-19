@@ -1,0 +1,20 @@
+crates/proof-chamber/tests/plate_shimmer_render_contract.rs
+  s_487e9aa1e46063::t_efa3d26246cda9 62-77
+  s_487e9aa1e46063::t_15d566f9414520 41-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5b9aedcbc5f3e8611ddf0acd321bc5fb4c7b1ce2",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
