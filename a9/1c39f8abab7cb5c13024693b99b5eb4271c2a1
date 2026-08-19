@@ -1,0 +1,42 @@
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_e467904b625324 431
+  s_487e9aa1e46063::t_841e3ad7b493ce 643-661,670-676,679-681,683-685
+  s_487e9aa1e46063::t_4e2899b67acd1b 837-844
+  s_487e9aa1e46063::t_5703c78ba64b86 75-80
+  s_487e9aa1e46063::t_bdcd49ce4246c4 621-632,635-639
+  s_487e9aa1e46063::t_27d478e2a66d7a 25
+  s_487e9aa1e46063::t_2ffd07e5033498 640,708-716
+  s_487e9aa1e46063::t_3e00e2fcd23c43 93,96-98
+  s_487e9aa1e46063::t_0cc3d989640ddc 99,641-642
+src/modules/Collaboration/repositories/peerConnection.ts
+  s_487e9aa1e46063::t_a548c560e4c856 124-125,130-140
+src/modules/Collaboration/repositories/__tests__/peerConnection.spec.ts
+  s_487e9aa1e46063::t_eb79f0d4e6a9d7 268-300
+src/modules/Collaboration/models/__tests__/peerIdentityBounds.spec.ts
+  s_487e9aa1e46063::t_4654e6dfee374a 22-27,32
+  s_487e9aa1e46063::t_9886086e3786cb 1-21,28-31,33-70
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_487e9aa1e46063::t_1548740fbbce91 121-128,130-147
+  s_487e9aa1e46063::t_3d6b9d0ff8ec01 93-98,104-105
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_6f207b2b65753f 299-303,305
+  s_487e9aa1e46063::t_7aabccbc0665b9 724-725,738-743,747-750,762,764-773,775-791,793-802
+  s_487e9aa1e46063::t_b5066b64b134a1 551-562
+  s_487e9aa1e46063::t_5402c6031cbc57 751-752,774,792
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a91c39f8abab7cb5c13024693b99b5eb4271c2a1",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
