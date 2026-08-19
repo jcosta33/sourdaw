@@ -1,0 +1,21 @@
+electron/protocol.ts
+  s_487e9aa1e46063::t_a09dc5bc58d918 43-50,57
+electron/__tests__/webviewSecurity.spec.ts
+  s_487e9aa1e46063::t_54dd023273d125 61,63-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "08431d15594c56b3186c39248a4ec41c8aa239da",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
