@@ -1,0 +1,27 @@
+electron/protocol.ts
+  s_487e9aa1e46063::t_a2e5c778f34992 12-13
+  s_487e9aa1e46063::t_3617fc4688c9e4 27-35,43-52,54-65,67-72,76
+electron/__tests__/webviewSecurity.spec.ts
+  s_487e9aa1e46063::t_8696b9b1e79cef 19-21,23-25
+  s_487e9aa1e46063::t_6adbe46739004c 69-77
+  s_487e9aa1e46063::t_96e4c1b3e62036 100,107-181
+  s_487e9aa1e46063::t_0682bfcb64b6e6 8-9
+  s_487e9aa1e46063::t_af9312653e7487 26
+  s_487e9aa1e46063::t_7f4be0f56559c3 182-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5921967e4b8edae574258fae393dc0dde8c68b09",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
