@@ -179,34 +179,19 @@ The GitHub pull request is the team's review of this head: what changed and why,
 diff, a merge decision. Session logs, stance names, unpublished rounds, and repair diaries stay
 off GitHub.
 
-Approve when the change improves code health, even if it is not perfect. Do not approve a change
-that makes the system worse. Style-guide violations block; personal style does not.
-([Google: standard of code review](https://google.github.io/eng-practices/review/reviewer/standard.html))
+Approve when the change improves the system, even if it is not perfect. Do not approve a change
+that makes it worse. Style-guide violations block; personal style does not.
 
-`review.json` is that public review.
-[GitHub review events](https://docs.github.com/en/pull-requests/reference/pull-request-reviews):
-
-| Event             | Meaning                                                                                                                 |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `REQUEST_CHANGES` | This head must not merge. Every blocking finding is a line comment posted now. Body: a short pointer.                   |
-| `APPROVE`         | This head may merge. Body empty or one sentence about the code. Non-blocking notes: `Nit:` / `Optional:` line comments. |
-
-`review:publish` accepts only those two events.
+`review.json` event is `REQUEST_CHANGES` or `APPROVE`. Blocking findings are line comments posted
+now. `REQUEST_CHANGES` body is a short pointer. `APPROVE` body is empty or one sentence about the
+code. Non-blocking notes are `Nit:` or `Optional:` line comments on an `APPROVE`.
 
 Line comments sit on the changed line, one finding, one paragraph: what is wrong, why it matters,
-what done looks like. Comment on the code, never the author. Explain why
-([Google: how to write comments](https://google.github.io/eng-practices/review/reviewer/comments.html)).
+what done looks like. Comment on the code, never the author.
 
-The author answers on the branch, then on the thread
-([Google: handling comments](https://google.github.io/eng-practices/review/developer/handling-comments.html);
-[GitHub: resolving reviews](https://docs.github.com/en/pull-requests/concepts/resolving-reviews)):
-
-- Push the fix. Reply `Done` plus where, or why not, in one sentence.
-- Clarify the code. Do not leave the explanation only in the thread.
-- File out-of-scope feedback. Do not grow the PR.
-- Resolve a conversation only after that reply is true of the current head.
-- A new head needs a new review of that SHA. `REQUEST_CHANGES` is closed by `APPROVE` of the
-  current head, not by a private recap.
+Push the fix. Reply `Done` plus where, or why not, in one sentence. Clarify the code, not the
+thread. File out-of-scope feedback. Resolve a conversation only when that is true of the current
+head. A new head needs a new review of that SHA.
 
 Owner proof of delegated work (a test that fails when reverted, a measurement at the user
 boundary) stays in the session. It is not the GitHub review.
