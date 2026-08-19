@@ -171,18 +171,26 @@ bytes, and puts `Closes #<issue>` in Related tickets. It does not enable auto-me
 review.
 
 `review:prepare` prints a bundle path on the primary root. The bundle is `manifest.json`,
-`diff.patch`, `pr.md`, and base-commit `contracts/`. The caller writes `review.json` (`APPROVE` or
-`REQUEST_CHANGES`). Line comments are one paragraph: defect, consequence, required outcome. A
-reviewer agent gets that bundle, not the author transcript. `review:publish` prints the review id
-and posts as `jcosta33-reviewer[bot]` only when GitHub's head still matches the bundle.
+`diff.patch`, `pr.md`, and base-commit `contracts/`. The caller writes `review.json` for **this**
+head. A reviewer agent gets that bundle, not the author transcript. `review:publish` prints the
+review id and posts as `jcosta33-reviewer[bot]` only when GitHub's head still matches the bundle.
+
+The GitHub review is the review a teammate would leave on this PR. `REQUEST_CHANGES` means line
+comments on the diff, posted now, each one paragraph: defect, consequence, required outcome. The
+author answers by pushing a new head. `APPROVE` means this head is acceptable. Do not approve with
+a diary of unpublished internal rounds, stance names, or repairs that never appeared as review
+comments. Scrutiny inside the session is not a GitHub review: put the finding on the diff, or fix
+the code before asking for review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
 PR is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any other way.
 Run affected checks first.
 
-Keep batches small, live lanes few, merges prompt. A finished change waits only on that review.
-Three review stances by default, five at most; split the PR when five cannot cover it. At ten
-subagents or one hour, stop expanding review. Enable hooks: `git config core.hooksPath .githooks`.
+Keep batches small, live lanes few, merges prompt. A finished change waits only on that GitHub
+review. Owner scrutiny of delegated work uses three stances by default, five at most; split the PR
+when five cannot cover it. At ten subagents or one hour, stop expanding. Those findings become code
+or GitHub line comments, never the `APPROVE` body. Enable hooks:
+`git config core.hooksPath .githooks`.
 
 ## Safety
 
