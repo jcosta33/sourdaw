@@ -3,15 +3,18 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 import { PROCESSOR_TYPES } from '../models/ProcessorCatalog';
 import { type YeastProcessorInfo, type YeastState } from '../models/YeastState';
 
-const YEAST_CRDT_SCHEMA_VERSION = 2;
-// v1 stored no explicit order — decodeProcessors always sorted entities by id,
-// silently discarding any reorder the moment it round-tripped through this
-// storage (audit #2039: the Yeast rack's advertised reorder capability had no
-// way to survive a hydrate). v2 adds `order`; v1 documents are still accepted
-// on read (decodeProcessors falls back to id order for an entity with no
-// `order`, matching the only order v1 ever had) and are migrated to v2 the
-// next time a local mutation writes through `mutateYeastCrdt`.
-const SUPPORTED_YEAST_CRDT_SCHEMA_VERSIONS = new Set([1, 2]);
+// `order` was always additive: it is optional on YeastProcessorEntity, every
+// read path (decodeProcessors -> entityOrder) tolerates its absence, and no
+// code branches on a schema number. There is therefore no version to bump —
+// v1 stored no explicit order and decodeProcessors always sorted entities by
+// id, silently discarding any reorder the moment it round-tripped through
+// this storage (audit #2039: the Yeast rack's advertised reorder capability
+// had no way to survive a hydrate); a document written by an old build keeps
+// decoding in id order (entityOrder falls back to +Infinity, and the id
+// tiebreak takes over) until a local mutation backfills `order` onto every
+// entity via syncProcessorEntities. Bumping the version number here would
+// only make every previously shipped build throw on hydrate and on write.
+const YEAST_CRDT_SCHEMA_VERSION = 1;
 
 /** Empty Yeast rack — the store's seed value and its projection default. */
 export const defaultYeastState: YeastState = {
@@ -118,7 +121,7 @@ function isCrdtState(value: unknown): value is YeastCrdtState {
     return (
         isRecord(value) &&
         typeof value.schemaVersion === 'number' &&
-        SUPPORTED_YEAST_CRDT_SCHEMA_VERSIONS.has(value.schemaVersion) &&
+        value.schemaVersion === YEAST_CRDT_SCHEMA_VERSION &&
         isRecord(value.processors)
     );
 }
@@ -127,7 +130,7 @@ function assertSupportedSchema(value: unknown): void {
     if (!isRecord(value) || !Object.hasOwn(value, 'schemaVersion')) {
         return;
     }
-    if (typeof value.schemaVersion !== 'number' || !SUPPORTED_YEAST_CRDT_SCHEMA_VERSIONS.has(value.schemaVersion)) {
+    if (typeof value.schemaVersion !== 'number' || value.schemaVersion !== YEAST_CRDT_SCHEMA_VERSION) {
         throw new Error(`Unsupported Yeast CRDT schema version: ${String(value.schemaVersion)}`);
     }
 }
@@ -135,6 +138,27 @@ function assertSupportedSchema(value: unknown): void {
 /** An entity's `order`, or +Infinity for a v1 entity that never had one — sorted to the end, then by id. */
 function entityOrder(entity: YeastProcessorEntity): number {
     return typeof entity.order === 'number' ? entity.order : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Total order: two order-less entities both fall back to +Infinity, and
+ * `Infinity - Infinity` is `NaN` — a delta-based comparator returns NaN for
+ * that pair, which ECMA-262 SortCompare coerces to +0, so every order-less
+ * pair would compare equal and the stable sort would fall through to
+ * Automerge's internal map key order (add order) instead of ever reaching
+ * the id tiebreak below. Comparing with explicit `<`/`>` first makes
+ * `Infinity === Infinity` take the id branch instead.
+ */
+function compareEntities(left: [string, YeastProcessorEntity], right: [string, YeastProcessorEntity]): number {
+    const leftOrder = entityOrder(left[1]);
+    const rightOrder = entityOrder(right[1]);
+    if (leftOrder < rightOrder) {
+        return -1;
+    }
+    if (leftOrder > rightOrder) {
+        return 1;
+    }
+    return compareEntityKeys(left[0], right[0]);
 }
 
 function decodeProcessors(value: unknown): YeastProcessorInfo[] {
@@ -145,10 +169,7 @@ function decodeProcessors(value: unknown): YeastProcessorInfo[] {
     const live = Object.entries(value.processors).filter(
         (entry): entry is [string, YeastProcessorEntity] => isRecord(entry[1]) && entry[1].deleted === false
     );
-    live.sort(([leftId, left], [rightId, right]) => {
-        const orderDelta = entityOrder(left) - entityOrder(right);
-        return orderDelta !== 0 ? orderDelta : compareEntityKeys(leftId, rightId);
-    });
+    live.sort(compareEntities);
     return normalizeProcessors(live.map(([, entity]) => entity.value));
 }
 
@@ -247,10 +268,10 @@ function mutateYeastCrdt({ doc, key, value }: { doc: MutableRecord; key: string;
         doc[key] = encodeMigratedState(current, value.processors);
         return;
     }
+    // Backfills `order` onto every entity, including one that never had it,
+    // the first time it is locally mutated — no schema bump needed, `order`
+    // is additive and every read path already tolerates its absence.
     syncProcessorEntities(current.processors, value.processors);
-    // Backfills `order` onto every entity above, so a v1 document is fully
-    // migrated to v2 the first time it is locally mutated.
-    current.schemaVersion = YEAST_CRDT_SCHEMA_VERSION;
 }
 
 function rebaseProcessors({

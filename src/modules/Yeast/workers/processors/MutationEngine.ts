@@ -96,7 +96,15 @@ export class MutationEngine extends BaseMidiProcessor {
 
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                // Keyed by the note's own instance id when the feed carries one
+                // (both live and offline feeds do), falling back to a pitch
+                // composite only when it does not — same convention as
+                // GrooveModule/ChordGenerator/Harmonizer/ChordMemory. A pitch
+                // composite alone cross-assigns decisions between two
+                // overlapping same-pitch voices released out of order (On1,
+                // On2, Off2, Off1): if On1 passed and On2 dropped, Off1 would
+                // be wrongly suppressed and instance1 would never close.
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 if (dropChance > 0 && this.drawDropSample() < dropChance) {
                     this.passDecisions.push(event.trackId, key, false);
                     continue;
@@ -114,7 +122,7 @@ export class MutationEngine extends BaseMidiProcessor {
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 const passed = this.passDecisions.shift(event.trackId, key);
                 if (passed === false) {
                     continue;
@@ -221,8 +229,14 @@ export class MutationEngine extends BaseMidiProcessor {
         }
     }
 
-    /** Get current mutation values for UI display. */
-    getTargetValues(): Array<{ name: string; value: number }> {
+    /**
+     * Test-only: exposes each target's current depth-scaled value so specs
+     * can assert on the random walk's internal state directly instead of
+     * reverse-engineering it from emitted MIDI. Not "for UI display" — there
+     * is no production consumer; that was the same dead-API claim this PR
+     * removes elsewhere (MidiRack.setProcessorParam, MidiRack.reorder).
+     */
+    __getTargetValuesForTest(): Array<{ name: string; value: number }> {
         return this.targets.map((time) => ({ name: time.name, value: time.value * this.depth }));
     }
 }
