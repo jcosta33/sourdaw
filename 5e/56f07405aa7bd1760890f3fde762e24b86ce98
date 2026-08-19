@@ -1,0 +1,23 @@
+crates/sourdaw-native/src/commands/audio_postprocess.rs
+  s_487e9aa1e46063::t_a856e6852ac7b1 193-203
+  s_487e9aa1e46063::t_14e7c412dfe9c9 603-707
+  s_487e9aa1e46063::t_df749732d69e73 129-138
+  s_487e9aa1e46063::t_ce72d94623621b 237-244,257-258,260-265,277-317,708
+  s_487e9aa1e46063::t_12415f538cb6c3 139,204,318-319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5e56f07405aa7bd1760890f3fde762e24b86ce98",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
