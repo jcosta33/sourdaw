@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
-import { createAudioEngine } from '../createWebAudioEngine';
 import { createPhaser } from '../devices/modulation/createPhaser';
+
+import {
+    createAudioEngineTopologyTestHarness as createAudioEngine,
+    type AudioEngineTopologyTestHarness,
+} from './createAudioEngineTopologyTestHarness';
 
 import type {
     AdjustmentLayerTickInput,
-    AudioEngine,
     AudioProcessorLifecycleState,
     BuiltinDeviceNode,
 } from '../../models/AudioEngineState';
@@ -242,7 +245,7 @@ function trackMocks(trackId: string): Record<string, (...args: unknown[]) => voi
 }
 
 describe('AudioEngine — public API delegation and lifecycle', () => {
-    let engine: AudioEngine;
+    let engine: AudioEngineTopologyTestHarness;
     let mockCtx: MockAudioContext;
 
     beforeEach(() => {
@@ -600,7 +603,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
     it('routes device lifecycle and parameter calls through the owning strip', () => {
         engine.addDeviceToStrip('t1', 'dev-1', 'levain', 'inst-9', ['earlier']);
-        expect(trackMocks('t1').addDevice).toHaveBeenCalledWith('dev-1', 'levain', 'inst-9', ['earlier']);
+        expect(trackMocks('t1').addDevice).toHaveBeenCalledWith('dev-1', 'levain', 'inst-9', ['earlier'], undefined);
 
         engine.updateDeviceParam('t1', 'dev-1', 'cutoff', 0.3);
         expect(trackMocks('t1').updateParam).toHaveBeenCalledWith('dev-1', 'cutoff', 0.3);
@@ -666,6 +669,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
     it('setTrackOutput forwards the routing target to the strip', () => {
         engine.ensureTrackStrip('t1');
+        engine.ensureBusStrip('bus-1');
 
         engine.setTrackOutput('t1', 'bus-1');
 

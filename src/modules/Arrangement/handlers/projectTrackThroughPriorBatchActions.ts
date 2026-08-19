@@ -57,6 +57,18 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             projected.sends = projected.sends.filter((send) => send.busId !== action.payload.busId);
         } else if (action.type === 'removeDevice') {
             projected.devices = projected.devices.filter((device) => device.id !== action.payload.deviceId);
+        } else if (action.type === 'reorderDevices') {
+            const sourceIndex = projected.devices.findIndex((device) => device.id === action.payload.deviceId);
+            if (
+                sourceIndex >= 0 &&
+                action.payload.targetIndex >= 0 &&
+                action.payload.targetIndex < projected.devices.length
+            ) {
+                const [device] = projected.devices.splice(sourceIndex, 1);
+                if (device) {
+                    projected.devices.splice(action.payload.targetIndex, 0, device);
+                }
+            }
         } else if (action.type === 'restoreDevice') {
             projected.devices.splice(action.payload.deviceIndex, 0, structuredClone(action.payload.deviceSnapshot));
         } else if (action.type === 'setDeviceParameter') {

@@ -318,7 +318,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             return null;
         };
 
-        // Check primary clip first (higher z-order)
+        // Hit-test in reverse paint order so the topmost visibly painted note
+        // wins. The renderer draws secondary opened clips first (in
+        // openedClipIds order, later clip on top) and the primary clip's notes
+        // last of all, so the primary is tested first and secondary clips are
+        // tested last-opened first.
         const primaryHit = testNoteList(notes, clipId);
         if (primaryHit) {
             return primaryHit;
@@ -326,7 +330,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
         // A9: also check notes from secondary open clips
         if (openedClipNotes) {
-            for (const [openedId, openedNotes] of Object.entries(openedClipNotes)) {
+            const openedEntries = Object.entries(openedClipNotes);
+            for (let entryIndex = openedEntries.length - 1; entryIndex >= 0; entryIndex--) {
+                const [openedId, openedNotes] = openedEntries[entryIndex]!;
                 if (openedId === clipId) {
                     continue;
                 }

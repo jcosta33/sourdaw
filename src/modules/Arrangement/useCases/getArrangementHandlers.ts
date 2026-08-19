@@ -14,6 +14,7 @@ import { handleLoadExternalPlugin } from '../handlers/device/handleLoadExternalP
 import { handleRemoveDevice } from '../handlers/device/handleRemoveDevice';
 import { handleRemoveSend } from '../handlers/device/handleRemoveSend';
 import { handleRemoveSidechainRoute } from '../handlers/device/handleRemoveSidechainRoute';
+import { handleReorderDevices } from '../handlers/device/handleReorderDevices';
 import { handleRestoreDevice } from '../handlers/device/handleRestoreDevice';
 import { handleSetDeviceParameter } from '../handlers/device/handleSetDeviceParameter';
 import { handleSetDeviceState } from '../handlers/device/handleSetDeviceState';
@@ -25,7 +26,7 @@ import { handleRemoveMarker } from '../handlers/marker/handleRemoveMarker';
 import { handleRemoveSection } from '../handlers/marker/handleRemoveSection';
 import { handleRenameSection } from '../handlers/marker/handleRenameSection';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
-import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
+import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handlers/preset/handleLoadPreset';
 import { handleSavePreset } from '../handlers/preset/handleSavePreset';
 import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
 import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
@@ -160,6 +161,7 @@ export function getArrangementHandlers() {
         restoreClipStretchState: handleRestoreClipStretchState,
         fitClipToBeats: handleFitClipToBeats,
         loadPreset: handleLoadPreset,
+        restorePresetDeviceChain: handleRestorePresetDeviceChain,
         savePreset: handleSavePreset,
         restoreTrack: handleRestoreTrack,
         restoreClip: handleRestoreClip,
@@ -167,6 +169,7 @@ export function getArrangementHandlers() {
         loadExternalPlugin: handleLoadExternalPlugin,
         bypassDevice: handleBypassDevice,
         removeDevice: handleRemoveDevice,
+        reorderDevices: handleReorderDevices,
         restoreDevice: handleRestoreDevice,
         setDeviceParameter: handleSetDeviceParameter,
         setExternalPluginState: handleSetExternalPluginState,

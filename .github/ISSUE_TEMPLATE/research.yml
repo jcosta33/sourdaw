@@ -1,0 +1,92 @@
+name: Research
+description: Evidence for a decision. No requirements.
+title: "research(scope): "
+labels: ["status:tracking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One question. Evidence only. Intent and ACs belong on a Spec. Secrets stay in `~/.agents/artifacts`.
+
+        Mark unreachable claims `[unconfirmed]`.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Subsystem
+      options:
+        - audio-engine
+        - daw-dsp
+        - electron
+        - native
+        - plugin-host
+        - midi
+        - arrangement
+        - transport
+        - yeast / bacteria / knead / levain / crumbs / grinder / grand-boule / fermenter
+        - ai
+        - workspace-shell / ui
+        - security
+        - build
+        - cross-cutting
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question and scope
+      description: The decision, audience, time horizon, and reversal evidence.
+    validations:
+      required: true
+
+  - type: textarea
+    id: method
+    attributes:
+      label: Method and coverage
+      description: What was searched, exercised, or excluded.
+    validations:
+      required: true
+
+  - type: textarea
+    id: findings
+    attributes:
+      label: Findings
+      description: One claim per R-NNN. Separate observation, source claim, and inference.
+      placeholder: |
+        ### R-001
+        - Claim:
+        - Evidence:
+        - Confidence: High | Moderate | Low | Very low
+        - Decision relevance:
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options comparison
+      description: Named criteria. Keep disconfirming evidence.
+      placeholder: |
+        | Option |  |  |
+        | --- | --- | --- |
+        |  |  |  |
+    validations:
+      required: true
+
+  - type: textarea
+    id: open_questions
+    attributes:
+      label: Open questions
+      description: Exact question or test that unlocks direction. None if the evidence already chooses.
+      placeholder: "None"
+    validations:
+      required: true
+
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Advisory recommendation
+      description: Cite finding IDs. No Intent. No AC-NNN.
+    validations:
+      required: true

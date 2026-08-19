@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleRemoveDevice } from '../handleRemoveDevice';
 
 const mocks = vi.hoisted(() => ({
-    removeDevice: vi.fn(),
+    prepareRemoveDevice: vi.fn(),
     getTrackStoreState: vi.fn(),
 }));
 
-vi.mock('../../../useCases/device/removeDevice', () => ({
-    removeDevice: mocks.removeDevice,
+vi.mock('../../../useCases/device/prepareRemoveDevice', () => ({
+    prepareRemoveDevice: mocks.prepareRemoveDevice,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -25,21 +25,21 @@ describe('handleRemoveDevice', () => {
         ['missing', { status: 'no-write' }],
         ['conflict', { status: 'conflict' }],
     ] as const)('maps the %s outcome to the handler result', (outcome, expected) => {
-        mocks.removeDevice.mockReturnValue(outcome);
+        mocks.prepareRemoveDevice.mockReturnValue(outcome);
 
         const result = handleRemoveDevice.execute({
             type: 'removeDevice',
             payload: { deviceId: 'd1' },
         });
 
-        expect(mocks.removeDevice).toHaveBeenCalledWith('d1', { deferRuntimeEffects: true });
+        expect(mocks.prepareRemoveDevice).toHaveBeenCalledWith('d1');
         expect(result).toEqual(expected);
     });
 
     it('defers external unload until commit and preserves ambiguous-commit reconciliation', () => {
         const afterCommit = vi.fn();
         const afterAmbiguousCommit = vi.fn();
-        mocks.removeDevice.mockReturnValue({ outcome: 'written', afterCommit, afterAmbiguousCommit });
+        mocks.prepareRemoveDevice.mockReturnValue({ outcome: 'written', afterCommit, afterAmbiguousCommit });
 
         const result = handleRemoveDevice.execute({
             type: 'removeDevice',

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -10,12 +10,26 @@ import type { PluginDescriptorView as PluginDescriptor } from '../../../../model
 import type { SidebarPanelActions } from '../SidebarTypes';
 
 const arrangementMocks = vi.hoisted(() => ({
-    addDevice: vi.fn<(trackId: string, deviceType: string) => { id: string } | null>(),
+    compileAddDeviceAction: vi.fn(),
+    compileLoadPresetActions: vi.fn(),
+    getFactoryPresets: vi.fn(),
+}));
+
+const commandMocks = vi.hoisted(() => ({
+    executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    addDevice: arrangementMocks.addDevice,
+    compileAddDeviceAction: arrangementMocks.compileAddDeviceAction,
+    compileLoadPresetActions: arrangementMocks.compileLoadPresetActions,
+    getFactoryPresets: arrangementMocks.getFactoryPresets,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: commandMocks.executeAppAction,
+    executeAppActionBatch: commandMocks.executeAppActionBatch,
 }));
 
 const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({
@@ -74,6 +88,46 @@ describe('EffectsTab', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        arrangementMocks.getFactoryPresets.mockReturnValue([
+            {
+                id: 'fx-chain-1',
+                name: 'Vocal Chain',
+                category: 'fx',
+                description: '',
+                trackKind: 'audio',
+                devices: [{ type: 'builtin-delay', name: 'Delay', parameterValues: { mix: 0.4 } }],
+                tags: [],
+                author: 'test',
+                isFactory: true,
+            },
+        ]);
+        arrangementMocks.compileAddDeviceAction.mockImplementation((trackId: string, deviceType: string) => ({
+            type: 'addDevice',
+            payload: { trackId, deviceType, deviceId: 'device-77', expectedDeviceIds: [] },
+        }));
+        commandMocks.executeAppAction.mockResolvedValue(undefined);
+    });
+
+    it('loads an FX preset through the compiled action instead of directly mutating the selected track', () => {
+        const action = { type: 'loadPreset', payload: { presetId: 'fx-chain-1', trackId: 'track-1' } } as const;
+        arrangementMocks.compileLoadPresetActions.mockReturnValue({
+            actions: [action],
+            deviceIds: ['preset-device-1'],
+            groupLabel: 'Load preset',
+            trackId: 'track-1',
+        });
+
+        renderWithTooltip(
+            <EffectsTab {...defaultProps} currentRoute={{ id: 'effects-fxpresets', title: 'FX Chain Presets' }} />
+        );
+
+        fireEvent.click(screen.getByText('Vocal Chain'));
+
+        expect(arrangementMocks.compileLoadPresetActions).toHaveBeenCalledWith({
+            presetId: 'fx-chain-1',
+            trackId: 'track-1',
+        });
+        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
     });
 
     it('should render without crashing', () => {
@@ -95,29 +149,35 @@ describe('EffectsTab', () => {
     it.each([
         { query: 'crust', deviceType: 'crust', panelAction: 'showCrust' as const, cardName: /crust/i },
         { query: 'dutch', deviceType: 'dutch-oven', panelAction: 'showDutchOven' as const, cardName: /dutch oven/i },
-    ])('opens the $deviceType panel on the device it just created', ({ query, panelAction, cardName }) => {
-        arrangementMocks.addDevice.mockReturnValue({ id: 'device-77' });
-        const panelActions = createPanelActions();
+    ])(
+        'opens the $deviceType panel only after the action commits',
+        async ({ query, deviceType, panelAction, cardName }) => {
+            const panelActions = createPanelActions();
 
-        renderWithTooltip(
-            <EffectsTab
-                {...defaultProps}
-                plugins={[
-                    createPlugin({ id: 'crust', name: 'Crust', category: 'effect' }),
-                    createPlugin({ id: 'dutch-oven', name: 'Dutch Oven', category: 'effect' }),
-                ]}
-                searchQuery={query}
-                panelActions={panelActions}
-            />
-        );
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[
+                        createPlugin({ id: 'crust', name: 'Crust', category: 'effect' }),
+                        createPlugin({ id: 'dutch-oven', name: 'Dutch Oven', category: 'effect' }),
+                    ]}
+                    searchQuery={query}
+                    panelActions={panelActions}
+                />
+            );
 
-        fireEvent.click(screen.getByRole('button', { name: cardName }));
+            fireEvent.click(screen.getByRole('button', { name: cardName }));
 
-        expect(panelActions[panelAction]).toHaveBeenCalledWith('device-77');
-    });
+            expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'addDevice',
+                payload: { trackId: 'track-1', deviceType, deviceId: 'device-77', expectedDeviceIds: [] },
+            });
+            await waitFor(() => expect(panelActions[panelAction]).toHaveBeenCalledWith('device-77'));
+        }
+    );
 
-    it('leaves the panel closed when the device could not be created', () => {
-        arrangementMocks.addDevice.mockReturnValue(null);
+    it('leaves the panel closed when the compiler rejects the add', () => {
+        arrangementMocks.compileAddDeviceAction.mockReturnValue(null);
         const panelActions = createPanelActions();
 
         renderWithTooltip(

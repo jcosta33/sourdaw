@@ -12,14 +12,14 @@ type PluginStub = { id: string; name: string };
 const mocks = vi.hoisted(() => ({
     selectTrack: vi.fn(),
     executeAppAction: vi.fn(),
-    reorderDevices: vi.fn(),
+    compileReorderDevicesAction: vi.fn(),
     getPlatformPlugins: vi.fn<() => PluginStub[]>(() => []),
     openInspector: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     selectTrack: mocks.selectTrack,
-    reorderDevices: mocks.reorderDevices,
+    compileReorderDevicesAction: mocks.compileReorderDevicesAction,
     getPlatformPlugins: mocks.getPlatformPlugins,
 }));
 
@@ -116,6 +116,34 @@ describe('DeviceChainSection', () => {
             type: 'removeDevice',
             payload: { deviceId: 'dev-9' },
         });
+    });
+
+    it('routes a device rack drag through the compiled reorder action', () => {
+        const track: Track = {
+            ...baseTrack,
+            devices: [makeDevice({ id: 'dev-1', name: 'Delay' }), makeDevice({ id: 'dev-2', name: 'EQ' })],
+        };
+        const action = { type: 'reorderDevices', payload: { trackId: 'track-1' } };
+        mocks.compileReorderDevicesAction.mockReturnValue(action);
+        render(<DeviceChainSection track={track} />);
+
+        const dragged = screen.getByText('Delay').closest('button');
+        const target = screen.getByText('EQ').closest('button');
+        if (!dragged || !target) {
+            throw new Error('expected device rack buttons');
+        }
+        const dataTransfer = {
+            effectAllowed: '',
+            dropEffect: '',
+            getData: vi.fn(() => 'dev-1'),
+            setData: vi.fn(),
+        };
+
+        fireEvent.dragStart(dragged, { dataTransfer });
+        fireEvent.drop(target, { dataTransfer });
+
+        expect(mocks.compileReorderDevicesAction).toHaveBeenCalledWith('track-1', 'dev-1', 'dev-2');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
     });
 
     it('lists built-in plugins and MIDI FX after "+ add", dispatches the addDevice action on choice, and closes on cancel without dispatching', () => {

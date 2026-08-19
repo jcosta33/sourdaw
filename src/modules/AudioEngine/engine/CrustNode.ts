@@ -11,13 +11,29 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { logger } from '#/infra/logger/appLogger';
 
+import { createCrustRuntimeParameterIds } from '../models/CrustRuntimeControl';
+import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import crustProcessorUrl from '../services/crustProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, CRUST_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+
+let nextWorkletControlGeneration = 1;
+
+function allocateWorkletControlGeneration(): number {
+    const generation = nextWorkletControlGeneration;
+    nextWorkletControlGeneration = generation >= Number.MAX_SAFE_INTEGER ? 1 : generation + 1;
+    return generation;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export type CrustMeterData = {
     grDb: number;
@@ -50,9 +66,8 @@ function projectCrustMeter(view: Float32Array): CrustMeterData {
 
 export type CrustNodeResult = {
     workletNode: AudioWorkletNode;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number, sampleFrame?: number) => void;
     setBypass: (bypassed: boolean) => void;
-    resetTruePeak: () => void;
     onMeterData: (cb: (data: CrustMeterData) => void) => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
@@ -68,7 +83,9 @@ export function isCrustDevice(deviceType: string): boolean {
 export async function createCrustNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    controlTarget?: RuntimeDeviceControlTarget,
+    onRuntimeFailure?: (message: string) => void
 ): Promise<CrustNodeResult> {
     // Crust's whole readout — gain reduction, the LUFS set, the true-peak hold —
     // lives in a SAB telemetry slot. Without SAB the worklet still limits but
@@ -107,6 +124,55 @@ export async function createCrustNode(
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
+    const workletGeneration = allocateWorkletControlGeneration();
+    const target = controlTarget ?? {
+        trackId: 'offline-crust-track',
+        deviceId: 'offline-crust-device',
+        deviceType: 'crust',
+        parameterIds: [],
+    };
+    const fallbackControlTarget = Object.freeze({
+        trackId: target.trackId,
+        deviceId: target.deviceId,
+        deviceType: target.deviceType,
+        parameterIds: createCrustRuntimeParameterIds(),
+    });
+    let nextControlSequence = 1;
+    let destroyed = false;
+    const postFallbackControl = (name: string, value: number, sampleFrame?: number): void => {
+        // Crust is explicitly exempt from device-level parameter automation:
+        // a supplied frame is rejected, never degraded to an immediate write.
+        // The protocol keeps timing fields so the processor can fail closed on
+        // forged scheduled traffic too.
+        if (
+            destroyed ||
+            sampleFrame !== undefined ||
+            nextControlSequence > Number.MAX_SAFE_INTEGER ||
+            !Number.isFinite(value)
+        ) {
+            return;
+        }
+        const compilation = compileRuntimeDeviceControl(
+            {
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
+                    parameterId: name,
+                },
+                value,
+                correlation: { workletGeneration, controlSequence: nextControlSequence },
+                scheduling: { targetFrame: null, deadlineFrame: null },
+            },
+            fallbackControlTarget.parameterIds
+        );
+        if (compilation.status === 'compiled') {
+            nextControlSequence++;
+            node.port.postMessage(compilation.control);
+        }
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
@@ -116,29 +182,37 @@ export async function createCrustNode(
     node.port.onmessage = (event: MessageEvent) => {
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
-            const data = event.data as Record<string, unknown>;
-            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
+            const data: unknown = event.data;
+            if (isRecord(data) && data.type === 'latency-changed' && typeof data.latency === 'number') {
                 latencyCallback?.(data.latency);
             }
             return;
         }
+        if (outcome === 'late' && isRecord(event.data) && event.data.type === 'error') {
+            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+            logger.warn('CrustNode runtime fault (processor faulted):', message);
+            onRuntimeFailure?.(message);
+        }
     };
     const readyPromise = handshake.promise;
 
+    node.port.postMessage(
+        Object.freeze({
+            schemaVersion: 1,
+            command: 'initialize-fallback-control',
+            target: fallbackControlTarget,
+            correlation: Object.freeze({ workletGeneration }),
+        })
+    );
     node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,
-        setParam(name: string, value: number) {
-            if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
-            }
+        setParam(name: string, value: number, sampleFrame?: number) {
+            postFallbackControl(name, value, sampleFrame);
         },
         setBypass(state: boolean) {
-            node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
-        },
-        resetTruePeak() {
-            node.port.postMessage({ type: 'reset-true-peak' });
+            postFallbackControl('bypass', state ? 1 : 0);
         },
         onMeterData(cb: (data: CrustMeterData) => void) {
             if (meterRafId !== null) {
@@ -172,6 +246,10 @@ export async function createCrustNode(
             }
         },
         destroy() {
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
             if (meterRafId !== null) {
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;
