@@ -260,6 +260,8 @@ export function githubChildEnv(
     env.GIT_CONFIG_GLOBAL = '/dev/null';
     env.GIT_CONFIG_SYSTEM = '/dev/null';
     env.GIT_TERMINAL_PROMPT = '0';
+    env.GIT_SSH_COMMAND = '/usr/bin/false';
+    env.GIT_SSH = '/usr/bin/false';
     env.GCM_INTERACTIVE = 'never';
     return env;
 }

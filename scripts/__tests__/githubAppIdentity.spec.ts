@@ -349,7 +349,8 @@ describe('isolated gh sessions', () => {
         expect(auth.session.env.GIT_TRACE).toBeUndefined();
         expect(auth.session.env.GIT_TRACE2).toBeUndefined();
         expect(auth.session.env.GIT_CURL_VERBOSE).toBeUndefined();
-        expect(auth.session.env.GIT_SSH_COMMAND).toBeUndefined();
+        expect(auth.session.env.GIT_SSH_COMMAND).toBe('/usr/bin/false');
+        expect(auth.session.env.GIT_SSH).toBe('/usr/bin/false');
         expect(auth.minted.login).toBe(AUTHOR_BOT_LOGIN);
         expect(JSON.stringify(auth.session.env)).not.toContain(pem.slice(0, 40));
         expect(requests[0]?.url).toContain('/app/installations/154969409/access_tokens');
