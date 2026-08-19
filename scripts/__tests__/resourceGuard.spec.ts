@@ -389,7 +389,7 @@ describe('resource CLI', () => {
         const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
-        expect(packageJson.scripts.guard).toMatch(/resourceGuard\.ts$/);
+        expect(packageJson.scripts.guard).toBe('node scripts/resourceGuard.ts');
         expect(() => parseCliArgs(['--profile', 'focused', '--require-target', '--', 'vitest', 'run'])).not.toThrow();
     });
 

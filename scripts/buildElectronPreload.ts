@@ -40,6 +40,8 @@ await build({
         // `tsc` has already written this directory, and the renderer bundle is
         // not ours to remove either.
         emptyOutDir: false,
+        // Tracks the Node bundled by the pinned Electron major, not the repo's
+        // own Node floor — do not bump this alongside `.node-version`.
         target: 'node22',
         // A preload is read by a person debugging a renderer that has no
         // devtools sourcemap for it; the file is small and never shipped hot.
