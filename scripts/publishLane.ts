@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
     AUTHOR_BOT_LOGIN,
     AUTHOR_LOCK_REASON,
-    GITHUB_HTTPS_REMOTE,
+    githubAuthenticatedRemote,
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
@@ -28,6 +28,7 @@ export type PublishWorktree = {
 };
 
 export type PublishLanePort = {
+    fetchMain: () => void;
     worktrees: () => PublishWorktree[];
     aheadBehind: (lane: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
@@ -58,6 +59,7 @@ export function parsePublishLaneArgs(args: string[]): { issue?: number; help: bo
 }
 
 export function publishLane(issue: number, port: PublishLanePort): number {
+    port.fetchMain();
     const prefix = `agent/${issue}/`;
     const matches = port.worktrees().filter((worktree) => {
         const branch = worktree.branch;
@@ -115,6 +117,17 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     const ghRun = (args: string[]) => spawnRun('gh', args, { cwd: primaryRoot, env: session.env });
     return {
+        fetchMain: () => {
+            spawnRun(
+                'git',
+                gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', [
+                    'fetch',
+                    githubAuthenticatedRemote(session.env.GH_TOKEN ?? ''),
+                    '+refs/heads/main:refs/remotes/origin/main',
+                ]),
+                { cwd: primaryRoot, env: session.env }
+            );
+        },
         worktrees: () =>
             parsePublishWorktrees(spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })),
         aheadBehind: (lane) => {
@@ -138,7 +151,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
             spawnRun('git', ['commit', '-m', subject], { cwd: lane });
         },
         remoteBranchSha: (branch) => {
-            const output = git(['ls-remote', GITHUB_HTTPS_REMOTE, `refs/heads/${branch}`], primaryRoot);
+            const output = git(['ls-remote', githubAuthenticatedRemote(session.env.GH_TOKEN ?? ''), `refs/heads/${branch}`], primaryRoot);
             if (output === '') {
                 return undefined;
             }
@@ -151,7 +164,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
                 'git',
                 gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', [
                     'push',
-                    GITHUB_HTTPS_REMOTE,
+                    githubAuthenticatedRemote(session.env.GH_TOKEN ?? ''),
                     `HEAD:refs/heads/${branch}`,
                 ]),
                 {

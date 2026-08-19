@@ -36,6 +36,7 @@ function fakePort(input: FakeInput = {}) {
     const logs: string[] = [];
     let dirty = input.dirty ?? false;
     const port: PublishLanePort = {
+        fetchMain: () => calls.push('fetch'),
         worktrees: () => input.trees ?? [worktree()],
         aheadBehind: () => ({ ahead: input.ahead ?? 1, behind: input.behind ?? 0 }),
         dirty: () => dirty,
@@ -86,7 +87,8 @@ describe('lane publish', () => {
 
         publishLane(12, port);
 
-        expect(calls[0]).toBe('commit:feat(vcs): add identities');
+        expect(calls).toContain('fetch');
+        expect(calls).toContain('commit:feat(vcs): add identities');
         expect(calls).toContain('push:agent/12/work');
     });
 

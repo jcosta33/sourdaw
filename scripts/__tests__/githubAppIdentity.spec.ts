@@ -289,7 +289,7 @@ describe('isolated gh sessions', () => {
             '-c',
             'credential.helper=',
             '-c',
-            'http.extraHeader=AUTHORIZATION: bearer ghs_minted',
+            'http.extraHeader=Authorization: Bearer ghs_minted',
             'push',
             GITHUB_HTTPS_REMOTE,
             'HEAD:refs/heads/agent/12/work',

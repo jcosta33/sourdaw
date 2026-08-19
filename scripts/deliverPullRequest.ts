@@ -4,12 +4,12 @@ import { fileURLToPath } from 'node:url';
 
 import {
     AUTHOR_BOT_LOGIN,
-    GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_LOGIN,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
     gitAuthenticatedArgs,
+    githubAuthenticatedRemote,
     originMainBlob,
     resolvePrimaryRoot,
     spawnCapture,
@@ -285,7 +285,7 @@ export function shellPort(
                     gitAuthenticatedArgs(options.gitToken, [
                         'fetch',
                         '--prune',
-                        GITHUB_HTTPS_REMOTE,
+                        githubAuthenticatedRemote(options.gitToken),
                         '+refs/heads/main:refs/remotes/origin/main',
                     ])
                 );

@@ -10,6 +10,9 @@ export const AUTHOR_BOT_LOGIN = 'jcosta33-author[bot]';
 export const REVIEWER_BOT_LOGIN = 'jcosta33-reviewer[bot]';
 export const REQUIRED_REPOSITORY = 'jcosta33/sourdaw';
 export const GITHUB_HTTPS_REMOTE = `https://github.com/${REQUIRED_REPOSITORY}.git`;
+export function githubAuthenticatedRemote(token: string): string {
+    return `https://x-access-token:${token}@github.com/${REQUIRED_REPOSITORY}.git`;
+}
 export const AUTHOR_LOCK_REASON = 'active:sourdaw-author';
 
 export const AUTHOR_MINT_PERMISSIONS = {
@@ -262,7 +265,7 @@ export function githubChildEnv(
 }
 
 export function gitAuthenticatedArgs(token: string, args: string[]): string[] {
-    return ['-c', 'credential.helper=', '-c', `http.extraHeader=AUTHORIZATION: bearer ${token}`, ...args];
+    return ['-c', 'credential.helper=', '-c', `http.extraHeader=Authorization: Bearer ${token}`, ...args];
 }
 
 export function spawnCapture(
