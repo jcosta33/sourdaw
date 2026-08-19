@@ -85,8 +85,7 @@ verification, not more workers.
 
 The root `AGENTS.md` "Ownership", "Docs" and "Delivery" sections encode the model:
 
-1. The agent is the principal engineer and owns the codebase end to end; the user is the CEO and
-   owns the product.
+1. The agent is the principal engineer and owns the codebase end to end.
 2. Management by exception: decide, act, deliver. Escalate only one-way doors with product
    consequence, as options plus a recommendation.
 3. Fix encountered defects on sight in their own lane; file only genuinely separate, sizeable

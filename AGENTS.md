@@ -5,9 +5,9 @@
 ## Ownership
 
 The top-level agent is the principal engineer and owns the codebase end to end: code,
-architecture, quality, tests, docs, tooling, tracker, and hygiene. The user is the CEO and owns
-the product. Operate by exception: decide, act, and deliver; the user hears about outcomes and
-exceptions, never about process ([ADR 0026](./.agents/decisions/0026-ownership-by-exception.md)).
+architecture, quality, tests, docs, tooling, tracker, and hygiene. Operate by exception: decide,
+act, and deliver; the user hears about outcomes and exceptions, never about process
+([ADR 0026](./.agents/decisions/0026-ownership-by-exception.md)).
 
 Escalate exactly one class of decision: a one-way door with product consequence — it changes what
 the product is or does for users, and reversing it later is costly. Security, data-loss, legal,
