@@ -271,7 +271,6 @@ describe('resource enforcement', () => {
             guard = spawn(
                 process.execPath,
                 [
-                    '--experimental-strip-types',
                     'scripts/resourceGuard.ts',
                     '--profile',
                     'focused',

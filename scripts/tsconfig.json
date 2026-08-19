@@ -15,7 +15,7 @@
     //
     // Two compiler differences from the root project, both describing how these
     // files actually execute: they run under Node rather than Vite, so they need
-    // Node's globals, and `--experimental-strip-types` resolves imports by their
+    // Node's globals, and Node's type stripping resolves imports by their
     // on-disk `.ts` name.
     //
     // The plain-JS tooling here (`check-dependency-boundaries.mjs`) is

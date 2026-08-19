@@ -388,14 +388,14 @@ function main(): number {
     try {
         const args = process.argv.slice(2);
         if (args[0] === '--help' && args.length === 1) {
-            console.log('Usage: node --experimental-strip-types scripts/removeLane.ts <worktree-path>');
+            console.log('Usage: node scripts/removeLane.ts <worktree-path>');
             console.log('');
             console.log('Removes a spent agent worktree. The lane must be clean, unlocked, idle, and');
             console.log('hold the merged head of exactly one pull request in this repository.');
             return 0;
         }
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
-            fail('usage: node --experimental-strip-types scripts/removeLane.ts <worktree-path>');
+            fail('usage: node scripts/removeLane.ts <worktree-path>');
         }
         const cwd = process.cwd();
         assertTrustedExecutingBlob(

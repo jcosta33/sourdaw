@@ -190,13 +190,9 @@ describe('Plugin Lifecycle Use Cases', () => {
             }));
         `;
 
-        const output = execFileSync(
-            process.execPath,
-            ['--experimental-strip-types', '--input-type=module', '--eval', script],
-            {
-                encoding: 'utf8',
-            }
-        );
+        const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+            encoding: 'utf8',
+        });
 
         expect(JSON.parse(output)).toEqual({
             count: 1,
