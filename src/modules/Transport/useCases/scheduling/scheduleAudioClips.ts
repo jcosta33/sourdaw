@@ -44,8 +44,8 @@ function releaseGainNode(node: GainNode, ctx: BaseAudioContext): void {
     }
 }
 
-// Vite HMR: clear the pool + asset dedup before this module is replaced so a
-// fresh AudioContext never inherits GainNodes wired into the disposed graph.
+// Vite HMR: clear the pool before this module is replaced so a fresh
+// AudioContext never inherits GainNodes wired into the disposed graph.
 import.meta.hot?.dispose(() => {
     disposeAudioClipScheduling();
 });
