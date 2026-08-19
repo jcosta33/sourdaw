@@ -8,7 +8,7 @@
 /// freeze, shimmer (granular pitch shifter in feedback), and pre-delay.
 use std::f32::consts::TAU;
 
-use crate::decay_eq::{one_pole_magnitude, DecayRateEq, NUM_PROBES};
+use crate::decay_eq::{one_pole_magnitude, Biquad, DecayRateEq, NUM_PROBES};
 use crate::early_reflections::EarlyReflections;
 use crate::output_stage::OutputStage;
 
@@ -262,8 +262,40 @@ impl OnePole {
 // Granular pitch shifter (for shimmer)
 // ---------------------------------------------------------------------------
 
+/// Where the shimmer feed is band-limited before the grains resample it.
+///
+/// Reading a grain faster than it was written is resampling, and resampling
+/// images: anything the tank carries above `sample_rate / (2 * ratio)`
+/// transposes past Nyquist and folds back down the spectrum as a pitch nobody
+/// selected — which then recirculates through the tank feedback and folds again.
+///
+/// 6 kHz is the conventional corner for a shimmer feed rather than the highest
+/// one that would be safe. Shimmer designs feed the pitch shifter a deliberately
+/// dark signal so the transposed voice reads as a halo over the source instead
+/// of a second and brighter copy of it, and an octave up of a 6 kHz feed still
+/// reaches 12 kHz, so the wash keeps its air. Sitting that far down also leaves
+/// most of an octave of transition band before the worst-case fold corner —
+/// 11.025 kHz, at 44.1 kHz with the octave selected — which is what lets a
+/// filter this cheap do the job.
+const SHIMMER_FEED_HZ: f32 = 6_000.0;
+
+/// The largest ratio `shimmer_pitch` selects, and so the one that folds first.
+const MAX_SHIMMER_RATIO: f32 = 2.0;
+
 struct GranularShifter {
     buffer: Vec<f32>,
+    /// Anti-imaging lowpass on the buffer feed, as a fourth-order Butterworth
+    /// pair. Only what the grains read is filtered: the dry term in the output
+    /// blend below stays full-band, so engaging Shimmer does not darken the tank
+    /// it sits in.
+    ///
+    /// The order is set by the rejection needed at the fold corner rather than
+    /// by the passband, where a single second-order section reaches barely 10 dB
+    /// down. Two sections put the image under the noise the tank already carries
+    /// at the image frequency, which is as far as it can usefully go: a third
+    /// section measures the same rejection, because what is left there is the
+    /// tank's own floor and not the filter's stopband.
+    feed: [Biquad; 2],
     write_pos: usize,
     phase1: f64,
     phase2: f64,
@@ -285,13 +317,23 @@ impl GranularShifter {
     /// between the two tank halves, which would otherwise scatter their grains
     /// in lockstep and collapse the shimmer to the centre of the image.
     fn new(sample_rate: f32, jitter_seed: u32) -> Self {
-        let grain_size = (0.030 * sample_rate as f64) as usize; // 30ms grain
-                                                                // A grain reaches back one grain of history, plus however far its own
-                                                                // scatter draw pushes it. Four grains of buffer covers both with room
-                                                                // to spare.
+        // 30ms grain. A grain reaches back one grain of history, plus however
+        // far its own scatter draw pushes it, so four grains of buffer covers
+        // both with room to spare.
+        let grain_size = (0.030 * sample_rate as f64) as usize;
         let buf_size = grain_size * 4;
+
+        // Butterworth Q pair for a fourth-order cascade. The corner only moves
+        // off its conventional 6 kHz on a rate low enough that the octave would
+        // otherwise fold below it.
+        let corner = SHIMMER_FEED_HZ.min(0.55 * sample_rate / (2.0 * MAX_SHIMMER_RATIO));
+        let mut feed = [Biquad::new(), Biquad::new()];
+        feed[0].design_lowpass(corner, 0.541_196, sample_rate);
+        feed[1].design_lowpass(corner, 1.306_563, sample_rate);
+
         Self {
             buffer: vec![0.0; buf_size],
+            feed,
             write_pos: 0,
             phase1: 0.0,
             phase2: 0.5, // 180° offset for overlap
@@ -325,15 +367,40 @@ impl GranularShifter {
     /// The draw has to span a good fraction of a grain to do its job. Grains
     /// restart on a fixed period, and a periodically restarting resampler is a
     /// linear periodically time-varying system: its output for an input partial
-    /// at `f` can only land on the grid `f + k / grain_period`, so the
-    /// transposed partial at `f * ratio` — which is not on that grid — is the
-    /// one frequency such a shifter can never produce. Restarting each grain at
-    /// an unrelated point in history randomises the phase every grain inherits,
-    /// which breaks the periodicity that builds the grid and leaves the energy
-    /// where the resampling put it, at `f * ratio`.
+    /// at `f` can only land on the grid `f + k / grain_period`, which does not
+    /// in general contain `f * ratio` — it does so only when a grain holds a
+    /// whole number of input cycles, and the transposed partial is otherwise the
+    /// one frequency such a shifter cannot produce. Restarting each grain at an
+    /// unrelated point in history randomises the phase every grain inherits,
+    /// which breaks the periodicity that builds the grid: the transposed energy
+    /// then arrives centred on `f * ratio`, spread over a band about one grain
+    /// rate wide rather than standing as a single line.
     #[inline]
     fn draw_scatter(&mut self) -> f64 {
         (self.jitter() * 0.5 + 0.5) * self.scatter_range
+    }
+
+    /// The buffer at a fractional position, linearly interpolated.
+    ///
+    /// The read pointer carries a fraction — the scatter draw and the ramp both
+    /// put it between samples — and rounding it to an index throws that fraction
+    /// away, which is a quantisation error that changes every sample. It is not
+    /// what the fold cell in `plate_shimmer_render_contract.rs` measures (that
+    /// figure is unchanged by interpolating), but a fractional pointer that gets
+    /// truncated is a pointer whose fraction was computed for nothing.
+    ///
+    /// `floor` rather than a cast: read positions go negative whenever a grain
+    /// reaches back past the start of the buffer, and a cast truncates toward
+    /// zero there, which would fold one sample of the grain onto its neighbour.
+    #[inline]
+    fn read_interpolated(&self, position: f64) -> f32 {
+        let buf_len = self.buffer.len();
+        let base = position.floor();
+        let fraction = (position - base) as f32;
+        let lower = (base as isize).rem_euclid(buf_len as isize) as usize;
+        let upper = if lower + 1 == buf_len { 0 } else { lower + 1 };
+        let (a, b) = (self.buffer[lower], self.buffer[upper]);
+        a + (b - a) * fraction
     }
 
     #[inline]
@@ -343,7 +410,10 @@ impl GranularShifter {
         }
 
         let buf_len = self.buffer.len();
-        self.buffer[self.write_pos] = input;
+        // Band-limit what the grains will resample, not what the blend returns.
+        let mut feed = self.feed[0].process(input);
+        feed = self.feed[1].process(feed);
+        self.buffer[self.write_pos] = feed;
         self.write_pos = (self.write_pos + 1) % buf_len;
 
         let gs = self.grain_size as f64;
@@ -351,31 +421,41 @@ impl GranularShifter {
         // A grain raises pitch by replaying recent history *faster* than it was
         // written, so its read pointer has to trail the write pointer by a
         // delay that shrinks as the grain plays: one grain of history at
-        // `phase = 0` down to none at `phase = 1`, offset by wherever this
-        // grain's scatter draw started it. The delay is consumed at
-        // `pitch_ratio - 1` samples per sample, so the pointer advances at
-        // `pitch_ratio` and the grain comes back up-shifted by exactly that
-        // factor. Trailing by a *growing* delay is the same construction upside
-        // down and shifts down instead, which is what a `gs * phase` delay does.
+        // `phase = 0`, closing on the write pointer as `phase` approaches 1,
+        // offset by wherever this grain's scatter draw started it. The delay is
+        // consumed at `pitch_ratio - 1` samples per sample, so the pointer
+        // advances at `pitch_ratio` and the grain comes back up-shifted by
+        // exactly that factor. Trailing by a *growing* delay is the same
+        // construction upside down and shifts down instead, which is what a
+        // `gs * phase` delay does.
+        //
+        // The end of the ramp is not a read of the sample just written. Closing
+        // on `write_pos` closes on the slot the write above already stepped
+        // past, which is the *oldest* sample the buffer holds — a whole buffer
+        // of delay, `4 * gs`, rather than none. That discontinuity is never
+        // heard because the Hann window below is at its zero exactly there, and
+        // the scatter draw normally keeps the pointer short of it anyway; it is
+        // the envelope, not the arithmetic, that makes the wrap silent.
         let read1 = self.write_pos as f64 - gs * (1.0 - self.phase1) - self.scatter1;
         let read2 = self.write_pos as f64 - gs * (1.0 - self.phase2) - self.scatter2;
 
         // Hann envelope, taken at the phase the pointers above were taken at so
         // a grain's window stays aligned with its own pointer. The window sits
         // at its zero on both ends of the ramp, which is where the pointer jumps
-        // back to a fresh start; the two grains stay a half period apart, so
-        // their envelopes sum to unity and the seam is inaudible.
+        // back to a fresh start, so the jump itself is silent.
+        //
+        // The two grains stay exactly a half period apart, so the envelopes sum
+        // to one. That holds the *envelope* flat, not the output: the grains
+        // read from independently drawn points in history, so they are mutually
+        // incoherent and their sum at the crossfade midpoint runs with the phase
+        // between them rather than with the envelope. Short-window RMS wobbles
+        // by some 9 dB at the octave and 4 dB at the fifth. An equal-power
+        // crossfade measures worse on both counts, so the wobble is what this
+        // design costs, not something left unfinished.
         let env1 = (0.5 * (1.0 - (TAU as f64 * self.phase1).cos())) as f32;
         let env2 = (0.5 * (1.0 - (TAU as f64 * self.phase2).cos())) as f32;
 
-        // `floor` rather than a cast: the read positions go negative whenever a
-        // grain reaches back past the start of the buffer, and a cast truncates
-        // toward zero there, which would fold one sample of the grain onto its
-        // neighbour.
-        let idx1 = (read1.floor() as isize).rem_euclid(buf_len as isize) as usize;
-        let idx2 = (read2.floor() as isize).rem_euclid(buf_len as isize) as usize;
-
-        let shifted = self.buffer[idx1] * env1 + self.buffer[idx2] * env2;
+        let shifted = self.read_interpolated(read1) * env1 + self.read_interpolated(read2) * env2;
 
         // Advance last, and redraw each grain's placement at its own wrap —
         // where its envelope is at zero, so the jump costs nothing.
