@@ -5,7 +5,8 @@
  * pins the Tauri capability; this one pins the four things the Electron shell
  * decides for itself and that are each silent when wrong:
  *
- * - the Content-Security-Policy every `app://` response carries,
+ * - the Content-Security-Policy every `app://` response carries — both the
+ *   policy string and its attachment, driven through the registered handler,
  * - the permission allow-list,
  * - the sender-origin check every IPC handler runs, exercised with a spoofed
  *   frame URL rather than only with the honest one,
@@ -15,9 +16,14 @@
  * The command sets are pinned in `commands.spec.ts`, where they are re-derived
  * from Rust.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { APP_ORIGIN, ISOLATION_HEADERS, PRODUCTION_CSP } from '../protocol.js';
+import { net, protocol } from 'electron';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { APP_ORIGIN, handleAppProtocol, ISOLATION_HEADERS, PRODUCTION_CSP, type ContentRoots } from '../protocol.js';
 import { withTrustedSender, type SenderFrameCarrier } from '../router.js';
 import {
     ALLOWED_PERMISSIONS,
@@ -60,13 +66,15 @@ describe('the production Content-Security-Policy', () => {
 
     it('admits only bundled workers and the enumerated provider and model hosts', () => {
         expect(directives.get('worker-src')).toEqual(["'self'"]);
-        // The enumerated production connection surface, and nothing wider,
-        // mirroring the Tauri policy (#2171): loopback HTTP for user-run
-        // OpenAI-compatible LLM servers, Hugging Face plus its CDN redirect
-        // hosts for Kokoro/WebLLM model artifacts, the MLC wasm runtime on
-        // raw.githubusercontent.com, and DDSP checkpoints on
-        // storage.googleapis.com. A bare `https:` is an open exfiltration
-        // channel and must never return.
+        // This shell's renderer egress, and nothing wider. Each source is a
+        // host renderer code in this build actually fetches: loopback HTTP for
+        // a user-run OpenAI-compatible LLM server (a hosted https provider
+        // streams through the native gateway over IPC, which no CSP directive
+        // governs), Hugging Face plus its CDN redirect hosts for Kokoro/WebLLM
+        // model artifacts, and raw.githubusercontent.com for the MLC wasm
+        // runtime, whose artifacts are sha256-pinned. A host with no consumer
+        // stays out, and a bare `https:` is an open exfiltration channel that
+        // must never return.
         expect(directives.get('connect-src')).toEqual([
             "'self'",
             'http://localhost:*',
@@ -75,7 +83,6 @@ describe('the production Content-Security-Policy', () => {
             'https://*.huggingface.co',
             'https://*.hf.co',
             'https://raw.githubusercontent.com',
-            'https://storage.googleapis.com',
         ]);
         expect(directives.get('connect-src')).not.toContain('https:');
         expect([...directives.values()].flat()).not.toContain('https:');
@@ -90,13 +97,87 @@ describe('the production Content-Security-Policy', () => {
         expect(directives.get('form-action')).toEqual(["'self'"]);
     });
 
-    it('ships that policy on every response, alongside the isolation headers', () => {
-        // Asserted against the headers the handler actually sends. A policy
-        // string that is correct in a constant nothing attaches is a policy
-        // that is not applied.
+    it('sits in the header set the shell attaches, alongside the isolation headers', () => {
         expect(ISOLATION_HEADERS['Content-Security-Policy']).toBe(PRODUCTION_CSP);
         expect(ISOLATION_HEADERS['Cross-Origin-Opener-Policy']).toBe('same-origin');
         expect(ISOLATION_HEADERS['Cross-Origin-Embedder-Policy']).toBe('require-corp');
+    });
+});
+
+/**
+ * A correct policy in a constant nothing attaches is a policy that is not
+ * applied, and in Electron there is no second chance: the header is per
+ * response, with no webview-level fallback, so a response that leaves the
+ * handler without it carries no policy at all rather than a weaker one. These
+ * cases therefore drive the handler `handleAppProtocol` registers and read the
+ * headers off the `Response` it returns.
+ */
+describe('the policy the protocol handler attaches', () => {
+    let roots: ContentRoots;
+
+    beforeAll(() => {
+        const distDir = mkdtempSync(join(tmpdir(), 'sourdaw-csp-dist-'));
+        writeFileSync(join(distDir, 'index.html'), '<!doctype html>');
+        roots = { distDir, samplesDir: mkdtempSync(join(tmpdir(), 'sourdaw-csp-samples-')) };
+    });
+
+    const installedHandler = (): ((request: Request) => Promise<Response> | Response) => {
+        const handle = vi.mocked(protocol.handle);
+        handle.mockClear();
+        handleAppProtocol(roots);
+
+        const registration = handle.mock.calls.at(-1);
+        if (registration === undefined) {
+            throw new Error('handleAppProtocol registered no handler');
+        }
+        return registration[1];
+    };
+
+    const expectPolicy = (response: Response): void => {
+        expect(response.headers.get('Content-Security-Policy')).toBe(PRODUCTION_CSP);
+        expect(response.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+        expect(response.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+        expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+    };
+
+    it('carries it on the response that serves a file', async () => {
+        // `net.fetch` answers over `file://` and sends none of these headers, so
+        // whatever it returns has to be re-wrapped before it reaches Chromium.
+        vi.mocked(net.fetch).mockResolvedValue(new Response('<!doctype html>', { status: 200 }));
+
+        const response = await installedHandler()(new Request(`${APP_ORIGIN}/index.html`));
+
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe('<!doctype html>');
+        expectPolicy(response);
+    });
+
+    it('carries it on every refusal the handler can answer with', async () => {
+        vi.mocked(net.fetch).mockResolvedValue(new Response('<!doctype html>', { status: 200 }));
+        const handler = installedHandler();
+
+        // Wrong host: `app://sourdaw:1` is a distinct origin to Chromium.
+        const foreignHost = await handler(new Request('app://sourdaw:1/index.html'));
+        expect(foreignHost.status).toBe(404);
+        expectPolicy(foreignHost);
+
+        // Unresolvable path. Chromium normalises `..` out of the URL before the
+        // handler sees it, so the reachable way into this branch is an encoding
+        // `decodeURIComponent` refuses.
+        const unresolvable = await handler(new Request(`${APP_ORIGIN}/%zz`));
+        expect(unresolvable.status).toBe(403);
+        expectPolicy(unresolvable);
+
+        // Extension-bearing miss: a 404, never the SPA fallback.
+        const missingAsset = await handler(new Request(`${APP_ORIGIN}/wasm/absent.wasm`));
+        expect(missingAsset.status).toBe(404);
+        expectPolicy(missingAsset);
+
+        // The read itself failing is the last path out of the handler.
+        vi.mocked(net.fetch).mockRejectedValueOnce(new Error('EIO'));
+        const readFailure = await handler(new Request(`${APP_ORIGIN}/index.html`));
+        expect(readFailure.status).toBe(404);
+        expectPolicy(readFailure);
     });
 });
 
