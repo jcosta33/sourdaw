@@ -1,0 +1,14 @@
+AGENTS.md
+  h_1228e573df1f42 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "190bed1bbe28cdb5071addfbbe3e586dee9a7d15",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
