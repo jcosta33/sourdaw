@@ -1,0 +1,871 @@
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  s_42d78e0bb71895::t_2e65bd82e2efa8 15
+src/modules/WorkspaceShell/presentations/components/MobileGate.tsx
+  s_42d78e0bb71895::t_d22784453bf8af 22-23
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 4,16-19,31,34,37-38,40,43,49-51,53,59,64-66,68,73-74,76,86,88,95,97,101,107,111,115,117,124,132-133,144,146,158-159,170-171,185-186,200,214-215,238-239,252-253,261-262,266,269,278,283,289,292,300,308,310
+public/wasm/scoring/scoring.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_42d78e0bb71895::t_30591f85c47145 30
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/startDictation.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-16
+src/modules/AiRuntime/useCases/voiceDictation/onDictationError.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/onDictationResult.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 9,14
+src/modules/SampleLibrary/repositories/readNativeDirectory.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-43
+crates/daw-dsp/src/gluten/detector.rs
+  s_42d78e0bb71895::t_50baa4c081884a 161-163
+crates/daw-io/src/audio_decode.rs
+  s_42d78e0bb71895::t_c0f1c0cd827281 87
+src/utils/desktopRuntime.ts
+  s_d91dcbe5f07151::t_649a1e95b577cd 1-19
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 4,8-10,19,43-44,48,53,57,64-65,80-81,95-96,110-111,120-121
+src/modules/AudioRendering/repositories/audioExport/__tests__/writeNativeAudioMixdownFile.spec.ts
+  s_42d78e0bb71895::t_206815a6771cec 3,7-8,13,31-33,35-37
+docs/architecture/09-ai-stack.md
+  s_42d78e0bb71895::t_dc3bb722ebc49d 75
+  s_42d78e0bb71895::t_7f667fc0618f49 9
+src/modules/AiGeneration/repositories/nativeAIBridge/__tests__/invokeAI.spec.ts
+  s_d91dcbe5f07151::t_8e40ae3608dd9d 3,7-8,12,14-16,20,24,28,31-32,34-35,38-40,47
+src/utils/__tests__/desktopBridge.spec.ts
+  s_d91dcbe5f07151::t_855618645b6a57 1-328,331-332
+src/modules/Crumbs/repositories/crumbsBridge/detectOnsets.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,3,12-13
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/stopDictation.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 9,14
+src/modules/PluginHost/useCases/faustEngine/compilerEngine.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 23
+docs/modern-primitives.md
+  s_42d78e0bb71895::t_d923df6075a18c 123
+  s_42d78e0bb71895::t_e45002fe254afc 14-15
+Cargo.toml
+  s_42d78e0bb71895::t_883bf3a810f718 12
+  s_42d78e0bb71895::t_d850cd99ee5acc 35-38
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_42d78e0bb71895::t_c169edca121a22 1
+crates/daw-dsp/src/crumbs/streaming/io_thread.rs
+  s_42d78e0bb71895::t_0f2547011b47c2 9-10
+src/modules/SampleLibrary/repositories/libraryPersistence/__tests__/libraryPersistence.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 6,10,33-34,37-38,174,244-245,248,270,357,372,418-421,426,459,478,500-503,511-514,522-525,533-536,548,562,576,587,596-598
+src/modules/Crumbs/useCases/positionTracking.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 55
+src/modules/PluginHost/repositories/pluginBridge/setPluginState.ts
+  s_d91dcbe5f07151::t_89125914e976bd 6,8-9
+  s_ab5443e65c7fba::t_f0c5f47c7b0757 1,12
+tests/e2e/aiGenerationPatternTestId.spec.ts
+  s_42d78e0bb71895::t_8c649f26ef7a74 13-14
+scripts/health-gates-server.sh
+  s_42d78e0bb71895::t_5df3f58c2c7156 66-69,71-72
+  s_42d78e0bb71895::t_21963d2533c61f 32-33,35-36,40
+src/modules/BrowserAi/repositories/capabilityDetector.ts
+  s_42d78e0bb71895::t_ce303ea59cd7a1 67-69,71-72,75
+  s_42d78e0bb71895::t_99684c165fa5a5 259,261
+  s_487e9aa1e46063::t_87931cef315b24 47
+src/modules/Crumbs/useCases/handleFileDrop.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/isNativeCrdtAvailable.spec.ts
+  s_42d78e0bb71895::t_af84880695f5e1 5,9,12,16-17
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_42d78e0bb71895::t_540d66a6d865e1 22
+electron/main.ts
+  s_42d78e0bb71895::t_786728dc39cca7 9
+AGENTS.md
+  s_42d78e0bb71895::t_7f7fae180c13e3 92
+  s_42d78e0bb71895::t_27fb500bf2c4cb 87
+  s_42d78e0bb71895::t_d72625a4541d96 101-102
+  s_42d78e0bb71895::t_7c123111cb7a85 115
+  s_42d78e0bb71895::t_eeb17fb7948f48 105-106
+src/modules/AiRuntime/models/ChatSystemPrompt.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 10
+src/modules/PluginHost/useCases/pluginLifecycle/readPluginState.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 12
+src/modules/DawInterchange/repositories/__tests__/saveDawProjectFileDialog.spec.ts
+  s_42d78e0bb71895::t_e8242b77e219bc 3,8-10,15-16,20,25,32,44
+src/modules/AudioEngine/models/EngineRtDiagnostics.ts
+  s_42d78e0bb71895::t_7b8133e3418f01 2-3
+src/modules/AudioEngine/repositories/audioAnalysis/__tests__/analyze-native-pitch.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,7-9,15,25,29,37,49-50,55
+src/modules/Project/repositories/nativeFileDialog/__tests__/openViaNative.spec.ts
+  s_42d78e0bb71895::t_28eaffc4653a77 3-62
+  s_ed5585887a9cf6::t_5cbe6b1ebe3065 65
+src/modules/SampleLibrary/repositories/__tests__/pickNativeSampleFolder.spec.ts
+  s_42d78e0bb71895::t_b07ab4575bd96b 3-33
+  s_42d78e0bb71895::t_c19df2710739b8 34
+crates/daw-dsp/src/crumbs/analysis/loop_points.rs
+  s_42d78e0bb71895::t_8cdac8bf37f0b0 52
+src/modules/AudioEngine/useCases/audioAnalysis/analyzePitchForClip.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 119
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,7-8,13,17-18,29-31,41,47,55,60,67,75,89,99
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/stopDictation.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-16
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+src/modules/MIDI/repositories/webMidi/messageHandlers.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 47
+src/modules/AiRuntime/useCases/voiceDictation/startDictation.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+electron-builder.yml
+  s_d91dcbe5f07151::t_02932635eed10c 108
+  s_ab5443e65c7fba::t_7c802902d41664 93,155
+src/modules/MIDI/stores/webMidiStore.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 8,10
+src/modules/Project/repositories/nativeFileDialog/pickFiles.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 2,4,69,74-75
+crates/daw-dsp/tests/fermenter_portamento_mode_legato.rs
+  s_42d78e0bb71895::t_50baa4c081884a 305-316,348-359
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 61,63
+src/utils/__tests__/desktopRuntime.spec.ts
+  s_d91dcbe5f07151::t_cdf84717f88714 3-30
+scripts/__tests__/resourceGuard.spec.ts
+  s_42d78e0bb71895::t_919a1999fc894a 398
+crates/daw-dsp/src/crumbs/sample.rs
+  s_42d78e0bb71895::t_1c13813bd8ef2e 184
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_42d78e0bb71895::t_e8dd59107a2715 59,61-62,66,69,74
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/getTemplates.spec.ts
+  s_42d78e0bb71895::t_8071e6dd949dec 1
+release/open-source-inventory.json
+  s_42d78e0bb71895::t_91b0045adcfbee 642
+  s_42d78e0bb71895::t_ea1e38eaa58449 498
+  s_42d78e0bb71895::t_afe604f2e35ae4 78
+  s_42d78e0bb71895::t_320ae3630c5736 626
+  s_42d78e0bb71895::t_d561098459b31e 79-80,83-84,86
+  s_42d78e0bb71895::t_64cac5ac457dcf 121-122
+  s_42d78e0bb71895::t_fe84a34e3739ea 190
+  s_42d78e0bb71895::t_a2d85ba225cf59 614
+  s_42d78e0bb71895::t_05517139eaea38 319
+  s_42d78e0bb71895::t_95ef3d8feb658e 634
+  s_42d78e0bb71895::t_8e8bc705385120 630
+electron/tsconfig.dev.json
+  s_42d78e0bb71895::t_928e6b0bdd1546 1-11
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/onDictationError.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-43
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/ensureWhisperReady.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 9,14
+src/modules/SampleLibrary/repositories/__tests__/readNativeAudioFileBytes.spec.ts
+  s_42d78e0bb71895::t_0458e03d96ff9d 3-21
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_42d78e0bb71895::t_2e65bd82e2efa8 321
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInputNative.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-19,22-24,26-27,29-37,39-41,43-46,49-51,53-54,56-59,61-76,80-83,85-98,101,103-107,110-112,115,117-132,134-146,150
+crates/daw-dsp/src/crumbs/mod.rs
+  s_42d78e0bb71895::t_e40ca991a51878 39
+crates/sourdaw-native/src/lib.rs
+  s_42d78e0bb71895::t_66c4c69c3389ab 32-33
+  s_42d78e0bb71895::t_cea4658e709361 82-86
+  s_42d78e0bb71895::t_102fa53bf00cc5 3-8
+src/modules/SampleLibrary/repositories/isNativeSampleLibraryRuntimeAvailable.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,4
+crates/daw-dsp/tests/crumbs_analysis_fft.rs
+  s_42d78e0bb71895::t_b63bfd82540b75 4
+src/modules/SampleLibrary/useCases/connectFolder/connectFolder.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 2,5,9,46,48,70,83-84
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_42d78e0bb71895::t_2e65bd82e2efa8 190,234,238,249,275,328,343,345
+src/modules/Levain/repositories/sampleLoader/resolveSampleBasePath.ts
+  s_d91dcbe5f07151::t_53057c5d224b5e 8-13,17,21,23
+  s_ab5443e65c7fba::t_497fe36990ac57 2-3
+src/modules/Project/repositories/nativeProjectFiles/__tests__/nativeProjectFiles.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,6,8,11,14-15,18,29,43-44,57,71,78,86-87,91-92
+crates/sourdaw-native/src/commands/engine_diagnostics.rs
+  s_42d78e0bb71895::t_1186f4667ac055 118-119
+src/modules/WorkspaceShell/presentations/views/__tests__/WorkspaceMobileGate.spec.tsx
+  s_42d78e0bb71895::t_27e1847bc917c1 137
+docs/06-testing.md
+  s_42d78e0bb71895::t_8ea3661ef3e3b5 207,211
+  s_42d78e0bb71895::t_0fda4a40e1d2d4 250
+  s_42d78e0bb71895::t_3b3e55c46af2e1 625,627,630-631,635
+  s_42d78e0bb71895::t_f7b5448da203c2 676,678
+  s_42d78e0bb71895::t_2162bd99ec84e7 13
+  s_42d78e0bb71895::t_09e065699f4ac1 35
+  s_42d78e0bb71895::t_ec218f9051c4db 120
+src/modules/MIDI/repositories/webMidi/setNativeEventUnlisten.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-5
+crates/sourdaw-native/AGENTS.md
+  s_42d78e0bb71895::t_4bd080c1cd8244 7-8
+src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 4,8,208,211,213-214,218,292,296
+public/audio/worklets/native-plugin-host-processor.js
+  s_42d78e0bb71895::t_3a5fe396fdbe2e 53-54
+src/modules/AudioEngine/AGENTS.md
+  s_42d78e0bb71895::t_784e3f3532607c 15
+electron/protocol.ts
+  s_42d78e0bb71895::t_dcdfa3e2449182 27-29,31-32,41
+  s_42d78e0bb71895::t_8a78dec6155b40 12-13
+crates/sourdaw-native/src/events.rs
+  s_42d78e0bb71895::t_9f1dda7bb2fd29 1-2
+  s_42d78e0bb71895::t_47aef1971dbcba 6
+crates/sourdaw-native/src/addon/windows.rs
+  s_42d78e0bb71895::t_e53d9dc66124a5 11
+  s_42d78e0bb71895::t_4c146f414b0239 103-104
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_42d78e0bb71895::t_a3e677b3d6caee 53
+  s_42d78e0bb71895::t_4477be5dc0f877 323
+public/wasm/manifest.json
+  s_42d78e0bb71895::t_2e65bd82e2efa8 15,20,26,31-32,35,40,45-46,49
+  s_42d78e0bb71895::t_c169edca121a22 12,17-18,21
+  s_42d78e0bb71895::t_4301080e8ff3e2 54
+src/modules/MIDI/repositories/webMidi/lifecycle/listNativeMidiInputs.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-83
+src/modules/SampleLibrary/useCases/connectFolder/scanNativeDirectory.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-108
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+docs/architecture/01-system.md
+  s_42d78e0bb71895::t_d97992eab7062a 643
+  s_42d78e0bb71895::t_9b4214ba927378 32
+  s_42d78e0bb71895::t_e42df35f91a84d 817
+  s_42d78e0bb71895::t_b21c2911090b46 316
+  s_42d78e0bb71895::t_928d8da39e3bb5 848
+  s_42d78e0bb71895::t_488e6c6cab1c82 872
+  s_42d78e0bb71895::t_3bcee61fb49d08 139,141,150
+  s_42d78e0bb71895::t_cd17bc4ade87d3 721
+  s_42d78e0bb71895::t_03567dabc806d5 20
+  s_42d78e0bb71895::t_a0aa4c3d369423 737
+  s_42d78e0bb71895::t_428eb2f3046ec8 290
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 11
+src/modules/PluginHost/useCases/pluginLifecycle/restorePluginState.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 14
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/onDictationError.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 9,14
+src/modules/Project/repositories/nativeProjectFiles/isNativeFileSystemAvailable.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,7
+src/modules/AiGeneration/repositories/nativeAIBridge/audioDenoising.ts
+  s_42d78e0bb71895::t_1e6895ef8bec1d 10
+src/modules/Crumbs/useCases/__tests__/voiceStacking.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 46
+docs/architecture/08-device-authoring.md
+  s_42d78e0bb71895::t_73c383babb1d6c 56
+src/modules/Collaboration/AGENTS.md
+  s_42d78e0bb71895::t_2e65bd82e2efa8 7
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 5,36-37,48
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+src/modules/Project/repositories/nativeTuning/__tests__/parseScl.spec.ts
+  s_42d78e0bb71895::t_dff977c54000ef 3,7-8,22,26
+src/modules/Crumbs/useCases/loadSample.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/rescanRoot.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 7,14,48,61,72,75,81
+crates/daw-dsp/src/crumbs/streaming/mod.rs
+  s_42d78e0bb71895::t_d1c63b6ead1de4 9
+docs/01-dependency-injection.md
+  s_42d78e0bb71895::t_8df9f0d00c6648 57
+src/modules/AiRuntime/useCases/voiceDictation/ensureWhisperReady.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+src/modules/Project/repositories/nativeProjectFiles/__tests__/desktopInvoke.spec.ts
+  s_42d78e0bb71895::t_39f427b6838145 3,8-9,21,27-30,33-40
+  s_42d78e0bb71895::t_2e65bd82e2efa8 5,13,22-25,32
+  s_42d78e0bb71895::t_8edecece0d3a6b 6,16
+src/utils/Notification/notificationEventBus.ts
+  s_42d78e0bb71895::t_8fd2cc7eb7d429 32
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 75
+  s_42d78e0bb71895::t_c169edca121a22 1
+docs/architecture/04-plugin-hosting-security.md
+  s_42d78e0bb71895::t_7f68337c17723f 31-32
+  s_42d78e0bb71895::t_aa7c9e23990033 40,43
+  s_42d78e0bb71895::t_405cd2baaa6db9 63
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/onDictationResult.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-43
+src/utils/Notification/promptUser.ts
+  s_42d78e0bb71895::t_9130f66caa2a9c 8
+src/utils/capabilities.ts
+  s_d91dcbe5f07151::t_30c1c1e6cd568b 5,11-12
+  s_d91dcbe5f07151::t_bde8d7d85020a0 57
+  s_ab5443e65c7fba::t_53daf2cf74b8dd 17,19,42,49
+src/modules/MIDI/repositories/webMidi/getNativeMode.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-5
+src/modules/SampleLibrary/repositories/__tests__/isNativeSampleLibraryRuntimeAvailable.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,7-8,13,16-17,20,23-24,27
+crates/daw-dsp/src/crumbs/analysis/fft.rs
+  s_42d78e0bb71895::t_dea7a5fe9c4b57 7
+src/modules/SampleLibrary/models/LibraryTypes.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 35,54,228
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_42d78e0bb71895::t_c06b99982526dc 54
+  s_42d78e0bb71895::t_0ee12a705ae959 3
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginStateBinaryIpc.spec.ts
+  s_42d78e0bb71895::t_af568ab5f5a386 1
+  s_42d78e0bb71895::t_85f346722ca278 36
+  s_42d78e0bb71895::t_43ab2add70fe15 3-4,6,8-11,13-17,22-23,35,41-43,46-47,52-53,56,59-60,64-65,69,74-75,79,84-85,91-92,95-96,98,102,106-107,111-113,117,119,127-128
+src/modules/PluginHost/useCases/pluginLifecycle/externalLatencyReporters.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 7
+src/utils/platformCapabilities.ts
+  s_42d78e0bb71895::t_034060f49201a0 5-7
+  s_487e9aa1e46063::t_1ea1547a8b5994 10,13,15,17,19,21,23,47
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInputNative.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-285
+crates/sourdaw-native/src/addon/mod.rs
+  s_42d78e0bb71895::t_0af40a2180f9a2 101-104
+  s_42d78e0bb71895::t_cd6ae8020c83a4 183-184
+  s_42d78e0bb71895::t_de97e431dbdaa6 4-5
+.agents/decisions/0004-plugin-hosting-security-policy.md
+  s_42d78e0bb71895::t_a8886006637ddf 78-84
+src/modules/AiRuntime/presentations/hooks/useVoiceRecording.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 6
+crates/sourdaw-native/src/host/plugin_window.rs
+  s_42d78e0bb71895::t_981c727ae5c763 285
+  s_42d78e0bb71895::t_bd5d42d7ee0db7 32-35,38
+  s_42d78e0bb71895::t_ddb595ea57bc1f 60
+  s_42d78e0bb71895::t_57b9d0cf466322 77-78,81
+  s_42d78e0bb71895::t_fef19633cb0390 273-276,278
+README.md
+  s_42d78e0bb71895::t_bbed34c9b8e789 4,6-7
+src/modules/Project/repositories/nativeFileDialog/openFileDialog.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,4,9,12,16-17
+src/modules/AiGeneration/repositories/nativeAIBridge/invokeAI.ts
+  s_42d78e0bb71895::t_849db68b844b0c 5
+  s_487e9aa1e46063::t_8f46e8d2dd4a87 1,4,8-9
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+docs/architecture/05-boundary-enforcement-limits.md
+  s_42d78e0bb71895::t_9452143f89269e 42-45,47-48
+src/modules/Crumbs/repositories/__tests__/is-crumbs-native-available.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,7-8,16-17,22-23
+src/modules/Project/repositories/nativeProjectFiles/desktopInvoke.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-11
+src/modules/SampleLibrary/useCases/connectFolder/reconcileScannedRoot.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 40
+src/modules/Crumbs/repositories/crumbsBridge/getCrumbsPosition.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,3,6-7
+crates/sourdaw-native/Cargo.toml
+  s_42d78e0bb71895::t_167870a88e8018 15-16
+  s_42d78e0bb71895::t_acb596ad5c81f9 10-11
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 2
+src/modules/Arrangement/repositories/__tests__/getPlatformPlugins.spec.ts
+  s_42d78e0bb71895::t_2a2cf541f79f73 12-13,17,23,33-36,46-47
+.dependency-cruiser.cjs
+  s_42d78e0bb71895::t_e731d9cf3122c3 605,610
+  s_42d78e0bb71895::t_079453edcba5cf 649,654
+  s_42d78e0bb71895::t_2e65bd82e2efa8 733,735,942
+  s_42d78e0bb71895::t_2f0cf5007092a5 54,603,647
+src/modules/MIDI/useCases/webMidiInput/resolveInputEventTime.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 9
+crates/daw-dsp/tests/fermenter_karplus_glide.rs
+  s_42d78e0bb71895::t_50baa4c081884a 122,148-151
+src/modules/AudioRendering/repositories/audioExport/__tests__/selectNativeAudioExportFile.spec.ts
+  s_42d78e0bb71895::t_8c26d5ea922e39 3,7-8,13,17,25
+src/modules/Project/repositories/nativeFileDialog/saveFileDialog.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,10,23,28,31
+electron/tsconfig.build.json
+  s_42d78e0bb71895::t_fc75e02e812d2f 13-19
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 258
+src/modules/Project/repositories/runtime/isNativeProjectRuntimeAvailable.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,4
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/offlineDeviceCoverage.spec.ts
+  s_42d78e0bb71895::t_5003e9eb71d6a1 99,103
+.agents/skills/desktop-platform/SKILL.md
+  s_42d78e0bb71895::t_a4f02aefc783d6 2-73
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/destroyWebMidi.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 9-10,15-17,19-21,32-33,36-37,56-57,60-61,77-79,98,100-101,106-108,111-113,117-118,174
+crates/sourdaw-native/src/commands/plugins.rs
+  s_42d78e0bb71895::t_63dcfe1f56a2fb 902
+  s_42d78e0bb71895::t_1ad286b32ea928 2117-2118
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/ensureWhisperReady.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-16
+src/modules/Crumbs/repositories/crumbsBridge/helpers.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,3-4
+src/modules/AudioEngine/engine/__tests__/panelReachesTheEngine.spec.tsx
+  s_42d78e0bb71895::t_4e419347626f6d 126,130
+  s_42d78e0bb71895::t_8bf1c5ae9f3ebe 54
+src/utils/sourdawCommandArguments.ts
+  s_42d78e0bb71895::t_dd476ca02be7f6 5-9
+  s_487e9aa1e46063::t_85bd395d43aec4 18
+.agents/decisions/0029-electron-desktop-shell.md
+  s_42d78e0bb71895::t_4b756f19be7081 1-72
+electron/channels.ts
+  s_42d78e0bb71895::t_2398e71b0e14b7 29
+  s_42d78e0bb71895::t_2d8c07d8b3ac4f 38-40
+  s_42d78e0bb71895::t_fda06323041523 70
+src/modules/AudioEngine/repositories/audioAnalysis/__tests__/commit-native-pitch-edit.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,7-9,15,29,40-41,51
+src/modules/PluginHost/repositories/pluginBridge/getPluginState.ts
+  s_d91dcbe5f07151::t_9e07b5e4c067a0 6-7
+  s_487e9aa1e46063::t_4431dd9fd73db2 1,16
+src/modules/AudioEngine/engine/NativePluginBridgeNode.ts
+  s_42d78e0bb71895::t_02c32b5457dfa0 3
+src/modules/AudioRendering/repositories/audioExport/__tests__/selectNativeAudioExportDirectory.spec.ts
+  s_42d78e0bb71895::t_17859c948bb0a0 3,7-8,13,17,22
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_42d78e0bb71895::t_fe61869700324f 176-177
+  s_487e9aa1e46063::t_9350b8247a8ad2 1,188
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/connectFolder.spec.ts
+  s_42d78e0bb71895::t_9d351429d33b19 3,5-12,24,32-33,55,57-58,63,75-76
+  s_42d78e0bb71895::t_45b8519e74f930 77
+electron/__tests__/webviewSecurity.spec.ts
+  s_42d78e0bb71895::t_32b7c8cb721e07 54-72
+  s_42d78e0bb71895::t_d19e0cee841d39 17-19
+  s_42d78e0bb71895::t_323d95d60ed7ec 4-5
+  s_42d78e0bb71895::t_df3dc161312f45 87-90
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 19,39-41,73,109-111,141,159,478,506
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 75
+  s_42d78e0bb71895::t_c169edca121a22 1
+crates/daw-dsp/tests/fermenter_ms20_stability.rs
+  s_42d78e0bb71895::t_50baa4c081884a 11
+.dependency-cruiser.shared.cjs
+  s_42d78e0bb71895::t_5eb9ad1cce8ca3 13-14
+  s_42d78e0bb71895::t_142d0c2617ec43 27-28,31-34,41,44
+  s_42d78e0bb71895::t_584a724b87cf69 71
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  s_42d78e0bb71895::t_7df5d6c41b0e2e 81
+  s_42d78e0bb71895::t_6f3d492dbdd953 106
+  s_42d78e0bb71895::t_752a682c541e32 31
+  s_42d78e0bb71895::t_b855e87949da0b 40
+  s_42d78e0bb71895::t_afc6431662502e 67
+  s_42d78e0bb71895::t_4f0ca486635083 57
+  s_42d78e0bb71895::t_826687eecb2e92 51
+  s_42d78e0bb71895::t_e805a0b0626c26 92
+  s_42d78e0bb71895::t_d94f9abdb23c0f 32-33
+  s_42d78e0bb71895::t_d1dea6d5fbfa7f 41
+  s_42d78e0bb71895::t_b9b56712fd10ea 52
+  s_42d78e0bb71895::t_b9637740d20e35 58
+  s_42d78e0bb71895::t_433fa6d7a1d59c 68-69
+  s_42d78e0bb71895::t_0113743682935e 82-83
+  s_42d78e0bb71895::t_844a82a215644a 93-94
+  s_42d78e0bb71895::t_672cccdf5a9cd3 107
+  s_362f3f5ae9444a::t_6ee3748270d617 3,7,11-12,21-22,37,131
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/invokeCommand.desktopRuntime.spec.ts
+  s_42d78e0bb71895::t_95e757ffb2b7da 5-6,13-17,19-20,22-24,26,32-33,40,43,47,57,60-61,64,67,73,75
+tests/e2e/audioEnginePickersTestId.spec.ts
+  s_42d78e0bb71895::t_dbf1a130292a95 10-13
+  s_42d78e0bb71895::t_0f7403005baaf5 62
+docs/architecture/02-rust-backend.md
+  s_42d78e0bb71895::t_b873cd20aef41c 604
+  s_42d78e0bb71895::t_fd425cb0bde68f 754,756
+  s_42d78e0bb71895::t_fcbe1761a52be5 47,49-59
+  s_42d78e0bb71895::t_271bbfc583d714 561
+  s_42d78e0bb71895::t_2bb4814fae68e3 577
+  s_42d78e0bb71895::t_5a0da30d0f9fab 147
+  s_42d78e0bb71895::t_5c1556d21d9f44 779,781
+  s_42d78e0bb71895::t_5d93902aa6abeb 834-842,845-859
+  s_42d78e0bb71895::t_14e239f3c7bf17 885-886
+  s_42d78e0bb71895::t_4de252c94cf72f 292
+  s_42d78e0bb71895::t_f7b25a5cf4a465 31-32,35
+  s_42d78e0bb71895::t_00a9a93931ae86 673
+  s_42d78e0bb71895::t_00c5342560f8fb 323,325-326,330-332,334,343,345-347
+  s_42d78e0bb71895::t_419baec7b7cc76 689
+  s_42d78e0bb71895::t_8365e3341cc9dc 920
+  s_42d78e0bb71895::t_3f90627b337b48 866-877
+  s_42d78e0bb71895::t_a26ab357e42357 586,588
+  s_42d78e0bb71895::t_28a6958655f26e 902-903
+  s_42d78e0bb71895::t_d90e4c5ececb8e 559
+  s_42d78e0bb71895::t_bd9d4fe046df95 124,136-138
+  s_42d78e0bb71895::t_be033640c3c8e2 104
+  s_42d78e0bb71895::t_534d73cea1e9a0 113
+  s_42d78e0bb71895::t_edac6763920b61 475
+  s_42d78e0bb71895::t_8e8c4e631d5d52 12
+  s_42d78e0bb71895::t_6be35998496cb4 194
+  s_42d78e0bb71895::t_d9f94d8239f39b 241
+  s_42d78e0bb71895::t_ef08bf8898e44e 264
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+electron/pluginGui.ts
+  s_42d78e0bb71895::t_e41d4c55cc233c 172-174
+  s_42d78e0bb71895::t_550b75a6d275c5 6-8
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/scanNativeDirectory.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-207
+src/modules/SampleLibrary/useCases/connectFolder/classifyScanError.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 5
+electron/__tests__/pluginGui.spec.ts
+  s_42d78e0bb71895::t_36716f88522aaa 244
+  s_42d78e0bb71895::t_a5ed2902236c6e 46-51
+  s_42d78e0bb71895::t_dde19857289256 25-30
+electron/tsconfig.json
+  s_42d78e0bb71895::t_5d104d357d205a 14,18-19
+  s_42d78e0bb71895::t_a5c3c64c679967 16-17
+  s_42d78e0bb71895::t_5e11e1024d19e4 26-29
+src/modules/SampleLibrary/useCases/__tests__/connectFolder.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 32
+src/modules/Crumbs/repositories/sampleTransfer/decodeCrumbsSampleFile.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,25
+src/modules/SampleLibrary/useCases/__tests__/resolveDroppedSampleFile.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 25,38,40,50,61,75,86,101,105,115,126
+src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 27
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_d91dcbe5f07151::t_3ecb3c7de422f4 28-31,33,38
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_42d78e0bb71895::t_50baa4c081884a 722-723,739-744
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 23,30,36,38-41,80-81,88-89,188,192-193,198-200,209-210,215,222,373,376-377,382,388,391-392,398,423-424,428-429,439,448-449,458,468-469,478,492-494,508-509,525,528-529
+package.json
+  s_42d78e0bb71895::t_87d3c3cfa4b6cf 46
+src/modules/AudioAnalysis/repositories/__tests__/isAudioAiServerRunning.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,7-8,13,16-17,22-23
+src/modules/Project/repositories/project/downloadProjectFile.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 2,16,22
+scripts/checkReleaseInventory.ts
+  s_42d78e0bb71895::t_7a061c5db77e58 128
+  s_42d78e0bb71895::t_8af84e3997206b 143
+src/modules/PluginHost/repositories/pluginBridge/processAudioIPC.ts
+  s_42d78e0bb71895::t_089defc1d4f3fd 6-7
+  s_487e9aa1e46063::t_dc4fcfb61a6298 2,63,68
+src/modules/Project/repositories/runtime/__tests__/isNativeProjectRuntimeAvailable.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 3,7-8,13,16-17,20,23-24,27
+.agents/decisions/0012-neither-target-degrades-the-other.md
+  s_42d78e0bb71895::t_16be8b4b0321cc 93-95
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_42d78e0bb71895::t_2e65bd82e2efa8 352-353,363-364,369,373,504,507,510,514
+crates/daw-dsp/tests/bacteria_grain_position.rs
+  s_42d78e0bb71895::t_50baa4c081884a 217
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_42d78e0bb71895::t_99a67988cea313 67
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 2,10,16-18,130,134,136-137,148,157,159,176
+crates/daw-plugin-host/src/clap_host.rs
+  s_42d78e0bb71895::t_057c352a771600 221-222
+src/modules/AiGeneration/useCases/actions/__tests__/handleAiDenoiseClip.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 5,10,24-25,69,86,92
+electron/commands.ts
+  s_42d78e0bb71895::t_de684c9cf8f872 151-153
+  s_42d78e0bb71895::t_f1b33b9d4f20d6 11-21,23-27
+  s_42d78e0bb71895::t_c63d39d0c13777 103-107
+src/modules/AudioEngine/useCases/audioAnalysis/__tests__/analyzePitchForClip.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 66
+src/modules/AiRuntime/useCases/voiceDictation/onDictationResult.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 4
+src/modules/AiRuntime/useCases/voiceDictation/stopDictation.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_42d78e0bb71895::t_2e65bd82e2efa8 17,30,45-46,142,145,159,249
+docs/architecture/03-typescript-module.md
+  s_42d78e0bb71895::t_c6bb4279612708 1212
+  s_42d78e0bb71895::t_129b23dc890642 937
+  s_42d78e0bb71895::t_adce0fa1450b41 395
+  s_42d78e0bb71895::t_8888d80b6af30c 1363
+  s_42d78e0bb71895::t_ba93d376018e83 585
+  s_42d78e0bb71895::t_d79d79c89b9107 723
+tests/e2e/desktopRuntime.spec.ts
+  s_42d78e0bb71895::t_f9eb33a0f0e67e 75-79
+  s_42d78e0bb71895::t_45d1b417b7bdaa 7,13
+  s_42d78e0bb71895::t_b748f5b0ef5a3d 55-59,62,64-70,87-103,105-107,109-112,116
+  s_42d78e0bb71895::t_17fd68004de129 121
+  s_42d78e0bb71895::t_d9040c58dd20a0 149,151
+  s_42d78e0bb71895::t_1dd6bc2639fa96 80-84
+  s_42d78e0bb71895::t_7ecddec10f42a4 135-148,150
+src/modules/MIDI/repositories/webMidi/getNativeEventUnlisten.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-5
+crates/daw-dsp/AGENTS.md
+  s_42d78e0bb71895::t_0381b6ff93e378 16
+electron/__tests__/commands.spec.ts
+  s_42d78e0bb71895::t_d1958a50f46f02 24-26
+  s_42d78e0bb71895::t_cb254e9bacc37f 46-70,72-86,88-95,98-107
+  s_42d78e0bb71895::t_e89ce4a00cb91f 6-10,12-17,19-20
+  s_42d78e0bb71895::t_9c68f670d7adac 71
+  s_42d78e0bb71895::t_b2f8ae4189cf27 135-145
+crates/sourdaw-native/build.rs
+  s_42d78e0bb71895::t_de5b8570e12405 2-3
+src/modules/Crumbs/repositories/crumbsBridge/detectSmartLoopPoints.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,3,11-12
+src/utils/desktopBridge.ts
+  s_d91dcbe5f07151::t_976b3501f644bd 1-302
+src/modules/AudioRendering/repositories/audioExport/__tests__/writeNativeAudioStemFile.spec.ts
+  s_42d78e0bb71895::t_aa09be5407aec6 3,7-9,14-15,18,20,28-31
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_42d78e0bb71895::t_5f6390af8868bd 330
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/nativeCrdtPersistence.spec.ts
+  s_42d78e0bb71895::t_f09e4791b86ada 20,22-25
+  s_487e9aa1e46063::t_5c65d1793648c6 29,36,49,66,74
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_42d78e0bb71895::t_2e65bd82e2efa8 41,543-544,564
+.dependency-cruiser.types.cjs
+  s_42d78e0bb71895::t_2e65bd82e2efa8 43,46,49
+crates/daw-plugin-host/src/params.rs
+  s_42d78e0bb71895::t_b3e4f25c934804 5
+.agents/decisions/README.md
+  s_42d78e0bb71895::t_e67d836a48d240 45
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInput.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 5,9-10,27,29,35,43-44
+src/modules/Project/repositories/project/__tests__/downloadProjectFile.spec.ts
+  s_42d78e0bb71895::t_095a8b1c30c84a 37
+  s_42d78e0bb71895::t_993e8b5ac8286d 38
+  s_ed5585887a9cf6::t_0534a2a79c3b46 3,8-9,48,67
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_42d78e0bb71895::t_1e173c4de406d2 450
+  s_42d78e0bb71895::t_b3a1ca8a484eb0 292
+  s_42d78e0bb71895::t_4b6d7116d34c36 454-455,469-472,474-478
+  s_42d78e0bb71895::t_3c6d60d9ab5611 296-297,301,341-342,350,356,382,426,429,431,434,437,440-444,451
+  s_42d78e0bb71895::t_7d153b9f6f2c40 381
+  s_42d78e0bb71895::t_1a5d9cd5289c5d 385,427,445
+  s_487e9aa1e46063::t_6196734e709c92 383,386,452,484-485,487-488,505,507,581-582,623
+src/infra/dialogService/PromptDialog.tsx
+  s_42d78e0bb71895::t_84916788626d44 12
+src/modules/SampleLibrary/repositories/__tests__/readNativeDirectory.spec.ts
+  s_42d78e0bb71895::t_6d7d360ddc66b0 3-24
+src/modules/Crumbs/repositories/crumbsBridge/getWaveformPeaks.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,3,11-12
+scripts/check-dependency-boundaries.mjs
+  s_42d78e0bb71895::t_2e65bd82e2efa8 24,265,926-927
+src/modules/BrowserAi/repositories/__tests__/capabilityDetector.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 6,9-10,94,354,365
+src/modules/Project/repositories/nativeProjectFiles/loadProjectFromFile.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,5,14-15
+.dependency-cruiser.tests.cjs
+  s_42d78e0bb71895::t_2e65bd82e2efa8 10-11,25,47
+scripts/wasm-artifacts.ts
+  s_42d78e0bb71895::t_2dddebab1b47d2 380
+src/utils/__tests__/capabilities.spec.ts
+  s_d91dcbe5f07151::t_6cc1289811daa5 14
+  s_d91dcbe5f07151::t_2e7c459f35de69 49
+  s_d91dcbe5f07151::t_a9f620415edc15 60
+  s_ab5443e65c7fba::t_50a6c0b54ef717 48,54,65,81
+tests/e2e/exportAudioEvidence.spec.ts
+  s_42d78e0bb71895::t_9818831f61224f 11
+src/modules/MIDI/repositories/webMidi/lifecycle/destroyWebMidi.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,4-5,11-12,25,32-33,36,38-39
+src/modules/Project/repositories/nativeProjectFiles/helpers.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,3-4
+public/wasm/daw-dsp/daw_dsp.js
+  s_42d78e0bb71895::t_2e65bd82e2efa8 144
+docs/architecture/06-crdt-collaboration.md
+  s_42d78e0bb71895::t_83db8830ccac45 76
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/nativeApplyChange.ts
+  s_42d78e0bb71895::t_c9ca11f7811d42 5-8
+crates/daw-engine/src/audio_bridge.rs
+  s_42d78e0bb71895::t_7db5fa949d9f0e 66
+src/modules/Project/repositories/nativeProjectFiles/saveProjectToFile.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,5,14-15
+src/modules/Crumbs/repositories/crumbsBridge/loadSample.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1,3,8-9
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/startDictation.spec.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 9,14
+.agents/decisions/open-decision-docket.md
+  s_42d78e0bb71895::t_2762ccb8ebf1b0 1177
+  s_42d78e0bb71895::t_a5d8b591d2fdd9 818
+  s_42d78e0bb71895::t_65b2b1c2938da7 839
+  s_42d78e0bb71895::t_b4bd1cdc87e826 164
+  s_42d78e0bb71895::t_a892980478408e 585
+  s_42d78e0bb71895::t_ccf3a1fe9b1e0b 45-46
+  s_42d78e0bb71895::t_97ff58c32e1554 871
+src/modules/MIDI/repositories/webMidi/setNativeMode.ts
+  s_42d78e0bb71895::t_2e65bd82e2efa8 1-5
+.github/CODEOWNERS
+  s_d91dcbe5f07151::t_007ff806eadf56 81
+Cargo.lock
+  s_487e9aa1e46063::t_35b974f77dc701 27,140,182,300,449,651,665-666,668,670-672,676-677,679,681,685-686,688,702,899-900,902,904-908,912-913,915,917-918,920-922,926-927,929,931,933-936,940-941,943,946-947,949,951-961,965-966,968,970-972,976-977,979,981,985-986,988,991-992,994,997-998,1000,1003-1004,1006,1127,1455-1456,1634,1644-1645,1669-1670,1683,1705,1798,1819,1834,1858,1868,1887,1948-1949,1951,1954-1955,1957,1960-1961,1963,1966-1967,1969,1971,2008,2115,2176,2231,2443-2444,2446-2450,2452-2454,2457,2466,2539-2540,2640,2669-2670,2672,2675-2676,2678,2680-2694,2698-2699,2791,2920,3020-3022,3026-3027,3029,3031-3033,3037-3038,3040,3042-3043,3047-3048,3050,3052-3056,3074-3075,3077,3086,3110,3381,3405,3407,3908,3919-3920,3950-3951,3970
+build/entitlements.mac.plist
+  s_d91dcbe5f07151::t_dea3018b8265bb 6
+src/modules/AiGeneration/useCases/actions/handleAiDenoiseClip.ts
+  s_d91dcbe5f07151::t_07f62827783f79 3,23
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/clearCloudProviderConfig.spec.ts
+  s_d91dcbe5f07151::t_18709665336c96 14
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/setCloudProviderConfig.spec.ts
+  s_d91dcbe5f07151::t_6f6abd5dab1df4 12,16-18,27,130
+src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts
+  s_d91dcbe5f07151::t_35ab3116c05adf 3,21,47
+src/modules/AiRuntime/repositories/providerGatewayDependencies.ts
+  s_d91dcbe5f07151::t_d67619dc4f3672 1,4,11
+src/modules/AiRuntime/repositories/voiceInput/__tests__/isNativeVoiceInputAvailable.spec.ts
+  s_d91dcbe5f07151::t_0b9d70b65e04a4 3,7-8,17,23
+src/modules/AiRuntime/repositories/voiceInput/isNativeVoiceInputAvailable.ts
+  s_d91dcbe5f07151::t_e188d13101e255 1,4
+src/modules/AiRuntime/repositories/voiceNativeAdapter/ensureWhisperReady.ts
+  s_d91dcbe5f07151::t_cf8468c3a2949d 1,8
+src/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationError.ts
+  s_d91dcbe5f07151::t_5de10d910accbd 1,15
+src/modules/AiRuntime/repositories/voiceNativeAdapter/onDictationResult.ts
+  s_d91dcbe5f07151::t_84f7da2aa1c51e 1,16
+src/modules/AiRuntime/repositories/voiceNativeAdapter/startDictation.ts
+  s_d91dcbe5f07151::t_752e1c7939ad29 1,5
+src/modules/AiRuntime/repositories/voiceNativeAdapter/stopDictation.ts
+  s_d91dcbe5f07151::t_99aee080df36a9 1,5
+src/modules/Arrangement/useCases/soundPresetLibrary.ts
+  s_d91dcbe5f07151::t_d31687f3328c71 2,22
+src/modules/AudioAnalysis/repositories/isAudioAiServerRunning.ts
+  s_d91dcbe5f07151::t_38ca8ad29abf02 1,5
+src/modules/AudioEngine/repositories/audioAnalysis/__tests__/listen-pitch-analysis-progress.spec.ts
+  s_d91dcbe5f07151::t_6d1f2dcaa089a4 3,7-9,15,23,48,54,60
+src/modules/AudioEngine/repositories/audioAnalysis/analyze-native-pitch.ts
+  s_d91dcbe5f07151::t_d89c33b9e51cef 1,60,64
+src/modules/AudioEngine/repositories/audioAnalysis/commit-native-pitch-edit.ts
+  s_d91dcbe5f07151::t_0c4369bd6257a8 1,24,28
+src/modules/AudioEngine/repositories/audioAnalysis/listen-pitch-analysis-progress.ts
+  s_d91dcbe5f07151::t_27097a06c0954c 1,19,23
+src/modules/AudioEngine/repositories/audioAnalysis/read-native-audio-file.ts
+  s_d91dcbe5f07151::t_aea416a289c80e 2
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  s_d91dcbe5f07151::t_fc0e1a5cd32f8e 2,89,93
+src/modules/AudioRendering/repositories/audioExport/selectNativeAudioExportDirectory.ts
+  s_d91dcbe5f07151::t_92e0d34ed99b47 1
+src/modules/AudioRendering/repositories/audioExport/selectNativeAudioExportFile.ts
+  s_d91dcbe5f07151::t_dc2736301e128b 1
+src/modules/AudioRendering/repositories/audioExport/writeNativeAudioMixdownFile.ts
+  s_d91dcbe5f07151::t_40536ea979ee24 1
+src/modules/AudioRendering/repositories/audioExport/writeNativeAudioStemFile.ts
+  s_d91dcbe5f07151::t_2d6d6c2a9aa123 1
+src/modules/ControlSurface/repositories/__tests__/pushHardwareTransport.spec.ts
+  s_d91dcbe5f07151::t_34dd83365d4fd6 3,7,9-11,23-24,26,33,68,76,78,87
+src/modules/ControlSurface/repositories/pushHardwareTransport.ts
+  s_d91dcbe5f07151::t_64f27ee8b56f1b 1,69,74,158-160,204
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/invokeCommand.ts
+  s_d91dcbe5f07151::t_348f7f4c4e5bae 1,4,8-9
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/isNativeCrdtAvailable.ts
+  s_d91dcbe5f07151::t_3b140981c65d84 1,5
+src/modules/Crumbs/repositories/__tests__/get-dropped-crumbs-file-path.spec.ts
+  s_d91dcbe5f07151::t_2c408d54b6e589 9
+src/modules/Crumbs/repositories/crumbsBridge/armRecording.ts
+  s_d91dcbe5f07151::t_c9f6e9be70e6a4 1,9,12
+src/modules/Crumbs/repositories/crumbsBridge/createCrumbsInstance.ts
+  s_d91dcbe5f07151::t_00a94311f0ff90 1,4,7
+src/modules/Crumbs/repositories/crumbsBridge/crumbsAllSoundOff.ts
+  s_d91dcbe5f07151::t_ef92e0941c5e4a 1,4,7
+src/modules/Crumbs/repositories/crumbsBridge/crumbsNoteOff.ts
+  s_d91dcbe5f07151::t_0af759b064de06 1,4,7
+src/modules/Crumbs/repositories/crumbsBridge/crumbsNoteOn.ts
+  s_d91dcbe5f07151::t_4620bab66c70dc 1,4,7
+src/modules/Crumbs/repositories/crumbsBridge/destroyCrumbsInstance.ts
+  s_d91dcbe5f07151::t_fe15836658daa7 1,4,7
+src/modules/Crumbs/repositories/crumbsBridge/setCrumbsMode.ts
+  s_d91dcbe5f07151::t_e15fb5c36a1594 1,6,9
+src/modules/Crumbs/repositories/crumbsBridge/setCrumbsParam.ts
+  s_d91dcbe5f07151::t_a2e56575b0650b 1,4,7
+src/modules/Crumbs/repositories/crumbsBridge/stopRecording.ts
+  s_d91dcbe5f07151::t_e3bae612b633da 1,4,7
+src/modules/Crumbs/repositories/get-dropped-crumbs-file-path.ts
+  s_d91dcbe5f07151::t_62d405cb1c93e9 2
+src/modules/Crumbs/repositories/is-crumbs-native-available.ts
+  s_d91dcbe5f07151::t_d6bba5ada27eae 1,4
+src/modules/DawInterchange/handlers/__tests__/handleExportDawProject.spec.ts
+  s_d91dcbe5f07151::t_5df8bbdbaa88fe 5,41-42,56,66,77,89,115
+src/modules/DawInterchange/handlers/handleExportDawProject.ts
+  s_d91dcbe5f07151::t_b181cff49b0504 4,27
+src/modules/DawInterchange/repositories/saveDawProjectFileDialog.ts
+  s_d91dcbe5f07151::t_cf8716e6d122e0 1
+src/modules/DawInterchange/repositories/writeDawProjectFile.ts
+  s_d91dcbe5f07151::t_75c7d5c50e15cb 1
+src/modules/MIDI/repositories/webMidi/__tests__/stateAccessors.spec.ts
+  s_d91dcbe5f07151::t_2ff0aad1ebd7d5 3-4
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/listNativeMidiInputs.spec.ts
+  s_d91dcbe5f07151::t_e40eebe0be91e5 3,5-7,10-11,13,19,24,27,32,40,46,58,63,65,69,77,79,83,89,97,105,111
+src/modules/MIDI/repositories/webMidi/lifecycle/resolveNativeMidiPort.ts
+  s_d91dcbe5f07151::t_bc9b6a791eec59 1,11
+src/modules/PluginHost/repositories/pluginBridge/closePluginGui.ts
+  s_d91dcbe5f07151::t_f054e1f8fac3ac 1,4,7
+src/modules/PluginHost/repositories/pluginBridge/getDefaultPluginPaths.ts
+  s_d91dcbe5f07151::t_1b3e0e7baf994d 1,4,7
+src/modules/PluginHost/repositories/pluginBridge/getPluginParameters.ts
+  s_d91dcbe5f07151::t_448a7c4f244d07 1,6,9
+src/modules/PluginHost/repositories/pluginBridge/isPluginGuiSupported.ts
+  s_d91dcbe5f07151::t_4c9d093fa1491c 1,4,7
+src/modules/PluginHost/repositories/pluginBridge/loadPlugin.ts
+  s_d91dcbe5f07151::t_6c0bd0cb27ee4f 1,6,18
+src/modules/PluginHost/repositories/pluginBridge/onPluginLatencyChanged.ts
+  s_d91dcbe5f07151::t_4c43193e2cdc03 1,23,26
+src/modules/PluginHost/repositories/pluginBridge/openPluginGui.ts
+  s_d91dcbe5f07151::t_3db057e6fd2773 1,6,9
+src/modules/PluginHost/repositories/pluginBridge/scanPlugins.ts
+  s_d91dcbe5f07151::t_2da64cf6565ac4 1,6,9
+src/modules/PluginHost/repositories/pluginBridge/setPluginBypass.ts
+  s_d91dcbe5f07151::t_e2b927fc362691 1,9,12
+src/modules/PluginHost/repositories/pluginBridge/setPluginParameter.ts
+  s_d91dcbe5f07151::t_05c465200ca622 1,10,13
+src/modules/PluginHost/repositories/pluginBridge/unloadPlugin.ts
+  s_d91dcbe5f07151::t_8fba6f4a73bb19 1,14,17
+src/modules/Project/repositories/nativeFileDialog/openViaNative.ts
+  s_d91dcbe5f07151::t_f6ecc9f5d06e8a 1,7
+src/modules/Project/repositories/nativeProjectFiles/getProjectDirectory.ts
+  s_d91dcbe5f07151::t_729db042c1f7b6 1,3,16,20
+src/modules/Project/repositories/nativeProjectFiles/listProjectFiles.ts
+  s_d91dcbe5f07151::t_9fdc910cf5c3c8 1,10
+src/modules/Project/repositories/nativeTuning/parseScl.ts
+  s_d91dcbe5f07151::t_e21e97f093ac2e 1,37
+src/modules/Project/useCases/projectTemplates/templateDefinitions/getTemplates.ts
+  s_d91dcbe5f07151::t_cf3501050060a3 1,8
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_fefb1061a265d3::t_0e1835ed7876d8 35,226
+src/modules/SampleLibrary/repositories/pickNativeSampleFolder.ts
+  s_d91dcbe5f07151::t_ac8c50b8f8bc82 1,3,5
+src/modules/SampleLibrary/repositories/readNativeAudioFileBytes.ts
+  s_d91dcbe5f07151::t_0fba7aeb0db60c 1,3,7,9
+src/modules/SampleLibrary/useCases/__tests__/readNativeLibrarySampleFile.spec.ts
+  s_d91dcbe5f07151::t_44151dddb1be68 5,7,13,15-16,18,24,30-31,33,39,47-48,50,53
+src/modules/SampleLibrary/useCases/connectFolder/rescanRoot.ts
+  s_d91dcbe5f07151::t_b0ae746fd8d7f2 4,34
+src/modules/SampleLibrary/useCases/index.ts
+  s_d91dcbe5f07151::t_5267f35a3a1e01 3
+src/modules/SampleLibrary/useCases/readNativeLibrarySampleFile.ts
+  s_d91dcbe5f07151::t_a5a3ee07b11853 4,6,12,14-16,20,34
+src/modules/SampleLibrary/useCases/resolveDroppedSampleFile.ts
+  s_d91dcbe5f07151::t_b7a1ce2cc7f28a 7,29,35,50
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_d91dcbe5f07151::t_9d5c1de8d240a6 160
+src/utils/__tests__/platformCapabilities.spec.ts
+  s_d91dcbe5f07151::t_fcd78439f6177d 17-19,32-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "96296bf24cf98296a7aa3bb4e4f9d3aa29842687",
+  "prompts": {},
+  "sessions": {
+    "s_362f3f5ae9444a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-adfc845a73327b87d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_42d78e0bb71895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5db0d749-ff23-4f4c-8e27-17b7e9b2a62c",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d91dcbe5f07151": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c9dd1e1-14d7-42ef-bb59-2967a892f992",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ed5585887a9cf6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a8f5ed70b906d0708",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_fefb1061a265d3": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7c5d9f06-ce17-42d1-99dd-55e7b7f93aa7",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
