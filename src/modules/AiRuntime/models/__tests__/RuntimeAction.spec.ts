@@ -68,6 +68,7 @@ describe('RuntimeAction', () => {
             { type: 'setClipFade', payload: { clipId: 'clip-1', fadeInBeats: 1, fadeOutBeats: 2 } },
             { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
             { type: 'glueClips', payload: { clipIds: ['clip-1', 'clip-2'] } },
+            { type: 'stripSilence', payload: { clipId: 'clip-1', threshold: -40, minDuration: 0.5 } },
             { type: 'setPunchEnabled', payload: { enabled: true } },
             {
                 type: 'addAdjustmentRegion',
@@ -110,6 +111,7 @@ describe('RuntimeAction', () => {
             'setClipFade',
             'setClipLoop',
             'glueClips',
+            'stripSilence',
             'setPunchEnabled',
             'addAdjustmentRegion',
             'automateTrackGainRange',
@@ -158,6 +160,8 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'glueClips', 'targetClipId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'glueClips', 'expected'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'glueClips', 'replacement'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'stripSilence', 'expected'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'stripSilence', 'replacement'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setPunchEnabled', 'expectedEnabled'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAdjustmentRegion', 'regionId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAdjustmentRegion', 'expectedLayer'>>().toEqualTypeOf<false>();

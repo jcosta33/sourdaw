@@ -1,26 +1,33 @@
-import { restoreMidiClipGlueState } from '#/modules/MIDI/useCases';
-import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { setTrackState } from '../../repositories/track/setTrackState';
-import { applyClipAutomationLaneTransition, clipAutomationLaneTransitionMatchesStore } from '../clip/clipAutomationLaneTransition';
-import { insertReplacementClips } from '../clipReplacementSnapshot';
-import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
 
-import { getClipIdCensus } from './getClipIdCensus';
-import { hasClipGlueDependencies } from './hasClipGlueDependencies';
+import { applyClipAutomationLaneTransition, clipAutomationLaneTransitionMatchesStore } from './clip/clipAutomationLaneTransition';
+import { getClipIdCensus } from './clipEditing/getClipIdCensus';
+import { insertReplacementClips } from './clipReplacementSnapshot';
+import { prepareClipSatelliteStateRestore } from './timeOperations/prepareClipSatelliteStateRestore';
 
-type RestoreClipGlueStateInput = {
-    expected: ClipGlueActionSnapshot;
-    replacement: ClipGlueActionSnapshot;
+type RestoreStripSilenceStateInput = {
+    expected: StripSilenceActionSnapshot;
+    replacement: StripSilenceActionSnapshot;
 };
 
-export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueStateInput): boolean {
+/**
+ * Apply (or, called with the arguments swapped, undo) one strip-silence
+ * transition: `expected` is the snapshot the stores must currently hold and
+ * `replacement` is the snapshot they hold afterward. Rejects without writing
+ * anything if the live stores have drifted from `expected` along any
+ * dimension the transition touches — the clip rectangles, the gain
+ * envelope/warp state satellites, or the clip-scoped automation lanes
+ * (ledger #2108).
+ */
+export function restoreStripSilenceState({ expected, replacement }: RestoreStripSilenceStateInput): boolean {
     if (expected.trackId !== replacement.trackId) {
         return false;
     }
-    const affectedClipIds = expected.midi.clips.map((clip) => clip.clipId);
-    const replacementAffectedClipIds = replacement.midi.clips.map((clip) => clip.clipId);
+    const affectedClipIds = expected.clipSatellites.map((entry) => entry.clipId);
+    const replacementAffectedClipIds = replacement.clipSatellites.map((entry) => entry.clipId);
     const expectedClipIds = expected.clips.map((clip) => clip.id);
     const replacementClipIds = replacement.clips.map((clip) => clip.id);
     if (
@@ -37,14 +44,13 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     ) {
         return false;
     }
-    if (hasClipGlueDependencies(affectedClipIds)) {
-        return false;
-    }
+
     const state = getTrackState();
     const track = state?.tracks.find((candidate) => candidate.id === expected.trackId);
     if (!state || !track) {
         return false;
     }
+
     const clipIdCensus = getClipIdCensus({ clipIds: affectedClipIds, state });
     const hasUnexpectedGlobalPlacement = affectedClipIds.some((clipId) => {
         const expectedClip = expected.clips.find((clip) => clip.id === clipId);
@@ -61,6 +67,7 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     if (hasUnexpectedGlobalPlacement) {
         return false;
     }
+
     const expectedIndexes = expected.clips.map((clip) =>
         track.clips.findIndex(
             (candidate) => candidate.id === clip.id && JSON.stringify(candidate) === JSON.stringify(clip)
@@ -75,9 +82,10 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     }
 
     // Validate every store this operation touches BEFORE mutating any of
-    // them — `restoreMidiClipGlueState` and `setTrackState` below have no
-    // rollback, so a guard that fails after one of them has already written
-    // would leave the transaction half-applied.
+    // them, mirroring restoreClipGlueState's atomicity discipline: the
+    // satellite and automation-lane guards must both pass before
+    // `setTrackState` writes, so a later guard failure can never leave a
+    // half-applied transaction.
     const expectedClipAutomationLanes = expected.clipAutomationLanes as never;
     const replacementClipAutomationLanes = replacement.clipAutomationLanes as never;
     const clipSatellitePreparation = prepareClipSatelliteStateRestore({
@@ -89,28 +97,26 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
         return false;
     }
     // The completeness check re-reads live lanes for the full affected set,
-    // so a lane added to the glued clip out of band (after glue, before
+    // so a lane added to a segment out of band (after the strip, before
     // undo) is detected here and blocks rather than getting silently
-    // orphaned once the glued clip id stops existing.
+    // orphaned once that segment's clip id stops existing.
     if (!clipAutomationLaneTransitionMatchesStore(affectedClipIds, expectedClipAutomationLanes)) {
         return false;
     }
 
-    if (!restoreMidiClipGlueState({ expected: expected.midi, replacement: replacement.midi })) {
-        return false;
-    }
-
-    // Gain envelope / warp state: the first source's satellites migrate onto
-    // the glued clip (or back, on undo); the rest were retired. Nothing else
-    // could have changed the stores between the check above and here — this
-    // whole function runs synchronously — so `apply` cannot fail now.
+    // Gain envelope / warp state: every segment's satellites migrate in (or
+    // the target's migrate back, on undo). Nothing else could have changed
+    // the stores between the checks above and here — this function runs
+    // synchronously — so `apply` cannot fail now.
     if (clipSatellitePreparation.hasChanges && !clipSatellitePreparation.apply()) {
         return false;
     }
 
-    // Clip-scoped automation lanes: every source's lanes were retired (or
-    // restored, on undo) — none migrate to the glued clip.
-    if (!applyClipAutomationLaneTransition(affectedClipIds, expectedClipAutomationLanes, replacementClipAutomationLanes)) {
+    // Clip-scoped automation lanes: only the first segment can inherit one;
+    // the rest (and the target's own, on redo) were retired.
+    if (
+        !applyClipAutomationLaneTransition(affectedClipIds, expectedClipAutomationLanes, replacementClipAutomationLanes)
+    ) {
         return false;
     }
 

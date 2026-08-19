@@ -5,9 +5,10 @@ import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MI
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { setWarpState, warpStates } from '../../../stores/warpStates';
 import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
 
@@ -53,6 +54,7 @@ describe('glueClips MIDI state integration', () => {
         takeLaneStore.set({ lanes: [] });
         stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
+        warpStates.clear();
     });
 
     afterEach(() => {
@@ -62,6 +64,7 @@ describe('glueClips MIDI state integration', () => {
         takeLaneStore.set({ lanes: [] });
         stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
+        warpStates.clear();
     });
 
     it('projects only adjacent plain source pairs without hidden clip dependencies', () => {
@@ -87,8 +90,10 @@ describe('glueClips MIDI state integration', () => {
                 ),
             })),
         });
+        // A source's gain envelope no longer disqualifies the pair: it migrates
+        // onto the glued clip rather than blocking the glue (ledger #2108).
         setEnvelope('clip-a', { clipId: 'clip-a', points: [], enabled: true });
-        expect(getGlueEligibleClipPairs()).toEqual([]);
+        expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
     });
 
     it('projects an adjacent source pair across an unrelated overlapping clip', () => {
@@ -216,7 +221,7 @@ describe('glueClips MIDI state integration', () => {
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
     });
 
-    it('refuses glue while a source clip owns automation instead of stranding the lane', () => {
+    it('retires a source clip automation lane instead of refusing the glue or stranding the lane (regression #2108)', () => {
         automationStore.set({
             lanes: [
                 {
@@ -235,23 +240,47 @@ describe('glueClips MIDI state integration', () => {
                 },
             ],
         });
-        const previousTracks = trackStore.value!.tracks;
 
-        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
 
-        expect(trackStore.value!.tracks).toEqual(previousTracks);
-        expect(automationStore.value!.lanes).toMatchObject([{ id: 'lane-clip-a-gain', clipId: 'clip-a' }]);
-        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-a');
-        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-b');
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        // No coherent per-clip merge exists for automation: the source's lane
+        // is retired rather than migrated onto the glued clip.
+        expect(automationStore.value!.lanes).toEqual([]);
+        expect(midiStore.value!.notesByClipId).not.toHaveProperty('clip-a');
+        expect(midiStore.value!.notesByClipId).toHaveProperty(glued.id);
     });
 
-    it('refuses glue while a source clip owns a gain envelope', () => {
-        setEnvelope('clip-a', { clipId: 'clip-a', enabled: true, points: [] });
+    it('migrates the FIRST source clip gain envelope onto the glued clip (regression #2108)', () => {
+        // clip-a starts at beat 8, clip-b at beat 12 — clip-a sorts first.
+        const gainEnvelope = { clipId: 'clip-a', enabled: true, points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }] };
+        setEnvelope('clip-a', gainEnvelope);
 
-        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
 
-        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
-        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-a');
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(getEnvelope('clip-a')).toBeUndefined();
+        expect(getEnvelope(glued.id)).toEqual({ ...gainEnvelope, clipId: glued.id });
+    });
+
+    it('retires the SECOND source clip gain envelope and warp state instead of migrating them (regression #2108)', () => {
+        setEnvelope('clip-b', { clipId: 'clip-b', enabled: true, points: [{ id: 'p1', beatOffset: 0, gainDb: -3 }] });
+        setWarpState('clip-b', {
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0 }],
+            stretchMode: 'beats',
+            originalTempo: 120,
+        });
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
+
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(getEnvelope('clip-b')).toBeUndefined();
+        expect(warpStates.has('clip-b')).toBe(false);
+        // Only the first source migrates its satellites — the glued clip must
+        // not inherit the second source's envelope or warp state.
+        expect(getEnvelope(glued.id)).toBeUndefined();
+        expect(warpStates.has(glued.id)).toBe(false);
     });
 
     it('refuses glue while an active comp region depends on a source clip take', () => {

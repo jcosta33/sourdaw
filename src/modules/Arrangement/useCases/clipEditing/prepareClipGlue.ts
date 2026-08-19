@@ -5,7 +5,9 @@ import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { createClipSatelliteTransitionPlan } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { readClipScopedAutomationLanes } from '../clip/clipAutomationLaneTransition';
 
 import { getClipIdCensus } from './getClipIdCensus';
 import { getMidiClipGlueSources } from './getMidiClipGlueSources';
@@ -116,12 +118,41 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         return null;
     }
 
+    // Glue join semantics (Logic/Live): the surviving glued clip carries the
+    // FIRST source's gain envelope and warp state — the rest retire, undoably.
+    // Automation has no coherent per-clip merge, so every source's clip-scoped
+    // lanes retire (including the first); none migrate to the glued clip.
+    const sourceIds = clips.map((clip) => clip.id);
+    const [firstSourceId, ...remainingSourceIds] = sourceIds as [string, ...string[]];
+    const clipSatelliteTransitionPlan = createClipSatelliteTransitionPlan({
+        removedClipIds: remainingSourceIds,
+        migrations: [{ sourceClipId: firstSourceId, targetClipId: gluedId }],
+    });
+    if (!clipSatelliteTransitionPlan) {
+        return null;
+    }
+    // `createClipSatelliteTransitionPlan` omits any clip id that carries no
+    // satellite data at all (the common bare-clip case), so its entries may
+    // not cover every id this glue touches. Pad both sides with explicit
+    // empty entries for whatever is missing so restoreClipGlueState's
+    // freshness guard can assert "nothing lives here" for the FULL affected
+    // set — including the glued id itself when the first source had nothing
+    // to migrate — not just the ids the plan happened to mention.
+    const affectedClipIds = [...sourceIds, gluedId];
+    const presentSatelliteIds = new Set(clipSatelliteTransitionPlan.expected.entries.map((entry) => entry.clipId));
+    const emptySatelliteEntries = affectedClipIds
+        .filter((clipId) => !presentSatelliteIds.has(clipId))
+        .map((clipId) => ({ clipId, gainEnvelope: null, warpState: null }));
+    const sourceAutomationLanes = readClipScopedAutomationLanes(sourceIds);
+
     return {
         previous: {
             trackId: track.id,
             clips: structuredClone(clipsInTrackOrder),
             clipOrder: track.clips.map((clip) => clip.id),
             midi: midiPlan.previous,
+            clipSatellites: [...clipSatelliteTransitionPlan.expected.entries, ...emptySatelliteEntries],
+            clipAutomationLanes: sourceAutomationLanes,
         },
         next: {
             trackId: track.id,
@@ -133,6 +164,8 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
                 return clipIds.includes(clip.id) ? [] : [clip.id];
             }),
             midi: midiPlan.next,
+            clipSatellites: [...clipSatelliteTransitionPlan.replacement.entries, ...emptySatelliteEntries],
+            clipAutomationLanes: [],
         },
         targetClipId: gluedId,
     };

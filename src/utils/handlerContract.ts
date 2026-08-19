@@ -184,6 +184,38 @@ export type ClipStretchStateSnapshot = {
     readonly ratio: { readonly present: boolean; readonly value: number };
 };
 export type AutomationLaneSnapshot = { readonly id: string; readonly trackId: string };
+export type ClipSatelliteWarpMarkerSnapshot = {
+    readonly id: string;
+    readonly originalBeat: number;
+    readonly warpedBeat: number;
+    readonly origin?: 'user' | 'transient-auto' | 'grid-snap';
+    readonly confidence?: number;
+    readonly locked?: boolean;
+};
+export type ClipSatelliteWarpStateSnapshot = {
+    readonly enabled: boolean;
+    readonly markers: readonly ClipSatelliteWarpMarkerSnapshot[];
+    readonly stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    readonly originalTempo: number | null;
+};
+export type ClipSatelliteGainEnvelopePointSnapshot = {
+    readonly id: string;
+    readonly beatOffset: number;
+    readonly gainDb: number;
+};
+export type ClipSatelliteGainEnvelopeSnapshot = {
+    readonly clipId: string;
+    readonly points: readonly ClipSatelliteGainEnvelopePointSnapshot[];
+    readonly enabled: boolean;
+};
+/** A clip's gain envelope and warp state — the per-clip satellites owned by
+ *  Arrangement's `clipSatelliteState` store pair. Kept structural (not imported
+ *  from Arrangement's models) for the same reason every other snapshot here is. */
+export type ClipSatelliteEntrySnapshot = {
+    readonly clipId: string;
+    readonly gainEnvelope: ClipSatelliteGainEnvelopeSnapshot | null;
+    readonly warpState: ClipSatelliteWarpStateSnapshot | null;
+};
 /** A captured automation point, carried by the `restoreAutomationLanePoints` inverse
  *  action. Command cannot import Automation's `AutomationPoint` model (model isolation),
  *  so this specifies only the fields a transform-undo round-trips. */
@@ -248,6 +280,15 @@ export type ClipGlueActionSnapshot = {
     readonly clips: readonly ClipStateSnapshot[];
     readonly clipOrder: readonly string[];
     readonly midi: MidiClipGlueActionSnapshot;
+    readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
+    readonly clipAutomationLanes: readonly AutomationLaneSnapshot[];
+};
+export type StripSilenceActionSnapshot = {
+    readonly trackId: string;
+    readonly clips: readonly ClipStateSnapshot[];
+    readonly clipOrder: readonly string[];
+    readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
+    readonly clipAutomationLanes: readonly AutomationLaneSnapshot[];
 };
 export type ClipSplitActionSnapshot = {
     readonly trackId: string;
@@ -266,6 +307,8 @@ export type RippleShiftSnapshot = {
 export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
     readonly shiftedClips: readonly RippleShiftSnapshot[];
+    readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
+    readonly clipAutomationLanes: readonly AutomationLaneSnapshot[];
 };
 export type AdjustmentLayerSnapshot = {
     readonly id: string;
@@ -690,6 +733,7 @@ export type AppAction =
               wasSelected: boolean;
               routingPatches: readonly TrackRoutingPatchSnapshot[];
               automationLaneSnapshots: readonly AutomationLaneSnapshot[];
+              clipSatellites: readonly ClipSatelliteEntrySnapshot[];
               midiNotesByClipId: Record<string, MidiNotesSnapshot>;
               midiCcByClipId: Record<string, MidiCcSnapshot>;
               midiPitchBendByClipId: Record<string, MidiPitchBendSnapshot>;
@@ -1557,7 +1601,24 @@ export type AppAction =
     | { type: 'deleteTime'; payload: { startBeat: number; endBeat: number } }
     | { type: 'insertTime'; payload: { atBeat: number; durationBeats: number } }
     | { type: 'duplicateTimeRange'; payload: { startBeat: number; endBeat: number } }
-    | { type: 'stripSilence'; payload: { clipId: string; threshold?: number; minDuration?: number } }
+    | {
+          type: 'stripSilence';
+          payload: {
+              clipId: string;
+              threshold?: number;
+              minDuration?: number;
+              /** Internal deterministic replay metadata. AiRuntime rejects these fields. */
+              expected?: StripSilenceActionSnapshot;
+              replacement?: StripSilenceActionSnapshot;
+          };
+      }
+    | {
+          type: 'restoreStripSilenceState';
+          payload: {
+              expected: StripSilenceActionSnapshot;
+              replacement: StripSilenceActionSnapshot;
+          };
+      }
     | { type: 'detectTempo'; payload: { clipId: string } }
     | { type: 'detectKey'; payload: { clipId: string } }
     | { type: 'consolidateAllTracks'; payload?: undefined }

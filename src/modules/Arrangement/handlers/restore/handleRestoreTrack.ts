@@ -4,6 +4,7 @@ import { ensureBusStrip, restoreSidechainRoutes, setBusGain, wireSidechainRoutes
 import { createHandler } from '#/utils/createHandler';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
@@ -32,6 +33,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
             wasSelected,
             routingPatches,
             automationLaneSnapshots,
+            clipSatellites,
             midiNotesByClipId,
             midiCcByClipId,
             midiPitchBendByClipId,
@@ -87,6 +89,10 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
 
         if (automationLaneSnapshots.length > 0) {
             restoreAutomationLanes(automationLaneSnapshots);
+        }
+
+        for (const entry of clipSatellites) {
+            writeClipSatelliteEntry(entry as never);
         }
 
         const midiClipIds = new Set([
