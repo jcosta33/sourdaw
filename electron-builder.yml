@@ -75,10 +75,11 @@ extraResources:
     - from: public/samples
       to: samples
     # `resolveNativeAddonPath()` in `electron/native.ts` reads the packaged
-    # addon from `<Resources>/sourdaw-native.node`. A directory source with a
-    # filter, rather than a file source, so a build without a compiled addon
-    # produces a shell that reports the missing addon at startup instead of
-    # failing the package step.
+    # addon from `<Resources>/sourdaw-native.node`. The artifact itself is
+    # guaranteed by `scripts/buildNativeAddon.ts` earlier in the
+    # `desktop:build` chain, which fails the build when it cannot produce
+    # one; this glob only carries it (and any addon-adjacent dylib) into
+    # Resources.
     - from: crates/sourdaw-native
       to: .
       filter:
