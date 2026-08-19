@@ -137,6 +137,26 @@ impl Biquad {
         self.a2 = ((a + 1.0) - (a - 1.0) * cos_w0 - sqrt_a_alpha) / a0;
     }
 
+    /// Design a lowpass filter.
+    ///
+    /// `q` selects the section's alignment: cascade two of these at `0.5412` and
+    /// `1.3066` for a fourth-order Butterworth, or use one at `0.707` for a
+    /// second-order one. Unlike the three designers above this one has no unity
+    /// setting — a lowpass is never a pass-through — so it must not be reached
+    /// from any path a pinned digest renders.
+    pub fn design_lowpass(&mut self, freq: f32, q: f32, sample_rate: f32) {
+        let w0 = TAU * freq / sample_rate;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos_w0 = w0.cos();
+
+        let a0 = 1.0 + alpha;
+        self.b0 = ((1.0 - cos_w0) * 0.5) / a0;
+        self.b1 = (1.0 - cos_w0) / a0;
+        self.b2 = ((1.0 - cos_w0) * 0.5) / a0;
+        self.a1 = (-2.0 * cos_w0) / a0;
+        self.a2 = (1.0 - alpha) / a0;
+    }
+
     /// Make this section a pass-through, leaving its state alone.
     pub fn to_identity(&mut self) {
         self.b0 = 1.0;
