@@ -19,6 +19,7 @@ import {
     gitAuthenticatedArgs,
     gitCredentialHelperPath,
     githubChildEnv,
+    isReviewerBotLogin,
     loadRoleCredentials,
     mintInstallationToken,
     parseDotenv,
@@ -453,5 +454,13 @@ describe('repository and trusted blob', () => {
             (path) => path
         );
         expect(root).toBe('/repo');
+    });
+
+    it('treats GraphQL Bot login and REST [bot] login as the reviewer', () => {
+        expect(isReviewerBotLogin('jcosta33-reviewer[bot]')).toBe(true);
+        expect(isReviewerBotLogin('jcosta33-reviewer')).toBe(true);
+        expect(isReviewerBotLogin('jcosta33-author[bot]')).toBe(false);
+        expect(isReviewerBotLogin('jcosta33')).toBe(false);
+        expect(isReviewerBotLogin(undefined)).toBe(false);
     });
 });

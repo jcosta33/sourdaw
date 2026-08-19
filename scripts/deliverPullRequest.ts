@@ -10,6 +10,7 @@ import {
     authenticateRole,
     gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
+    isReviewerBotLogin,
     originMainBlob,
     resolvePrimaryRoot,
     spawnCapture,
@@ -350,7 +351,7 @@ export function shellPort(
                     candidate.state !== 'DISMISSED' &&
                     candidate.state !== 'PENDING' &&
                     candidate.commit?.oid === expectedHead &&
-                    candidate.author?.login === REVIEWER_BOT_LOGIN
+                    isReviewerBotLogin(candidate.author?.login)
             );
             onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
             return {

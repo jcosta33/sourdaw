@@ -594,4 +594,42 @@ describe('delivery shell boundary', () => {
             rmSync(helperDir, { recursive: true, force: true });
         }
     });
+
+    it('treats GraphQL reviewer login without [bot] as the reviewer App', () => {
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                if (args.some((arg) => arg.startsWith('query='))) {
+                    return JSON.stringify({
+                        data: {
+                            repository: {
+                                pullRequest: {
+                                    reviews: {
+                                        nodes: [
+                                            {
+                                                state: 'APPROVED',
+                                                submittedAt: '2026-08-19T00:00:00Z',
+                                                author: { login: 'jcosta33-reviewer' },
+                                                commit: { oid: 'head' },
+                                            },
+                                        ],
+                                        pageInfo: { hasPreviousPage: false },
+                                    },
+                                    reviewThreads: {
+                                        nodes: [{ isResolved: true }],
+                                        pageInfo: { hasNextPage: false },
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 0,
+        });
+    });
 });
