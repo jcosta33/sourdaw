@@ -11,7 +11,7 @@
 //! the granular shifter deleted, since Shimmer sits inside a tank that has its
 //! own tail. The delta row at the bottom is what makes Amount a control here
 //! rather than a name; what the *interval* does is measured in
-//! `plate_shimmer_render_contract.rs`, which the shipped engine fails.
+//! `plate_shimmer_render_contract.rs`.
 
 use proof_chamber::ProofChamberInstance;
 

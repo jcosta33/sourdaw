@@ -1,5 +1,5 @@
 import { createCollaborationError } from '../../errors/CollaborationError';
-import { type SignalingMessage } from '../../models/CollaborationTypes';
+import { type SignalingMessage, sanitizePeerName } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
 import { type CollaborationPeer } from '../collaborationQueries';
 
@@ -81,7 +81,9 @@ export async function acceptAnswer(answerString: string): Promise<void> {
         if (state) {
             const joinerInfo: CollaborationPeer = {
                 id: answer.peerId,
-                name: answer.name,
+                // Answer payloads are sender-controlled — bound the joiner name
+                // with the same limit every identity ingress uses.
+                name: sanitizePeerName(answer.name),
                 color: runtime.pickPeerColor([state.localColor, ...state.peers.map((param) => param.color)]),
                 isHost: false,
                 isConnected: false,

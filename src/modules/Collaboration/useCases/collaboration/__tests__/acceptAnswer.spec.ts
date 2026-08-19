@@ -195,6 +195,14 @@ describe('acceptAnswer', () => {
         ]);
     });
 
+    it('truncates an oversized joiner name from the answer to the shared identity bound', async () => {
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer({ name: 'j'.repeat(200) })));
+
+        await acceptAnswer('raw');
+
+        expect(collaborationStore.value?.peers[0]?.name).toBe('j'.repeat(64));
+    });
+
     it('still clears the pending invite id when no session is active in the store', async () => {
         collaborationStore.set(null);
         mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
