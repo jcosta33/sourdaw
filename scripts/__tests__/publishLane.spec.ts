@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_LOCK_REASON } from '../githubAppIdentity.ts';
 import {
+    existingOpenPullRequestArgs,
     parsePublishLaneArgs,
     parsePublishWorktrees,
     publishLane,
@@ -138,5 +139,21 @@ describe('lane publish', () => {
         });
         expect(parsePublishLaneArgs(['12'])).toEqual({ issue: 12, help: false });
         expect(() => parsePublishLaneArgs([])).toThrow(/usage/);
+    });
+
+    it('lists same-repo pull requests by branch name, not owner:branch', () => {
+        expect(existingOpenPullRequestArgs('agent/12/work')).toEqual([
+            'pr',
+            'list',
+            '--repo',
+            'jcosta33/sourdaw',
+            '--head',
+            'agent/12/work',
+            '--state',
+            'open',
+            '--json',
+            'number',
+        ]);
+        expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
     });
 });

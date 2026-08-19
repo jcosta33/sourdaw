@@ -176,18 +176,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         },
         existingOpenPullRequest: (branch) => {
             const rows = parseJson<Array<{ number: number }>>(
-                gh([
-                    'pr',
-                    'list',
-                    '--repo',
-                    REQUIRED_REPOSITORY,
-                    '--head',
-                    `${REQUIRED_REPOSITORY.split('/')[0]}:${branch}`,
-                    '--state',
-                    'open',
-                    '--json',
-                    'number',
-                ]),
+                gh(existingOpenPullRequestArgs(branch)),
                 'open pull-request query'
             );
             if (rows.length > 1) {
@@ -238,6 +227,10 @@ function isAncestorCommit(lane: string, ancestorSha: string, descendantSha: stri
         return false;
     }
     throw new Error(result.stderr.trim() || 'git merge-base --is-ancestor failed');
+}
+
+export function existingOpenPullRequestArgs(branch: string): string[] {
+    return ['pr', 'list', '--repo', REQUIRED_REPOSITORY, '--head', branch, '--state', 'open', '--json', 'number'];
 }
 
 export function parsePublishWorktrees(value: string): PublishWorktree[] {
