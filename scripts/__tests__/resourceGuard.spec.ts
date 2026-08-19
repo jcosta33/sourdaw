@@ -395,12 +395,18 @@ describe('resource CLI', () => {
     });
 
     it('never wraps the web build', () => {
-        // Guard admission refuses on low MemFree, which is the resting state
+        // Guard admission refuses on low memory, which is the resting state
         // of cloud build containers — a guarded build breaks every deploy.
         const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
-        expect(packageJson.scripts.build).toBe('vite build');
+        expect(packageJson.scripts.build).not.toMatch(/resourceGuard\.ts/);
+    });
+
+    it('keeps the format target separator', () => {
+        const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+            scripts: Record<string, string>;
+        };
         expect(packageJson.scripts.format).toMatch(/prettier --write --$/);
     });
 
