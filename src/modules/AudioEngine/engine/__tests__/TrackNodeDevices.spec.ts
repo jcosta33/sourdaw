@@ -92,11 +92,13 @@ function pushControllerDevice(
 
 function installDeferredWasmDevice({
     deviceId = 'wasm-1',
+    deviceType = 'levain',
     controller,
     beforeLoaded,
     requiresContent = true,
 }: {
     deviceId?: string;
+    deviceType?: string;
     controller?: BuiltinDeviceNode['controller'];
     beforeLoaded?: (finalDn: BuiltinDeviceNode) => void;
     requiresContent?: boolean;
@@ -109,6 +111,10 @@ function installDeferredWasmDevice({
         onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
         placeholder: BuiltinDeviceNode;
         signal?: AbortSignal;
+        trackId?: string;
+        deviceId: string;
+        deviceType: string;
+        parameterIds: readonly string[];
     };
     const generations: DeferredGeneration[] = [];
     const getGeneration = (index = generations.length - 1): DeferredGeneration => {
@@ -127,11 +133,15 @@ function installDeferredWasmDevice({
             onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
             onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
             signal?: AbortSignal;
+            trackId?: string;
+            deviceId: string;
+            deviceType: string;
+            parameterIds?: readonly string[];
         }) => {
             const placeholderNode = createMockAudioNode('gain');
             const placeholder: BuiltinDeviceNode = {
                 deviceId,
-                type: 'levain',
+                type: deviceType,
                 nodes: [placeholderNode],
                 inputNode: placeholderNode,
                 outputNode: placeholderNode,
@@ -146,6 +156,10 @@ function installDeferredWasmDevice({
                 onRuntimeRecovery: deps.onRuntimeRecovery,
                 placeholder,
                 signal: deps.signal,
+                trackId: deps.trackId,
+                deviceId: deps.deviceId,
+                deviceType: deps.deviceType,
+                parameterIds: deps.parameterIds ?? [],
             });
             return { placeholder, loadPromise: load.promise };
         },
@@ -159,6 +173,20 @@ function installDeferredWasmDevice({
         },
         get signal(): AbortSignal | undefined {
             return getGeneration().signal;
+        },
+        controlTarget(generationIndex?: number): {
+            trackId?: string;
+            deviceId: string;
+            deviceType: string;
+            parameterIds: readonly string[];
+        } {
+            const generation = getGeneration(generationIndex);
+            return {
+                trackId: generation.trackId,
+                deviceId: generation.deviceId,
+                deviceType: generation.deviceType,
+                parameterIds: generation.parameterIds,
+            };
         },
         resolve(finalDn: BuiltinDeviceNode, generationIndex?: number): void {
             const generation = getGeneration(generationIndex);
@@ -901,6 +929,45 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(pendingDevicePromises.size).toBe(0);
         });
 
+        it('preserves scheduled placeholder order while coalescing only immediate runs on promotion', () => {
+            const deferred = installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+
+            track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'drive', 0.2);
+            track.updateParam('wasm-1', 'drive', 0.8);
+            track.scheduleParam('wasm-1', 'tone', 0.3, 0);
+            track.updateParam('wasm-1', 'tone', 0.7);
+
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+
+            expect(loaded.controller.setParam.mock.calls).toEqual([
+                ['drive', 0.8],
+                ['tone', 0.3, 0],
+                ['tone', 0.7],
+            ]);
+        });
+
+        it('preserves A/B/A immediate placeholder writes on promotion', () => {
+            const deferred = installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+
+            track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'drive', 0.1);
+            track.updateParam('wasm-1', 'tone', 0.2);
+            track.updateParam('wasm-1', 'drive', 0.9);
+
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+
+            expect(loaded.controller.setParam.mock.calls).toEqual([
+                ['drive', 0.1],
+                ['tone', 0.2],
+                ['drive', 0.9],
+            ]);
+        });
+
         it('reports exactly one owner-owned graph mutation when an async placeholder promotes and rebuilds', async () => {
             const deferred = installDeferredWasmDevice({ requiresContent: false });
             const onAsyncRuntimeGraphMutation = vi.fn();
@@ -958,45 +1025,52 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         });
 
         it('recovers a terminally failed loaded device once and preserves its bypass', async () => {
-            const deferred = installDeferredWasmDevice();
+            const parameterIds = Object.freeze(['drive', 'neuralCustomInputDrive']);
+            const deferred = installDeferredWasmDevice({ deviceId: 'grinder-1', deviceType: 'grinder' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
             const onAsyncRuntimeGraphMutation = vi.fn();
             const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics, onAsyncRuntimeGraphMutation }));
             track.addDevice('first', 'builtin-gain');
-            track.addDevice('wasm-1', 'levain', undefined, ['first']);
+            track.addDevice('grinder-1', 'grinder', undefined, ['first'], parameterIds);
             track.addDevice('last', 'builtin-gain');
-            const loaded = createLoadedDevice();
+            const loaded = createLoadedDevice('grinder-1');
             deferred.resolve(loaded.device);
             deferred.settleContent('ready');
             deferred.settle();
             await Promise.resolve();
             await Promise.resolve();
-            expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
-            track.updateBypass('wasm-1', true);
+            expect(track.getDeviceLoadState('grinder-1')).toBe('ready');
+            track.updateBypass('grinder-1', true);
 
             deferred.fail(loaded.device);
             await Promise.resolve();
 
             expect(deferred.generationCount).toBe(2);
-            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'wasm-1', 'last']);
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'grinder-1', 'last']);
             expect(track.strip.deviceNodes[1]).toBe(deferred.placeholder);
-            expect(track.getDeviceLoadState('wasm-1')).toBe('pending');
+            expect(track.getDeviceLoadState('grinder-1')).toBe('pending');
+            expect(deferred.controlTarget(1)).toEqual({
+                trackId: 't1',
+                deviceId: 'grinder-1',
+                deviceType: 'grinder',
+                parameterIds,
+            });
             expect(onAsyncRuntimeGraphMutation.mock.calls.map(([mutation]) => mutation.application)).toEqual([
                 'applied',
                 'needs-reconcile',
                 'needs-reconcile',
             ]);
 
-            const recovered = createLoadedDevice();
+            const recovered = createLoadedDevice('grinder-1');
             deferred.resolve(recovered.device);
             deferred.settleContent('ready');
             deferred.settle();
             await Promise.resolve();
             await Promise.resolve();
 
-            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'wasm-1', 'last']);
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'grinder-1', 'last']);
             expect(track.strip.deviceNodes[1]).toBe(recovered.device);
-            expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
+            expect(track.getDeviceLoadState('grinder-1')).toBe('ready');
             expect(recovered.controller.setBypass).toHaveBeenCalledWith(true);
 
             deferred.fail(recovered.device);
@@ -1004,11 +1078,11 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(deferred.generationCount).toBe(2);
             expect(track.strip.deviceNodes[1]).toBe(deferred.placeholder);
-            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
+            expect(track.getDeviceLoadState('grinder-1')).toBe('failed');
             const diagnostics = readinessDiagnostics.snapshot();
-            const failedDevice = diagnostics.devices.find((device) => device.deviceId === 'wasm-1');
+            const failedDevice = diagnostics.devices.find((device) => device.deviceId === 'grinder-1');
             expect(diagnostics.counts).toMatchObject({ requested: 4, playableReady: 2, failed: 2 });
-            expect(failedDevice).toMatchObject({ deviceId: 'wasm-1', status: 'failed', failureStage: 'runtime' });
+            expect(failedDevice).toMatchObject({ deviceId: 'grinder-1', status: 'failed', failureStage: 'runtime' });
         });
 
         it('cancels queued runtime recovery when the failed slot is removed', async () => {

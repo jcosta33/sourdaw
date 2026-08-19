@@ -7,6 +7,7 @@ import { externalLatencyRegistry } from '../../useCases/latencyCompensation/comp
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
 import { type CrumbsNodeResult } from '../CrumbsNode';
+import { type CrustNodeResult } from '../CrustNode';
 import { type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { type FermenterNodeResult } from '../FermenterNode';
 import { type GlutenNodeResult } from '../GlutenNode';
@@ -26,6 +27,7 @@ const factoryMocks = vi.hoisted(() => ({
     createCrumbsNode: vi.fn(),
     createProofChamberNode: vi.fn(),
     createGlutenNode: vi.fn(),
+    createCrustNode: vi.fn(),
     createBacteriaNode: vi.fn(),
     createGrinderNode: vi.fn(),
     createScoringNode: vi.fn(),
@@ -60,6 +62,10 @@ vi.mock('../ProofChamberNode', async (importOriginal) => ({
 vi.mock('../GlutenNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GlutenNode')>()),
     createGlutenNode: factoryMocks.createGlutenNode,
+}));
+vi.mock('../CrustNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../CrustNode')>()),
+    createCrustNode: factoryMocks.createCrustNode,
 }));
 vi.mock('../BacteriaNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../BacteriaNode')>()),
@@ -786,6 +792,59 @@ describe('wasmDeviceRegistry descriptors', () => {
         });
     });
 
+    describe('crust', () => {
+        function makeCrustResult(): CrustNodeResult {
+            return {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+        }
+
+        it('retires a post-ready fault, clears latency and meters, and does not request default recovery', async () => {
+            const result = makeCrustResult();
+            factoryMocks.createCrustNode.mockResolvedValue(result);
+            const replaceRuntimeFailure = vi.fn(() => true);
+            const requestRuntimeRecovery = vi.fn();
+            const deleteCrustMeters = vi.fn();
+            setAudioDeviceRuntimeSink({ deleteCrustMeters });
+            const deps = createDeps({
+                deviceType: 'crust',
+                deviceId: 'crust-failed',
+                trackId: 'track-1',
+                parameterIds: ['ceiling'],
+                onRuntimeFailure: replaceRuntimeFailure,
+                onRuntimeRecovery: requestRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('crust').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const factoryCall = factoryMocks.createCrustNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[4];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected CrustNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('wasm trap');
+            reportRuntimeFailure('duplicate failure');
+
+            expect(loaded.controller?.ready).toBe(false);
+            expect(replaceRuntimeFailure).toHaveBeenCalledOnce();
+            expect(replaceRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(deleteCrustMeters).toHaveBeenCalledWith('crust-failed');
+            expect(externalLatencyRegistry.get('crust-failed')).toBeUndefined();
+            expect(requestRuntimeRecovery).not.toHaveBeenCalled();
+        });
+    });
+
     describe('bacteria', () => {
         function makeBacteriaResult(
             ready: Record<string, unknown> | Promise<Record<string, unknown>>
@@ -837,6 +896,41 @@ describe('wasmDeviceRegistry descriptors', () => {
             await loadPromise;
 
             expect(externalLatencyRegistry.get('bac-2')).toBe(0);
+        });
+
+        it('retires a post-ready fault into the loading bypass without default recovery', async () => {
+            const result = makeBacteriaResult({ latency: 96 });
+            factoryMocks.createBacteriaNode.mockResolvedValue(result);
+            const updateBacteriaMeters = vi.fn();
+            const onRuntimeFailure = vi.fn(() => true);
+            const onRuntimeRecovery = vi.fn();
+            setAudioDeviceRuntimeSink({ updateBacteriaMeters });
+            const deps = createDeps({
+                deviceType: 'bacteria',
+                deviceId: 'bac-fault',
+                onRuntimeFailure,
+                onRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('bacteria').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const reporter = factoryMocks.createBacteriaNode.mock.calls[0]?.[4];
+            if (!isRuntimeFailureReporter(reporter)) {
+                throw new Error('expected Bacteria runtime failure reporter');
+            }
+            reporter('WASM panic');
+
+            expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(externalLatencyRegistry.has('bac-fault')).toBe(false);
+            expect(updateBacteriaMeters).toHaveBeenCalledWith('bac-fault', {
+                inputDb: 0,
+                outputDb: 0,
+                bandLevels: [0, 0, 0, 0, 0, 0],
+                latency: 0,
+            });
+            expect(onRuntimeRecovery).not.toHaveBeenCalled();
         });
 
         it('destroys an invalidated late load before it reports latency or installs callbacks', async () => {
@@ -910,7 +1004,7 @@ describe('wasmDeviceRegistry descriptors', () => {
     });
 
     describe('grinder', () => {
-        it('replays queued params, the pending patch, and the pending bypass on load', async () => {
+        it('preserves scheduled queued params and coalesces immediate queued params on load', async () => {
             const result: GrinderNodeResult = {
                 workletNode: makeWorkletNode(),
                 setParam: vi.fn(),
@@ -924,16 +1018,49 @@ describe('wasmDeviceRegistry descriptors', () => {
                 ready: Promise.resolve({ latency: 0 }),
             };
             factoryMocks.createGrinderNode.mockResolvedValue(result);
-            const deps = createDeps({ deviceType: 'grinder', deviceId: 'grind-1' });
+            const parameterIds = Object.freeze(['drive', 'sag']);
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'grinder',
+                deviceId: 'grind-1',
+                parameterIds,
+            });
 
             const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
+            expect(factoryMocks.createGrinderNode).toHaveBeenCalledWith(
+                deps.context,
+                undefined,
+                deps.signal,
+                {
+                    trackId: 'track-1',
+                    deviceId: 'grind-1',
+                    deviceType: 'grinder',
+                    parameterIds,
+                },
+                expect.any(Function)
+            );
             expect(placeholder.controller).toBeDefined();
+            placeholder.controller?.setParam('drive', 0.2);
             placeholder.controller?.setParam('drive', 0.7);
+            placeholder.controller?.setParam('gain', 0.1);
+            placeholder.controller?.setParam('tone', 0.2);
+            placeholder.controller?.setParam('gain', 0.9);
+            placeholder.controller?.setParam('sag', 0.25, 48_000);
+            placeholder.controller?.setParam('sag', 0.75, 96_000);
+            placeholder.controller?.setParam('sag', 0.9);
             placeholder.controller?.setPatch?.({ amp: 'lead' });
             placeholder.controller?.setBypass?.(true);
             await loadPromise;
 
-            expect(result.setParam).toHaveBeenCalledWith('drive', 0.7);
+            expect(vi.mocked(result.setParam).mock.calls).toEqual([
+                ['drive', 0.7],
+                ['gain', 0.1],
+                ['tone', 0.2],
+                ['gain', 0.9],
+                ['sag', 0.25, 48_000],
+                ['sag', 0.75, 96_000],
+                ['sag', 0.9],
+            ]);
             expect(result.setPatch).toHaveBeenCalledWith({ amp: 'lead' });
             expect(result.setBypass).toHaveBeenCalledWith(true);
         });
@@ -972,6 +1099,50 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(result.setParam).not.toHaveBeenCalled();
             expect(result.onLatencyChanged).not.toHaveBeenCalled();
             expect(result.onMeterData).not.toHaveBeenCalled();
+        });
+
+        it('reconciles a post-ready neural-patch processor fault through the owning runtime callback', async () => {
+            const result: GrinderNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setPatch: vi.fn(),
+                setBypass: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 128 }),
+            };
+            factoryMocks.createGrinderNode.mockResolvedValue(result);
+            const onRuntimeFailure = vi.fn(() => true);
+            const onRuntimeRecovery = vi.fn();
+            const deps = createDeps({
+                trackId: 'track-1',
+                deviceType: 'grinder',
+                deviceId: 'grind-fault',
+                onRuntimeFailure,
+                onRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            expect(externalLatencyRegistry.has('grind-fault')).toBe(true);
+            const reportRuntimeFailure = factoryMocks.createGrinderNode.mock.calls[0]?.[4];
+            if (typeof reportRuntimeFailure !== 'function') {
+                throw new TypeError('expected GrinderNode to receive a post-ready runtime failure callback');
+            }
+
+            loaded.controller?.setPatch?.({ neuralModelMode: 'builtin' });
+            expect(result.setPatch).toHaveBeenCalledWith({ neuralModelMode: 'builtin' });
+            reportRuntimeFailure('neural patch set_param trapped after partial mutation');
+
+            expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(loaded.controller?.ready).toBe(false);
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(externalLatencyRegistry.has('grind-fault')).toBe(false);
+            expect(onRuntimeRecovery).toHaveBeenCalledWith(placeholder);
         });
 
         it('forwards worklet telemetry frames to the grinder sink', async () => {

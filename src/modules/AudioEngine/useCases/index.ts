@@ -50,8 +50,6 @@ export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 export { decodeAudioFile } from './decodeAudioFile';
 export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
 
-export { addDeviceToStrip } from './deviceControls/addDeviceToStrip';
-export { removeDeviceFromStrip } from './deviceControls/removeDeviceFromStrip';
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
@@ -151,3 +149,4 @@ export { configureRuntimeGraphTopologyValidator } from './configureRuntimeGraphT
 export { createRuntimeGraphTopologyFingerprint } from './createRuntimeGraphTopologyFingerprint';
 export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';
+export { initializeTrackStripFromSnapshot } from './initializeTrackStripFromSnapshot';

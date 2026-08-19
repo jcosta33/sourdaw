@@ -1,4 +1,4 @@
-export { createDrumTrackStack } from './createDrumTrackStack';
+export { compileToasterTrackStackActions } from './compileToasterTrackStackActions';
 export { getDefaultPadNames } from './getDefaultPadNames';
 export { getToasterPresetDeviceState } from './getToasterPresetDeviceState';
 export { prepareOfflineToaster } from './prepareOfflineToaster';

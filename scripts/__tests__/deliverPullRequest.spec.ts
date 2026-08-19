@@ -20,6 +20,104 @@ None.
 ### 📌 Related tickets & additional notes
 None.`;
 
+type MergeSettings = {
+    allow_merge_commit: boolean;
+    allow_rebase_merge: boolean;
+    allow_squash_merge: boolean;
+    delete_branch_on_merge: boolean;
+};
+
+function mergePolicyPort(settings: string | Error) {
+    const captures: Array<{ command: string; args: string[] }> = [];
+    const port = shellPort('jcosta33/sourdaw', {
+        capture: (command, args) => {
+            captures.push({ command, args });
+            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                if (settings instanceof Error) {
+                    throw settings;
+                }
+                return settings;
+            }
+            if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                return JSON.stringify({ merged: true, message: 'merged' });
+            }
+            throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+        },
+        run: () => undefined,
+    });
+    return { captures, port };
+}
+
+function mergeSettings(settings: MergeSettings): string {
+    return JSON.stringify(settings);
+}
+
+function stackedDeliveryPort(finalSettings: MergeSettings) {
+    const captures: Array<{ command: string; args: string[] }> = [];
+    let child = pullRequest({ ...stacked(), baseRefOid: 'base' });
+    const port = shellPort('jcosta33/sourdaw', {
+        capture: (command, args) => {
+            captures.push({ command, args });
+            const joined = args.join(' ');
+            if (command === 'git' && joined === 'rev-parse HEAD') {
+                return 'head';
+            }
+            if (command === 'git' && joined === 'status --porcelain=v1') {
+                return '';
+            }
+            if (command === 'git' && joined === 'rev-parse refs/remotes/origin/main') {
+                return 'base';
+            }
+            if (joined.includes('pr view')) {
+                return JSON.stringify(args.includes('43') ? child : pullRequest());
+            }
+            if (joined.includes('query=')) {
+                return JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                reviews: {
+                                    nodes: [{ state: 'COMMENTED', commit: { oid: 'head' } }],
+                                    pageInfo: { hasPreviousPage: false },
+                                },
+                                reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
+                            },
+                        },
+                    },
+                });
+            }
+            if (joined.includes('pulls?state=open')) {
+                return JSON.stringify([
+                    [
+                        {
+                            number: 43,
+                            state: 'open',
+                            head: { ref: 'feat/child', sha: 'child-head' },
+                            base: { ref: 'feat/gate' },
+                        },
+                    ],
+                ]);
+            }
+            if (joined.includes('.delete_branch_on_merge')) {
+                return 'false';
+            }
+            if (joined === 'api repos/jcosta33/sourdaw') {
+                return mergeSettings(finalSettings);
+            }
+            if (joined.includes('/merge')) {
+                return JSON.stringify({ merged: true, message: 'merged' });
+            }
+            throw new Error(`unexpected capture: ${command} ${joined}`);
+        },
+        run: (_command, args) => {
+            if (args.includes('PATCH')) {
+                child = { ...child, baseRefName: 'main' };
+            }
+        },
+    });
+    return { captures, port };
+}
+
 function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
     return {
         number: 42,
@@ -277,6 +375,14 @@ describe('delivery shell boundary', () => {
                 if (joined.includes('.delete_branch_on_merge')) {
                     return 'false';
                 }
+                if (joined === 'api repos/jcosta33/sourdaw') {
+                    return mergeSettings({
+                        allow_merge_commit: true,
+                        allow_rebase_merge: false,
+                        allow_squash_merge: true,
+                        delete_branch_on_merge: false,
+                    });
+                }
                 if (joined.includes('/merge')) {
                     return JSON.stringify({ merged: true, message: 'merged' });
                 }
@@ -289,7 +395,7 @@ describe('delivery shell boundary', () => {
         expect(port.reviewState(42, 'head')).toEqual({ currentHeadReviews: 1, unresolvedThreads: 0 });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
-        port.merge(42, 'head');
+        port.merge(42, 'head', false);
         port.retarget(43, 'main');
 
         expect(
@@ -314,5 +420,110 @@ describe('delivery shell boundary', () => {
             command: 'gh',
             args: ['api', '--method', 'PATCH', 'repos/jcosta33/sourdaw/pulls/43', '-f', 'base=main', '--silent'],
         });
+    });
+
+    it.each([
+        [
+            'uses squash when it is the only enabled method',
+            {
+                allow_merge_commit: false,
+                allow_rebase_merge: false,
+                allow_squash_merge: true,
+                delete_branch_on_merge: false,
+            },
+            'squash',
+        ],
+        [
+            'preserves merge commits when merge is enabled',
+            {
+                allow_merge_commit: true,
+                allow_rebase_merge: true,
+                allow_squash_merge: true,
+                delete_branch_on_merge: false,
+            },
+            'merge',
+        ],
+        [
+            'falls back to rebase when it is the only enabled method',
+            {
+                allow_merge_commit: false,
+                allow_rebase_merge: true,
+                allow_squash_merge: false,
+                delete_branch_on_merge: false,
+            },
+            'rebase',
+        ],
+    ])('%s', (_case, settings, expectedMethod) => {
+        const { captures, port } = mergePolicyPort(mergeSettings(settings));
+
+        port.merge(42, 'head', false);
+
+        expect(captures).toContainEqual({
+            command: 'gh',
+            args: ['api', 'repos/jcosta33/sourdaw'],
+        });
+        expect(captures).toContainEqual({
+            command: 'gh',
+            args: [
+                'api',
+                '--method',
+                'PUT',
+                'repos/jcosta33/sourdaw/pulls/42/merge',
+                '-f',
+                'sha=head',
+                '-f',
+                `merge_method=${expectedMethod}`,
+            ],
+        });
+    });
+
+    it('rejects merging when no repository merge method is enabled', () => {
+        const { captures, port } = mergePolicyPort(
+            mergeSettings({
+                allow_merge_commit: false,
+                allow_rebase_merge: false,
+                allow_squash_merge: false,
+                delete_branch_on_merge: false,
+            })
+        );
+
+        expect(() => port.merge(42, 'head', false)).toThrow(/no merge method is enabled/);
+        expect(captures).not.toContainEqual(
+            expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
+        );
+    });
+
+    it('rejects stacked delivery when merged-branch deletion is enabled before the final merge', () => {
+        const { captures, port } = stackedDeliveryPort({
+            allow_merge_commit: false,
+            allow_rebase_merge: false,
+            allow_squash_merge: true,
+            delete_branch_on_merge: true,
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/automatic merged-branch deletion/);
+        expect(captures).not.toContainEqual(
+            expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
+        );
+    });
+
+    it('rejects malformed repository merge settings', () => {
+        const { captures, port } = mergePolicyPort('{"allow_merge_commit":true}');
+
+        expect(() => port.merge(42, 'head', false)).toThrow(/cannot prove repository merge settings/);
+        expect(captures).not.toContainEqual(
+            expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
+        );
+    });
+
+    it('rejects a failed repository merge-settings query', () => {
+        const { captures, port } = mergePolicyPort(new Error('GitHub unavailable'));
+
+        expect(() => port.merge(42, 'head', false)).toThrow(
+            /cannot determine repository merge settings: GitHub unavailable/
+        );
+        expect(captures).not.toContainEqual(
+            expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
+        );
     });
 });

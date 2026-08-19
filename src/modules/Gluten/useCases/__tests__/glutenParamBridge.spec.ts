@@ -94,6 +94,14 @@ describe('glutenParamBridge', () => {
         expect(mockExecuteAppAction).not.toHaveBeenCalled();
     });
 
+    it('emits the GlutenPanel knee control on the live engine preview path', () => {
+        mockTrackStoreValue.value = { tracks: [{ id: 't1', devices: [{ id: 'd1' }] }] };
+
+        setGlutenParamWithAudio('d1', 'knee', 6, true);
+
+        expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'knee', 6);
+    });
+
     it('setGlutenParamWithAudio noops when device cannot be found', () => {
         mockTrackStoreValue.value = { tracks: [] };
 

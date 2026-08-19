@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 
-import { createAudioEngine } from '../createWebAudioEngine';
+import {
+    createAudioEngineTopologyTestHarness as createAudioEngine,
+    type AudioEngineTopologyTestHarness,
+} from './createAudioEngineTopologyTestHarness';
 
 import type { KneadNodeResult } from '../../engine/KneadNode';
 import type { AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
@@ -78,7 +81,7 @@ function kneadSnapshot(shift: number): Record<string, unknown> {
 }
 
 describe('Knead state synced while its device is still loading', () => {
-    let engine: AudioEngine;
+    let engine: AudioEngineTopologyTestHarness;
     let mockCtx: MockAudioContext;
 
     beforeEach(() => {
