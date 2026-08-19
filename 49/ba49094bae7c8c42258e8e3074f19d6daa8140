@@ -1,0 +1,35 @@
+.agents/decisions/0004-plugin-hosting-security-policy.md
+  s_42d78e0bb71895::t_3b3a81f42e6a0f 81-86
+.agents/decisions/open-decision-docket.md
+  s_42d78e0bb71895::t_486a235bcab394 404
+.gitignore
+  s_42d78e0bb71895::t_12c59df676a205 17
+scripts/test-health-gate-scripts.sh
+  s_42d78e0bb71895::t_c32790d4db0504 231-232,281
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_487e9aa1e46063::t_e5c1021bf9b627 215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "49ba49094bae7c8c42258e8e3074f19d6daa8140",
+  "prompts": {},
+  "sessions": {
+    "s_42d78e0bb71895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5db0d749-ff23-4f4c-8e27-17b7e9b2a62c",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
