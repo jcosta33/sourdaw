@@ -681,22 +681,23 @@ Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(te
 
 ## 9. Running tests
 
-| Command                                  | Purpose                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| `pnpm test:watch`                        | Vitest watch mode for active development                                 |
-| `pnpm test:run <target>`                 | Focused single run; a file or narrow directory is required               |
-| `pnpm test:full`                         | Full Vitest suite; run only when explicitly requested                    |
-| `pnpm test:coverage`                     | Full Vitest run with **v8** coverage; run only when explicitly requested |
-| `pnpm test:e2e <spec>`                   | Run one affected Playwright spec                                         |
-| `pnpm test:e2e:full`                     | Full Playwright suite; run only when explicitly requested                |
-| `pnpm typecheck:test`                    | Spec-inclusive type check (`tsconfig.test.json`)                         |
-| `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                |
+| Command                                      | Purpose                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| `pnpm test:watch`                            | Vitest watch mode for active development                                 |
+| `pnpm test:run <target>`                     | Focused single run; a file or narrow directory is required               |
+| `pnpm test:full`                             | Full Vitest suite; run only when explicitly requested                    |
+| `pnpm test:coverage`                         | Full Vitest run with **v8** coverage; run only when explicitly requested |
+| `pnpm test:e2e <spec>`                       | Run one affected Playwright spec                                         |
+| `pnpm test:e2e:full`                         | Full Playwright suite; run only when explicitly requested                |
+| `pnpm typecheck:test`                        | Spec-inclusive type check (`tsconfig.test.json`)                         |
+| `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                    |
 
 Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
 coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
-sequentially through `package.json`. The resource guard rejects concurrent validation, low-memory
-starts, timeouts, and process trees above the configured RSS ceiling. A refusal is final; never
-bypass the guard with a raw tool command.
+sequentially through `package.json`. The scripts themselves are plain, standard commands; in
+agent sessions, wrap compute-heavy runs with `pnpm guard --profile <p> -- <command>`, which
+rejects concurrent validation, low-memory starts, timeouts, and process trees above the
+configured RSS ceiling. A guard refusal is final; never bypass it by rerunning unguarded.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 

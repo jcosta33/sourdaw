@@ -52,8 +52,10 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 - Run repository commands sequentially. Never overlap tests, lint, typechecks, builds, Cargo,
   Playwright, WASM, or measurements.
-- Use guarded `package.json` scripts. A busy lock, memory refusal, timeout, or RSS kill is a stop.
-  Never bypass it with raw tool commands.
+- `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy
+  runs (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
+  `pnpm guard --profile <focused|broad|extended> [--require-target] -- <command>`. A busy lock,
+  memory refusal, timeout, or RSS kill is a stop — never bypass it by rerunning unguarded.
 - Run only checks that can fail because of the changed files. Never expand to repository-wide
   tests, lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
@@ -61,20 +63,20 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 ## Checks
 
-| Need                | Command                                       |
-| ------------------- | --------------------------------------------- |
-| Focused tests       | `pnpm test:run <file-or-narrow-directory>`    |
-| Focused E2E         | `pnpm test:e2e <spec>`                        |
-| Focused lint        | `pnpm lint <changed-files>`                   |
-| Focused format      | `pnpm format <changed-files>`                 |
-| App types           | `pnpm typecheck`                              |
-| Test types          | `pnpm typecheck:test`                         |
-| Script types        | `pnpm typecheck:scripts`                      |
-| E2E types           | `pnpm typecheck:e2e`                          |
-| Focused Rust tests  | `pnpm cargo:test --package <crate> <filter>`  |
-| Focused Rust format | `pnpm cargo:fmt --package <crate>`            |
-| Module boundaries   | `pnpm deps:validate`                          |
-| Barrel mocks        | `pnpm test:barrel-mocks`                      |
+| Need                | Command                                      |
+| ------------------- | -------------------------------------------- |
+| Focused tests       | `pnpm test:run <file-or-narrow-directory>`   |
+| Focused E2E         | `pnpm test:e2e <spec>`                       |
+| Focused lint        | `pnpm lint <changed-files>`                  |
+| Focused format      | `pnpm format <changed-files>`                |
+| App types           | `pnpm typecheck`                             |
+| Test types          | `pnpm typecheck:test`                        |
+| Script types        | `pnpm typecheck:scripts`                     |
+| E2E types           | `pnpm typecheck:e2e`                         |
+| Focused Rust tests  | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format | `pnpm cargo:fmt --package <crate>`           |
+| Module boundaries   | `pnpm deps:validate`                         |
+| Barrel mocks        | `pnpm test:barrel-mocks`                     |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 

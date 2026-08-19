@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
+import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-import { emitGuardedResult, enterResourceSession, runGuardedCommand, type ResourceSession } from './resourceGuard.ts';
 
 type Options = {
     files: string[];
@@ -44,21 +43,19 @@ export function parseArgs(args: string[]): Options {
     return { files, fix, full };
 }
 
-async function runStep(session: ResourceSession, label: string, args: string[]): Promise<void> {
-    const result = await runGuardedCommand({ command: 'pnpm', args, profile: 'broad', session });
-    if (emitGuardedResult(label, result) !== 0) {
+function runStep(label: string, args: string[]): void {
+    const result = spawnSync('pnpm', args, { stdio: 'inherit' });
+    if (result.status !== 0) {
         throw new Error(`${label} failed`);
     }
 }
 
 async function main(): Promise<number> {
-    let session: ResourceSession | undefined;
     try {
         const options = parseArgs(process.argv.slice(2));
         const targets = options.full ? ['src', 'scripts'] : options.files;
         const eslintTargets = options.full ? ['src/**/*.{ts,tsx}', 'scripts/**/*.ts'] : options.files;
-        session = enterResourceSession({ command: `lint ${targets.join(' ')}` });
-        await runStep(session, 'oxlint', [
+        runStep('oxlint', [
             'exec',
             'oxlint',
             '--quiet',
@@ -67,7 +64,7 @@ async function main(): Promise<number> {
             ...(options.fix ? ['--fix'] : []),
             ...targets,
         ]);
-        await runStep(session, 'eslint', [
+        runStep('eslint', [
             'exec',
             'eslint',
             '--quiet',
@@ -82,8 +79,6 @@ async function main(): Promise<number> {
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
         return 1;
-    } finally {
-        session?.release();
     }
 }
 

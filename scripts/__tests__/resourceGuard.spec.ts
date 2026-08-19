@@ -10,6 +10,7 @@ import {
     enterResourceSession,
     hasExplicitTarget,
     parseCliArgs,
+    parseMemAvailableBytes,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
 } from '../resourceGuard';
@@ -162,6 +163,22 @@ describe('resource admission', () => {
             }
             rmSync(root, { recursive: true, force: true });
         }
+    });
+});
+
+describe('linux memory sampling', () => {
+    it('reads MemAvailable, not MemFree, from meminfo', () => {
+        const meminfo = [
+            'MemTotal:        8039352 kB',
+            'MemFree:          161184 kB',
+            'MemAvailable:    5872400 kB',
+            'Buffers:          312244 kB',
+        ].join('\n');
+        expect(parseMemAvailableBytes(meminfo)).toBe(5872400 * 1024);
+    });
+
+    it('returns undefined when MemAvailable is absent', () => {
+        expect(parseMemAvailableBytes('MemTotal: 8039352 kB\nMemFree: 161184 kB\n')).toBeUndefined();
     });
 });
 
@@ -369,39 +386,12 @@ describe('resource CLI', () => {
         );
     });
 
-    it('requires targets for focused repository commands', () => {
+    it('stays available as the opt-in guard script', () => {
         const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
-
-        for (const script of [
-            'test:run',
-            'test:e2e',
-            'format',
-            'cargo:fmt',
-            'cargo:test',
-            'cargo:check',
-            'cargo:clippy',
-            'cargo:bench',
-            'cargo:fuzz',
-        ]) {
-            expect(packageJson.scripts[script]).toContain('--require-target');
-        }
-        expect(packageJson.scripts.format).toMatch(/prettier --write --$/);
+        expect(packageJson.scripts.guard).toMatch(/resourceGuard\.ts$/);
         expect(() => parseCliArgs(['--profile', 'focused', '--require-target', '--', 'vitest', 'run'])).not.toThrow();
-    });
-
-    it('guards every non-interactive repository command', () => {
-        const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
-            scripts: Record<string, string>;
-        };
-        const exempt = new Set(['deliver', 'dev', 'dev:no-hmr', 'preview', 'wasm:all']);
-
-        for (const [name, command] of Object.entries(packageJson.scripts)) {
-            if (!exempt.has(name)) {
-                expect(command, name).toMatch(/resourceGuard\.ts|runLint\.ts/);
-            }
-        }
     });
 
     it('pins validation worker limits', () => {

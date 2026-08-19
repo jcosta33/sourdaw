@@ -288,7 +288,24 @@ export function availableMemoryBytes(): number | undefined {
         }
         return undefined;
     }
+    if (platform() === 'linux') {
+        // freemem() reports MemFree, which the page cache keeps near zero on
+        // busy hosts; MemAvailable is the kernel's reclaimable estimate.
+        try {
+            const memAvailableBytes = parseMemAvailableBytes(readFileSync('/proc/meminfo', 'utf8'));
+            if (memAvailableBytes !== undefined) {
+                return memAvailableBytes;
+            }
+        } catch {
+            // Fall through to freemem() when /proc/meminfo is unreadable.
+        }
+    }
     return freemem();
+}
+
+export function parseMemAvailableBytes(meminfo: string): number | undefined {
+    const match = /^MemAvailable:\s*(\d+)\s*kB$/m.exec(meminfo);
+    return match?.[1] === undefined ? undefined : Number(match[1]) * 1024;
 }
 
 type ProcessRow = {
