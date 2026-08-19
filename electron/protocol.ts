@@ -9,8 +9,8 @@
  * audio graph cannot start.
  *
  * `file://` gives neither. A custom scheme registered as `standard` + `secure`
- * gives both, and lets every response carry the isolation headers and the same
- * Content-Security-Policy Tauri ships today.
+ * gives both, and lets every response carry the isolation headers and this
+ * shell's Content-Security-Policy.
  */
 import { statSync } from 'node:fs';
 import { dirname, join, normalize, resolve, sep } from 'node:path';
@@ -24,8 +24,15 @@ export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
 
 /**
- * The production CSP from `src-tauri/tauri.conf.json`
- * (`app.security.csp`), with the Tauri-only schemes removed.
+ * The Content-Security-Policy every `app://` response carries.
+ *
+ * The document-level directives — `script-src`, `style-src`, `worker-src`,
+ * `object-src`, `base-uri`, `frame-src`, `form-action` — are held identical to
+ * the ones the Tauri config ships, on purpose: both shells load the same web
+ * build, so a difference there is a behavioural difference inside one
+ * application. The origin-level and connection-level directives are this
+ * shell's own decision, because the two shells do not have the same origins and
+ * do not make the same requests.
  *
  * `ipc:` / `http://ipc.localhost` name Tauri's IPC transport and `asset:` /
  * `http://asset.localhost` name Tauri's asset protocol. Neither exists in the
@@ -33,20 +40,40 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
  * already covers — so carrying them here would widen the policy past what any
  * request can use.
  *
- * `http://[::1]:*` is dropped for a different reason: Chromium rejects it as an
- * invalid source and logs a console error on every page load. A rejected source
- * grants nothing, so dropping it costs no reach — an `http://[::1]:port` fetch
- * is refused either way — and it keeps the console readable, which is the only
- * place a real policy violation shows up. (The Tauri config still carries the
- * token; that is a defect in the shipped policy, filed separately.)
+ * `http://[::1]:*` is not carried: Chromium rejects it as an invalid source and
+ * logs a console error on every page load. A rejected source grants nothing, so
+ * omitting it costs no reach — an `http://[::1]:port` fetch is refused either
+ * way — and it keeps the console readable, which is the only place a real
+ * policy violation shows up.
  *
- * Every other directive is byte-identical to the Tauri policy on purpose: the
- * renderer is the same build, so a directive that differs is a behavioural
- * difference between the two shells.
+ * `connect-src` enumerates this shell's renderer egress and nothing wider. A
+ * bare `https:` is an open exfiltration channel for any injected script and
+ * must never return, so a source belongs here only when renderer code in this
+ * build actually fetches it:
+ *
+ * - Loopback HTTP, for a user-run OpenAI-compatible LLM server. That is the
+ *   only provider the renderer requests itself: a hosted `https:` provider is
+ *   bound to a compiled adapter and streamed by the native provider gateway
+ *   over IPC, a transport no CSP directive governs. `configureCloudProvider`
+ *   accepts a third loopback spelling, `[::1]`, that this policy cannot express
+ *   for the reason above, so such a base URL passes application validation and
+ *   is then refused here.
+ * - Hugging Face and its CDN redirect hosts, for Kokoro and WebLLM model
+ *   artifacts.
+ * - `raw.githubusercontent.com`, for the MLC wasm runtime. It is as
+ *   multi-tenant as any public bucket host and is admitted only because
+ *   `webLlmArtifactAdmission` pins every artifact it serves by sha256.
+ *
+ * A host with no consumer stays out however plausible its future use, because a
+ * shared multi-tenant origin admitted "for later" is an attacker-registrable
+ * exfiltration endpoint in the meantime. DDSP checkpoints are the live example:
+ * they sit on `storage.googleapis.com`, one origin fronting every public GCS
+ * bucket, and DDSP rendering is a stub in this build that performs no egress.
+ * The source returns path-scoped when DDSP rendering ships.
  */
 export const PRODUCTION_CSP = [
     "default-src 'self'",
-    "connect-src 'self' http://localhost:* http://127.0.0.1:* https:",
+    "connect-src 'self' http://localhost:* http://127.0.0.1:* https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com",
     "img-src 'self' data: blob:",
     "media-src 'self' data: blob:",
     "style-src 'self' 'unsafe-inline'",
