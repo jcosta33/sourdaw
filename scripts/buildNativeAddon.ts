@@ -10,7 +10,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,7 +43,8 @@ function main(): number {
         return 1;
     }
 
-    const artifact = join(repoRoot, 'target', 'release', cdylibFileName(process.platform));
+    const targetDir = process.env.CARGO_TARGET_DIR ?? join(repoRoot, 'target');
+    const artifact = join(targetDir, 'release', cdylibFileName(process.platform));
     if (!existsSync(artifact)) {
         console.error(`the cargo build produced no cdylib at ${artifact}`);
         return 1;
@@ -54,7 +55,10 @@ function main(): number {
     return 0;
 }
 
-const invokedPath = process.argv[1] === undefined ? '' : resolve(process.argv[1]);
+// `realpathSync`, because the ESM loader realpaths `import.meta.url` while
+// `argv[1]` keeps any symlink; a plain `resolve` comparison would silently
+// skip `main()` — and exit 0 — from a symlinked checkout.
+const invokedPath = process.argv[1] === undefined ? '' : realpathSync(resolve(process.argv[1]));
 if (invokedPath === fileURLToPath(import.meta.url)) {
     process.exit(main());
 }

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -15,7 +15,8 @@ describe('native addon build', () => {
     it('should run in every desktop packaging chain', () => {
         // electron-builder packages whatever `crates/sourdaw-native/*.node`
         // exists; without this step a DMG ships no native surface, silently.
-        const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+        const repoRoot = resolve(import.meta.dirname, '../..');
+        const packageJson = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
             scripts: Record<string, string>;
         };
         expect(packageJson.scripts['desktop:build']).toContain('buildNativeAddon.ts');

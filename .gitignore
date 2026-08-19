@@ -45,3 +45,4 @@ test-results/
 
 # Native addon build artifact (produced by scripts/buildNativeAddon.ts)
 /crates/sourdaw-native/*.node
+/crates/sourdaw-native/*.dylib
