@@ -1,0 +1,159 @@
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_ab5443e65c7fba::t_2fe5f0a366268f 94-97
+  s_ab5443e65c7fba::t_506622a4937fe9 7
+  s_ab5443e65c7fba::t_63993c734f8fea 36
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_ab5443e65c7fba::t_d443b9614b0c14 88
+src/modules/Arrangement/useCases/clipEditing/prepareClipGlue.ts
+  s_ab5443e65c7fba::t_65cba7c3ba29cc 121-133,146-147,155,168
+  s_ab5443e65c7fba::t_57d2ddfaf69284 8,10
+  s_ab5443e65c7fba::t_afa4ee199399b2 134-145,154,167
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_ab5443e65c7fba::t_c2d44ac35387ec 81
+  s_ab5443e65c7fba::t_9271abc2dd527a 30
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_ab5443e65c7fba::t_c8de233daf17f3 46-47,71-78,86-91
+  s_ab5443e65c7fba::t_a876544794bdf2 237-238
+  s_ab5443e65c7fba::t_735fc419480cb5 147-152
+  s_ab5443e65c7fba::t_7300c88e4c29bb 206-211,214-230
+  s_ab5443e65c7fba::t_689d4adfe90afe 257-262
+  s_ab5443e65c7fba::t_ae92cd7ba7496b 212-213
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_ab5443e65c7fba::t_f7be50acc45ec7 2,4-5,9-20,22-60,62-63
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  s_ab5443e65c7fba::t_4daf3ea89a40c5 93-94
+  s_ab5443e65c7fba::t_2cff2fd4e8615c 168-169
+src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts
+  s_ab5443e65c7fba::t_b844021e9bc1e5 3,6-7,21-26,40-47,66-70,74-75
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_ab5443e65c7fba::t_3ba478e18669d3 103-104
+  s_ab5443e65c7fba::t_5d999f2989fd22 190
+  s_ab5443e65c7fba::t_680b8c42d7a638 1-102,105-189,191-228,230-258
+  s_ab5443e65c7fba::t_32f7445f100d09 229
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_ab5443e65c7fba::t_8f56bd19719fbe 23-24
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_ab5443e65c7fba::t_8b5b3edd24c245 224,244,246-251,254-257,259,261-283
+  s_ab5443e65c7fba::t_91665c30180ddb 11
+  s_ab5443e65c7fba::t_44cb0829207d0e 57,67
+  s_ab5443e65c7fba::t_b6211efe452fac 8
+  s_ab5443e65c7fba::t_d07dc6a318903c 93-94,96
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_ab5443e65c7fba::t_fbaa864685eda6 77-80,89-94,98,102-106,112
+  s_ab5443e65c7fba::t_ba2087afdcb19d 8
+  s_ab5443e65c7fba::t_ed8a613e119cbf 95
+  s_ab5443e65c7fba::t_7ea66a9311761f 6
+  s_ab5443e65c7fba::t_fbd1a0995a2392 76,83-88,96-97,107-111,114-116
+  s_ab5443e65c7fba::t_bf4946797a32d5 2,7
+  s_ab5443e65c7fba::t_123473631c4417 113
+  s_ab5443e65c7fba::t_085e889c953840 81-82
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_ab5443e65c7fba::t_71cb1f93991633 1-180,186-198
+  s_ab5443e65c7fba::t_a323fafc67e603 181-185
+src/modules/Arrangement/useCases/stripSilence.ts
+  s_ab5443e65c7fba::t_315a450ff214bd 1-2,8-13,16-17
+src/modules/Arrangement/handlers/clip/handleRestoreStripSilenceState.ts
+  s_ab5443e65c7fba::t_858c95acf8406f 1-13
+src/modules/Arrangement/useCases/clipReplacementSnapshot.ts
+  s_ab5443e65c7fba::t_32b09d547b555a 1-83
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  s_ab5443e65c7fba::t_3928f668f2bc78 74-106
+  s_ab5443e65c7fba::t_da1ac5f50e1af5 10-12,31-42,44-52
+src/modules/Arrangement/useCases/rippleDelete/__tests__/undoRippleDelete.spec.ts
+  s_ab5443e65c7fba::t_9ed5626a43a702 9-11,16-17,28-29
+  s_ab5443e65c7fba::t_2ca7e362c9e4ca 67-72,87-114
+  s_ab5443e65c7fba::t_9c663e3b34c6e7 73-86
+  s_ab5443e65c7fba::t_6a61f0c564904e 30-31
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_ab5443e65c7fba::t_0b919dc1cda5fb 1-233
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_ab5443e65c7fba::t_a33635afdccd63 38
+  s_ab5443e65c7fba::t_f4a6b982c586db 91-94
+  s_ab5443e65c7fba::t_d6568a59243f9a 249
+  s_ab5443e65c7fba::t_d4c203c8c0d489 228-239
+  s_ab5443e65c7fba::t_f94e449f8a692d 109
+src/modules/Arrangement/useCases/__tests__/stripSilence.spec.ts
+  s_ab5443e65c7fba::t_f6545b87fe877d 6-7,10-11,13-14,22-23,25,27-28,32-36,40,44-48,50
+src/utils/handlerContract.ts
+  s_ab5443e65c7fba::t_379348a693ff00 187-218
+  s_ab5443e65c7fba::t_eb2427fe64e59b 283-291
+  s_ab5443e65c7fba::t_d09508899b9b67 310-311
+  s_ab5443e65c7fba::t_be0d75071eeca3 736
+  s_ab5443e65c7fba::t_7332a4a1f80915 1604-1621
+src/modules/Arrangement/handlers/clip/__tests__/handleStripSilence.spec.ts
+  s_ab5443e65c7fba::t_bd5418fdd6d0c4 26
+  s_ab5443e65c7fba::t_61ee51d517b4fc 78-79
+  s_ab5443e65c7fba::t_cdc01367ad5ec4 6-7,11-16,25,29,50-67,74-77,80-102,107
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.spec.ts
+  s_ab5443e65c7fba::t_8a696cb15744a8 94-95,102-103
+  s_ab5443e65c7fba::t_5fda6ec97ac93e 56-57
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_487e9aa1e46063::t_6467e005341efc 114
+  s_487e9aa1e46063::t_5fd7d33cbd796c 71
+  s_487e9aa1e46063::t_eda378104f5656 163-164
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_ab5443e65c7fba::t_8c735bcf7f6aa7 78
+  s_ab5443e65c7fba::t_24f8eba2f13e37 18
+  s_ab5443e65c7fba::t_75e5680ae15d57 55-57
+  s_ab5443e65c7fba::t_cbd79e9b411009 123-125
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_487e9aa1e46063::t_f116bdbf7518a6 351
+  s_487e9aa1e46063::t_f44796be8acb05 291
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_ab5443e65c7fba::t_a6dd062f663a55 249
+  s_ab5443e65c7fba::t_93c1d53a927700 205-208
+  s_ab5443e65c7fba::t_8397214d5ab7a5 10
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_ab5443e65c7fba::t_0abc86bcdf3968 17
+  s_ab5443e65c7fba::t_8521170740b59a 71-75
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_ab5443e65c7fba::t_026f5236d1793a 4,9
+  s_ab5443e65c7fba::t_ede5d3ef548040 61-64
+src/modules/Arrangement/useCases/restoreStripSilenceState.ts
+  s_ab5443e65c7fba::t_2620cd364b3b42 1-129
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  s_ab5443e65c7fba::t_ddfc32e224e840 24
+  s_ab5443e65c7fba::t_8d407c61d9149e 73-84
+  s_ab5443e65c7fba::t_0402d28ea58f99 1,8
+  s_ab5443e65c7fba::t_a8956cef46044b 3,21-23,27-33
+  s_ab5443e65c7fba::t_838d634d1899cd 9
+src/modules/Arrangement/useCases/clip/clipAutomationLaneTransition.ts
+  s_ab5443e65c7fba::t_4d639baeaab573 47-54,56-60,65,70,72,74
+  s_ab5443e65c7fba::t_bd9ab57d43cf8e 3
+  s_ab5443e65c7fba::t_e34e4e6633e198 20-37
+  s_ab5443e65c7fba::t_d513549b12cf8f 1-2,4-19,38-46,55,61-64,66-68,71,73,75-95
+  s_ab5443e65c7fba::t_5c8c4d4b3bfd7f 69
+src/modules/Arrangement/useCases/clipEditing/hasClipGlueDependencies.ts
+  s_ab5443e65c7fba::t_a84e429373c939 6-15
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_ab5443e65c7fba::t_7c7ebfaf91669d 125-129
+  s_ab5443e65c7fba::t_87513ba822b1b4 425-453
+  s_ab5443e65c7fba::t_5d1d3501c04a4a 112-115
+  s_ab5443e65c7fba::t_42ca6f1c6f26d7 54
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_ab5443e65c7fba::t_e084b9107df0bf 334-442,449,466,481,496,519,524-525,539,544,549,561-562,570,579-581,588,594,601,617-620,622-624,637,661,676,681-684,686,690,693,700-704,943,970,980,992,996,1029-1030,1037,1044,1051,1059,1068-1069,1134,1142,1147,1163,1174,1178,1186-1187,1206,1229,1235,1254,1260,1278,1284,1292-1294,1303-1304,1306-1307,1317-1318,1382,1386,1389,1393,1399,1411,1415,1432,1438,1441,1459,1466,1477,1513,1529,1540,1574,1579,1612,1617,1703,1726-1727,1750,1769,1777,1786,1797-1799,1813-1815,1846,1852,1861,1872,1880,1891-1892,1906-1907,1932-1933,1991,2000,2003-2004,2031,2057,2075,2081,2103,2129,2137-2139,2146,2155-2156,2161-2166,2201,2208,2224,2232-2234,2257,2287-2288,2290-2291,2409,2415,2423,2429,2436,2450-2451,2460,2462-2464,2466,2474-2475,2483-2484,2524-2525,2598-2599,2677-2678,2786-2787,2794,2801,2804,2813,2815,2896-2897,2924-2925,2947,2961,2970,2979,2992,3006,3013,3020-3022,3063-3066,3088,3093,3105,3112,3117,3119,3125,3130,3132-3133,3152,3159,3167-3168,3174,3177,3193,3211,3221-3222,3231-3232,3295,3310,3315,3327-3328,3341,3368,3376-3377,3394,3399-3400,3423-3434,3441-3442,3447-3455,3469-3470,3492,3540,3547,3553-3554,3561,3575,3582-3583,3590,3604,3609-3612,3640,3646,3660,3666,3711,3713-3715,3728-3729,3737-3738,3740-3741,3753-3754,3757-3758,3764,3769,3796,3801,3896,3903,3931,3939,3945,3953-3954,3994,4005,4013,4019,4026,4031,4039-4040,4242,4258,4275,4282-4283,4286,4317,4330-4333,4343-4344,4389,4399,4407,4412,4414,4462,4467,4485,4490,4514,4519,4557-4864
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a3bd4e250118e0550b611af2f7910b7bba5f3aa1",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
