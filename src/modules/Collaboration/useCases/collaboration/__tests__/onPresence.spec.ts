@@ -6,22 +6,20 @@ import { onPresence } from '../onPresence';
 type Listener = (data: PresenceDelta) => void;
 
 /**
- * `onPresence` only manipulates the shared listener `Set` on
+ * `onPresence` only manipulates the app-lifetime listener `Set` on
  * `sessionManagement`'s `sessionRuntimePrimitives`. Mock that boundary so the
  * spec exercises subscribe/unsubscribe in isolation from the rest of the
  * session runtime.
  */
 const mockRuntime = vi.hoisted(() => ({
-    state: {
-        presenceListeners: new Set<Listener>(),
-    },
+    presenceListeners: new Set<Listener>(),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
 describe('onPresence', () => {
     beforeEach(() => {
-        mockRuntime.state.presenceListeners.clear();
+        mockRuntime.presenceListeners.clear();
     });
 
     it('adds the listener to the shared presence listener set', () => {
@@ -29,8 +27,8 @@ describe('onPresence', () => {
 
         onPresence(listener);
 
-        expect(mockRuntime.state.presenceListeners.has(listener)).toBe(true);
-        expect(mockRuntime.state.presenceListeners.size).toBe(1);
+        expect(mockRuntime.presenceListeners.has(listener)).toBe(true);
+        expect(mockRuntime.presenceListeners.size).toBe(1);
     });
 
     it('returns an unsubscribe function that removes only its own listener', () => {
@@ -41,8 +39,8 @@ describe('onPresence', () => {
         onPresence(listenerB);
         unsubscribeA();
 
-        expect(mockRuntime.state.presenceListeners.has(listenerA)).toBe(false);
-        expect(mockRuntime.state.presenceListeners.has(listenerB)).toBe(true);
+        expect(mockRuntime.presenceListeners.has(listenerA)).toBe(false);
+        expect(mockRuntime.presenceListeners.has(listenerB)).toBe(true);
     });
 
     it('is safe to call the unsubscribe function more than once', () => {
@@ -52,6 +50,6 @@ describe('onPresence', () => {
         unsubscribe();
         unsubscribe();
 
-        expect(mockRuntime.state.presenceListeners.size).toBe(0);
+        expect(mockRuntime.presenceListeners.size).toBe(0);
     });
 });
