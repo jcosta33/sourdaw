@@ -12,3 +12,4 @@ export { teardownYeastRuntime } from './teardownYeastRuntime';
 export { getYeastSchedulingLookahead } from './getYeastSchedulingLookahead';
 export { createOfflineYeastMidiProcessor } from './createOfflineYeastMidiProcessor';
 export { subscribeYeastPreview } from './subscribeYeastPreview';
+export { reorderYeastProcessor } from './reorderYeastProcessor';
