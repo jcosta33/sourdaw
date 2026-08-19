@@ -289,12 +289,14 @@ struct GranularShifter {
     /// blend below stays full-band, so engaging Shimmer does not darken the tank
     /// it sits in.
     ///
-    /// The order is set by the rejection needed at the fold corner rather than
-    /// by the passband, where a single second-order section reaches barely 10 dB
-    /// down. Two sections put the image under the noise the tank already carries
-    /// at the image frequency, which is as far as it can usefully go: a third
-    /// section measures the same rejection, because what is left there is the
-    /// tank's own floor and not the filter's stopband.
+    /// The order is set by the rejection needed at the fold frequencies, not by
+    /// the passband. Measured on the fold cells in
+    /// `plate_shimmer_render_contract.rs`: one second-order section at this
+    /// corner rejects 24 to 40 dB, which misses the bar that file sets in every
+    /// cell; two reach 55 to 63 dB. A third section was measured too and buys
+    /// another 5 to 6 dB — real, but a diminishing return on a biquad running
+    /// per sample in each of two tank halves, and far inside the margin two
+    /// sections already hold.
     feed: [Biquad; 2],
     write_pos: usize,
     phase1: f64,

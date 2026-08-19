@@ -266,12 +266,12 @@ const FOLD_TONE_HZ: f32 = 18_000.0;
 /// the ratio between them is the rejection the feed filter achieves and nothing
 /// else.
 ///
-/// An unfiltered feed manages between 5 dB and *nothing* across the four cells
-/// below — at 48 kHz the alias comes back louder than the partial that made it.
-/// A band-limited feed reaches at worst 60 dB, and that figure is set by the
-/// tank's own noise at the image frequency rather than by the filter, so it does
-/// not move when the filter is made steeper. This bar sits between the two with
-/// room on both sides; it is not a rejection figure to tune a filter down to.
+/// An unfiltered feed manages between 5 dB and *less than nothing* across the
+/// four cells below — at 48 kHz the alias comes back louder than the partial
+/// that made it. The shipped fourth-order feed filter reaches 55 dB at worst.
+/// This bar sits between the two with room on both sides, so it fails on a feed
+/// that stops being band-limited rather than on one whose filter was retuned; it
+/// is not a rejection figure to design a filter down to.
 const FOLD_REJECTION_DB: f32 = 40.0;
 
 #[test]
