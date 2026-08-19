@@ -1,0 +1,27 @@
+.agents/decisions/0026-ownership-by-exception.md
+  s_8ddfabd1166b5d::t_81ded4e7327ca3 105-107
+AGENTS.md
+  s_8ddfabd1166b5d::t_98a2e04d6a6477 192
+  s_8ddfabd1166b5d::t_9b0bcd138b5364 186,189-191
+  s_8ddfabd1166b5d::t_fad3ba4f8c7685 178
+  s_8ddfabd1166b5d::t_672fedbc8f6dd2 179-185,188,193-212,219
+  s_8ddfabd1166b5d::t_4b4f216c292cd3 187
+.github/pull_request_template.md
+  s_8ddfabd1166b5d::t_36b0bd77e03b0c 19-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9d24bb7735ab2870fae4df458e7c853bc905045b",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
