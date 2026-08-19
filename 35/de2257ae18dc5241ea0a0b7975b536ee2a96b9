@@ -1,0 +1,19 @@
+scripts/__tests__/resourceGuard.spec.ts
+  s_17304f5c488d05::t_df041643e4df66 398,403-409
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "35de2257ae18dc5241ea0a0b7975b536ee2a96b9",
+  "prompts": {},
+  "sessions": {
+    "s_17304f5c488d05": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12ae5903-f746-4e24-878e-d160658947d3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
