@@ -38,10 +38,12 @@
                 ".prettierrc",
                 "AGENTS.md",
                 "CLAUDE.md",
+                "CONTRIBUTING.md",
                 "Cargo.lock",
                 "Cargo.toml",
                 "GEMINI.md",
                 "README.md",
+                "SECURITY.md",
                 "components.json",
                 "eslint.config.mjs",
                 "index.html",
@@ -611,7 +613,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "69659fb07eba121f9d9a66e27d7bb696e56cec004ed126ea5ee4e7940acbdf08"
+            "sha256": "ea507dad9cd930681a474cf81ca925feb97109cefd63220a13e57472f241bccc"
         },
         {
             "path": "server/package.json",
@@ -631,7 +633,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "ef608355492ffc8a7b7e83964153ac11678b14f030a5717d2aa4d2ad14a24be2"
+            "sha256": "556bccf886a221ecaca60076b2112ae0d4970ec4b253c1936b698de93cef3cdb"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -639,7 +641,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "763016f68b9626876af02c3b140dd2a514c47357a36730dd43d3535e7721b36c"
+            "sha256": "506853a334648b1232b39285edd8a36a6db5b5d809a4486f297518412882566c"
         }
     ],
     "externalReferences": [
@@ -735,6 +737,49 @@
             "surface": "webllm-qwen-artifacts",
             "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
             "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://*.huggingface.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://*.hf.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/app"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/app/installations/${slot}/access_tokens",
+            "templateSha256": "76200d27ac9ab019dcfb19f05709725ad0be2d0093145bbb300ced8d3b1306ab"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://github.com/${slot}.git",
+            "templateSha256": "23b8ac49f564e78e90b87a229539dc6e2563b9a6f1a1b5d4f098b277a7240b8e"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://x-access-token:${slot}@github.com/${slot}.git",
+            "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
         },
         {
             "surface": "cloud-ai-providers",
