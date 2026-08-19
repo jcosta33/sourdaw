@@ -6,12 +6,12 @@ const mocks = vi.hoisted(() => ({
     stopVoiceDictation: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/repositories/voiceTauriAdapter/stopDictation', () => ({
+vi.mock('#/modules/AiRuntime/repositories/voiceNativeAdapter/stopDictation', () => ({
     stopDictation: mocks.stopVoiceDictation,
 }));
 
 describe('stopDictation (useCase)', () => {
-    it('forwards to the voiceTauriAdapter', async () => {
+    it('forwards to the voiceNativeAdapter', async () => {
         await stopDictation();
         expect(mocks.stopVoiceDictation).toHaveBeenCalledTimes(1);
     });

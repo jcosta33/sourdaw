@@ -377,7 +377,7 @@ function resolveLockDep(byName: Map<string, LockPackage[]>, depString: string): 
  * closure — the crate plus every package transitively reachable through the lock
  * `dependencies` graph. A locked version/checksum change to a dependency this
  * crate actually builds against trips it; a bump confined to an unrelated crate
- * (`src-tauri`, `daw-engine`, …) that shares the one workspace lock does not.
+ * (`sourdaw-native`, `daw-engine`, …) that shares the one workspace lock does not.
  */
 function lockClosureFingerprint(crateName: string): string {
     const byName = parseCargoLock();

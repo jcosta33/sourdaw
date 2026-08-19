@@ -19,7 +19,8 @@ const MOBILE_BREAKPOINT = 768;
  * a running shell and re-run its boot effects — and `loadProject` ends in
  * `clearUndoHistory()`, so the user's undo stack and non-CRDT module state would be
  * silently discarded. Ordinary desktop actions cross 768 CSS px mid-session: browser
- * zoom at 175–200%, docking DevTools to the side, dragging a Tauri window narrow. The
+ * zoom at 175–200%, docking DevTools to the side, dragging the Sourdaw desktop app
+ * window narrow. The
  * mobile → desktop direction stays live because the shell has not mounted yet, so
  * there is no session to lose and a window that starts narrow can still recover.
  *

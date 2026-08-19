@@ -90,7 +90,7 @@ extraResources:
 afterPack: ./scripts/flipElectronFuses.ts
 
 mac:
-    icon: src-tauri/icons/icon.icns
+    icon: build/icons/icon.icns
     category: public.app-category.music
     minimumSystemVersion: '11.0'
     hardenedRuntime: true
@@ -105,7 +105,7 @@ mac:
         - target: zip
           arch:
               - arm64
-    # Carried over from `src-tauri/Info.plist`. electron-builder's `extendInfo`
+    # Carried over from the Tauri-era Info.plist. electron-builder's `extendInfo`
     # takes an inline object only — there is no path form — so the entries live
     # here rather than in a second plist under `build/`.
     extendInfo:
@@ -152,7 +152,7 @@ dmg:
 # cross-compile contract that has to be satisfied before this target produces a
 # working installer.
 win:
-    icon: src-tauri/icons/icon.ico
+    icon: build/icons/icon.ico
     target:
         - target: nsis
           arch:

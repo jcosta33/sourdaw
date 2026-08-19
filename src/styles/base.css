@@ -14,13 +14,6 @@
     }
 }
 
-/* Tauri specific font-weight compensation for Linux WebKitGTK */
-[data-platform='linux'] {
-    --weight-normal: 300;
-    --weight-medium: 400;
-    --weight-semibold: 500;
-}
-
 /* ── Global scrollbar styling ───────────────────────────────────────────── */
 /* Firefox */
 * {

@@ -1,8 +1,8 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 export async function createCrumbsInstance(instanceId: string, sampleRate: number): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('create_crumbs', { instanceId, sampleRate });
+    await desktopInvoke('create_crumbs', { instanceId, sampleRate });
 }

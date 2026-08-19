@@ -8,7 +8,7 @@ export type MidiInputInfo = {
  * The only two fields this module ever reads off an inbound MIDI message.
  *
  * Web MIDI delivers a real `MIDIMessageEvent`, which satisfies this shape; the
- * Tauri bridge has no DOM event to deliver and used to fabricate one with a
+ * native bridge has no DOM event to deliver and used to fabricate one with a
  * cast, producing an object that claimed `target`, `currentTarget`,
  * `preventDefault` and the rest while carrying none of them (issue #1837 F8).
  * Naming what is actually consumed lets both sources be honest.

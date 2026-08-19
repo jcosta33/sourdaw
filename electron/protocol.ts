@@ -9,8 +9,8 @@
  * audio graph cannot start.
  *
  * `file://` gives neither. A custom scheme registered as `standard` + `secure`
- * gives both, and lets every response carry the isolation headers and the same
- * Content-Security-Policy Tauri ships today.
+ * gives both, and lets every response carry the isolation headers and the
+ * production Content-Security-Policy.
  */
 import { statSync } from 'node:fs';
 import { dirname, join, normalize, resolve, sep } from 'node:path';
@@ -24,11 +24,12 @@ export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
 
 /**
- * The production CSP from `src-tauri/tauri.conf.json`
- * (`app.security.csp`), with the Tauri-only schemes removed.
+ * The production CSP. Carried over from the Tauri-era policy with the
+ * Tauri-only schemes removed, so the same renderer build kept the same policy
+ * across the shell change.
  *
- * `ipc:` / `http://ipc.localhost` name Tauri's IPC transport and `asset:` /
- * `http://asset.localhost` name Tauri's asset protocol. Neither exists in the
+ * `ipc:` / `http://ipc.localhost` named Tauri's IPC transport and `asset:` /
+ * `http://asset.localhost` named its asset protocol. Neither exists in the
  * Electron shell — the shell serves everything from this origin, which `'self'`
  * already covers — so carrying them here would widen the policy past what any
  * request can use.
@@ -37,12 +38,7 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
  * invalid source and logs a console error on every page load. A rejected source
  * grants nothing, so dropping it costs no reach — an `http://[::1]:port` fetch
  * is refused either way — and it keeps the console readable, which is the only
- * place a real policy violation shows up. (The Tauri config still carries the
- * token; that is a defect in the shipped policy, filed separately.)
- *
- * Every other directive is byte-identical to the Tauri policy on purpose: the
- * renderer is the same build, so a directive that differs is a behavioural
- * difference between the two shells.
+ * place a real policy violation shows up.
  */
 export const PRODUCTION_CSP = [
     "default-src 'self'",

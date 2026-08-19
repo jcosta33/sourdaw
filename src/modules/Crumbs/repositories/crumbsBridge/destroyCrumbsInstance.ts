@@ -1,8 +1,8 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 export async function destroyCrumbsInstance(instanceId: string): Promise<void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return;
     }
-    await tauriInvoke('destroy_crumbs', { instanceId });
+    await desktopInvoke('destroy_crumbs', { instanceId });
 }

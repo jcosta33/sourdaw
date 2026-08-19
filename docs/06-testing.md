@@ -10,7 +10,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm test:e2e -- <spec>`. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
 - **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
-- **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `@tauri-apps/api/core` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
+- **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `#/utils/desktopBridge` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
 - **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
 
 ---
@@ -32,7 +32,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 
 **Do not test (yet):**
 
-- Real Tauri IPC round-trips
+- Real desktop IPC round-trips
 - Real Web Audio rendering (AudioWorklet output, scheduler correctness with real time)
 - Real Automerge document convergence
 - Cross-module flows end-to-end
@@ -117,7 +117,7 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 | Subject under test                                              | Mock its deps with                                                        |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                       |
-| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                |
+| A module outside the inject map (`#/utils/desktopBridge`, etc.) | `vi.mock(modulePath, ...)`                                                |
 | Thin static same-module repos used by an injectable             | `vi.mock` on those repo modules is OK when they are not in the inject map |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
@@ -204,11 +204,11 @@ Use the canonical shape from §5: `spy<T>()` + `injectDependencies()` for depend
 
 Use the canonical shape from §5 (and the real `useCases/__tests__/addTrack.spec.ts` in Arrangement). Do not invent `TrackRepo` / `Logger` inject deps that the subject does not declare.
 
-### 6.2 Repositories — Tauri IPC
+### 6.2 Repositories — desktop IPC
 
 Subject: `src/modules/CrdtDocument/repositories/nativeCrdtPersistence/nativeCreateProject.ts` — wraps the module's `invokeCommand` adapter.
 
-Mock `invokeCommand` at the repository-folder boundary. Its own repository test covers the Tauri `invoke` call.
+Mock `invokeCommand` at the repository-folder boundary. Its own repository test covers the `desktopInvoke` call.
 
 ```typescript
 // src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/nativeCrdtPersistence.spec.ts
@@ -247,7 +247,7 @@ describe('nativeCreateProject', () => {
 });
 ```
 
-If the repository checks `isTauri()` and short-circuits when not in Tauri, also mock that helper (`#/utils/tauriRuntime`) and test both branches.
+If the repository checks `isDesktopRuntime()` and short-circuits outside the desktop shell, also mock that helper (`#/utils/desktopRuntime`) and test both branches.
 
 ### 6.3 Repositories — Web Audio
 
@@ -622,17 +622,17 @@ If a module’s store is a module-level singleton (e.g. `export const trackStore
 
 Prefer (1) unless the store is the subject under test.
 
-### 7.6 Tauri availability
+### 7.6 Desktop runtime availability
 
-Repositories that check `isTauri()` before calling `invoke` need that check mocked:
+Repositories that check `isDesktopRuntime()` before invoking a command need that check mocked:
 
 ```typescript
-vi.mock('#/utils/tauriRuntime', () => ({
-    isTauri: vi.fn(() => true),
+vi.mock('#/utils/desktopRuntime', () => ({
+    isDesktopRuntime: vi.fn(() => true),
 }));
 ```
 
-Test both branches: the Tauri-available path (mock `invoke`) and the browser-only fallback path.
+Test both branches: the desktop path (mock `desktopInvoke`) and the browser-only fallback path.
 
 ---
 
@@ -673,9 +673,9 @@ mod tests {
 }
 ```
 
-### Tauri backend tests
+### Native command tests
 
-Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in files including `filesystem.rs`, `plugin_gui.rs`, and `plugins.rs`. Add command tests beside the Rust module they exercise; test command behavior directly rather than routing through Tauri IPC.
+Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(test)]` coverage. Add command tests beside the Rust module they exercise; test the body directly rather than routing through the desktop shell's IPC.
 
 ---
 

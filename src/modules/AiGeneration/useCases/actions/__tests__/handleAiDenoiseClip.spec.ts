@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '../handleAiDenoiseClip';
 
-const { cacheAudioBufferMock, denoiseAudioMock, getCachedAudioBufferMock, isTauriMock, updateTaskMock } = vi.hoisted(
+const { cacheAudioBufferMock, denoiseAudioMock, getCachedAudioBufferMock, isDesktopMock, updateTaskMock } = vi.hoisted(
     () => ({
         cacheAudioBufferMock: vi.fn(),
         denoiseAudioMock: vi.fn(),
         getCachedAudioBufferMock: vi.fn(),
-        isTauriMock: vi.fn(),
+        isDesktopMock: vi.fn(),
         updateTaskMock: vi.fn(),
     })
 );
@@ -21,8 +21,8 @@ vi.mock('../../nativeAiBridge/denoiseAudio', () => ({
     denoiseAudio: denoiseAudioMock,
 }));
 
-vi.mock('#/utils/tauriRuntime', () => ({
-    isTauri: isTauriMock,
+vi.mock('#/utils/desktopRuntime', () => ({
+    isDesktopRuntime: isDesktopMock,
 }));
 
 vi.mock('../addTask', () => ({
@@ -66,7 +66,7 @@ describe('handleAiDenoiseClip', () => {
         vi.clearAllMocks();
         vi.stubGlobal('OfflineAudioContext', TestOfflineAudioContext);
         getCachedAudioBufferMock.mockReturnValue(null);
-        isTauriMock.mockReturnValue(false);
+        isDesktopMock.mockReturnValue(false);
     });
 
     it('records an error task when the clip buffer is missing', async () => {
@@ -83,13 +83,13 @@ describe('handleAiDenoiseClip', () => {
         );
     });
 
-    it('should route the Tauri denoise path through AudioEngine cache use cases', async () => {
+    it('should route the desktop denoise path through AudioEngine cache use cases', async () => {
         const source_samples = new Float32Array([0.1, 0.2, 0.3, 0.4]);
         const source_buffer = create_test_audio_buffer(source_samples);
         const denoised_samples = new Float32Array([0.01, 0.02, 0.03, 0.04]);
 
         getCachedAudioBufferMock.mockReturnValue(source_buffer);
-        isTauriMock.mockReturnValue(true);
+        isDesktopMock.mockReturnValue(true);
         denoiseAudioMock.mockResolvedValue({
             noise_floor_db: -42,
             samples: denoised_samples,

@@ -1,25 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { open } from '@tauri-apps/plugin-dialog';
+import { desktopOpenDialog } from '#/utils/desktopBridge';
 
 import { selectNativeAudioExportDirectory } from '../selectNativeAudioExportDirectory';
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-    open: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    desktopOpenDialog: vi.fn(),
 }));
 
 describe('selectNativeAudioExportDirectory', () => {
     beforeEach(() => {
-        vi.mocked(open).mockReset();
+        vi.mocked(desktopOpenDialog).mockReset();
     });
 
     it('should return null when native directory selection is cancelled', async () => {
-        vi.mocked(open).mockResolvedValue(null);
+        vi.mocked(desktopOpenDialog).mockResolvedValue(null);
 
         const result = await selectNativeAudioExportDirectory();
 
         expect(result).toBeNull();
-        expect(open).toHaveBeenCalledWith({
+        expect(desktopOpenDialog).toHaveBeenCalledWith({
             directory: true,
             multiple: false,
             title: 'Select Output Folder for Slices (Stems)',

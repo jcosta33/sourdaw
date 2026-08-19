@@ -42,7 +42,8 @@ what is open. Neither was engineering's to take unilaterally.
   `cargo fmt --check` leg, after #1098 reformatted 96 files so the leg could
   pass). `-D warnings` deliberately **not** set: 239 pre-existing warning sites,
   and `#[allow]` would be evasion. `src-tauri` excluded from the build legs — it
-  cannot compile on `ubuntu-latest`.
+  cannot compile on `ubuntu-latest`. (Since the Electron cutover the excluded
+  crate is `sourdaw-native`, for the same unconditional-`metal` reason.)
   Context the decision did not change: `health-gates.yml` is
   `on: workflow_dispatch` only because the account's Actions billing is
   suspended, so *nothing* runs automatically today. Restoring it is one `on:`
@@ -160,7 +161,7 @@ code: no (all dormant).
 | **Push 2 hardware controller** | ControlSurface | Protocol/codec primitives exist, but no production hardware transport owns them; the two files remain visible `no-orphans` warnings. `handlePadPress` now does an indexed write with a clamped velocity instead of a full `.map()` scan (issue #1828 F-6/F-7); `updateDisplay`/`setPadColor`/`setPadMode`/`setScale`/`mapEncoder` and `pushStore`'s UI reader are still unreached outside specs | Build the connection lifecycle tracked by #1745; do not delete or exempt the primitives |
 | **MIDI hardware controller** | ControlSurface | `export/importHardwareMappings` dead; profiles never populated; the unshipped controller-scripting Worker was retired in #1746. `hardwareControllerStore` is now seeded with `PUSH_2_PROFILE` and `importHardwareMappings` notifies on an unknown `profileId` instead of silently no-opping (issue #1828 F-8), but `matchControllerProfile` still has no production caller and no device-identity data to match against | Build device wiring, or remove the remaining subsystem. Any future scripting surface requires a new trust-model decision |
 | **MCU/OSC control-surface protocol layer** | ControlSurface | `stores/controlSurface.ts` (`McuState` banking/vpots, OSC endpoints/mappings) is reachable only through `setProtocol`; `mcuBankLeft`/`mcuBankRight`/vpot/OSC dispatch have no production caller. `connected` is now kept in sync with `protocol` inside `handleSetControlSurface` and the banking use cases no longer reassign the master fader or leave channel faders unclamped (issue #1828 F-4/F-5) | Build the MCU/OSC hardware transport wiring, or remove the protocol-state model. Same desktop-deferral class as the Push/MIDI hardware controller rows above (ADR 0016) |
-| **Native-Tauri CRDT backend + `.sdaw` import/merge** | CrdtDocument | `nativeCrdtPersistence/` parked; PR #110 fixed the misleading `getPersistenceBackend()` report so the active lifecycle reports browser/IndexedDB; `.sdaw` merge wired but no trigger | Build the native backend / `.sdaw` import UI, or remove |
+| **Native CRDT backend + `.sdaw` import/merge** | CrdtDocument | `nativeCrdtPersistence/` parked; PR #110 fixed the misleading `getPersistenceBackend()` report so the active lifecycle reports browser/IndexedDB; `.sdaw` merge wired but no trigger | Build the native backend / `.sdaw` import UI, or remove |
 | **Toaster performance features** | Toaster | Note-Repeat / 16-Levels / Sound-Locks / Pattern-Morph / multi-pattern / polymetric — full impls, no UI/command entry; their sequencer reader branches are dead | Ship each (UI + command + e2e) or retire it with its branches |
 | **Yeast param-readback / introspection UI** | Yeast | StepPatternEditor edits never reach the Arpeggiator; all panel knobs uncontrolled; 12 introspection methods + reorder are unbuilt-feature groundwork. (`yeastPanic` is now wired via Transport `panicYeastRuntime` → Yeast `yeastPanic` — no longer part of this row) | Build the param-projection store + pattern/reorder wiring, or retire |
 | **SoundLibrary vs SampleLibrary** | SoundLibrary | Two modules own "the sample library"; only SampleLibrary has a UI; their `findSimilarSamples` return types are incompatible (`SampleEntry[]` vs `string[]`) | Decide the owner; retire or merge the other (cross-module model-merge is forbidden — an ownership/migration decision) |
@@ -581,7 +582,7 @@ code: no (all dormant).
   code: yes, for latency-compensation work. Source:
   `src/modules/AudioEngine/engine/TrackNode.ts:202` (routeOutput).
 - **NativePluginBridgeNode per-block IPC ceiling (architecture).** An async
-  `tauriInvoke('process_plugin_audio')` per audio block means per-block IPC
+  desktop-IPC `process_plugin_audio` call per audio block means per-block IPC
   dominates the budget with many native plugins. Options: accept + cap
   concurrent native plugins vs change the boundary (batching, shared-memory
   transport, processing across the bridge). Blocks code: yes — no code change
@@ -814,7 +815,7 @@ code: no (all dormant).
 
 ## Crumbs
 
-- **Web/non-Tauri build: bridge calls silently void with no real audio** — E2E
+- **Web build: bridge calls silently void with no real audio** — E2E
   against the browser build exercises a working-looking UI over a no-op
   bridge. (The hardcoded "Ready" LED was since fixed: CrumbsPanel now gates
   the LED on an engineReady init check.) Options: explicit unavailable state
@@ -835,7 +836,7 @@ code: no (all dormant).
   engine; no `set_slice_marker` IPC exists. Options: add the IPC + engine path
   vs UI-only markers by design. Blocks code: yes, for slice playback. Source:
   `src/modules/Crumbs/useCases/updateSliceMarker/debouncedUpdateMarkerPosition.ts:16`,
-  `src-tauri/src/commands/crumbs.rs`.
+  `crates/sourdaw-native/src/commands/crumbs.rs`.
 
 ## Knead
 
@@ -867,7 +868,7 @@ code: no (all dormant).
   code: no. Source: `src/modules/AudioEngine/stores/audioBufferCache.ts:64-107`,
   `src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts:108`.
 - **Where does the audio-decoding pipeline live** (browser OfflineAudioContext
-  vs Tauri reads)? Still split: timeline drag-in decodes via the AudioEngine
+  vs native reads)? Still split: timeline drag-in decodes via the AudioEngine
   `decodeAudioFile` use case while sample preview decodes inline with
   `ctx.decodeAudioData`. Blocks code: yes, for decode consolidation. Source:
   `src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts:192`,
@@ -1173,7 +1174,7 @@ re-litigated; ADR 0016 is the record.
   That is the scope rule now, and it replaces the per-row finish-or-remove call for every
   browser-capable entry in the table above. Two rows (RAVE, DDSP/TF.js) carry an unproven premise:
   establish that the models run in-browser at acceptable cost before committing to a shape. Rows
-  whose home is native — the Tauri CRDT backend, Push hardware, MIDI hardware controllers — follow
+  whose home is native — the native CRDT backend, Push hardware, MIDI hardware controllers — follow
   the desktop deferral.
 - **Correctness versus existing mixes** — **there are no users; correctness wins outright.** No
   compatibility shims, no version-gated legacy behaviour. This answers Gluten's +6.31 dB, Knead's

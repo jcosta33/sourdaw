@@ -1,9 +1,9 @@
-import { tauriInvoke } from '#/utils/tauriBridge';
+import { desktopInvoke } from '#/utils/desktopBridge';
 
-import { ensureTauri } from './helpers';
+import { ensureNative } from './helpers';
 
 export async function getCrumbsPosition(instanceId: string): Promise<number> {
-    ensureTauri('get_crumbs_position');
-    const result = await tauriInvoke('get_crumbs_position', { instanceId });
+    ensureNative('get_crumbs_position');
+    const result = await desktopInvoke('get_crumbs_position', { instanceId });
     return result as number;
 }

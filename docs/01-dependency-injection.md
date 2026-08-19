@@ -54,7 +54,7 @@ Hooks and **views** **do not** use `inject()`. They subscribe to stores via cont
 ## What is still open
 
 > [!NOTE]
-> **Error handling** — no single documented pattern for surfacing errors from use cases to callers; `Result`-style alignment with Tauri is a future direction.
+> **Error handling** — no single documented pattern for surfacing errors from use cases to callers; `Result`-style alignment with the native command boundary is a future direction.
 
 > [!NOTE]
 > **Internationalisation (i18n)** — not yet documented end-to-end.

@@ -1,27 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
-import { join } from '@tauri-apps/api/path';
+import { desktopPathJoin, writeFileBytes } from '#/utils/desktopBridge';
 
 import { writeNativeAudioStemFile } from '../writeNativeAudioStemFile';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/path', () => ({
-    join: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    desktopPathJoin: vi.fn(),
+    writeFileBytes: vi.fn(),
 }));
 
 describe('writeNativeAudioStemFile', () => {
     beforeEach(() => {
-        vi.mocked(invoke).mockReset();
-        vi.mocked(join).mockReset();
+        vi.mocked(desktopPathJoin).mockReset();
+        vi.mocked(writeFileBytes).mockReset();
     });
 
-    it('should join the native stems directory with the encoded file name before writing bytes', async () => {
+    it('should join the native stems directory with the file name before writing bytes', async () => {
         const bytes = new Uint8Array([7, 8, 9]);
-        vi.mocked(join).mockResolvedValue('/exports/Kick.wav');
+        vi.mocked(desktopPathJoin).mockResolvedValue('/exports/Kick.wav');
 
         await writeNativeAudioStemFile({
             bytes,
@@ -29,12 +25,10 @@ describe('writeNativeAudioStemFile', () => {
             fileName: 'Kick.wav',
         });
 
-        expect(join).toHaveBeenCalledWith('/exports', 'Kick.wav');
-        expect(invoke).toHaveBeenCalledWith('write_file_bytes', expect.any(ArrayBuffer), {
-            headers: { 'x-sourdaw-path': encodeURIComponent('/exports/Kick.wav') },
+        expect(desktopPathJoin).toHaveBeenCalledWith('/exports', 'Kick.wav');
+        expect(writeFileBytes).toHaveBeenCalledWith({
+            bytes,
+            path: '/exports/Kick.wav',
         });
-
-        const [, body] = vi.mocked(invoke).mock.calls[0] as unknown as [string, ArrayBuffer];
-        expect(new Uint8Array(body)).toEqual(new Uint8Array([7, 8, 9]));
     });
 });

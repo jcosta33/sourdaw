@@ -38,7 +38,7 @@ import {
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
-import { isTauri } from '#/utils/tauriRuntime';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -540,8 +540,8 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         Reverse
                     </button>
                     <DisabledFeatureWrapper
-                        disabled={!isTauri()}
-                        reason="AI Denoise requires the Tauri Desktop version of Sourdaw to run."
+                        disabled={!isDesktopRuntime()}
+                        reason="AI Denoise requires the Sourdaw desktop app."
                         className="w-full flex"
                     >
                         <button
@@ -561,7 +561,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         >
                             <span>AI Denoise</span>
                             <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
-                                {isTauri() ? 'Desktop' : 'Web'}
+                                {isDesktopRuntime() ? 'Desktop' : 'Web'}
                             </span>
                         </button>
                     </DisabledFeatureWrapper>

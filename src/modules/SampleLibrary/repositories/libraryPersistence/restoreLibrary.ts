@@ -1,11 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, libraryStore, setActiveRoot } from '../../stores/libraryStore';
-import { readTauriDirectory } from '../readTauriDirectory';
+import { readNativeDirectory } from '../readNativeDirectory';
 
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
 import { ACTIVE_ROOT_KEY } from './persistSamples';
@@ -205,17 +205,17 @@ function isNativeChildListingError(error: unknown): boolean {
 }
 
 /**
- * Validate that a restored Tauri root's absolute path still resolves on disk.
+ * Validate that a restored native root's absolute path still resolves on disk.
  * Returns the status the root should take: `ready` when the path exists,
  * `path_missing` when it provably does not, and `offline` when we cannot tell
- * (not in a Tauri runtime, no path recorded, or the check itself failed).
+ * (not in a desktop runtime, no path recorded, or the check itself failed).
  */
-async function resolveTauriRootStatus(root: LibraryRoot): Promise<LibraryRoot['status']> {
-    if (!isTauri() || !root.rootRef) {
+async function resolveNativeRootStatus(root: LibraryRoot): Promise<LibraryRoot['status']> {
+    if (!isDesktopRuntime() || !root.rootRef) {
         return 'offline';
     }
     try {
-        await readTauriDirectory({ path: root.rootRef });
+        await readNativeDirectory({ path: root.rootRef });
         return 'ready';
     } catch (error) {
         if (isNativeMissingDirectoryError(error)) {
@@ -289,11 +289,11 @@ export async function restoreLibrary(): Promise<string[]> {
                     root.status = 'offline';
                 }
             } else {
-                // Tauri: cheaply confirm the absolute path still resolves before
+                // Native: cheaply confirm the absolute path still resolves before
                 // claiming the root is ready. A moved/deleted folder restores as
                 // path_missing instead of a falsely-ready root that fails on first
                 // access with no explanation.
-                root.status = await resolveTauriRootStatus(root);
+                root.status = await resolveNativeRootStatus(root);
             }
         }
 

@@ -24,7 +24,7 @@ import { setCrumbsParamThrottled } from './crumbsParamBridge/setCrumbsParamThrot
  * **The knob was not reaching the engine that renders.** Crumbs is built by
  * `wasmDeviceRegistry` and sounds through the `crumbs-processor` worklet, live and
  * in an offline bounce. `setCrumbsParamThrottled` addresses the *native*
- * `CrumbsInstance` behind the `set_crumbs_param` Tauri command — the
+ * `CrumbsInstance` behind the `set_crumbs_param` native command — the
  * sample-acquisition and disk-streaming path, not the one summed into the track
  * strip. So moving Cutoff moved a filter nobody could hear. Both halves below now
  * drive the worklet as well: `updateDeviceParam` → `TrackNode.updateParam` →

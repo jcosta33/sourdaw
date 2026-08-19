@@ -75,6 +75,13 @@ Native plugin hosting uses explicit security policy:
 
 accepted
 
+Reviewed at the Electron cutover (ADR 0029, 2026-08-19): the policy stands
+unchanged. Decision item 3's "Tauri command layer" is now the native command
+layer in `crates/sourdaw-native` fronted by the Electron IPC surface
+(`electron/commands.ts`); scan-root authority, DTO-only exposure, and the
+entitlement posture are shell-independent and carried over verbatim — the
+packaged entitlements delta is recorded in `build/entitlements.mac.plist`.
+
 ## Follow-up work
 
 Future implementation work should move scan-root authority into native-owned

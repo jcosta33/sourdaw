@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 import {
     notRunningEngineRtDiagnostics,
@@ -86,9 +86,9 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
  * platforms but must own the rejection.
  */
 export async function getEngineRtDiagnostics(): Promise<EngineRtDiagnostics> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return notRunningEngineRtDiagnostics;
     }
 
-    return toEngineRtDiagnostics(await tauriInvoke('engine_rt_diagnostics'));
+    return toEngineRtDiagnostics(await desktopInvoke('engine_rt_diagnostics'));
 }

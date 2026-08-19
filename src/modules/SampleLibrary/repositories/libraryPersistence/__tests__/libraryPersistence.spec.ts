@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type LibraryRoot, type SampleRecord, toBpm } from '../../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, setActiveRoot, type LibraryState } from '../../../stores/libraryStore';
-import { readTauriDirectory } from '../../readTauriDirectory';
+import { readNativeDirectory } from '../../readNativeDirectory';
 import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
 import { persistSamples, ACTIVE_ROOT_KEY } from '../persistSamples';
@@ -30,12 +30,12 @@ vi.mock('../../../stores/libraryStore', () => ({
     setActiveRoot: vi.fn(),
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(),
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: vi.fn(),
 }));
 
-vi.mock('../../readTauriDirectory', () => ({
-    readTauriDirectory: vi.fn(),
+vi.mock('../../readNativeDirectory', () => ({
+    readNativeDirectory: vi.fn(),
 }));
 
 const mockNotificationEventBus = {
@@ -171,7 +171,7 @@ function createPersistenceDb({ roots = [], handles = [], samples = [], abortWrit
     };
 }
 
-function createTauriRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
+function createNativeRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
     return {
         id: 'root-1',
         name: 'Samples',
@@ -241,11 +241,11 @@ describe('Library Persistence', () => {
 
         it('serializes roots without their runtime handle and stores browser handles separately', async () => {
             const handle = { kind: 'directory' } as unknown as FileSystemDirectoryHandle;
-            const browserRoot = createTauriRoot({ id: 'b1', provider: 'browser', handle });
-            const tauriRoot = createTauriRoot({ id: 't1' });
+            const browserRoot = createNativeRoot({ id: 'b1', provider: 'browser', handle });
+            const nativeRoot = createNativeRoot({ id: 't1' });
             const db = createPersistenceDb();
             vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
-            mockLibraryStore.value = createLibraryState({ roots: [browserRoot, tauriRoot] });
+            mockLibraryStore.value = createLibraryState({ roots: [browserRoot, nativeRoot] });
 
             await persistLibraryRoots();
 
@@ -267,7 +267,7 @@ describe('Library Persistence', () => {
                 },
                 close: vi.fn(),
             } as any);
-            mockLibraryStore.value = createLibraryState({ roots: [createTauriRoot()] });
+            mockLibraryStore.value = createLibraryState({ roots: [createNativeRoot()] });
 
             await persistLibraryRoots();
 
@@ -354,7 +354,7 @@ describe('Library Persistence', () => {
         });
 
         it('should restore favorite and existing tags after the real persistSamples to restoreLibrary path', async () => {
-            const root = createTauriRoot({ id: 'root-1', status: 'ready' });
+            const root = createNativeRoot({ id: 'root-1', status: 'ready' });
             const sample = {
                 id: 'sample-1',
                 libraryRootId: 'root-1',
@@ -369,7 +369,7 @@ describe('Library Persistence', () => {
             } satisfies SampleRecord;
             const db = createPersistenceDb({ roots: [root] });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
-            vi.mocked(isTauri).mockReturnValue(false);
+            vi.mocked(isDesktopRuntime).mockReturnValue(false);
             mockLibraryStore.value = createLibraryState({
                 roots: [root],
                 samples: [sample],
@@ -415,15 +415,15 @@ describe('Library Persistence', () => {
             expect(helpers.openDb).toHaveBeenCalled();
         });
 
-        it('should probe restored Tauri roots through the native directory reader', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(readTauriDirectory).mockResolvedValue([]);
-            const root = createTauriRoot();
+        it('should probe restored native roots through the native directory reader', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockResolvedValue([]);
+            const root = createNativeRoot();
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
 
             const restoredRootIds = await restoreLibrary();
 
-            expect(readTauriDirectory).toHaveBeenCalledWith({ path: '/Users/jose/Samples' });
+            expect(readNativeDirectory).toHaveBeenCalledWith({ path: '/Users/jose/Samples' });
             expectRestoredRoot({ id: 'root-1', status: 'ready' });
             expect(batchStoreUpdates).toHaveBeenCalledTimes(1);
             expect(restoredRootIds).toEqual(['root-1']);
@@ -456,7 +456,7 @@ describe('Library Persistence', () => {
                 format: { durationSec: 'bad' },
             };
             const db = createPersistenceDb({
-                roots: [{ id: 'bad-root' }, createTauriRoot()],
+                roots: [{ id: 'bad-root' }, createNativeRoot()],
                 handles: [{ id: 'bad-handle' }],
                 samples: [malformedSample, malformedFormat, createAnalyzedSample()],
             });
@@ -475,7 +475,7 @@ describe('Library Persistence', () => {
         });
 
         it('does not expose partial restore state when cleanup aborts', async () => {
-            const root = createTauriRoot();
+            const root = createNativeRoot();
             const db = createPersistenceDb({ roots: [root], samples: [createAnalyzedSample()], abortWrites: true });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
 
@@ -497,10 +497,10 @@ describe('Library Persistence', () => {
             expect(db.stores.samples.rows.get('sample-1')).not.toHaveProperty('analysis');
         });
 
-        it('should mark restored Tauri roots missing when the native directory reader reports a missing path', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(readTauriDirectory).mockRejectedValue('File not found or not accessible');
-            const root = createTauriRoot();
+        it('should mark restored native roots missing when the native directory reader reports a missing path', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockRejectedValue('File not found or not accessible');
+            const root = createNativeRoot();
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
 
             await restoreLibrary();
@@ -508,10 +508,10 @@ describe('Library Persistence', () => {
             expectRestoredRoot({ id: 'root-1', status: 'path_missing' });
         });
 
-        it('should keep restored Tauri roots ready when a child entry fails after the root opens', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read entry: Operation not permitted');
-            const root = createTauriRoot();
+        it('should keep restored native roots ready when a child entry fails after the root opens', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockRejectedValue('Failed to read entry: Operation not permitted');
+            const root = createNativeRoot();
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
 
             await restoreLibrary();
@@ -519,10 +519,10 @@ describe('Library Persistence', () => {
             expectRestoredRoot({ id: 'root-1', status: 'ready' });
         });
 
-        it('should keep restored Tauri roots ready when child metadata fails after the root opens', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read metadata: Operation not permitted');
-            const root = createTauriRoot();
+        it('should keep restored native roots ready when child metadata fails after the root opens', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockRejectedValue('Failed to read metadata: Operation not permitted');
+            const root = createNativeRoot();
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
 
             await restoreLibrary();
@@ -530,10 +530,10 @@ describe('Library Persistence', () => {
             expectRestoredRoot({ id: 'root-1', status: 'ready' });
         });
 
-        it('should mark restored Tauri roots offline when the root cannot be read', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read directory: Operation not permitted');
-            const root = createTauriRoot();
+        it('should mark restored native roots offline when the root cannot be read', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockRejectedValue('Failed to read directory: Operation not permitted');
+            const root = createNativeRoot();
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
 
             await restoreLibrary();
@@ -545,7 +545,7 @@ describe('Library Persistence', () => {
             const handle = {
                 queryPermission: vi.fn().mockResolvedValue('granted'),
             } as unknown as FileSystemDirectoryHandle;
-            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            const root = createNativeRoot({ id: 'b1', provider: 'browser', status: 'offline' });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(
                 createRestoreDb({ roots: [root], handles: [{ id: 'b1', handle }] }) as any
             );
@@ -559,7 +559,7 @@ describe('Library Persistence', () => {
             const handle = {
                 queryPermission: vi.fn().mockResolvedValue('prompt'),
             } as unknown as FileSystemDirectoryHandle;
-            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            const root = createNativeRoot({ id: 'b1', provider: 'browser', status: 'offline' });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(
                 createRestoreDb({ roots: [root], handles: [{ id: 'b1', handle }] }) as any
             );
@@ -573,7 +573,7 @@ describe('Library Persistence', () => {
             const handle = {
                 queryPermission: vi.fn().mockRejectedValue(new Error('detached')),
             } as unknown as FileSystemDirectoryHandle;
-            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            const root = createNativeRoot({ id: 'b1', provider: 'browser', status: 'offline' });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(
                 createRestoreDb({ roots: [root], handles: [{ id: 'b1', handle }] }) as any
             );
@@ -584,7 +584,7 @@ describe('Library Persistence', () => {
         });
 
         it('marks a browsed root offline when its persisted handle cannot be found', async () => {
-            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            const root = createNativeRoot({ id: 'b1', provider: 'browser', status: 'offline' });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root], handles: [] }) as any);
 
             await restoreLibrary();
@@ -593,9 +593,9 @@ describe('Library Persistence', () => {
         });
 
         it('restores the previously focused root id from localStorage', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(readTauriDirectory).mockResolvedValue([]);
-            const root = createTauriRoot({ id: 'root-1' });
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockResolvedValue([]);
+            const root = createNativeRoot({ id: 'root-1' });
             localStorage.setItem(ACTIVE_ROOT_KEY, 'root-1');
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
             mockLibraryStore.value = createLibraryState({ roots: [root] });

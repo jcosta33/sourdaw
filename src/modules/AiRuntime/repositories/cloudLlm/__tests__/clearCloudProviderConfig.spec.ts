@@ -11,7 +11,7 @@ const invoke = vi.hoisted(() =>
     )
 );
 
-vi.mock('#/utils/tauriBridge', () => ({ isTauri: () => true, tauriInvoke: invoke, createChannel: vi.fn() }));
+vi.mock('#/utils/desktopBridge', () => ({ isDesktopRuntime: () => true, desktopInvoke: invoke, createChannel: vi.fn() }));
 
 describe('clearCloudProviderConfig', () => {
     beforeEach(async () => {

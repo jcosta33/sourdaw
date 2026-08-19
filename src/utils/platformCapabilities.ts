@@ -2,25 +2,25 @@
  * Platform capabilities detection.
  *
  * Detects which features are available based on the runtime environment
- * (Tauri desktop app vs. plain browser). Views use these capabilities to
- * disable UI controls that require unavailable platform features, showing
- * an explanatory tooltip instead.
+ * (desktop app vs. plain browser). Views use these capabilities to disable
+ * UI controls that require unavailable platform features, showing an
+ * explanatory tooltip instead.
  */
 
-import { isTauri } from './tauriRuntime';
+import { isDesktopRuntime } from './desktopRuntime';
 
 export type PlatformCapabilities = {
-    /** CLAP plugin hosting — Tauri only */
+    /** CLAP plugin hosting — desktop only */
     readonly hasNativePlugins: boolean;
-    /** Plugin directory scanning — Tauri only */
+    /** Plugin directory scanning — desktop only */
     readonly hasPluginScanning: boolean;
-    /** MIDI input — Web MIDI API (Chrome) or Tauri native */
+    /** MIDI input — Web MIDI API (Chrome) or native */
     readonly hasMidiInput: boolean;
-    /** Voice command ASR — Tauri native (whisper-rs) or browser SpeechRecognition */
+    /** Voice command ASR — native (whisper-rs) or browser SpeechRecognition */
     readonly hasVoiceCommands: boolean;
-    /** Native OS file save dialogs — Tauri only */
+    /** Native OS file save dialogs — desktop only */
     readonly hasNativeFileDialogs: boolean;
-    /** Multi-track simultaneous recording — Tauri only */
+    /** Multi-track simultaneous recording — desktop only */
     readonly hasMultiTrackRecording: boolean;
     /** Whether we're running in the desktop app */
     readonly isDesktopApp: boolean;
@@ -44,7 +44,7 @@ export function getPlatformCapabilities(): PlatformCapabilities {
         return cached;
     }
 
-    const isDesktop = isTauri();
+    const isDesktop = isDesktopRuntime();
 
     cached = {
         hasNativePlugins: isDesktop,

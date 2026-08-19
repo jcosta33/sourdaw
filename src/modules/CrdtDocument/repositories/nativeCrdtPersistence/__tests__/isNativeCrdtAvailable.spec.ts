@@ -2,19 +2,19 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { isNativeCrdtAvailable } from '../isNativeCrdtAvailable';
 
-type WindowWithTauri = Window & { __TAURI_INTERNALS__?: object };
+type WindowWithDesktopBridge = Window & { sourdaw?: object };
 
 describe('isNativeCrdtAvailable', () => {
     afterEach(() => {
-        delete (window as WindowWithTauri).__TAURI_INTERNALS__;
+        delete (window as WindowWithDesktopBridge).sourdaw;
     });
 
-    it('returns false when the Tauri desktop runtime marker is absent', () => {
+    it('returns false when the desktop bridge is absent', () => {
         expect(isNativeCrdtAvailable()).toBe(false);
     });
 
-    it('returns true when __TAURI_INTERNALS__ is present on window', () => {
-        (window as WindowWithTauri).__TAURI_INTERNALS__ = {};
+    it('returns true when window.sourdaw is present', () => {
+        (window as WindowWithDesktopBridge).sourdaw = {};
         expect(isNativeCrdtAvailable()).toBe(true);
     });
 });

@@ -20,11 +20,6 @@
                 "scripts/**",
                 "server/**",
                 "src/**",
-                "src-tauri/AGENTS.md",
-                "src-tauri/CLAUDE.md",
-                "src-tauri/GEMINI.md",
-                "src-tauri/src/**",
-                "src-tauri/tests/**",
                 "tests/**",
                 ".dependency-cruiser-known-violations-reachability.json",
                 ".dependency-cruiser-known-violations-tests.json",
@@ -80,32 +75,15 @@
             "retention": "keep-with-obligations",
             "owner": "OS-07",
             "releaseModes": ["source", "desktop"],
-            "paths": [
-                "electron/**",
-                "src-tauri/.cargo/**",
-                "src-tauri/Cargo.toml",
-                "src-tauri/Entitlements.plist",
-                "src-tauri/Info.plist",
-                "src-tauri/build.rs",
-                "src-tauri/capabilities/**",
-                "src-tauri/gen/**",
-                "src-tauri/icons/**",
-                "src-tauri/permissions/**",
-                "src-tauri/tauri.conf.json"
-            ],
-            "sources": [
-                "https://github.com/electron/electron",
-                "https://github.com/tauri-apps/tauri",
-                "package.json",
-                "src-tauri/Cargo.toml"
-            ],
-            "revisions": ["pnpm-lock.yaml", "Cargo.lock"],
+            "paths": ["electron/**", "build/**", "electron-builder.yml"],
+            "sources": ["https://github.com/electron/electron", "package.json"],
+            "revisions": ["pnpm-lock.yaml"],
             "digests": ["pending:OS-07-final-desktop-package"],
             "licenses": ["pending:OS-07"],
-            "productSurfaces": ["Electron shell", "Tauri shell"],
-            "evidence": ["package.json", "src-tauri/Cargo.toml"],
+            "productSurfaces": ["Electron shell"],
+            "evidence": ["package.json"],
             "obligations": [
-                "Reconcile both desktop shells and every bundled runtime notice after campaign 2037 settles."
+                "Reconcile the Electron shell and every bundled runtime notice before the desktop package ships."
             ]
         },
         {
@@ -140,8 +118,8 @@
             "retention": "keep-with-obligations",
             "owner": "OS-10",
             "releaseModes": ["source", "web", "desktop"],
-            "paths": ["Cargo.toml", "Cargo.lock", "crates/**", "src-tauri/Cargo.toml"],
-            "sources": ["Cargo.toml", "src-tauri/Cargo.toml", "Cargo.lock"],
+            "paths": ["Cargo.toml", "Cargo.lock", "crates/**"],
+            "sources": ["Cargo.toml", "Cargo.lock"],
             "revisions": ["exact Cargo lock graph"],
             "digests": ["sha256:e3b3d4ad90a892b92acf9a72c701a99d5ef4f1f9ecc04254cd19283d81f7c88a"],
             "licenses": ["individual dependency terms pending OS-10 notice assembly"],
@@ -209,7 +187,7 @@
             "retention": "defer-behind-admission",
             "owner": "OS-04",
             "releaseModes": ["desktop"],
-            "paths": ["crates/sourdaw-native/src/commands/speech.rs", "src-tauri/src/commands/speech.rs"],
+            "paths": ["crates/sourdaw-native/src/commands/speech.rs"],
             "sources": ["https://huggingface.co/ggerganov/whisper.cpp"],
             "revisions": ["5359861c739e955e79d9a303bcbc70fb988958b1"],
             "digests": ["sha256:a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"],
@@ -338,8 +316,7 @@
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts",
                 "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
-                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx",
-                "src-tauri/src/commands/provider_gateway.rs"
+                "src/modules/Preferences/presentations/views/preferences/AiSection.tsx"
             ],
             "sources": [
                 "https://api.anthropic.com/v1/messages",
@@ -518,7 +495,7 @@
                 "public/icon.png",
                 "public/logo-parts/**",
                 "sourdaw.png",
-                "src-tauri/icons/**"
+                "build/icons/**"
             ],
             "sources": ["unknown pending OS-08 owner attestation"],
             "revisions": ["4b6012ef4560c78df09405515a0ad9365a41a553"],
@@ -634,7 +611,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "612714cab773a1e49f5e961b0deb82e28b44d28deca5cb259d26306b8a600b54"
+            "sha256": "69659fb07eba121f9d9a66e27d7bb696e56cec004ed126ea5ee4e7940acbdf08"
         },
         {
             "path": "server/package.json",
@@ -646,19 +623,15 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "1d1ad26954efd783f3953a648c2224bf96ecc0e3f1104bb23376ba317fb1fec8"
+            "sha256": "9154e917357ca7bc62566fdbc0b601f27c56c3e8c62c5a19378c1f60f0a925b6"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "5180c54656c229953fc8ee2712ef121341e6af3ab014a7f71ea9d17fccd6e60f"
-        },
-        {
-            "path": "src-tauri/Cargo.toml",
-            "sha256": "297fab6a955eb807003cd30f18d34f824493d702248d52784c3895de6bbb54b9"
+            "sha256": "05b593cb24e1dfe392ae417ae6d80b24b45c9e9b0205118372da0eff364ac50c"
         },
         {
             "path": "Cargo.lock",
-            "sha256": "54b56397362b96c342dd3426929b16e1481555f5eb8510c8e42817ee3af4fa06"
+            "sha256": "ef608355492ffc8a7b7e83964153ac11678b14f030a5717d2aa4d2ad14a24be2"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -666,7 +639,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "6c8edbf1a39e780641b1324b58350b4741aa25cbed3f9ee0478d5529b642958a"
+            "sha256": "763016f68b9626876af02c3b140dd2a514c47357a36730dd43d3535e7721b36c"
         }
     ],
     "externalReferences": [

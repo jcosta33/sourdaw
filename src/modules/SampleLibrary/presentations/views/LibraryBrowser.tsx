@@ -32,7 +32,7 @@ import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLi
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { isNativeSampleLibraryRuntimeAvailable } from '../../useCases/isNativeSampleLibraryRuntimeAvailable';
-import { readTauriLibrarySampleFile } from '../../useCases/readTauriLibrarySampleFile';
+import { readNativeLibrarySampleFile } from '../../useCases/readNativeLibrarySampleFile';
 import { requestPermission } from '../../useCases/requestPermission';
 import { toggleFavorite } from '../../useCases/toggleFavorite';
 import { LibraryRootCard } from '../components/LibraryRootCard';
@@ -223,7 +223,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         try {
             let file: File;
             if (nativeRuntimeAvailable && root.provider === 'tauri' && root.rootRef) {
-                file = await readTauriLibrarySampleFile({
+                file = await readNativeLibrarySampleFile({
                     rootPath: root.rootRef,
                     relativePath: sample.relativePath,
                     fallbackName: sample.displayName,

@@ -7,13 +7,13 @@ edition = "2021"
 
 [lib]
 name = "sourdaw_native"
-# `rlib` so the Tauri shell can link the relocated bodies; `cdylib` so the same
-# bodies ship as a Node addon once `napi-addon` is on.
+# `rlib` so tests and in-process consumers link the bodies directly; `cdylib`
+# so the same bodies ship as a Node addon once `napi-addon` is on.
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# The napi surface is opt-in: the Tauri shell links this crate as a plain rlib
-# and must not pull the Node addon registration in with it.
+# The napi surface is opt-in: an rlib consumer (tests, tooling) must not pull
+# the Node addon registration in with it.
 default = []
 napi-addon = ["dep:napi", "dep:napi-derive"]
 

@@ -8,7 +8,7 @@ import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
-    '[MIDI] Web MIDI failed, trying Tauri fallback',
+    '[MIDI] Web MIDI failed',
     'No available adapters.',
 ] as const;
 

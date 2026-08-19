@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const pickTauriSampleFolder = vi.hoisted(() => vi.fn<() => Promise<string | null>>());
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
-vi.mock('../../../repositories/pickTauriSampleFolder', () => ({
-    pickTauriSampleFolder,
+const pickNativeSampleFolder = vi.hoisted(() => vi.fn<() => Promise<string | null>>());
+
+vi.mock('#/utils/desktopRuntime', () => ({
+    isDesktopRuntime: vi.fn(),
+}));
+
+vi.mock('../../../repositories/pickNativeSampleFolder', () => ({
+    pickNativeSampleFolder,
 }));
 
 vi.mock('../../../stores/libraryStore', () => ({
@@ -15,7 +21,7 @@ vi.mock('../../../stores/libraryStore', () => ({
 }));
 
 vi.mock('../scanBrowserDirectory', () => ({ scanBrowserDirectory: vi.fn() }));
-vi.mock('../scanTauriDirectory', () => ({ scanTauriDirectory: vi.fn() }));
+vi.mock('../scanNativeDirectory', () => ({ scanNativeDirectory: vi.fn() }));
 
 import { addLibraryRoot } from '../../../stores/libraryStore';
 import { connectFolder } from '../connectFolder';
@@ -23,8 +29,8 @@ import { connectFolder } from '../connectFolder';
 describe('connectFolder', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        pickTauriSampleFolder.mockReset();
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+        pickNativeSampleFolder.mockReset();
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
     });
 
     it('returns null in the browser when the directory-picker API is unavailable', async () => {
@@ -46,15 +52,15 @@ describe('connectFolder', () => {
         expect(result).toBeNull();
     });
 
-    it('should derive a stable folder basename from a native Windows Tauri path', async () => {
+    it('should derive a stable folder basename from a native Windows path', async () => {
         const selected_path = String.raw`C:\Users\jose\Samples`;
-        Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-        pickTauriSampleFolder.mockResolvedValue(selected_path);
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        pickNativeSampleFolder.mockResolvedValue(selected_path);
 
         const result = await connectFolder();
 
         expect(result).toMatch(/^lib-/);
-        expect(pickTauriSampleFolder).toHaveBeenCalledTimes(1);
+        expect(pickNativeSampleFolder).toHaveBeenCalledTimes(1);
         expect(vi.mocked(addLibraryRoot)).toHaveBeenCalledWith(
             expect.objectContaining({
                 name: 'Samples',
@@ -66,9 +72,9 @@ describe('connectFolder', () => {
         );
     });
 
-    it('should return null when the native Tauri directory picker is cancelled', async () => {
-        Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-        pickTauriSampleFolder.mockResolvedValue(null);
+    it('should return null when the native directory picker is cancelled', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        pickNativeSampleFolder.mockResolvedValue(null);
 
         const result = await connectFolder();
 

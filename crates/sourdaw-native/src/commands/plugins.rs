@@ -788,14 +788,6 @@ pub async fn get_plugin_parameters(
     Ok(instance.parameters.clone())
 }
 
-/// Name the shell addresses `set_plugin_state_bytes` by.
-///
-/// A raw-body transport makes the state chunk the *whole* message, so the
-/// instance id cannot ride along as a sibling field — exactly the constraint
-/// that put the destination path beside the payload for `write_file_bytes`. The
-/// name is shared so both shells report the same thing when it is missing.
-pub const PLUGIN_INSTANCE_HEADER: &str = "x-sourdaw-plugin-instance";
-
 /// Read a loaded plugin instance's opaque state chunk.
 ///
 /// Shared by the command layer so the transport can change without the lookup
@@ -907,8 +899,7 @@ pub async fn get_plugin_state_bytes(
 /// The chunk arrives as bytes rather than as a JSON number array, so it crosses
 /// at exactly its byte length; the instance id travels beside it because the
 /// byte channel carries the payload and nothing else. How the shell addresses
-/// the payload is its own business — `commands::binary_ipc` owns the validation
-/// both shells share.
+/// the payload is its own business.
 pub async fn set_plugin_state_bytes(
     instance_id: String,
     plugin_state: &[u8],
@@ -2123,9 +2114,8 @@ mod tests {
         assert_eq!(get_result, Ok(vec![9, 8, 7]));
     }
 
-    /// The body's contract is the bytes; whether they cross the wire raw or as
-    /// a JSON number array is the shell's, and is guarded in
-    /// `src-tauri/src/commands/plugins.rs` where `IpcResponse` exists.
+    /// The body's contract is the bytes; how they cross the wire is the
+    /// shell's business.
     #[test]
     fn get_plugin_state_bytes_returns_the_stored_chunk() {
         let state = AppState::default();

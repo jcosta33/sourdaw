@@ -84,12 +84,12 @@ Tests use at most two workers. Playwright uses one. See [testing](./docs/06-test
 - `src/app/`: composition root and dependency registration.
 - `src/infra/`, `src/helpers/`, `src/utils/`: cross-cutting code; never import domain modules.
 - `src/components/`: shared UI; never import stores or use cases directly.
-- `src-tauri/`: Tauri commands and bridge code.
+- `electron/`: desktop shell — main process, preload bridge, and IPC router.
 - `crates/`: Rust, native audio, and DSP.
 - `.agents/skills/`: repository-specific skills.
 - `.agents/worktrees/`: gitignored worker lanes.
 
-Read the local `AGENTS.md` in `src-tauri/`, `crates/daw-dsp/`, `src/components/`,
+Read the local `AGENTS.md` in `crates/sourdaw-native/`, `crates/daw-dsp/`, `src/components/`,
 `src/modules/AudioEngine/`, and `src/modules/Collaboration/` before editing those trees.
 
 ## Architecture
@@ -98,11 +98,12 @@ Read the local `AGENTS.md` in `src-tauri/`, `crates/daw-dsp/`, `src/components/`
 - Cross modules through `useCases/`, `stores/`, `events/`, or `presentations/views/` barrels. Import
   defining files relatively inside one module.
 - Keep direction strict: presentation -> use cases -> repositories, stores, and services.
-- Repositories own I/O. Only repository roots and `src/utils/tauriBridge.ts` may call Tauri.
+- Repositories own I/O. Only repository roots and `src/utils/desktopBridge.ts` may call the desktop
+  bridge.
 - Foreign modules may read stores. They mutate through the owner’s use cases.
 - Keep use-case types and models private. Derive public shapes from callable or event contracts.
-- Keep worklets isolated from app, helpers, and Tauri. Audio-thread code must not allocate, lock,
-  or block.
+- Keep worklets isolated from app, helpers, and desktop IPC. Audio-thread code must not allocate,
+  lock, or block.
 - Use `type`, named exports, explicit control flow, real types, and meaningful assertions. Never
   launder failures with unsafe casts, suppressions, weakened tests, or baseline edits.
 - React Compiler owns memoization. Do not add `useMemo`, `useCallback`, `React.memo`, or
@@ -111,7 +112,7 @@ Read the local `AGENTS.md` in `src-tauri/`, `crates/daw-dsp/`, `src/components/`
 Run `pnpm deps:validate` after cross-module changes. Full rules:
 [system](./docs/architecture/01-system.md),
 [TypeScript modules](./docs/architecture/03-typescript-module.md),
-[Rust/Tauri](./docs/architecture/02-rust-backend.md), and
+[Rust backend](./docs/architecture/02-rust-backend.md), and
 [conventions](./docs/07-conventions.md).
 
 ## Worktrees

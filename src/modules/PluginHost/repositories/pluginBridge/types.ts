@@ -1,5 +1,5 @@
 /**
- * Plugin bridge types — DTOs for Tauri plugin IPC.
+ * Plugin bridge types — DTOs for native plugin IPC.
  */
 
 import { type ScannedPlugin } from '../../models/ScannedPlugin';

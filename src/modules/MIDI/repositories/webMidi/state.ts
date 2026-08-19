@@ -2,7 +2,7 @@
  * Internal mutable state for the Web MIDI repository.
  * Singleton module — shared across all split files via imports.
  */
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import {
     type WebMidiState,
@@ -33,8 +33,8 @@ export const webMidiRuntime = {
     targetTrackOwnerId: null as string | null,
     targetTrackRevision: 0,
     mpeEnabled: false,
-    tauriMode: false,
-    tauriEventUnlisten: null as (() => void) | null,
+    nativeMode: false,
+    nativeEventUnlisten: null as (() => void) | null,
     /**
      * Milliseconds to add to a native MIDI stamp to express it on the
      * `performance.now()` clock. Null until the first message on a port teaches
@@ -45,7 +45,7 @@ export const webMidiRuntime = {
 
 export const webMidiState: { current: WebMidiState } = {
     current: {
-        isSupported: webMidiSupported || isTauri(),
+        isSupported: webMidiSupported || isDesktopRuntime(),
         inputs: [],
         selectedInputId: readPersistedInputId(),
     },

@@ -1,4 +1,4 @@
-import { tauriListen, isTauri } from '#/utils/tauriBridge';
+import { desktopListen, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type PluginLatencyChange } from './types';
 
@@ -20,10 +20,10 @@ function isPluginLatencyChange(value: unknown): value is PluginLatencyChange {
  * host, so it subscribes to nothing and the unlisten is a no-op.
  */
 export async function onPluginLatencyChanged(handler: (change: PluginLatencyChange) => void): Promise<() => void> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return () => {};
     }
-    return tauriListen('plugin-latency-changed', (payload: unknown) => {
+    return desktopListen('plugin-latency-changed', (payload: unknown) => {
         const event = payload as { payload?: unknown };
         if (!isPluginLatencyChange(event.payload)) {
             return;

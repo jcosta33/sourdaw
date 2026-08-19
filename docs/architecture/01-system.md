@@ -17,7 +17,7 @@ That belongs in the TypeScript and Rust architecture documents.
 
 This document is the top-level source of truth for system architecture.
 
-Related agent skills: `state-and-write-paths` (state categories), `crdt-collaboration` (CRDT write path), `web-audio-engine` (channels/engine), `tauri-platform` (placement).
+Related agent skills: `state-and-write-paths` (state categories), `crdt-collaboration` (CRDT write path), `web-audio-engine` (channels/engine), `desktop-platform` (placement).
 
 ---
 
@@ -29,7 +29,7 @@ The architecture exists to solve these constraints at once:
 2. Business logic must remain framework-free and runtime-agnostic.
 3. The codebase must remain operable despite legacy shortcuts and uneven quality.
 4. AI agents must have enough structure to make good decisions without being over-constrained.
-5. The system must support multiple runtime implementations, including browser-only and Tauri/Rust-backed execution.
+5. The system must support multiple runtime implementations, including browser-only and desktop/Rust-backed execution.
 6. The architecture must support gradual convergence rather than requiring all-at-once rewrites.
 
 This is not a greenfield purity document.
@@ -136,9 +136,9 @@ Business logic must not depend on:
 
 React is presentation only.
 
-### 3.4 Tauri is a bridge, not the core
+### 3.4 The desktop shell is a bridge, not the core
 
-Tauri is an integration shell.
+The Electron shell and the native addon behind it are an integration seam.
 
 It is not:
 
@@ -147,7 +147,7 @@ It is not:
 - the audio engine
 - the source of truth
 
-Anything that matters outside the shell must live outside Tauri-specific code.
+Anything that matters outside the shell must live outside shell-specific code.
 
 ### 3.5 Writes and reads are different concerns
 
@@ -287,7 +287,7 @@ Responsibilities:
 This layer is plain code:
 
 - no React
-- no Tauri
+- no desktop IPC
 - no browser APIs
 - no raw runtime handles
 
@@ -313,7 +313,7 @@ Responsibilities:
 - MIDI integration
 - file I/O
 - IndexedDB/local storage
-- Tauri commands/events/channels
+- desktop commands/events/streams
 - browser/native API bridges
 - persistence and codec integration
 
@@ -640,7 +640,7 @@ The architecture should distinguish:
 
 ### 12.4 Native hosting stays behind ports/adapters
 
-If the system supports VST3/CLAP through Tauri/Rust, that belongs behind ports and adapters.
+If the system supports VST3/CLAP through the desktop shell's native backend, that belongs behind ports and adapters.
 
 ### 12.5 Built-in devices and hosted plugins should align conceptually
 
@@ -718,7 +718,7 @@ The system must make clear whether:
 
 ### 15.3 Shell/framework errors are translated
 
-Tauri or browser-specific errors should be wrapped into stable application-facing structures.
+Shell or browser-specific errors should be wrapped into stable application-facing structures.
 
 ---
 
@@ -734,7 +734,7 @@ Projection logic should be testable from input state to output state.
 
 ### 16.3 Test adapters separately
 
-Engine, plugin host, persistence adapters, and Tauri bridges should have runtime-appropriate integration tests.
+Engine, plugin host, persistence adapters, and desktop bridges should have runtime-appropriate integration tests.
 
 ### 16.4 Test RT safety where applicable
 
@@ -814,7 +814,7 @@ Runtime state stores the actual instantiated plugin object.
 | React state owns AudioNode or plugin instance      | UI/runtime coupling             | engine-owned runtime object                |
 | one module mutates another module’s store directly | ownership leak                  | call owning application action             |
 | projection store used as write API                 | hidden source of truth          | explicit command/action                    |
-| Tauri command contains business logic              | shell leakage                   | move logic to application/domain core      |
+| command body contains business logic               | shell leakage                   | move logic to application/domain core      |
 | every field change emits an event                  | event noise                     | emit only meaningful business events       |
 | telemetry written back into truth automatically    | feedback loop confusion         | explicit action if commit is needed        |
 | local UI detail stored globally                    | needless coupling               | local/component/view-scoped state          |
@@ -845,7 +845,7 @@ Before adding a new abstraction, ask:
 2. Does it cross a runtime boundary?
 3. Does it improve ownership clarity?
 4. Does it reduce hidden mutation?
-5. Can it be tested without React or Tauri?
+5. Can it be tested without React or the desktop shell?
 
 ## 19.3 RT checklist
 
@@ -869,7 +869,7 @@ The architecture is built around a few central truths:
 - writes happen through explicit actions and commands
 - reads happen through projections and telemetry
 - runtime systems execute; they do not define business meaning
-- Tauri is a shell and bridge, not the core
+- the desktop shell is a bridge, not the core
 - the codebase must converge gradually, not through ideological rewrites
 - module boundaries should remain flexible so long as architectural invariants are preserved
 

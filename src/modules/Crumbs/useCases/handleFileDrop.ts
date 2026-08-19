@@ -1,6 +1,6 @@
 /**
  * Handle file drop events on the crumbs panel.
- * Supports both browser File API and Tauri file paths.
+ * Supports both browser File API and native file paths.
  * Auto-detects sample category and suggests appropriate mode.
  */
 

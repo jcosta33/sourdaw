@@ -1,4 +1,4 @@
-import { desktopSaveDialog, isTauri } from '#/utils/tauriBridge';
+import { desktopSaveDialog, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import type { DialogFilter } from './helpers';
 
@@ -7,7 +7,7 @@ type SaveFileOptions = {
     filters?: DialogFilter[];
 };
 
-async function saveViaTauri(options: SaveFileOptions): Promise<string | null> {
+async function saveViaNative(options: SaveFileOptions): Promise<string | null> {
     try {
         const result = await desktopSaveDialog({
             defaultPath: options.defaultPath,
@@ -20,13 +20,13 @@ async function saveViaTauri(options: SaveFileOptions): Promise<string | null> {
 }
 
 /**
- * Opens a "save file" dialog. Only meaningful in Tauri — in a browser context
+ * Opens a "save file" dialog. Only meaningful in the desktop app — in a browser context
  * there is no native save dialog, so this returns `null` and callers should
  * fall back to blob downloads.
  */
 export async function saveFileDialog(options: SaveFileOptions = {}): Promise<string | null> {
-    if (!isTauri()) {
+    if (!isDesktopRuntime()) {
         return null;
     }
-    return saveViaTauri(options);
+    return saveViaNative(options);
 }

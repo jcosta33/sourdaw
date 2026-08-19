@@ -37,7 +37,7 @@ export function reconcileScannedRoot(rootId: string, scanned: Map<string, Sample
             continue;
         }
         // Replace only when both sides expose an mtime and it moved. Undefined
-        // mtime (provider can't stat, e.g. Tauri readDir) is treated as "no
+        // mtime (provider can't stat, e.g. native readDir) is treated as "no
         // change signal" so we never churn records we can't compare.
         const freshMtime = fresh.sync.mtimeMs;
         const storedMtime = stored.sync.mtimeMs;

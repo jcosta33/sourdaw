@@ -1,6 +1,6 @@
 /**
- * Mirror of the `engine_rt_diagnostics` Tauri command payload
- * (`src-tauri/src/commands/engine_diagnostics.rs`).
+ * Mirror of the `engine_rt_diagnostics` native command payload
+ * (`crates/sourdaw-native/src/commands/engine_diagnostics.rs`).
  *
  * Hand-maintained on both sides — no binding generator runs, so a change to the
  * Rust payload must land here in the same change. The Rust wire-shape test pins

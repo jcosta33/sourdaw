@@ -19,7 +19,6 @@ export const REQUIRED_SNAPSHOT_PATHS = [
     'server/package-lock.json',
     'pnpm-lock.yaml',
     'Cargo.toml',
-    'src-tauri/Cargo.toml',
     'Cargo.lock',
     'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
     'public/wasm/manifest.json',
@@ -115,7 +114,6 @@ const ignoredUrlHosts = new Set([
     '127.0.0.1',
     'emscripten.org',
     'localhost',
-    'schema.tauri.app',
     'schemas.android.com',
     'schemas.microsoft.com',
     'www.apple.com',
@@ -127,7 +125,7 @@ function sortedUnique(values: string[]): string[] {
 }
 
 function isScannedSource(path: string): boolean {
-    if (!['crates/', 'public/', 'scripts/', 'server/', 'src/', 'src-tauri/'].some((root) => path.startsWith(root))) {
+    if (!['crates/', 'electron/', 'public/', 'scripts/', 'server/', 'src/'].some((root) => path.startsWith(root))) {
         return false;
     }
     if (path.includes('/__tests__/') || path.includes('/tests/') || /\.(spec|test)\./.test(path)) {
@@ -136,16 +134,13 @@ function isScannedSource(path: string): boolean {
     if (path.endsWith('package-lock.json')) {
         return false;
     }
-    if (path.startsWith('src-tauri/gen/schemas/')) {
-        return false;
-    }
     return scannedExtensions.has(extname(path));
 }
 
 function isMarkSource(path: string): boolean {
     if (
         !['README.md', 'index.html'].includes(path) &&
-        !['docs/', 'public/', 'src/', 'src-tauri/'].some((root) => path.startsWith(root))
+        !['docs/', 'public/', 'src/'].some((root) => path.startsWith(root))
     ) {
         return false;
     }

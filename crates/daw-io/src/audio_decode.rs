@@ -84,7 +84,7 @@ impl DecodeDiagnostics {
 /// Decode an audio file from disk by path.
 /// Supports WAV, FLAC, MP3, OGG/Vorbis, AAC, ALAC, and more.
 /// Prefer this over `decode_audio_file_bytes` when the file is on disk — avoids reading
-/// the entire file into memory before passing it over the Tauri IPC boundary.
+/// the entire file into memory before passing it over the desktop IPC boundary.
 pub fn decode_audio_file(path: &str) -> Result<DecodedAudio, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
     build_planar_audio(decode_from_stream(MediaSourceStream::new(

@@ -1,15 +1,15 @@
-import { tauriInvoke } from '#/utils/tauriBridge';
+import { desktopInvoke } from '#/utils/desktopBridge';
 
 import { getMidiAccess } from '../getMidiAccess';
-import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
-import { getTauriMode } from '../getTauriMode';
+import { getNativeEventUnlisten } from '../getNativeEventUnlisten';
+import { getNativeMode } from '../getNativeMode';
 import { releaseAllActiveNotes } from '../releaseAllActiveNotes';
 import { resetChannelControllerState } from '../resetChannelControllerState';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
 import { setTargetTrackId } from '../setTargetTrackId';
-import { setTauriEventUnlisten } from '../setTauriEventUnlisten';
-import { setTauriMode } from '../setTauriMode';
+import { setNativeEventUnlisten } from '../setNativeEventUnlisten';
+import { setNativeMode } from '../setNativeMode';
 import { midiLearn } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';
@@ -22,21 +22,21 @@ import type { GetWebMidiTrackStrip } from '../engineStripAccess';
  *
  * No production caller reaches this today — the only exercise is its own spec
  * (issue #1837 F6). It is kept rather than deleted because it is the sole caller
- * of the `close_midi_input` Tauri command, so deleting it would drop the only
+ * of the `close_midi_input` native command, so deleting it would drop the only
  * path that releases the native device. Wiring it to a real teardown lifecycle
  * (app shutdown, or a MIDI-disable toggle) is an open decision.
  */
 export function destroyWebMidi(getTrackStrip: GetWebMidiTrackStrip): void {
     detachActiveInput();
 
-    if (getTauriMode()) {
-        const unlisten = getTauriEventUnlisten();
+    if (getNativeMode()) {
+        const unlisten = getNativeEventUnlisten();
         if (unlisten) {
             unlisten();
-            setTauriEventUnlisten(null);
+            setNativeEventUnlisten(null);
         }
-        tauriInvoke('close_midi_input').catch(() => {});
-        setTauriMode(false);
+        desktopInvoke('close_midi_input').catch(() => {});
+        setNativeMode(false);
     }
 
     // Same release core as reset and panic (audit MD-6). Teardown used to stop

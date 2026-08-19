@@ -1,10 +1,9 @@
-//! Host-agnostic seams for everything the relocated command bodies used to
-//! reach through a `tauri::AppHandle`.
+//! Host-agnostic seams for everything the command bodies need to push back to
+//! the shell.
 //!
 //! A command body may need to *push* — a MIDI message arriving on a driver
 //! thread, dictation text, an analysis progress tick — or to *stream* a
-//! correlated sequence back to one caller. Under Tauri those were
-//! `AppHandle::emit` and `tauri::ipc::Channel`; under the Node addon they are a
+//! correlated sequence back to one caller. Under the Node addon these are a
 //! threadsafe function and a per-request threadsafe function. Neither concept
 //! belongs to a transport, so the bodies address these traits and each shell
 //! supplies its own implementation.

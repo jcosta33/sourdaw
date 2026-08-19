@@ -11,21 +11,22 @@
     // fetch/`Response` globals it does use come from `@types/node`. It is
     // resolved and emitted as real Node ESM (`package.json` declares
     // `"type": "module"`), so relative imports carry the `.js` specifier Node
-    // requires at runtime. And unlike every other project in the repo it emits:
-    // `pnpm desktop:dev` compiles into `electron/out/`, which is gitignored.
+    // requires at runtime.
     //
-    // `pnpm typecheck:electron` runs this project with `--noEmit`, so the gate
-    // never writes build output.
+    // This project is typecheck-only (`pnpm typecheck:electron`) and the only
+    // one that sees the specs. Emit happens through the extending
+    // `tsconfig.dev.json` / `tsconfig.build.json`, whose spec-free scope
+    // compiles into `electron/out/` (gitignored).
     "extends": "../tsconfig.json",
     "compilerOptions": {
         "lib": ["ES2024"],
         "types": ["node"],
         "module": "nodenext",
         "moduleResolution": "nodenext",
-        "noEmit": false,
-        "outDir": "./out",
-        "rootDir": ".",
-        "sourceMap": true,
+        // No alias: the specs cross-check the shell's command table against
+        // the renderer's `SOURDAW_COMMAND_ARGUMENTS` through an explicit
+        // relative import, and shell runtime code must not touch `src/` at
+        // all — `commands.spec.ts` pins that boundary.
         "paths": {}
     },
     "include": ["."],

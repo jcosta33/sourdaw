@@ -1,6 +1,6 @@
-import { writeFileBytes } from '#/utils/tauriBridge';
+import { writeFileBytes } from '#/utils/desktopBridge';
 
-import { tauriInvoke } from './tauriInvoke';
+import { desktopInvoke } from './desktopInvoke';
 
 /**
  * Get the default project directory path.
@@ -13,11 +13,11 @@ import { tauriInvoke } from './tauriInvoke';
  */
 export async function getProjectDirectory(): Promise<string> {
     // Use platform-appropriate documents directory
-    const homeDir = await tauriInvoke<string>('get_home_dir').catch(() => '/tmp');
+    const homeDir = await desktopInvoke<string>('get_home_dir').catch(() => '/tmp');
     const projectDir = `${homeDir}/Documents/Sourdaw Projects`;
 
     // Probe for the directory; `list_directory` rejects when it is absent.
-    const exists = await tauriInvoke('list_directory', { path: projectDir }).then(
+    const exists = await desktopInvoke('list_directory', { path: projectDir }).then(
         () => true,
         () => false
     );

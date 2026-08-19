@@ -9,18 +9,18 @@ import { getPlatformPlugins } from '../getPlatformPlugins';
  * entries and so said nothing about whether any real device was offered on a
  * platform that cannot run it.
  */
-function withTauriRuntime(run: () => void): void {
-    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+function withDesktopRuntime(run: () => void): void {
+    Object.defineProperty(window, 'sourdaw', { value: {}, configurable: true });
     try {
         run();
     } finally {
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+        Reflect.deleteProperty(window, 'sourdaw');
     }
 }
 
 describe('getPlatformPlugins', () => {
     afterEach(() => {
-        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+        Reflect.deleteProperty(window, 'sourdaw');
     });
 
     it('offers devices that run anywhere on a plain browser build', () => {
@@ -30,9 +30,10 @@ describe('getPlatformPlugins', () => {
         expect(ids).toContain('fermenter');
     });
 
-    // Crumbs has no WebAudio implementation at all: its engine is Rust, reached
-    // through the `crumbs_*` Tauri commands. Offering it in a browser build put
-    // a device in the Content Browser that provably cannot make a sound.
+    // Crumbs has no WebAudio implementation at all: its engine is native,
+    // reached through the `crumbs_*` desktop commands. Offering it in a browser
+    // build put a device in the Content Browser that provably cannot make a
+    // sound.
     it('hides a native-only device on a plain browser build', () => {
         const ids = getPlatformPlugins().map((plugin) => plugin.id);
 
@@ -42,8 +43,8 @@ describe('getPlatformPlugins', () => {
     // The old filter dropped `platform: 'native'` unconditionally, with no
     // runtime check — so marking a device native-only would have hidden it from
     // the native build too, which is the one place its engine exists.
-    it('offers that same native-only device under the Tauri runtime', () => {
-        withTauriRuntime(() => {
+    it('offers that same native-only device under the desktop runtime', () => {
+        withDesktopRuntime(() => {
             const ids = getPlatformPlugins().map((plugin) => plugin.id);
 
             expect(ids).toContain('builtin-crumbs');

@@ -2,11 +2,11 @@
  * What each Electron-exposed command's positional arguments are, in order.
  *
  * `window.sourdaw.invoke` takes a positional array — not the named record
- * Tauri's `invoke` takes — so the bridge seam has to order a caller's named
- * arguments before they cross. The order here *is* the wire contract: under
- * napi-rs a transposed pair of same-typed parameters deserializes without a
- * word and surfaces as a plugin that will not load or a request signed with
- * the wrong key.
+ * shape Tauri's `invoke` took — so the bridge seam has to order a caller's
+ * named arguments before they cross. The order here *is* the wire contract:
+ * under napi-rs a transposed pair of same-typed parameters deserializes
+ * without a word and surfaces as a plugin that will not load or a request
+ * signed with the wrong key.
  *
  * Parameter names are the addon's own snake_case; the seam derives the
  * caller-facing camelCase key from each. `on_event` stream emitters are
@@ -15,7 +15,7 @@
  *
  * Two pins keep this honest: `electron/__tests__/commands.spec.ts` proves this
  * table equal to the one derived from the addon's `#[napi]` signatures, and
- * `src/utils/__tests__/tauriBridge.spec.ts` proves the seam orders arguments
+ * `src/utils/__tests__/desktopBridge.spec.ts` proves the seam orders arguments
  * by it.
  */
 export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([

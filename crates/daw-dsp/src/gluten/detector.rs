@@ -158,7 +158,9 @@ impl StereoDetector {
         if self.is_fully_linked() {
             let linked = match self.mode {
                 DetectionMode::Rms => RmsDetector::mean_square_to_db(
-                    self.rms_left.mean_square().max(self.rms_right.mean_square()),
+                    self.rms_left
+                        .mean_square()
+                        .max(self.rms_right.mean_square()),
                 ),
                 DetectionMode::Peak => PeakDetector::detect(left.abs().max(right.abs())),
             };

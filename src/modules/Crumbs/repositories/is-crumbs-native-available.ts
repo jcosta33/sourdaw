@@ -1,5 +1,5 @@
-import { isTauri } from '#/utils/tauriBridge';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 export function isCrumbsNativeAvailable(): boolean {
-    return isTauri();
+    return isDesktopRuntime();
 }
