@@ -79,18 +79,43 @@ export function parseIssueForm(yaml: string): IssueForm {
     return { name, titlePrefix, labels, fields };
 }
 
-export function composeIssueTitle(prefix: string, title: string): string {
-    if (title.startsWith(prefix) || /^[a-z]+\([^)]+\): /.test(title)) {
-        return title;
+export function composeIssueTitle(prefix: string, title: string, scopeToken?: string): string {
+    const trimmed = title.trim();
+    if (/^[a-z]+\([^)]+\): /.test(trimmed)) {
+        return applyScopeToken(trimmed, scopeToken);
     }
-    return `${prefix}${title}`;
+    const typed = applyScopeToken(prefix, scopeToken);
+    const subject = stripMatchingScopeSubject(trimmed, scopeToken);
+    return `${typed}${subject}`;
+}
+
+function applyScopeToken(text: string, scopeToken: string | undefined): string {
+    if (scopeToken !== undefined && text.includes('(scope)')) {
+        return text.replace('(scope)', `(${scopeToken})`);
+    }
+    return text;
+}
+
+function stripMatchingScopeSubject(title: string, scopeToken: string | undefined): string {
+    if (scopeToken !== undefined && title.startsWith(`${scopeToken}: `)) {
+        return title.slice(scopeToken.length + 2);
+    }
+    return title;
+}
+
+function titleSubject(title: string): string {
+    const match = /^[a-z]+(?:\([^)]+\))?:\s*(.*)$/.exec(title.trim());
+    if (match?.[1] !== undefined) {
+        return match[1].trim();
+    }
+    return title.trim();
 }
 
 export function renderIssueSubmission(
     form: IssueForm,
     input: { title: string; fields: Record<string, string> }
 ): IssueSubmission {
-    if (input.title.trim() === '') {
+    if (titleSubject(input.title) === '') {
         fail('title is empty');
     }
     const sections: string[] = [];
@@ -112,7 +137,7 @@ export function renderIssueSubmission(
         sections.push(`### ${field.label}\n\n${value}`);
     }
     return {
-        title: composeIssueTitle(form.titlePrefix, input.title.trim()),
+        title: composeIssueTitle(form.titlePrefix, input.title, nonempty(input.fields.scope)?.trim()),
         labels,
         body: `${sections.join('\n\n')}\n`,
     };

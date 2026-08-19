@@ -8,8 +8,8 @@ Rust, and Tauri. The frontend follows module boundary contracts documented in
 ## Project governance
 
 Durable planning lives in GitHub issues (see `.github/ISSUE_TEMPLATE/`).
-Accepted architecture decisions live under `.agents/decisions/`. Leave existing
-`.agents/specs/` material untouched unless assigned.
+Accepted architecture decisions live under `.agents/decisions/`. Do not add new
+specs under `.agents/specs/`; unpublished work stays in `~/.agents/artifacts`.
 
 ## Setup
 

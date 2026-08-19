@@ -56,7 +56,7 @@ describe('renderIssueSubmission', () => {
             },
         });
 
-        expect(submission.title).toBe('spec(scope): mixer: mute groups');
+        expect(submission.title).toBe('spec(arrangement): mixer: mute groups');
         expect(submission.labels).toEqual(['status:tracking', 'priority:P1']);
         expect(submission.body).toContain('### Intent\n\nMute groups exist for the mixer operator.');
         expect(submission.body).toContain('### Boundary\n\n_No response_');
@@ -91,6 +91,7 @@ describe('renderIssueSubmission', () => {
         });
         expect(submission.body).toContain('### Subsystem\n\nsecurity (CSP, sandbox, memory safety)');
         expect(submission.labels).toEqual(['bug', 'status:ready', 'priority:P0']);
+        expect(submission.title).toBe('fix(security): csp ipv6');
     });
 
     it('accepts the Bug ai token against ai / airuntime', () => {
@@ -139,11 +140,20 @@ describe('renderIssueSubmission', () => {
 
 describe('composeIssueTitle', () => {
     it('does not double the form prefix', () => {
-        expect(composeIssueTitle('spec(scope): ', 'spec(scope): mixer: mute')).toBe('spec(scope): mixer: mute');
+        expect(composeIssueTitle('spec(scope): ', 'spec(scope): mixer: mute', 'arrangement')).toBe(
+            'spec(arrangement): mixer: mute'
+        );
     });
 
     it('keeps an already conventional title', () => {
         expect(composeIssueTitle('spec(scope): ', 'spec(arrangement): mixer')).toBe('spec(arrangement): mixer');
+    });
+
+    it('interpolates the selected scope into the prefix', () => {
+        expect(composeIssueTitle('spec(scope): ', 'mute groups', 'arrangement')).toBe('spec(arrangement): mute groups');
+        expect(composeIssueTitle('spec(scope): ', 'arrangement: mute groups', 'arrangement')).toBe(
+            'spec(arrangement): mute groups'
+        );
     });
 });
 
@@ -176,6 +186,15 @@ describe('renderIssueSubmission title', () => {
         expect(() =>
             renderIssueSubmission(parseIssueForm(load('spec.yml')), {
                 title: '   ',
+                fields: { scope: 'arrangement', priority: 'P2', intent: 'i', requirements: 'r' },
+            })
+        ).toThrow(/title is empty/);
+    });
+
+    it('rejects a type(scope) prefix with no subject', () => {
+        expect(() =>
+            renderIssueSubmission(parseIssueForm(load('spec.yml')), {
+                title: 'spec(scope): ',
                 fields: { scope: 'arrangement', priority: 'P2', intent: 'i', requirements: 'r' },
             })
         ).toThrow(/title is empty/);
