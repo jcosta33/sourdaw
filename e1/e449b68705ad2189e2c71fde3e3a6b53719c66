@@ -1,0 +1,56 @@
+src/modules/Collaboration/useCases/collaboration/acceptAnswer.ts
+  s_487e9aa1e46063::t_ed3bf1bac2b9f6 2
+  s_487e9aa1e46063::t_a14c6392c99b28 33-35
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_487e9aa1e46063::t_0bc257fabe957b 90-131
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_736fe5e6774588 438-439
+  s_487e9aa1e46063::t_2ed2f7a29b610c 784-790
+  s_487e9aa1e46063::t_bcbe4fb0ddce2a 670-674
+  s_487e9aa1e46063::t_7783ad96d19637 111,115-116
+  s_487e9aa1e46063::t_00b1c47d447376 112
+  s_487e9aa1e46063::t_19d39059a3431a 30-31
+  s_487e9aa1e46063::t_bab00299249279 805
+  s_487e9aa1e46063::t_b13302c6b5642c 546
+  s_487e9aa1e46063::t_23dee8baf1bd12 690-692,695-696
+  s_487e9aa1e46063::t_452cc3914f041d 626-652
+  s_487e9aa1e46063::t_d899352bafefbd 88-99
+src/modules/Collaboration/useCases/collaboration/__tests__/onPresence.spec.ts
+  s_487e9aa1e46063::t_8426eacbd75997 9,15
+  s_487e9aa1e46063::t_447b9db5ca7b53 22,30-31,42-43,53
+src/modules/Collaboration/useCases/collaboration/onPresence.ts
+  s_487e9aa1e46063::t_c8ab69d4252418 5-10,12,14
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_487e9aa1e46063::t_d4ec04aea7af7e 209-217
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_487e9aa1e46063::t_7d30276ec9d021 138-145
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_487e9aa1e46063::t_5a000adc8d692c 2
+  s_487e9aa1e46063::t_72e46391488f99 70-72
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_d73c909e5a7ad5 532-547
+  s_487e9aa1e46063::t_147e615e6694b8 298-308
+  s_487e9aa1e46063::t_2b8afaec9ddd39 458
+  s_487e9aa1e46063::t_2ae5e29f1fd9fd 479
+  s_487e9aa1e46063::t_50f308b0b0ae52 12
+  s_487e9aa1e46063::t_69f7a7d49c86a9 568-586
+  s_487e9aa1e46063::t_c4e8d2d4315d4a 326
+  s_487e9aa1e46063::t_545c2279c910a5 491-518
+  s_487e9aa1e46063::t_d5d57c3985bfdc 708-756
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e1e449b68705ad2189e2c71fde3e3a6b53719c66",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
