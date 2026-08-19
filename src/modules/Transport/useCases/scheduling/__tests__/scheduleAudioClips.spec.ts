@@ -12,7 +12,6 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { sessionState } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
@@ -209,16 +208,6 @@ describe('scheduleAudioClips', () => {
         expect(when + duration).toBeCloseTo(10, 9);
     });
 
-    it('disposeAudioClipScheduling clears the requested-asset dedup (regression: §B fix 5)', () => {
-        sessionState.requestedAssets.add('hash-a');
-        sessionState.requestedAssets.add('hash-b');
-        expect(sessionState.requestedAssets.size).toBe(2);
-
-        disposeAudioClipScheduling();
-
-        expect(sessionState.requestedAssets.size).toBe(0);
-    });
-
     // Regression (PR #514 review): identical defect to the MIDI path — the
     // frozen-track dedup was keyed by track.id only, so an unfreeze → refreeze
     // within one session (new frozenBufferId, same id) stayed silent. Keying by
@@ -374,7 +363,11 @@ describe('scheduleAudioClips', () => {
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
 
-    it('requests a missing asset from peers once when collaboration is enabled and the clip has a hash', () => {
+    // The scheduler deliberately keeps no dedup of its own. A local
+    // "requested once, ever" Set made an asset permanently unfetchable after
+    // one aborted transfer; AssetTransfer owns the dedup because only it knows
+    // whether the request is still alive, and it re-opens the hash on abort.
+    it('asks AssetTransfer for a missing asset on every tick while collaboration is enabled', () => {
         const requestAsset = vi.fn();
         vi.mocked(getAssetTransfer).mockReturnValue({ requestAsset } as never);
         collaborationStoreState.value = { isEnabled: true };
@@ -384,10 +377,9 @@ describe('scheduleAudioClips', () => {
         const scheduled = new Set<string>();
 
         scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
-        // Second tick: asset already requested, must not re-request.
         scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
 
-        expect(requestAsset).toHaveBeenCalledTimes(1);
+        expect(requestAsset).toHaveBeenCalledTimes(2);
         expect(requestAsset).toHaveBeenCalledWith('hash-1');
         expect(notifyUser).not.toHaveBeenCalled();
     });

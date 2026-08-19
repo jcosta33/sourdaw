@@ -155,3 +155,89 @@ export function sanitizePeerColor(color: string): string {
     const bounded = color.length <= MAX_PEER_COLOR_LEN ? color : color.slice(0, MAX_PEER_COLOR_LEN);
     return SAFE_CSS_COLOR_RE.test(bounded) ? bounded : FALLBACK_PEER_COLOR;
 }
+
+// -- Sender-controlled asset-manifest bounds --
+//
+// An asset manifest arrives from a remote peer and declares the dimensions
+// every later chunk is validated against, so the manifest itself decides how
+// much receiver memory a transfer may claim. Each accepted chunk costs a `Map`
+// entry plus a `Set` entry on top of its bytes, so the *slot count* matters
+// independently of the byte ceiling: a manifest is only safe once both the
+// per-chunk size and the total size are bounded from both ends.
+
+/** Chunk size this peer sends with (256 KiB). Must sit inside the accepted range. */
+export const ASSET_CHUNK_SIZE = 256 * 1024;
+
+/** Hard ceiling on a single accepted asset transfer (512 MiB). */
+export const MAX_ASSET_SIZE = 512 * 1024 * 1024;
+
+/**
+ * Floor on a manifest's declared chunk size (4 KiB).
+ *
+ * Without a floor, `chunkCount === ceil(size / chunkSize)` still admits a
+ * `chunkSize: 1` manifest, which declares one slot per byte — up to ~5×10⁸
+ * `Map` + `Set` entries for a size that is nominally within the byte ceiling.
+ * The floor caps the worst-case slot count at `MAX_ASSET_SIZE /
+ * MIN_ASSET_CHUNK_SIZE`, four orders of magnitude below that. No legitimate
+ * sender is refused: every manifest this app mints declares
+ * {@link ASSET_CHUNK_SIZE}.
+ */
+export const MIN_ASSET_CHUNK_SIZE = 4 * 1024;
+
+/**
+ * Ceiling on a manifest's declared chunk size (4 MiB).
+ *
+ * The declared chunk size is the per-chunk acceptance bound, so it also fixes
+ * how large a single decoded chunk may be before it is refused. Allowing it to
+ * reach `MAX_ASSET_SIZE` let one message claim the entire byte ceiling.
+ */
+export const MAX_ASSET_CHUNK_SIZE = 4 * 1024 * 1024;
+
+/** Max accepted length for a sender-supplied asset file name. */
+export const MAX_ASSET_NAME_LEN = 256;
+
+/** Max accepted length for a sender-supplied asset MIME type. */
+export const MAX_ASSET_MIME_LEN = 128;
+
+// -- Asset request retry policy --
+//
+// The scheduler asks for every missing asset in its lookahead window on every
+// tick (~100/s), so the request path itself carries no memory of failure. That
+// memory lives here: a hash whose transfer just ended must wait before it may
+// be asked for again, and a hash that keeps failing must eventually stop being
+// asked for at all. `clip.assetHash` is remote-writable CRDT data, so the
+// give-up bound is what keeps a peer-minted hash from costing a
+// request/abort/toast cycle for the whole session.
+
+/**
+ * Minimum wait before a hash whose transfer aborted may be re-requested (30 s).
+ *
+ * Held at or above the stall deadline so a hash can never be re-requested
+ * faster than the deadline it just failed. Without it, the immediately-aborting
+ * failure classes (out-of-range chunk, oversize chunk, integrity failure) close
+ * the request → transfer → abort → re-request loop at peer-RTT speed, and the
+ * integrity variant re-transmits the whole asset every cycle.
+ */
+export const ASSET_REQUEST_RETRY_COOLDOWN_MS = 30_000;
+
+/**
+ * Aborted attempts a hash may accumulate before it is abandoned for the rest of
+ * the session (5).
+ *
+ * High enough that a transiently unlucky but real asset — a responder that
+ * dropped, a request shed by {@link MAX_CONCURRENT_ASSET_RESPONSES_PER_PEER} —
+ * still recovers; low enough that a hash no peer holds costs a bounded number
+ * of cycles rather than an unbounded one.
+ */
+export const ASSET_REQUEST_MAX_ATTEMPTS = 5;
+
+/**
+ * Distinct asset responses one peer may have in flight against this host (4).
+ *
+ * Serving a request slices, base64-encodes and buffers the entire asset, and
+ * nothing about the request is expensive to send, so an unbounded responder
+ * lets one peer multiply its own ~100-byte messages into gigabytes of egress.
+ * Identical concurrent requests are dropped outright; distinct ones are capped
+ * here, above the fan-out any real project needs at one instant.
+ */
+export const MAX_CONCURRENT_ASSET_RESPONSES_PER_PEER = 4;

@@ -38,6 +38,8 @@ import { AssetTransfer } from '../assetTransfer';
 import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { type CollaborationPeer } from '../collaborationQueries';
 
+import { clearCollaborationFailure } from './clearCollaborationFailure';
+
 /**
  * §14.1 — Coalesce all collaboration-session mutables into one holder so the
  * session lives behind a single named handle and individual bindings can't
@@ -420,6 +422,20 @@ function initializeSessionRuntime(): PeerConnectionManager {
         onProgress: (_hash, _received, _total) => {
             // Could update a UI progress indicator.
         },
+        // An abandoned asset transfer is not a session failure — peers stay
+        // connected and the hash becomes requestable again — but it does mean
+        // clips referencing it stay silent, which the user otherwise has no way
+        // to see. Surface it on the panel's error row.
+        // The message names the retry condition rather than promising a retry:
+        // the only thing that re-asks for an asset is the scheduler tick, so a
+        // request is re-issued when playback next runs over a clip that needs
+        // it — and only until AssetTransfer's attempt bound is spent.
+        onTransferFailed: (hash, reason) => {
+            logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
+            setCollaborationError(
+                `Could not receive shared audio from a peer — ${reason}. Playing over the affected clips asks again.`
+            );
+        },
     });
 
     return peerManager;
@@ -443,6 +459,10 @@ function cleanupSubsystems(): void {
         sessionState.cleanupProjectionBridge();
         sessionState.cleanupProjectionBridge = null;
     }
+    // Dispose before dropping the reference: in-flight transfers hold partial
+    // chunk buffers and armed stall timers that would otherwise fire against a
+    // torn-down session.
+    sessionState.assetTransfer?.dispose();
     sessionState.assetTransfer = null;
     if (sessionState.peerManager) {
         sessionState.peerManager.closeAll();
@@ -498,6 +518,12 @@ async function resolveAssetForClips(hash: string): Promise<void> {
             }
         }
     }
+
+    // A delivered asset retires whatever transfer failure is on the panel. The
+    // failure row is written by `onTransferFailed` and otherwise only cleared by
+    // session-lifecycle use cases, so without this the message survives its own
+    // successful retry and sits there until the user leaves the session.
+    clearCollaborationFailure();
 }
 
 // -- Playhead broadcast --

@@ -58,9 +58,11 @@ const assetTransferMock = vi.hoisted(() => ({
     instances: [] as {
         handleMessage: ReturnType<typeof vi.fn>;
         getAsset: ReturnType<typeof vi.fn>;
+        dispose: ReturnType<typeof vi.fn>;
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
+            onTransferFailed: (hash: string, reason: string) => void;
         };
     }[],
 }));
@@ -153,9 +155,10 @@ vi.mock('../../assetTransfer', () => ({
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
+            onTransferFailed: (hash: string, reason: string) => void;
         }
     ) {
-        const instance = { handleMessage: vi.fn(), getAsset: vi.fn(), options };
+        const instance = { handleMessage: vi.fn(), getAsset: vi.fn(), dispose: vi.fn(), options };
         assetTransferMock.instances.push(instance);
         return instance;
     }),
@@ -367,6 +370,18 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
             expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        });
+
+        // Dropping the reference alone leaves in-flight transfers holding
+        // partial chunk buffers and armed stall timers that fire against a
+        // torn-down session.
+        it('disposes the asset transfer before dropping it', () => {
+            sessionRuntimePrimitives.initialize();
+            const assetTransfer = latestAssetTransfer();
+
+            sessionRuntimePrimitives.cleanup();
+
+            expect(assetTransfer.dispose).toHaveBeenCalledTimes(1);
         });
 
         it('is safe to call when no session is active', () => {
@@ -1071,6 +1086,45 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
     });
 
+    describe('AssetTransfer onTransferFailed hook', () => {
+        // An abandoned asset transfer used to be a logger.warn and nothing
+        // else: clips referencing the asset stayed silent with no user-visible
+        // signal anywhere in the panel.
+        it('surfaces an abandoned transfer on the store error row', () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'the sending peer stopped responding');
+
+            expect(collaborationStore.value?.error).toBe(
+                'Could not receive shared audio from a peer — the sending peer stopped responding. Playing over the affected clips asks again.'
+            );
+        });
+
+        // The retry driver is the scheduler tick, so the message must name that
+        // condition rather than promise an unconditional retry: with playback
+        // stopped, nothing re-asks for the asset.
+        it('states the condition under which the asset is asked for again', () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+
+            expect(collaborationStore.value?.error).not.toContain('It will be retried');
+            expect(collaborationStore.value?.error).toContain('Playing over the affected clips');
+        });
+
+        it('leaves the live session state alone — a failed asset is not a failed session', () => {
+            collaborationStore.set(makeState({ connectionStatus: 'connected', isEnabled: true }));
+            sessionRuntimePrimitives.initialize();
+
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+
+            expect(collaborationStore.value?.connectionStatus).toBe('connected');
+            expect(collaborationStore.value?.isEnabled).toBe(true);
+        });
+    });
+
     describe('resolveAssetForClips (invoked via the AssetTransfer onAssetAvailable hook)', () => {
         function makeAudioBuffer(): AudioBuffer {
             return { duration: 1 } as AudioBuffer;
@@ -1121,6 +1175,27 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(decodeAudioData).toHaveBeenCalledWith(arrayBuffer);
             expect(audioEngineMock.cacheAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1', buffer: decodedBuffer });
+        });
+
+        // The transfer-failure row is only otherwise cleared by session
+        // lifecycle use cases, so a message about an asset that has since
+        // arrived outlived its own successful retry for the whole session.
+        it('clears a previous transfer failure once the asset resolves', async () => {
+            collaborationStore.set(makeState());
+            sessionRuntimePrimitives.initialize();
+            latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding');
+            expect(collaborationStore.value?.error).not.toBeNull();
+
+            const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };
+            latestAssetTransfer().getAsset.mockReturnValue(blob);
+            audioEngineMock.getAudioContext.mockReturnValue({
+                decodeAudioData: vi.fn().mockResolvedValue(makeAudioBuffer()),
+            });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(null);
+            trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
+
+            latestAssetTransfer().options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
         });
 
         it('skips a clip whose asset hash does not match', async () => {
