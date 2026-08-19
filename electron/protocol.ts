@@ -21,7 +21,10 @@ import { app, net, protocol } from 'electron';
 export const APP_SCHEME = 'app';
 export const APP_HOST = 'sourdaw';
 export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
-export const APP_ENTRY_URL = `${APP_ORIGIN}/index.html`;
+// The entry pathname is what the client router matches. Loading
+// `/index.html` renders the router's not-found view under the shell; the
+// protocol handler serves `index.html` for `/` either way.
+export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
 
 /**
  * The Content-Security-Policy every `app://` response carries.

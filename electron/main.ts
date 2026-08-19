@@ -28,6 +28,12 @@ import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFr
 import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 
+// Logging must never crash the shell. When stdout or stderr is a closed pipe
+// — a packaged app whose parent went away — every console write raises EPIPE,
+// and an unhandled stream error becomes an uncaughtException dialog per write.
+process.stdout.on('error', () => undefined);
+process.stderr.on('error', () => undefined);
+
 // Before anything that can await. Chromium builds its privileged-scheme table
 // once, at `ready`; the ESM main entry resumes after `ready` at the first await,
 // and a scheme registered then is silently an ordinary opaque scheme.
@@ -325,9 +331,12 @@ const startNativeSurface = (): void => {
             `[shell] the native addon at ${addonPath} did not load: ${String(error)}. ` +
                 `Set ${NATIVE_ADDON_PATH_ENV} to a built addon; native commands are unavailable until then.`
         );
-        return;
     }
 
+    // Registration is unconditional. A known command whose backend is missing
+    // must reject through the router's native-host check; leaving the channel
+    // unregistered surfaces Electron's own error on every renderer call —
+    // once per second for the diagnostics poll.
     registerCommandRouter({
         ipcMain,
         native: () => nativeHost,
@@ -342,10 +351,12 @@ const startNativeSurface = (): void => {
     scanSupervisor = createUtilityScanSupervisor(addonPath);
     registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
 
-    registerPluginWindowHost(nativeHost, {
-        createWindow: createEditorWindow,
-        getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
-    });
+    if (nativeHost !== undefined) {
+        registerPluginWindowHost(nativeHost, {
+            createWindow: createEditorWindow,
+            getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
+        });
+    }
 };
 
 void app.whenReady().then(() => {

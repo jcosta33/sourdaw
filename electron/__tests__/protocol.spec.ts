@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { resolveRequestPath } from '../protocol.js';
+import { APP_ENTRY_URL, resolveRequestPath } from '../protocol.js';
 
 // The module imports Electron's `app`, `net` and `protocol` at load time, none
 // of which exist outside an Electron process. `vi.mock` is hoisted above the
@@ -32,6 +32,14 @@ beforeAll(() => {
     samplesDir = mkdtempSync(join(tmpdir(), 'sourdaw-samples-'));
     writeFileSync(join(distDir, 'index.html'), '<!doctype html>');
     writeFileSync(join(distDir, 'real.js'), '// asset');
+});
+
+describe('APP_ENTRY_URL', () => {
+    it('should load a pathname the client router matches', () => {
+        // The router's only route is `/`; an `/index.html` entry renders its
+        // not-found view inside the packaged shell while the web app works.
+        expect(new URL(APP_ENTRY_URL).pathname).toBe('/');
+    });
 });
 
 describe('resolveRequestPath', () => {
