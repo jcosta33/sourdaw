@@ -1,0 +1,52 @@
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_487e9aa1e46063::t_7889378c87d056 158-200
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_487e9aa1e46063::t_ff25ebdff01212 381-382,388-390
+  s_487e9aa1e46063::t_8a8f181c57e31b 420-421,433,435-437
+  s_487e9aa1e46063::t_d6fd1d45ede4bb 318-325,328-329
+  s_487e9aa1e46063::t_19fb48b38eb276 126,481,487-490,498-500,503,505-510,514-517
+  s_487e9aa1e46063::t_ea92bf3d24e0e2 87-96,100-106,112-125
+  s_487e9aa1e46063::t_329eea56b1be34 196-204,206,213
+  s_487e9aa1e46063::t_19a3dab439d2af 249-290,297,301,380
+  s_487e9aa1e46063::t_1a4328c9c9afe2 4-13,17-26
+  s_487e9aa1e46063::t_eb62b0e7f2f6e8 45-52
+  s_487e9aa1e46063::t_aedb171ed32394 127,409,419,470,480
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_938cef997d8637 454-457
+  s_487e9aa1e46063::t_ac401300b74271 423-430
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_487e9aa1e46063::t_a4595406fd43d7 1-11,14
+  s_487e9aa1e46063::t_4b38ac8ca7c664 66,73-81
+  s_487e9aa1e46063::t_b94a558ecfb18c 45-49
+  s_487e9aa1e46063::t_a9cf9c92729c84 303-308,310,317,336-340,342,350-353,359-531
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_487e9aa1e46063::t_dfd257dcd3f1ee 366-370,382
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_487e9aa1e46063::t_7154496a955137 114-122
+  s_487e9aa1e46063::t_b75f31866aa776 21
+src/modules/Transport/useCases/scheduling/disposeAudioClipScheduling.ts
+  s_487e9aa1e46063::t_9dd713d616d5ce 1,6-7
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_e2e073b016af68 61,65
+  s_487e9aa1e46063::t_953ac66f269e19 1089-1114
+  s_487e9aa1e46063::t_ba3e66960bbb72 158,161
+  s_487e9aa1e46063::t_eff6ae97f8dec8 375-386
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  s_487e9aa1e46063::t_e72ff34f7ad120 10-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7130dc60460774c341f837305590cd38e8abd4d2",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
