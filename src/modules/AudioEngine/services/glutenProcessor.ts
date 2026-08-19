@@ -7,6 +7,7 @@
  * Effect processor: reads from inputs[0] (main) and inputs[1] (sidechain), writes to outputs[0].
  */
 
+import { GLUTEN_RUNTIME_PARAMETER_COUNT, isGlutenRuntimeParameterId } from '../models/GlutenRuntimeControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
@@ -63,10 +64,24 @@ const PARAM_MAP: Record<string, string> = {
     extSidechain: 'ext_sidechain',
 };
 
-type GlutenMsg =
-    | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
-    | { type: 'param'; name: string; value: number };
+type UnknownRecord = Record<string, unknown>;
+const MAX_ID_LENGTH = 128;
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function hasOnlyKeys(value: UnknownRecord, keys: readonly string[]): boolean {
+    const actual = Object.keys(value);
+    return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+function isBoundedId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
+}
+function isPositiveSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+function isNonNegativeSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
 
 class GlutenProcessor extends AudioWorkletProcessor {
     _instance: GlutenInstance | null = null;
@@ -77,6 +92,14 @@ class GlutenProcessor extends AudioWorkletProcessor {
     _sabView: Float32Array | null = null;
     /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
     _sabSeqView: Int32Array | null = null;
+    _fallbackControlGeneration: number | null = null;
+    _fallbackControlTarget: {
+        trackId: string;
+        deviceId: string;
+        deviceType: string;
+        parameterIds: readonly string[];
+    } | null = null;
+    _lastFallbackControlSequence = 0;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -90,9 +113,12 @@ class GlutenProcessor extends AudioWorkletProcessor {
     constructor(...args: unknown[]) {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
-        this.port.onmessage = (event: MessageEvent<GlutenMsg>) => {
+        this.port.onmessage = (event: MessageEvent<unknown>) => {
             const msg = event.data;
             try {
+                if (!isRecord(msg)) {
+                    return;
+                }
                 if (msg.type === 'init') {
                     if (this._ready) {
                         return;
@@ -102,17 +128,17 @@ class GlutenProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (
+                    msg.type === 'init-sab' &&
+                    msg.sab instanceof SharedArrayBuffer &&
+                    isNonNegativeSafeInteger(msg.byteOffset)
+                ) {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
-                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
-                    const rustName = PARAM_MAP[msg.name] ?? msg.name;
-                    const oldLatency = this._instance.get_latency_samples();
-                    this._instance.set_param(rustName, msg.value);
-                    const newLatency = this._instance.get_latency_samples();
-                    if (newLatency !== oldLatency) {
-                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
-                    }
+                } else if (this._initializeFallbackControl(msg)) {
+                    return;
+                } else {
+                    this._handleFallbackControl(msg);
                 }
             } catch (error) {
                 // Same policy as the process() catch below. A throw at the wasm
@@ -128,6 +154,86 @@ class GlutenProcessor extends AudioWorkletProcessor {
                 });
             }
         };
+    }
+
+    _initializeFallbackControl(message: UnknownRecord): boolean {
+        if (
+            this._fallbackControlGeneration !== null ||
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'correlation']) ||
+            message.schemaVersion !== 1 ||
+            message.command !== 'initialize-fallback-control' ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterIds']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            message.target.deviceType !== 'gluten' ||
+            !Array.isArray(message.target.parameterIds) ||
+            message.target.parameterIds.length !== GLUTEN_RUNTIME_PARAMETER_COUNT ||
+            !message.target.parameterIds.every(isGlutenRuntimeParameterId) ||
+            new Set(message.target.parameterIds).size !== message.target.parameterIds.length ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration)
+        ) {
+            return false;
+        }
+        this._fallbackControlTarget = Object.freeze({
+            trackId: message.target.trackId,
+            deviceId: message.target.deviceId,
+            deviceType: message.target.deviceType,
+            parameterIds: Object.freeze([...message.target.parameterIds]),
+        });
+        this._fallbackControlGeneration = message.correlation.workletGeneration;
+        this._lastFallbackControlSequence = 0;
+        return true;
+    }
+
+    _handleFallbackControl(message: UnknownRecord): void {
+        if (
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
+            message.schemaVersion !== 1 ||
+            message.command !== 'set-fallback-param' ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
+            !isBoundedId(message.target.trackId) ||
+            !isBoundedId(message.target.deviceId) ||
+            message.target.deviceType !== 'gluten' ||
+            !isGlutenRuntimeParameterId(message.target.parameterId) ||
+            typeof message.value !== 'number' ||
+            !Number.isFinite(message.value) ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration', 'controlSequence']) ||
+            !isPositiveSafeInteger(message.correlation.workletGeneration) ||
+            !isPositiveSafeInteger(message.correlation.controlSequence) ||
+            !isRecord(message.scheduling) ||
+            !hasOnlyKeys(message.scheduling, ['targetFrame', 'deadlineFrame']) ||
+            message.scheduling.targetFrame !== null ||
+            message.scheduling.deadlineFrame !== null
+        ) {
+            return;
+        }
+        const target = this._fallbackControlTarget;
+        if (
+            !target ||
+            this._fallbackControlGeneration === null ||
+            message.correlation.workletGeneration !== this._fallbackControlGeneration ||
+            message.correlation.controlSequence <= this._lastFallbackControlSequence ||
+            message.target.trackId !== target.trackId ||
+            message.target.deviceId !== target.deviceId ||
+            !target.parameterIds.includes(message.target.parameterId)
+        ) {
+            return;
+        }
+        this._lastFallbackControlSequence = message.correlation.controlSequence;
+        if (!this._instance || this._faulted) {
+            return;
+        }
+        const oldLatency = this._instance.get_latency_samples();
+        this._instance.set_param(PARAM_MAP[message.target.parameterId] ?? message.target.parameterId, message.value);
+        const newLatency = this._instance.get_latency_samples();
+        if (newLatency !== oldLatency) {
+            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+        }
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {

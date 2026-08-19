@@ -77,6 +77,7 @@ describe('createBacteriaNode', () => {
         vi.stubGlobal('AudioContext', FakeAudioContext);
         return new FakeAudioContext() as unknown as BaseAudioContext;
     }
+    const target = { trackId: 'track-1', deviceId: 'bacteria-1', deviceType: 'bacteria', parameterIds: ['drive'] };
 
     it('should resume the context only when it starts out suspended', async () => {
         await createBacteriaNode(makeCtx('suspended'));
@@ -109,25 +110,81 @@ describe('createBacteriaNode', () => {
     });
 
     it('should forward a finite setParam value and drop a non-finite one', async () => {
-        const node = await createBacteriaNode(makeCtx());
+        const node = await createBacteriaNode(makeCtx(), undefined, undefined, target);
         postMessage.mockClear();
 
         node.setParam('drive', 0.6);
         node.setParam('drive', Number.NaN);
 
         expect(postMessage).toHaveBeenCalledTimes(1);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'drive', value: 0.6 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'drive' }),
+                value: 0.6,
+            })
+        );
+    });
+
+    it('admits Bacteria bridge band keys, rejects synthetic keys, and refuses scheduled control without telemetry', async () => {
+        const node = await createBacteriaNode(makeCtx(), undefined, undefined, target);
+        postMessage.mockClear();
+
+        node.setParam('band5_drive', 0.6);
+        node.setParam('synthetic-control', 1);
+        node.setParam('drive', 0.6, 48_000);
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'band5_drive' }),
+                scheduling: { targetFrame: null, deadlineFrame: null },
+            })
+        );
+    });
+
+    it('sends scheduled control only with a telemetry slot and retains the requested frame/deadline', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view: new Float32Array(32),
+            seqView: new Int32Array(32),
+        });
+        const node = await createBacteriaNode(makeCtx(), undefined, undefined, target);
+        postMessage.mockClear();
+
+        node.setParam('drive', 0.6, 48_000);
+
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                scheduling: { targetFrame: 48_000, deadlineFrame: 48_128 },
+            })
+        );
     });
 
     it('should forward setBypass as a param message named bypass', async () => {
-        const node = await createBacteriaNode(makeCtx());
+        const node = await createBacteriaNode(makeCtx(), undefined, undefined, target);
         postMessage.mockClear();
 
         node.setBypass(true);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 1 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'bypass' }),
+                value: 1,
+            })
+        );
 
         node.setBypass(false);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 0 });
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'set-fallback-param',
+                target: expect.objectContaining({ parameterId: 'bypass' }),
+                value: 0,
+            })
+        );
     });
 
     it('should poll meter data only when a telemetry slot is available, converting band levels to dB', async () => {
@@ -215,7 +272,12 @@ describe('createBacteriaNode', () => {
         node.onMeterData(vi.fn());
 
         node.destroy();
+        postMessage.mockClear();
+        node.setParam('band5_drive', 0.4);
+        node.setBypass(true);
+        node.destroy();
 
+        expect(postMessage).not.toHaveBeenCalled();
         expect(telemetryAllocator.releaseSlot).toHaveBeenCalledWith(64);
         expect(cancelRaf).toHaveBeenCalledWith(7);
         expect(disconnect).toHaveBeenCalled();

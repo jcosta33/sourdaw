@@ -805,18 +805,68 @@ const glutenDescriptor: WasmDeviceDescriptor = {
         notes: { availability: 'unavailable' },
         latency: { kind: 'reported-dynamically' },
     },
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: GlutenNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            pendingParams.length = 0;
+            placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
+            clearReportedLatency(deviceId);
+            getAudioDeviceRuntimeSink().deleteGlutenMeters(deviceId);
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
             setBypass: () => {},
         };
-        const loadPromise = createGlutenNode(context, undefined, signal)
+        const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
+        const loadPromise = createGlutenNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: GlutenNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
@@ -833,7 +883,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     });
                     reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
                 });
-                onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -841,6 +891,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     dispose: result.destroy,
                     controller: {
+                        ready: true,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
                         destroy: () => {
@@ -850,7 +901,15 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
+                if (accepted === false) {
+                    result.destroy();
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
                 return;
             })
             .catch((error) => {
@@ -865,22 +924,73 @@ const crustDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isCrustDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        isCurrent,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: CrustNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            pendingParams.length = 0;
+            placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
+            clearReportedLatency(deviceId);
+            getAudioDeviceRuntimeSink().deleteCrustMeters(deviceId);
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
             setBypass: () => {},
         };
-        const loadPromise = createCrustNode(context, undefined, signal)
+        const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
+        const loadPromise = createCrustNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: CrustNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
                     return;
                 }
                 if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
                     result.destroy();
                     return;
                 }
@@ -900,7 +1010,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateCrustMeters(deviceId, data);
                 });
-                onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -908,6 +1018,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     dispose: result.destroy,
                     controller: {
+                        ready: true,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
                         destroy: () => {
@@ -917,7 +1028,15 @@ const crustDescriptor: WasmDeviceDescriptor = {
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
+                if (accepted === false) {
+                    result.destroy();
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
                 return;
             })
             .catch((error) => {
@@ -932,22 +1051,74 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isBacteriaDevice,
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({
+        context,
+        trackId,
+        deviceId,
+        deviceType,
+        parameterIds,
+        isCurrent,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: BacteriaNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            pendingParams.length = 0;
+            placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            publishedResult.destroy();
+            clearReportedLatency(deviceId);
+            getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, {
+                inputDb: 0,
+                outputDb: 0,
+                bandLevels: [0, 0, 0, 0, 0, 0],
+                latency: 0,
+            });
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
             setBypass: () => {},
         };
-        const loadPromise = createBacteriaNode(context, undefined, signal)
+        const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
+        const loadPromise = createBacteriaNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: BacteriaNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
                     return;
                 }
                 if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
                     result.destroy();
                     return;
                 }
@@ -963,7 +1134,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, data);
                 });
-                onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -976,10 +1147,24 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             result.destroy();
                             clearReportedLatency(deviceId);
+                            getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, {
+                                inputDb: 0,
+                                outputDb: 0,
+                                bandLevels: [0, 0, 0, 0, 0, 0],
+                                latency: 0,
+                            });
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
+                if (accepted === false) {
+                    result.destroy();
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
                 return;
             })
             .catch((error) => {
