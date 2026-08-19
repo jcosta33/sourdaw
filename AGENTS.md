@@ -61,20 +61,20 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 
 ## Checks
 
-| Need                | Command                                       |
-| ------------------- | --------------------------------------------- |
-| Focused tests       | `pnpm test:run <file-or-narrow-directory>`    |
-| Focused E2E         | `pnpm test:e2e <spec>`                        |
-| Focused lint        | `pnpm lint <changed-files>`                   |
-| Focused format      | `pnpm format <changed-files>`                 |
-| App types           | `pnpm typecheck`                              |
-| Test types          | `pnpm typecheck:test`                         |
-| Script types        | `pnpm typecheck:scripts`                      |
-| E2E types           | `pnpm typecheck:e2e`                          |
-| Focused Rust tests  | `pnpm cargo:test --package <crate> <filter>`  |
-| Focused Rust format | `pnpm cargo:fmt --package <crate>`            |
-| Module boundaries   | `pnpm deps:validate`                          |
-| Barrel mocks        | `pnpm test:barrel-mocks`                      |
+| Need                | Command                                      |
+| ------------------- | -------------------------------------------- |
+| Focused tests       | `pnpm test:run <file-or-narrow-directory>`   |
+| Focused E2E         | `pnpm test:e2e <spec>`                       |
+| Focused lint        | `pnpm lint <changed-files>`                  |
+| Focused format      | `pnpm format <changed-files>`                |
+| App types           | `pnpm typecheck`                             |
+| Test types          | `pnpm typecheck:test`                        |
+| Script types        | `pnpm typecheck:scripts`                     |
+| E2E types           | `pnpm typecheck:e2e`                         |
+| Focused Rust tests  | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format | `pnpm cargo:fmt --package <crate>`           |
+| Module boundaries   | `pnpm deps:validate`                         |
+| Barrel mocks        | `pnpm test:barrel-mocks`                     |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
@@ -87,7 +87,8 @@ Tests use at most two workers. Playwright uses one. See [testing](./docs/06-test
 - `electron/`: desktop shell — main process, preload bridge, and IPC router.
 - `crates/`: Rust, native audio, and DSP.
 - `.agents/skills/`: repository-specific skills.
-- `.agents/worktrees/`: gitignored worker lanes.
+- `.agents/worktrees/`: gitignored author lanes.
+- `.agents/review-bundles/`: gitignored review material for one PR head.
 
 Read the local `AGENTS.md` in `crates/sourdaw-native/`, `crates/daw-dsp/`, `src/components/`,
 `src/modules/AudioEngine/`, and `src/modules/Collaboration/` before editing those trees.
@@ -117,12 +118,14 @@ Run `pnpm deps:validate` after cross-module changes. Full rules:
 
 ## Worktrees
 
-One change, one worktree. Never implement or review mutable work in the shared root checkout.
-Create its lane from `origin/main` and lock it with
-`git worktree lock --reason active:<owner> <path>`. Touch only your lane. Never disturb another
-owner’s worktree or changes. A merged PR means its worktree is dead: unlock it and immediately run
-`node --experimental-strip-types scripts/removeLane.ts <path>` from elsewhere. Delete the local
-branch if the remover leaves it behind.
+One change, one lane. Mutable work lives under `.agents/worktrees/`, never in the primary checkout.
+`pnpm lane:open <issue> [slug]` fetches `origin/main`, creates `agent/<issue>/<slug>` (slug `work`
+if omitted), and locks `active:sourdaw-author`. Last stdout line is the lane path. It does not mint
+or spawn `gh`. Touch only that lane.
+
+`pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
+Removal requires exactly one merged pull request for that branch. Delete a leftover local branch
+after success.
 
 ## Artifacts
 
@@ -138,18 +141,46 @@ parent/child issues as GitHub sub-issues.
 
 ## Delivery
 
-- Keep batches small, live lanes few, and merges prompt. A finished change waits on nothing but its
-  review.
-- Run affected checks before delivery. Use `pnpm deliver <pr-number>` only to validate PR state and
-  merge. Never bypass it with raw merge or branch deletion.
-- Follow `.github/pull_request_template.md`. PR descriptions stay under 4000 bytes. State what
-  changed, why, and what deserves attention.
-- Put review findings on the relevant diff line. Use one short paragraph: defect, consequence,
-  required outcome. Use a general comment only for a cross-cutting defect; keep it under 2000 bytes.
-- Use three review stances by default and five at most. Split the PR when five cannot cover it. At
-  ten subagents or one hour, stop expanding review; reconcile, fix, and finish or split the PR.
-- Use conventional commit titles: `type(scope): subject`. Enable hooks with
-  `git config core.hooksPath .githooks`.
+GitHub writes for agent work go through trusted `pnpm` scripts. The model does not run `gh` or
+`git push`. Identity is the App those scripts mint, not a persona.
+
+| Need                        | Command                         |
+| --------------------------- | ------------------------------- |
+| Open a lane                 | `pnpm lane:open <issue> [slug]` |
+| Push; open or update the PR | `pnpm lane:publish <issue>`     |
+| Write the review bundle     | `pnpm review:prepare <pr>`      |
+| Post `review.json`          | `pnpm review:publish <pr>`      |
+| Squash-merge                | `pnpm deliver <pr>`             |
+| Remove a spent lane         | `pnpm lane:remove <path>`       |
+
+Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
+`.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for
+`review:prepare` and `review:publish`. Do not commit them. Do not load the other role's file.
+Author mint is `jcosta33-author[bot]`. Reviewer mint is `jcosta33-reviewer[bot]`. `deliver` does
+not mint the reviewer.
+
+If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
+scripts may run from the working tree.
+
+`lane:publish` prints the PR number. It pushes without `--force`, titles the PR with the HEAD
+subject (`type(scope): subject`), keeps the four headings in
+[`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
+bytes, and puts `Closes #<issue>` in Related tickets. It does not enable auto-merge or post a
+review.
+
+`review:prepare` prints a bundle path on the primary root. The bundle is `manifest.json`,
+`diff.patch`, `pr.md`, and base-commit `contracts/`. The caller writes `review.json` (`APPROVE` or
+`REQUEST_CHANGES`). Line comments are one paragraph: defect, consequence, required outcome. A
+reviewer agent gets that bundle, not the author transcript. `review:publish` prints the review id
+and posts as `jcosta33-reviewer[bot]` only when GitHub's head still matches the bundle.
+
+`pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
+PR is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any other way.
+Run affected checks first.
+
+Keep batches small, live lanes few, merges prompt. A finished change waits only on that review.
+Three review stances by default, five at most; split the PR when five cannot cover it. At ten
+subagents or one hour, stop expanding review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety
 
