@@ -38,10 +38,9 @@
 //!   input cycles), so the one frequency it cannot produce is the one it exists
 //!   to produce.
 //!
-//! The `10x` floor margin below is deliberately far under what a working shifter
-//! should deliver — the fundamental sits some 300x over the same floor — so a
-//! change that lands under it has stopped Shimmer being audible and the number
-//! is not the thing to move.
+//! The floor margin below sits between what a working shifter delivers and what
+//! each of those defects leaves behind, so a change that lands under it has
+//! stopped Shimmer being audible and the number is not the thing to move.
 
 use proof_chamber::ProofChamberInstance;
 
@@ -60,9 +59,22 @@ const SUSTAIN_SECONDS: f32 = 2.0;
 /// below 0.5 selects the 1.5 ratio, at or above selects 2.0.
 const PITCH_SETTINGS: [(f32, f32, &str); 2] = [(0.0, 1.5, "fifth up"), (1.0, 2.0, "octave up")];
 
-/// How far over the surrounding spectral floor the shifted partial has to
-/// stand before it counts as present rather than as part of the noise.
-const FLOOR_MARGIN: f32 = 10.0;
+/// How far over the surrounding spectral floor the shifted band has to stand
+/// before it counts as an interval rather than as noise.
+///
+/// Set by the defects it has to reject, measured on the band metric below.
+/// Grains read backwards put the band at 2.4x the floor. One shifter serving
+/// both tank halves scrambles them into broadband noise that still reads 33.5x,
+/// over a floor it has itself raised some ninefold — a single bin at `f * ratio`
+/// caught that case at 6.8x, but integrating the band collects the scramble's
+/// noise along with it, so the bar has to clear the noise rather than sit under
+/// it. A working shifter reads 115x at its weakest cell, so this sits between
+/// the two with about a factor of two on either side.
+///
+/// That headroom is affordable only because the band metric holds the four cells
+/// inside a 1.8x spread. The single-bin reading it replaced swung 8.5x across the
+/// same cells, and no threshold in this range would have survived it.
+const FLOOR_MARGIN: f32 = 60.0;
 
 /// How far the up-shifted partial has to stand over its downward mirror. This
 /// is the direction claim on its own: a shifter running backwards puts its
