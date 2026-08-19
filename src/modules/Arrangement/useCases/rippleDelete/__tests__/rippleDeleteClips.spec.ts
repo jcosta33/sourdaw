@@ -36,7 +36,7 @@ vi.mock('../../clip/removeClipSatelliteData', () => ({
     removeClipSatelliteData: mocks.removeClipSatelliteData,
 }));
 
-vi.mock('../../clip/clipAutomationLaneTransition', () => ({
+vi.mock('../../clip/readClipScopedAutomationLanes', () => ({
     readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
 }));
 

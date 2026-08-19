@@ -14,7 +14,7 @@ export type ClipReplacementSnapshot = {
     readonly clipOrder: readonly string[];
 };
 
-export function cloneSnapshotClip(snapshot: ClipStateSnapshot): Clip {
+function cloneSnapshotClip(snapshot: ClipStateSnapshot): Clip {
     return {
         ...structuredClone(snapshot),
         overrides: snapshot.overrides ? { ...snapshot.overrides } : undefined,

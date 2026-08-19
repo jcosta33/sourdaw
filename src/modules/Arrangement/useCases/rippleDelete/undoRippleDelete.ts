@@ -1,4 +1,4 @@
-import { getAutomationLanes, restoreAutomationLanes, shiftClipAutomation } from '#/modules/Automation/useCases';
+import { type getAutomationLanes, restoreAutomationLanes, shiftClipAutomation } from '#/modules/Automation/useCases';
 
 import { type ClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';

@@ -1,12 +1,12 @@
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
-import { readClipScopedAutomationLanes } from '../../useCases/clip/clipAutomationLaneTransition';
+import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
-import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.

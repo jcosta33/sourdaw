@@ -2,16 +2,13 @@ import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
-import { getTrackState } from '../repositories/track/getTrackState';
-import {
-    type ClipGainEnvelope,
-    type GainEnvelopePoint,
-} from '../stores/gainEnvelopeStore';
-import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../stores/clipSatelliteState';
-import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 import { type WarpMarker, type WarpState } from '../models/WarpMarker';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../stores/clipSatelliteState';
+import { type ClipGainEnvelope, type GainEnvelopePoint } from '../stores/gainEnvelopeStore';
+import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 
-import { readClipScopedAutomationLanes, type AutomationLaneValue } from './clip/clipAutomationLaneTransition';
+import { readClipScopedAutomationLanes, type AutomationLaneValue } from './clip/readClipScopedAutomationLanes';
 
 type PrepareStripSilenceInput = {
     clipId: string;
@@ -86,9 +83,7 @@ function migrateAutomationLaneToFirstSegment(
     const rebasedPoints = lane.points
         .map((point) => ({ ...point, beat: point.beat - shift }))
         .sort((left, right) => left.beat - right.beat);
-    const fitsFirstSegment = rebasedPoints.some(
-        (point) => point.beat >= 0 && point.beat < firstSegmentDurationBeats
-    );
+    const fitsFirstSegment = rebasedPoints.some((point) => point.beat >= 0 && point.beat < firstSegmentDurationBeats);
     if (!fitsFirstSegment) {
         return null;
     }

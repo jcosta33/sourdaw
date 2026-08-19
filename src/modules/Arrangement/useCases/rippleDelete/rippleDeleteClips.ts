@@ -1,10 +1,10 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
 
 import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
+import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
-import { readClipScopedAutomationLanes } from '../clip/clipAutomationLaneTransition';
-import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 
 import { type PlanRippleDeleteOutput, planRippleDelete } from './planRippleDelete';
 

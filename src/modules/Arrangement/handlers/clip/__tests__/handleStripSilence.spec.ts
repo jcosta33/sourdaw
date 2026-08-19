@@ -85,7 +85,11 @@ describe('handleStripSilence', () => {
 
         const desc = handleStripSilence.describe(action);
 
-        expect(mocks.prepareStripSilence).toHaveBeenCalledWith({ clipId: 'c1', threshold: undefined, minDuration: undefined });
+        expect(mocks.prepareStripSilence).toHaveBeenCalledWith({
+            clipId: 'c1',
+            threshold: undefined,
+            minDuration: undefined,
+        });
         expect(action.payload).toMatchObject({ expected: previous, replacement: next });
         expect(desc.inverseAction).toEqual({
             type: 'restoreStripSilenceState',

@@ -51,7 +51,7 @@ function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuf
         length: channelData.length,
         numberOfChannels: 1,
         sampleRate,
-    } as AudioBuffer;
+    };
 }
 
 describe('prepareStripSilence', () => {
@@ -107,7 +107,7 @@ describe('prepareStripSilence', () => {
 
     it('returns null when the audio has only one sound region', () => {
         const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1' });
-        const channelData = new Float32Array(100).fill(0.5) as Float32Array<ArrayBuffer>;
+        const channelData = new Float32Array(100).fill(0.5);
         mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
         mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channelData));
 
@@ -117,7 +117,7 @@ describe('prepareStripSilence', () => {
     it('splits multi-region audio into a before/after snapshot', () => {
         const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1', startBeat: 0, endBeat: 10 });
         const track = createTrackWithClips([clip]);
-        const channelData = new Float32Array(100) as Float32Array<ArrayBuffer>;
+        const channelData = new Float32Array(100);
         channelData.fill(0.5, 0, 20);
         channelData.fill(0.5, 60, 100);
         mocks.getTrackState.mockReturnValue(createTrackState(track));
@@ -141,7 +141,7 @@ describe('prepareStripSilence', () => {
         // Regions: loud 0-19, 22-41 (gap of 2 samples = 0.2 beats < 0.5 merges),
         //          then a large 40-sample gap (4 beats, not merged) to loud 82-99.
         const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1', startBeat: 0, endBeat: 10 });
-        const channelData = new Float32Array(100) as Float32Array<ArrayBuffer>;
+        const channelData = new Float32Array(100);
         channelData.fill(0.5, 0, 20);
         channelData.fill(0.5, 22, 42);
         channelData.fill(0.5, 82, 100);
@@ -157,7 +157,7 @@ describe('prepareStripSilence', () => {
 
     it('returns null when every silence gap is below minSilenceBeats (all regions merge into one)', () => {
         const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1', startBeat: 0, endBeat: 10 });
-        const channelData = new Float32Array(100) as Float32Array<ArrayBuffer>;
+        const channelData = new Float32Array(100);
         channelData.fill(0.5, 0, 20);
         channelData.fill(0.5, 22, 42);
         channelData.fill(0.5, 45, 65);
@@ -184,7 +184,7 @@ describe('prepareStripSilence', () => {
         // window hardcoded to the buffer's own length (100) would run only
         // one peak-detection pass over the whole buffer and see one region.
         const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1', startBeat: 0, endBeat: 10 });
-        const channelData = new Float32Array(100) as Float32Array<ArrayBuffer>;
+        const channelData = new Float32Array(100);
         channelData.fill(0.5, 0, 5);
         channelData.fill(0.5, 50, 55);
         mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));

@@ -72,7 +72,7 @@ vi.mock('../../../stores/clipSatelliteState', () => ({
     readClipSatelliteEntry: mocks.readClipSatelliteEntry,
 }));
 
-vi.mock('../../../useCases/clip/clipAutomationLaneTransition', () => ({
+vi.mock('../../../useCases/clip/readClipScopedAutomationLanes', () => ({
     readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
 }));
 

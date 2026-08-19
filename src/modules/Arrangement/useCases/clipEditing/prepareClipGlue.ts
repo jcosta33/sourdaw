@@ -7,7 +7,7 @@ import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { createClipSatelliteTransitionPlan } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { readClipScopedAutomationLanes } from '../clip/clipAutomationLaneTransition';
+import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 
 import { getClipIdCensus } from './getClipIdCensus';
 import { getMidiClipGlueSources } from './getMidiClipGlueSources';

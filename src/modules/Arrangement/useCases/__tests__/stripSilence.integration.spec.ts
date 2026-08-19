@@ -31,13 +31,13 @@ function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuf
         length: channelData.length,
         numberOfChannels: 1,
         sampleRate,
-    } as AudioBuffer;
+    };
 }
 
 /** clipDurationBeats = 10 over 100 samples -> 0.1 beats/sample; two regions
  *  at samples [0,20) and [60,100) -> segments [beat 0,2) and [beat 6,10). */
 function twoRegionChannelData(): Float32Array<ArrayBuffer> {
-    const channelData = new Float32Array(100) as Float32Array<ArrayBuffer>;
+    const channelData = new Float32Array(100);
     channelData.fill(0.5, 0, 20);
     channelData.fill(0.5, 60, 100);
     return channelData;

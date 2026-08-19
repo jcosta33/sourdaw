@@ -3,7 +3,8 @@ import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 
-import { applyClipAutomationLaneTransition, clipAutomationLaneTransitionMatchesStore } from './clip/clipAutomationLaneTransition';
+import { applyClipAutomationLaneTransition } from './clip/applyClipAutomationLaneTransition';
+import { clipAutomationLaneTransitionMatchesStore } from './clip/clipAutomationLaneTransitionMatchesStore';
 import { getClipIdCensus } from './clipEditing/getClipIdCensus';
 import { insertReplacementClips } from './clipReplacementSnapshot';
 import { prepareClipSatelliteStateRestore } from './timeOperations/prepareClipSatelliteStateRestore';

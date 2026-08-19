@@ -3,7 +3,8 @@ import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { applyClipAutomationLaneTransition, clipAutomationLaneTransitionMatchesStore } from '../clip/clipAutomationLaneTransition';
+import { applyClipAutomationLaneTransition } from '../clip/applyClipAutomationLaneTransition';
+import { clipAutomationLaneTransitionMatchesStore } from '../clip/clipAutomationLaneTransitionMatchesStore';
 import { insertReplacementClips } from '../clipReplacementSnapshot';
 import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
 
@@ -110,7 +111,9 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
 
     // Clip-scoped automation lanes: every source's lanes were retired (or
     // restored, on undo) — none migrate to the glued clip.
-    if (!applyClipAutomationLaneTransition(affectedClipIds, expectedClipAutomationLanes, replacementClipAutomationLanes)) {
+    if (
+        !applyClipAutomationLaneTransition(affectedClipIds, expectedClipAutomationLanes, replacementClipAutomationLanes)
+    ) {
         return false;
     }
 

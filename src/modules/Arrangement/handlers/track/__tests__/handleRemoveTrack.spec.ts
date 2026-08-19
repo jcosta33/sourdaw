@@ -434,7 +434,9 @@ describe('handleRemoveTrack', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
             const gainEnvelope = { clipId: 'c1', points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }], enabled: true };
             mocks.readClipSatelliteEntry.mockImplementation((clipId: string) =>
-                clipId === 'c1' ? { clipId, gainEnvelope, warpState: null } : { clipId, gainEnvelope: null, warpState: null }
+                clipId === 'c1'
+                    ? { clipId, gainEnvelope, warpState: null }
+                    : { clipId, gainEnvelope: null, warpState: null }
             );
 
             const desc = handleRemoveTrack.describe({
