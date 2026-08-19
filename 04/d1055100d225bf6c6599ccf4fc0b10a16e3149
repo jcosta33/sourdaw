@@ -1,0 +1,37 @@
+scripts/test-health-gate-scripts.sh
+  s_17304f5c488d05::t_b6b35792af7d5b 108
+.github/workflows/health-gates.yml
+  s_17304f5c488d05::t_b6b35792af7d5b 141
+release/open-source-inventory.json
+  s_17304f5c488d05::t_0f2d85279734e0 616
+scripts/__tests__/resourceGuard.spec.ts
+  s_17304f5c488d05::t_5ae4afc2b5a12c 397-406
+package.json
+  s_17304f5c488d05::t_b6b35792af7d5b 43
+scripts/health-gates-web.sh
+  s_17304f5c488d05::t_b6b35792af7d5b 19
+scripts/runLint.ts
+  s_17304f5c488d05::t_f75a9d274b5d9f 90
+  s_17304f5c488d05::t_124586f64560b8 48-50,56
+docs/06-testing.md
+  s_17304f5c488d05::t_a0a24e2f1dfe52 687-689
+  s_17304f5c488d05::t_baab0260b9f67d 684-686,690-691
+AGENTS.md
+  s_17304f5c488d05::t_9e7a5ddafff055 162-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "04d1055100d225bf6c6599ccf4fc0b10a16e3149",
+  "prompts": {},
+  "sessions": {
+    "s_17304f5c488d05": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12ae5903-f746-4e24-878e-d160658947d3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
