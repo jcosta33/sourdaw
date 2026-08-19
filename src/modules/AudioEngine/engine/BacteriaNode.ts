@@ -7,8 +7,12 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { logger } from '#/infra/logger/appLogger';
 
+import { createBacteriaRuntimeParameterIds } from '../models/BacteriaRuntimeControl';
+import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
+import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {
@@ -53,7 +57,7 @@ function projectBacteriaMeter(view: Float32Array): BacteriaMeterData {
 
 export type BacteriaNodeResult = {
     workletNode: AudioWorkletNode;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number, sampleFrame?: number) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: BacteriaMeterData) => void) => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
@@ -63,6 +67,32 @@ export type BacteriaNodeResult = {
     ready: Promise<Record<string, unknown>>;
 };
 
+const CONTROL_DEADLINE_FRAMES = 128;
+let nextWorkletControlGeneration = 1;
+
+function allocateWorkletControlGeneration(): number {
+    const generation = nextWorkletControlGeneration;
+    nextWorkletControlGeneration = generation >= Number.MAX_SAFE_INTEGER ? 1 : generation + 1;
+    return generation;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function toControlScheduling(sampleFrame: number | undefined): {
+    targetFrame: number | null;
+    deadlineFrame: number | null;
+} {
+    if (!Number.isSafeInteger(sampleFrame) || sampleFrame === undefined || sampleFrame < 0) {
+        return { targetFrame: null, deadlineFrame: null };
+    }
+    const deadlineFrame = sampleFrame + CONTROL_DEADLINE_FRAMES;
+    return Number.isSafeInteger(deadlineFrame)
+        ? { targetFrame: sampleFrame, deadlineFrame }
+        : { targetFrame: null, deadlineFrame: null };
+}
+
 export function isBacteriaDevice(deviceType: string): boolean {
     return deviceType === 'bacteria';
 }
@@ -70,7 +100,9 @@ export function isBacteriaDevice(deviceType: string): boolean {
 export async function createBacteriaNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    controlTarget?: RuntimeDeviceControlTarget,
+    onRuntimeFailure?: (message: string) => void
 ): Promise<BacteriaNodeResult> {
     // Bacteria's per-band meter telemetry lives in a SAB slot. Guard here so
     // the worklet setup doesn't run pointlessly in an un-isolated environment.
@@ -107,6 +139,59 @@ export async function createBacteriaNode(
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
+    let lastReportedLatency: number | null = null;
+    const reportLatencyChange = (latency: number): void => {
+        if (latency !== lastReportedLatency) {
+            lastReportedLatency = latency;
+            latencyCallback?.(latency);
+        }
+    };
+    const workletGeneration = allocateWorkletControlGeneration();
+    // Offline rendering retains the pre-existing direct Bacteria API, but it
+    // still traverses the same validated worklet envelope with a local identity.
+    const target = controlTarget ?? {
+        trackId: 'offline-bacteria-track',
+        deviceId: 'offline-bacteria-device',
+        deviceType: 'bacteria',
+        parameterIds: [],
+    };
+    const fallbackControlTarget = Object.freeze({
+        trackId: target.trackId,
+        deviceId: target.deviceId,
+        deviceType: target.deviceType,
+        parameterIds: createBacteriaRuntimeParameterIds(),
+    });
+    let nextControlSequence = 1;
+    let destroyed = false;
+    const postFallbackControl = (name: string, value: number, sampleFrame?: number): void => {
+        if (destroyed || nextControlSequence > Number.MAX_SAFE_INTEGER) {
+            return;
+        }
+        const scheduling = toControlScheduling(sampleFrame);
+        if (scheduling.targetFrame !== null && !slot) {
+            return;
+        }
+        const result = compileRuntimeDeviceControl(
+            {
+                schemaVersion: 1,
+                command: 'set-fallback-param',
+                target: {
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
+                    parameterId: name,
+                },
+                value,
+                correlation: { workletGeneration, controlSequence: nextControlSequence },
+                scheduling,
+            },
+            fallbackControlTarget.parameterIds
+        );
+        if (result.status === 'compiled') {
+            nextControlSequence++;
+            node.port.postMessage(result.control);
+        }
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
@@ -116,26 +201,41 @@ export async function createBacteriaNode(
     node.port.onmessage = (event: MessageEvent) => {
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
-            const data = event.data as Record<string, unknown>;
-            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
-                latencyCallback?.(data.latency);
+            const data: unknown = event.data;
+            if (isRecord(data) && data.type === 'latency-changed' && typeof data.latency === 'number') {
+                reportLatencyChange(data.latency);
             }
             return;
+        }
+        if (outcome === 'late' && isRecord(event.data) && event.data.type === 'error') {
+            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+            logger.warn('BacteriaNode runtime fault (WASM panic — processor faulted):', message);
+            onRuntimeFailure?.(message);
         }
     };
     const readyPromise = handshake.promise;
 
+    if (fallbackControlTarget) {
+        node.port.postMessage(
+            Object.freeze({
+                schemaVersion: 1,
+                command: 'initialize-fallback-control',
+                target: fallbackControlTarget,
+                correlation: Object.freeze({ workletGeneration }),
+            })
+        );
+    }
     node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,
-        setParam(name: string, value: number) {
+        setParam(name: string, value: number, sampleFrame?: number) {
             if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
+                postFallbackControl(name, value, sampleFrame);
             }
         },
         setBypass(state: boolean) {
-            node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
+            postFallbackControl('bypass', state ? 1 : 0);
         },
         onMeterData(cb: (data: BacteriaMeterData) => void) {
             if (meterRafId !== null) {
@@ -152,7 +252,9 @@ export async function createBacteriaNode(
             // since it retains the last consistent snapshot.
             const readMeter = createTelemetryReader({ slot, project: projectBacteriaMeter });
             const poll = () => {
-                cb(readMeter());
+                const data = readMeter();
+                reportLatencyChange(data.latency);
+                cb(data);
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);
@@ -171,6 +273,10 @@ export async function createBacteriaNode(
             }
         },
         destroy() {
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
             if (meterRafId !== null) {
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;

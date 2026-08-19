@@ -86,12 +86,16 @@ export class RuntimeGraphMutationRejected extends Error {
     }
 }
 
+type PendingParameterWrite =
+    | Readonly<{ kind: 'immediate'; name: string; value: number }>
+    | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
+
 type PendingDeviceLoad = {
     abortController: AbortController;
     externalInstanceId?: string;
     bypassed?: boolean;
     parameterIds: readonly string[];
-    parameterWrites: Array<[string, number]>;
+    parameterWrites: PendingParameterWrite[];
     loadPromise?: Promise<unknown>;
     placeholder?: BuiltinDeviceNode;
     readinessToken: DeviceReadinessToken;
@@ -631,11 +635,24 @@ export class TrackNode {
         return {
             ...controller,
             ready: false,
-            setParam: (name, value) => {
+            setParam: (name, value, sampleFrame) => {
                 if (this._disposed || pendingLoad.resolved || this._pendingDeviceLoads.get(deviceId) !== pendingLoad) {
                     return;
                 }
-                pendingLoad.parameterWrites.push([name, value]);
+                if (sampleFrame !== undefined && Number.isSafeInteger(sampleFrame) && sampleFrame >= 0) {
+                    pendingLoad.parameterWrites.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
+                    return;
+                }
+                const previous = pendingLoad.parameterWrites.at(-1);
+                if (previous?.kind === 'immediate' && previous.name === name) {
+                    pendingLoad.parameterWrites[pendingLoad.parameterWrites.length - 1] = Object.freeze({
+                        kind: 'immediate',
+                        name,
+                        value,
+                    });
+                    return;
+                }
+                pendingLoad.parameterWrites.push(Object.freeze({ kind: 'immediate', name, value }));
             },
         };
     }
@@ -711,8 +728,12 @@ export class TrackNode {
         try {
             finalDn.parameterIds = pendingLoad.parameterIds;
             finalDn.externalInstanceId = pendingLoad.externalInstanceId;
-            for (const [name, value] of pendingLoad.parameterWrites) {
-                finalDn.controller?.setParam(name, value);
+            for (const pending of pendingLoad.parameterWrites) {
+                if (pending.kind === 'scheduled') {
+                    finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
+                } else {
+                    finalDn.controller?.setParam(pending.name, pending.value);
+                }
             }
             if (pendingLoad.bypassed !== undefined) {
                 finalDn.controller?.setBypass?.(pendingLoad.bypassed);
@@ -802,7 +823,7 @@ export class TrackNode {
             }
 
             const precedingDeviceIds = this.strip.deviceNodes.slice(0, index).map((device) => device.deviceId);
-            const { bypassed, type } = replacementDn;
+            const { bypassed, type, parameterIds } = replacementDn;
             this.reportAsyncRuntimeGraphMutation(
                 'needs-reconcile',
                 `Recovered device ${deviceId} is rebuilding its live graph slot`
@@ -810,7 +831,7 @@ export class TrackNode {
             this.invalidatePendingDeviceLoad({ deviceId });
             this.strip.deviceNodes.splice(index, 1);
             this.destroyRejectedDeviceNode(replacementDn);
-            this.addDevice(deviceId, type, undefined, precedingDeviceIds);
+            this.addDevice(deviceId, type, undefined, precedingDeviceIds, parameterIds);
             if (bypassed !== undefined) {
                 this.updateBypass(deviceId, bypassed);
             }
@@ -1067,8 +1088,10 @@ export class TrackNode {
                 try {
                     created = descriptor.create({
                         context,
+                        trackId: this.trackId,
                         deviceId,
                         deviceType,
+                        parameterIds: pendingLoad.parameterIds,
                         transportSAB: this.deps.transportSAB,
                         isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                         signal: pendingLoad.abortController.signal,
