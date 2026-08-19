@@ -254,7 +254,7 @@ function repositoryMergePolicy(repository: string, shell: ShellRunner): Reposito
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
-    options: { gitToken?: string } = {}
+    options: { gitToken?: string; helperDir?: string } = {}
 ): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
@@ -280,13 +280,15 @@ export function shellPort(
     return {
         fetch: () => {
             if (options.gitToken !== undefined) {
+                const helperDir =
+                    options.helperDir ?? fail('authenticated git fetch requires a credential helper directory');
                 shell.run(
                     'git',
-                    gitAuthenticatedArgs(options.gitToken, [
+                    gitAuthenticatedArgs(options.gitToken, helperDir, [
                         'fetch',
                         '--prune',
                         GITHUB_HTTPS_REMOTE,
-                        '+refs/heads/main:refs/remotes/origin/main',
+                        '+refs/heads/*:refs/remotes/origin/*',
                     ])
                 );
                 return;
@@ -470,7 +472,10 @@ async function main(): Promise<number> {
             capture: (command, args) => spawnCapture(command, args, { env: auth.session.env, cwd: primaryRoot }),
             run: (command, args) => spawnRun(command, args, { env: auth.session.env, cwd: primaryRoot }),
         };
-        deliverPullRequest(parsed.number, shellPort(repository, shell, { gitToken: auth.minted.token }));
+        deliverPullRequest(
+            parsed.number,
+            shellPort(repository, shell, { gitToken: auth.minted.token, helperDir: auth.session.configDir })
+        );
         return 0;
     } finally {
         auth.session.dispose();

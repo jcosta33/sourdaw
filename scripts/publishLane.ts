@@ -109,8 +109,9 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd
     );
+    const token = session.env.GH_TOKEN ?? '';
     const git = (args: string[], directory: string) =>
-        spawnCapture('git', gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', args), {
+        spawnCapture('git', gitAuthenticatedArgs(token, session.configDir, args), {
             cwd: directory,
             env: session.env,
         });
@@ -120,7 +121,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         fetchMain: () => {
             spawnRun(
                 'git',
-                gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', [
+                gitAuthenticatedArgs(token, session.configDir, [
                     'fetch',
                     GITHUB_HTTPS_REMOTE,
                     '+refs/heads/main:refs/remotes/origin/main',
@@ -162,7 +163,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         push: (lane, branch) => {
             spawnRun(
                 'git',
-                gitAuthenticatedArgs(session.env.GH_TOKEN ?? '', [
+                gitAuthenticatedArgs(token, session.configDir, [
                     'push',
                     GITHUB_HTTPS_REMOTE,
                     `HEAD:refs/heads/${branch}`,

@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,6 +14,7 @@ import {
     type ShellRunner,
     type StackedPullRequest,
 } from '../deliverPullRequest';
+import { GITHUB_HTTPS_REMOTE } from '../githubAppIdentity.ts';
 
 const body = `### 🎯 What does this PR do?
 Change.
@@ -556,5 +561,37 @@ describe('delivery shell boundary', () => {
         expect(captures).not.toContainEqual(
             expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
         );
+    });
+
+    it('authenticates fetch by pruning all origin heads over HTTPS', () => {
+        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
+        const runs: Array<{ command: string; args: string[] }> = [];
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => '',
+                    run: (command, args) => runs.push({ command, args }),
+                },
+                { gitToken: 'ghs_minted', helperDir }
+            );
+            port.fetch();
+            expect(runs).toHaveLength(1);
+            const args = runs[0]?.args ?? [];
+            expect(args.slice(0, 3)).toEqual(['-c', 'credential.helper=', '-c']);
+            expect(args[3]).toMatch(/^credential\.helper=\//);
+            expect(args[3]).not.toContain('ghs_minted');
+            expect(args.slice(4)).toEqual([
+                'fetch',
+                '--prune',
+                GITHUB_HTTPS_REMOTE,
+                '+refs/heads/*:refs/remotes/origin/*',
+            ]);
+            expect(args.join('\0')).not.toContain('ghs_minted');
+            expect(args).not.toContain('--force');
+            expect(args).not.toContain('+refs/heads/main:refs/remotes/origin/main');
+        } finally {
+            rmSync(helperDir, { recursive: true, force: true });
+        }
     });
 });

@@ -1,4 +1,8 @@
+import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +17,7 @@ import {
     authenticateRole,
     createGhSession,
     gitAuthenticatedArgs,
+    gitCredentialHelperPath,
     githubChildEnv,
     loadRoleCredentials,
     mintInstallationToken,
@@ -71,6 +76,15 @@ function mintClient(input: { login: string; permissions: Record<string, string>;
             return { status: 200, body: { slug: input.login.replace('[bot]', '') } };
         },
     };
+}
+
+function runCredentialHelper(helperPath: string, action: string, input: string): string {
+    const result = spawnSync(helperPath, [action], { encoding: 'utf8', input });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    expect(result.status).toBe(0);
+    return result.stdout;
 }
 
 describe('dotenv and role files', () => {
@@ -173,6 +187,76 @@ describe('installation mint', () => {
         expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
     });
 
+    it('refuses a reviewer token missing contents before further GitHub writes', async () => {
+        const { requests, request } = mintClient({
+            login: REVIEWER_BOT_LOGIN,
+            permissions: { pull_requests: 'write' },
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/contents is <missing>/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
+    it('refuses extra write grants on a minted token before further GitHub writes', async () => {
+        const { requests, request } = mintClient({
+            login: REVIEWER_BOT_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write', administration: 'write' },
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/administration: write/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
+    it('refuses an author token whose contents level does not match the request', async () => {
+        const { requests, request } = mintClient({
+            login: AUTHOR_BOT_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write' },
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: AUTHOR_MINT_PERMISSIONS,
+                expectedLogin: AUTHOR_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/contents is read/);
+        expect(requests.filter((entry) => entry.url.endsWith('/app'))).toHaveLength(0);
+    });
+
+    it('allows extra read-only grants on a minted token', async () => {
+        const { request } = mintClient({
+            login: REVIEWER_BOT_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write', metadata: 'read' },
+        });
+        const minted = await mintInstallationToken({
+            appId: '1',
+            installationId: '1',
+            privateKey: pem,
+            permissions: REVIEWER_MINT_PERMISSIONS,
+            expectedLogin: REVIEWER_BOT_LOGIN,
+            request,
+        });
+        expect(minted.token).toBe('ghs_minted');
+    });
+
     it('requests only author contents write and pull_requests write', async () => {
         const { requests, request } = mintClient({
             login: AUTHOR_BOT_LOGIN,
@@ -224,6 +308,13 @@ describe('isolated gh sessions', () => {
             GIT_SSH_COMMAND: 'ssh',
             GIT_CONFIG_GLOBAL: '/tmp/global',
             GIT_CONFIG_SYSTEM: '/tmp/system',
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'url.https://evil.example/.insteadof',
+            GIT_CONFIG_VALUE_0: 'https://github.com/',
+            GIT_CONFIG_PARAMETERS: "'credential.helper=osxkeychain'",
+            GIT_TRACE: '1',
+            GIT_TRACE2: '1',
+            GIT_CURL_VERBOSE: '1',
         };
         const { requests, request } = mintClient({
             login: AUTHOR_BOT_LOGIN,
@@ -248,6 +339,16 @@ describe('isolated gh sessions', () => {
         expect(auth.session.env.SSH_AUTH_SOCK).toBeUndefined();
         expect(auth.session.env.GIT_ASKPASS).toBeUndefined();
         expect(auth.session.env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
+        expect(auth.session.env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
+        expect(auth.session.env.GIT_TERMINAL_PROMPT).toBe('0');
+        expect(auth.session.env.GIT_CONFIG_COUNT).toBeUndefined();
+        expect(auth.session.env.GIT_CONFIG_KEY_0).toBeUndefined();
+        expect(auth.session.env.GIT_CONFIG_VALUE_0).toBeUndefined();
+        expect(auth.session.env.GIT_CONFIG_PARAMETERS).toBeUndefined();
+        expect(auth.session.env.GIT_TRACE).toBeUndefined();
+        expect(auth.session.env.GIT_TRACE2).toBeUndefined();
+        expect(auth.session.env.GIT_CURL_VERBOSE).toBeUndefined();
+        expect(auth.session.env.GIT_SSH_COMMAND).toBeUndefined();
         expect(auth.minted.login).toBe(AUTHOR_BOT_LOGIN);
         expect(JSON.stringify(auth.session.env)).not.toContain(pem.slice(0, 40));
         expect(requests[0]?.url).toContain('/app/installations/154969409/access_tokens');
@@ -283,19 +384,51 @@ describe('isolated gh sessions', () => {
         second.dispose();
     });
 
-    it('authenticates git over HTTPS with only the minted token', () => {
-        const args = gitAuthenticatedArgs('ghs_minted', ['push', GITHUB_HTTPS_REMOTE, 'HEAD:refs/heads/agent/12/work']);
-        expect(args).toEqual([
-            '-c',
-            'credential.helper=',
-            '-c',
-            'credential.helper=!f() { echo username=x-access-token; echo password=ghs_minted; }; f',
-            'push',
-            GITHUB_HTTPS_REMOTE,
-            'HEAD:refs/heads/agent/12/work',
-        ]);
-        expect(args).not.toContain('--force');
-        expect(args).not.toContain('--force-with-lease');
+    it('authenticates git over HTTPS with a host-scoped helper file', () => {
+        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
+        try {
+            const args = gitAuthenticatedArgs('ghs_minted', helperDir, [
+                'push',
+                GITHUB_HTTPS_REMOTE,
+                'HEAD:refs/heads/agent/12/work',
+            ]);
+            const helperPath = gitCredentialHelperPath(helperDir);
+            expect(args).toEqual([
+                '-c',
+                'credential.helper=',
+                '-c',
+                `credential.helper=${helperPath}`,
+                'push',
+                GITHUB_HTTPS_REMOTE,
+                'HEAD:refs/heads/agent/12/work',
+            ]);
+            expect(args.join('\0')).not.toContain('ghs_minted');
+            expect(args.some((arg) => arg.includes('!f()'))).toBe(false);
+            expect(args).not.toContain('--force');
+            expect(args).not.toContain('--force-with-lease');
+            expect(statSync(helperPath).mode & 0o777).toBe(0o700);
+            expect(runCredentialHelper(helperPath, 'get', 'protocol=https\nhost=github.com\n\n')).toBe(
+                'username=x-access-token\npassword=ghs_minted\n'
+            );
+            expect(runCredentialHelper(helperPath, 'get', 'protocol=https\nhost=gist.github.com\n\n')).toBe('');
+            expect(runCredentialHelper(helperPath, 'get', 'protocol=https\nhost=github.com.evil.example\n\n')).toBe('');
+            expect(runCredentialHelper(helperPath, 'get', 'protocol=http\nhost=github.com\n\n')).toBe('');
+            expect(runCredentialHelper(helperPath, 'store', 'protocol=https\nhost=github.com\n\n')).toBe('');
+        } finally {
+            rmSync(helperDir, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects installation tokens outside the ghs_ charset before writing a helper', () => {
+        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
+        try {
+            expect(() => gitAuthenticatedArgs('ghs_minted-token', helperDir, ['status'])).toThrow(/ghs_/);
+            expect(() => gitAuthenticatedArgs('gho_minted', helperDir, ['status'])).toThrow(/ghs_/);
+            expect(() => gitAuthenticatedArgs('ghs_', helperDir, ['status'])).toThrow(/ghs_/);
+            expect(readdirSync(helperDir)).toEqual([]);
+        } finally {
+            rmSync(helperDir, { recursive: true, force: true });
+        }
     });
 });
 

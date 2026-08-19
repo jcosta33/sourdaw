@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createSign } from 'node:crypto';
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
@@ -181,9 +181,7 @@ export async function mintInstallationToken(input: {
         fail('installation token response is missing token');
     }
     const permissions = stringRecord(payload.permissions);
-    if (input.permissions.contents === 'read' && permissions.contents === 'write') {
-        fail('reviewer installation token granted contents: write');
-    }
+    assertMintedPermissions(input.permissions, permissions);
     const app = await request('https://api.github.com/app', {
         method: 'GET',
         headers: {
@@ -246,11 +244,8 @@ export function githubChildEnv(
             key.startsWith('SOURDAW_GITHUB_APP_') ||
             key.startsWith('GH_') ||
             key.startsWith('GITHUB_') ||
-            key === 'SSH_AUTH_SOCK' ||
-            key === 'GIT_SSH_COMMAND' ||
-            key === 'GIT_ASKPASS' ||
-            key === 'GIT_CONFIG_GLOBAL' ||
-            key === 'GIT_CONFIG_SYSTEM'
+            key.startsWith('GIT_') ||
+            key === 'SSH_AUTH_SOCK'
         ) {
             delete env[key];
         }
@@ -264,9 +259,13 @@ export function githubChildEnv(
     return env;
 }
 
-export function gitAuthenticatedArgs(token: string, args: string[]): string[] {
-    const helper = `!f() { echo username=x-access-token; echo password=${token}; }; f`;
-    return ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, ...args];
+export function gitCredentialHelperPath(helperDir: string): string {
+    return resolve(helperDir, 'git-credential-github');
+}
+
+export function gitAuthenticatedArgs(token: string, helperDir: string, args: string[]): string[] {
+    const helperPath = installGitCredentialHelper(helperDir, token);
+    return ['-c', 'credential.helper=', '-c', `credential.helper=${helperPath}`, ...args];
 }
 
 export function spawnCapture(
@@ -394,6 +393,58 @@ function unquoteDotenvValue(rawValue: string): string {
 
 function normalizePem(value: string): string {
     return value.replaceAll('\\n', '\n').trim();
+}
+
+function assertMintedPermissions(requested: MintPermissions, granted: Record<string, string>): void {
+    if (requested.contents === 'read' && granted.contents === 'write') {
+        fail('reviewer installation token granted contents: write');
+    }
+    if (granted.contents !== requested.contents) {
+        fail(`installation token contents is ${granted.contents ?? '<missing>'}; expected ${requested.contents}`);
+    }
+    const requestedNames = new Set(Object.keys(requested));
+    for (const [key, level] of Object.entries(granted)) {
+        if (level === 'write' && !requestedNames.has(key)) {
+            fail(`installation token granted ${key}: write`);
+        }
+    }
+}
+
+function assertInstallationToken(token: string): void {
+    if (!/^ghs_[A-Za-z0-9_]+$/.test(token)) {
+        fail('GitHub App installation token must be ghs_ followed by alphanumeric characters or underscore');
+    }
+}
+
+function gitCredentialHelperSource(token: string): string {
+    return [
+        '#!/bin/sh',
+        'set -eu',
+        'if [ "${1-}" != get ]; then',
+        '    exit 0',
+        'fi',
+        'protocol=',
+        'host=',
+        'while IFS= read -r line || [ -n "$line" ]; do',
+        '    case "$line" in',
+        '        protocol=*) protocol=${line#protocol=} ;;',
+        '        host=*) host=${line#host=} ;;',
+        "        '') break ;;",
+        '    esac',
+        'done',
+        'if [ "$protocol" = https ] && [ "$host" = github.com ]; then',
+        `    printf 'username=x-access-token\\npassword=%s\\n' '${token}'`,
+        'fi',
+        '',
+    ].join('\n');
+}
+
+function installGitCredentialHelper(helperDir: string, token: string): string {
+    assertInstallationToken(token);
+    const helperPath = gitCredentialHelperPath(helperDir);
+    writeFileSync(helperPath, gitCredentialHelperSource(token), { encoding: 'utf8', mode: 0o700 });
+    chmodSync(helperPath, 0o700);
+    return helperPath;
 }
 
 function stringRecord(value: unknown): Record<string, string> {

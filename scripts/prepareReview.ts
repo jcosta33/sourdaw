@@ -118,7 +118,10 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
     );
     const token = session.env.GH_TOKEN ?? '';
     const git = (args: string[]) =>
-        spawnCapture('git', gitAuthenticatedArgs(token, args), { cwd: primaryRoot, env: session.env });
+        spawnCapture('git', gitAuthenticatedArgs(token, session.configDir, args), {
+            cwd: primaryRoot,
+            env: session.env,
+        });
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         primaryRoot: () => primaryRoot,
