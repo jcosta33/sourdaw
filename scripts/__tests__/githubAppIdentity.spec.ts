@@ -422,10 +422,11 @@ describe('isolated gh sessions', () => {
     it('rejects installation tokens outside the ghs_ charset before writing a helper', () => {
         const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
         try {
-            expect(() => gitAuthenticatedArgs('ghs_minted-token', helperDir, ['status'])).toThrow(/ghs_/);
+            expect(() => gitAuthenticatedArgs('ghs_minted;rm', helperDir, ['status'])).toThrow(/ghs_/);
             expect(() => gitAuthenticatedArgs('gho_minted', helperDir, ['status'])).toThrow(/ghs_/);
             expect(() => gitAuthenticatedArgs('ghs_', helperDir, ['status'])).toThrow(/ghs_/);
             expect(readdirSync(helperDir)).toEqual([]);
+            expect(() => gitAuthenticatedArgs('ghs_1_header.payload.signature', helperDir, ['status'])).not.toThrow();
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
         }

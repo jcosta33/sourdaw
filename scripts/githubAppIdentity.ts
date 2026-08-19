@@ -411,8 +411,8 @@ function assertMintedPermissions(requested: MintPermissions, granted: Record<str
 }
 
 function assertInstallationToken(token: string): void {
-    if (!/^ghs_[A-Za-z0-9_]+$/.test(token)) {
-        fail('GitHub App installation token must be ghs_ followed by alphanumeric characters or underscore');
+    if (!/^ghs_[A-Za-z0-9._-]+$/.test(token)) {
+        fail('GitHub App installation token must be ghs_ followed by alphanumeric, dot, hyphen, or underscore');
     }
 }
 
