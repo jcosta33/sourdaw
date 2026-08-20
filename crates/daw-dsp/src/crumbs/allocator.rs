@@ -129,7 +129,10 @@ pub struct StealCandidate {
 /// Priority categories for voice stealing, ordered from most-stealable to least.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StealPriority {
-    /// Same note being retriggered — always steal this voice.
+    /// Same note being retriggered — the victim in every configuration, the
+    /// incoming note's own choke group included. The one thing that keeps it
+    /// from being taken is a fade already in flight: steal selection passes
+    /// over fading voices entirely (see `CrumbsEngine::find_steal_target`).
     SameNote,
     /// Voice belongs to a choke group that should be cut.
     ChokeGroup,
