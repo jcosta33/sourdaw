@@ -1,0 +1,31 @@
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_7ba0b7bee9e951::t_6ac88fbf1a3fdc 262-280
+  s_7ba0b7bee9e951::t_2b4f78252b7367 289-294,296-298
+src/modules/Crumbs/useCases/recording/__tests__/armCrumbsRecording.spec.ts
+  s_7ba0b7bee9e951::t_c3fc9ac8e5331d 67-70,75-83
+  s_7ba0b7bee9e951::t_71096ac71ec52d 84
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  s_7ba0b7bee9e951::t_0e64622bef84eb 11
+  s_7ba0b7bee9e951::t_320036d22beee3 29-36,39
+  s_7ba0b7bee9e951::t_758caef5adc471 1
+  s_7ba0b7bee9e951::t_020842ab9abba7 210-249
+  s_7ba0b7bee9e951::t_b5ebbb7142215f 82-83
+src/modules/Crumbs/useCases/recording/armCrumbsRecording.ts
+  s_7ba0b7bee9e951::t_69e8abb151835d 17-22,29,32,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "76ec84d04138aac88136abe72b0e50c90bc83b5d",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
