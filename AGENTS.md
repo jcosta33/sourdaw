@@ -174,12 +174,13 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 `.agents/review-bundles/` at that root, the caller writes `review.json` beside them, and the
 `.env.sourdaw-*` credentials live there.
 
-`pnpm lane:open [issue] [slug]` (slug `work` if omitted) fetches `origin/main`, branches from it,
-and locks the lane `active:sourdaw-author`. Its last stdout line is the lane path. It stays offline
-past that fetch and never mints or spawns `gh`. Supply the issue number when the work has a ticket;
-the branch is then `agent/<issue>/<slug>` and the pull request closes the issue on merge. Without
-one the branch is `agent/<slug>`, and `lane:publish` must then be run from inside that lane, since
-the working directory is what identifies it when no issue number does. Touch only your own lane.
+`pnpm lane:open [issue] [slug]` fetches `origin/main`, branches from it, and locks the lane
+`active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
+never mints or spawns `gh`. The slug is `work` if omitted, and never purely numeric, because a bare
+number is read as the issue. Supply the issue number when the work has a ticket; the branch is then
+`agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
+`agent/<slug>`, and `lane:publish` must then be run from inside that lane, since the working
+directory is what identifies it when no issue number does. Touch only your own lane.
 
 A lane isolates the working tree and nothing else. The stash, the process table, the disk, and the
 author lock are shared across every lane, so a global or destructive operation run inside one lane
@@ -256,11 +257,14 @@ the manifest agrees and the artifact is stale. `pnpm wasm:all` covers all of the
 rebase can merge cleanly and still leave wasm stale; `pnpm wasm:verify` is the only proof of
 freshness.
 
-`lane:publish` prints the PR number. It pushes without `--force`, titles the PR with the HEAD
-subject (`type(scope): subject`), and keeps the four headings in
+`lane:publish` names the lane it resolved, then prints the PR number last. With an issue argument
+it finds the lane by branch prefix from anywhere; without one it takes the lane the shell is
+standing in, so an issueless lane is publishable only from inside itself. It pushes without
+`--force`, titles the PR with the HEAD subject (`type(scope): subject`), keeps the four headings in
 [`.github/pull_request_template.md`](./.github/pull_request_template.md) nonempty and within 4000
-bytes. Related tickets carries `Closes #<issue>` when the lane has one. It does not enable
-auto-merge or post a review.
+bytes, and puts `Closes #<issue>` in Related tickets — taking the issue from the argument or, when
+there is none, from the lane's own branch. Related tickets reads `None.` only for a lane whose
+branch carries no issue. It does not enable auto-merge or post a review.
 
 Write the pull request for a teammate who was not in the session. Under the four template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation
@@ -280,8 +284,13 @@ summary is a short pointer to those comments, not a report.
 
 Approve when the change improves the system, even if it is not perfect. Do not approve a change that
 makes it worse. Style-guide violations block; personal style does not. Leave the approval empty or
-write one sentence about the code. Prefix non-blocking notes `Nit:` or `Optional:` and put them on
-the approval.
+write one sentence about the code.
+
+Keep an approval free of inline comments. Every inline comment opens a review thread, the ruleset
+refuses to merge while one is unresolved, and no sanctioned script resolves a thread — so a note
+meant not to block is exactly what blocks. Put a non-blocking observation in the approval body,
+prefixed `Nit:` or `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review,
+where the thread is meant to stop the merge and a new head clears it.
 
 When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence. Clarify
 the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation
