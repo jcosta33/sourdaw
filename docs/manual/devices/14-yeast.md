@@ -9,7 +9,8 @@ The panel is labelled **Note rack**. It opens on **Play**. The left rail heading
 
 The Effects card reads **Arpeggiator · Chord Generator · Scale Filter**.
 
-A new device has an empty rack. Add processors from **Sprout**, **Build**, **Route**, or **Lab**.
+A project has one Yeast rack. The panel is empty until you add processors from **Sprout**,
+**Build**, **Route**, or **Lab**. A second Yeast on another track shows that same rack.
 
 ## At a glance
 
