@@ -403,6 +403,27 @@ describe('scheduleAudioClips', () => {
         expect(offset).toBeCloseTo(0, 6);
     });
 
+    /// The live half of #2098's law, pinned so it cannot drift back into
+    /// agreement with the defect the export carried: `start`'s duration
+    /// argument is measured in the source buffer's own time, so a clip that
+    /// occupies two seconds of timeline at half speed asks for one second of
+    /// material. The export asserts the same thing in
+    /// `AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts`.
+    it('asks for the source seconds a half-speed clip consumes, not its destination span', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ stretchMode: 'timestretch', stretchRatio: 0.5 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        expect((fakeSource.playbackRate as { value: number }).value).toBe(0.5);
+        const [, , duration] = fakeSource.start.mock.calls[0]!;
+        // Timeline duration 4 beats / 2 bps = 2 s; *stretch 0.5 = 1 s of material.
+        expect(duration).toBeCloseTo(1, 6);
+    });
+
     it('inserts an envelope gain node scaled by 10^(db/20) when the clip has env gain', () => {
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);

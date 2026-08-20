@@ -38,8 +38,9 @@
 //! rate-converted through `ClipPlayback::playback_rate`
 //! (`material_rate / engine_rate` — a sample-rate conversion, which preserves
 //! pitch-at-speed semantics). The contract's own `playbackRate` must be `1`
-//! in this slice: a stretched clip's duration semantics are unresolved
-//! (jcosta33/sourdaw#2098) and are refused rather than guessed.
+//! in this slice: `TimelineClip` has nowhere to carry a stretch, so a
+//! stretched clip is refused rather than played at unity behind the user's
+//! back.
 //!
 //! ## Engine bootstrap (#1984)
 //!
@@ -1505,12 +1506,13 @@ fn map_schedule_clip(
 
     let rate = finite(playback.playback_rate, "playbackRate")?;
     if rate != 1.0 {
-        // #2098 is unresolved: the two web runtimes disagree about what a
-        // stretched clip's duration means, so a second backend must refuse a
-        // stretched clip rather than pick a side silently.
+        // This backend does not implement stretch: `TimelineClip` has nowhere
+        // to carry a rate, and a clip played at unity instead would bounce at
+        // the wrong pitch and the wrong length without saying so. Refuse until
+        // the engine can play one.
         return Err(format!(
-            "schedule-clip: stretched-clip-unsupported — playbackRate {rate} refused while \
-             jcosta33/sourdaw#2098 leaves its duration semantics ambiguous"
+            "schedule-clip: stretched-clip-unsupported — playbackRate {rate} refused because this \
+             backend cannot stretch a clip yet"
         ));
     }
     // Rate *conversion* is not a stretch: material decoded at another rate is
@@ -2109,7 +2111,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stretched_clip_refuses_under_2098_and_a_missing_sample_refuses_by_name() {
+    fn a_stretched_clip_refuses_as_unsupported_and_a_missing_sample_refuses_by_name() {
         let stretched = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [], "honorMuted": true, "contributesAudio": true },
@@ -2126,7 +2128,7 @@ mod tests {
         )
         .expect_err("a stretched clip must refuse");
         assert!(refusal.contains("stretched-clip-unsupported"));
-        assert!(refusal.contains("#2098"));
+        assert!(refusal.contains("1.5"));
 
         let unknown = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
@@ -2170,7 +2172,7 @@ mod tests {
             .expect("a rate-converted clip should map");
 
         // Half-rate material on a 48k engine reads 0.5 source frames per
-        // rendered frame — conversion, with #2098's stretch still refused.
+        // rendered frame — conversion, with a contract stretch still refused.
         assert!(mapped.ops.iter().any(|op| matches!(
             op,
             GraphCommand::AddClip(_, clip) if clip.playback().playback_rate == 0.5

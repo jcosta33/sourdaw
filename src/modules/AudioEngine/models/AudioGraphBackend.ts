@@ -301,11 +301,6 @@ export type AudioGraphClipPlayback = Readonly<{
     /**
      * How long the clip sounds, on the **destination** timeline: a stretched
      * clip that plays for two seconds plays for two seconds whatever its rate.
-     *
-     * Known deviation — the two web runtimes disagree about this today, and
-     * this contract states the law they should converge on rather than the
-     * disagreement. See jcosta33/sourdaw#2098, which must be resolved before a
-     * second backend implements a stretched clip against this field.
      */
     durationSeconds: number;
     /**

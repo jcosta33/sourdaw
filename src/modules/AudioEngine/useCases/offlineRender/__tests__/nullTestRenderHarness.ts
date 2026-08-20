@@ -35,10 +35,12 @@
  *   - `AnalyserNode`           pass-through, which is what it is.
  *   - `AudioWorkletNode`       runs the real registered processor's `process()`.
  *   - `AudioBufferSourceNode`  starts when it was told to, reads from the offset
- *                              it was given, stops after the destination-timeline
- *                              duration it was handed, and interpolates between
- *                              frames at a non-unity rate. Only on a `scheduled`
- *                              context — see the automation sections below.
+ *                              it was given, stops once it has consumed the
+ *                              source duration it was handed (§1.24 — so `d / r`
+ *                              of the timeline at rate `r`), and interpolates
+ *                              between frames at a non-unity rate. Only on a
+ *                              `scheduled` context — see the automation
+ *                              sections below.
  *
  * A node type nothing here models throws on construction rather than degrading
  * to a pass-through. That is deliberate: a silently-inert node turns this from a
@@ -295,9 +297,9 @@ class HarnessAudioParam {
  * The rate param the buffer source reads as a plain `.value` — its
  * `transform` never walks the timeline, so a scheduled write here would be
  * recorded and then silently ignored, the silent-inert-node failure this
- * module exists to refuse. Scheduling therefore throws until the node
- * samples the timeline, which the stretched-clip fixture (jcosta33/sourdaw#2098)
- * will force.
+ * module exists to refuse. Scheduling therefore throws until the node samples
+ * the timeline. A constant rate — what a stretched clip sets — is a plain
+ * `.value` write and is unaffected.
  */
 class HarnessPlaybackRateParam extends HarnessAudioParam {
     private static refuse(): never {
@@ -798,8 +800,16 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
 
     /**
      * A real `AudioBufferSourceNode`: it starts when it was told to, reads from
-     * the offset it was given, and stops after the destination-timeline duration
-     * it was handed.
+     * the offset it was given, and stops once it has consumed the *source*
+     * duration it was handed.
+     *
+     * The unit of that third argument is the whole of Web Audio §1.24: `start`'s
+     * `duration` is measured in the buffer's own time, so a clip handed `d` at
+     * rate `r` sounds for `d / r` of the destination timeline. Modelling it as a
+     * destination span reads the same at rate 1 — every fixture here would stay
+     * green — and hides every stretched clip's length, which is why it is
+     * modelled in source frames even though nothing but the stretched fixture
+     * can tell the difference.
      *
      * Those three numbers are the whole content of a clip command, so a model
      * that ignored any of them would let a backend schedule a clip at the wrong
@@ -812,7 +822,10 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
         readonly playbackRate: HarnessAudioParam;
         private startFrame: number | null = null;
         private offsetFrames = 0;
-        private durationFrames = Infinity;
+        /** Source frames, per `start`'s third argument. */
+        private durationSourceFrames = Infinity;
+        /** Destination frame `stop()` cuts the sound off at, in its own unit. */
+        private stopFrame = Infinity;
 
         constructor(
             playbackRate: HarnessAudioParam,
@@ -828,12 +841,11 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
             }
             this.startFrame = Math.round(when * this.sampleRate);
             this.offsetFrames = offset * this.sampleRate;
-            this.durationFrames = duration === undefined ? Infinity : duration * this.sampleRate;
+            this.durationSourceFrames = duration === undefined ? Infinity : duration * this.sampleRate;
         }
 
         stop(when = 0): void {
-            const startFrame = this.startFrame ?? 0;
-            this.durationFrames = Math.min(this.durationFrames, Math.max(0, when * this.sampleRate - startFrame));
+            this.stopFrame = Math.min(this.stopFrame, Math.max(this.startFrame ?? 0, when * this.sampleRate));
         }
 
         protected override transform(): void {
@@ -846,14 +858,21 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
             const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
             const blockStart = this.renderedQuantum * QUANTUM_FRAMES;
             for (let index = 0; index < QUANTUM_FRAMES; index++) {
-                const elapsed = blockStart + index - startFrame;
-                if (elapsed < 0 || elapsed >= this.durationFrames) {
+                const frame = blockStart + index;
+                const elapsed = frame - startFrame;
+                if (elapsed < 0 || frame >= this.stopFrame) {
+                    continue;
+                }
+                // The read head, in source frames since the offset. It is also
+                // what `duration` bounds, so the two are compared in one unit.
+                const consumed = elapsed * rate;
+                if (consumed >= this.durationSourceFrames) {
                     continue;
                 }
                 // Linear interpolation, because a non-unity rate lands between
                 // frames. At rate 1 with an integral start the position is
                 // integral and this reads the sample itself.
-                const position = this.offsetFrames + elapsed * rate;
+                const position = this.offsetFrames + consumed;
                 const lower = Math.floor(position);
                 if (lower < 0 || lower >= buffer.length) {
                     continue;
