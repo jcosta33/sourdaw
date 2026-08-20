@@ -1,0 +1,153 @@
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_0a3429e31e555d::t_8103434777b07a 5-8,62-69
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_0a3429e31e555d::t_94ae7c27fe514c 64,69-70,85,137
+src/modules/BrowserAi/repositories/__tests__/measureInferenceThroughput.spec.ts
+  s_0a3429e31e555d::t_1f8199599ce8c8 25
+  s_0a3429e31e555d::t_37a4bac6919896 99
+src/infra/release/modelReleaseAdmission.ts
+  s_0a3429e31e555d::t_6cb20b65166d28 1-8
+src/modules/BrowserAi/useCases/renderKokoroTts.ts
+  s_0a3429e31e555d::t_41dd02d750cc32 18-22,29,37,51-55,58-63,65,68-76,78,84,121-124,176
+  s_0a3429e31e555d::t_1f8199599ce8c8 23
+  s_0a3429e31e555d::t_4ac0b14b8b1807 16,117-119
+  s_0a3429e31e555d::t_7c5c382493fb53 17
+.agents/decisions/0030-exact-model-release-admission.md
+  s_0a3429e31e555d::t_94a38ef9b5aefc 1-53
+src/modules/BrowserAi/presentations/views/KokoroVoiceSelector.tsx
+  s_0a3429e31e555d::t_1f8199599ce8c8 5
+  s_0a3429e31e555d::t_08694f3e1852c9 35-36
+docs/architecture/09-ai-stack.md
+  s_0a3429e31e555d::t_5960e1c74b4f9f 19,24-25,33-35,37-39
+  s_0a3429e31e555d::t_94a38ef9b5aefc 79
+src/modules/BrowserAi/useCases/__tests__/capabilityColdStart.spec.ts
+  s_0a3429e31e555d::t_37a4bac6919896 41
+  s_0a3429e31e555d::t_1f8199599ce8c8 14
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/setAiBackendPreference.ts
+  s_0a3429e31e555d::t_eaa0fe784d48c7 1,9
+  s_0a3429e31e555d::t_b67bb8b1959722 10-13
+  s_0a3429e31e555d::t_ff7a99caace986 2
+  s_0a3429e31e555d::t_94ae7c27fe514c 19-20,30
+src/modules/AiRuntime/repositories/webLlm/__tests__/engineLifecycle.spec.ts
+  s_0a3429e31e555d::t_0a392ea7430cf4 22
+  s_0a3429e31e555d::t_b0256f78554e80 7-20
+  s_0a3429e31e555d::t_a3348464ebf8a3 23-24,49,94-99
+  s_0a3429e31e555d::t_2a89bd30a6f393 100-101
+tests/e2e/modelManagerRemoveTestId.spec.ts
+  s_0a3429e31e555d::t_cd3b2dc09279f1 3-4,7-14,43
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts
+  s_0a3429e31e555d::t_94ae7c27fe514c 24,29-30
+src/modules/BrowserAi/models/BrowserModel.ts
+  s_0a3429e31e555d::t_08694f3e1852c9 17
+src/modules/BrowserAi/useCases/initBrowserAi.ts
+  s_0a3429e31e555d::t_4ac0b14b8b1807 73,82-96,109
+  s_0a3429e31e555d::t_b0256f78554e80 74-80
+  s_0a3429e31e555d::t_08694f3e1852c9 17,29,32-33,40,158
+  s_0a3429e31e555d::t_1f8199599ce8c8 18
+  s_0a3429e31e555d::t_eaa0fe784d48c7 13
+  s_0a3429e31e555d::t_8993ec29ef0af2 81
+src/modules/BrowserAi/useCases/initRaveModels.ts
+  s_0a3429e31e555d::t_eaa0fe784d48c7 3
+  s_0a3429e31e555d::t_b0256f78554e80 37-38
+  s_0a3429e31e555d::t_b0c67b704292cc 39-40
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts
+  s_0a3429e31e555d::t_ff7a99caace986 1-2
+  s_0a3429e31e555d::t_08694f3e1852c9 34
+src/modules/BrowserAi/repositories/measureInferenceThroughput.ts
+  s_0a3429e31e555d::t_1f8199599ce8c8 54
+  s_0a3429e31e555d::t_41dd02d750cc32 60
+  s_0a3429e31e555d::t_37a4bac6919896 21
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_0a3429e31e555d::t_eaa0fe784d48c7 8
+  s_0a3429e31e555d::t_08694f3e1852c9 36,52,183-184,216-217
+  s_0a3429e31e555d::t_4ac0b14b8b1807 219-233,235-238,248
+  s_0a3429e31e555d::t_b0256f78554e80 41-50,185-215
+  s_0a3429e31e555d::t_ede765cc377f98 218
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_0a3429e31e555d::t_eaa0fe784d48c7 3
+  s_0a3429e31e555d::t_08694f3e1852c9 20-22
+src/modules/BrowserAi/workers/onnxInferenceWorker.ts
+  s_0a3429e31e555d::t_41dd02d750cc32 401,424
+  s_0a3429e31e555d::t_1f8199599ce8c8 14
+  s_0a3429e31e555d::t_4715e106fbb3f7 15
+src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts
+  s_0a3429e31e555d::t_4ac0b14b8b1807 20,89-91
+  s_0a3429e31e555d::t_7cd172d9ddbc79 9
+src/modules/BrowserAi/useCases/rave/loadModel.ts
+  s_0a3429e31e555d::t_eaa0fe784d48c7 1
+  s_0a3429e31e555d::t_b0256f78554e80 2,21-23
+src/modules/BrowserAi/useCases/__tests__/initRaveModels.spec.ts
+  s_0a3429e31e555d::t_8e7844a78c33ae 5-6,8,32,36-45
+  s_0a3429e31e555d::t_0a392ea7430cf4 7
+  s_0a3429e31e555d::t_29ac45edca4442 46-47
+src/modules/BrowserAi/models/DdspInstrumentCatalog.ts
+  s_0a3429e31e555d::t_08694f3e1852c9 27-28,39-40,51-52,63-64
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_0a3429e31e555d::t_1f8199599ce8c8 19
+  s_0a3429e31e555d::t_37a4bac6919896 53,116-119
+  s_0a3429e31e555d::t_8e7844a78c33ae 101,113-114
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_0a3429e31e555d::t_2250b1ec9c08e6 103-108
+  s_0a3429e31e555d::t_4715e106fbb3f7 9
+  s_0a3429e31e555d::t_0fff04f8f09c57 68-70,77,177,181-183,350
+src/modules/BrowserAi/presentations/views/__tests__/KokoroVoiceSelector.spec.tsx
+  s_0a3429e31e555d::t_94ae7c27fe514c 13
+  s_0a3429e31e555d::t_1f8199599ce8c8 4
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_0a3429e31e555d::t_0fff04f8f09c57 123-126
+  s_0a3429e31e555d::t_4715e106fbb3f7 9
+src/modules/BrowserAi/useCases/__tests__/renderKokoroTts.spec.ts
+  s_0a3429e31e555d::t_8103434777b07a 27-29,97,101-108
+  s_0a3429e31e555d::t_c68f9eae4c31d0 26,39,48-53,75,96,100,124-125,157-158,160-167,172,184-185,201-202,213-214,218-233,235
+  s_0a3429e31e555d::t_1f8199599ce8c8 43
+src/modules/CommandInterface/presentations/views/__tests__/commandRegistry.spec.ts
+  s_0a3429e31e555d::t_e2b9f9e591de33 32-33,65,68,71,74,77
+src/modules/AiRuntime/useCases/voiceDictation/ensureWhisperReady.ts
+  s_0a3429e31e555d::t_4ac0b14b8b1807 1-2,6-8
+src/modules/AiRuntime/useCases/voiceDictation/__tests__/ensureWhisperReady.spec.ts
+  s_0a3429e31e555d::t_8103434777b07a 1,7,10-11,17-21,26-32
+src/modules/BrowserAi/useCases/rave/isRaveModelPresent.ts
+  s_0a3429e31e555d::t_eaa0fe784d48c7 1
+  s_0a3429e31e555d::t_b0256f78554e80 2,20
+release/open-source-inventory.json
+  s_0a3429e31e555d::t_1f8199599ce8c8 233,246,841
+  s_0a3429e31e555d::t_0a392ea7430cf4 160,186,232,263,315,340
+  s_0a3429e31e555d::t_5960e1c74b4f9f 161,164-167,170-172,187,189-190,192,197,200-203,206-215,217,219-223,228,234-245,248,251-252,254,262,264-267,271-276,314,321,323-324,336-339,341-342
+  s_0a3429e31e555d::t_7b3d29deb44726 204-205
+  s_0a3429e31e555d::t_882c6ed341f5a0 842-843
+  s_0a3429e31e555d::t_b653dfbc31b624 247
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_0a3429e31e555d::t_0a392ea7430cf4 42
+  s_0a3429e31e555d::t_94ae7c27fe514c 43-52,72,76,78,104
+.agents/decisions/README.md
+  s_0a3429e31e555d::t_94a38ef9b5aefc 46
+src/modules/BrowserAi/useCases/rave/__tests__/isRaveModelPresent.spec.ts
+  s_0a3429e31e555d::t_55354148247fb1 1-12,14-32
+  s_0a3429e31e555d::t_76b772de351ff6 13
+src/modules/BrowserAi/useCases/rave/__tests__/loadModel.spec.ts
+  s_0a3429e31e555d::t_0a392ea7430cf4 5
+  s_0a3429e31e555d::t_8e7844a78c33ae 3-4,6,27,38-42
+  s_0a3429e31e555d::t_155965616f1f12 43-44
+src/modules/BrowserAi/repositories/sha256ArrayBuffer.ts
+  s_0a3429e31e555d::t_241f518ca8db20 1-6
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts
+  s_0a3429e31e555d::t_94ae7c27fe514c 46-55
+src/modules/BrowserAi/models/KokoroArtifactManifest.ts
+  s_0a3429e31e555d::t_ee68d89207bf40 1-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4a8ca42eae69b33e0b8521d421650aeb20fd2c30",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
