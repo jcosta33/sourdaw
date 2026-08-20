@@ -16,11 +16,27 @@
  * A *refused batch* — the native side's own vocabulary for "I cannot render
  * this" (a queue past capacity, a state its strip cannot hold) — declines the
  * attempt: the caller falls back to the Web Audio render, observably, and the
- * user still gets the correct file. A *thrown* transport or seam error
- * propagates instead: after the availability probe answered, a throw is a
- * defect, and folding it into a silent fallback would hide it forever.
- * Cancellation (`checkCancel`) likewise propagates — a cancelled export must
- * not fall back into a second, uncancelled render.
+ * user still gets the correct file.
+ *
+ * The phase decides what a *throw* does, because the backend's two halves
+ * treat one differently:
+ *
+ *   - **Apply phase.** `createNativeOfflineGraphBackend.apply` catches the
+ *     transport and answers `rejected` with the error's message, so a wire
+ *     failure while building the graph reaches this file as a refusal and
+ *     declines like any other. That is deliberate and it stays observable:
+ *     nothing is rendered yet, the reason travels with the decline, and the
+ *     caller names it on `onWarning`. Two seam *defects* are excluded from it
+ *     and do throw — a prior that no longer replays, and a malformed wire
+ *     result — because neither describes anything the incoming batch asked
+ *     for.
+ *   - **Render phase.** `backend.render` catches nothing. Every batch was
+ *     accepted whole by then, so a failure there describes the render request
+ *     or the runtime, and falling back would hide it behind a second render
+ *     that silently succeeded.
+ *
+ * Cancellation (`checkCancel`) propagates from either phase — a cancelled
+ * export must not fall back into a second, uncancelled render.
  *
  * Warnings are buffered and flushed only when the native render is the one
  * delivered; a declined attempt discards them because the Web Audio path

@@ -15,33 +15,48 @@
  * every refusal reason this backend is accountable for: `stretched-clip-
  * unsupported`, `smoothed-write-unsupported`, `bus-to-track-routing-
  * unsupported`, the queue-capacity refusals) lives on the native side. So
- * `apply` probes through `map_graph_batch`: the commands committed so far
- * replay as the prior graph, the incoming batch maps against it, and the
- * answer is the native apply-result itself — refusal reasons and strip
- * reports — with nothing rendered. A probe that refuses commits nothing, so a
- * rejected batch changes nothing this backend will ever render — the same
- * whole-or-nothing law `apply_graph_commands` keeps on the live path. One
- * honest caveat: clip material is sent to the native sample pool *before* the
- * probe, because a `schedule-clip` the probe maps must find its sample there.
- * The pool is process-wide and identity-keyed with replace semantics, so a
- * refused batch may leave material in it; the backend forgets those ids on
- * refusal and a retry simply re-registers the same bytes under the same
- * identity.
+ * `apply` probes through `map_graph_batch`: the incoming batch maps against
+ * the graph the committed commands built, and the answer is the native
+ * apply-result itself — refusal reasons and strip reports — with nothing
+ * rendered. A probe that refuses commits nothing, so a rejected batch changes
+ * nothing this backend will ever render — the same whole-or-nothing law
+ * `apply_graph_commands` keeps on the live path. One honest caveat: clip
+ * material is sent to the native sample pool *before* the probe, because a
+ * `schedule-clip` the probe maps must find its sample there. The pool is
+ * process-wide and identity-keyed with replace semantics, so a refused batch
+ * may leave material in it; the backend forgets those ids on refusal and a
+ * retry simply re-registers the same bytes under the same identity.
+ *
+ * ── Where the committed history lives ─────────────────────────────────────
+ *
+ * On the native side, normally. Every probe names this backend's *mapping
+ * session* (`sessionId`, plus the committed command count as `revision`) and
+ * carries an empty `prior`, and the native side maps the batch against the
+ * registry it is already holding under that key. A bounce of N batches
+ * therefore crosses O(N) commands in total rather than the O(N²) a stateless
+ * prior replay costs.
+ *
+ * The session is a cache, never the truth: `wireCommands` stays this backend's
+ * committed history, both because the render sends it and because it is what
+ * re-establishes a lost session. A native side that evicted or restarted
+ * answers a session fault, and *that* leg — and only that leg — replays the
+ * full prior, once, under the same key. Full-prior replay is the recovery
+ * path, not the normal one.
  *
  * An offline backend deliberately never calls `apply_graph_commands`: that
  * command lazily starts the live CPAL engine (#1984), and a bounce must not
- * open an audio device. Live adoption is the D3.c.2 cutover (#2225).
+ * open an audio device. Live adoption is the bridge-deletion slice (#2226).
  *
  * ── The strip reports ─────────────────────────────────────────────────────
  *
  * Reports are the native mapping's own observations, carried across the wire:
  * the same touched-strip reports `graph.rs` builds from its post-batch
- * registry on the live path, scoped to the incoming batch by the
- * prior/incoming split of `map_graph_batch`. Nothing is restated TS-side —
- * a device the native side degraded is absent because the native side
- * observed it absent. The `runtimeRevision` in the result stays this
- * backend's own counter: a mapping has no runtime, so the wire result
- * deliberately carries none.
+ * registry on the live path, scoped to the incoming batch by the split
+ * `map_graph_batch` draws between the graph it already held and the commands
+ * this call adds. Nothing is restated TS-side — a device the native side
+ * degraded is absent because the native side observed it absent. The
+ * `runtimeRevision` in the result stays this backend's own counter: a mapping
+ * has no runtime, so the wire result deliberately carries none.
  */
 
 import {
@@ -223,21 +238,12 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 sentSourceIds.push(source.sourceId);
             }
 
-            // The whole-batch probe (see the header): the committed history is
-            // the prior graph, the incoming batch maps against it, nothing
-            // renders. A refusal is the native side's own reasons and commits
-            // nothing; an acceptance carries the native reports.
-            //
-            // The history normally does NOT re-cross the wire: the probe names
-            // this backend's mapping session (`sessionId` + the committed
-            // command count as `revision`) with an empty `prior`, and the
-            // native side resumes the registry it kept — so a bounce of N
-            // batches crosses O(N) commands in total, not the O(N²) the
-            // stateless prior replay cost (#2225). The session is a cache,
-            // never the truth: `wireCommands` stays the committed history,
-            // both for the render and for the one recovery leg below — a
-            // session the native side evicted or lost answers a session fault,
-            // and the retry resends the full prior once to re-establish it.
+            // The whole-batch probe (see the header): the incoming batch maps
+            // against the graph the native side already holds under this
+            // backend's session key, nothing renders. A refusal is the native
+            // side's own reasons and commits nothing; an acceptance carries
+            // the native reports. `prior` stays empty here — the recovery leg
+            // below is the only place the committed history re-crosses.
             const session = { sessionId, revision: wireCommands.length };
             let mappedRaw: unknown;
             try {
@@ -266,9 +272,11 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                 }
                 // Recovery, exactly once: the full committed history replays
                 // as the prior and re-establishes the session under the same
-                // key. A session fault here again would mean the native side
-                // cannot hold what it just built — that surfaces below as
-                // whatever error it raises, never as a silent loop.
+                // key. A session fault here *again* would mean the native side
+                // cannot hold what it just built; it is not retried a second
+                // time — it falls into the same `rejected` answer as any other
+                // non-prior transport error, so the caller declines and falls
+                // back to the Web Audio render instead of looping.
                 try {
                     mappedRaw = await transport.mapGraphBatch({
                         prior: wireCommands,

@@ -26,6 +26,11 @@
  *     (`stretched-clip-unsupported`, #2219).
  *   - **Shaped buses** — the native bus strip has no panner or mute gate and
  *     refuses a state that needs one.
+ *   - **Bus sends** — the same strip has no send taps either, so a send
+ *     configured on a bus reaches the seam as an `add-send` refusal
+ *     (`bus-send-unsupported`). Refused mid-render it would still fall back,
+ *     but only after building the whole graph twice, and this file is where
+ *     the promise above says that answer is decided.
  *   - **Bus → track routing** — `daw-engine` refuses it outright (the routing
  *     constraint recorded in `AudioGraphBackend`'s header).
  *
@@ -73,6 +78,9 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
         }
         if (track.kind === 'bus' && (track.pan !== 0 || track.muted)) {
             return `bus "${track.name}" is panned or muted, which the native bus strip cannot hold`;
+        }
+        if (track.kind === 'bus' && track.sends.length > 0) {
+            return `bus "${track.name}" carries a send, which the native bus strip has no tap for`;
         }
     }
     for (const track of scheduledTracks) {

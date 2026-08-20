@@ -72,6 +72,13 @@
  * `src/`. A null it reports is proof that the two paths configure the graph
  * identically — not proof that an un-modelled browser behaviour also agrees.
  *
+ * **The cancellation is conditional on both legs being this model, and one
+ * caller's are not**: `renderOfflineNativeParity.spec.ts` subtracts a native
+ * render from a harness render, so there every modelled shortcut is measured
+ * rather than cancelled. A shortcut taken here on the grounds that "no fixture
+ * exercises it" therefore has to be revisited, not restated, when a fixture
+ * does — which is why the panner below reads its position a-rate.
+ *
  * ── Automation is settled, not glided ─────────────────────────────────────
  *
  * `AudioParam` records writes and reports the value the last write targets.
@@ -101,7 +108,7 @@
  * hold the fade-out's final `0` for the whole render and the clip would be
  * silent. A context constructed with `{ automation: 'scheduled' }` therefore
  * skips the settle and evaluates each param's timeline at render time —
- * per sample for a gain, once per quantum elsewhere.
+ * per sample for a gain and a pan, once per quantum elsewhere.
  *
  * It is opt-in, and must stay opt-in, for the reason the settle exists: the live
  * writers glide, so a globally-scheduled harness would put a ~100 ms exponential
@@ -456,7 +463,17 @@ class HarnessGainNode extends HarnessAudioNode {
     }
 }
 
-/** The spec's `StereoPannerNode` panning algorithm, the stereo-input branch. */
+/**
+ * The spec's `StereoPannerNode` panning algorithm, the stereo-input branch.
+ *
+ * A-rate, as the spec defines `pan`: the position is read once per frame, not
+ * once per quantum. An earlier revision read it per quantum on the reasoning
+ * that no fixture moves a pan lane inside one — which held only because every
+ * fixture time landed on a quantum boundary at 48 kHz. It stops holding the
+ * moment a fixture renders at another rate (44 100 is not a multiple of 128),
+ * and a block-rate read then quantises a step to the next boundary and reads
+ * as a backend divergence that is really the model's.
+ */
 class HarnessStereoPannerNode extends HarnessAudioNode {
     constructor(
         readonly pan: HarnessAudioParam,
@@ -466,17 +483,12 @@ class HarnessStereoPannerNode extends HarnessAudioNode {
     }
 
     protected override transform(): void {
-        // Block-rate, which is what the module header says this model is. A pan
-        // lane that moves inside a quantum is not a property any fixture here
-        // measures, and no production writer aims one at a panner.
-        const position = Math.max(
-            -1,
-            Math.min(1, this.pan.sample((this.renderedQuantum * QUANTUM_FRAMES) / this.sampleRate))
-        );
-        const x = position <= 0 ? position + 1 : position;
-        const gainLeft = Math.cos((x * Math.PI) / 2);
-        const gainRight = Math.sin((x * Math.PI) / 2);
+        const startFrame = this.renderedQuantum * QUANTUM_FRAMES;
         for (let index = 0; index < QUANTUM_FRAMES; index++) {
+            const position = Math.max(-1, Math.min(1, this.pan.sample((startFrame + index) / this.sampleRate)));
+            const x = position <= 0 ? position + 1 : position;
+            const gainLeft = Math.cos((x * Math.PI) / 2);
+            const gainRight = Math.sin((x * Math.PI) / 2);
             const left = this.out.left[index]!;
             const right = this.out.right[index]!;
             if (position <= 0) {
@@ -820,15 +832,28 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
      * that ignored any of them would let a backend schedule a clip at the wrong
      * place and still null. `start()` is refused twice, as Web Audio refuses it,
      * because a second start on one node is a graph the product cannot build.
+     *
+     * ── Rate conversion ───────────────────────────────────────────────────
+     *
+     * The buffer's own rate is the fourth number. Web Audio resamples material
+     * decoded at another rate onto the context's clock, which is the same law
+     * as an added playback rate of `buffer.sampleRate / context.sampleRate`:
+     * the read head advances that many *source* frames per rendered frame, so
+     * the material keeps its pitch and its duration in seconds. `offset` and
+     * `duration` are both measured in the buffer's own time, so both resolve
+     * against the buffer's rate, not the context's — which is why they are
+     * held here in seconds and converted where the buffer is known. At an
+     * equal-rate buffer every quantity collapses to what it was before.
      */
     class HarnessAudioBufferSourceNode extends HarnessAudioNode {
         override numberOfInputs = 0;
         buffer: HarnessAudioBuffer | null = null;
         readonly playbackRate: HarnessAudioParam;
         private startFrame: number | null = null;
-        private offsetFrames = 0;
-        /** Source frames, per `start`'s third argument. */
-        private durationSourceFrames = Infinity;
+        /** Source seconds, per `start`'s second argument. */
+        private offsetSeconds = 0;
+        /** Source seconds, per `start`'s third argument. */
+        private durationSourceSeconds = Infinity;
         /** Destination frame `stop()` cuts the sound off at, in its own unit. */
         private stopFrame = Infinity;
 
@@ -845,8 +870,8 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
                 throw new Error('nullTestRenderHarness: AudioBufferSourceNode.start() called twice');
             }
             this.startFrame = Math.round(when * this.sampleRate);
-            this.offsetFrames = offset * this.sampleRate;
-            this.durationSourceFrames = duration === undefined ? Infinity : duration * this.sampleRate;
+            this.offsetSeconds = offset;
+            this.durationSourceSeconds = duration ?? Infinity;
         }
 
         stop(when = 0): void {
@@ -858,7 +883,11 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
             if (!buffer || startFrame === null) {
                 return;
             }
-            const rate = this.playbackRate.value;
+            // The buffer's rate against the context's is the resampling half
+            // of the read rate; the node's own `playbackRate` is the other.
+            const rate = this.playbackRate.value * (buffer.sampleRate / this.sampleRate);
+            const offsetFrames = this.offsetSeconds * buffer.sampleRate;
+            const durationSourceFrames = this.durationSourceSeconds * buffer.sampleRate;
             const left = buffer.getChannelData(0);
             const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
             const blockStart = this.renderedQuantum * QUANTUM_FRAMES;
@@ -871,13 +900,13 @@ export function createNullTestRenderHarness(): NullTestRenderHarness {
                 // The read head, in source frames since the offset. It is also
                 // what `duration` bounds, so the two are compared in one unit.
                 const consumed = elapsed * rate;
-                if (consumed >= this.durationSourceFrames) {
+                if (consumed >= durationSourceFrames) {
                     continue;
                 }
                 // Linear interpolation, because a non-unity rate lands between
                 // frames. At rate 1 with an integral start the position is
                 // integral and this reads the sample itself.
-                const position = this.offsetFrames + consumed;
+                const position = offsetFrames + consumed;
                 const lower = Math.floor(position);
                 if (lower < 0 || lower >= buffer.length) {
                     continue;

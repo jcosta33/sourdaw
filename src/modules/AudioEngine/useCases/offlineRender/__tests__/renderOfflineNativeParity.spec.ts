@@ -26,6 +26,36 @@
  * a missing buffer must fail the comparison loudly rather than quietly turn
  * it into web-versus-web.
  *
+ * ── The off-rate leg, and why its floor is a different number ─────────────
+ *
+ * The same fixture is rendered a second time at 44 100 Hz from 48 kHz
+ * material. That combination is not an edge case: `resolveRenderContext`
+ * defaults to 44 100, so it is what the *default* desktop export does, and
+ * neither engine's rate conversion is exercised at all by the equal-rate leg
+ * above. Both convert by reading the material at `materialRate / renderRate`
+ * source frames per rendered frame and interpolating linearly between the two
+ * frames the read head falls between (`ClipSource::resampled_at` in
+ * `crates/daw-engine/src/timeline.rs`; the harness's
+ * `AudioBufferSourceNode`, modelling Web Audio's implicit resample).
+ *
+ * Same law, different arithmetic: the native side carries that ratio in
+ * `ClipPlayback::playback_rate`, an `f32`, while the read head on the other
+ * side is `f64` throughout. `fround(48000 / 44100)` sits 3.73e−8 below the
+ * exact ratio, and the read head accumulates that every rendered frame — so
+ * by the end of this two-second render the two heads are 3.3e−3 source frames
+ * apart. Against material whose adjacent samples differ by ~0.08 that is a
+ * ~2.6e−4 sample difference, ~−70 dBFS after the fixture's gains, which is
+ * what the leg measures (−70.68 dBFS; floor −68). The profile confirms the
+ * mechanism rather than assuming it: the residual grows monotonically with
+ * elapsed frames, and rendering the same fixture at 24 kHz — an exactly
+ * representable 2:1 ratio — drops it to −118 dBFS with no growth at all.
+ *
+ * The floor is therefore a property of this fixture's *length*: the divergence
+ * is a relative rate error, so it scales with the render. It is bounded in the
+ * only unit that matters to a listener — 3.73e−8 is under a third of a sample
+ * of drift across a three-minute export, and a pitch error of 4e−6 cents —
+ * which is why this is a floor and not a content gate.
+ *
  * ── Fixture constraints (the null test's own, restated) ───────────────────
  *
  * Unstretched clips, device-free tracks, a plain bus, and every musical time
@@ -73,6 +103,16 @@ import {
 } from './nullTestRenderHarness';
 
 const SAMPLE_RATE = 48_000;
+/**
+ * `resolveRenderContext`'s own default, and therefore the rate the *default*
+ * desktop export runs at: the off-rate leg below renders 48 kHz material here.
+ */
+const DEFAULT_EXPORT_RATE = 44_100;
+/**
+ * The off-rate leg's residual floor. Derived, not chosen — see the header's
+ * "Off-rate leg" section; the observed residual is −70.7 dBFS.
+ */
+const OFF_RATE_RESIDUAL_FLOOR_DBFS = -68;
 const DURATION_BEATS = 4;
 /** 120 BPM: the fixture context's one tempo law, shared by both legs. */
 const SECONDS_PER_BEAT = 0.5;
@@ -481,12 +521,12 @@ type LegMeasurement = {
     rssBytes: number;
 };
 
-async function runLeg(leg: 'native' | 'web'): Promise<LegMeasurement> {
+async function runLeg(leg: 'native' | 'web', renderRate = SAMPLE_RATE): Promise<LegMeasurement> {
     mocks.probe.native = leg === 'native';
     const startedAt = Date.now();
     const buffer = await renderOffline({
         durationBeats: DURATION_BEATS,
-        sampleRate: SAMPLE_RATE,
+        sampleRate: renderRate,
         onWarning: (message) => {
             throw new Error(`${leg} leg degraded instead of rendering: ${message}`);
         },
@@ -568,6 +608,34 @@ describe('renderOffline — native/web export parity (#2225)', () => {
             // The presence pin (ADR 0015 rule 4): a null against silence is not a null.
             expect(result.signalPeakDbfs).toBeGreaterThan(-30);
             expect(result.residualPeakDbfs).toBeLessThanOrEqual(-90);
+        },
+        30_000
+    );
+
+    it.runIf(nativeAddonPresent)(
+        'renders 48 kHz material at the default 44.1 kHz export rate the same way on both engines',
+        async () => {
+            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
+
+            const native = await runLeg('native', DEFAULT_EXPORT_RATE);
+            // Same discriminator as the leg above, plus the rate itself: a
+            // fallback would answer the harness's buffer, and a native render
+            // at the material's rate would not be the off-rate measurement.
+            expect(native.buffer).toBeInstanceOf(StubAudioBuffer);
+            expect(native.buffer.sampleRate).toBe(DEFAULT_EXPORT_RATE);
+
+            const web = await runLeg('web', DEFAULT_EXPORT_RATE);
+            expect(web.buffer).not.toBeInstanceOf(StubAudioBuffer);
+            expect(web.buffer.sampleRate).toBe(DEFAULT_EXPORT_RATE);
+
+            const result = nullTest({ a: web.buffer, b: native.buffer });
+            process.stdout.write(
+                `[parity 44.1k] null: residual ${result.residualPeakDbfs.toFixed(2)} dBFS, ` +
+                    `signal ${result.signalPeakDbfs.toFixed(2)} dBFS, worst frame ${String(result.worstFrame)}\n`
+            );
+
+            expect(result.signalPeakDbfs).toBeGreaterThan(-30);
+            expect(result.residualPeakDbfs).toBeLessThanOrEqual(OFF_RATE_RESIDUAL_FLOOR_DBFS);
         },
         30_000
     );
