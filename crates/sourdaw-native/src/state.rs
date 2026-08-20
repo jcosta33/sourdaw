@@ -1,4 +1,4 @@
-use crate::host::native_bridge::SharedClapPlugin;
+use crate::host::native_bridge::SharedHostedPlugin;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::EngineHandle;
 use daw_plugin_host::AudioPlugin;
@@ -14,49 +14,32 @@ pub struct PluginInstanceData {
     pub plugin: Box<dyn AudioPlugin>,
 }
 
+/// Every method here reaches the plugin through `AudioPlugin` and nothing else.
+///
+/// These four used to downcast to `ClapWrapper` and answer "no editor", "not a
+/// CLAP plugin" or nothing at all for anything else — which made the CLAP-only
+/// assumption invisible at the call site and wrong for any second format. The
+/// honest answers now live on the trait, where a backend states its own, and
+/// `as_any`/`as_any_mut` are gone with the downcasts they existed for.
 impl PluginInstanceData {
     /// Check if this plugin instance supports a custom GUI.
     pub fn has_gui(&self) -> bool {
-        if let Some(clap) = self.as_clap() {
-            clap.has_gui()
-        } else {
-            false
-        }
+        self.plugin.has_gui()
     }
 
     /// Get the display name of this plugin.
     pub fn get_name(&self) -> &str {
-        if let Some(clap) = self.as_clap() {
-            clap.get_name()
-        } else {
-            "Plugin"
-        }
+        self.plugin.get_name()
     }
 
     /// Open the plugin GUI, parenting it into the given native handle.
     pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
-        if let Some(clap) = self.as_clap_mut() {
-            clap.open_gui(handle_ptr)
-        } else {
-            Err("Plugin does not support GUI (not a CLAP plugin)".to_string())
-        }
+        self.plugin.open_gui(handle_ptr)
     }
 
     /// Close the plugin GUI.
     pub fn close_gui(&mut self) {
-        if let Some(clap) = self.as_clap_mut() {
-            clap.close_gui();
-        }
-    }
-
-    /// Downcast to ClapWrapper (immutable) via the as_any trait method.
-    fn as_clap(&self) -> Option<&ClapWrapper> {
-        self.plugin.as_any().downcast_ref::<ClapWrapper>()
-    }
-
-    /// Downcast to ClapWrapper (mutable) via the as_any_mut trait method.
-    fn as_clap_mut(&mut self) -> Option<&mut ClapWrapper> {
-        self.plugin.as_any_mut().downcast_mut::<ClapWrapper>()
+        self.plugin.close_gui();
     }
 }
 
@@ -84,7 +67,7 @@ impl Default for PluginRelayScratch {
 
 pub struct EnginePluginInstanceData {
     pub engine_plugin_id: usize,
-    pub runtime: Arc<SharedClapPlugin>,
+    pub runtime: Arc<SharedHostedPlugin>,
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
@@ -128,7 +111,7 @@ pub struct AppState {
     /// Entries leave only through `sweep_retired_engine_plugins`, and only once
     /// the scheduler has released its own `Arc` — see that method for the
     /// invariant.
-    pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedClapPlugin>>>>,
+    pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedHostedPlugin>>>>,
     /// Input blocks `process_plugin_audio` could not hand to a bridge because
     /// its input ring was full. Each one is audio the plugin never saw, and on
     /// the native sampler's record feed it is a hole in the recording — so the
@@ -183,7 +166,9 @@ pub struct PluginRegistryEntry {
     /// reachable under the CLAP descriptor id and still has to be able to say
     /// which scanned file it came from.
     pub stable_id: String,
-    pub clap_id: String,
+    /// The plugin's own move-survivable descriptor identity — CLAP's reverse-DNS
+    /// id, VST3's class CID. Empty when the scan read no usable descriptor.
+    pub descriptor_id: String,
     pub format: String,
     pub name: String,
     /// Total audio channels the plugin declared through `clap.audio-ports` when
@@ -258,7 +243,7 @@ fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtim
 /// The retirement vec exists so the render callback never final-drops a hosted
 /// plugin: removal from the scheduler is *queued*, so at the moment a runtime is
 /// retired the audio thread may still be holding — and processing — the
-/// `ClapPluginSlot` that owns the second `Arc`. Freeing then is a use-after-free
+/// `HostedPluginSlot` that owns the second `Arc`. Freeing then is a use-after-free
 /// on the audio thread.
 ///
 /// The scheduler's own `Arc` is therefore the acknowledgment: when the slot is
@@ -325,7 +310,7 @@ impl AppState {
         runtime.with_control(Duration::from_secs(2), operation)
     }
 
-    pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedClapPlugin>) {
+    pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedHostedPlugin>) {
         match self.retired_engine_plugins.lock() {
             Ok(mut retired_plugins) => {
                 retain_runtime_once(&mut retired_plugins, runtime);
@@ -350,6 +335,132 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A hosted plugin that is not a `ClapWrapper`.
+    ///
+    /// The four methods below used to be reachable only by downcasting the
+    /// boxed plugin to that one concrete type, so a backend like this one got
+    /// "Plugin", "no editor" and a refusal naming CLAP no matter what it
+    /// implemented. Restore either downcast and every assertion in
+    /// `a_non_clap_backend_is_reached_through_the_trait` fails.
+    struct EditorBackedTestPlugin {
+        editor_open: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl AudioPlugin for EditorBackedTestPlugin {
+        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
+
+        fn set_parameter(&mut self, _: u32, _: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Vec<u8> {
+            Vec::new()
+        }
+
+        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn get_name(&self) -> &str {
+            "Test Backend Plugin"
+        }
+
+        fn has_gui(&self) -> bool {
+            true
+        }
+
+        fn open_gui(&mut self, _: *mut c_void) -> Result<(u32, u32), String> {
+            self.editor_open
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok((640, 480))
+        }
+
+        fn close_gui(&mut self) {
+            self.editor_open
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    /// A backend that overrides none of the four and takes the trait defaults.
+    struct SilentTestPlugin;
+
+    impl AudioPlugin for SilentTestPlugin {
+        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
+
+        fn set_parameter(&mut self, _: u32, _: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Vec<u8> {
+            Vec::new()
+        }
+
+        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_non_clap_backend_is_reached_through_the_trait() {
+        let editor_open = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut instance = PluginInstanceData {
+            plugin: Box::new(EditorBackedTestPlugin {
+                editor_open: Arc::clone(&editor_open),
+            }),
+        };
+
+        assert_eq!(instance.get_name(), "Test Backend Plugin");
+        assert!(
+            instance.has_gui(),
+            "a backend that reports an editor must be believed"
+        );
+        assert_eq!(
+            instance.open_gui(std::ptr::null_mut()),
+            Ok((640, 480)),
+            "the editor size must come from the plugin, not from a downcast that missed"
+        );
+        assert!(
+            editor_open.load(std::sync::atomic::Ordering::SeqCst),
+            "open_gui must mark the editor open"
+        );
+
+        instance.close_gui();
+        assert!(
+            !editor_open.load(std::sync::atomic::Ordering::SeqCst),
+            "close_gui must mark the editor closed"
+        );
+    }
+
+    /// The defaults are answers a backend can stand behind, and none of them
+    /// names a format: "not a CLAP plugin" was a true statement about the wrong
+    /// subject, and it will be wrong again for the next format.
+    #[test]
+    fn a_backend_with_no_editor_refuses_without_naming_a_format() {
+        let mut instance = PluginInstanceData {
+            plugin: Box::new(SilentTestPlugin),
+        };
+
+        assert_eq!(instance.get_name(), "Plugin");
+        assert!(!instance.has_gui());
+
+        let refusal = instance
+            .open_gui(std::ptr::null_mut())
+            .expect_err("a plugin with no editor cannot open one");
+        assert_eq!(refusal, "Plugin does not support GUI");
+        assert!(
+            !refusal.contains("CLAP"),
+            "the refusal must describe the plugin, not the format it is not: {refusal}"
+        );
+
+        // A plugin with no editor has nothing to close, and closing it is not an
+        // error a caller has to guard against.
+        instance.close_gui();
+    }
 
     #[test]
     fn retain_runtime_once_pushes_new_runtime() {
@@ -511,7 +622,7 @@ mod tests {
         let state = AppState::default();
 
         for _ in 0..8 {
-            let runtime = Arc::new(SharedClapPlugin::new(
+            let runtime = Arc::new(SharedHostedPlugin::new(
                 daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
                     "retirement fixture",
                     Vec::new(),
