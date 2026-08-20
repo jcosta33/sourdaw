@@ -94,11 +94,11 @@ export async function createAmbientTemplate(): Promise<void> {
         deviceName: 'DX Bells',
     });
     const ambientPiano = createInstrumentTrack({
-        name: 'Piano',
+        name: 'Keys',
         parentId: melodicFolder.id,
-        deviceType: 'grand-boule',
-        deviceName: 'Grand Piano',
-        deviceParams: { masterGain: 0.6, soundboardSend: 0.65, sympatheticSend: 0.4 },
+        deviceType: 'builtin-synth',
+        deviceName: 'Soft Keys',
+        deviceParams: { waveform: 1, attack: 0.04, release: 0.8, filterCutoff: 2600, gain: 0.32 },
     });
     const granular = createInstrumentTrack({
         name: 'Granular',

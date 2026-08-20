@@ -16,12 +16,12 @@ describe('createInstrumentTrack', () => {
     it('creates a midi track with the instrument as the first device', () => {
         const track = createInstrumentTrack({
             name: 'Piano',
-            deviceType: 'grand-boule',
-            deviceName: 'Grand Piano',
+            deviceType: 'builtin-synth',
+            deviceName: 'Soft Keys',
         });
         expect(mocks.createTrack).toHaveBeenCalledExactlyOnceWith({ name: 'Piano', kind: 'midi', parentId: undefined });
-        expect(track.devices[0]?.type).toBe('grand-boule');
-        expect(track.devices[0]?.name).toBe('Grand Piano');
+        expect(track.devices[0]?.type).toBe('builtin-synth');
+        expect(track.devices[0]?.name).toBe('Soft Keys');
     });
 
     it('defaults device name to the track name when deviceName is omitted', () => {
