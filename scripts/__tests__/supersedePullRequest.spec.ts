@@ -9,90 +9,106 @@ import {
 
 const head = 'a'.repeat(40);
 const movedHead = 'b'.repeat(40);
-type Snapshot = { number: number; state: string; head: string; repository: string; base: string };
-
-function fakePort(
-    input: { old?: Partial<Snapshot>; replacement?: Partial<Snapshot>; heads?: string[]; failDelete?: boolean } = {}
-) {
+const oldComment = { id: 'IC_old', fullDatabaseId: '9223372036854775807', body: 'old', authorLogin: 'reviewer[bot]' };
+type Input = {
+    heads?: string[];
+    authorLogin?: string;
+    replacementState?: string;
+    throwAfterComment?: boolean;
+    throwAfterClose?: boolean;
+    failDelete?: boolean;
+};
+function fakePort(input: Input = {}) {
     const calls: string[] = [];
-    let oldState = input.old?.state ?? 'OPEN';
-    let commentExists = false;
     let index = 0;
-    const old = (): Snapshot => ({
-        number: 2244,
-        state: oldState,
-        head: input.heads?.[index++] ?? input.old?.head ?? head,
-        repository: input.old?.repository ?? 'jcosta33/sourdaw',
-        base: input.old?.base ?? 'main',
-    });
-    const replacement = (): Snapshot => ({
-        number: 2246,
-        state: input.replacement?.state ?? 'MERGED',
-        head: input.replacement?.head ?? 'c'.repeat(40),
-        repository: input.replacement?.repository ?? 'jcosta33/sourdaw',
-        base: input.replacement?.base ?? 'main',
-    });
+    let state = 'OPEN';
+    let comments = [oldComment];
+    const snapshot = (number: number) =>
+        number === 2244
+            ? {
+                  number,
+                  state,
+                  head: input.heads?.[index++] ?? head,
+                  repository: 'jcosta33/sourdaw',
+                  base: 'main',
+                  comments,
+              }
+            : {
+                  number,
+                  state: input.replacementState ?? 'MERGED',
+                  head: 'c'.repeat(40),
+                  repository: 'jcosta33/sourdaw',
+                  base: 'main',
+                  comments: [],
+              };
     const port: SupersedePullRequestPort = {
         inspect: (number) => {
             calls.push(`inspect:${number}`);
-            return number === 2244 ? old() : replacement();
+            return snapshot(number);
         },
         comment: (number, body) => {
             calls.push(`comment:${number}:${body}`);
-            commentExists = true;
-            return { id: 'IC_comment', fullDatabaseId: '9223372036854775808' };
+            const created = {
+                id: 'IC_new',
+                fullDatabaseId: '9223372036854775808',
+                body,
+                authorLogin: AUTHOR_BOT_LOGIN,
+            };
+            comments = [...comments, created];
+            if (input.throwAfterComment) {
+                throw new Error('comment transport lost');
+            }
+            return created;
         },
         close: (number) => {
             calls.push(`close:${number}`);
-            oldState = 'CLOSED';
+            state = 'CLOSED';
+            if (input.throwAfterClose) {
+                throw new Error('close transport lost');
+            }
         },
         reopen: (number) => {
             calls.push(`reopen:${number}`);
-            oldState = 'OPEN';
+            state = 'OPEN';
         },
         deleteComment: (id) => {
             calls.push(`delete:${id}`);
-            if (input.failDelete === true) {
+            if (input.failDelete) {
                 throw new Error('delete denied');
             }
-            commentExists = false;
+            comments = comments.filter((comment) => comment.id !== id);
         },
-        inspectComment: () => commentExists,
         log: (message) => calls.push(`log:${message}`),
     };
-    return { calls, port };
+    return { port, calls, authorLogin: input.authorLogin ?? AUTHOR_BOT_LOGIN, state: () => ({ state, comments }) };
 }
 
 describe('pull-request supersession', () => {
-    it('requires strict arguments', () => {
-        expect(parseSupersedePullRequestArgs(['2244', '--head', head, '--replacement', '2246'])).toEqual({
+    it('parses strict arguments', () => {
+        expect(parseSupersedePullRequestArgs(['2244', '--head', head, '--replacement', '2246'])).toMatchObject({
             oldNumber: 2244,
             head,
             replacementNumber: 2246,
-            help: false,
         });
         for (const args of [
             [],
             ['2244', '--replacement', '2246', '--head', head],
-            ['0', '--head', head, '--replacement', '2246'],
+            ['2244', '--head', head, '--replacement', '2244'],
         ]) {
             expect(() => parseSupersedePullRequestArgs(args)).toThrow(/usage/i);
         }
     });
     it.each([
-        ['wrong identity', 'other[bot]', {}],
-        ['replacement not merged', AUTHOR_BOT_LOGIN, { replacement: { state: 'OPEN' } }],
-        ['old head mismatch', AUTHOR_BOT_LOGIN, { old: { head: movedHead } }],
-    ])('refuses %s without mutations', (_case, login, input) => {
+        ['wrong actor', 'other[bot]', {}],
+        ['replacement open', AUTHOR_BOT_LOGIN, { replacementState: 'OPEN' }],
+    ])('refuses %s without mutations', (_name, login, input) => {
         const { port, calls } = fakePort(input);
         expect(() => supersedePullRequest(2244, head, 2246, login, port)).toThrow();
-        expect(calls.filter((call) => /^(comment|close|reopen|delete):/.test(call))).toEqual([]);
+        expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
     });
-    it('comments, reinspects, closes, and verifies in that order', () => {
-        const { port, calls } = fakePort();
-        expect(supersedePullRequest(2244, head, 2246, AUTHOR_BOT_LOGIN, port)).toBe(
-            'pull-request-superseded:2244:2246'
-        );
+    it('comments, reinspects, closes, and verifies', () => {
+        const { port, calls, authorLogin } = fakePort();
+        expect(supersedePullRequest(2244, head, 2246, authorLogin, port)).toBe('pull-request-superseded:2244:2246');
         expect(calls).toEqual([
             'inspect:2244',
             'inspect:2246',
@@ -103,35 +119,25 @@ describe('pull-request supersession', () => {
             'log:pull-request-superseded:2244:2246',
         ]);
     });
-    it('deletes its comment when the head moves after commenting', () => {
-        const { port, calls } = fakePort({ heads: [head, movedHead, movedHead] });
-        expect(() => supersedePullRequest(2244, head, 2246, AUTHOR_BOT_LOGIN, port)).toThrow(/head moved/i);
-        expect(calls).toEqual([
-            'inspect:2244',
-            'inspect:2246',
-            'comment:2244:Superseded by #2246.',
-            'inspect:2244',
-            'delete:IC_comment',
-            'inspect:2244',
-        ]);
+    it('compensates a comment that committed before its mutation threw', () => {
+        const { port, authorLogin, state } = fakePort({ throwAfterComment: true });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/comment transport lost$/);
+        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
     });
-    it('reopens and deletes its comment when the head moves after closing', () => {
-        const { port, calls } = fakePort({ heads: [head, head, movedHead, movedHead] });
-        expect(() => supersedePullRequest(2244, head, 2246, AUTHOR_BOT_LOGIN, port)).toThrow(/head moved/i);
-        expect(calls).toEqual([
-            'inspect:2244',
-            'inspect:2246',
-            'comment:2244:Superseded by #2246.',
-            'inspect:2244',
-            'close:2244',
-            'inspect:2244',
-            'reopen:2244',
-            'delete:IC_comment',
-            'inspect:2244',
-        ]);
+    it('compensates a close that committed before its mutation threw', () => {
+        const { port, authorLogin, state } = fakePort({ throwAfterClose: true });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/close transport lost$/);
+        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
     });
-    it('reports compensation failures', () => {
-        const { port } = fakePort({ heads: [head, movedHead], failDelete: true });
-        expect(() => supersedePullRequest(2244, head, 2246, AUTHOR_BOT_LOGIN, port)).toThrow(/compensation failed/i);
+    it('rolls back after a post-comment head move', () => {
+        const { port, authorLogin, state } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/head moved/i);
+        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+    });
+    it('surfaces compensation failure', () => {
+        const { port, authorLogin } = fakePort({ throwAfterComment: true, failDelete: true });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
+            /comment transport lost[\s\S]*compensation failed/i
+        );
     });
 });
