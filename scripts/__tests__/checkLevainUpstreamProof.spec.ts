@@ -4,8 +4,8 @@ import { gitObjectSha, validateLevainUpstreamProof } from '../checkLevainUpstrea
 
 import type { LevainProvenance } from '../checkLevainProvenance';
 
-function treeEntry(name: string, sha: string): Buffer[] {
-    return [Buffer.from(`100644 ${name}\0`), Buffer.from(sha, 'hex')];
+function treeEntry(mode: '100644' | '40000', name: string, sha: string): Buffer[] {
+    return [Buffer.from(`${mode} ${name}\0`), Buffer.from(sha, 'hex')];
 }
 
 function fixture(): {
@@ -18,7 +18,11 @@ function fixture(): {
     const sample = Buffer.from('sample');
     const licenseBlob = gitObjectSha('blob', license);
     const sampleBlob = gitObjectSha('blob', sample);
-    const treeBody = Buffer.concat([...treeEntry('LICENSE', licenseBlob), ...treeEntry('note.wav', sampleBlob)]);
+    const sampleTree = gitObjectSha('tree', Buffer.concat(treeEntry('100644', 'note.wav', sampleBlob)));
+    const treeBody = Buffer.concat([
+        ...treeEntry('100644', 'LICENSE', licenseBlob),
+        ...treeEntry('40000', 'Samples', sampleTree),
+    ]);
     const tree = gitObjectSha('tree', treeBody);
     const commit = Buffer.from(
         `tree ${tree}\nauthor Test <test@example.com> 0 +0000\ncommitter Test <test@example.com> 0 +0000\n\nfixture\n`
@@ -38,7 +42,7 @@ function fixture(): {
             samples: [
                 {
                     path: 'public/samples/levain/note.wav',
-                    sourcePath: 'note.wav',
+                    sourcePath: 'Samples/note.wav',
                     gitBlob: sampleBlob,
                     sha256: 'a'.repeat(64),
                     license: 'CC0-1.0',
@@ -53,7 +57,8 @@ function fixture(): {
             `#\ttree\t${tree}`,
             'mode\ttype\tsha\tpath',
             `100644\tblob\t${licenseBlob}\tLICENSE`,
-            `100644\tblob\t${sampleBlob}\tnote.wav`,
+            `040000\ttree\t${sampleTree}\tSamples`,
+            `100644\tblob\t${sampleBlob}\tSamples/note.wav`,
         ].join('\n'),
     };
 }
@@ -69,6 +74,18 @@ describe('Levain upstream proof', () => {
         value.provenance.samples[0]!.gitBlob = 'b'.repeat(40);
         expect(validateLevainUpstreamProof(value.provenance, value.commit, value.license, value.tree)).toContain(
             'public/samples/levain/note.wav: upstream path does not match Git blob'
+        );
+    });
+
+    it('rejects a tree relabeled as a blob with its descendants removed', () => {
+        const value = fixture();
+        const relabeled = value.tree
+            .split('\n')
+            .filter((line) => !line.endsWith('\tSamples/note.wav'))
+            .map((line) => line.replace('040000\ttree\t', '040000\tblob\t'))
+            .join('\n');
+        expect(() => validateLevainUpstreamProof(value.provenance, value.commit, value.license, relabeled)).toThrow(
+            'Malformed Levain upstream tree row'
         );
     });
 });

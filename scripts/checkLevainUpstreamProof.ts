@@ -42,6 +42,7 @@ function parseTreeProof(contents: string): { revision: string; tree: string; ent
             path === undefined ||
             !/^[0-9a-f]{6}$/.test(mode) ||
             !['blob', 'tree'].includes(type) ||
+            !((mode === '040000' && type === 'tree') || (mode === '100644' && type === 'blob')) ||
             !/^[0-9a-f]{40}$/.test(sha) ||
             path === '' ||
             path.startsWith('/') ||
