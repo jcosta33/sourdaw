@@ -1,0 +1,104 @@
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_487e9aa1e46063::t_59f98c85fbc590 21,83,127
+src/modules/Collaboration/useCases/collaboration/__tests__/generateInvite.spec.ts
+  s_487e9aa1e46063::t_f51fe6a7fc066b 44
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_487e9aa1e46063::t_4c1a38baf81522 67
+src/modules/Collaboration/stores/__tests__/collaborationStore.spec.ts
+  s_487e9aa1e46063::t_c7274ad7c8c571 16,57,99
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_487e9aa1e46063::t_814265e1290c46 315,699
+  s_487e9aa1e46063::t_7dc433c8cd6d75 316-342
+  s_487e9aa1e46063::t_0f4bda9941b75e 823-830,838
+  s_487e9aa1e46063::t_1d07b765bf45ee 385-389
+src/modules/Collaboration/useCases/collaboration/__tests__/clearCollaborationFailure.spec.ts
+  s_487e9aa1e46063::t_b0ec2fd7a601fb 17
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_487e9aa1e46063::t_7dc865c06b1544 314
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_487e9aa1e46063::t_33c1311abb6c15 23-36
+src/modules/Collaboration/presentations/hooks/useCollaborationState.ts
+  s_487e9aa1e46063::t_11c516e6e01acd 16
+src/modules/Collaboration/presentations/views/CollaborationPanel.tsx
+  s_487e9aa1e46063::t_2cfd0135d8073a 366-373
+  s_487e9aa1e46063::t_e36919a0503b08 173-186
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_487e9aa1e46063::t_85ee32d1c10da0 60,153,197
+src/modules/Collaboration/useCases/collaboration/__tests__/broadcastPresence.spec.ts
+  s_487e9aa1e46063::t_c5518ff7dc3ae9 32
+src/modules/Collaboration/useCases/collaboration/__tests__/canExecuteCommandBatch.spec.ts
+  s_487e9aa1e46063::t_4eb2a79e97c6e2 9
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_487e9aa1e46063::t_2da8cd19eb166c 29
+src/modules/Collaboration/presentations/views/__tests__/CollaborationPanel.spec.tsx
+  s_487e9aa1e46063::t_f1e970a6f408c6 170-199
+  s_7ba0b7bee9e951::t_9dd3a3d19e4c4d 66
+src/modules/Collaboration/useCases/collaboration/__tests__/recordCollaborationFailure.spec.ts
+  s_487e9aa1e46063::t_a6158cc507d370 17
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_487e9aa1e46063::t_bd6b4427ffaf13 360-374,376-386,388-389,392-397,399-401,404-410,413-414,416,418-428,430-431,434-464,489,491,493,495-497,501,538-543,546-548,557,566-567,572,574,579,581,583,585-590,592,594-598,629-642,650-651,656,659-666,678-679,681-685,687-689,694,697-698,702-706,709-714,716-717,723,725,728,744,746-757,762,764,766-789,791-792,804-805,814-817,819-821,826,829,833,835-836,838,840-842,846,854-855,859-888
+  s_487e9aa1e46063::t_f66e05609916d5 794-798,800
+  s_487e9aa1e46063::t_1fa4badec27217 129-132,136-141
+  s_487e9aa1e46063::t_94f16372c10d85 549-553,559-561,564-565
+  s_487e9aa1e46063::t_a9602ddb6df138 525-535
+  s_487e9aa1e46063::t_a58c9814e9c6b5 51
+  s_487e9aa1e46063::t_faf08a2c0e6a89 502-507
+  s_487e9aa1e46063::t_c7921e3b40be7f 515-518
+  s_487e9aa1e46063::t_936d297daee9d8 500
+  s_487e9aa1e46063::t_89f0b1b2f9ed76 481-486
+  s_487e9aa1e46063::t_e7887be37d5538 726,731-743
+  s_487e9aa1e46063::t_3c3a0132d43b79 12
+  s_487e9aa1e46063::t_5a910bad3333ab 568-571
+  s_487e9aa1e46063::t_fd142c73d851ea 672
+  s_487e9aa1e46063::t_f3d3a04bee8f57 466-480,490,498-499
+  s_487e9aa1e46063::t_580e3c6dc1addc 465,693,721,745,761,790
+  s_487e9aa1e46063::t_63c160cc1813dc 22,29
+  s_487e9aa1e46063::t_0a9aea99ca4bc7 133-135
+  s_487e9aa1e46063::t_b1742b8f65613a 391
+  s_487e9aa1e46063::t_3a41bb11ccb43c 508
+  s_487e9aa1e46063::t_59e8c2823307fe 575-578,580,582,584,591,593,599-628,643-649,652-655
+  s_487e9aa1e46063::t_6ee411981f5f52 573
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_487e9aa1e46063::t_de72d5f8e21c12 28
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_487e9aa1e46063::t_bc0b36095def6c 49,55,141,150,239
+  s_487e9aa1e46063::t_6b7f15fa620047 871-905
+  s_487e9aa1e46063::t_418cc7adacc8a6 449-455,465-490
+  s_487e9aa1e46063::t_6a90782779b5f3 1287-1324
+src/modules/Collaboration/stores/collaborationStore.ts
+  s_487e9aa1e46063::t_bd3b2a630a6571 15
+src/modules/Collaboration/presentations/hooks/__tests__/useCollaborationState.spec.ts
+  s_487e9aa1e46063::t_31c7504603033f 27,53
+src/modules/Collaboration/useCases/collaboration/leaveSession.ts
+  s_487e9aa1e46063::t_31de74faafbe93 39
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_487e9aa1e46063::t_83e1be3b17d08b 75
+src/modules/Collaboration/useCases/collaboration/__tests__/leaveSession.spec.ts
+  s_487e9aa1e46063::t_60ab65af032d72 33,46
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_487e9aa1e46063::t_a420f936e7855d 23,61-98,174-178,181-186,229-230,233-238,281,294-305,313-325,329-334,337-340,410-426,432,437-441,480,488-489,491,493-494,496-500,502-506,508,523,528-577,579,584-588,592-595,597,599-619,621-641,701-708
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "99f0c5905bdbf0517349e0a8f1077b61564dc1a7",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
