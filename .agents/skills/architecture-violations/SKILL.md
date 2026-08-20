@@ -21,6 +21,8 @@ Establish the architecture so the code flows through the right boundary. Never: 
 
 **Why:** the architecture encodes non-negotiable DAW constraints. A green check that re-introduces the hazard — now invisible — is a regression.
 
+`no-circular` is **error** and the file-level cycles are cleared, but it resolves files, not modules. The `AiGeneration` ↔ `AiRuntime` cycle is live and travels through contract barrels — `AiGeneration/handlers/aiMidi/*` imports `AiRuntime/useCases`, and `AiRuntime/presentations/views/GenerativeAiPanel.tsx` imports back into `AiGeneration` — so no rule, baseline row, or ADR records it. A green `deps:validate` is not proof the module graph is acyclic.
+
 ### 2. A boundary is only real if responsibility changes across it
 
 Real compliance improves or preserves ownership, write discipline, runtime isolation, testability, truth-vs-projection separation, framework independence of business logic, and real-time safety. Pass-through laundering and renamed entry points with the same coupling are fake compliance.

@@ -23,7 +23,7 @@ Root sources, worklets, buses, automation targets, metering, and monitor output 
 
 ### 2. Custom real-time DSP runs in `AudioWorklet`
 
-Never `ScriptProcessorNode`. Worklet code stays isolated from app modules, helpers, and the desktop bridge.
+Never `ScriptProcessorNode`. Worklet code stays isolated from app modules, helpers, and the desktop bridge. The depcruise `worklets-no-*` rules are **error** but match `src/modules/<M>/worklets/**` only; processors under `public/audio/worklets/` fall outside them, so nothing checks those and the isolation there rests on you.
 
 **Why:** `ScriptProcessorNode` runs on the main thread; worklets run on the audio render thread and must stay isolated.
 

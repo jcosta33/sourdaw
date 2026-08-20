@@ -29,8 +29,11 @@ Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch
 
 ## Runtime boundaries
 
-- Worklet isolation is machine-enforced (deps **error**). `worker.format: 'iife'` in
-  `vite.config.ts` is what lets worklet blob URLs load bundles — don't change it casually.
+- Worklets import nothing from app modules, helpers, or desktop IPC. The depcruise `worklets-no-*`
+  rules are **error** but match `src/modules/<M>/worklets/**` only, so they do not reach the raw
+  processors in `public/audio/worklets/` — there the isolation is yours to hold, unchecked.
+  `worker.format: 'iife'` in `vite.config.ts` is what lets worklet blob URLs load bundles — don't
+  change it casually.
 - One live `AudioContext` app-wide.
 - Faust is wired here and in PluginHost. Change one, check the other.
 - Native-plugin bridge worklets are raw JS in `public/audio/worklets/`, separate from the WASM

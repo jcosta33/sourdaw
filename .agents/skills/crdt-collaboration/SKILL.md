@@ -53,7 +53,7 @@ scope(async () => {
 
 Two writes separated by an `await` need two `scope(...)` calls, one per synchronous run.
 
-**Both mistakes fail silently.** Capturing _after_ an `await` finds no active transaction and returns a pass-through; awaiting _inside_ `scope` un-scopes at that await. Neither raises an error, fails a type check, or trips lint — the code looks fixed and behaves exactly as it did before.
+**Both mistakes fail silently.** Capturing _after_ an `await` finds no active transaction and returns a pass-through; awaiting _inside_ `scope` un-scopes at that await. Neither raises an error, fails a type check, or trips lint — the code looks fixed and behaves exactly as it did before. Audit finding CC-10 tracks the handlers still awaiting conversion, and proposes making the second case loud with a dev-mode assertion when the callback returns a thenable.
 
 ### 2. CrdtDocument owns the document; modules own projections
 

@@ -123,7 +123,8 @@ semantics. Follow the common professional convention unless Sourdaw deliberately
 | Focused Rust format   | `pnpm cargo:fmt --package <crate>`           |
 | Module boundaries     | `pnpm deps:validate`                         |
 | Barrel mocks          | `pnpm test:barrel-mocks`                     |
-| Rebuild DSP wasm      | `pnpm wasm:dsp`                              |
+| Rebuild one wasm pkg  | that package's own `wasm:*` script           |
+| Rebuild every wasm    | `pnpm wasm:all`                              |
 | Rewrite wasm manifest | `pnpm wasm:manifest`                         |
 | Prove wasm freshness  | `pnpm wasm:verify`                           |
 
@@ -173,7 +174,7 @@ paths are the exception the delivery scripts require: `review:prepare` writes bu
 `.agents/review-bundles/` at that root, the caller writes `review.json` beside them, and the
 `.env.sourdaw-*` credentials live there.
 
-`pnpm lane:open [issue] [slug]` fetches `origin/main`, branches from it, and locks the lane
+`pnpm lane:open [issue] [slug]` (slug `work` if omitted) fetches `origin/main`, branches from it, and locks the lane
 `active:sourdaw-author`. Its last stdout line is the lane path. It stays offline past that fetch and
 never mints or spawns `gh`. Supply the issue number when the work has a ticket; the branch is then
 `agent/<issue>/<slug>` and the pull request closes the issue on merge. Without one the branch is
@@ -234,14 +235,22 @@ If `origin/main` already has the executing script, run that blob, not a mutated 
 scripts may run from the working tree.
 
 Hosted checks do not run. `.github/workflows/health-gates.yml` is manual dispatch only because the
-account's Actions billing is suspended, and `main` carries no branch protection. The affected local
-checks and the review below are the only gate a change passes, so a check you skipped is a check
-nobody ran.
+account's Actions billing is suspended. `main` is covered by a ruleset, but read what it actually
+does: it blocks deletion and non-fast-forward, forces a squashed pull request, and demands resolved
+threads — it requires no status check and no approving review, so it constrains how a change lands
+and judges nothing about the change itself. The affected local checks and the review below are the
+only gate a change passes, so a check you skipped is a check nobody ran.
 
-Rust changes ship compiled artifacts. Any non-test edit under `crates/`, a comment included, changes
-the manifest hash: rerun `pnpm wasm:dsp` and `pnpm wasm:manifest`, then stage the rebuilt artifacts
-and verify after staging rather than after building. A rebase can merge cleanly and still leave the
-wasm stale; `pnpm wasm:verify` is the only proof of freshness.
+Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
+is the list, and it carries each package's build script because that name is not derivable from the
+crate — guess it and you run a script that does not exist. A non-test edit anywhere in such a
+package's path-dependency closure, a comment included, changes its hash: run that package's own
+build script, then `pnpm wasm:manifest`, then stage the rebuilt artifacts and verify after staging
+rather than after building. Rebuilding the wrong package is worse than rebuilding nothing, because
+`wasm:manifest` preserves the recorded hash of every package the run has no evidence it rebuilt —
+the manifest agrees and the artifact is stale. `pnpm wasm:all` covers all of them when in doubt. A
+rebase can merge cleanly and still leave wasm stale; `pnpm wasm:verify` is the only proof of
+freshness.
 
 `lane:publish` prints the PR number. It pushes without `--force`, titles the PR with the HEAD subject
 (`type(scope): subject`), and keeps the four headings in
@@ -278,7 +287,10 @@ Proof that a delegated change works — a test that fails when reverted, a measu
 users experience — stays in the session. It is not the GitHub review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
-every finding it accepted is actually addressed there, and run the affected checks. `pnpm deliver`
+the change does what it was specified to do, confirm every finding it accepted is actually addressed
+there, and run the affected checks. An approval alone is weak evidence, so every consequential claim
+carries discriminating proof — a test that fails when the change is reverted, a measurement at the
+boundary users experience. `pnpm deliver`
 squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the PR is not a draft,
 merge state is `CLEAN`, and threads are resolved. Do not merge any other way.
 
