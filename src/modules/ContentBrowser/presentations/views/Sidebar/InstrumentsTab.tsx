@@ -7,7 +7,7 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+import { findWithheldDeviceType, isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import {
     addTrack,
     getFactoryPresets,
@@ -137,10 +137,16 @@ export const InstrumentsTab = ({
     const soundPresets = factoryPresets.filter((param) => isSoundPreset(param) && matchesSearch(param));
     const filteredUser = userPresets.filter((param) => matchesSearch(param));
 
-    const executeCatalogPreset = async (presetId: string, trackId?: string) => {
+    const executeCatalogPreset = async (presetId: string, trackId?: string, devices: SoundPreset['devices'] = []) => {
         const plan = compileLoadPresetActions({ presetId, ...(trackId ? { trackId } : {}) });
         if (!plan) {
-            notifyUser('Preset cannot be applied to the current track.', 'error');
+            const withheldDevice = findWithheldDeviceType(devices);
+            notifyUser(
+                withheldDevice
+                    ? `Preset contains withheld device "${withheldDevice}" and cannot be loaded in this build.`
+                    : 'Preset cannot be applied to the current track.',
+                'error'
+            );
             return null;
         }
         try {
@@ -159,9 +165,9 @@ export const InstrumentsTab = ({
             (preset.trackKind === 'midi' && selectedTrack?.kind === 'midi') ||
             (preset.trackKind === 'audio' && selectedTrack?.kind === 'audio');
         if (selectedTrackId && trackKindMatches) {
-            void executeCatalogPreset(preset.id, selectedTrackId);
+            void executeCatalogPreset(preset.id, selectedTrackId, preset.devices);
         } else {
-            void executeCatalogPreset(preset.id);
+            void executeCatalogPreset(preset.id, undefined, preset.devices);
         }
     };
 
@@ -169,7 +175,7 @@ export const InstrumentsTab = ({
         if (!selectedTrack || !saveFormName.trim()) {
             return;
         }
-        saveCurrentAsPreset({
+        const savedPreset = saveCurrentAsPreset({
             name: saveFormName.trim(),
             category: saveFormCategory,
             trackKind: selectedTrack.kind === 'midi' ? 'midi' : 'audio',
@@ -179,6 +185,9 @@ export const InstrumentsTab = ({
                 parameterValues: data.parameterValues,
             })),
         });
+        if (!savedPreset) {
+            return;
+        }
         setSaveFormName('');
         setShowSaveForm(false);
         setUserPresetsVersion((value) => value + 1);

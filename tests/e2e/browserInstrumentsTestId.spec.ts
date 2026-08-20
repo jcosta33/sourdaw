@@ -33,7 +33,7 @@ test.describe('Browser instrument cards — test-id targeted', () => {
     test('browser search narrows the instrument list', async ({ page }) => {
         const search = page.getByTestId('browser-search');
         // Before filtering, multiple instrument cards are present.
-        const allCards = page.getByRole('button', { name: /^(Fermenter|Levain|Grand Boule|Toaster|Crumbs)/i });
+        const allCards = page.getByRole('button', { name: /^(Fermenter|Levain|Toaster|Crumbs)/i });
         const beforeCount = await allCards.count();
 
         await search.fill('toaster');
