@@ -15,11 +15,14 @@ function clamp(value: number, min: number, max: number): number {
  * to the UI). `targetPad` is clamped against the live pad count; `threshold` to
  * 0..1; `maxDurationSecs` to a strictly positive value.
  *
- * Resolves `true` only when the recorder was actually armed. An instance with
- * no pads has nothing to capture into and is refused here, before the bridge —
- * a resolved promise either way would report an open take to a caller that has
- * none, and the recorder's readout is transport state a musician trusts. A
- * refusal raised by the backend still rejects.
+ * Resolves `true` only when the arm request reached the bridge and was
+ * accepted for enqueue — that is the honest ceiling of this chain: the native
+ * side enqueues the arm onto the RT command queue, and the non-desktop bridge
+ * short-circuits without arming anything. An instance with no pads has
+ * nothing to capture into and is refused here, before the bridge — a resolved
+ * promise either way would report an open take to a caller that has none, and
+ * the recorder's readout is transport state a musician trusts. A refusal
+ * raised by the backend still rejects.
  */
 export async function armCrumbsRecording(
     instanceId: string,

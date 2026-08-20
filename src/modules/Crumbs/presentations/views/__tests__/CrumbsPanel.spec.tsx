@@ -247,6 +247,30 @@ describe('CrumbsPanel', () => {
         expect(screen.queryByText('Recording...')).not.toBeInTheDocument();
     });
 
+    it('ignores an arm that resolves after Stop was pressed', async () => {
+        // The arm's IPC round trip can outlive a Stop press. The stop request
+        // leaves after the arm request, so the recorder really is stopped —
+        // a stale arm resolution writing the readout would flip the LED back
+        // to "Recording..." over a closed take.
+        let resolveArm: (armed: boolean) => void = () => undefined;
+        armRecordingMock.mockImplementationOnce(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    resolveArm = resolve;
+                })
+        );
+        setMode(DEVICE, 'record');
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        resolveArm(true);
+
+        await waitFor(() => expect(armRecordingMock).toHaveBeenCalledTimes(1));
+        expect(screen.getByText('Idle')).toBeInTheDocument();
+        expect(screen.queryByText('Recording...')).not.toBeInTheDocument();
+    });
+
     it('renders the slice controls when mode is slice and a sample is loaded', () => {
         setMode(DEVICE, 'slice');
         setActiveSample(DEVICE, seedSample());
