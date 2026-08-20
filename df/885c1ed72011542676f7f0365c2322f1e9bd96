@@ -1,0 +1,34 @@
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_7ba0b7bee9e951::t_016ca779c27c3a 542-544
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_d3867d51ffef97 3084-3145
+  s_7ba0b7bee9e951::t_69b5c4641b2c94 2104-2111
+  s_7ba0b7bee9e951::t_16a8a03199019d 2166
+  s_7ba0b7bee9e951::t_38623d8f91a1f0 546-552
+  s_7ba0b7bee9e951::t_07d9e727648075 2132-2136
+  s_7ba0b7bee9e951::t_62be142478dbd1 3266-3268
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_7ba0b7bee9e951::t_1b562f4859dcd1 63-74
+  s_7ba0b7bee9e951::t_71c0f6f22a8734 228-239
+src/modules/AudioEngine/useCases/offlineRender/createOfflineRenderBackend.ts
+  s_7ba0b7bee9e951::t_05eb83a269d3a1 13
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_7ba0b7bee9e951::t_b727d7294fbc11 8-10
+  s_7ba0b7bee9e951::t_fac5f375de4616 346-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "df885c1ed72011542676f7f0365c2322f1e9bd96",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
