@@ -109,6 +109,16 @@ describe('the Electron command surface', () => {
         // exposure therefore also needs the call chain verified by hand and
         // recorded in the exposing commit.
         const productionSource = readProductionTypescript('src');
+        // The seam table's own quoted command names would satisfy every
+        // membership check below regardless of whether a real caller exists,
+        // so its exclusion from the scan is load-bearing: prove it is still
+        // in effect rather than trusting the directory-walk skip silently.
+        // The identifier alone is the wrong probe — `desktopBridge.ts` is a
+        // legitimate production caller and imports it by name — so this
+        // matches the *declaration*, which only the seam table itself carries.
+        expect(productionSource, 'the seam table is back in the caller scan').not.toMatch(
+            /export const SOURDAW_COMMAND_ARGUMENTS/u
+        );
         for (const command of EXPOSED_COMMANDS) {
             expect(productionSource, `no production caller for '${command}'`).toMatch(
                 new RegExp(`["']${command}["']`, 'u')

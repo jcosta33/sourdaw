@@ -97,11 +97,21 @@ export const EXPOSED_COMMANDS = [
 /**
  * Commands with no handler and no preload path.
  *
- * Each was already withheld from the renderer under the Tauri shell, and for
- * a reason that survived the shell change: a bulk plugin-GUI operation belongs
- * to the exit cascade rather than to a page, LAN discovery is not
- * renderer-driven, and the raw audio-file and whisper-model paths are
- * reachable only through the narrower commands that wrap them.
+ * Every command here except the Link group was already withheld from the
+ * renderer under the Tauri shell, and for a reason that survived the shell
+ * change: a bulk plugin-GUI operation belongs to the exit cascade rather than
+ * to a page, LAN discovery is not renderer-driven, and the raw audio-file and
+ * whisper-model paths are reachable only through the narrower commands that
+ * wrap them.
+ *
+ * The Link transport commands (`enable_link`, `disable_link`,
+ * `set_link_tempo`, `get_link_status`, `link_start_playing`,
+ * `link_stop_playing`) are that exception, and are denied for a different
+ * reason: Tauri's `allow-sourdaw-commands` capability granted all of them to
+ * the main window (`src-tauri/permissions/sourdaw-commands.toml`), and they
+ * carried into `EXPOSED_COMMANDS` unchanged at the Tauri-to-Electron cutover.
+ * No caller for any of them has ever existed in `src/` — Link has no UI or use
+ * case wired to it — so they stay denied here until one does.
  *
  * The offline graph commands (`map_graph_batch`, `register_timeline_sample`,
  * `render_graph_offline`) are exposed as of the D3.c.2 cutover
