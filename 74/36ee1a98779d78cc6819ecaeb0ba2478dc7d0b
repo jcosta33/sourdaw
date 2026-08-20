@@ -1,0 +1,41 @@
+scripts/ui-restatement-census.json
+  s_24b1bdbc3c31ad::t_c61694a9f57537 38-46,146-154,509,533-541,986,1499,1661,1706,1839,1841-1842,1844-1845,1904,1994,2072-2080,2099-2107,2525,2846-2854,3053-3061,3389,3431-3439,3542,3902,4583-4591,4739,4754-4762,5567,5888-5896,6062,6122-6130,6683,6827,7421,7538,7805-7813,7832-7840,7997,8807,9122,9614-9622,9716,10091-10099,10535,10580,10928-10936,10958,11036-11044,11345,11558-11566,11624,11756-11764,12506,12755-12763,12944-12952,13574-13582,14045,14411-14419,14519-14527,14945,14981,15638,15879,15881-15882,15885,16436-16444,17141,17804-17812,18470-18478,18722-18730,19400,19472,20192,20606,20612-20620,20831,21638-21646,21674-21682,21839,22133-22141,22196-22204,22280,22415,22487,22991,23648,24350,24527-24535,24626-24634,24719,24725-24733,24824-24832
+src/modules/Preferences/presentations/views/ShortcutsSection.tsx
+  s_24b1bdbc3c31ad::t_37342c2cc719f6 7,160,165,167,179,191,197,200-203,211,217,219
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_2175fca1f07426::t_e7e1b14f666035 6,188,201,289,304,311,339
+src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx
+  s_2175fca1f07426::t_36ca550fbad55b 5,24,41,55,72
+src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx
+  s_2175fca1f07426::t_40a4210182cd24 6,41,53,60,71,95,101,104,111,125,127,131-132,134,145-148,157,159,161,172-173,175-176,180,185,216-217
+src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx
+  s_2175fca1f07426::t_3ff7bb0b49f133 5,25-26,28,43-44,46,48,63-64,66,68,83-84,86,88,103-105
+src/modules/Preferences/presentations/views/preferences/MidiSection.tsx
+  s_2175fca1f07426::t_24c7ca6a3ccfb3 6,31,48
+src/modules/Preferences/presentations/views/preferencesShared.tsx
+  s_2175fca1f07426::t_3070d5fb589b30 6,15,19,25,28,44,59,92,104,126,128,147,149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7436ee1a98779d78cc6819ecaeb0ba2478dc7d0b",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
