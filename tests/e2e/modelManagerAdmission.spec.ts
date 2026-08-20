@@ -28,7 +28,8 @@ test.describe('Browser AI model admission', () => {
         await expect(dialog.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ })).toBeVisible();
         await expect(dialog.getByRole('button', { name: /Remove .+ from storage/ })).toHaveCount(0);
         await expect(dialog.getByRole('button', { name: /Retry downloading .+/ })).toHaveCount(0);
-        expect(await dialog.getByText('Unavailable', { exact: true }).count()).toBeGreaterThanOrEqual(4);
+        await expect(dialog.getByText('DDSP Instruments', { exact: true })).toHaveCount(0);
+        await expect(dialog.getByText('Unavailable', { exact: true })).toHaveCount(0);
     });
 
     test('a failed download can be retried', async ({ page }) => {
