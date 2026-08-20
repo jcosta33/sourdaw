@@ -180,19 +180,8 @@ loudness values.
 
 ## Presets
 
-Eight factory presets in four categories — Mastering, Bus, Broadcast, and Creative. Loading one
-replaces the whole patch, including algorithm, gain, ceiling, and saturation.
-
-| Preset | Category |
-|---|---|
-| Transparent Master | Mastering |
-| Punchy Bus | Bus |
-| Allround Streaming | Mastering |
-| Loud Club | Mastering |
-| Broadcast EBU R128 | Broadcast |
-| Safe Acoustic | Mastering |
-| Warm Analog | Creative |
-| Dynamic Rock | Bus |
+Loading a factory preset replaces the whole patch, including algorithm, gain, ceiling, and
+saturation.
 
 ## Automation and control
 
