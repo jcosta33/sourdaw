@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isDesktopRuntime } from '#/utils/desktopBridge';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type LibraryRoot, type SampleRecord, toBpm } from '../../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, setActiveRoot, type LibraryState } from '../../../stores/libraryStore';
@@ -175,7 +175,7 @@ function createNativeRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
     return {
         id: 'root-1',
         name: 'Samples',
-        provider: 'tauri',
+        provider: 'desktop',
         rootRef: '/Users/jose/Samples',
         connectedAt: 1,
         status: 'offline',
@@ -602,6 +602,56 @@ describe('Library Persistence', () => {
             await restoreLibrary();
 
             expect(setActiveRoot).toHaveBeenCalledWith('root-1');
+        });
+
+        // ── Legacy provider spelling ─────────────────────────────────────────
+        //
+        // Roots connected before the desktop shell moved off Tauri persisted the
+        // desktop provider as `'tauri'`. Those rows are still in the user's
+        // IndexedDB and nothing rewrites them on read, so the restore path has to
+        // keep accepting the old spelling for as long as the database survives.
+
+        it('restores a root persisted under the legacy tauri provider spelling and resolves it as desktop', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockResolvedValue([]);
+            const legacyRoot = { ...createNativeRoot(), provider: 'tauri' } as unknown as LibraryRoot;
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [legacyRoot] }) as any);
+
+            const restoredRootIds = await restoreLibrary();
+
+            // Resolving the provider is what routes the root to the native
+            // reader; a root left on the unknown kind would be dropped instead.
+            expect(readNativeDirectory).toHaveBeenCalledWith({ path: '/Users/jose/Samples' });
+            expectRestoredRoot({ id: 'root-1', provider: 'desktop', status: 'ready' });
+            expect(restoredRootIds).toEqual(['root-1']);
+        });
+
+        it('drops a root whose persisted provider is neither the current nor the legacy spelling', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            const unknownRoot = { ...createNativeRoot(), provider: 'electron' } as unknown as LibraryRoot;
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [unknownRoot] }) as any);
+
+            const restoredRootIds = await restoreLibrary();
+
+            expect(restoredRootIds).toEqual([]);
+            expect(addLibraryRoot).not.toHaveBeenCalled();
+        });
+
+        it('round-trips a desktop root through persistLibraryRoots without reintroducing the legacy spelling', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockResolvedValue([]);
+            const db = createPersistenceDb();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+            mockLibraryStore.value = createLibraryState({ roots: [createNativeRoot()] });
+
+            await persistLibraryRoots();
+
+            expect(db.stores.roots.rows.get('root-1')).toEqual(expect.objectContaining({ provider: 'desktop' }));
+
+            mockLibraryStore.value = createLibraryState();
+            await restoreLibrary();
+
+            expectRestoredRoot({ id: 'root-1', provider: 'desktop' });
         });
     });
 });

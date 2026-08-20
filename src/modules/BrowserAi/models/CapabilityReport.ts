@@ -27,7 +27,14 @@
  */
 export type WebGpuTier = 'webgpu-fast' | 'webgpu-slow' | 'unavailable' | 'not-measured';
 
-export type BrowserAiCapability = 'supported' | 'unsupported-browser' | 'unsupported-platform';
+/**
+ * Whether this runtime can host browser AI at all. There was a third verdict,
+ * `'unsupported-platform'`, for the desktop app on macOS/Linux: the Tauri-era
+ * webviews (WKWebView, WebKitGTK) had no WebGPU. Every shipped renderer is now
+ * Chromium, so the platform the app runs on no longer decides this — the
+ * browser facts do.
+ */
+export type BrowserAiCapability = 'supported' | 'unsupported-browser';
 
 /** Why a throughput figure is absent. Each value names a distinct, actionable cause. */
 export type ThroughputNotMeasuredReason =

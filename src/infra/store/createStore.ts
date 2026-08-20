@@ -63,8 +63,9 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
      * store, and it repairs one holding content this build sanitized. A throw
      * from either aborts the module graph before the composition root exists,
      * so nothing in the app can catch it and the app does not boot — which a
-     * full origin quota, or Safari private mode's outright `SecurityError` from
-     * `setItem`, is enough to cause. See #1557.
+     * full origin quota, or a `setItem` refused outright with `SecurityError`
+     * because storage access is blocked for this origin, is enough to cause.
+     * See #1557.
      *
      * Returns whether the value is DURABLE — committed to a backing store that
      * outlives the session — which is the question every caller of the boolean

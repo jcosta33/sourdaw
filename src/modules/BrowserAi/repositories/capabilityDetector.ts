@@ -44,7 +44,6 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import {
     type BrowserAiCapability,
@@ -62,20 +61,6 @@ const STORAGE_KEY = 'sourdaw-browser-ai-capability';
 const FAST_REALTIME_FACTOR = 1;
 /** At or above this, but below fast: `webgpu-slow`. Below it: `unavailable`. */
 const USABLE_REALTIME_FACTOR = 0.2;
-
-/**
- * Determine if we're running in the desktop app on macOS or Linux. The gate was
- * introduced for the old Tauri shell, whose WKWebView/WebKitGTK webviews had no
- * WebGPU.
- */
-function isDesktopNonWindowsPlatform(): boolean {
-    if (!isDesktopRuntime()) {
-        return false;
-    }
-    // In the desktop app, navigator.platform reports the host OS
-    const platform = navigator.platform.toLowerCase();
-    return platform.includes('mac') || platform.includes('linux');
-}
 
 /**
  * Detect Chrome version from user agent.
@@ -133,8 +118,14 @@ function is_plain_record(value: unknown): value is UnknownRecord {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * A cached report naming a capability this build cannot produce fails
+ * validation, so `read_cached_report` discards it and the platform facts are
+ * re-detected. That is what retires the old `'unsupported-platform'` verdict
+ * from the localStorage of anyone who ran a build that could still emit it.
+ */
 function is_browser_ai_capability(value: unknown): value is BrowserAiCapability {
-    return value === 'supported' || value === 'unsupported-browser' || value === 'unsupported-platform';
+    return value === 'supported' || value === 'unsupported-browser';
 }
 
 function is_web_gpu_tier(value: unknown): value is WebGpuTier {
@@ -256,10 +247,7 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput })
             let capability: BrowserAiCapability;
             let inference: InferenceThroughput = { status: 'not-measured', reason: 'not-requested' };
 
-            if (isDesktopNonWindowsPlatform()) {
-                capability = 'unsupported-platform';
-                logger.info('[BrowserAi] Running in the desktop app on macOS/Linux — browser AI disabled');
-            } else if (!chromeVersion) {
+            if (!chromeVersion) {
                 capability = 'unsupported-browser';
                 logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');
             } else if (!webGpuAvailable) {

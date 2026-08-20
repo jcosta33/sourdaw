@@ -64,7 +64,7 @@ describe('connectFolder', () => {
         expect(vi.mocked(addLibraryRoot)).toHaveBeenCalledWith(
             expect.objectContaining({
                 name: 'Samples',
-                provider: 'tauri',
+                provider: 'desktop',
                 rootRef: selected_path,
                 settings: { recursive: true },
                 status: 'scanning',

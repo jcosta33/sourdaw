@@ -56,7 +56,7 @@ vi.mock('../SpatialMapRenderer', () => ({
 }));
 
 type CreateLibraryStateInput = {
-    provider: 'browser' | 'tauri';
+    provider: 'browser' | 'desktop';
     ext: string;
     rootRef: string;
     relativePath: string;
@@ -144,7 +144,7 @@ describe('LibraryBrowser', () => {
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
         mocks.readNativeLibrarySampleFile.mockResolvedValue(file);
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',
@@ -188,7 +188,7 @@ describe('LibraryBrowser', () => {
 
     it('should render a subfolder label by its Windows-native basename', () => {
         const state = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: 'C:\\Users\\jose\\Samples',
             relativePath: 'Drums\\Kits\\Kick.wav',
@@ -207,7 +207,7 @@ describe('LibraryBrowser', () => {
 
     it('should sort multiple subfolders by basename across slash, backslash, and mixed separators', () => {
         const state = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: 'C:\\Users\\jose\\Samples',
             relativePath: 'Drums\\Snares\\Snare.wav',
@@ -248,7 +248,7 @@ describe('LibraryBrowser', () => {
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
         mocks.readNativeLibrarySampleFile.mockResolvedValue(file);
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'flac',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Loops/Texture.flac',
@@ -270,7 +270,7 @@ describe('LibraryBrowser', () => {
 
     it('does not offer fabricated musical analysis for indexed samples', () => {
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',
@@ -284,7 +284,7 @@ describe('LibraryBrowser', () => {
 
     it('should render the Re-project UMAP control disabled with the unavailable label and never dispatch', () => {
         mocks.libraryState = createLibraryState({
-            provider: 'tauri',
+            provider: 'desktop',
             ext: 'wav',
             rootRef: '/Users/jose/Samples',
             relativePath: 'Drums/Kick.wav',

@@ -6,11 +6,14 @@ import {
 } from './classifyGrinderNeuralPersistenceError';
 
 /**
- * Safari caps a single origin's IndexedDB at roughly 50 MB without a persisted
- * grant. Each imported entry carries the full 1–50 MB NAM JSON source text, so
- * a few large captures can blow the cap mid-write and corrupt the whole
- * `entries` record. Guard against it up front with a distinct quota error
- * rather than letting the transaction fail opaquely.
+ * A self-imposed ceiling on the neural library's IndexedDB footprint. Each
+ * imported entry carries the full 1–50 MB NAM JSON source text, so a few large
+ * captures can blow whatever the origin is actually granted, mid-write, and
+ * corrupt the whole `entries` record. Refuse up front with a distinct quota
+ * error rather than letting the transaction fail opaquely.
+ *
+ * The figure was originally Safari's ungranted per-origin cap. Chromium grants
+ * far more, so this is now a conservative budget rather than an engine limit.
  */
 const NEURAL_LIBRARY_BYTE_BUDGET = 45 * 1024 * 1024;
 
