@@ -18,6 +18,12 @@ mix = hslider("dry_wet", 0.3, 0, 1, 0.01);
 maxdel = 2.0;
 delay = hslider("delay", 0.3, 0.01, 2, 0.01);
 feedback = hslider("feedback", 0.5, 0, 0.95, 0.01);
-wet = (+ : de.fdelay(ma.SR * maxdel, delay * ma.SR)) ~ *(feedback);
+
+// `/tape_delay/tone` was declared in builtinDSP.ts with no `hslider` behind it
+// (#2300). It sits inside the feedback loop, not after it, so each successive
+// repeat is darker than the last — the tape head-and-electronics roll-off a
+// tone control on this device is expected to model.
+tone = hslider("tone", 4000, 500, 12000, 100);
+wet = (+ : fi.lowpass(1, tone) : de.fdelay(ma.SR * maxdel, delay * ma.SR)) ~ *(feedback);
 
 process = _ <: *(1 - mix), (wet : *(mix)) :> _;

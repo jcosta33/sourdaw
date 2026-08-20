@@ -3,7 +3,7 @@ import { hasActiveStepRecordingDependency } from '#/modules/MIDI/useCases';
 
 import { getEnvelope } from '../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { warpStates } from '../../stores/warpStates';
+import { hasNonDefaultWarpState } from '../../stores/warpStates';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 export function hasClipGlueDependencies(clipIds: readonly string[]): boolean {
@@ -11,7 +11,7 @@ export function hasClipGlueDependencies(clipIds: readonly string[]): boolean {
     if (hasActiveStepRecordingDependency(clipIds)) {
         return true;
     }
-    if (clipIds.some((clipId) => getEnvelope(clipId) !== undefined || warpStates.has(clipId))) {
+    if (clipIds.some((clipId) => getEnvelope(clipId) !== undefined || hasNonDefaultWarpState(clipId))) {
         return true;
     }
     if (getAutomationLanes().some((lane) => lane.clipId !== undefined && clipIdSet.has(lane.clipId))) {

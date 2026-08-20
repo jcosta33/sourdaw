@@ -51,7 +51,6 @@ export type DeliveryPort = {
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    remoteBranchHead: (branch: string) => string;
     merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
     retarget: (number: number, baseBranch: string) => void;
     log: (message: string) => void;
@@ -90,15 +89,8 @@ function validateReview(number: number, review: ReviewState): void {
     }
 }
 
-function validateRemoteBase(port: DeliveryPort, pullRequest: PullRequestSnapshot): void {
-    const remoteBase = port.remoteBranchHead(pullRequest.baseRefName);
-    if (remoteBase !== pullRequest.baseRefOid) {
-        fail(`origin/${pullRequest.baseRefName} ${remoteBase} does not match PR base ${pullRequest.baseRefOid}`);
-    }
-}
-
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
-    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'baseRefOid', 'headRefName', 'baseRefName'];
+    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
             fail(`PR #${before.number} ${field} changed during delivery`);
@@ -161,7 +153,6 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
         return;
     }
     validatePullRequest(initial);
-    validateRemoteBase(port, initial);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -174,7 +165,6 @@ export function deliverPullRequest(number: number, port: DeliveryPort): void {
     const current = port.pullRequest(number);
     validatePullRequest(current);
     validateStablePullRequest(initial, current);
-    validateRemoteBase(port, current);
     validateReview(number, port.reviewState(number, current.headRefOid));
     const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
     validateDependentSet(dependents, currentDependents);
@@ -388,7 +378,6 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        remoteBranchHead: (branch) => shell.capture('git', ['rev-parse', `refs/remotes/origin/${branch}`]),
         merge: (number, expectedHead, hasDependents) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {

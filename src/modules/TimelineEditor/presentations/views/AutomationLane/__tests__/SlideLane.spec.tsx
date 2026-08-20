@@ -28,7 +28,9 @@ describe('SlideLane', () => {
         trackId: 'track-1',
         selectedNoteIds: new Set<string>(),
         beatWidth: 40,
-        contentWidth: 800,
+        // NotePropertyLane is stubbed out here, so the scroll container it
+        // would read is never consulted.
+        scrollRef: { current: null },
     };
 
     beforeEach(() => {

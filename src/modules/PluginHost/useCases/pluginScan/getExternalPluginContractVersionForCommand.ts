@@ -8,7 +8,7 @@ export function getExternalPluginContractVersionForCommand(deviceType: string): 
     return JSON.stringify([
         'external-plugin-v1',
         plugin.format,
-        plugin.clap_id || plugin.id,
+        plugin.descriptor_id || plugin.id,
         plugin.version,
         plugin.num_inputs,
         plugin.num_outputs,

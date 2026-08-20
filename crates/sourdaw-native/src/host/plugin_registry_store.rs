@@ -15,7 +15,7 @@
 //! written.
 //!
 //! What the file *is* trusted for, verbatim, is the mapping from a registry key
-//! to a `(path, clap_id)` pair. The stored fingerprint gates staleness, not
+//! to a `(path, descriptor_id)` pair. The stored fingerprint gates staleness, not
 //! authenticity: it can tell that the file at that path has changed since the
 //! scan, and it can tell nothing whatsoever about whether the bytes there were
 //! ever the plugin the row claims. An attacker who can write this file can
@@ -59,7 +59,15 @@ use crate::state::PluginRegistryEntry;
 /// there is no migration that can invent one: the whole document reads as
 /// absent and the next scan refills it, which is the policy every other row
 /// change here follows.
-const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 2;
+///
+/// Bumped to 3 when `clap_id` became `descriptor_id`: the column holds the same
+/// move-survivable identity, now named for the concept rather than for the one
+/// format that had it. `descriptor_id` carries no serde default, so a version 2
+/// document actually fails to deserialize at all — `read_registry_document`
+/// discards the whole document before the schema check ever runs. The version
+/// gate is belt-and-braces here, not the mechanism that drops the secondary key
+/// a moved plugin resolves by.
+const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 3;
 
 const REGISTRY_DIRECTORY: &str = "com.sourdaw.app";
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
@@ -109,7 +117,7 @@ pub struct PersistedPluginEntry {
     /// `ScannedPlugin::id` — the hash of the path this plugin was scanned at.
     pub stable_id: String,
     /// The CLAP descriptor's own id. Empty for formats that carry none.
-    pub clap_id: String,
+    pub descriptor_id: String,
     pub format: String,
     pub name: String,
     /// What the scan read from the plugin's own capability extensions: total
@@ -138,7 +146,7 @@ impl PersistedPluginEntry {
         PluginRegistryEntry {
             path: self.path.clone(),
             stable_id: self.stable_id.clone(),
-            clap_id: self.clap_id.clone(),
+            descriptor_id: self.descriptor_id.clone(),
             format: self.format.clone(),
             name: self.name.clone(),
             num_inputs: self.num_inputs,
@@ -423,7 +431,7 @@ impl PluginRegistryStore {
                 PersistedPluginEntry {
                     path: entry.path.clone(),
                     stable_id: entry.stable_id.clone(),
-                    clap_id: entry.clap_id.clone(),
+                    descriptor_id: entry.descriptor_id.clone(),
                     format: entry.format.clone(),
                     name: entry.name.clone(),
                     num_inputs: entry.num_inputs,
@@ -630,7 +638,7 @@ mod tests {
         PluginRegistryEntry {
             path: path.display().to_string(),
             stable_id: stable_id.to_string(),
-            clap_id: "com.vendor.reverb".to_string(),
+            descriptor_id: "com.vendor.reverb".to_string(),
             format: "clap".to_string(),
             name: "Vendor Reverb".to_string(),
             num_inputs: 2,
@@ -669,7 +677,7 @@ mod tests {
             .get("aaaa1111")
             .expect("the persisted entry must resolve without a new scan");
         assert_eq!(entry.path, plugin_path.display().to_string());
-        assert_eq!(entry.clap_id, "com.vendor.reverb");
+        assert_eq!(entry.descriptor_id, "com.vendor.reverb");
         assert_eq!(entry.name, "Vendor Reverb");
         assert_eq!(entry.format, "clap");
         assert_eq!(entry.stable_id, "aaaa1111");
@@ -881,7 +889,7 @@ mod tests {
         // there, unmodified, inside an authorized root. Only the schema version
         // stops it.
         let document = format!(
-            r#"{{"schema_version":1,"entries":{{"aaaa1111":{{"path":{},"stable_id":"aaaa1111","clap_id":"com.vendor.reverb","format":"clap","name":"Vendor Reverb","file_size_bytes":{size},"file_modified_ms":{modified}}}}}}}"#,
+            r#"{{"schema_version":1,"entries":{{"aaaa1111":{{"path":{},"stable_id":"aaaa1111","descriptor_id":"com.vendor.reverb","format":"clap","name":"Vendor Reverb","file_size_bytes":{size},"file_modified_ms":{modified}}}}}}}"#,
             serde_json::to_string(&plugin_path.display().to_string())
                 .expect("a path should serialize as a JSON string")
         );
@@ -1013,7 +1021,7 @@ mod tests {
                 PersistedPluginEntry {
                     path: plugin_path.display().to_string(),
                     stable_id: format!("key-{index:05}"),
-                    clap_id: "com.vendor.reverb".to_string(),
+                    descriptor_id: "com.vendor.reverb".to_string(),
                     format: "clap".to_string(),
                     name: "Vendor Reverb".to_string(),
                     num_inputs: 2,

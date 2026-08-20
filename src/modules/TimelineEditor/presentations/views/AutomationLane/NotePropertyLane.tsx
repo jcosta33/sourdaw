@@ -1,4 +1,25 @@
-import { type ReactElement, type PointerEvent, useRef, useLayoutEffect } from 'react';
+/**
+ * Note-property lane — the velocity/probability/pressure/slide bar chart that
+ * sits under the piano roll.
+ *
+ * ## The canvas covers the viewport, not the clip
+ *
+ * The backing store spans the visible slice of the scroll container this lane
+ * is laid out inside, and every bar is drawn translated by that container's
+ * `scrollLeft`, so canvas x `0` is the beat at the left edge of the viewport.
+ * The element is `position: sticky` inside a wrapper that carries the full
+ * content width (`PianoRoll.tsx`, `ClipView/AutomationLane.tsx`), so CSS layout
+ * owns the scroll extent and the canvas never has to — the same split
+ * `usePianoRollRenderer` uses for the roll above.
+ *
+ * Nothing here may size the backing store from the clip. A canvas dimension is
+ * finite, so `beats * beatWidth * devicePixelRatio` had to fit inside it, which
+ * made the reachable beat count inversely proportional to zoom by construction:
+ * at the toolbar's 400% the browser's limit landed around beat 102 on a 2x
+ * display and beat 68 on a 3x one, and any budget on that product could only
+ * pick which of the two to sacrifice.
+ */
+import { type ReactElement, type PointerEvent, type RefObject, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -29,12 +50,25 @@ type NotePropertyTrackState = {
     selectedTrackId: string | null;
 };
 
+/**
+ * Lane-local y → a 0–127 property value, clamped to the drawable band (the bars
+ * keep 2px of padding at the top and bottom of the lane).
+ */
+const valueFromLaneY = (y: number, height: number): number =>
+    Math.round((1 - Math.max(0, Math.min(1, (y - 2) / (height - 4)))) * 127);
+
 type NotePropertyLaneProps = {
     clipId: string | null;
     trackId: string;
     selectedNoteIds: Set<string>;
     beatWidth: number;
-    contentWidth: number;
+    /**
+     * The horizontally scrolling wrapper this lane is laid out inside. Its
+     * `clientWidth` is the width the backing store is sized to and its
+     * `scrollLeft` is both the drawing origin and the offset every pointer
+     * position is mapped through.
+     */
+    scrollRef: RefObject<HTMLElement | null>;
     /** Extract the 0–127 value from a note for display. */
     getValue: (note: MidiNote) => number;
     /** Set the value on the note (called during drag). */
@@ -52,7 +86,7 @@ export const NotePropertyLane = ({
     trackId,
     selectedNoteIds,
     beatWidth,
-    contentWidth,
+    scrollRef,
     getValue,
     setValue,
     setValues,
@@ -84,65 +118,139 @@ export const NotePropertyLane = ({
     const selectedNotes = notes.filter((node) => selectedNoteIds.has(node.id));
     const sortedSelected = [...selectedNotes].sort((alpha, b) => alpha.startBeat - b.startBeat);
 
-    useLayoutEffect(() => {
+    // Passive, not layout: React attaches a host ref only after the layout
+    // effects of everything below it have run, so `scrollRef` — owned by an
+    // ancestor — is still null during this component's layout phase. A passive
+    // effect runs after the whole commit, when it is attached.
+    useEffect(() => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
+        const scrollEl = scrollRef.current;
         if (!canvas || !container) {
-            return;
-        }
-        const dpr = window.devicePixelRatio || 1;
-        const containerWidth = container.getBoundingClientRect().width;
-        const w = Math.max(containerWidth, contentWidth);
-        const h = container.getBoundingClientRect().height;
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        canvas.style.width = `${w}px`;
-        canvas.style.height = `${h}px`;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            return;
-        }
-        ctx.scale(dpr, dpr);
-
-        ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
-        ctx.fillRect(0, 0, w, h);
-
-        if (notes.length === 0) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.font = '10px system-ui';
-            ctx.textAlign = 'center';
-            ctx.fillText(`No notes — add MIDI to edit ${label.toLowerCase()}`, w / 2, h / 2 + 4);
-            return;
+            return undefined;
         }
 
-        for (const note of notes) {
-            const val = getValue(note);
-            const x = note.startBeat * beatWidth;
-            const barW = Math.max(3, note.duration * beatWidth - 2);
-            const barH = (val / 127) * (h - 4);
-            const barY = h - barH - 2;
-            const isSelected = selectedNoteIds.has(note.id);
+        const draw = (): void => {
+            const dpr = window.devicePixelRatio || 1;
+            const h = container.getBoundingClientRect().height;
+            // Viewport, not content extent. The wrapper around this lane
+            // carries the clip's width in CSS and owns the scroll; the backing
+            // store only ever covers what is on screen.
+            const viewportWidth = scrollEl?.clientWidth ?? 0;
+            if (viewportWidth <= 0) {
+                // Not laid out yet, or the panel is collapsed to nothing. There
+                // is no visible slice to draw, and sizing the backing store off
+                // a bogus measurement is how the picture ends up blank.
+                return;
+            }
 
-            const noteColor = isSelected ? selectedColor : clipColor;
-            const alpha = 0.35 + (val / 127) * 0.55;
+            canvas.width = Math.round(viewportWidth * dpr);
+            canvas.height = Math.round(h * dpr);
+            canvas.style.width = `${viewportWidth}px`;
+            canvas.style.height = `${h}px`;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                return;
+            }
 
-            ctx.fillStyle = colorWithAlpha(noteColor, alpha);
-            ctx.beginPath();
-            ctx.roundRect(x + 1, barY, barW, barH, [2, 2, 0, 0]);
-            ctx.fill();
+            // Snapped to whole device pixels so the bars do not shimmer a
+            // fraction of a pixel while scrolling.
+            const scrollDevicePx = Math.max(0, Math.round((scrollEl?.scrollLeft ?? 0) * dpr));
+            const scrollPx = scrollDevicePx / dpr;
 
-            ctx.strokeStyle = colorWithAlpha(noteColor, isSelected ? 0.6 : 0.25);
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
+            // Background first, in canvas-local space.
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
+            ctx.fillRect(0, 0, viewportWidth, h);
 
-            if (barW > 14) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                ctx.font = '7px system-ui';
+            if (notes.length === 0) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.font = '10px system-ui';
                 ctx.textAlign = 'center';
-                ctx.fillText(String(val), x + 1 + barW / 2, barY - 2);
+                ctx.fillText(`No notes — add MIDI to edit ${label.toLowerCase()}`, viewportWidth / 2, h / 2 + 4);
+                return;
+            }
+
+            // From here the lane draws in content coordinates, the same space
+            // the hit test and the ramp handles use.
+            ctx.setTransform(dpr, 0, 0, dpr, -scrollDevicePx, 0);
+
+            for (const note of notes) {
+                const x = note.startBeat * beatWidth;
+                const barW = Math.max(3, note.duration * beatWidth - 2);
+                // Cull against the drawn slice. A long clip's bars are mostly
+                // off-viewport at any useful zoom, and this loop runs on every
+                // frame of a scroll.
+                if (x + 1 + barW < scrollPx || x + 1 > scrollPx + viewportWidth) {
+                    continue;
+                }
+                const val = getValue(note);
+                const barH = (val / 127) * (h - 4);
+                const barY = h - barH - 2;
+                const isSelected = selectedNoteIds.has(note.id);
+
+                const noteColor = isSelected ? selectedColor : clipColor;
+                const alpha = 0.35 + (val / 127) * 0.55;
+
+                ctx.fillStyle = colorWithAlpha(noteColor, alpha);
+                ctx.beginPath();
+                ctx.roundRect(x + 1, barY, barW, barH, [2, 2, 0, 0]);
+                ctx.fill();
+
+                ctx.strokeStyle = colorWithAlpha(noteColor, isSelected ? 0.6 : 0.25);
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+
+                if (barW > 14) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                    ctx.font = '7px system-ui';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(String(val), x + 1 + barW / 2, barY - 2);
+                }
+            }
+        };
+
+        draw();
+
+        // The drawn window moves with the scroll offset and its width with the
+        // panel, so both have to repaint — neither goes through React.
+        let observer: ResizeObserver | null = null;
+        if (scrollEl) {
+            scrollEl.addEventListener('scroll', draw, { passive: true });
+            if (typeof ResizeObserver !== 'undefined') {
+                observer = new ResizeObserver(draw);
+                observer.observe(scrollEl);
             }
         }
-    }, [notes, selectedNoteIds, beatWidth, contentWidth, clipColor, selectedColor, getValue, label]);
+        return () => {
+            scrollEl?.removeEventListener('scroll', draw);
+            observer?.disconnect();
+        };
+    }, [notes, selectedNoteIds, beatWidth, clipColor, selectedColor, getValue, label, scrollRef]);
+
+    /**
+     * The one place a pointer becomes a lane coordinate. Every gesture below
+     * goes through it, and none of them may re-derive this inline.
+     *
+     * `x` is a content x — the same space the bars are drawn in and the hit
+     * test walks. Getting there needs the scroll offset added back, because the
+     * canvas is pinned to the viewport by `position: sticky`: its
+     * `getBoundingClientRect().left` is the left edge of the visible slice, not
+     * of the clip. While the canvas scrolled natively `clientX - rect.left` was
+     * already a content x, so this is exactly the correction that a handler
+     * left on the old formula would silently skip, by the width of the scroll.
+     *
+     * `y` is measured from the lane root, which is what the value math and the
+     * bar heights are expressed against.
+     */
+    const toLanePoint = (clientX: number, clientY: number): { x: number; y: number } => {
+        const canvasLeft = canvasRef.current?.getBoundingClientRect().left ?? 0;
+        const containerTop = containerRef.current?.getBoundingClientRect().top ?? 0;
+        return {
+            x: clientX - canvasLeft + (scrollRef.current?.scrollLeft ?? 0),
+            y: clientY - containerTop,
+        };
+    };
 
     const hitNoteAtX = (mx: number): (typeof notes)[0] | null => {
         // Walk in reverse paint order: the render loop above draws `notes` in
@@ -170,15 +278,16 @@ export const NotePropertyLane = ({
         if (!canvas || !container) {
             return;
         }
-        const rect = canvas.getBoundingClientRect();
-        const mx = event.clientX - rect.left;
         const h = container.getBoundingClientRect().height;
-
-        const hitNote = hitNoteAtX(mx);
+        const hitNote = hitNoteAtX(toLanePoint(event.clientX, event.clientY).x);
 
         if (!hitNote) {
             return;
         }
+
+        /** Property value under a pointer, whatever element it was captured on. */
+        const valueAt = ({ clientX, clientY }: LanePointerPosition): number =>
+            valueFromLaneY(toLanePoint(clientX, clientY).y, h);
 
         // ── A7: Shift+drag ramp ────────────────────────────────────────────
         // If Shift is held and 2+ notes are selected, draw a velocity ramp:
@@ -203,14 +312,8 @@ export const NotePropertyLane = ({
                 }
             };
 
-            const getEndVal = (clientY: number): number => {
-                const containerRect = container.getBoundingClientRect();
-                const ry = clientY - containerRect.top;
-                return Math.round((1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)))) * 127);
-            };
-
-            const onMove = ({ clientY }: LanePointerPosition): void => {
-                applyRamp(getEndVal(clientY));
+            const onMove = (position: LanePointerPosition): void => {
+                applyRamp(valueAt(position));
             };
 
             const onCommit = (): void => {
@@ -249,7 +352,7 @@ export const NotePropertyLane = ({
                 commit: onCommit,
             });
             // Apply initial ramp from anchor position — only once the gesture has an owner.
-            applyRamp(getEndVal(event.clientY));
+            applyRamp(valueAt(event));
             return;
         }
 
@@ -257,20 +360,12 @@ export const NotePropertyLane = ({
         const noteId = hitNote.id;
         const origValues = new Map<string, number>(notes.map((node) => [node.id, getValue(node)]));
 
-        const getVal = (clientY: number): number => {
-            const containerRect = container.getBoundingClientRect();
-            const ry = clientY - containerRect.top;
-            return Math.round((1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)))) * 127);
-        };
-
-        const onMove = ({ clientX, clientY }: LanePointerPosition): void => {
-            const containerRect = container.getBoundingClientRect();
-            const rx = clientX - containerRect.left;
-            const value = getVal(clientY);
+        const onMove = (position: LanePointerPosition): void => {
+            const point = toLanePoint(position.clientX, position.clientY);
             // Paint the note currently under the cursor (horizontal movement)
-            const noteAtX = hitNoteAtX(rx);
+            const noteAtX = hitNoteAtX(point.x);
             if (noteAtX) {
-                setValue(clipId, noteAtX.id, value);
+                setValue(clipId, noteAtX.id, valueFromLaneY(point.y, h));
             }
         };
 
@@ -309,7 +404,7 @@ export const NotePropertyLane = ({
             move: onMove,
             commit: onCommit,
         });
-        setValue(clipId, noteId, getVal(event.clientY));
+        setValue(clipId, noteId, valueAt(event));
     };
 
     const handleRampDrag = (side: 'left' | 'right', event: PointerEvent<HTMLDivElement>) => {
@@ -339,11 +434,8 @@ export const NotePropertyLane = ({
 
         const captureTarget = event.currentTarget;
 
-        const onMove = ({ clientY }: LanePointerPosition) => {
-            const containerRect = container.getBoundingClientRect();
-            const ry = clientY - containerRect.top;
-            const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));
-            const newVal = Math.round(r * 127);
+        const onMove = ({ clientX, clientY }: LanePointerPosition) => {
+            const newVal = valueFromLaneY(toLanePoint(clientX, clientY).y, h);
 
             const currentLeft = side === 'left' ? newVal : startLeftVal;
             const currentRight = side === 'right' ? newVal : startRightVal;
@@ -440,9 +532,17 @@ export const NotePropertyLane = ({
             aria-label={`${label} lane`}
             {...dragHandlers}
         >
+            {/*
+             * The backing store covers only the visible slice (see the block
+             * comment at the top of this file), so the canvas stays pinned to
+             * the left edge of the scrollport while the container around it —
+             * which carries the clip's full width — scrolls past. The ramp
+             * overlay below is plain DOM in content coordinates and keeps
+             * scrolling natively.
+             */}
             <canvas
                 ref={canvasRef}
-                className="cursor-ns-resize"
+                className="sticky left-0 block cursor-ns-resize"
                 style={{ touchAction: 'none' }}
                 onPointerDown={handleCanvasPointerDown}
             />
