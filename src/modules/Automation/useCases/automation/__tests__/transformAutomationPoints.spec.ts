@@ -115,6 +115,42 @@ describe('transformAutomationPoints — invert', () => {
         // 100 - (10 - 0) = 90
         expect(values(result)).toEqual([90]);
     });
+
+    it('mirrors bezier control-point y-values about the lane midpoint, not just the point value', () => {
+        // A no-op round trip would pass trivially even if cp1/cp2 were never
+        // touched at all, so this asserts the mirrored shape after a SINGLE
+        // invert: maxValue - (y - minValue) = 1 - y for the default [0,1] lane.
+        // cp.x is a segment-relative time fraction and must stay untouched.
+        const lane = makeLane([
+            { beat: 0, value: 0.25, curve: 'bezier', cp1: { x: 0.2, y: 0.25 }, cp2: { x: 0.8, y: 0.75 } },
+        ]);
+        const result = transformAutomationPoints(lane, { type: 'invert' });
+        expect(result[0]?.cp1).toEqual({ x: 0.2, y: 0.75 });
+        expect(result[0]?.cp2).toEqual({ x: 0.8, y: 0.25 });
+    });
+
+    it('double-invert returns the exact original points, including curve fields', () => {
+        // cp1/cp2 y-values live in the same absolute units as `value` (see
+        // evaluateAutomationCurve, which feeds `cp1.y ?? firstPoint.value`
+        // straight into the same cubicBezier() call as the endpoint values) —
+        // so an invert that mirrors `value` but not `cp1`/`cp2` bows the bezier
+        // shape onto the wrong side of the mirror. cp.x is a segment-relative
+        // time fraction, never touched by a value-space mirror.
+        const lane = makeLane([
+            {
+                beat: 0,
+                value: 0.25,
+                curve: 'bezier',
+                tension: 0.4,
+                cp1: { x: 0.2, y: 0.25 },
+                cp2: { x: 0.8, y: 0.75 },
+            },
+            { beat: 1, value: 0.75, curve: 'exponential', tension: -0.5 },
+        ]);
+        const once = transformAutomationPoints(lane, { type: 'invert' });
+        const twice = transformAutomationPoints({ ...lane, points: once }, { type: 'invert' });
+        expect(twice).toEqual(lane.points);
+    });
 });
 
 describe('transformAutomationPoints — stretch', () => {
@@ -189,6 +225,43 @@ describe('transformAutomationPoints — reverse', () => {
         const lane = makeLane([]);
         const result = transformAutomationPoints(lane, { type: 'reverse' });
         expect(result).toEqual([]);
+    });
+
+    it('re-associates curve data with the segment it belongs to, not the point that carried it', () => {
+        // evaluateAutomationCurve reads curve/tension/cp1/cp2/stairSteps off
+        // `firstPoint` (the earlier-beat point of a pair) to shape the segment
+        // toward its next neighbour. The original [0,2] segment is 'bezier',
+        // anchored on the point at beat 0. After reversing, that physical span
+        // sits between new beats 2 and 4 (mirror(0)=4, mirror(2)=2) — its
+        // shape must move to the new segment's earlier point, beat 2.
+        const lane = makeLane([
+            { beat: 0, value: 0, curve: 'bezier', tension: 0, cp1: { x: 0.1, y: 0.1 }, cp2: { x: 0.9, y: 0.9 } },
+            { beat: 2, value: 0.5, curve: 'linear' },
+            { beat: 4, value: 1, curve: 'step' },
+        ]);
+        const result = transformAutomationPoints(lane, { type: 'reverse' });
+        const atBeat2 = result.find((p) => p.beat === 2);
+        expect(atBeat2?.curve).toBe('bezier');
+        expect(atBeat2?.cp1).toEqual({ x: 0.1, y: 0.1 });
+        expect(atBeat2?.cp2).toEqual({ x: 0.9, y: 0.9 });
+    });
+
+    it('double-reverse returns the exact original points, including curve fields', () => {
+        const lane = makeLane([
+            {
+                beat: 0,
+                value: 0.1,
+                curve: 'bezier',
+                tension: 0.2,
+                cp1: { x: 0.25, y: 0.4 },
+                cp2: { x: 0.75, y: 0.6 },
+            },
+            { beat: 2, value: 0.5, curve: 'exponential', tension: 0.7 },
+            { beat: 4, value: 0.9, curve: 's-curve', tension: -0.3 },
+        ]);
+        const once = transformAutomationPoints(lane, { type: 'reverse' });
+        const twice = transformAutomationPoints({ ...lane, points: once }, { type: 'reverse' });
+        expect(twice).toEqual(lane.points);
     });
 });
 
