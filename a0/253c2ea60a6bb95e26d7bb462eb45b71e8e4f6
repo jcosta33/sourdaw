@@ -1,0 +1,30 @@
+scripts/__tests__/prContract.spec.ts
+  s_0a3429e31e555d::t_27c91493f0195a 25-31
+scripts/__tests__/publishLane.spec.ts
+  s_0a3429e31e555d::t_0170221f1cf776 202-210
+  s_0a3429e31e555d::t_27c91493f0195a 182-201,418-422,424
+AGENTS.md
+  s_0a3429e31e555d::t_27c91493f0195a 228
+  s_0a3429e31e555d::t_9de2aad45e9182 225-227,229-232
+scripts/prContract.ts
+  s_0a3429e31e555d::t_27c91493f0195a 56-64,78-79
+scripts/publishLane.ts
+  s_0a3429e31e555d::t_27c91493f0195a 23-29,38,59-63,68,70-72,75-79,173-177,199-203,417,434
+  s_0a3429e31e555d::t_0170221f1cf776 125,198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a0253c2ea60a6bb95e26d7bb462eb45b71e8e4f6",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
