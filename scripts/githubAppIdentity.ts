@@ -24,6 +24,23 @@ export function githubAuthenticatedRemote(token: string): string {
 }
 export const AUTHOR_LOCK_REASON = 'active:sourdaw-author';
 
+/**
+ * `removeLane` locks a lane `lane-remove:<pid>` for the length of a removal, so that reason records
+ * work in flight rather than an owner. It and `AUTHOR_LOCK_REASON` are the only lock reasons lane
+ * tooling writes, and both readers of the marker share this one definition: `removeLane` asks
+ * whether the pid is still alive, `publishLane` only needs to know the lock names nobody. A pid that
+ * is not a safe positive integer is not this marker, so it is treated as an unrecognized reason
+ * rather than handed on as a number no caller can act on.
+ */
+export function removalLockPid(lockReason: string | undefined): number | undefined {
+    const captured = /^lane-remove:(\d+)$/.exec(lockReason ?? '')?.[1];
+    if (captured === undefined) {
+        return undefined;
+    }
+    const pid = Number(captured);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+
 export const AUTHOR_MINT_PERMISSIONS = {
     contents: 'write',
     pull_requests: 'write',

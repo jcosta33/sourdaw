@@ -234,4 +234,15 @@ describe('renderKokoroTts', () => {
 
         await expect(callRender({ speakerId: 'bf_isabella' })).rejects.toThrow(/failed SHA-256 verification/);
     });
+
+    it('should include targetDurationSec in the cache key calculation', async () => {
+        const textDecoder = new TextDecoder();
+        await callRender({ speakerId: 'af_heart', targetDurationSec: 3.5 });
+
+        expect(computeRenderCacheKey).toHaveBeenCalledTimes(1);
+        const firstCall = computeRenderCacheKey.mock.calls[0]?.[0];
+        expect(firstCall).toBeDefined();
+        const decodedInput = textDecoder.decode(firstCall!.inputData);
+        expect(decodedInput).toContain('3.5');
+    });
 });
