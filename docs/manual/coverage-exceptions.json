@@ -126,7 +126,9 @@
             "ac": "SPEC-drum-machine-groove-templates/AC-007",
             "reason": "The Template menu is the library. Names are not catalogued; Straight is the no-op."
         },
-        { "ac": "SPEC-fermenter-ui/AC-006", "reason": "Dependency-boundary hygiene gate." }
+        { "ac": "SPEC-fermenter-ui/AC-006", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-unified-sampler-suite/AC-012", "reason": "Dependency-boundary hygiene gate." },
+        { "ac": "SPEC-slicer/AC-009", "reason": "Module isolation. No control." }
     ],
 
     "omitted-unshipped": [
@@ -273,6 +275,35 @@
         {
             "ac": "SPEC-fermenter-ui/AC-005",
             "reason": "Layer rows have no bounce or freeze action."
+        },
+
+        {
+            "ac": "SPEC-slicer/AC-010",
+            "reason": "No Send to Toaster control on the shipped Crumbs panel."
+        },
+        {
+            "ac": "SPEC-slicer/AC-011",
+            "reason": "No Suggest button for complementary markers."
+        },
+        {
+            "ac": "SPEC-slicer/AC-014",
+            "reason": "No built-in step sequencer on Crumbs."
+        },
+        {
+            "ac": "SPEC-slicer/AC-016",
+            "reason": "Play through Lab disclosure is not on this panel."
+        },
+        {
+            "ac": "SPEC-slicer/AC-018",
+            "reason": "REX2 import is not a reachable control."
+        },
+        {
+            "ac": "SPEC-unified-sampler-suite/AC-015",
+            "reason": "Mod X/Y dual-deck is not on the shipped panel."
+        },
+        {
+            "ac": "SPEC-unified-sampler-suite/AC-028",
+            "reason": "Granular warp parameter set is not on the shipped panel; Warp is a mode chip only."
         }
     ],
 
