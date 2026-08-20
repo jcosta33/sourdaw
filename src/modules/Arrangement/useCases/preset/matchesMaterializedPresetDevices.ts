@@ -1,3 +1,4 @@
+import { findWithheldDeviceType } from '#/infra/release/deviceReleaseAdmission';
 import { type DeviceSnapshot } from '#/utils/handlerContract';
 
 import { type SoundPreset } from '../../models/SoundPreset';
@@ -14,7 +15,11 @@ function hasBoundedId(value: string): boolean {
 
 /** Rechecks a command snapshot against the authoritative catalog without trusting caller values or ids. */
 export function matchesMaterializedPresetDevices(preset: SoundPreset, devices: readonly DeviceSnapshot[]): boolean {
-    if (preset.devices.length !== devices.length || !hasUniqueIds(devices.map((device) => device.id))) {
+    if (
+        preset.devices.length !== devices.length ||
+        findWithheldDeviceType(preset.devices) !== undefined ||
+        !hasUniqueIds(devices.map((device) => device.id))
+    ) {
         return false;
     }
     return preset.devices.every((presetDevice, index) => {

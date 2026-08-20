@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
+import { findWithheldDeviceType } from '#/infra/release/deviceReleaseAdmission';
 import { duplicateClipAutomationBatch } from '#/modules/Automation/useCases';
 import { duplicateMidiClipData } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -29,12 +29,9 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
             if (!source || source.kind === 'master') {
                 return null;
             }
-            const withheldDevice = source.devices.find(({ type }) => !isDeviceReleaseAdmitted(type));
-            if (withheldDevice) {
-                notifyUser(
-                    `Track contains withheld device "${withheldDevice.type}" and was not duplicated.`,
-                    'warning'
-                );
+            const withheldDeviceType = findWithheldDeviceType(source.devices);
+            if (withheldDeviceType) {
+                notifyUser(`Track contains withheld device "${withheldDeviceType}" and was not duplicated.`, 'warning');
                 return null;
             }
             const arrangementSnapshot = getTrackState();

@@ -113,11 +113,23 @@ describe('compileLoadPresetActions', () => {
     });
 
     it('rejects a preset containing a device withheld from release', () => {
-        mocks.getFactoryPresets.mockReturnValue([
-            preset({ devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }] }),
-        ]);
+        const withheldPreset = preset({
+            devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }],
+        });
+        mocks.getFactoryPresets.mockReturnValue([withheldPreset]);
 
         expect(compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' })).toBeNull();
+        expect(
+            matchesMaterializedPresetDevices(withheldPreset, [
+                {
+                    id: 'preset-device-1',
+                    name: 'Grand Boule',
+                    type: 'grand-boule',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ])
+        ).toBe(false);
     });
 
     it('rejects a caller snapshot with a missing or extra parameter before the handler writes', () => {
