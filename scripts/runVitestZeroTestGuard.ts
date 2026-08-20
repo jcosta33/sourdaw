@@ -13,8 +13,10 @@ import { fileURLToPath } from 'node:url';
 
 import {
     formatSilentZeroCollectionFailure,
+    formatZeroExecutedAssertionsFailure,
     readVitestJsonReport,
     silentZeroCollectedFiles,
+    silentZeroExecutedAssertions,
     type VitestJsonReport,
 } from './vitestZeroTestReport.ts';
 
@@ -48,12 +50,19 @@ export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
         let report: VitestJsonReport;
         try {
             report = readVitestJsonReport(readFileSync(jsonPath, 'utf8'));
-        } catch {
+        } catch (error) {
+            console.error(
+                `vitest zero-test guard: could not read Vitest's JSON report at ${jsonPath}: ${String(error)}`
+            );
             return vitestStatus === 0 ? 1 : vitestStatus;
         }
         const silent = silentZeroCollectedFiles(report);
         if (silent.length > 0) {
             console.error(formatSilentZeroCollectionFailure(silent));
+            return 1;
+        }
+        if (silentZeroExecutedAssertions(report)) {
+            console.error(formatZeroExecutedAssertionsFailure(report));
             return 1;
         }
         return vitestStatus;

@@ -3,13 +3,16 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { runZeroTestGuard } from '../runVitestZeroTestGuard.ts';
 import {
+    executedAssertionCount,
     formatSilentZeroCollectionFailure,
+    formatZeroExecutedAssertionsFailure,
     readVitestJsonReport,
     silentZeroCollectedFiles,
+    silentZeroExecutedAssertions,
     type VitestJsonReport,
 } from '../vitestZeroTestReport.ts';
 
@@ -66,13 +69,57 @@ describe('silentZeroCollectedFiles', () => {
                     {
                         name: 'scripts/__tests__/prContract.spec.ts',
                         status: 'passed',
-                        assertionResults: [{ title: 'keeps Closes' }],
+                        assertionResults: [{ status: 'passed' }],
                     },
                 ],
             })
         );
 
         expect(paths).toEqual([]);
+    });
+});
+
+describe('silentZeroExecutedAssertions', () => {
+    it('flags a run where every assertion across all collected files is skipped', () => {
+        const zeroExecuted = report({
+            numTotalTests: 13,
+            testResults: [
+                {
+                    name: 'scripts/__tests__/prContract.spec.ts',
+                    status: 'passed',
+                    assertionResults: Array.from({ length: 13 }, () => ({ status: 'skipped' })),
+                },
+            ],
+        });
+
+        expect(silentZeroExecutedAssertions(zeroExecuted)).toBe(true);
+        expect(executedAssertionCount(zeroExecuted)).toBe(0);
+        expect(formatZeroExecutedAssertionsFailure(zeroExecuted)).toContain('prContract.spec.ts');
+    });
+
+    it('does not flag a run where one spec is deliberately skipped among passing specs', () => {
+        const mixedRun = report({
+            numTotalTests: 2,
+            testResults: [
+                {
+                    name: 'scripts/__tests__/deliberatelySkipped.spec.ts',
+                    status: 'skipped',
+                    assertionResults: [{ status: 'skipped' }],
+                },
+                {
+                    name: 'scripts/__tests__/prContract.spec.ts',
+                    status: 'passed',
+                    assertionResults: [{ status: 'passed' }],
+                },
+            ],
+        });
+
+        expect(silentZeroExecutedAssertions(mixedRun)).toBe(false);
+        expect(executedAssertionCount(mixedRun)).toBe(1);
+    });
+
+    it('does not flag a run that collected no files at all', () => {
+        expect(silentZeroExecutedAssertions(report({ testResults: [] }))).toBe(false);
     });
 });
 
@@ -125,7 +172,7 @@ describe('runZeroTestGuard', () => {
             {
                 name: 'scripts/__tests__/prContract.spec.ts',
                 status: 'passed',
-                assertionResults: [{ title: 'keeps Closes' }],
+                assertionResults: [{ status: 'passed', title: 'keeps Closes' }],
             },
         ],
     });
@@ -137,6 +184,20 @@ describe('runZeroTestGuard', () => {
                 name: 'scripts/__tests__/zeroCollectProbe.spec.ts',
                 status: 'failed',
                 assertionResults: [],
+            },
+        ],
+    });
+    const nameFilterMatchedNothingJson = JSON.stringify({
+        success: true,
+        numTotalTests: 13,
+        testResults: [
+            {
+                name: 'scripts/__tests__/prContract.spec.ts',
+                status: 'passed',
+                assertionResults: Array.from({ length: 13 }, (_unused, index) => ({
+                    status: 'skipped',
+                    title: `assertion ${index}`,
+                })),
             },
         ],
     });
@@ -217,6 +278,46 @@ describe('runZeroTestGuard', () => {
 
             expect(status).toBe(0);
         } finally {
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
+
+    it('exits 1 when a -t filter matches nothing and every assertion is skipped', () => {
+        const fake = fakeVitest('name-filter');
+        try {
+            const status = runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['scripts/__tests__/prContract.spec.ts', '-t', 'no-such-test-name-xyz'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: { FAKE_VITEST_JSON: nameFilterMatchedNothingJson, FAKE_VITEST_EXIT: '0' },
+            });
+
+            expect(status).toBe(1);
+        } finally {
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
+
+    it('exits 1 and prints the reason when the JSON report is missing or unparseable', () => {
+        const fake = fakeVitest('unreadable');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const status = runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['scripts/__tests__/prContract.spec.ts'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: { FAKE_VITEST_JSON: '', FAKE_VITEST_EXIT: '0' },
+            });
+
+            expect(status).toBe(1);
+            expect(errorSpy).toHaveBeenCalledTimes(1);
+            const [message] = errorSpy.mock.calls[0] as [string];
+            expect(message).toContain('report.json');
+            expect(message).toContain("could not read Vitest's JSON report");
+        } finally {
+            errorSpy.mockRestore();
             rmSync(fake.root, { recursive: true, force: true });
         }
     });
