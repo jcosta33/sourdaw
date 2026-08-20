@@ -25,6 +25,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    pushUndoEntry: vi.fn(),
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({

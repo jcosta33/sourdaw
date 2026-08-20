@@ -53,6 +53,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
     reportLatency: mocks.reportLatency,
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
