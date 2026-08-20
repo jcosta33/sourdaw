@@ -135,7 +135,11 @@ function fixture(): { root: string; contract: LgplRuntimeContract } {
     );
     write(root, 'node_modules/@breezystack/lamejs/LICENSE', 'hi');
     write(root, 'node_modules/@breezystack/lamejs/dist/lamejs.js', 'hi');
-    write(root, 'src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts', '@breezystack/lamejs');
+    write(
+        root,
+        'src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts',
+        "import { Mp3Encoder } from '@breezystack/lamejs';"
+    );
     write(
         root,
         'public/legal/SOURCES.json',
@@ -290,5 +294,38 @@ describe('LGPL runtime provenance', () => {
         );
 
         expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
+    });
+
+    it('rejects canonical-looking lock entries outside the root importer and packages maps', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n\n  .:\n    dependencies:\n      '@grame/faustwasm':\n        specifier: 9.0.0\n        version: 9.0.0\n\ndecoys:\n\n  importer:\n    dependencies:\n      '@grame/faustwasm':\n        specifier: 1.0.0\n        version: 1.0.0\n\n  package:\n    '@grame/faustwasm@1.0.0':\n      resolution: {integrity: sha512-test}\n`
+        );
+
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
+    });
+
+    it('rejects duplicate lockfile keys', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n\n  .:\n    dependencies:\n      '@grame/faustwasm':\n        specifier: 1.0.0\n        version: 1.0.0\n      '@grame/faustwasm':\n        specifier: 1.0.0\n        version: 1.0.0\n\npackages:\n\n  '@grame/faustwasm@1.0.0':\n    resolution: {integrity: sha512-test}\n`
+        );
+
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
+    });
+
+    it('rejects an import name left only as inert text', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts',
+            "const removedImport = '@breezystack/lamejs';"
+        );
+
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('lamejs: integration import drifted');
     });
 });

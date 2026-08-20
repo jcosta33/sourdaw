@@ -726,7 +726,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "96049cf92357f383bc5386c55b5498ecf2cf3f527b59ca38c03d4b8847f4a13e"
+            "sha256": "e25612b2560528fb8b0c6aee8023468052b044d586ef2379b6757449702144e7"
         },
         {
             "path": "server/package.json",
@@ -738,7 +738,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "9dc20d67f09c95d37fcdbf890e25f3a83049de217470338b7f65720fbb5b4301"
+            "sha256": "131903d9fd1ca4d3d7dc9559020afce5dbfbea4e56f6d18385d8406d0ae7bcec"
         },
         {
             "path": "Cargo.toml",

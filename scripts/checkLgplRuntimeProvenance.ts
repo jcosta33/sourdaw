@@ -5,6 +5,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import ts from 'typescript';
+import { parseDocument } from 'yaml';
+
 type Source = {
     id: string;
     repository: string;
@@ -162,24 +165,54 @@ function sameRecord(actual: Record<string, string>, expected: Record<string, str
     return JSON.stringify(Object.entries(actual).sort()) === JSON.stringify(Object.entries(expected).sort());
 }
 
-function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+function lockHasExactResolution(lock: string, component: Component): boolean {
+    const document = parseDocument(lock, { uniqueKeys: true });
+    if (document.errors.length > 0) {
+        return false;
+    }
+    const parsed = document.toJS() as {
+        importers?: Record<string, { dependencies?: Record<string, { specifier?: string; version?: string }> }>;
+        packages?: Record<string, { resolution?: { integrity?: string } }>;
+    };
+    const dependency = parsed.importers?.['.']?.dependencies?.[component.package];
+    const resolution = parsed.packages?.[`${component.package}@${component.version}`]?.resolution;
+    return (
+        dependency?.specifier === component.specifier &&
+        dependency.version === component.version &&
+        resolution?.integrity === component.integrity
+    );
 }
 
-function lockHasExactResolution(lock: string, component: Component): boolean {
-    const packageName = escapeRegExp(component.package);
-    const version = escapeRegExp(component.version);
-    const specifier = escapeRegExp(component.specifier);
-    const integrity = escapeRegExp(component.integrity);
-    const importer = new RegExp(
-        `^      '${packageName}':\\n        specifier: ${specifier}\\n        version: ${version}$`,
-        'mu'
+function hasRuntimeImport(path: string, specifier: string): boolean {
+    const source = ts.createSourceFile(
+        path,
+        readFileSync(path, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
     );
-    const resolution = new RegExp(
-        `^  '${packageName}@${version}':\\n    resolution: \\{integrity: ${integrity}\\}$`,
-        'mu'
-    );
-    return importer.test(lock) && resolution.test(lock);
+    return source.statements.some((statement) => {
+        if (
+            !ts.isImportDeclaration(statement) ||
+            !ts.isStringLiteral(statement.moduleSpecifier) ||
+            statement.moduleSpecifier.text !== specifier
+        ) {
+            return false;
+        }
+        const clause = statement.importClause;
+        if (clause === undefined) {
+            return true;
+        }
+        if (clause.isTypeOnly) {
+            return false;
+        }
+        if (clause.name !== undefined || clause.namedBindings === undefined) {
+            return true;
+        }
+        return (
+            ts.isNamespaceImport(clause.namedBindings) || clause.namedBindings.elements.some((item) => !item.isTypeOnly)
+        );
+    });
 }
 
 export function validateLgplRuntimeProvenance(
@@ -315,8 +348,7 @@ export function validateLgplRuntimeProvenance(
         }
 
         if (component.integration !== undefined) {
-            const integration = readFileSync(resolve(root, component.integration.file), 'utf8');
-            if (!integration.includes(component.integration.import)) {
+            if (!hasRuntimeImport(resolve(root, component.integration.file), component.integration.import)) {
                 errors.push(`${component.id}: integration import drifted`);
             }
         }
