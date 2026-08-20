@@ -512,4 +512,54 @@ describe('PeerConnectionManager', () => {
         expect(readyPresenceChannel.send).toHaveBeenCalledWith(JSON.stringify(presenceMessage));
         expect(pendingPresenceChannel.send).not.toHaveBeenCalled();
     });
+
+    describe('rekeyPeer', () => {
+        it('re-keys an existing peer and updates its internal peerId for callbacks', async () => {
+            const onConnected = vi.fn();
+            const onMessage = vi.fn();
+            const rekeyManager = new PeerConnectionManager({ ...noopCallbacks, onConnected, onMessage });
+
+            const peer = rekeyManager.createPeer('pending-slot-1');
+            await peer.createOffer();
+            const fakeRtc = peer.rtc as unknown as FakeRTCPeerConnection;
+            const channel = fakeRtc.channels.find((c) => c.label === 'crdt-sync')!;
+
+            const rekeyResult = rekeyManager.rekeyPeer('pending-slot-1', 'confirmed-joiner-1');
+            expect(rekeyResult).toBe(true);
+
+            expect(rekeyManager.getPeer('pending-slot-1')).toBeUndefined();
+            expect(rekeyManager.getPeer('confirmed-joiner-1')).toBe(peer);
+
+            // Verify callbacks use the updated peerId
+            channel.open();
+            expect(onConnected).toHaveBeenCalledWith('confirmed-joiner-1');
+
+            channel.onmessage?.({ data: JSON.stringify({ type: 'crdt-sync', docId: 'test', syncMessage: 'xyz' }) });
+            expect(onMessage).toHaveBeenCalledWith({
+                peerId: 'confirmed-joiner-1',
+                message: expect.objectContaining({ type: 'crdt-sync' }),
+            });
+        });
+
+        it('returns false when oldPeerId does not exist or matches newPeerId', () => {
+            expect(manager.rekeyPeer('nonexistent', 'new-id')).toBe(false);
+            manager.createPeer('same-id');
+            expect(manager.rekeyPeer('same-id', 'same-id')).toBe(false);
+        });
+
+        it('refuses collision when newPeerId already belongs to another peer or matches local host ID', () => {
+            const rekeyManager = new PeerConnectionManager(noopCallbacks);
+            const peer1 = rekeyManager.createPeer('pending-1');
+            const peer2 = rekeyManager.createPeer('existing-peer-2');
+
+            // Refuse collision with already-registered peer2
+            expect(rekeyManager.rekeyPeer('pending-1', 'existing-peer-2')).toBe(false);
+            expect(rekeyManager.getPeer('pending-1')).toBe(peer1);
+            expect(rekeyManager.getPeer('existing-peer-2')).toBe(peer2);
+
+            // Refuse collision with host's own local peer ID
+            expect(rekeyManager.rekeyPeer('pending-1', 'host-local-id', 'host-local-id')).toBe(false);
+            expect(rekeyManager.getPeer('pending-1')).toBe(peer1);
+        });
+    });
 });
