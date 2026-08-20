@@ -1,0 +1,87 @@
+src/modules/PluginHost/stores/pluginScanStore.ts
+  s_7ba0b7bee9e951::t_52e5e900250ae3 136
+  s_7ba0b7bee9e951::t_54daa0d13779b0 116-119
+crates/sourdaw-native/src/commands/plugins.rs
+  s_7ba0b7bee9e951::t_7c6c41ad57c119 2579
+  s_7ba0b7bee9e951::t_9d05c38539593b 149-155
+  s_7ba0b7bee9e951::t_0a83e790abd73a 694-702
+  s_7ba0b7bee9e951::t_de8b5c03d211b3 2234-2328
+  s_7ba0b7bee9e951::t_ebc5de9167c561 2203-2208,2219
+  s_7ba0b7bee9e951::t_87f4cf82c8450e 2700-2707
+  s_7ba0b7bee9e951::t_10b4b805026690 295-305,307,309-319
+  s_7ba0b7bee9e951::t_0d1451c38b1a41 2111-2114
+  s_7ba0b7bee9e951::t_26983c0df3e1b5 2633-2636
+.agents/decisions/README.md
+  s_7ba0b7bee9e951::t_7fbf20508a5c47 47
+crates/sourdaw-native/src/state.rs
+  s_7ba0b7bee9e951::t_6344338d7d92db 189-200
+docs/manual/02-concepts.md
+  s_7ba0b7bee9e951::t_a8ddfdcdae7fcc 76
+crates/sourdaw-native/AGENTS.md
+  s_7ba0b7bee9e951::t_156012464d31e8 55-59,61-68
+crates/daw-plugin-host/src/scanner.rs
+  s_7ba0b7bee9e951::t_6c9fcea260b303 1354-1425,1430-1434,1437-1452
+  s_7ba0b7bee9e951::t_6a442911647012 556,560,569-637
+  s_7ba0b7bee9e951::t_07b3f27cbe39b3 1588-1592
+  s_7ba0b7bee9e951::t_09aee61c086478 171-176
+  s_7ba0b7bee9e951::t_8a49c6199a42e7 1547
+  s_7ba0b7bee9e951::t_4cc1dd8d1f3a64 769,951-1010
+  s_7ba0b7bee9e951::t_7bfd221668ac49 638-639,1453,1541,1543,1553,1555,1564,1580-1587,1593-1607,1621,1623-1638,1643-1702,1706,1708
+  s_7ba0b7bee9e951::t_a04ad4cae86170 1608,1610,1612-1613,1615-1618
+  s_7ba0b7bee9e951::t_405677f4806ab5 366-373
+  s_7ba0b7bee9e951::t_bb5e720459e25c 234-260,267-273
+  s_7ba0b7bee9e951::t_e0605478865b15 1639-1642
+  s_7ba0b7bee9e951::t_0d3411c3b6d916 80-83,85-86,89-91,97-134
+  s_7ba0b7bee9e951::t_e5adc5e06f3fa5 1040-1052,1054-1072
+  s_7ba0b7bee9e951::t_90ca2cbd602c13 1493-1513,1520-1525,1530-1540
+  s_7ba0b7bee9e951::t_b863d71eaebf1d 387-403,406-411,422-423,428,431-432
+  s_7ba0b7bee9e951::t_a49ae69ce75ed7 11-14,27-43,47-64
+  s_7ba0b7bee9e951::t_3896c8a1b65c9a 1609,1611,1614,1619-1620,1622
+  s_7ba0b7bee9e951::t_25a9794f6facfa 1173-1187
+  s_7ba0b7bee9e951::t_bd38b8c84f3877 65,640,770-771,775,795,1011,1013,1073-1075,1151,1160,1188-1191,1542,1544,1703-1705,1707
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_7ba0b7bee9e951::t_702681cf04c173 2-3
+  s_7ba0b7bee9e951::t_0a10e82911f2b5 220,223
+  s_7ba0b7bee9e951::t_ef478a51ee3703 133-134
+  s_7ba0b7bee9e951::t_f2db0d7a06f502 185
+  s_7ba0b7bee9e951::t_72fb076dde39ec 15-23
+  s_7ba0b7bee9e951::t_a42f523ccc5117 136,158,164,172,175,178,180,224,338,354,359
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_7ba0b7bee9e951::t_4a562195b76171 636-639
+  s_7ba0b7bee9e951::t_15bfe76cffc587 115-124
+  s_7ba0b7bee9e951::t_5c6e63c6652375 971-974
+  s_7ba0b7bee9e951::t_bec9c6ae482619 56-62
+  s_7ba0b7bee9e951::t_53d257a6f6eb91 429-432
+  s_7ba0b7bee9e951::t_945889c803e04e 144-147
+src/modules/PluginHost/stores/__tests__/pluginScanStore.spec.ts
+  s_7ba0b7bee9e951::t_e0cba5bb099b99 235-259
+.agents/decisions/0031-native-plugin-format-strategy.md
+  s_7ba0b7bee9e951::t_fd15f50398a3c6 11-12,17
+  s_7ba0b7bee9e951::t_e96fb298f72bd7 100-108
+  s_7ba0b7bee9e951::t_5139b81550d755 78-84
+  s_7ba0b7bee9e951::t_ab55623a0fc062 1-10,13-16,18-50,56,63,77,85-99,109-123,130-132
+  s_7ba0b7bee9e951::t_fc76a51bf6f2b8 124-129
+  s_7ba0b7bee9e951::t_292210f7705a24 51-55,57-62,64-76
+docs/architecture/02-rust-backend.md
+  s_7ba0b7bee9e951::t_fc17594f468758 75-76
+  s_7ba0b7bee9e951::t_60c00a559b4fb5 277-279,281,283-304
+  s_7ba0b7bee9e951::t_c98d9d8578d4b4 848-849
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_7ba0b7bee9e951::t_95d3693fe509d3 38-43,45,48-52,61-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f0e4d8d61bbe87d8a37cb2741a56a2e14dac1fc0",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
