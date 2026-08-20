@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -526,6 +526,19 @@ describe('resource enforcement', () => {
     it('terminates the child and releases when an injected sampler throws mid-run', async () => {
         const root = fixtureRoot('sampler-throw');
         const pidPath = join(root, 'pid');
+        // The throw must land in the wrapped pre-timer sample(), so the gate has to be ordered
+        // by the guard's own code, not by child timing: setSessionProcessIdentity publishes
+        // childPid to a '<token>.state.*.json' file beside the reservation synchronously,
+        // before that sample runs. A child-written pid file carries no such ordering.
+        const reservationsRoot = join(enforcementAdmissionRoot, 'sourdaw-validation.reservations');
+        const childIdentityPublished = () =>
+            existsSync(reservationsRoot) &&
+            readdirSync(reservationsRoot).some(
+                (name) =>
+                    name.includes('.state.') &&
+                    name.endsWith('.json') &&
+                    /"childPid":\s*\d+/.test(readFileSync(join(reservationsRoot, name), 'utf8'))
+            );
         let childPid: number | undefined;
         try {
             await expect(
@@ -537,7 +550,7 @@ describe('resource enforcement', () => {
                     ],
                     profile: 'focused',
                     memorySampler: () => {
-                        if (existsSync(pidPath)) {
+                        if (childIdentityPublished()) {
                             throw new Error('injected sampler failure');
                         }
                         return abundantMemoryBytes;

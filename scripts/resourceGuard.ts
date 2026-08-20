@@ -1043,6 +1043,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         if (ownedSession) {
             session.release();
         }
+        if (forceKillTimer !== undefined) {
+            clearTimeout(forceKillTimer);
+        }
         process.removeListener('SIGINT', onSigint);
         process.removeListener('SIGTERM', onSigterm);
         throw error;
