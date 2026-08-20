@@ -24,8 +24,8 @@ import {
 import { type RenderProvenance } from '../models/RenderProgress';
 import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
-import { readModel } from '../repositories/readModel';
 import { readRenderCache } from '../repositories/readRenderCache';
+import { readVerifiedModel } from '../repositories/readVerifiedModel';
 import { sha256ArrayBuffer } from '../repositories/sha256ArrayBuffer';
 import { writeRenderCache } from '../repositories/writeRenderCache';
 import { resampleTo44100, applyFades } from '../services/audioResampler';
@@ -105,8 +105,8 @@ type RenderKokoroTtsOutput = Promise<{
     provenance: RenderProvenance;
 }>;
 
-export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writeRenderCache })(
-    ({ logger, readModel, readRenderCache, writeRenderCache }) =>
+export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedModel, writeRenderCache })(
+    ({ logger, readRenderCache, readVerifiedModel, writeRenderCache }) =>
         async function renderKokoroTts({
             phraseId,
             text,
@@ -163,9 +163,14 @@ export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writ
 
                 // 1. Load Kokoro model from OPFS → worker session cache
                 //    loadOnnxSession is idempotent — the worker caches by modelId.
-                const modelData = await readModel({ family: 'kokoro', modelId: KOKORO_MODEL_ID });
+                const modelData = await readVerifiedModel({
+                    family: 'kokoro',
+                    modelId: KOKORO_MODEL_ID,
+                    sha256: KOKORO_MODEL_ARTIFACT.sha256,
+                    sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
+                });
                 if (!modelData) {
-                    throw new Error('Kokoro model not found in OPFS — download it in AI Settings first');
+                    throw new Error('Kokoro model is absent or failed verification; download it in AI Settings');
                 }
                 await inferenceWorkerBridge.loadOnnxSession({ modelId: KOKORO_MODEL_ID, modelData });
 

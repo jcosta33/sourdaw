@@ -14,7 +14,7 @@ const runKokoroTts = vi.hoisted(() =>
         }>
     >()
 );
-const readModel = vi.hoisted(() => vi.fn<() => Promise<ArrayBuffer | null>>());
+const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<ArrayBuffer | null>>());
 const readRenderCache = vi.hoisted(() => vi.fn<() => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const computeRenderCacheKey = vi.hoisted(() => vi.fn<() => Promise<string>>());
@@ -33,7 +33,7 @@ vi.mock('../../repositories/inferenceWorkerBridge', () => ({
 }));
 
 vi.mock('../../repositories/computeRenderCacheKey', () => ({ computeRenderCacheKey }));
-vi.mock('../../repositories/readModel', () => ({ readModel }));
+vi.mock('../../repositories/readVerifiedModel', () => ({ readVerifiedModel }));
 vi.mock('../../repositories/readRenderCache', () => ({ readRenderCache }));
 vi.mock('../../repositories/writeRenderCache', () => ({ writeRenderCache }));
 vi.mock('../../repositories/sha256ArrayBuffer', () => ({ sha256ArrayBuffer }));
@@ -86,7 +86,7 @@ describe('renderKokoroTts', () => {
             audio: new Float32Array(2400),
             samplingRate: 24000,
         });
-        readModel.mockReset().mockResolvedValue(new ArrayBuffer(8));
+        readVerifiedModel.mockReset().mockResolvedValue(new ArrayBuffer(8));
         readRenderCache.mockReset().mockResolvedValue(null);
         writeRenderCache.mockReset().mockResolvedValue(undefined);
         computeRenderCacheKey.mockReset().mockResolvedValue('cache-key-1');
@@ -104,7 +104,7 @@ describe('renderKokoroTts', () => {
         releaseGate.kokoro = false;
 
         await expect(callRender()).rejects.toThrow(/not admitted in this release/);
-        expect(readModel).not.toHaveBeenCalled();
+        expect(readVerifiedModel).not.toHaveBeenCalled();
         expect(fetch).not.toHaveBeenCalled();
     });
 
@@ -131,10 +131,10 @@ describe('renderKokoroTts', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
     });
 
-    it('should throw a re-download message when the Kokoro model is absent from OPFS', async () => {
-        readModel.mockResolvedValue(null);
+    it('should throw a re-download message when the Kokoro model is absent or invalid', async () => {
+        readVerifiedModel.mockResolvedValue(null);
 
-        await expect(callRender()).rejects.toThrow(/not found in OPFS — download it in AI Settings/);
+        await expect(callRender()).rejects.toThrow(/absent or failed verification/);
 
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('error');
         expect(Object.keys(inferenceProgressStore.value?.activeRenders ?? {})).toHaveLength(0);
@@ -218,7 +218,7 @@ describe('renderKokoroTts', () => {
     it('should reject an unknown voice before reading or fetching artifacts', async () => {
         await expect(callRender({ speakerId: 'not-a-voice' })).rejects.toThrow(/Unknown Kokoro voice/);
 
-        expect(readModel).not.toHaveBeenCalled();
+        expect(readVerifiedModel).not.toHaveBeenCalled();
         expect(fetch).not.toHaveBeenCalled();
     });
 

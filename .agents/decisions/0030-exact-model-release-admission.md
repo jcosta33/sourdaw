@@ -14,13 +14,13 @@ sources:
     - https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC
     - https://huggingface.co/mlc-ai/Qwen3-8B-q4f16_1-MLC
     - https://github.com/magenta/ddsp
-    - .agents/decisions/0028-native-provider-credential-sessions.md
+    - .agents/decisions/0016-ultracode-session-scope-and-standard.md
 ---
 
 # 0030 — Exact model artifacts require release admission
 
-**Accepted 2026-08-17.** This narrows ADR 0028. Browser WebLLM architecture remains, but its exact
-quantized artifacts are withheld from this release.
+**Accepted 2026-08-17.** This narrows ADR 0016: browser-capable model features still require exact
+artifact admission. Browser WebLLM architecture remains, but its quantized artifacts are withheld.
 
 ## Context
 
@@ -40,6 +40,8 @@ from product controls. Its neutral architecture may remain.
 | DDSP checkpoints        | Withhold | Exact GCS checkpoint licenses and immutable digests remain unproved.                              |
 | RAVE models             | Withhold | No model artifact, source, digest, or license is admitted.                                        |
 | WebLLM Qwen conversions | Withhold | Base Qwen licenses do not prove the exact MLC quantized artifact repositories.                    |
+| Native denoise          | Keep     | The current downward expander is first-party DSP with no external model artifact.                 |
+| Stem separation         | Withhold | No replacement model stack is admitted; the current repository reports it unavailable.            |
 
 Kokoro downloads use the pinned revision, a versioned cache key, exact byte counts, and SHA-256
 verification before storage or inference. The release contract blocks WebLLM and RAVE before model
@@ -50,4 +52,6 @@ loading and keeps DDSP out of the runtime registry and model manager.
 - Hosted language models remain desktop-only and explicit.
 - This release has no browser-local language model.
 - Kokoro, Whisper, and Basic Pitch remain available with their notices.
+- Native denoise remains available without a model dependency.
 - DDSP, RAVE, or WebLLM can return only after a later ADR admits exact artifacts and obligations.
+- Stem separation remains unavailable until a complete replacement stack passes admission.

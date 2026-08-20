@@ -26,7 +26,12 @@ type DetectCapabilitiesRepo = (input?: {
     forceRefresh?: boolean;
     measureInference?: boolean;
 }) => Promise<CapabilityReport>;
-type CheckModelCached = (input: { family: string; modelId: string }) => Promise<boolean>;
+type ReadVerifiedModel = (input: {
+    family: string;
+    modelId: string;
+    sha256: string;
+    sizeBytes: number;
+}) => Promise<ArrayBuffer | null>;
 
 type LoggerMock = {
     info: (message: string) => void;
@@ -80,12 +85,12 @@ describe('initBrowserAi', () => {
 
     it('should force a capability re-probe on cold start instead of allowing a cached report', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();
@@ -100,12 +105,12 @@ describe('initBrowserAi', () => {
 
     it('should keep withheld DDSP checkpoints out of the runtime registry', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();
@@ -113,23 +118,41 @@ describe('initBrowserAi', () => {
         expect(modelRegistryStore.value?.ddspInstruments).toEqual([]);
         expect(DDSP_INSTRUMENT_CATALOG.every((instrument) => instrument.license === 'Unverified')).toBe(true);
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('not-downloaded');
-        expect(check_model_cached).toHaveBeenCalledWith({
+        expect(read_verified_model).toHaveBeenCalledWith({
             family: 'kokoro',
             modelId: KOKORO_MODEL_ARTIFACT.id,
+            sha256: KOKORO_MODEL_ARTIFACT.sha256,
+            sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
         });
         expect(modelRegistryStore.value?.vocoder).toBeNull();
     });
 
+    it('reports Kokoro ready only after the cached artifact is verified', async () => {
+        const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(new ArrayBuffer(8));
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: detect_capabilities_repo,
+            readVerifiedModel: read_verified_model,
+        });
+
+        await initBrowserAi();
+
+        expect(modelRegistryStore.value?.kokoroModel?.status).toBe('ready');
+        expect(modelRegistryStore.value?.kokoroModel?.downloadProgress).toBe(1);
+    });
+
     it('should preserve cache-probe failures as model error state', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
-        const check_model_cached = vi
-            .fn<CheckModelCached>()
+        const read_verified_model = vi
+            .fn<ReadVerifiedModel>()
             .mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();
@@ -142,13 +165,13 @@ describe('initBrowserAi', () => {
         const detect_capabilities_repo = vi
             .fn<DetectCapabilitiesRepo>()
             .mockRejectedValue(new Error('WebGPU probe crashed'));
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
         const logger_mock = create_logger_mock();
 
         injectDependencies(initBrowserAi, {
             logger: logger_mock,
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();
@@ -166,12 +189,12 @@ describe('initBrowserAi', () => {
             value: { persist },
         });
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
 
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();
@@ -186,13 +209,13 @@ describe('initBrowserAi', () => {
             value: { persist },
         });
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
         const logger_mock = create_logger_mock();
 
         injectDependencies(initBrowserAi, {
             logger: logger_mock,
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await expect(initBrowserAi()).resolves.toBeUndefined();
@@ -204,7 +227,7 @@ describe('initBrowserAi', () => {
 
     it('should adopt the first MIDI emission as a baseline without marking anything stale', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
         renderQueueStore.set({
             entries: [],
             cachedPhraseIds: [],
@@ -214,7 +237,7 @@ describe('initBrowserAi', () => {
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();
@@ -231,7 +254,7 @@ describe('initBrowserAi', () => {
 
     it('should mark only rendered phrases whose note array reference changed after the baseline', async () => {
         const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
-        const check_model_cached = vi.fn<CheckModelCached>().mockResolvedValue(false);
+        const read_verified_model = vi.fn<ReadVerifiedModel>().mockResolvedValue(null);
         renderQueueStore.set({
             entries: [],
             cachedPhraseIds: [],
@@ -241,7 +264,7 @@ describe('initBrowserAi', () => {
         injectDependencies(initBrowserAi, {
             logger: create_logger_mock(),
             detectCapabilitiesRepo: detect_capabilities_repo,
-            checkModelCached: check_model_cached,
+            readVerifiedModel: read_verified_model,
         });
 
         await initBrowserAi();

@@ -28,7 +28,8 @@ surface. Unauthenticated loopback OpenAI-compatible endpoints carry no credentia
 
 ## 2. Audio ML
 
-**Native:** DeepFilterNet denoise (`ai_audio.rs`) plus audio post-processing (`audio_postprocess.rs`).
+**Native:** first-party downward-expander denoise (`ai_audio.rs`) plus audio post-processing
+(`audio_postprocess.rs`). Neither path loads a model artifact.
 
 **In-browser (BrowserAi):** Kokoro TTS runs through a dedicated worker and model registry. Its model
 and exposed voices are revision-pinned and SHA-256 verified. DDSP, RAVE, and singing synthesis stay

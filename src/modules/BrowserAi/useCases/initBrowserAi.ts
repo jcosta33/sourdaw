@@ -3,7 +3,7 @@
  *
  * Called once from bootstrap. Responsibilities:
  * 1. Detect browser platform capabilities (cold-start probe; no inference measurement)
- * 2. Populate model registry with DDSP catalog + Kokoro model entry
+ * 2. Populate the registry with admitted model entries
  * 3. Check which downloadable models are already cached in OPFS and update status
  * 4. Request persistent storage if browser AI is supported
  */
@@ -17,7 +17,7 @@ import { type DdspInstrument, type KokoroModel, type ModelDownloadStatus } from 
 import { DDSP_INSTRUMENT_CATALOG } from '../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../models/KokoroArtifactManifest';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
-import { checkModelCached } from '../repositories/checkModelCached';
+import { readVerifiedModel } from '../repositories/readVerifiedModel';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
@@ -40,8 +40,8 @@ export const KOKORO_MODEL_ENTRY: KokoroModel = {
     sha256: KOKORO_MODEL_ARTIFACT.sha256,
 };
 
-export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModelCached })(
-    ({ logger, detectCapabilitiesRepo, checkModelCached }) =>
+export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, readVerifiedModel })(
+    ({ logger, detectCapabilitiesRepo, readVerifiedModel }) =>
         async function initBrowserAi(): Promise<void> {
             logger.info('[BrowserAi] Initializing…');
 
@@ -83,8 +83,13 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             if (MODEL_RELEASE_ADMISSION.kokoro) {
                 let kokoroStatus: ModelDownloadStatus;
                 try {
-                    const cached = await checkModelCached({ family: 'kokoro', modelId: KOKORO_MODEL_ENTRY.id });
-                    kokoroStatus = cached ? 'ready' : 'not-downloaded';
+                    const modelData = await readVerifiedModel({
+                        family: 'kokoro',
+                        modelId: KOKORO_MODEL_ENTRY.id,
+                        sha256: KOKORO_MODEL_ARTIFACT.sha256,
+                        sizeBytes: KOKORO_MODEL_ARTIFACT.sizeBytes,
+                    });
+                    kokoroStatus = modelData ? 'ready' : 'not-downloaded';
                 } catch (error) {
                     kokoroStatus = 'error';
                     logger.warn(`[BrowserAi] Kokoro cache probe failed: ${String(error)}`);
