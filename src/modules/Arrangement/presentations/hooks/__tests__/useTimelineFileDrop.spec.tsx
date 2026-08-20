@@ -65,6 +65,10 @@ vi.mock('../../../useCases/device/compileAddDeviceAction', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 vi.mock('../../../useCases/addTrack', () => ({
