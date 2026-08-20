@@ -144,6 +144,23 @@ const REQUIRED_COMPONENTS: LgplRuntimeContract = {
     },
 };
 
+const REQUIRED_RELINKING: Readonly<Record<string, { heading: string; markers: readonly string[] }>> = {
+    faustwasm: {
+        heading: 'FaustWasm',
+        markers: ['SOURCES.json', 'public/faust/', 'pnpm build', 'pnpm desktop:build'],
+    },
+    lamejs: {
+        heading: 'lamejs',
+        markers: ['SOURCES.json', '@breezystack/lamejs', 'pnpm build', 'pnpm desktop:build'],
+    },
+};
+
+const REQUIRED_RELINKING_PREAMBLE = [
+    'exact Sourdaw source archive',
+    'permit modification and relinking',
+    'Do not distribute a binary without the matching archive.',
+] as const;
+
 function sha256(path: string): string {
     return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 }
@@ -215,6 +232,16 @@ function hasRuntimeImport(path: string, specifier: string): boolean {
     });
 }
 
+function markdownSection(markdown: string, heading: string): string | undefined {
+    const marker = `## ${heading}`;
+    const start = markdown.indexOf(marker);
+    if (start === -1) {
+        return undefined;
+    }
+    const next = markdown.indexOf('\n## ', start + marker.length);
+    return markdown.slice(start, next === -1 ? undefined : next);
+}
+
 export function validateLgplRuntimeProvenance(
     root: string,
     requiredComponents: LgplRuntimeContract = REQUIRED_COMPONENTS
@@ -222,10 +249,9 @@ export function validateLgplRuntimeProvenance(
     const manifest = readJson<Provenance>(resolve(root, 'public/legal/SOURCES.json'));
     const projectPackage = readJson<{ dependencies?: Record<string, string> }>(resolve(root, 'package.json'));
     const lock = readFileSync(resolve(root, 'pnpm-lock.yaml'), 'utf8');
-    const directions = [
-        readFileSync(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8'),
-        readFileSync(resolve(root, 'public/legal/RELINKING.md'), 'utf8'),
-    ].join('\n');
+    const notices = readFileSync(resolve(root, 'public/legal/THIRD-PARTY-NOTICES.md'), 'utf8');
+    const relinking = readFileSync(resolve(root, 'public/legal/RELINKING.md'), 'utf8');
+    const directions = [notices, relinking].join('\n');
     const errors: string[] = [];
 
     if (manifest.schemaVersion !== 1) {
@@ -244,6 +270,16 @@ export function validateLgplRuntimeProvenance(
         const required = requiredComponents[component.id];
         if (required === undefined) {
             continue;
+        }
+        const relinkingContract = REQUIRED_RELINKING[component.id];
+        const relinkingSection =
+            relinkingContract === undefined ? undefined : markdownSection(relinking, relinkingContract.heading);
+        if (
+            relinkingContract === undefined ||
+            relinkingSection === undefined ||
+            relinkingContract.markers.some((marker) => !relinkingSection.includes(marker))
+        ) {
+            errors.push(`${component.id}: relinking directions drifted`);
         }
         if (
             component.package !== required.package ||
@@ -352,6 +388,10 @@ export function validateLgplRuntimeProvenance(
                 errors.push(`${component.id}: integration import drifted`);
             }
         }
+    }
+
+    if (REQUIRED_RELINKING_PREAMBLE.some((marker) => !relinking.includes(marker))) {
+        errors.push('matching application-source directions drifted');
     }
 
     const faust = manifest.components.find((component) => component.id === 'faustwasm');

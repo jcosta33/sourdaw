@@ -106,7 +106,11 @@ function fixture(): { root: string; contract: LgplRuntimeContract } {
         'public/legal/THIRD-PARTY-NOTICES.md',
         `1.0.0 LGPL-2.1-or-later ${archive} ${compilerArchive} 1.2.7 LGPL-3.0-only ${lameArchive}`
     );
-    write(root, 'public/legal/RELINKING.md', 'replace and rebuild');
+    write(
+        root,
+        'public/legal/RELINKING.md',
+        `Use the exact Sourdaw source archive under terms that permit modification and relinking. Do not distribute a binary without the matching archive.\n\n## FaustWasm\n\nUse SOURCES.json, replace public/faust/, then run pnpm build or pnpm desktop:build.\n\n## lamejs\n\nUse SOURCES.json, replace @breezystack/lamejs, then run pnpm build or pnpm desktop:build.`
+    );
     write(root, 'public/legal/faustwasm-COPYING.txt', 'hi');
     write(root, 'public/legal/LGPL-3.0-and-GPL-3.0.txt', 'hi');
     write(root, 'public/legal/lamejs-NOTICE.txt', 'hi');
@@ -256,6 +260,26 @@ describe('LGPL runtime provenance', () => {
         expect(validateLgplRuntimeProvenance(root, contract)).toContain(
             `faustwasm: source directions omit ${'a'.repeat(40)}`
         );
+    });
+
+    it('rejects missing relinking directions', () => {
+        const { root, contract } = fixture();
+        write(root, 'public/legal/RELINKING.md', '');
+
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: relinking directions drifted');
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('lamejs: relinking directions drifted');
+    });
+
+    it('rejects replacement instructions under the wrong component', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'public/legal/RELINKING.md',
+            `Use the exact Sourdaw source archive under terms that permit modification and relinking. Do not distribute a binary without the matching archive.\n\n## FaustWasm\n\nUse SOURCES.json, replace @breezystack/lamejs, then run pnpm build or pnpm desktop:build.\n\n## lamejs\n\nUse SOURCES.json, replace public/faust/, then run pnpm build or pnpm desktop:build.`
+        );
+
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: relinking directions drifted');
+        expect(validateLgplRuntimeProvenance(root, contract)).toContain('lamejs: relinking directions drifted');
     });
 
     it('rejects deletion of a required license file contract', () => {
