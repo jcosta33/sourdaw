@@ -4,6 +4,7 @@ import { Keyboard } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { shortcutStore, type ShortcutDefinition, type ShortcutStoreState } from '#/modules/CommandInterface/stores';
@@ -156,14 +157,14 @@ export const ShortcutsSection = (): ReactElement => {
 
     return (
         <>
-            <div className="flex items-center justify-between mb-4">
+            <Row justify="between" className="mb-4">
                 <SectionTitle icon={<Keyboard className="size-4" />} title="Keyboard Shortcuts" />
                 <Button variant="ghost" size="xs" onClick={resetMappings} className="text-[10px] text-muted-foreground">
                     Reset to Defaults
                 </Button>
-            </div>
+            </Row>
 
-            <div className="flex flex-col gap-4">
+            <Stack gap={4}>
                 {categories.map((category) => (
                     <div key={category}>
                         <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
@@ -175,7 +176,7 @@ export const ShortcutsSection = (): ReactElement => {
                                 const display = keys.map(formatCombo).join(' / ');
                                 const isEditing = editingId === def.id;
                                 return (
-                                    <div key={def.id} className="flex items-center justify-between group col-span-2">
+                                    <Row justify="between" className="group col-span-2" key={def.id}>
                                         <span className="text-xs text-muted-foreground">{def.label}</span>
                                         <CaptureKeyButton
                                             listening={isEditing}
@@ -187,16 +188,19 @@ export const ShortcutsSection = (): ReactElement => {
                                         >
                                             {isEditing ? 'Press keys...' : display}
                                         </CaptureKeyButton>
-                                    </div>
+                                    </Row>
                                 );
                             })}
                         </div>
                     </div>
                 ))}
-            </div>
+            </Stack>
 
             {editingDefinition ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px] pointer-events-auto">
+                <Row
+                    justify="center"
+                    className="fixed inset-0 z-50 bg-bg-scrim/90 px-4 backdrop-blur-[2px] pointer-events-auto"
+                >
                     <DawUtilityPanel className="w-full max-w-sm">
                         <DawHeaderBand
                             className="px-4 py-3"
@@ -204,15 +208,15 @@ export const ShortcutsSection = (): ReactElement => {
                             title={`Binding: ${editingDefinition.label}`}
                             titleClassName="text-[11px] text-foreground normal-case tracking-normal"
                         />
-                        <div className="flex flex-col items-center gap-3 px-4 py-5 text-center">
+                        <Stack align="center" gap={3} className="px-4 py-5 text-center">
                             <Keyboard className="size-8 text-primary" />
                             <p className="text-sm text-muted-foreground">Press the desired key combination.</p>
                             <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
                                 Cancel
                             </Button>
-                        </div>
+                        </Stack>
                     </DawUtilityPanel>
-                </div>
+                </Row>
             ) : null}
         </>
     );

@@ -3,6 +3,7 @@ import { type ReactElement } from 'react';
 import { KeyboardMusic } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { Row } from '#/components/layout';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { MidiDevicePicker } from '#/modules/AudioEngine/presentations/views';
@@ -27,7 +28,7 @@ export const MidiSection = ({ prefs, update }: SectionProps): ReactElement => (
         <Separator />
 
         <FieldGroup label="Default Velocity">
-            <div className="flex items-center gap-2">
+            <Row gap={2}>
                 <Slider
                     value={[prefs.defaultVelocity]}
                     onValueChange={([value]) => {
@@ -44,7 +45,7 @@ export const MidiSection = ({ prefs, update }: SectionProps): ReactElement => (
                 <span className="text-[10px] font-mono text-muted-foreground w-6 text-right">
                     {prefs.defaultVelocity}
                 </span>
-            </div>
+            </Row>
         </FieldGroup>
 
         <FieldGroup label="Input Channel">
