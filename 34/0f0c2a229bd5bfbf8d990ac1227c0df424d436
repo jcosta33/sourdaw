@@ -1,0 +1,26 @@
+docs/manual/devices/17-fermenter.md
+  s_8ddfabd1166b5d::t_238380af21ac5c 106
+  s_8ddfabd1166b5d::t_5b7c0ef672fa0f 1-105,107-128,131-309
+  s_8ddfabd1166b5d::t_dc0c59fa711962 129-130
+docs/manual/README.md
+  s_8ddfabd1166b5d::t_4409cdee1b08a8 35-36
+docs/manual/coverage-exceptions.json
+  s_8ddfabd1166b5d::t_09f46762761373 128-129
+  s_8ddfabd1166b5d::t_c8f2dbd4df3735 263-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "340f0c2a229bd5bfbf8d990ac1227c0df424d436",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
