@@ -1,0 +1,29 @@
+docs/manual/README.md
+  s_815371b033ccf2::t_0c1a5628a70d00 27-28
+docs/manual/devices/13-bacteria.md
+  s_8ddfabd1166b5d::t_9377b65d95e4d3 1-397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4b00a8032244e9e158729b850819865715a891cf",
+  "prompts": {},
+  "sessions": {
+    "s_815371b033ccf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0205d-8a20-7a20-9075-f26ea79ca25d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
