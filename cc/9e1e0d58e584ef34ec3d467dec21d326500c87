@@ -1,0 +1,35 @@
+scripts/fileTrackerIssue.ts
+  s_bef51c907b1953::t_bab6fa88da38e7 368,373-378,382-383
+  s_bef51c907b1953::t_0dc35bb80b9b17 160-161,168,172-173,192-207,210-221
+  s_bef51c907b1953::t_f0ec01bf1154a8 399,403,407
+  s_bef51c907b1953::t_ee8ff167ae0f48 419
+  s_bef51c907b1953::t_3815b3139689fd 28-32,39-40
+  s_7ba0b7bee9e951::t_05ade164041675 41
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_bef51c907b1953::t_c31a73aba3ded0 224-242,244-260,263-321
+  s_bef51c907b1953::t_d82af1272382e1 9,15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "cc9e1e0d58e584ef34ec3d467dec21d326500c87",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bef51c907b1953": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec3b96a6-3b56-406a-b86a-457eb52ac4a6",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
