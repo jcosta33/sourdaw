@@ -1,0 +1,29 @@
+scripts/removeLane.ts
+  s_b3e68b902b6b93::t_088d619aaa430d 190-191
+  s_b3e68b902b6b93::t_e2c810de124d95 256-261
+  s_b3e68b902b6b93::t_d2258d494cc393 176-184
+  s_b3e68b902b6b93::t_deeac7967e6ac0 262
+scripts/__tests__/removeLane.spec.ts
+  s_b3e68b902b6b93::t_81f88ee0cb6e91 256,264-265
+  s_b3e68b902b6b93::t_682982c71ff04b 266
+  s_b3e68b902b6b93::t_601af7b6f3cd19 211-235,237-239,241-254
+  s_b3e68b902b6b93::t_6877fc5c9115ee 236,240
+  s_b3e68b902b6b93::t_acc44cc84797ab 255,257,267-268
+  s_b3e68b902b6b93::t_1b4f848ae6bd3b 155-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e87ed270fd14fd957accc199bc1042b48bc68123",
+  "prompts": {},
+  "sessions": {
+    "s_b3e68b902b6b93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c0d718b-88cc-4178-9233-97f906059b66",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
