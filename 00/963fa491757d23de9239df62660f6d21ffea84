@@ -1,0 +1,21 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_487e9aa1e46063::t_2b26d367360a6a 712-728
+  s_487e9aa1e46063::t_41c89176bc3e33 650-675
+  s_487e9aa1e46063::t_2307cefa874c6a 823-830
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "00963fa491757d23de9239df62660f6d21ffea84",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
