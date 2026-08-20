@@ -312,7 +312,10 @@ everything that can fail because of these changed files. They are one boundary r
 a check this diff can break is never out of scope, and a check it cannot break is not evidence about
 it. Run it in the lane, on the head being merged — `lane:publish` refuses a lane that is not
 strictly ahead of `origin/main`, and `deliver` refuses a pull request whose base its own fetch does
-not match, so the branch a green run measured is the branch that lands.
+not match. A branch-local run stands in for the merge result only while the branch is current, so
+merging `origin/main` back into the lane — the routine answer when `deliver` reports a base
+mismatch — makes a new head and stales every run that preceded it. Run them again on the head that
+will actually merge.
 
 An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
 test that fails when the change is reverted, a measurement at the boundary users experience. That
