@@ -14,7 +14,7 @@ function create_scanned_plugin(overrides: Partial<ScannedPlugin> = {}): ScannedP
         category: 'instrument',
         path: '/plugins/plugin.vst3',
         version: '1.0.0',
-        clap_id: 'com.test.plugin',
+        descriptor_id: 'com.test.plugin',
         num_inputs: 2,
         num_outputs: 2,
         num_parameters: 8,

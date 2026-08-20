@@ -14,7 +14,7 @@ describe('getExternalPluginContractVersionForCommand', () => {
             scannedPlugins: [
                 {
                     id: 'path-hash',
-                    clap_id: 'com.vendor.plugin',
+                    descriptor_id: 'com.vendor.plugin',
                     name: 'Vendor Plugin',
                     vendor: 'Vendor',
                     format: 'clap',
