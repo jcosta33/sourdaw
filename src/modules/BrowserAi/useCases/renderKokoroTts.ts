@@ -125,7 +125,9 @@ export const renderKokoroTts = inject({ logger, readRenderCache, readVerifiedMod
 
             // Deterministic cache key
             const textEncoder = new TextEncoder();
-            const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}`).buffer;
+            const durationKey =
+                targetDurationSec !== undefined && targetDurationSec > 0 ? `:${String(targetDurationSec)}` : '';
+            const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}${durationKey}`).buffer;
             const cacheKey = await computeRenderCacheKey({
                 modelId: KOKORO_MODEL_ID,
                 inputData,
