@@ -543,7 +543,13 @@ pub struct GraphRegistry {
     /// ring — the control-side twin of the drain's `batches_applied` count.
     /// Every send is one fence ([`daw_engine::EngineHandle::send_graph_batch`])
     /// and this module is that fence's only producer, so batch `n` here is
-    /// batch `n` in the engine's echo.
+    /// batch `n` in the engine's echo. That identity is an assumption, not a
+    /// guarantee: this counter and the ledger stamps numbered from it are only
+    /// comparable to `batches_applied` while both count the same stream, so any
+    /// future engine-restart path must reset the registry's ledger and this
+    /// counter together with the engine's — a counter left ahead of a restarted
+    /// echo only over-refuses, but the invariant belongs where the counter
+    /// lives.
     batches_sent: u64,
     automation_pending: HashMap<AutomationTarget, Vec<PendingStamp>>,
     device_param_pending: HashMap<usize, Vec<DeviceParamStamp>>,
@@ -2095,6 +2101,14 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
     ))
 }
 
+/// The wire's fault marker for a `prior` that no longer replays: the stable
+/// prefix of [`map_graph_batch`]'s transport error, and the only thing that
+/// distinguishes a broken seam invariant from an ordinary batch refusal once
+/// both have crossed as an error. `createNativeOfflineGraphBackend.ts` matches
+/// this exact text to rethrow rather than answer `rejected`, so it is part of
+/// the seam contract — never reword one side alone.
+const PRIOR_FAULT_PREFIX: &str = "previously applied commands no longer map";
+
 /// Map one batch against the graph a prior command sequence built — the
 /// report wire of the offline seam, with nothing rendered.
 ///
@@ -2115,7 +2129,11 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
 /// replay is a transport error, not a refusal — those commands were already
 /// accepted once, so a registry that no longer takes them is a broken seam
 /// invariant, and reporting it as a refusal of the *incoming* batch would
-/// blame the wrong commands.
+/// blame the wrong commands. The wire has one error channel for both, so
+/// [`PRIOR_FAULT_PREFIX`] is what tells them apart on the far side: it is a
+/// seam contract, not a message, and the TS consumer
+/// (`createNativeOfflineGraphBackend.ts`) matches on it to rethrow instead of
+/// shaping a batch refusal. Change it on both sides or not at all.
 pub async fn map_graph_batch(
     prior: Value,
     batch: Value,
@@ -2145,7 +2163,7 @@ pub async fn map_graph_batch(
             commands: prior_commands,
         };
         map_batch(&replay, &mut registry, &samples, sample_rate as f32)
-            .map_err(|reason| format!("previously applied commands no longer map: {reason}"))?;
+            .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
     }
 
     let correlation = batch.correlation.clone();
@@ -3063,6 +3081,68 @@ mod tests {
         );
     }
 
+    /// The release proof's boundary, pinned on the frame it turns on. Both
+    /// other ledger tests stamp far from the playhead, so the `<` in
+    /// [`GraphRegistry::release_landed`] could be `<=` and go unnoticed — and
+    /// `<=` under-releases by exactly one block: a write stamped at the echoed
+    /// playhead is due in the block that has not run yet, so it still occupies
+    /// its engine slot, and freeing its ledger slot would let a later batch
+    /// overflow the queue the engine drops render-side with only a counter.
+    #[test]
+    fn a_stamp_at_the_echoed_playhead_stays_charged_until_the_next_block() {
+        const BLOCK: u64 = 512;
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                knead_insert("t1", "d1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        renderer.render(BLOCK as usize);
+
+        // Stamped at the frame the *next* render will leave the playhead on,
+        // so the echo that proves this batch applied echoes a playhead equal
+        // to the stamp — the one frame the two predicates disagree about.
+        let boundary = BLOCK * 2;
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([device_step("t1", "d1", 1.0, boundary as f64 / 48_000.0)]),
+            &samples,
+        )
+        .expect("the boundary write admits");
+        renderer.render(BLOCK as usize);
+
+        let progress = renderer.graph_progress();
+        assert_eq!(
+            progress.playhead_frame, boundary,
+            "the echo must land exactly on the stamp for this test to discriminate"
+        );
+        registry.release_landed(progress);
+        let charged: usize = registry.device_param_pending.values().map(Vec::len).sum();
+        assert_eq!(
+            charged, 1,
+            "a stamp at the echoed playhead is due in the block that has not run: it stays charged"
+        );
+
+        // One more block carries the playhead past the stamp — the engine pops
+        // it, and only now may the ledger.
+        renderer.render(BLOCK as usize);
+        registry.release_landed(renderer.graph_progress());
+        assert!(
+            registry.device_param_pending.is_empty(),
+            "the stamp releases once the echoed playhead is strictly past it"
+        );
+    }
+
     /// Debt 3, refusal ordering: a batch that lost its revision race rejects
     /// with the contract's semantics — refused before the graph changed —
     /// and before the lazy bootstrap, so a lost batch never starts an
@@ -3183,10 +3263,9 @@ mod tests {
             &state,
         ))
         .expect_err("a prior that no longer maps is a transport fault");
-        assert!(
-            fault.contains("previously applied commands no longer map"),
-            "got: {fault}"
-        );
+        // Leading, not merely present: the TS consumer keys its rethrow off
+        // the prefix, so the marker has to open the message.
+        assert!(fault.starts_with(PRIOR_FAULT_PREFIX), "got: {fault}");
     }
 
     /// A payload that does not deserialize resolves to the contract's

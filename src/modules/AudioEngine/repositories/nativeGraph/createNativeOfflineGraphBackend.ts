@@ -60,6 +60,18 @@ import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBat
 
 export const NATIVE_OFFLINE_BACKEND_ID = 'native/offline';
 
+/**
+ * The wire's fault marker for a `prior` that no longer replays.
+ *
+ * `map_graph_batch` answers refusals and seam faults down one error channel,
+ * and this prefix is the only thing that tells them apart: it opens the
+ * transport error the native side raises when the *already accepted* commands
+ * fail to replay (`PRIOR_FAULT_PREFIX` in `crates/sourdaw-native/src/commands/
+ * graph.rs`, where the same contract is recorded). It is a seam contract, not
+ * a message — never reword one side alone.
+ */
+const PRIOR_FAULT_PREFIX = 'previously applied commands no longer map';
+
 export type NativeOfflineGraphBackendDeps = Readonly<{
     /** The render's rate; every batch time is mapped to frames against it. */
     sampleRate: number;
@@ -213,7 +225,18 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                     sampleRate,
                 });
             } catch (error) {
-                return rejected(reasonOf(error));
+                // A prior fault is not this batch's refusal: those commands
+                // were accepted once, so a mapping that no longer takes them
+                // is a broken seam invariant, and shaping it as `rejected`
+                // would blame the incoming batch for a fault it did not cause
+                // and hand the caller a reason no command of theirs explains.
+                // It surfaces as a throw, exactly as a malformed wire result
+                // does (`readMappedResult`) — one law for seam defects.
+                const reason = reasonOf(error);
+                if (reason.startsWith(PRIOR_FAULT_PREFIX)) {
+                    throw error;
+                }
+                return rejected(reason);
             }
             const mapped = readMappedResult(mappedRaw);
             if (mapped.outcome === 'rejected') {

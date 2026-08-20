@@ -539,8 +539,9 @@ export type AudioGraphStripReport = Readonly<{
  * The three states mean exactly what they mean there — `rejected` is refused
  * before the graph changed, `applied` is whole, `needs-reconcile` is a partial
  * application the caller must resolve against project truth — and the extra
- * field is the reports, because a batch that builds strips has to say what it
- * built.
+ * field is the reports, because a batch that touched a strip has to say what
+ * that strip now holds ({@link AudioGraphStripReport}: created or chain-edited
+ * alike).
  */
 export type AudioGraphApplyResult =
     | Readonly<{

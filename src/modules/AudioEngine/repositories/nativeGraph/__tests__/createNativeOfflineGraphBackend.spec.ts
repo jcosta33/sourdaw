@@ -5,8 +5,9 @@
  * here: material registered before the probe, the render-nothing mapping
  * probe carrying the committed prior beside the incoming batch,
  * refusal-with-rollback, wire-fed reports and the interleaved-bytes round
- * trip. What the wire's far side does with those payloads is the null test's
- * question, answered against the built addon.
+ * trip — and the line between a batch refusal, which resolves, and a seam
+ * fault, which throws. What the wire's far side does with those payloads is
+ * the null test's question, answered against the built addon.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -340,6 +341,52 @@ describe('createNativeOfflineGraphBackend', () => {
         // The render batch is the committed commands — mapping probes never
         // rendered them.
         expect(transport.renders.at(-1)!.batch.commands).toHaveLength(1);
+    });
+
+    it('throws a prior-fault transport error instead of blaming the incoming batch', async () => {
+        const transport = scriptedTransport();
+        const backend = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: {
+                ...transport,
+                async mapGraphBatch() {
+                    throw new Error('previously applied commands no longer map: duplicate track id "track-1"');
+                },
+            },
+        });
+
+        // The prefix is the wire's fault marker: the already-accepted commands
+        // failed to replay, so this is a broken seam, not a refusal of the
+        // batch the caller just sent.
+        await expect(backend.apply({ schemaVersion: 1, commands: [TRACK_STRIP] })).rejects.toThrow(
+            'previously applied commands no longer map'
+        );
+    });
+
+    it('throws on wire shapes the mapping result vocabulary does not contain', async () => {
+        const transport = scriptedTransport();
+        const unknownOutcome = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: {
+                ...transport,
+                async mapGraphBatch() {
+                    return { acceptance: 'accepted', application: 'needs-reconcile' };
+                },
+            },
+        });
+        await expect(unknownOutcome.apply({ schemaVersion: 1, commands: [TRACK_STRIP] })).rejects.toThrow(
+            'map_graph_batch answered an unknown outcome'
+        );
+
+        const malformedReports = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: scriptedTransport({
+                reports: () => [{ kind: 'track', id: 'track-1', deviceIds: 'dev-1' }],
+            }),
+        });
+        await expect(malformedReports.apply({ schemaVersion: 1, commands: [TRACK_STRIP] })).rejects.toThrow(
+            'map_graph_batch answered a malformed strip report'
+        );
     });
 
     it('refuses a schema version it does not speak, and everything after dispose', async () => {
