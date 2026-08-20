@@ -35,11 +35,11 @@ Heading **Phrase view**. Subtitle **Read-only preview of upcoming rack output.**
 picture, time runs left to right, duration is width, velocity is brightness, and probability is
 opacity. Events fade as they meet the playhead.
 
-| Tile            | Shows                                                  |
-| --------------- | ------------------------------------------------------ |
-| **Preview**     | **Initializing**, **Unavailable**, **Error**, or live. |
-| **p95 latency** | Scheduling lag in milliseconds, or **—**               |
-| **Processors**  | `N active · N enabled · N bypassed · N failed`         |
+| Tile            | Shows                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| **Preview**     | **Error**, **Unavailable**, **Initializing**, **Bypassed**, **Active**, **Silent**, or **Available** |
+| **p95 latency** | Scheduling lag in milliseconds, or **—**                                                             |
+| **Processors**  | `N active · N enabled · N bypassed · N failed`                                                       |
 
 <!-- ac: SPEC-yeast/AC-011, SPEC-yeast/AC-025 -->
 
@@ -162,21 +162,21 @@ Expand a row to edit it. Names below are the add-chip names. Defaults are a fres
 
 | Control       | Range                                                                                                                                                                            | Default     | What it does             |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------ |
-| **Root**      | **C** … **B**                                                                                                                                                                    | **C**       | Tonic                    |
+| **Root**      | **C**, **C#**, **D**, **D#**, **E**, **F**, **F#**, **G**, **G#**, **A**, **A#**, **B**                                                                                          | **C**       | Tonic                    |
 | **Scale**     | **Major**, **Minor**, **Harm Min**, **Mel Min**, **Dorian**, **Phrygian**, **Lydian**, **Mixolyd.**, **Pent Maj**, **Pent Min**, **Blues**, **Whole**, **Dimin.**, **Chromatic** | **Major**   | Allowed pitches          |
 | **Remap**     | **Nearest**, **Up**, **Down**                                                                                                                                                    | **Nearest** | How off-scale notes move |
 | **Transpose** | −7 to +7 deg                                                                                                                                                                     | 0 deg       | Scale-degree shift       |
 
 ### Harmonizer
 
-| Control     | Range                                                                    | Default   | What it does       |
-| ----------- | ------------------------------------------------------------------------ | --------- | ------------------ |
-| **Root**    | **C** … **B**                                                            | **C**     | Tonic              |
-| **Scale**   | **Major**, **Minor**, **Dorian**, **Mixolyd.**, **Pent.**, **Chromatic** | **Major** | Harmony scale      |
-| **Voice 1** | −7 to +7 deg                                                             | 2 deg     | First extra voice  |
-| **V1**      | **Off**, **On**                                                          | **On**    | Enable Voice 1     |
-| **Voice 2** | −7 to +7 deg                                                             | 4 deg     | Second extra voice |
-| **V2**      | **Off**, **On**                                                          | **Off**   | Enable Voice 2     |
+| Control     | Range                                                                                   | Default   | What it does       |
+| ----------- | --------------------------------------------------------------------------------------- | --------- | ------------------ |
+| **Root**    | **C**, **C#**, **D**, **D#**, **E**, **F**, **F#**, **G**, **G#**, **A**, **A#**, **B** | **C**     | Tonic              |
+| **Scale**   | **Major**, **Minor**, **Dorian**, **Mixolyd.**, **Pent.**, **Chromatic**                | **Major** | Harmony scale      |
+| **Voice 1** | −7 to +7 deg                                                                            | 2 deg     | First extra voice  |
+| **V1**      | **Off**, **On**                                                                         | **On**    | Enable Voice 1     |
+| **Voice 2** | −7 to +7 deg                                                                            | 4 deg     | Second extra voice |
+| **V2**      | **Off**, **On**                                                                         | **Off**   | Enable Voice 2     |
 
 ### Transposer
 
