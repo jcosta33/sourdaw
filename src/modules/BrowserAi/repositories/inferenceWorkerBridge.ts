@@ -72,6 +72,39 @@ function createMessageHandler(state: WorkerState): (event: MessageEvent<WorkerRe
     };
 }
 
+function toError(reason: unknown, fallback: string): Error {
+    if (reason instanceof Error) {
+        return reason;
+    }
+    return new Error(typeof reason === 'string' && reason ? reason : fallback);
+}
+
+function resetWorkerAfterFailure(state: WorkerState, failedWorker: Worker, reason: Error): void {
+    if (state.worker !== failedWorker) {
+        return;
+    }
+    for (const { reject } of state.pendingRequests.values()) {
+        reject(reason);
+    }
+    state.pendingRequests.clear();
+    failedWorker.terminate();
+    state.worker = null;
+    state.initialized = false;
+    if (state === workerState.tfjs && workerState.tfjsIdleTimer !== null) {
+        clearTimeout(workerState.tfjsIdleTimer);
+        workerState.tfjsIdleTimer = null;
+    }
+}
+
+function installFailureHandlers(state: WorkerState, worker: Worker, label: string): void {
+    worker.onerror = (event) => {
+        resetWorkerAfterFailure(state, worker, new Error(event.message || `${label} inference worker failed`));
+    };
+    worker.onmessageerror = () => {
+        resetWorkerAfterFailure(state, worker, new Error(`${label} inference worker returned an unreadable response`));
+    };
+}
+
 // eslint-disable-next-line @typescript-eslint/require-await -- consistent async API; callers await this; worker creation is currently synchronous
 async function getOnnxWorker(): Promise<Worker> {
     if (workerState.onnx.worker && workerState.onnx.initialized) {
@@ -82,6 +115,7 @@ async function getOnnxWorker(): Promise<Worker> {
     worker.onmessage = createMessageHandler(workerState.onnx);
     workerState.onnx.worker = worker;
     workerState.onnx.initialized = true;
+    installFailureHandlers(workerState.onnx, worker, 'ONNX');
     return worker;
 }
 
@@ -101,6 +135,7 @@ async function getTfjsWorker(): Promise<Worker> {
     worker.onmessage = createMessageHandler(workerState.tfjs);
     workerState.tfjs.worker = worker;
     workerState.tfjs.initialized = true;
+    installFailureHandlers(workerState.tfjs, worker, 'TF.js');
     return worker;
 }
 
@@ -129,10 +164,20 @@ function sendRequest(
         if (requestId) {
             state.pendingRequests.set(requestId, { resolve, reject });
         }
-        if (transferable && transferable.length > 0) {
-            worker.postMessage(request, transferable);
-        } else {
-            worker.postMessage(request);
+        try {
+            if (transferable && transferable.length > 0) {
+                worker.postMessage(request, transferable);
+            } else {
+                worker.postMessage(request);
+            }
+        } catch (error) {
+            for (const item of transferable ?? []) {
+                if (typeof MessagePort !== 'undefined' && item instanceof MessagePort) {
+                    item.close();
+                }
+            }
+            resetWorkerAfterFailure(state, worker, toError(error, 'Inference worker request failed'));
+            return;
         }
         // For fire-and-forget messages (no requestId), resolve immediately
         if (!requestId) {

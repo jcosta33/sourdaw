@@ -26,6 +26,10 @@ const MAX_RETRIES = 3;
 /** Minimum interval between throttled progress emissions (~10 Hz). */
 const PROGRESS_THROTTLE_MS = 100;
 
+class ModelSizeError extends Error {
+    override readonly name = 'ModelSizeError';
+}
+
 type ModelDownloadSpec = {
     modelId: string;
     family: string;
@@ -150,13 +154,23 @@ export const downloadModel = inject({
                             throw new Error(`HTTP ${String(response.status)}: ${response.statusText}`);
                         }
 
-                        const contentLength = response.headers.get('content-length');
-                        const totalBytes = contentLength ? parseInt(contentLength, 10) : sizeBytes;
-
                         const reader = response.body?.getReader();
                         if (!reader) {
                             throw new Error('Response body not readable');
                         }
+
+                        const contentLength = response.headers.get('content-length');
+                        const declaredBytes = contentLength === null ? null : Number(contentLength);
+                        if (
+                            declaredBytes !== null &&
+                            (!Number.isSafeInteger(declaredBytes) || declaredBytes < 0 || declaredBytes !== sizeBytes)
+                        ) {
+                            await reader.cancel();
+                            throw new ModelSizeError(
+                                `Content-Length mismatch for ${modelId}: expected ${String(sizeBytes)} bytes, got ${String(contentLength)}`
+                            );
+                        }
+                        const totalBytes = declaredBytes ?? sizeBytes;
 
                         const isContainer = isModelArchiveUrl(url);
                         if (isContainer && totalBytes > MAX_GUARDED_ZIP_BYTES) {
@@ -189,13 +203,20 @@ export const downloadModel = inject({
                                 }
                                 throwIfAborted(signal);
                                 const chunkBytes = value.byteLength;
-                                bytesDownloaded += chunkBytes;
-                                if (isContainer && bytesDownloaded > MAX_GUARDED_ZIP_BYTES) {
+                                const nextBytesDownloaded = bytesDownloaded + chunkBytes;
+                                if (isContainer && nextBytesDownloaded > MAX_GUARDED_ZIP_BYTES) {
                                     await reader.cancel();
                                     throw new ZipArchiveError(
                                         `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
                                     );
                                 }
+                                if (nextBytesDownloaded > sizeBytes) {
+                                    await reader.cancel();
+                                    throw new ModelSizeError(
+                                        `Model byte limit exceeded for ${modelId}: expected at most ${String(sizeBytes)} bytes`
+                                    );
+                                }
+                                bytesDownloaded = nextBytesDownloaded;
 
                                 const chunk =
                                     value.byteOffset === 0 && value.byteLength === value.buffer.byteLength
@@ -282,7 +303,7 @@ export const downloadModel = inject({
                         logger.warn(
                             `[ModelDownload] Attempt ${String(attempt + 1)} failed for ${modelId}: ${String(error)}`
                         );
-                        if (error instanceof ZipArchiveError) {
+                        if (error instanceof ZipArchiveError || error instanceof ModelSizeError) {
                             break;
                         }
                         if (attempt < MAX_RETRIES - 1) {
@@ -310,6 +331,9 @@ export const downloadModel = inject({
                     error: String(lastError),
                 });
                 if (lastError instanceof ZipArchiveError) {
+                    throw lastError;
+                }
+                if (lastError instanceof ModelSizeError) {
                     throw lastError;
                 }
                 throw new Error(

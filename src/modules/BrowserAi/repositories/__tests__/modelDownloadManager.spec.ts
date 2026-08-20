@@ -32,13 +32,15 @@ function deferred<T>(): Deferred<T> {
     };
 }
 
-function streamingResponse(chunks: Uint8Array[], totalBytes: number, cancel = vi.fn()): Response {
+function streamingResponse(chunks: Uint8Array[], totalBytes: number | null, cancel = vi.fn()): Response {
     let index = 0;
     return {
         ok: true,
         status: 200,
         statusText: 'OK',
-        headers: { get: (name: string) => (name === 'content-length' ? String(totalBytes) : null) },
+        headers: {
+            get: (name: string) => (name === 'content-length' && totalBytes !== null ? String(totalBytes) : null),
+        },
         body: {
             getReader() {
                 return {
@@ -172,6 +174,38 @@ describe('downloadModel storage worker stream', () => {
         expect(abortModelWrite).not.toHaveBeenCalled();
     });
 
+    it('rejects a mismatched Content-Length before opening a worker write', async () => {
+        const cancel = vi.fn(() => Promise.resolve());
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 31, cancel)))
+        );
+
+        await expect(downloadModel({ spec: baseSpec })).rejects.toThrow(/Content-Length/);
+
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(beginModelWrite).not.toHaveBeenCalled();
+        expect(writeModelChunk).not.toHaveBeenCalled();
+    });
+
+    it('cancels and aborts before transferring a raw chunk past the manifest size', async () => {
+        const cancel = vi.fn(() => Promise.resolve());
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() =>
+                Promise.resolve(streamingResponse([Uint8Array.from([1, 2, 3]), Uint8Array.from([4, 5])], null, cancel))
+            )
+        );
+
+        await expect(downloadModel({ spec: { ...baseSpec, sizeBytes: 4 } })).rejects.toThrow(/byte limit/);
+
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(writeModelChunk).toHaveBeenCalledOnce();
+        expect(writeModelChunk.mock.calls[0]?.[0].chunk.byteLength).toBe(3);
+        expect(abortModelWrite).toHaveBeenCalledWith('write-1');
+        expect(commitModelWrite).not.toHaveBeenCalled();
+    });
+
     it('keeps one BroadcastChannel for progress and closes it after completion', async () => {
         const chunks = Array.from({ length: 50 }, () => new Uint8Array(4));
         vi.stubGlobal(
@@ -243,7 +277,7 @@ describe('downloadModel storage worker stream', () => {
         vi.useFakeTimers();
         vi.stubGlobal(
             'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(3)], 3)))
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(3)], null)))
         );
 
         const promise = downloadModel({ spec: { ...baseSpec, sizeBytes: 4 } });
@@ -429,20 +463,26 @@ describe('downloadModel archive guards', () => {
         );
 
         await expect(
-            downloadModel({ spec: { ...baseSpec, url: 'https://cdn.example/oversized.zip', sizeBytes: 1 } })
+            downloadModel({
+                spec: {
+                    ...baseSpec,
+                    url: 'https://cdn.example/oversized.zip',
+                    sizeBytes: 2 * 1024 * 1024 * 1024 + 1,
+                },
+            })
         ).rejects.toThrow(/archive byte limit/);
         expect(cancel).toHaveBeenCalledOnce();
         expect(beginModelWrite).not.toHaveBeenCalled();
     });
 
-    it('aborts the partial write when an archive stream exceeds a smaller declared length', async () => {
+    it('aborts before transferring an archive chunk past the guarded archive cap', async () => {
         const cancel = vi.fn(() => Promise.resolve());
         const oversizedChunk = {
             byteLength: 2 * 1024 * 1024 * 1024 + 1,
         } as unknown as Uint8Array;
         vi.stubGlobal(
             'fetch',
-            vi.fn(() => Promise.resolve(streamingResponse([oversizedChunk], 1, cancel)))
+            vi.fn(() => Promise.resolve(streamingResponse([oversizedChunk], null, cancel)))
         );
 
         await expect(

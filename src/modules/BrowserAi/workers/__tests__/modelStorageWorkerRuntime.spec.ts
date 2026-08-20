@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ZipArchiveError } from '#/infra/archive/extractGuardedZip';
 
 import { type ModelStorageWorkerResponse } from '../../models/ModelStorageWorkerProtocol';
-import { createModelStorageRequestHandler } from '../modelStorageWorkerRuntime';
+import { createModelStorageRequestHandler as createRuntimeModelStorageRequestHandler } from '../modelStorageWorkerRuntime';
 
 type SyncAccessHandle = {
     close: () => void;
@@ -29,6 +29,145 @@ function readAccess(bytes: Uint8Array): SyncAccessHandle {
         truncate: vi.fn(),
         write: vi.fn(),
     };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolvePromise: ((value: T) => void) | undefined;
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+    return { promise, resolve: (value) => resolvePromise?.(value) };
+}
+
+type TestLockLease = { release: () => Promise<void> };
+type TestLockPort = {
+    acquireExclusive: (name: string) => Promise<TestLockLease>;
+    tryAcquireExclusive: (name: string) => Promise<TestLockLease | null>;
+};
+
+class TestOriginLocks {
+    private readonly active = new Map<string, { owner: string; release: () => Promise<void> }>();
+    private readonly waiters = new Map<string, Array<(lease: TestLockLease) => void>>();
+
+    port(owner: string): TestLockPort {
+        return {
+            acquireExclusive: (name) => this.acquire(owner, name),
+            tryAcquireExclusive: (name) => Promise.resolve(this.active.has(name) ? null : this.activate(owner, name)),
+        };
+    }
+
+    async crash(owner: string): Promise<void> {
+        const releases = [...this.active.values()]
+            .filter((entry) => entry.owner === owner)
+            .map((entry) => entry.release());
+        await Promise.all(releases);
+    }
+
+    private acquire(owner: string, name: string): Promise<TestLockLease> {
+        if (!this.active.has(name)) {
+            return Promise.resolve(this.activate(owner, name));
+        }
+        return new Promise<TestLockLease>((resolve) => {
+            const waiters = this.waiters.get(name) ?? [];
+            waiters.push(resolve);
+            this.waiters.set(name, waiters);
+        }).then(() => this.activate(owner, name));
+    }
+
+    private activate(owner: string, name: string): TestLockLease {
+        let released = false;
+        const lease: TestLockLease = {
+            release: async () => {
+                if (released) {
+                    return;
+                }
+                released = true;
+                this.active.delete(name);
+                const next = this.waiters.get(name)?.shift();
+                if (next) {
+                    next(lease);
+                }
+            },
+        };
+        this.active.set(name, { owner, release: lease.release });
+        return lease;
+    }
+}
+
+function createModelStorageRequestHandler(
+    input: Parameters<typeof createRuntimeModelStorageRequestHandler>[0]
+): ReturnType<typeof createRuntimeModelStorageRequestHandler> {
+    const locks = new TestOriginLocks();
+    return createRuntimeModelStorageRequestHandler({ locks: locks.port('handler'), ...input });
+}
+
+function createMutableStorageTree(): {
+    files: Map<string, FileSystemFileHandle>;
+    removeEntry: ReturnType<typeof vi.fn>;
+    root: FileSystemDirectoryHandle;
+} {
+    const file = (size: number) =>
+        ({
+            kind: 'file',
+            getFile: vi.fn(() => Promise.resolve({ size })),
+        }) as unknown as FileSystemFileHandle;
+    const files = new Map<string, FileSystemFileHandle>([['model.onnx', file(100)]]);
+    const removeEntry = vi.fn(async (name: string) => {
+        files.delete(name);
+    });
+    const familyDirectory = {
+        kind: 'directory',
+        getFileHandle: vi.fn((name: string, options?: { create?: boolean }) => {
+            const existing = files.get(name);
+            if (existing) {
+                return Promise.resolve(existing);
+            }
+            if (!options?.create) {
+                return Promise.reject(new DOMException('missing', 'NotFoundError'));
+            }
+            const access = readAccess(new Uint8Array(0));
+            const temporaryFile = {
+                kind: 'file',
+                createSyncAccessHandle: vi.fn(() => Promise.resolve(access)),
+                getFile: vi.fn(() => Promise.resolve({ size: 40 })),
+                move: vi.fn(async (_destination: FileSystemDirectoryHandle, finalName: string) => {
+                    files.delete(name);
+                    files.set(finalName, temporaryFile);
+                }),
+            } as unknown as FileSystemFileHandle;
+            files.set(name, temporaryFile);
+            return Promise.resolve(temporaryFile);
+        }),
+        removeEntry,
+        async *[Symbol.asyncIterator]() {
+            yield* files.entries();
+        },
+    } as unknown as FileSystemDirectoryHandle;
+    const modelsDirectory = {
+        kind: 'directory',
+        getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+        async *[Symbol.asyncIterator]() {
+            yield ['kokoro', familyDirectory] as const;
+        },
+    } as unknown as FileSystemDirectoryHandle;
+    const rendersDirectory = {
+        kind: 'directory',
+        async *[Symbol.asyncIterator]() {
+            yield ['phrase.pcm', file(20)] as const;
+        },
+    } as unknown as FileSystemDirectoryHandle;
+    const root = {
+        getDirectoryHandle: vi.fn((name: string) => {
+            if (name === 'models') {
+                return Promise.resolve(modelsDirectory);
+            }
+            if (name === 'renders') {
+                return Promise.resolve(rendersDirectory);
+            }
+            return Promise.reject(new Error(`Unexpected directory: ${name}`));
+        }),
+    } as unknown as FileSystemDirectoryHandle;
+    return { files, removeEntry, root };
 }
 
 describe('modelStorageWorkerRuntime', () => {
@@ -200,6 +339,65 @@ describe('modelStorageWorkerRuntime', () => {
         });
     });
 
+    it('aborts before writing a chunk that would exceed the expected model size', async () => {
+        const write = vi.fn((input: ArrayBufferView) => input.byteLength);
+        const syncAccess = readAccess(new Uint8Array(0));
+        syncAccess.write = write;
+        const temporaryFile = {
+            createSyncAccessHandle: vi.fn(() => Promise.resolve(syncAccess)),
+            move: vi.fn(() => Promise.resolve()),
+        } as unknown as FileSystemFileHandle;
+        const removeEntry = vi.fn(() => Promise.resolve());
+        const familyDirectory = {
+            getFileHandle: vi.fn(() => Promise.resolve(temporaryFile)),
+            removeEntry,
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() =>
+                Promise.resolve({
+                    getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+                    async *[Symbol.asyncIterator]() {},
+                } as unknown as FileSystemDirectoryHandle)
+            ),
+        } as unknown as FileSystemDirectoryHandle;
+        const responses: ModelStorageWorkerResponse[] = [];
+        const handler = createModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            postResponse: (response) => responses.push(response),
+        });
+
+        await handler({
+            type: 'begin-model-write',
+            requestId: 'begin-bounded',
+            writeId: 'write-bounded',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            expectedSizeBytes: 4,
+            archive: false,
+        });
+        await handler({
+            type: 'write-model-chunk',
+            requestId: 'chunk-within-bound',
+            writeId: 'write-bounded',
+            chunk: Uint8Array.from([1, 2, 3]).buffer,
+        });
+        await handler({
+            type: 'write-model-chunk',
+            requestId: 'chunk-over-bound',
+            writeId: 'write-bounded',
+            chunk: Uint8Array.from([4, 5]).buffer,
+        });
+
+        expect(write).toHaveBeenCalledOnce();
+        expect(removeEntry).toHaveBeenCalledWith('.sourdaw-write-bounded.partial');
+        expect(responses).toContainEqual({
+            type: 'error',
+            requestId: 'chunk-over-bound',
+            name: 'Error',
+            message: 'Model byte limit exceeded for model.onnx: expected at most 4 bytes',
+        });
+    });
+
     it('deletes a cached model that fails exact release verification without transferring its bytes', async () => {
         const syncAccess = readAccess(Uint8Array.from([1, 2, 3]));
         const fileHandle = {
@@ -282,6 +480,135 @@ describe('modelStorageWorkerRuntime', () => {
 
         expect(removeEntry).toHaveBeenCalledWith('model.onnx');
         expect(responses).toContainEqual({ type: 'model-verified', requestId: 'verify-1', verified: false });
+    });
+
+    it('holds the model lock until invalid verification deletion finishes before a replacement commit', async () => {
+        const events: string[] = [];
+        const digest = deferred<string>();
+        const oldFile = {
+            kind: 'file',
+            createSyncAccessHandle: vi.fn(() => {
+                events.push('read-old');
+                return Promise.resolve(readAccess(Uint8Array.from([1, 2, 3])));
+            }),
+        } as unknown as FileSystemFileHandle;
+        const writeAccess = readAccess(new Uint8Array(0));
+        writeAccess.write = vi.fn((input) => input.byteLength);
+        let finalFile: FileSystemFileHandle | null = oldFile;
+        let temporaryFile: FileSystemFileHandle | null = null;
+        let temporaryName = '';
+        const familyDirectory = {
+            kind: 'directory',
+            getFileHandle: vi.fn((name: string, options?: { create?: boolean }) => {
+                if (name === 'model.onnx' && finalFile) {
+                    return Promise.resolve(finalFile);
+                }
+                if (options?.create) {
+                    events.push('create-partial');
+                    temporaryName = name;
+                    const created = {
+                        kind: 'file',
+                        createSyncAccessHandle: vi.fn(() => Promise.resolve(writeAccess)),
+                        move: vi.fn(async (_directory: FileSystemDirectoryHandle, finalName: string) => {
+                            events.push('move-new');
+                            temporaryFile = null;
+                            finalFile = created;
+                            expect(finalName).toBe('model.onnx');
+                        }),
+                    } as unknown as FileSystemFileHandle;
+                    temporaryFile = created;
+                    return Promise.resolve(created);
+                }
+                return Promise.reject(new DOMException('missing', 'NotFoundError'));
+            }),
+            removeEntry: vi.fn(async (name: string) => {
+                if (name === 'model.onnx') {
+                    events.push('delete-old');
+                    finalFile = null;
+                    return;
+                }
+                if (name === temporaryName) {
+                    temporaryFile = null;
+                }
+            }),
+            async *[Symbol.asyncIterator]() {
+                if (finalFile) {
+                    yield ['model.onnx', finalFile] as const;
+                }
+                if (temporaryFile) {
+                    yield [temporaryName, temporaryFile] as const;
+                }
+            },
+        } as unknown as FileSystemDirectoryHandle;
+        const modelsDirectory = {
+            kind: 'directory',
+            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+            async *[Symbol.asyncIterator]() {
+                yield ['kokoro', familyDirectory] as const;
+            },
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        const originLocks = new TestOriginLocks();
+        const verificationResponses: ModelStorageWorkerResponse[] = [];
+        const verifier = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('verifier'),
+            sha256: () => digest.promise,
+            postResponse: (response) => verificationResponses.push(response),
+        });
+        const writer = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(root),
+            locks: originLocks.port('writer'),
+            postResponse: vi.fn(),
+        });
+
+        const verification = verifier({
+            type: 'verify-model',
+            requestId: 'verify-old',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            expectedSizeBytes: 3,
+            expectedSha256: 'verified',
+        });
+        await vi.waitFor(() => expect(events).toContain('read-old'));
+        const begin = writer({
+            type: 'begin-model-write',
+            requestId: 'begin-new',
+            writeId: 'write-new',
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        let beginSettled = false;
+        void begin.then(() => {
+            beginSettled = true;
+        });
+        for (let index = 0; index < 10; index += 1) {
+            await Promise.resolve();
+        }
+        expect(beginSettled).toBe(false);
+        expect(events).not.toContain('create-partial');
+
+        digest.resolve('wrong');
+        await verification;
+        await begin;
+        await writer({
+            type: 'write-model-chunk',
+            requestId: 'chunk-new',
+            writeId: 'write-new',
+            chunk: Uint8Array.from([4, 5, 6]).buffer,
+        });
+        await writer({ type: 'commit-model-write', requestId: 'commit-new', writeId: 'write-new' });
+
+        expect(events).toEqual(['read-old', 'delete-old', 'create-partial', 'move-new']);
+        expect(finalFile).not.toBeNull();
+        expect(verificationResponses).toContainEqual({
+            type: 'model-verified',
+            requestId: 'verify-old',
+            verified: false,
+        });
     });
 
     it('verifies and extracts archives off the renderer before atomically publishing only ONNX bytes', async () => {
@@ -680,7 +1007,7 @@ describe('modelStorageWorkerRuntime', () => {
 
         await handler({ type: 'measure-storage', requestId: 'measure-1' });
 
-        expect(getDirectoryHandle.mock.calls.map(([name]) => name)).toEqual(['models', 'renders']);
+        expect(getDirectoryHandle.mock.calls.map(([name]) => name)).toEqual(['models', 'models', 'renders']);
         expect(responses).toContainEqual({
             type: 'storage-measured',
             requestId: 'measure-1',
@@ -688,69 +1015,25 @@ describe('modelStorageWorkerRuntime', () => {
         });
     });
 
-    it('scavenges orphan model partials while preserving an active write partial', async () => {
+    it("does not scavenge another worker context's active partial", async () => {
         const activeWriteId = 'write-active';
         const activeTemporaryName = `.sourdaw-${activeWriteId}.partial`;
-        const orphanTemporaryName = '.sourdaw-write-orphan.partial';
-        const file = (size: number) =>
-            ({
-                kind: 'file',
-                getFile: vi.fn(() => Promise.resolve({ size })),
-            }) as unknown as FileSystemFileHandle;
-        const activeAccess = readAccess(new Uint8Array(0));
-        const activeTemporaryFile = {
-            kind: 'file',
-            createSyncAccessHandle: vi.fn(() => Promise.resolve(activeAccess)),
-            getFile: vi.fn(() => Promise.resolve({ size: 40 })),
-            move: vi.fn(() => Promise.resolve()),
-        } as unknown as FileSystemFileHandle;
-        const removeEntry = vi.fn(() => Promise.resolve());
-        const familyDirectory = {
-            kind: 'directory',
-            getFileHandle: vi.fn((name: string) => {
-                if (name === activeTemporaryName) {
-                    return Promise.resolve(activeTemporaryFile);
-                }
-                return Promise.reject(new Error(`Unexpected file: ${name}`));
-            }),
-            removeEntry,
-            async *[Symbol.asyncIterator]() {
-                yield ['model.onnx', file(100)] as const;
-                yield [orphanTemporaryName, file(30)] as const;
-                yield [activeTemporaryName, activeTemporaryFile] as const;
-            },
-        } as unknown as FileSystemDirectoryHandle;
-        const modelsDirectory = {
-            kind: 'directory',
-            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
-            async *[Symbol.asyncIterator]() {
-                yield ['kokoro', familyDirectory] as const;
-            },
-        } as unknown as FileSystemDirectoryHandle;
-        const rendersDirectory = {
-            kind: 'directory',
-            async *[Symbol.asyncIterator]() {
-                yield ['phrase.pcm', file(20)] as const;
-            },
-        } as unknown as FileSystemDirectoryHandle;
-        const root = {
-            getDirectoryHandle: vi.fn((name: string) => {
-                if (name === 'models') {
-                    return Promise.resolve(modelsDirectory);
-                }
-                if (name === 'renders') {
-                    return Promise.resolve(rendersDirectory);
-                }
-                return Promise.reject(new Error(`Unexpected directory: ${name}`));
-            }),
-        } as unknown as FileSystemDirectoryHandle;
-        const responses: ModelStorageWorkerResponse[] = [];
-        const handler = createModelStorageRequestHandler({
-            getRoot: () => Promise.resolve(root),
-            postResponse: (response) => responses.push(response),
+        const storage = createMutableStorageTree();
+        const originLocks = new TestOriginLocks();
+        const writerResponses: ModelStorageWorkerResponse[] = [];
+        const observerResponses: ModelStorageWorkerResponse[] = [];
+        const writer = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(storage.root),
+            locks: originLocks.port('writer-worker'),
+            postResponse: (response) => writerResponses.push(response),
+        });
+        const observer = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(storage.root),
+            locks: originLocks.port('observer-worker'),
+            postResponse: (response) => observerResponses.push(response),
         });
 
-        await handler({
+        await writer({
             type: 'begin-model-write',
             requestId: 'begin-active',
             writeId: activeWriteId,
@@ -758,14 +1041,52 @@ describe('modelStorageWorkerRuntime', () => {
             modelId: 'model.onnx',
             archive: false,
         });
-        await handler({ type: 'measure-storage', requestId: 'measure-partials' });
+        storage.removeEntry.mockClear();
+        await observer({ type: 'measure-storage', requestId: 'measure-partials' });
 
-        expect(removeEntry).toHaveBeenCalledOnce();
-        expect(removeEntry).toHaveBeenCalledWith(orphanTemporaryName);
-        expect(removeEntry).not.toHaveBeenCalledWith(activeTemporaryName);
-        expect(responses).toContainEqual({
+        expect(storage.files.has(activeTemporaryName)).toBe(true);
+        expect(storage.removeEntry).not.toHaveBeenCalledWith(activeTemporaryName);
+        expect(observerResponses).toContainEqual({
             type: 'storage-measured',
             requestId: 'measure-partials',
+            usedBytes: 120,
+        });
+    });
+
+    it('scavenges a crashed worker partial after its origin-wide lease resets', async () => {
+        const crashedWriteId = 'write-crashed';
+        const crashedTemporaryName = `.sourdaw-${crashedWriteId}.partial`;
+        const storage = createMutableStorageTree();
+        const originLocks = new TestOriginLocks();
+        const crashedWorker = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(storage.root),
+            locks: originLocks.port('crashed-worker'),
+            postResponse: vi.fn(),
+        });
+        const restartedResponses: ModelStorageWorkerResponse[] = [];
+
+        await crashedWorker({
+            type: 'begin-model-write',
+            requestId: 'begin-crashed',
+            writeId: crashedWriteId,
+            family: 'kokoro',
+            modelId: 'model.onnx',
+            archive: false,
+        });
+        await originLocks.crash('crashed-worker');
+
+        const restartedWorker = createRuntimeModelStorageRequestHandler({
+            getRoot: () => Promise.resolve(storage.root),
+            locks: originLocks.port('restarted-worker'),
+            postResponse: (response) => restartedResponses.push(response),
+        });
+        await restartedWorker({ type: 'measure-storage', requestId: 'measure-after-crash' });
+
+        expect(storage.removeEntry).toHaveBeenCalledWith(crashedTemporaryName);
+        expect(storage.files.has(crashedTemporaryName)).toBe(false);
+        expect(restartedResponses).toContainEqual({
+            type: 'storage-measured',
+            requestId: 'measure-after-crash',
             usedBytes: 120,
         });
     });

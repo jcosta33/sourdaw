@@ -21,22 +21,32 @@ import { inferenceWorkerBridge } from '../inferenceWorkerBridge';
  */
 type FakeWorker = {
     url: string;
+    onerror: ((event: ErrorEvent) => void) | null;
     onmessage: ((event: MessageEvent<WorkerResponse>) => void) | null;
+    onmessageerror: ((event: MessageEvent) => void) | null;
     postMessage: ReturnType<typeof vi.fn<(message: WorkerRequest, transfer?: Transferable[]) => void>>;
     terminate: ReturnType<typeof vi.fn>;
 };
 
 let installedWorkers: FakeWorker[] = [];
+let synchronousPostError: Error | null = null;
 const OriginalWorker = globalThis.Worker;
 
 beforeEach(() => {
     installedWorkers = [];
+    synchronousPostError = null;
     inferenceProgressStore.set({ activeRenders: {} });
 
     class WorkerStub {
         url: string;
+        onerror: ((event: ErrorEvent) => void) | null = null;
         onmessage: ((event: MessageEvent<WorkerResponse>) => void) | null = null;
-        postMessage = vi.fn<(message: WorkerRequest, transfer?: Transferable[]) => void>();
+        onmessageerror: ((event: MessageEvent) => void) | null = null;
+        postMessage = vi.fn<(message: WorkerRequest, transfer?: Transferable[]) => void>(() => {
+            if (synchronousPostError) {
+                throw synchronousPostError;
+            }
+        });
         terminate = vi.fn();
         constructor(url: string | URL) {
             this.url = String(url);
@@ -152,6 +162,66 @@ describe('inferenceWorkerBridge — ONNX session lifecycle', () => {
             executionProviders: ['wasm'],
         });
         await expect(promise).resolves.toEqual(['wasm']);
+    });
+
+    it('rejects every pending ONNX request on a worker crash and respawns for a port-based retry', async () => {
+        const firstPort = new MessageChannel().port1;
+        const session = inferenceWorkerBridge.loadOnnxSession({ modelId: 'crashed-model', modelDataPort: firstPort });
+        const status = inferenceWorkerBridge.getLoadedOnnxSessions();
+        await flush();
+        const crashed = onnxWorker();
+
+        crashed.onerror?.({ message: 'worker crashed' } as ErrorEvent);
+
+        await expect(session).rejects.toThrow('worker crashed');
+        await expect(status).rejects.toThrow('worker crashed');
+        expect(crashed.terminate).toHaveBeenCalledOnce();
+
+        const retryPort = new MessageChannel().port1;
+        const retry = inferenceWorkerBridge.loadOnnxSession({ modelId: 'retry-model', modelDataPort: retryPort });
+        await flush();
+        expect(installedWorkers).toHaveLength(2);
+        const replacement = onnxWorker();
+        reply(replacement, {
+            type: 'session-created',
+            requestId: lastRequestId(replacement),
+            modelId: 'retry-model',
+            executionProviders: ['wasm'],
+        });
+        await expect(retry).resolves.toEqual(['wasm']);
+    });
+
+    it('resets the ONNX worker after an unreadable response', async () => {
+        const pending = inferenceWorkerBridge.getLoadedOnnxSessions();
+        await flush();
+        const crashed = onnxWorker();
+
+        crashed.onmessageerror?.({} as MessageEvent);
+
+        await expect(pending).rejects.toThrow('unreadable response');
+        expect(crashed.terminate).toHaveBeenCalledOnce();
+        const retry = inferenceWorkerBridge.getLoadedOnnxSessions();
+        retry.catch(() => undefined);
+        await flush();
+        expect(installedWorkers).toHaveLength(2);
+    });
+
+    it('closes a model port and resets worker state when transfer postMessage throws', async () => {
+        const modelDataPort = new MessageChannel().port1;
+        const close = vi.spyOn(modelDataPort, 'close');
+        synchronousPostError = new Error('transfer failed');
+
+        await expect(
+            inferenceWorkerBridge.loadOnnxSession({ modelId: 'transfer-failure', modelDataPort })
+        ).rejects.toThrow('transfer failed');
+
+        expect(close).toHaveBeenCalledOnce();
+        expect(onnxWorker().terminate).toHaveBeenCalledOnce();
+        synchronousPostError = null;
+        const retry = inferenceWorkerBridge.getLoadedOnnxSessions();
+        retry.catch(() => undefined);
+        await flush();
+        expect(installedWorkers).toHaveLength(2);
     });
 
     it('spawns one ONNX worker and posts create-session with the model buffer as a transfer', async () => {

@@ -11,6 +11,8 @@ const RENDERS_DIRECTORY = 'renders';
 const READ_CHUNK_BYTES = 4 * 1024 * 1024;
 const TEMPORARY_MODEL_PREFIX = '.sourdaw-';
 const TEMPORARY_MODEL_SUFFIX = '.partial';
+const MODEL_LOCK_PREFIX = 'sourdaw:browser-ai:model-storage:model:';
+const PARTIAL_LOCK_PREFIX = 'sourdaw:browser-ai:model-storage:partial:';
 
 type SyncAccessHandle = {
     close: () => void;
@@ -39,8 +41,19 @@ type WriteSession = {
     file: MovableSyncFileHandle;
     fileName: string;
     modelId: string;
+    modelLease: ModelStorageLockLease;
     offset: number;
+    partialLease: ModelStorageLockLease;
     temporaryName: string;
+};
+
+type ModelStorageLockLease = {
+    release: () => Promise<void>;
+};
+
+type ModelStorageLockPort = {
+    acquireExclusive: (name: string) => Promise<ModelStorageLockLease>;
+    tryAcquireExclusive: (name: string) => Promise<ModelStorageLockLease | null>;
 };
 
 type CreateModelStorageRequestHandlerInput = {
@@ -52,6 +65,58 @@ type CreateModelStorageRequestHandlerInput = {
         suffix: string;
         signal?: AbortSignal;
     }) => Promise<{ path: string; data: Uint8Array<ArrayBuffer> }>;
+    locks?: ModelStorageLockPort;
+};
+
+function requireBrowserLockManager(): LockManager {
+    if (typeof navigator === 'undefined' || !navigator.locks) {
+        throw new TypeError('Current Chromium Web Locks support is required for model storage');
+    }
+    return navigator.locks;
+}
+
+function requestBrowserLock(name: string, ifAvailable: boolean): Promise<ModelStorageLockLease | null> {
+    return new Promise<ModelStorageLockLease | null>((resolve, reject) => {
+        let releaseHold: (() => void) | undefined;
+        const hold = new Promise<void>((resolve) => {
+            releaseHold = resolve;
+        });
+        let acquired = false;
+        const request = requireBrowserLockManager().request(
+            name,
+            { mode: 'exclusive', ...(ifAvailable ? { ifAvailable: true } : {}) },
+            async (lock) => {
+                acquired = true;
+                if (lock === null) {
+                    resolve(null);
+                    return;
+                }
+                resolve({
+                    async release() {
+                        releaseHold?.();
+                        await request;
+                    },
+                });
+                await hold;
+            }
+        );
+        void request.catch((error: unknown) => {
+            if (!acquired) {
+                reject(error);
+            }
+        });
+    });
+}
+
+const browserLocks: ModelStorageLockPort = {
+    async acquireExclusive(name) {
+        const lease = await requestBrowserLock(name, false);
+        if (lease === null) {
+            throw new Error(`Failed to acquire required model storage lock: ${name}`);
+        }
+        return lease;
+    },
+    tryAcquireExclusive: (name) => requestBrowserLock(name, true),
 };
 
 function isNotFoundError(error: unknown): boolean {
@@ -63,6 +128,14 @@ function getTemporaryWriteId(name: string): string | null {
         return null;
     }
     return name.slice(TEMPORARY_MODEL_PREFIX.length, -TEMPORARY_MODEL_SUFFIX.length);
+}
+
+function modelLockName(input: { family: string; modelId: string }): string {
+    return `${MODEL_LOCK_PREFIX}${JSON.stringify([input.family, input.modelId])}`;
+}
+
+function partialLockName(writeId: string): string {
+    return `${PARTIAL_LOCK_PREFIX}${JSON.stringify(writeId)}`;
 }
 
 function serializeError(error: unknown): { name: string; message: string } {
@@ -167,6 +240,7 @@ export function createModelStorageRequestHandler({
     postResponse,
     sha256 = defaultSha256,
     extractArchive = extractSingleGuardedZipEntry,
+    locks = browserLocks,
 }: CreateModelStorageRequestHandlerInput): (request: ModelStorageWorkerRequest) => Promise<void> {
     const writes = new Map<string, WriteSession>();
 
@@ -183,32 +257,93 @@ export function createModelStorageRequestHandler({
                 session.access = null;
             }
         } finally {
-            await removeTemporaryFile(session);
+            try {
+                await removeTemporaryFile(session);
+            } finally {
+                await session.partialLease.release();
+                await session.modelLease.release();
+            }
+        }
+    }
+
+    async function withModelLock<Result>(
+        input: { family: string; modelId: string },
+        operation: () => Promise<Result>
+    ): Promise<Result> {
+        const lease = await locks.acquireExclusive(modelLockName(input));
+        try {
+            return await operation();
+        } finally {
+            await lease.release();
+        }
+    }
+
+    async function sweepStalePartials(directory: FileSystemDirectoryHandle): Promise<void> {
+        if (typeof Reflect.get(directory, Symbol.asyncIterator) !== 'function') {
+            return;
+        }
+        for await (const [name, handle] of directory as AsyncIterable<
+            [string, FileSystemFileHandle | FileSystemDirectoryHandle]
+        >) {
+            if (handle.kind === 'directory') {
+                await sweepStalePartials(handle);
+                continue;
+            }
+            const writeId = getTemporaryWriteId(name);
+            if (writeId === null) {
+                continue;
+            }
+            const lease = await locks.tryAcquireExclusive(partialLockName(writeId));
+            if (lease === null) {
+                continue;
+            }
+            try {
+                await directory.removeEntry(name).catch((error: unknown) => {
+                    if (!isNotFoundError(error)) {
+                        throw error;
+                    }
+                });
+            } finally {
+                await lease.release();
+            }
+        }
+    }
+
+    async function sweepModelPartials(): Promise<void> {
+        try {
+            const root = await getRoot();
+            await sweepStalePartials(await root.getDirectoryHandle(MODELS_DIRECTORY, { create: false }));
+        } catch (error) {
+            if (!isNotFoundError(error)) {
+                throw error;
+            }
         }
     }
 
     async function handleRead(request: Extract<ModelStorageWorkerRequest, { type: 'read-model' }>): Promise<void> {
         const { destinationPort } = request;
         try {
-            const root = await getRoot();
-            const { directory, fileName } = await resolveModelLocation(root, request, false);
-            const file = requireReadableSyncFileHandle(await directory.getFileHandle(fileName, { create: false }));
-            const modelData = await readAll(file);
-            const validSize =
-                request.expectedSizeBytes === undefined || modelData.byteLength === request.expectedSizeBytes;
-            const validDigest =
-                validSize &&
-                (request.expectedSha256 === undefined || (await sha256(modelData)) === request.expectedSha256);
-            if (!validDigest) {
-                await directory.removeEntry(fileName);
+            await withModelLock(request, async () => {
+                const root = await getRoot();
+                const { directory, fileName } = await resolveModelLocation(root, request, false);
+                const file = requireReadableSyncFileHandle(await directory.getFileHandle(fileName, { create: false }));
+                const modelData = await readAll(file);
+                const validSize =
+                    request.expectedSizeBytes === undefined || modelData.byteLength === request.expectedSizeBytes;
+                const validDigest =
+                    validSize &&
+                    (request.expectedSha256 === undefined || (await sha256(modelData)) === request.expectedSha256);
+                if (!validDigest) {
+                    await directory.removeEntry(fileName);
+                    destinationPort.close();
+                    postResponse({ type: 'read-complete', requestId: request.requestId, found: false });
+                    return;
+                }
+                const message: ModelStorageTransferMessage = { type: 'model-data', modelData };
+                destinationPort.postMessage(message, [modelData]);
                 destinationPort.close();
-                postResponse({ type: 'read-complete', requestId: request.requestId, found: false });
-                return;
-            }
-            const message: ModelStorageTransferMessage = { type: 'model-data', modelData };
-            destinationPort.postMessage(message, [modelData]);
-            destinationPort.close();
-            postResponse({ type: 'read-complete', requestId: request.requestId, found: true });
+                postResponse({ type: 'read-complete', requestId: request.requestId, found: true });
+            });
         } catch (error) {
             if (isNotFoundError(error)) {
                 destinationPort.close();
@@ -229,34 +364,42 @@ export function createModelStorageRequestHandler({
         if (writes.has(request.writeId)) {
             throw new Error(`Model write already exists: ${request.writeId}`);
         }
-        const root = await getRoot();
-        const { directory, fileName } = await resolveModelLocation(root, request, true);
+        await sweepModelPartials();
+        const modelLease = await locks.acquireExclusive(modelLockName(request));
         const temporaryName = `${TEMPORARY_MODEL_PREFIX}${request.writeId}${TEMPORARY_MODEL_SUFFIX}`;
-        const rawFile = await directory.getFileHandle(temporaryName, { create: true });
+        let directory: FileSystemDirectoryHandle | null = null;
+        let partialLease: ModelStorageLockLease | null = null;
         let access: SyncAccessHandle | null = null;
-        let file: MovableSyncFileHandle;
         try {
-            file = requireMovableSyncFileHandle(rawFile);
+            const root = await getRoot();
+            const location = await resolveModelLocation(root, request, true);
+            directory = location.directory;
+            partialLease = await locks.acquireExclusive(partialLockName(request.writeId));
+            const file = requireMovableSyncFileHandle(await directory.getFileHandle(temporaryName, { create: true }));
             access = await file.createSyncAccessHandle({ mode: 'readwrite' });
             access.truncate(0);
+            writes.set(request.writeId, {
+                access,
+                abortController: new AbortController(),
+                archive: request.archive,
+                directory,
+                expectedSha256: request.expectedSha256,
+                expectedSizeBytes: request.expectedSizeBytes,
+                file,
+                fileName: location.fileName,
+                modelId: request.modelId,
+                modelLease,
+                offset: 0,
+                partialLease,
+                temporaryName,
+            });
         } catch (error) {
             access?.close();
-            await directory.removeEntry(temporaryName).catch(() => undefined);
+            await directory?.removeEntry(temporaryName).catch(() => undefined);
+            await partialLease?.release();
+            await modelLease.release();
             throw error;
         }
-        writes.set(request.writeId, {
-            access,
-            abortController: new AbortController(),
-            archive: request.archive,
-            directory,
-            expectedSha256: request.expectedSha256,
-            expectedSizeBytes: request.expectedSizeBytes,
-            file,
-            fileName,
-            modelId: request.modelId,
-            offset: 0,
-            temporaryName,
-        });
         postResponse({ type: 'write-begun', requestId: request.requestId });
     }
 
@@ -269,6 +412,11 @@ export function createModelStorageRequestHandler({
         }
         throwIfAborted(session);
         const chunk = new Uint8Array(request.chunk);
+        if (session.expectedSizeBytes !== undefined && session.offset + chunk.byteLength > session.expectedSizeBytes) {
+            const message = `Model byte limit exceeded for ${session.modelId}: expected at most ${String(session.expectedSizeBytes)} bytes`;
+            await abortWrite(request.writeId);
+            throw new Error(message);
+        }
         const bytesWritten = session.access.write(chunk, { at: session.offset });
         if (bytesWritten !== chunk.byteLength) {
             throw new Error(`OPFS wrote ${String(bytesWritten)} of ${String(chunk.byteLength)} model bytes`);
@@ -336,6 +484,8 @@ export function createModelStorageRequestHandler({
             }
             throwIfAborted(session);
             await session.file.move(session.directory, session.fileName);
+            await session.partialLease.release();
+            await session.modelLease.release();
             writes.delete(request.writeId);
             postResponse({
                 type: 'write-committed',
@@ -360,13 +510,6 @@ export function createModelStorageRequestHandler({
             if (handle.kind === 'file') {
                 const temporaryWriteId = scavengeModelPartials ? getTemporaryWriteId(name) : null;
                 if (temporaryWriteId !== null) {
-                    if (!writes.has(temporaryWriteId)) {
-                        await directory.removeEntry(name).catch((error: unknown) => {
-                            if (!isNotFoundError(error)) {
-                                throw error;
-                            }
-                        });
-                    }
                     continue;
                 }
                 usedBytes += (await handle.getFile()).size;
@@ -401,15 +544,17 @@ export function createModelStorageRequestHandler({
                 return;
             }
             if (request.type === 'delete-model') {
-                try {
-                    const root = await getRoot();
-                    const { directory, fileName } = await resolveModelLocation(root, request, false);
-                    await directory.removeEntry(fileName);
-                } catch (error) {
-                    if (!isNotFoundError(error)) {
-                        throw error;
+                await withModelLock(request, async () => {
+                    try {
+                        const root = await getRoot();
+                        const { directory, fileName } = await resolveModelLocation(root, request, false);
+                        await directory.removeEntry(fileName);
+                    } catch (error) {
+                        if (!isNotFoundError(error)) {
+                            throw error;
+                        }
                     }
-                }
+                });
                 postResponse({ type: 'model-deleted', requestId: request.requestId });
                 return;
             }
@@ -430,28 +575,31 @@ export function createModelStorageRequestHandler({
             }
             if (request.type === 'verify-model') {
                 let verified = false;
-                try {
-                    const root = await getRoot();
-                    const { directory, fileName } = await resolveModelLocation(root, request, false);
-                    const file = requireReadableSyncFileHandle(
-                        await directory.getFileHandle(fileName, { create: false })
-                    );
-                    const modelData = await readAll(file);
-                    verified =
-                        modelData.byteLength === request.expectedSizeBytes &&
-                        (await sha256(modelData)) === request.expectedSha256;
-                    if (!verified) {
-                        await directory.removeEntry(fileName);
+                await withModelLock(request, async () => {
+                    try {
+                        const root = await getRoot();
+                        const { directory, fileName } = await resolveModelLocation(root, request, false);
+                        const file = requireReadableSyncFileHandle(
+                            await directory.getFileHandle(fileName, { create: false })
+                        );
+                        const modelData = await readAll(file);
+                        verified =
+                            modelData.byteLength === request.expectedSizeBytes &&
+                            (await sha256(modelData)) === request.expectedSha256;
+                        if (!verified) {
+                            await directory.removeEntry(fileName);
+                        }
+                    } catch (error) {
+                        if (!isNotFoundError(error)) {
+                            throw error;
+                        }
                     }
-                } catch (error) {
-                    if (!isNotFoundError(error)) {
-                        throw error;
-                    }
-                }
+                });
                 postResponse({ type: 'model-verified', requestId: request.requestId, verified });
                 return;
             }
 
+            await sweepModelPartials();
             const root = await getRoot();
             let usedBytes = 0;
             for (const name of [MODELS_DIRECTORY, RENDERS_DIRECTORY]) {

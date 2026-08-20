@@ -11,9 +11,10 @@
  * transient 86 MiB renderer control is transferred and detached before its
  * operation returns; the run is invalid unless that control breaches the gate.
  *
- * Usage:
- *   pnpm browser-ai:model-storage -- --mode legacy
- *   pnpm browser-ai:model-storage -- --mode worker --baseline-ms 38.7
+ * One invocation measures both legs against the same structured protocol and
+ * gates the worker result against the legacy median from that run.
+ *
+ * Usage: pnpm browser-ai:model-storage
  */
 
 import { createHash } from 'node:crypto';
@@ -52,29 +53,13 @@ type ReadSample = {
     hash: string;
 };
 
-function parseMode(): Mode {
-    const modeIndex = process.argv.indexOf('--mode');
-    const mode = modeIndex === -1 ? 'legacy' : process.argv[modeIndex + 1];
-    if (mode !== 'legacy' && mode !== 'worker') {
-        throw new Error(`Unsupported mode ${String(mode)}; expected legacy or worker`);
-    }
-    return mode;
-}
-
-function parseBaselineMs(mode: Mode): number | null {
-    const baselineIndex = process.argv.indexOf('--baseline-ms');
-    if (baselineIndex === -1) {
-        if (mode === 'worker') {
-            throw new Error('Worker mode requires --baseline-ms from the same 86 MiB legacy protocol');
-        }
-        return null;
-    }
-    const baselineMs = Number(process.argv[baselineIndex + 1]);
-    if (!Number.isFinite(baselineMs) || baselineMs <= 0) {
-        throw new Error(`Invalid --baseline-ms value: ${String(process.argv[baselineIndex + 1])}`);
-    }
-    return baselineMs;
-}
+type MeasurementLeg = {
+    mode: Mode;
+    medianColdReadMs: number;
+    peakRendererModelBufferBytes: number;
+    rendererAllocationPassed: boolean;
+    samples: ReadSample[];
+};
 
 function makeChunk(offset: number, length: number): Uint8Array {
     const chunk = new Uint8Array(length);
@@ -122,7 +107,7 @@ self.onmessage = (event) => {
 };
 `;
 
-function probePlugin(mode: Mode): Plugin {
+function probePlugin(expectedHash: string): Plugin {
     return {
         name: 'browser-ai-model-storage-probe',
         configureServer(server) {
@@ -144,7 +129,8 @@ const CHUNK_BYTES = ${String(CHUNK_BYTES)};
 const MODELS_DIRECTORY = ${JSON.stringify(MODELS_DIRECTORY)};
 const FAMILY = ${JSON.stringify(FAMILY)};
 const MODEL_ID = ${JSON.stringify(MODEL_ID)};
-const MODE = ${JSON.stringify(mode)};
+const EXPECTED_HASH = ${JSON.stringify(expectedHash)};
+let mode = 'legacy';
 let heldBuffer = null;
 let heldHashPromise = null;
 let nextSinkId = 0;
@@ -177,6 +163,11 @@ function makeChunk(offset, length) {
     return chunk;
 }
 
+async function sha256(buffer) {
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 async function seed() {
     const root = await navigator.storage.getDirectory();
     const models = await root.getDirectoryHandle(MODELS_DIRECTORY, { create: true });
@@ -190,7 +181,6 @@ async function seed() {
 }
 
 async function readLegacy() {
-    const startedAt = performance.now();
     const root = await navigator.storage.getDirectory();
     const models = await root.getDirectoryHandle(MODELS_DIRECTORY, { create: false });
     const family = await models.getDirectoryHandle(FAMILY, { create: false });
@@ -199,12 +189,19 @@ async function readLegacy() {
     if (!(heldBuffer instanceof ArrayBuffer) || heldBuffer.byteLength !== FIXTURE_BYTES) {
         throw new Error('Legacy read did not return the complete 86 MiB model buffer');
     }
-    return performance.now() - startedAt;
+    const verifiedHash = await sha256(heldBuffer);
+    if (verifiedHash !== EXPECTED_HASH) {
+        throw new Error('Legacy read failed exact SHA-256 verification');
+    }
 }
 
 async function readWorker() {
-    const startedAt = performance.now();
-    const modelDataPort = await readModel({ family: FAMILY, modelId: MODEL_ID });
+    const modelDataPort = await readModel({
+        family: FAMILY,
+        modelId: MODEL_ID,
+        expectedSizeBytes: FIXTURE_BYTES,
+        expectedSha256: EXPECTED_HASH,
+    });
     if (!(modelDataPort instanceof MessagePort)) {
         throw new Error('Worker read did not return a model transfer port');
     }
@@ -214,7 +211,6 @@ async function readWorker() {
         sinkPending.set(id, { resolve, reject });
     });
     sinkWorker.postMessage({ id, port: modelDataPort }, [modelDataPort]);
-    return performance.now() - startedAt;
 }
 
 async function allocateTransientRendererFixture() {
@@ -233,7 +229,7 @@ async function allocateTransientRendererFixture() {
 }
 
 async function hashHeldBuffer() {
-    if (MODE === 'worker') {
+    if (mode === 'worker') {
         if (!heldHashPromise) {
             throw new Error('No worker model hash is pending');
         }
@@ -242,8 +238,25 @@ async function hashHeldBuffer() {
     if (!(heldBuffer instanceof ArrayBuffer)) {
         throw new Error('No model buffer is held');
     }
-    const digest = await crypto.subtle.digest('SHA-256', heldBuffer);
-    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    return sha256(heldBuffer);
+}
+
+function setMode(nextMode) {
+    if (nextMode !== 'legacy' && nextMode !== 'worker') {
+        throw new Error('Unsupported measurement mode: ' + String(nextMode));
+    }
+    mode = nextMode;
+}
+
+async function readAndHash() {
+    const startedAt = performance.now();
+    if (mode === 'legacy') {
+        await readLegacy();
+    } else {
+        await readWorker();
+    }
+    const hash = await hashHeldBuffer();
+    return { durationMs: performance.now() - startedAt, hash };
 }
 
 async function measuredMemoryBytes() {
@@ -275,9 +288,8 @@ async function cleanup() {
 globalThis.browserAiModelStorageProbe = {
     seed,
     allocateTransientRendererFixture,
-    readLegacy,
-    readWorker,
-    hashHeldBuffer,
+    setMode,
+    readAndHash,
     measuredMemoryBytes,
     releaseBuffer,
     cleanup,
@@ -342,13 +354,26 @@ async function evaluateProbe<TResult>(page: Page, method: string): Promise<TResu
     }, method) as Promise<TResult>;
 }
 
-async function measureRead(page: Page, cdp: CDPSession, mode: Mode): Promise<ReadSample> {
+async function setProbeMode(page: Page, mode: Mode): Promise<void> {
+    await page.evaluate((nextMode) => {
+        const probe = (
+            globalThis as typeof globalThis & {
+                browserAiModelStorageProbe?: Record<string, (value: string) => unknown>;
+            }
+        ).browserAiModelStorageProbe;
+        const setMode = probe?.setMode;
+        if (!setMode) {
+            throw new Error('Probe method unavailable: setMode');
+        }
+        setMode(nextMode);
+    }, mode);
+}
+
+async function measureRead(page: Page, cdp: CDPSession): Promise<ReadSample> {
     await collectGarbage(cdp);
-    const observation = await observeRendererBackingStorageHighWater(cdp, async () => {
-        const durationMs = await evaluateProbe<number>(page, mode === 'legacy' ? 'readLegacy' : 'readWorker');
-        const hash = await evaluateProbe<string>(page, 'hashHeldBuffer');
-        return { durationMs, hash };
-    });
+    const observation = await observeRendererBackingStorageHighWater(cdp, () =>
+        evaluateProbe<{ durationMs: number; hash: string }>(page, 'readAndHash')
+    );
     const measuredMemoryBytes = await evaluateProbe<number | null>(page, 'measuredMemoryBytes');
     await evaluateProbe<void>(page, 'releaseBuffer');
     return {
@@ -357,6 +382,37 @@ async function measureRead(page: Page, cdp: CDPSession, mode: Mode): Promise<Rea
         rendererUsedHeapDeltaBytes: observation.after.usedSize - observation.before.usedSize,
         measuredMemoryBytes,
         hash: observation.result.hash,
+    };
+}
+
+async function measureLeg(page: Page, cdp: CDPSession, mode: Mode, expectedHash: string): Promise<MeasurementLeg> {
+    await setProbeMode(page, mode);
+    const warmup = await measureRead(page, cdp);
+    if (warmup.hash !== expectedHash) {
+        throw new Error(`${mode} warmup byte drift: expected ${expectedHash}, got ${warmup.hash}`);
+    }
+
+    const samples: ReadSample[] = [];
+    for (let index = 0; index < MEASURED_READS; index += 1) {
+        const sample = await measureRead(page, cdp);
+        if (sample.hash !== expectedHash) {
+            throw new Error(
+                `${mode} read ${String(index + 1)} byte drift: expected ${expectedHash}, got ${sample.hash}`
+            );
+        }
+        samples.push(sample);
+    }
+    const medianColdReadMs = percentile50(samples.map((sample) => sample.durationMs));
+    const peakRendererModelBufferBytes = Math.max(
+        0,
+        ...samples.map((sample) => sample.rendererBackingStorageDeltaBytes)
+    );
+    return {
+        mode,
+        medianColdReadMs,
+        peakRendererModelBufferBytes,
+        rendererAllocationPassed: peakRendererModelBufferBytes <= MAX_RENDERER_MODEL_BUFFER_BYTES,
+        samples,
     };
 }
 
@@ -373,11 +429,9 @@ async function measureRendererAllocationControl(page: Page, cdp: CDPSession): Pr
     return Math.max(0, observation.peakBackingStorageSize - observation.before.backingStorageSize);
 }
 
-const mode = parseMode();
-const baselineMs = parseBaselineMs(mode);
 const expectedHash = expectedFixtureHash();
 const vite = await createServer({
-    plugins: [probePlugin(mode)],
+    plugins: [probePlugin(expectedHash)],
     server: {
         host: '127.0.0.1',
         port: 0,
@@ -422,35 +476,16 @@ try {
         );
     }
 
-    const warmup = await measureRead(page, cdp, mode);
-    if (warmup.hash !== expectedHash) {
-        throw new Error(`Warmup byte drift: expected ${expectedHash}, got ${warmup.hash}`);
-    }
-
-    const samples: ReadSample[] = [];
-    for (let index = 0; index < MEASURED_READS; index += 1) {
-        const sample = await measureRead(page, cdp, mode);
-        if (sample.hash !== expectedHash) {
-            throw new Error(`Read ${String(index + 1)} byte drift: expected ${expectedHash}, got ${sample.hash}`);
-        }
-        samples.push(sample);
-    }
-
+    const legacy = await measureLeg(page, cdp, 'legacy', expectedHash);
+    const worker = await measureLeg(page, cdp, 'worker', expectedHash);
     const browserVersion = browser.version();
-    const durations = samples.map((sample) => sample.durationMs);
-    const medianColdReadMs = percentile50(durations);
-    const peakRendererAllocation = Math.max(0, ...samples.map((sample) => sample.rendererBackingStorageDeltaBytes));
-    const acceptance =
-        mode === 'worker' && baselineMs !== null
-            ? {
-                  maxRendererModelBufferBytes: MAX_RENDERER_MODEL_BUFFER_BYTES,
-                  maxMedianColdReadMs: baselineMs * MAX_COLD_READ_REGRESSION,
-                  rendererAllocationPassed: peakRendererAllocation <= MAX_RENDERER_MODEL_BUFFER_BYTES,
-                  coldReadPassed: medianColdReadMs <= baselineMs * MAX_COLD_READ_REGRESSION,
-              }
-            : null;
+    const acceptance = {
+        maxRendererModelBufferBytes: MAX_RENDERER_MODEL_BUFFER_BYTES,
+        maxMedianColdReadMs: legacy.medianColdReadMs * MAX_COLD_READ_REGRESSION,
+        rendererAllocationPassed: worker.rendererAllocationPassed,
+        coldReadPassed: worker.medianColdReadMs <= legacy.medianColdReadMs * MAX_COLD_READ_REGRESSION,
+    };
     const result = {
-        mode,
         browserVersion,
         machine: {
             platform: `${platform()} ${release()}`,
@@ -459,26 +494,26 @@ try {
             loadAverage: loadavg(),
         },
         protocol: {
+            schemaVersion: 1,
             fixtureBytes: FIXTURE_BYTES,
             fixtureSha256: expectedHash,
             warmups: 1,
             measuredReads: MEASURED_READS,
+            durationBoundary: 'read-verified-and-consumer-hash-complete',
         },
-        medianColdReadMs,
-        peakRendererModelBufferBytes: peakRendererAllocation,
-        rendererAllocationPassed: peakRendererAllocation <= MAX_RENDERER_MODEL_BUFFER_BYTES,
         rendererAllocationControl: {
             allocatedBytes: FIXTURE_BYTES,
             observedPeakRendererBytes: rendererAllocationControlBytes,
             rejectedByRendererAllocationGate: rendererAllocationControlBytes > MAX_RENDERER_MODEL_BUFFER_BYTES,
         },
+        legacy,
+        worker,
         acceptance,
-        samples,
     };
     console.log(JSON.stringify(result, null, 2));
-    if (acceptance && (!acceptance.rendererAllocationPassed || !acceptance.coldReadPassed)) {
+    if (!acceptance.rendererAllocationPassed || !acceptance.coldReadPassed) {
         throw new Error(
-            `Worker model-storage acceptance failed: renderer=${String(peakRendererAllocation)} bytes, median=${String(medianColdReadMs)} ms`
+            `Worker model-storage acceptance failed: renderer=${String(worker.peakRendererModelBufferBytes)} bytes, median=${String(worker.medianColdReadMs)} ms`
         );
     }
 } finally {
