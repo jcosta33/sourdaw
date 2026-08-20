@@ -66,14 +66,15 @@ at −0.3 dBTP. Those two only match after you pick the row again, which writes 
 | Music | **CD Master** | −9 LUFS | −0.1 dBTP |
 | Music | **Club / Dance** | −8 LUFS | −0.3 dBTP |
 | Music | **Hi-Fi Streaming** | −12 LUFS | −1.0 dBTP |
-| Custom | **Custom…** | — | unchanged |
+| Custom | **Custom…** | −14 LUFS in the menu, unused | unchanged |
 
 The header LED reads **On target** when short-term loudness is not more than 0.25 dB *above* the
 target — quieter than the target still reads **On target**. **Watch _n_ dB** appears only when
 short-term exceeds the target by more than 0.25 dB.
 
-**Custom…** has no loudness goal. Penalty then stays at 0.0 dB and the LED still reads **On
-target**, so that status is not a measurement.
+**Custom…** has no loudness goal. The menu still prints −14 LUFS on that row because every row
+shows its stored number; selecting **Custom…** does not use it. Penalty then stays at 0.0 dB and
+the LED still reads **On target**, so that status is not a measurement.
 
 ## Gain and ceiling
 
