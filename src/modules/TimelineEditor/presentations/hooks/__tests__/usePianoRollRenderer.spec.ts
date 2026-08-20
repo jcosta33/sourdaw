@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => {
         id: string;
         kind: string;
         color: string;
-        clips: Array<{ id: string; type: string; color: string }>;
+        clips: Array<{ id: string; type: string; color: string; startBeat?: number; endBeat?: number }>;
     };
     return {
         midiState: { notesByClipId: {} },
@@ -40,11 +40,28 @@ type RendererDeps = Parameters<typeof usePianoRollRenderer>[0];
 
 // ── Geometry ─────────────────────────────────────────────────────────────
 // chromatic + unfolded → 60 rows, pitches 83..24 top-to-bottom.
-// beatWidth 10 → totalWidth = GRID_BEATS(32) * 10 = 320 (canvas has no parent).
-// height = 60 * 16 + RULER(22) = 982. Note x = startBeat * 10, y = (83 - pitch) * 16.
+// The canvas covers the viewport, so its width comes from the scroll
+// container: clientWidth 400 - PITCH_RAIL_WIDTH(40) = 360 visible pixels.
+// height = 60 * 16 + RULER(22) = 982. At scrollLeft 0 the drawn slice starts
+// at beat 0, so note x = startBeat * 10, y = (83 - pitch) * 16.
 const BEAT_W = 10;
+const VIEWPORT_W = 360;
+const PITCH_RAIL_W = 40;
 
 const rowY = (pitch: number): number => (83 - pitch) * 16;
+
+/**
+ * Stand-in for the `overflow-auto` scroll container. Only `clientWidth` and
+ * `scrollLeft` are read, and they are exactly what decides which slice of the
+ * arrangement the canvas covers — a test that leaves them at jsdom's zeroes
+ * would be asserting against a viewport that does not exist.
+ */
+const scrollContainer = (scrollLeft = 0, clientWidth = VIEWPORT_W + PITCH_RAIL_W): { current: HTMLElement } => {
+    const element = document.createElement('div');
+    Object.defineProperty(element, 'clientWidth', { value: clientWidth, configurable: true });
+    Object.defineProperty(element, 'scrollLeft', { value: scrollLeft, writable: true, configurable: true });
+    return { current: element };
+};
 
 // rAF under manual control: the renderer re-queues a tick per frame.
 let rafQueue: FrameRequestCallback[] = [];
@@ -78,6 +95,7 @@ class OffscreenCanvasStub {
 
 const buildDeps = (overrides: Partial<RendererDeps> = {}): RendererDeps => ({
     canvasRef: { current: document.createElement('canvas') },
+    scrollRef: scrollContainer(),
     notes: [],
     clipId: 'clip-1',
     trackId: 'track-1',
@@ -119,17 +137,166 @@ describe('usePianoRollRenderer', () => {
         vi.restoreAllMocks();
     });
 
-    it('sizes the canvas backing store to the full grid on the first tick', () => {
+    it('sizes the canvas backing store to the viewport on the first tick', () => {
         const deps = buildDeps();
         renderHook(() => usePianoRollRenderer(deps));
 
         runTick();
 
         const canvas = deps.canvasRef.current!;
-        expect(canvas.width).toBe(320);
+        expect(canvas.width).toBe(VIEWPORT_W);
         expect(canvas.height).toBe(982);
-        expect(canvas.style.width).toBe('320px');
+        expect(canvas.style.width).toBe(`${VIEWPORT_W}px`);
         expect(canvas.style.height).toBe('982px');
+    });
+
+    // Issue #2299. A backing store sized to the whole arrangement made the
+    // reachable beat count inversely proportional to zoom: a canvas dimension
+    // is finite, so `beats * beatWidth * devicePixelRatio` had to fit inside
+    // it, and every attempt to bound that product truncated one of the two.
+    // The backing store must therefore not grow with content at all — a clip
+    // 100x longer than the viewport gets the same backing store as an empty
+    // one, and the extra beats live in CSS layout instead (PianoRoll.tsx).
+    it('keeps the backing store at the viewport size no matter how long the clip is', () => {
+        const emptyDeps = buildDeps();
+        renderHook(() => usePianoRollRenderer(emptyDeps));
+        runTick();
+        const emptyWidth = emptyDeps.canvasRef.current!.width;
+
+        mocks.trackState = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    kind: 'midi',
+                    color: 'oklch(0.5 0.1 200)',
+                    clips: [{ id: 'clip-1', type: 'midi', color: '', startBeat: 0, endBeat: 4000 }],
+                },
+            ],
+        };
+        mocks.midiState = {
+            notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 3990, duration: 4, velocity: 100 }] },
+        };
+        const longDeps = buildDeps();
+        renderHook(() => usePianoRollRenderer(longDeps));
+        runTick();
+
+        expect(longDeps.canvasRef.current!.width).toBe(VIEWPORT_W);
+        expect(longDeps.canvasRef.current!.width).toBe(emptyWidth);
+    });
+
+    // The cached grid and the dynamic layers have to move by the same amount
+    // or the picture tears apart the moment the user scrolls, so both origins
+    // are asserted together against one scroll offset. The layers themselves
+    // keep drawing in absolute content coordinates — the shift lives in the
+    // context transform and in the blit position, nowhere else.
+    it('puts the grid blit and the dynamic layers on the same scrolled origin', () => {
+        const setTransform = vi.spyOn(ctx, 'setTransform');
+        const drawImage = vi.spyOn(ctx, 'drawImage');
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        mocks.midiState = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n1', pitch: 60, startBeat: 35, duration: 2, velocity: 127 }],
+            },
+        };
+        const deps = buildDeps({ scrollRef: scrollContainer(300) });
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+
+        // Beat 35 at beatWidth 10 → content x 350, +1 for the note's inset.
+        expect(roundRect).toHaveBeenCalledWith(351, rowY(60) + 1, 18, 14, 2);
+        // devicePixelRatio 1, translated left by the scroll offset, so content
+        // x 350 lands 50px into a canvas that starts at content x 300.
+        expect(setTransform).toHaveBeenLastCalledWith(1, 0, 0, 1, -300, 0);
+        // The cache window starts half a viewport before the scroll offset
+        // (300 - 180), and is blitted at that same origin.
+        expect(drawImage).toHaveBeenCalledWith(expect.anything(), -180, 0);
+    });
+
+    // Every repaint walks the whole note list, including every frame of a
+    // scroll, so a clip long enough to need scrolling is mostly off-viewport
+    // work unless the slice is culled.
+    it('skips notes outside the drawn slice', () => {
+        const roundRect = vi.spyOn(ctx, 'roundRect');
+        mocks.midiState = {
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'near', pitch: 60, startBeat: 35, duration: 2, velocity: 127 },
+                    { id: 'far', pitch: 60, startBeat: 3000, duration: 2, velocity: 127 },
+                ],
+            },
+        };
+        const deps = buildDeps({ scrollRef: scrollContainer(300) });
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+
+        expect(roundRect).toHaveBeenCalledWith(351, rowY(60) + 1, 18, 14, 2);
+        expect(roundRect).not.toHaveBeenCalledWith(30_001, rowY(60) + 1, 18, 14, 2);
+    });
+
+    // A viewport-relative canvas that does not treat the scroll offset as a
+    // repaint trigger freezes the whole picture while scrolling — the dirty
+    // check would see identical notes, identical stores and an unchanged grid
+    // key and skip the frame, leaving the previous slice on screen.
+    it('repaints when only the scroll offset changed', () => {
+        const drawImage = vi.spyOn(ctx, 'drawImage');
+        const scrollRef = scrollContainer(0);
+        const deps = buildDeps({ scrollRef });
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(1);
+        runTick();
+        expect(drawImage).toHaveBeenCalledTimes(1);
+
+        scrollRef.current.scrollLeft = 40;
+        runTick();
+
+        expect(drawImage).toHaveBeenCalledTimes(2);
+    });
+
+    // Scrolling must not re-stroke the grid every frame. The cache spans a
+    // window wider than the viewport, so travel inside it costs a blit only;
+    // leaving it rebuilds once. `drawBackground`'s fill is the cache rebuild's
+    // own signature — it is the only full-height fillRect of the cache width.
+    it('rebuilds the grid cache only when the scroll offset leaves the cached window', () => {
+        const fillRect = vi.spyOn(ctx, 'fillRect');
+        const scrollRef = scrollContainer(0);
+        const deps = buildDeps({ scrollRef });
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+        const cacheWidth = VIEWPORT_W * 2;
+        const rebuilds = (): number =>
+            fillRect.mock.calls.filter((call) => call[2] === cacheWidth && call[3] === 982).length;
+        expect(rebuilds()).toBe(1);
+
+        // Inside the cached window: 40 frames of scrolling, no rebuild.
+        for (let step = 1; step <= 40; step++) {
+            scrollRef.current.scrollLeft = step * 4;
+            runTick();
+        }
+        expect(rebuilds()).toBe(1);
+
+        // Past the cached window's right edge → exactly one rebuild.
+        scrollRef.current.scrollLeft = VIEWPORT_W * 2;
+        runTick();
+        expect(rebuilds()).toBe(2);
+    });
+
+    // Nothing is drawn into a backing store whose size is a lie: before the
+    // scroll container is laid out its clientWidth is 0, which would otherwise
+    // size the canvas from a negative viewport width.
+    it('skips the frame while the scroll container has no measurable width', () => {
+        const drawImage = vi.spyOn(ctx, 'drawImage');
+        const deps = buildDeps({ scrollRef: scrollContainer(0, 0) });
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+
+        expect(drawImage).not.toHaveBeenCalled();
+        expect(deps.canvasRef.current!.width).toBe(300); // untouched jsdom default
     });
 
     it('blits the cached grid on a repaint and skips repainting when nothing changed', () => {
@@ -261,7 +428,7 @@ describe('usePianoRollRenderer', () => {
         // Column fill: x = stepBeat * beatWidth, width = gridSnap * beatWidth, full note area
         expect(fillRect).toHaveBeenCalledWith(40, 0, 10, 960);
         // Row highlight for the step pitch
-        expect(fillRect).toHaveBeenCalledWith(0, rowY(60), 320, 16);
+        expect(fillRect).toHaveBeenCalledWith(0, rowY(60), 360, 16);
     });
 
     it('draws ghost notes from other MIDI tracks only when the toggle is on', () => {

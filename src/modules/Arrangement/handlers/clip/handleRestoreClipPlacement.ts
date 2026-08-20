@@ -1,6 +1,6 @@
 import { clipAutomationMoveStateMatches, restoreClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type ClipMoveActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ClipMoveActionSnapshot } from '#/utils/handlerContract';
 
 import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -19,17 +19,26 @@ function readPlacement(clipId: string): Omit<ClipMoveActionSnapshot, 'automation
     return track && clip ? { trackId: track.id, startBeat: clip.startBeat, endBeat: clip.endBeat } : null;
 }
 
+type RestoreClipPlacementAction = Extract<AppAction, { type: 'restoreClipPlacement' }>;
+
+/** Same expected-placement match `execute` writes against, reused by `validate` so a batch
+ *  preflight rejects a diverged placement instead of executing into a silent overwrite. */
+function expectedPlacementMatches(action: RestoreClipPlacementAction): boolean {
+    const current = readPlacement(action.payload.clipId);
+    return (
+        current !== null &&
+        placementsMatch({ ...current, automationLanes: [] }, { ...action.payload.expected, automationLanes: [] }) &&
+        clipAutomationMoveStateMatches(action.payload.clipId, action.payload.expected.automationLanes)
+    );
+}
+
 export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>({
+    // `expected` is mandatory on this payload (unlike optional replay guards elsewhere), so
+    // every instance of this action carries a real precondition `validate` re-checks.
+    canReapplyAfterDivergence: () => true,
+    validate: expectedPlacementMatches,
     execute: (action) => {
-        const current = readPlacement(action.payload.clipId);
-        if (
-            !current ||
-            !placementsMatch(
-                { ...current, automationLanes: [] },
-                { ...action.payload.expected, automationLanes: [] }
-            ) ||
-            !clipAutomationMoveStateMatches(action.payload.clipId, action.payload.expected.automationLanes)
-        ) {
+        if (!expectedPlacementMatches(action)) {
             return { status: 'conflict' };
         }
         const moved = moveClip(

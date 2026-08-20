@@ -115,6 +115,42 @@ describe('transformAutomationPoints — invert', () => {
         // 100 - (10 - 0) = 90
         expect(values(result)).toEqual([90]);
     });
+
+    it('mirrors bezier control-point y-values about the lane midpoint, not just the point value', () => {
+        // A no-op round trip would pass trivially even if cp1/cp2 were never
+        // touched at all, so this asserts the mirrored shape after a SINGLE
+        // invert: maxValue - (y - minValue) = 1 - y for the default [0,1] lane.
+        // cp.x is a segment-relative time fraction and must stay untouched.
+        const lane = makeLane([
+            { beat: 0, value: 0.25, curve: 'bezier', cp1: { x: 0.2, y: 0.25 }, cp2: { x: 0.8, y: 0.75 } },
+        ]);
+        const result = transformAutomationPoints(lane, { type: 'invert' });
+        expect(result[0]?.cp1).toEqual({ x: 0.2, y: 0.75 });
+        expect(result[0]?.cp2).toEqual({ x: 0.8, y: 0.25 });
+    });
+
+    it('double-invert returns the exact original points, including curve fields', () => {
+        // cp1/cp2 y-values live in the same absolute units as `value` (see
+        // evaluateAutomationCurve, which feeds `cp1.y ?? firstPoint.value`
+        // straight into the same cubicBezier() call as the endpoint values) —
+        // so an invert that mirrors `value` but not `cp1`/`cp2` bows the bezier
+        // shape onto the wrong side of the mirror. cp.x is a segment-relative
+        // time fraction, never touched by a value-space mirror.
+        const lane = makeLane([
+            {
+                beat: 0,
+                value: 0.25,
+                curve: 'bezier',
+                tension: 0.4,
+                cp1: { x: 0.2, y: 0.25 },
+                cp2: { x: 0.8, y: 0.75 },
+            },
+            { beat: 1, value: 0.75, curve: 'exponential', tension: -0.5 },
+        ]);
+        const once = transformAutomationPoints(lane, { type: 'invert' });
+        const twice = transformAutomationPoints({ ...lane, points: once }, { type: 'invert' });
+        expect(twice).toEqual(lane.points);
+    });
 });
 
 describe('transformAutomationPoints — stretch', () => {
@@ -189,6 +225,118 @@ describe('transformAutomationPoints — reverse', () => {
         const lane = makeLane([]);
         const result = transformAutomationPoints(lane, { type: 'reverse' });
         expect(result).toEqual([]);
+    });
+
+    it('re-associates curve data with the segment it belongs to, not the point that carried it', () => {
+        // evaluateAutomationCurve reads curve/tension/cp1/cp2/stairSteps off
+        // `firstPoint` (the earlier-beat point of a pair) to shape the segment
+        // toward its next neighbour. The original [0,2] segment is 'bezier',
+        // anchored on the point at beat 0. After reversing, that physical span
+        // sits between new beats 2 and 4 (mirror(0)=4, mirror(2)=2) — its
+        // shape must move to the new segment's earlier point, beat 2. The
+        // bezier controls also swap and mirror their x (time swaps, value
+        // does not) — see the 'mirrors and swaps bezier control points' spec
+        // below for that transform in isolation.
+        // x's are dyadic fractions (0.25/0.75) so `1 - x` round-trips exactly
+        // in floating point — the assertion is about the swap/mirror, not
+        // about float precision.
+        const lane = makeLane([
+            { beat: 0, value: 0, curve: 'bezier', tension: 0, cp1: { x: 0.25, y: 0.1 }, cp2: { x: 0.75, y: 0.9 } },
+            { beat: 2, value: 0.5, curve: 'linear' },
+            { beat: 4, value: 1, curve: 'step' },
+        ]);
+        const result = transformAutomationPoints(lane, { type: 'reverse' });
+        const atBeat2 = result.find((p) => p.beat === 2);
+        expect(atBeat2?.curve).toBe('bezier');
+        expect(atBeat2?.cp1).toEqual({ x: 0.25, y: 0.9 });
+        expect(atBeat2?.cp2).toEqual({ x: 0.75, y: 0.1 });
+    });
+
+    it('mirrors and swaps bezier control points when the curve data moves to its new segment anchor', () => {
+        // A cubic from (0,v0) to (1,v1) with controls C1,C2, traversed
+        // backwards, is the cubic from (0,v1) to (1,v0) with controls
+        // (1-C2.x, C2.y) and (1-C1.x, C1.y): time flips (x mirrors, the two
+        // controls swap slots), value does not (y stays put). x's (0.25/0.75,
+        // dyadic so `1 - x` is exact in floating point) and y's (0.2/0.8) are
+        // deliberately different so a bug that only swaps, only mirrors, or
+        // does neither is caught — a round trip alone would not catch this,
+        // since a double swap-and-mirror is an identity just like a double
+        // no-op is.
+        const lane = makeLane([
+            { beat: 0, value: 0, curve: 'bezier', cp1: { x: 0.25, y: 0.2 }, cp2: { x: 0.75, y: 0.8 } },
+            { beat: 2, value: 1, curve: 'linear' },
+        ]);
+        const once = transformAutomationPoints(lane, { type: 'reverse' });
+        // mirror(0)=2, mirror(2)=0 — the bezier's original left point (beat 0)
+        // is now the terminal point; the new anchor (new beat 0) is the old
+        // point at beat 2, which inherits the transformed bezier data.
+        const anchor = once.find((p) => p.beat === 0);
+        expect(anchor?.curve).toBe('bezier');
+        expect(anchor?.cp1).toEqual({ x: 0.25, y: 0.8 });
+        expect(anchor?.cp2).toEqual({ x: 0.75, y: 0.2 });
+
+        const twice = transformAutomationPoints({ ...lane, points: once }, { type: 'reverse' });
+        const restoredAnchor = twice.find((p) => p.beat === 0);
+        expect(restoredAnchor?.cp1).toEqual({ x: 0.25, y: 0.2 });
+        expect(restoredAnchor?.cp2).toEqual({ x: 0.75, y: 0.8 });
+    });
+
+    it('double-reverse returns the exact original points, including curve fields', () => {
+        const lane = makeLane([
+            {
+                beat: 0,
+                value: 0.1,
+                curve: 'bezier',
+                tension: 0.2,
+                cp1: { x: 0.25, y: 0.4 },
+                cp2: { x: 0.75, y: 0.6 },
+            },
+            { beat: 2, value: 0.5, curve: 'exponential', tension: 0.7 },
+            { beat: 4, value: 0.9, curve: 's-curve', tension: -0.3 },
+        ]);
+        const once = transformAutomationPoints(lane, { type: 'reverse' });
+        const twice = transformAutomationPoints({ ...lane, points: once }, { type: 'reverse' });
+        expect(twice).toEqual(lane.points);
+
+        // A lane with a duplicate beat is how this codebase writes a hard
+        // jump (see addAutomationPoint: a tie lands after the existing
+        // equal-beat point; handleRemoveAutomationPoint branches on
+        // `beatDuplicated` for undo safety) — and it is the one case a
+        // distinct-beat lane can never exercise. `Array.prototype.sort` is
+        // stable, so relocating points by a beat-keyed sort alone leaves two
+        // tied points in their original relative order instead of swapping
+        // it; a true time-reversal of a jump must swap which point is the
+        // anchor, along with its curve data. A no-op curve permutation would
+        // pass this round trip trivially (curve never moves, so it can't
+        // land wrong) — this lane is only meaningful together with the
+        // segment-reassignment specs above, which prove curve data does move.
+        const jumpLane = makeLane([
+            { beat: 0, value: 0, curve: 'linear' },
+            { beat: 2, value: 10, curve: 'step' },
+            { beat: 2, value: 20, curve: 'exponential', tension: 0.5 },
+            { beat: 4, value: 30, curve: 's-curve' },
+        ]);
+        const jumpOnce = transformAutomationPoints(jumpLane, { type: 'reverse' });
+        const jumpTwice = transformAutomationPoints({ ...jumpLane, points: jumpOnce }, { type: 'reverse' });
+        expect(jumpTwice).toEqual(jumpLane.points);
+    });
+
+    it('reversing a lane with a duplicate beat swaps the tied points, not only their curve data', () => {
+        // The jump reads, forward, as "hold 10 up to beat 2, then jump to 20
+        // and hold to beat 4". A correct time-reversal must read as the jump
+        // played backwards: "hold 30 down to beat 4→2 [now 2→0 mirrored],
+        // land on 20, then jump down to 10 and hold to beat 0" — i.e. the
+        // *order* of the two beat-2 points must swap (20 before 10), not
+        // stay (10 before 20) as a beat-only stable sort would leave it.
+        const jumpLane = makeLane([
+            { beat: 0, value: 0, curve: 'linear' },
+            { beat: 2, value: 10, curve: 'step' },
+            { beat: 2, value: 20, curve: 'exponential', tension: 0.5 },
+            { beat: 4, value: 30, curve: 's-curve' },
+        ]);
+        const result = transformAutomationPoints(jumpLane, { type: 'reverse' });
+        expect(beats(result)).toEqual([0, 2, 2, 4]);
+        expect(values(result)).toEqual([30, 20, 10, 0]);
     });
 });
 

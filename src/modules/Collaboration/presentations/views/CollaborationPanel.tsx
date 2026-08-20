@@ -170,6 +170,20 @@ export const CollaborationPanel = (): ReactElement | null => {
         return 'Not connected';
     })();
 
+    // A quarantined peer stays in the peer list, connected, with live
+    // presence — the divergence is invisible unless it is said out loud, and
+    // it lasts until that peer is gone, so this row is not part of the
+    // transient error slot and nothing routine takes it down.
+    const quarantinedPeerLabel = (() => {
+        if (state.quarantinedPeerIds.length === 0) {
+            return null;
+        }
+        const names = state.quarantinedPeerIds.map(
+            (peerId) => state.peers.find((peer) => peer.id === peerId)?.name ?? 'a peer'
+        );
+        return `Stopped syncing with ${names.join(', ')} — their changes could not be applied after repeated attempts. Have them rejoin the session.`;
+    })();
+
     return (
         <DawUtilityPanel
             className="absolute right-2 top-10 z-40 w-72"
@@ -348,6 +362,14 @@ export const CollaborationPanel = (): ReactElement | null => {
                         </CollaborationBlock>
                     </>
                 )}
+
+                {quarantinedPeerLabel ? (
+                    <CollaborationStatusRow
+                        icon={<WifiOff className="size-3 text-[var(--color-state-danger)]" />}
+                        label={quarantinedPeerLabel}
+                        tone="danger"
+                    />
+                ) : null}
 
                 {state.error ? (
                     <CollaborationStatusRow

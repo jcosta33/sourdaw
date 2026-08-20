@@ -47,7 +47,7 @@ describe('agent device factory manifest', () => {
             scannedPlugins: [
                 {
                     id: 'scan-id',
-                    clap_id: 'org.example.effect',
+                    descriptor_id: 'org.example.effect',
                     name: 'Example Effect',
                     vendor: 'Example',
                     format: 'clap',
@@ -102,7 +102,7 @@ describe('agent device factory manifest', () => {
             }>;
         } = {
             id: 'scan-id',
-            clap_id: 'org.example.effect',
+            descriptor_id: 'org.example.effect',
             name: 'Example Effect',
             vendor: 'Example',
             format: 'clap',
@@ -185,7 +185,7 @@ describe('agent device factory manifest', () => {
             }>;
         } = {
             id: 'scan-id',
-            clap_id: 'org.example.effect',
+            descriptor_id: 'org.example.effect',
             name: 'Example Effect',
             vendor: 'Example',
             format: 'clap',
@@ -224,7 +224,7 @@ describe('agent device factory manifest', () => {
     it('fails closed for an overlong scanner parameter module', () => {
         const scannedPlugin: ScannedPlugin = {
             id: 'scan-id',
-            clap_id: 'org.example.effect',
+            descriptor_id: 'org.example.effect',
             name: 'Example Effect',
             vendor: 'Example',
             format: 'clap',
@@ -268,7 +268,7 @@ describe('agent device factory manifest', () => {
     ])('fails closed without throwing for %s', (_label, malformedParameter) => {
         const scannedPlugin = {
             id: 'scan-id',
-            clap_id: 'org.example.effect',
+            descriptor_id: 'org.example.effect',
             name: 'Example Effect',
             vendor: 'Example',
             format: 'clap',
@@ -296,7 +296,7 @@ describe('agent device factory manifest', () => {
     it('deduplicates equivalent parameter contracts and conflicts when one contract changes', () => {
         const base: ScannedPlugin = {
             id: 'scan-a',
-            clap_id: 'org.example.effect',
+            descriptor_id: 'org.example.effect',
             name: 'Example Effect',
             vendor: 'Example',
             format: 'clap',
@@ -363,7 +363,7 @@ describe('agent device factory manifest', () => {
             scannedPlugins: [
                 {
                     id: 'scan-id',
-                    clap_id: 'org.example.effect',
+                    descriptor_id: 'org.example.effect',
                     name: `\u0000 ${longName}`,
                     vendor: `\u0000 ${longVendor}`,
                     format: 'clap',
@@ -396,7 +396,7 @@ describe('agent device factory manifest', () => {
     it('derives stable factory versions from scan metadata, deduplicates equivalent rescans, and marks conflicts', () => {
         const base = {
             id: 'path-a',
-            clap_id: 'org.example.effect',
+            descriptor_id: 'org.example.effect',
             name: 'Example Effect',
             vendor: 'Example',
             format: 'clap',
@@ -448,7 +448,7 @@ describe('agent device factory manifest', () => {
         const second = `${prefix}.second`;
         const base = {
             id: 'scan-a',
-            clap_id: first,
+            descriptor_id: first,
             name: 'Example Effect',
             vendor: 'Example',
             format: 'clap',
@@ -462,7 +462,11 @@ describe('agent device factory manifest', () => {
         };
         pluginScanStore.set({
             ...defaultPluginScanState,
-            scannedPlugins: [base, { ...base, id: 'scan-b', path: '/plugins/b.clap' }, { ...base, id: 'scan-c', clap_id: second, path: '/plugins/c.clap' }],
+            scannedPlugins: [
+                base,
+                { ...base, id: 'scan-b', path: '/plugins/b.clap' },
+                { ...base, id: 'scan-c', descriptor_id: second, path: '/plugins/c.clap' },
+            ],
         });
         const manifest = getAgentDeviceFactoryManifest([`clap:${first}`, `clap:${second}`]);
         expect(manifest.devices.map((device) => device.type)).toEqual([`clap:${first}`, `clap:${second}`]);
@@ -472,8 +476,28 @@ describe('agent device factory manifest', () => {
     it('uses bounded v2 identities for non-BMP CLAP ids that exceed provider bounds', () => {
         const first = `org.example.${'😀'.repeat(230)}`;
         const second = `org.example.${'😃'.repeat(230)}`;
-        const base = { id: 'scan-a', clap_id: first, name: 'Effect', vendor: 'Example', format: 'clap', category: 'effect', path: '/plugins/a.clap', version: '1.0.0', num_inputs: 0, num_outputs: 0, num_parameters: 0, has_custom_ui: false };
-        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [base, { ...base, id: 'scan-b', path: '/plugins/b.clap' }, { ...base, id: 'scan-c', clap_id: second, path: '/plugins/c.clap' }] });
+        const base = {
+            id: 'scan-a',
+            descriptor_id: first,
+            name: 'Effect',
+            vendor: 'Example',
+            format: 'clap',
+            category: 'effect',
+            path: '/plugins/a.clap',
+            version: '1.0.0',
+            num_inputs: 0,
+            num_outputs: 0,
+            num_parameters: 0,
+            has_custom_ui: false,
+        };
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: [
+                base,
+                { ...base, id: 'scan-b', path: '/plugins/b.clap' },
+                { ...base, id: 'scan-c', descriptor_id: second, path: '/plugins/c.clap' },
+            ],
+        });
         const types = getAgentDeviceFactoryManifest().devices.map((device) => device.type);
         expect(types).toHaveLength(2);
         expect(types[0]).not.toBe(types[1]);
@@ -483,7 +507,7 @@ describe('agent device factory manifest', () => {
     it('does not expand an explicitly selected external factory set', () => {
         const first = {
             id: 'first',
-            clap_id: 'org.example.first',
+            descriptor_id: 'org.example.first',
             name: 'First',
             vendor: 'Example',
             format: 'clap',
@@ -499,7 +523,7 @@ describe('agent device factory manifest', () => {
             ...defaultPluginScanState,
             scannedPlugins: [
                 first,
-                { ...first, id: 'second', clap_id: 'org.example.second', path: '/plugins/second.clap' },
+                { ...first, id: 'second', descriptor_id: 'org.example.second', path: '/plugins/second.clap' },
             ],
         });
 

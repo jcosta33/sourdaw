@@ -1,6 +1,6 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
 
-import { cn } from '#/utils/Styles/cn';
+import { Stack } from '#/components/layout';
 
 type DawPluginReadoutListProps = HTMLAttributes<HTMLDivElement> & {
     density?: 'tight' | 'default';
@@ -12,7 +12,7 @@ export const DawPluginReadoutList = ({
     children,
     ...props
 }: DawPluginReadoutListProps): ReactElement => (
-    <div className={cn(density === 'tight' ? 'space-y-1' : 'space-y-2', className)} {...props}>
+    <Stack gap={density === 'tight' ? 1 : 2} className={className} {...props}>
         {children}
-    </div>
+    </Stack>
 );

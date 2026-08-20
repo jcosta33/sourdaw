@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type TrackTemplate } from '../../models/TrackTemplate';
 import { getTrackById } from '../../repositories/track/getTrackById';
@@ -19,6 +21,7 @@ vi.mock('../../repositories/trackTemplate/loadTrackTemplates', () => ({
 vi.mock('../../repositories/trackTemplate/saveTrackTemplates', () => ({
     saveTrackTemplates: vi.fn(),
 }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 describe('saveTrackAsTemplate', () => {
     function createTemplate(overrides: Partial<TrackTemplate> = {}): TrackTemplate {
@@ -52,6 +55,31 @@ describe('saveTrackAsTemplate', () => {
         expect(loadTrackTemplates).not.toHaveBeenCalled();
         expect(saveTrackTemplates).not.toHaveBeenCalled();
         expect(trackTemplateCache.templates).toBeNull();
+    });
+
+    it('rejects tracks containing a withheld device', () => {
+        vi.mocked(getTrackById).mockReturnValue(
+            TrackDummy.create({
+                id: 'track-1',
+                devices: [
+                    {
+                        id: 'grand-boule-source',
+                        name: 'Grand Boule',
+                        type: 'grand-boule',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                ],
+            })
+        );
+
+        expect(saveTrackAsTemplate('track-1', 'Withheld piano')).toBeNull();
+        expect(loadTrackTemplates).not.toHaveBeenCalled();
+        expect(saveTrackTemplates).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Track contains withheld device "grand-boule" and was not saved as a template.',
+            'warning'
+        );
     });
 
     it('should save a cloned template with the default User category', () => {

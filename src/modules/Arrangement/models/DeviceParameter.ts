@@ -1,3 +1,4 @@
+import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { type PluginDescriptor } from './DeviceParameterTypes';
@@ -177,6 +178,9 @@ export function getPluginById(pluginId: string): PluginDescriptor | undefined {
  * renderer + Web Audio.
  */
 export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean {
+    if (!isDeviceReleaseAdmitted(deviceType)) {
+        return false;
+    }
     const descriptor = BUILTIN_PLUGINS.find((param) => param.id === deviceType);
     if (!descriptor) {
         return true;

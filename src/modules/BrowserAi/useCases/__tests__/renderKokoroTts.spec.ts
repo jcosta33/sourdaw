@@ -17,7 +17,10 @@ const runKokoroTts = vi.hoisted(() =>
 const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<ArrayBuffer | null>>());
 const readRenderCache = vi.hoisted(() => vi.fn<() => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
-const computeRenderCacheKey = vi.hoisted(() => vi.fn<() => Promise<string>>());
+type ComputeRenderCacheKeyCall = Parameters<
+    typeof import('../../repositories/computeRenderCacheKey').computeRenderCacheKey
+>[0];
+const computeRenderCacheKey = vi.hoisted(() => vi.fn<(input: ComputeRenderCacheKeyCall) => Promise<string>>());
 const textToKokoroInputIds = vi.hoisted(() => vi.fn());
 const resampleTo44100 = vi.hoisted(() =>
     vi.fn<(input: { audio: Float32Array; fromSampleRate: number }) => Promise<Float32Array>>()
@@ -233,5 +236,16 @@ describe('renderKokoroTts', () => {
         sha256ArrayBuffer.mockResolvedValue('0'.repeat(64));
 
         await expect(callRender({ speakerId: 'bf_isabella' })).rejects.toThrow(/failed SHA-256 verification/);
+    });
+
+    it('should include targetDurationSec in the cache key calculation', async () => {
+        const textDecoder = new TextDecoder();
+        await callRender({ speakerId: 'af_heart', targetDurationSec: 3.5 });
+
+        expect(computeRenderCacheKey).toHaveBeenCalledTimes(1);
+        const firstCall = computeRenderCacheKey.mock.calls[0]?.[0];
+        expect(firstCall).toBeDefined();
+        const decodedInput = textDecoder.decode(firstCall!.inputData);
+        expect(decodedInput).toContain('3.5');
     });
 });

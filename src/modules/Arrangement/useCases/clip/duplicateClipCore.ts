@@ -5,7 +5,7 @@ import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { getWarpState, setWarpState } from '../../stores/warpStates';
+import { getWarpState, isDefaultWarpState, setWarpState } from '../../stores/warpStates';
 
 import { addClip } from './addClip';
 
@@ -91,10 +91,24 @@ export function duplicateClipCore(
     duplicateClipAutomation(clipId, newClip.id);
 
     const sourceWarp = getWarpState(clipId);
-    setWarpState(newClip.id, {
+    const clonedWarp = {
         ...sourceWarp,
         markers: sourceWarp.markers.map((marker) => ({ ...marker })),
-    });
+    };
+    // The readers that decide whether a clip "has warp state" —
+    // `hasClipSatelliteState` (see `isGeneratedMidiStateCurrent`) and
+    // `hasClipGlueDependencies` (`clipEditing/hasClipGlueDependencies.ts`) —
+    // call `hasNonDefaultWarpState`, which compares a clip's warp state
+    // against `defaultWarpState` by content rather than asking whether the
+    // map merely has an entry. That makes this guard no longer load-bearing
+    // for their correctness. It still matters for its own reason: skipping
+    // the write when the cloned state is value-identical to the default
+    // keeps `warpStates` from filling up with a noise entry for every plain
+    // duplicate, which matters for anything that iterates the map, such as
+    // `readClipSatelliteEntry`'s snapshots.
+    if (!isDefaultWarpState(clonedWarp)) {
+        setWarpState(newClip.id, clonedWarp);
+    }
 
     if (clip.type === 'midi') {
         duplicateClipNotes(clipId, newClip.id);

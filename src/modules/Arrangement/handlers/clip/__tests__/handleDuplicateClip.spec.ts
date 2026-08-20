@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
     duplicateClip: vi.fn(),
     prepareDuplicateClipTargetId: vi.fn(() => 'clip-copy'),
     resolveEligibleClipWriteTarget: vi.fn(),
+    getTrackStoreState: vi.fn(),
+    serializeMidiStateForClips: vi.fn(() => '{"notesByClipId":{}}'),
 }));
 
 vi.mock('../../../useCases/clip/duplicateClip', () => ({
@@ -20,10 +22,20 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    serializeMidiStateForClips: mocks.serializeMidiStateForClips,
+}));
+
 describe('handleDuplicateClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.duplicateClip.mockReturnValue(true);
+        mocks.serializeMidiStateForClips.mockReturnValue('{"notesByClipId":{}}');
+        mocks.getTrackStoreState.mockReturnValue(null);
         mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
             if (input.clipId === 'c1') {
                 return { status: 'eligible', clipId: 'c1', trackId: 't1' };
@@ -58,7 +70,10 @@ describe('handleDuplicateClip', () => {
 
         expect(desc).toEqual({
             label: 'Duplicate clip',
-            inverseAction: { type: 'discardDuplicatedClip', payload: { clipId: 'clip-copy' } },
+            inverseAction: {
+                type: 'discardDuplicatedClip',
+                payload: { clipId: 'clip-copy', generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' } },
+            },
         });
         expect(mocks.duplicateClip).toHaveBeenCalledWith({ clipId: 'c1', targetClipId: 'clip-copy' });
     });
@@ -69,6 +84,48 @@ describe('handleDuplicateClip', () => {
             payload: { clipId: 'c1' },
         });
         expect(desc.label).toBe('Duplicate clip');
+    });
+
+    it('stamps the inverse guard with the duplicated clip and its MIDI state after execution', () => {
+        const duplicatedClip = {
+            id: 'clip-copy',
+            trackId: 't1',
+            name: 'Test Clip (copy)',
+            startBeat: 4,
+            endBeat: 8,
+            type: 'audio' as const,
+            audioBufferId: 'buffer-1',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#ff0000',
+            locked: false,
+            muted: false,
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [duplicatedClip] }],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
+        const action = {
+            type: 'duplicateClip' as const,
+            payload: { clipId: 'c1', targetClipId: 'clip-copy' },
+        };
+
+        const desc = handleDuplicateClip.describe(action);
+        handleDuplicateClip.execute(action);
+
+        expect(desc.inverseAction).toEqual({
+            type: 'discardDuplicatedClip',
+            payload: {
+                clipId: 'clip-copy',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify(duplicatedClip),
+                    midiByClipIdJson: '{"notesByClipId":{}}',
+                },
+            },
+        });
+        expect(mocks.serializeMidiStateForClips).toHaveBeenCalledWith(['clip-copy']);
     });
 
     it('is undoable', () => {

@@ -7,6 +7,7 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
+import { findWithheldDeviceType, isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import {
     addTrack,
     getFactoryPresets,
@@ -60,6 +61,7 @@ const INSTRUMENT_GROUPS: InstrumentGroup[] = [
 
 // Device types that have their own internal preset explorers (excluded from Sounds)
 const CUSTOM_UI_DEVICE_TYPES = new Set(['fermenter', 'toaster', 'levain', 'builtin-sampler', 'grand-boule']);
+const GRAND_BOULE_RELEASED = isDeviceReleaseAdmitted('grand-boule');
 
 // Categories that belong in the Effects tab, not here
 const EFFECTS_CATEGORIES = new Set<SoundPresetCategory>(['fx', 'vocal']);
@@ -135,10 +137,16 @@ export const InstrumentsTab = ({
     const soundPresets = factoryPresets.filter((param) => isSoundPreset(param) && matchesSearch(param));
     const filteredUser = userPresets.filter((param) => matchesSearch(param));
 
-    const executeCatalogPreset = async (presetId: string, trackId?: string) => {
+    const executeCatalogPreset = async (presetId: string, trackId?: string, devices: SoundPreset['devices'] = []) => {
         const plan = compileLoadPresetActions({ presetId, ...(trackId ? { trackId } : {}) });
         if (!plan) {
-            notifyUser('Preset cannot be applied to the current track.', 'error');
+            const withheldDevice = findWithheldDeviceType(devices);
+            notifyUser(
+                withheldDevice
+                    ? `Preset contains withheld device "${withheldDevice}" and cannot be loaded in this build.`
+                    : 'Preset cannot be applied to the current track.',
+                'error'
+            );
             return null;
         }
         try {
@@ -157,9 +165,9 @@ export const InstrumentsTab = ({
             (preset.trackKind === 'midi' && selectedTrack?.kind === 'midi') ||
             (preset.trackKind === 'audio' && selectedTrack?.kind === 'audio');
         if (selectedTrackId && trackKindMatches) {
-            void executeCatalogPreset(preset.id, selectedTrackId);
+            void executeCatalogPreset(preset.id, selectedTrackId, preset.devices);
         } else {
-            void executeCatalogPreset(preset.id);
+            void executeCatalogPreset(preset.id, undefined, preset.devices);
         }
     };
 
@@ -167,7 +175,7 @@ export const InstrumentsTab = ({
         if (!selectedTrack || !saveFormName.trim()) {
             return;
         }
-        saveCurrentAsPreset({
+        const savedPreset = saveCurrentAsPreset({
             name: saveFormName.trim(),
             category: saveFormCategory,
             trackKind: selectedTrack.kind === 'midi' ? 'midi' : 'audio',
@@ -177,6 +185,9 @@ export const InstrumentsTab = ({
                 parameterValues: data.parameterValues,
             })),
         });
+        if (!savedPreset) {
+            return;
+        }
         setSaveFormName('');
         setShowSaveForm(false);
         setUserPresetsVersion((value) => value + 1);
@@ -285,7 +296,7 @@ export const InstrumentsTab = ({
                         />
                     );
                 case 'grand-boule':
-                    return (
+                    return GRAND_BOULE_RELEASED ? (
                         <InstrumentCard
                             icon={Piano}
                             label="Grand Boule"
@@ -294,16 +305,18 @@ export const InstrumentsTab = ({
                             onClick={handleAddGrandBouleTrack}
                             theme={GRAND_BOULE_THEME}
                         />
-                    );
+                    ) : null;
                 default:
                     return null;
             }
         };
 
-        const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule'].filter((id) => {
-            const name = id.replace('-', ' ');
-            return name.toLowerCase().includes(query) || (id === 'crumbs' && 'crumbs'.includes(query));
-        });
+        const premiumMatches = ['fermenter', 'toaster', 'levain', 'crumbs', 'grand-boule']
+            .filter((id) => id !== 'grand-boule' || GRAND_BOULE_RELEASED)
+            .filter((id) => {
+                const name = id.replace('-', ' ');
+                return name.toLowerCase().includes(query) || (id === 'crumbs' && 'crumbs'.includes(query));
+            });
 
         const totalCount = allResults.length + premiumMatches.length;
 
@@ -427,14 +440,16 @@ export const InstrumentsTab = ({
                     onClick={handleAddCrumbsTrack}
                     theme={CRUMBS_THEME}
                 />
-                <InstrumentCard
-                    icon={Piano}
-                    label="Grand Boule"
-                    badge="Piano"
-                    description="Physical modeling · 88 keys · Modal synthesis · Pedals"
-                    onClick={handleAddGrandBouleTrack}
-                    theme={GRAND_BOULE_THEME}
-                />
+                {GRAND_BOULE_RELEASED ? (
+                    <InstrumentCard
+                        icon={Piano}
+                        label="Grand Boule"
+                        badge="Piano"
+                        description="Physical modeling · 88 keys · Modal synthesis · Pedals"
+                        onClick={handleAddGrandBouleTrack}
+                        theme={GRAND_BOULE_THEME}
+                    />
+                ) : null}
             </div>
             <DawSectionDivider
                 label="Standard grain"

@@ -1293,7 +1293,15 @@ export type AppAction =
               };
           };
       }
-    | { type: 'setClipGain'; payload: { clipId: string; gain: number } }
+    | {
+          type: 'setClipGain';
+          payload: {
+              clipId: string;
+              gain: number;
+              /** Application-owned replay guard. AiRuntime payload validation rejects this field. */
+              expectedGain?: number;
+          };
+      }
     | { type: 'setClipColor'; payload: { clipId: string; color: string; expectedColor?: string } }
     | { type: 'lockClip'; payload: { clipId: string; locked: boolean; expectedLocked?: boolean } }
     | { type: 'consolidateSelection'; payload: { trackId: string; startBeat: number; endBeat: number } }

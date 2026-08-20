@@ -20,6 +20,9 @@ describe('agent protocol versioning', () => {
             'external-adapter',
         ]);
         expect(new Set(manifest.map(({ id }) => id)).size).toBe(manifest.length);
+        expect(
+            manifest.find(({ id }) => id === 'device-manifest')?.operations.some(({ name }) => name === 'grand-boule')
+        ).toBe(false);
 
         for (const contract of manifest) {
             expect(contract.owner.length).toBeGreaterThan(0);
