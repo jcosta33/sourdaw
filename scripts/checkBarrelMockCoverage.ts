@@ -74,15 +74,33 @@ export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/vi
  * defined on the "…" mock` — and a call at module scope takes the whole file just
  * as a render does. The difference is blast radius, and even that is incidental.
  *
- * The line is here because `presentations/views` is at zero after this change and
- * the other three are not: `--all` reports **109 unique (spec, barrel) pairs across
- * 72 spec files** (2127 individual violations, since one pair is counted once per
- * consuming module — the pair is the unit of repair, not the violation). Gating
- * those would need a 109-row baseline whose only content is "pre-existing", which
- * is a baseline wearing an exemption table's clothes. `--all` keeps the number
- * measurable so the follow-up starts from a count in the right unit.
+ * `presentations/views` and `events` are at zero. `stores` joined them despite
+ * carrying its own pre-existing debt (#2364: `#/modules/Arrangement/stores` grew
+ * `persistDeviceParam`, and three specs' hand-listed mocks omitted it — one of
+ * them, collected as part of `main` and not some unrelated suite, failed to
+ * collect at all, the same blast-radius failure `presentations/views` was gated
+ * to catch). Widening the scan surfaced eleven spec files short of exhaustive
+ * `stores` coverage, not three: `stores` fans out into use-case registries
+ * (AI action descriptions, command handlers, offline render, MIDI, Knead) that
+ * statically import far more of the barrel than any one spec's tests actually
+ * read, so the graph walk — which cannot tell "imported" from "imported and
+ * later executed" apart without running the code — over-reports. The three specs
+ * whose own bug this gate exists to catch are fixed for real (every missing key
+ * stubbed, not spread — spreading a barrel this size measurably slows the
+ * specs that already avoid it, see `formatViolation`'s App.spec.tsx numbers).
+ * The other eight are `exemptions` rows: each one is evidenced by a passing
+ * `pnpm test:run` on the unmodified spec, not assumed, and is documented as
+ * debt to close later rather than debt hidden by narrowing the gate. `useCases`
+ * is not gated at all: `--all` reports **109 unique (spec, barrel) pairs across
+ * 72 spec files** there alone (2127 individual violations, since one pair is
+ * counted once per consuming module — the pair is the unit of repair, not the
+ * violation). Gating that now would need a 109-row baseline whose only content
+ * is "pre-existing", which is a baseline wearing an exemption table's clothes —
+ * eight reasoned, evidenced rows is a table; 109 unexamined ones is not. `--all`
+ * keeps the `useCases` number measurable so a follow-up clearing it to zero
+ * starts from a count in the right unit.
  */
-const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = ['presentations/views'];
+const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = ['presentations/views', 'stores', 'events'];
 
 function buildBarrelPattern(kinds: ReadonlyArray<string>): RegExp {
     const kindAlternation = kinds.map((kind) => kind.replace('/', '\\/')).join('|');
@@ -104,7 +122,76 @@ const moduleExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
  * is cheating. Adding a row with a real reason is not that; deleting the check, or
  * adding a row because the gate was inconvenient, is.
  */
-const exemptions: ReadonlyArray<{ spec: string; barrel: string; reason: string }> = [];
+const exemptions: ReadonlyArray<{ spec: string; barrel: string; reason: string }> = [
+    // Pre-existing `stores` debt, surfaced (not caused) by gating `stores` in this
+    // change — the same shape as the three specs fixed alongside this gate
+    // (persistDeviceParam), but the fix for these eight was out of scope for that
+    // patch. Each row is evidenced, not assumed: `pnpm test:run <spec>` passes
+    // today, proving every name the graph walk lists as "missing" for that spec is
+    // read only inside a function body none of that spec's tests ever call — the
+    // graph walk treats reachable-via-import as required, with no way to tell that
+    // apart from reachable-and-executed short of running the code. Follow-up:
+    // replace each row with a real fix (stub the missing keys, same as the three
+    // specs above) rather than carrying it here indefinitely.
+    {
+        spec: 'src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx',
+        barrel: '#/modules/MIDI/stores',
+        reason:
+            'Omits GROOVE_CONSUMER_TYPES, chordTrackStore, grooveTemplateStore and related groove/chord-track ' +
+            "exports reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        reason: "Omits clipSelectionStore, reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        reason:
+            "Omits markerStore and resolveEligibleDeviceWriteTarget, reachable via this spec's graph but never " +
+            'read by its tests (verified passing).',
+    },
+    {
+        spec: 'src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        reason:
+            'Omits appendClipToTrack, clipSelectionStore, gainEnvelopeStore, getTrackEligibility, markerStore, ' +
+            'resolveEligibleClipWriteTarget, takeLaneStore, updateClipInStore, vcaGroupStore, reachable via this ' +
+            "spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        reason:
+            'Omits addWarpMarker, adjustmentLayerStore, clampDeviceParamWrite, deriveEffectiveAudibility, ' +
+            'deriveVcaMultiplier, getVcaGroupsState, getWarpState, shouldCreateLiveTrackStrip, takeLaneStore, ' +
+            "warpStates, reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx',
+        barrel: '#/modules/Arrangement/stores',
+        reason:
+            'Omits addWarpMarker, adjustmentLayerStore, clampDeviceParamWrite, deriveEffectiveAudibility, ' +
+            'deriveVcaMultiplier, getVcaGroupsState, getWarpState, shouldCreateLiveTrackStrip, takeLaneStore, ' +
+            "warpStates, reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+    {
+        spec: 'src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        reason:
+            'Omits appendClipToTrack, clipSelectionStore, gainEnvelopeStore, resolveEligibleClipWriteTarget, ' +
+            "updateClipInStore, vcaGroupStore, reachable via this spec's graph but never read by its tests " +
+            '(verified passing).',
+    },
+    {
+        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts',
+        barrel: '#/modules/Arrangement/stores',
+        reason:
+            'Omits appendClipToTrack, clipSelectionStore, resolveEligibleClipWriteTarget, updateClipInStore, ' +
+            "reachable via this spec's graph but never read by its tests (verified passing).",
+    },
+];
 
 export type MockedBarrel = {
     /** Module specifier passed to `vi.mock` / `vi.doMock`. */
@@ -176,7 +263,54 @@ export type AnalysisResult = {
  */
 export type ReadFacts = (absolutePath: string) => FileFacts | null;
 
+function unwrapParenthesized(expression: ts.Expression): ts.Expression {
+    let current = expression;
+    while (ts.isParenthesizedExpression(current)) {
+        current = current.expression;
+    }
+    return current;
+}
+
+/**
+ * Locates the object literal the factory actually *returns* — not the first object
+ * literal anywhere in its body. A factory that builds local state before returning,
+ * e.g. `const trackStore = { value: … }; return { ...mod, trackStore };`, has an
+ * object literal in that local well before the `return`; a walk that stops at the
+ * first match reads the local's keys (`value`) instead of the real ones, and misses
+ * a real `...mod` spread entirely — `applyAutomation.spec.ts` false-flagged this way
+ * despite already spreading `importOriginal`. Nested functions (getters, a
+ * `vi.fn(() => …)` callback) are not descended into: their return value is not this
+ * factory's.
+ */
 function findReturnedObjectLiteral(factory: ts.Node): ts.ObjectLiteralExpression | null {
+    if (ts.isArrowFunction(factory) || ts.isFunctionExpression(factory)) {
+        if (!ts.isBlock(factory.body)) {
+            const expression = unwrapParenthesized(factory.body);
+            return ts.isObjectLiteralExpression(expression) ? expression : null;
+        }
+        let found: ts.ObjectLiteralExpression | null = null;
+        const walk = (node: ts.Node): void => {
+            if (found !== null) {
+                return;
+            }
+            if (ts.isFunctionLike(node) && node !== factory) {
+                return;
+            }
+            if (ts.isReturnStatement(node) && node.expression) {
+                const expression = unwrapParenthesized(node.expression);
+                if (ts.isObjectLiteralExpression(expression)) {
+                    found = expression;
+                }
+                return;
+            }
+            node.forEachChild(walk);
+        };
+        walk(factory.body);
+        return found;
+    }
+
+    // Fallback for a non-function factory argument — kept permissive, matching
+    // this parser's previous behaviour for a shape it has not seen in practice.
     let found: ts.ObjectLiteralExpression | null = null;
     const walk = (node: ts.Node): void => {
         if (found !== null) {
@@ -219,19 +353,45 @@ function collectIdentifiers(node: ts.Node, into: Set<string>): void {
     });
 }
 
+/** `vi.importActual(specifier)`, awaited or not — the parameter-less twin of a
+ * factory's own `importOriginal` argument, and an equally common way to reach the
+ * real module. */
+function isImportActualCall(node: ts.Node): boolean {
+    const expression = ts.isAwaitExpression(node) ? node.expression : node;
+    if (!ts.isCallExpression(expression) || !ts.isPropertyAccessExpression(expression.expression)) {
+        return false;
+    }
+    return (
+        ts.isIdentifier(expression.expression.expression) &&
+        expression.expression.expression.text === 'vi' &&
+        expression.expression.name.text === 'importActual'
+    );
+}
+
+function containsImportActualCall(node: ts.Node): boolean {
+    if (isImportActualCall(node)) {
+        return true;
+    }
+    let found = false;
+    node.forEachChild((child) => {
+        if (!found) {
+            found = containsImportActualCall(child);
+        }
+    });
+    return found;
+}
+
 /**
  * True when the factory's returned object literal spreads a value that traces back
- * to the factory's first parameter — `...(await importOriginal())` directly, or
- * `const actual = await importOriginal(); return { ...actual, … }` through a local.
- * Textual detection was wrong: `factoryText.includes('importOriginal')` accepts a
- * parameter that is declared and never used, and accepts the word in a comment.
+ * to the real module — the factory's first parameter (`...(await importOriginal())`
+ * directly, or `const actual = await importOriginal(); return { ...actual, … }`
+ * through a local), or a `vi.importActual(specifier)` call (inline in the spread,
+ * or through a local the same way). Textual detection was wrong:
+ * `factoryText.includes('importOriginal')` accepts a parameter that is declared and
+ * never used, and accepts the word in a comment.
  */
 function detectOriginalSpread(factory: ts.Node): boolean {
     if (!ts.isArrowFunction(factory) && !ts.isFunctionExpression(factory)) {
-        return false;
-    }
-    const parameter = factory.parameters[0];
-    if (!parameter || !ts.isIdentifier(parameter.name)) {
         return false;
     }
 
@@ -240,19 +400,28 @@ function detectOriginalSpread(factory: ts.Node): boolean {
         return false;
     }
 
-    // Names that carry the original module: the parameter, plus locals initialised
-    // from anything already in the set. Two passes settle the chains that occur in
-    // practice (`const actual = await importOriginal()` and one alias of it).
-    const originNames = new Set<string>([parameter.name.text]);
+    // Names that carry the original module: the `importOriginal` parameter, if the
+    // factory has one, plus locals initialised from anything already in the set.
+    // Two passes settle the chains that occur in practice (`const actual = await
+    // importOriginal()` and one alias of it).
+    const parameter = factory.parameters[0];
+    const originNames = new Set<string>();
+    if (parameter && ts.isIdentifier(parameter.name)) {
+        originNames.add(parameter.name.text);
+    }
     for (let pass = 0; pass < 2; pass += 1) {
         const collectAliases = (node: ts.Node): void => {
             if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-                const referenced = new Set<string>();
-                collectIdentifiers(node.initializer, referenced);
-                for (const name of referenced) {
-                    if (originNames.has(name)) {
-                        originNames.add(node.name.text);
-                        break;
+                if (containsImportActualCall(node.initializer)) {
+                    originNames.add(node.name.text);
+                } else {
+                    const referenced = new Set<string>();
+                    collectIdentifiers(node.initializer, referenced);
+                    for (const name of referenced) {
+                        if (originNames.has(name)) {
+                            originNames.add(node.name.text);
+                            break;
+                        }
                     }
                 }
             }
@@ -264,6 +433,9 @@ function detectOriginalSpread(factory: ts.Node): boolean {
     return objectLiteral.properties.some((property) => {
         if (!ts.isSpreadAssignment(property)) {
             return false;
+        }
+        if (containsImportActualCall(property.expression)) {
+            return true;
         }
         const referenced = new Set<string>();
         collectIdentifiers(property.expression, referenced);
@@ -817,11 +989,16 @@ function main(): number {
 
     // Say what was actually analysed, not what was globbed. "3370 spec files
     // scanned" was true and misleading: 3370 is the glob, and it stays 3370 when
-    // resolution is broken and nothing at all is checked.
+    // resolution is broken and nothing at all is checked. Naming the kinds here
+    // matters just as much: printing "barrel" with no qualifier is how a reader
+    // mistakes this for full coverage — `useCases` carries 109 unmeasured-here
+    // (spec, barrel) pairs (`--all`), and this line is the only place that scope
+    // is stated at the moment someone reads the result.
     console.log(
-        `barrel mock coverage: OK — ${String(result.analyzedSpecCount)} of ${String(result.specCount)} spec files ` +
-            `mock a ${kinds.join('/')} barrel without a spread; ${String(result.resolvedMockCount)} mock specifier(s) ` +
-            `resolved, ${String(result.graphNodeCount)} module-graph node(s) walked`
+        `barrel mock coverage (${kinds.join(', ')}): OK — ${String(result.analyzedSpecCount)} of ` +
+            `${String(result.specCount)} spec files mock one of these barrel kinds without a spread; ` +
+            `${String(result.resolvedMockCount)} mock specifier(s) resolved, ` +
+            `${String(result.graphNodeCount)} module-graph node(s) walked`
     );
     return 0;
 }

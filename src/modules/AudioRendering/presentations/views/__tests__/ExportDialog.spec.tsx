@@ -147,9 +147,28 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
     clipSelectionStore: mocks.clipSelectionStore,
+    // Not exercised by this spec — stubbed only because this spec's module graph
+    // reaches these transitively (through unrelated use cases that share the
+    // barrel) and the widened barrel-mock-coverage gate (`stores`) treats every
+    // reachable import as required, even one only read inside a function body
+    // this spec's tests never call.
+    persistDeviceParam: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
+    getTrackEligibility: vi.fn(),
+    gainEnvelopeStore: { value: null },
+    markerStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn(),
+    updateClipInStore: vi.fn(),
+    appendClipToTrack: vi.fn(),
+    takeLaneStore: { value: null },
+    vcaGroupStore: { value: null },
 }));
 
-vi.mock('#/modules/Automation/stores', () => ({ automationStore: mocks.automationStore }));
+vi.mock('#/modules/Automation/stores', () => ({
+    automationStore: mocks.automationStore,
+    // Not exercised by this spec — stubbed for the same reason as above.
+    modulationStore: { value: null },
+}));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
     defaultWorkspaceState: { soloMode: 'sip' },

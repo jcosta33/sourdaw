@@ -149,7 +149,7 @@ vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
 }));
 ```
 
-`pnpm test:barrel-mocks` enforces this for `presentations/views` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. Its focused guard spec covers the checker. The failure names the spec, barrel, missing export, and consuming module, then prints the three remedies, including a reasoned `exemptions` row in `scripts/checkBarrelMockCoverage.ts`. `--all` reports the same class across the other three barrel kinds, which are measured rather than gated. Background: PR #1572, issue #1393.
+`pnpm test:barrel-mocks` enforces this for `presentations/views`, `stores`, and `events` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. Its focused guard spec covers the checker. The failure names the spec, barrel, missing export, and consuming module, then prints the three remedies, including a reasoned `exemptions` row in `scripts/checkBarrelMockCoverage.ts`. `--all` reports the same class across all four barrel kinds, including `useCases`, which carries too much pre-existing debt to gate and is measured rather than gated. Background: PR #1572, issue #1393, #2364.
 
 ### Canonical test shape for an injectable
 
