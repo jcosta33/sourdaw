@@ -22,9 +22,9 @@ test.describe('Automation lanes on EDM template', () => {
     });
 
     test('automation tab is accessible and shows mode button', async ({ page }) => {
-        const mode = page.getByTestId('automation-mode-button');
+        const mode = page.getByRole('button', { name: /Automation mode/ });
         await expect(mode).toBeVisible();
-        await expect(mode).toHaveAttribute('aria-label', /Automation mode/);
+        await expect(mode).toHaveAttribute('data-testid', 'automation-mode-button');
     });
 
     test('automation mode dropdown lists read/write/touch/latch', async ({ page }) => {
@@ -61,6 +61,7 @@ test.describe('Automation lanes on EDM template', () => {
 
         await mixer.click();
         await expect(mixer).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('region', { name: 'Mixer panel' })).toBeVisible();
 
         await automation.click();
         await expect(automation).toHaveAttribute('aria-selected', 'true');
