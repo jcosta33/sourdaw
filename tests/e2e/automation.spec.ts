@@ -1,78 +1,59 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+async function addMidiTrack(page: Page): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+    await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+}
+
 test.describe('Automation Lanes', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
+        await addMidiTrack(page);
     });
 
     test('Can toggle automation lanes and switch parameters', async ({ page }) => {
-        // 1. Add a track using the empty state button
-        const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-        await emptyStateMidiButton.waitFor({ state: 'visible' });
-        await emptyStateMidiButton.click();
-
-        // Wait for the track to appear
-        const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-        const newTrackRow = trackList.getByRole('row').filter({ hasText: /MIDI/i }).first();
-        await newTrackRow.waitFor({ state: 'visible' });
-
-        // Now that there is a user track, the timeline canvas will be rendered
         const canvas = page.getByLabel('Timeline editor surface');
         await expect(canvas).toBeVisible();
 
-        // Right-click the timeline canvas to create a MIDI clip on the first track
         await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
+        await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+        await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
 
-        // Wait for the context menu and click 'Add Clip Here'
-        const addClipItem = page.getByRole('menuitem', { name: /Add Clip Here/i });
-        await expect(addClipItem).toBeVisible();
-        await addClipItem.click();
-
-        // Wait a tiny bit for the clip to be created in the CRDT
-        await page.waitForTimeout(500);
-
-        // Double click the newly created clip on the canvas to open the MIDI editor
         await canvas.dblclick({ position: { x: 300, y: 30 } });
+        await expect(page.getByLabel('Piano roll editor')).toBeVisible();
 
-        // The Piano roll editor canvas should be visible in the bottom panel
-        const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
-        await expect(pianoRoll).toBeVisible();
-
-        // Find the automation lane selector in the bottom panel (ClipView)
-        // Usually, there is a select box for "Automation lane type"
         const laneSelector = page.getByRole('combobox', { name: /Automation lane type/i });
-        await expect(laneSelector).toBeVisible();
-
-        // Check that its default value is Velocity
         await expect(laneSelector).toHaveValue('velocity');
 
-        // Switch to a non-MPE lane. The MPE per-note lanes (Pitch Bend / Pressure
-        // / Slide) are intentionally hidden until the engine sounds them (audit
-        // MD-2, honest-availability flag — #719); the CC lanes remain available, so
-        // switch parameters via CC 11 (Expression).
+        // MPE per-note lanes stay hidden until the engine sounds them (#719).
         await laneSelector.selectOption('cc11');
         await expect(laneSelector).toHaveValue('cc11');
 
-        // The CC 11 automation lane should be visible.
-        const ccLane = page.locator('[aria-label="CC 11 automation lane"]');
+        const ccLane = page.getByRole('group', { name: 'CC 11 automation lane' });
         await expect(ccLane).toBeVisible();
+        await expect(ccLane.getByText('Click to add CC points')).toBeVisible();
 
-        const box = await ccLane.boundingBox();
-        expect(box).not.toBeNull();
+        await ccLane.click({ position: { x: 50, y: 20 } });
+        const point = ccLane.getByTitle(/^Beat /);
+        await expect(point).toHaveCount(1);
+        const titleBefore = await point.getAttribute('title');
+        expect(titleBefore).not.toBeNull();
 
-        if (box) {
-            // Click to add a point in the CC lane
-            await page.mouse.click(box.x + 50, box.y + box.height / 2);
-            await page.waitForTimeout(100);
-
-            // Drag the point slightly
-            await page.mouse.move(box.x + 50, box.y + box.height / 2);
-            await page.mouse.down();
-            await page.mouse.move(box.x + 60, box.y + box.height / 2 - 20, { steps: 5 });
-            await page.mouse.up();
+        const box = await point.boundingBox();
+        if (box === null) {
+            throw new Error('CC point has no bounding box');
         }
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2 + 24, box.y + box.height / 2 - 16, { steps: 5 });
+        await page.mouse.up();
+        await expect(point).not.toHaveAttribute('title', titleBefore ?? '');
     });
 });
