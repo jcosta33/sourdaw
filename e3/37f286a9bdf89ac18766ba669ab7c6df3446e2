@@ -1,0 +1,57 @@
+crates/daw-engine/Cargo.toml
+  s_7ba0b7bee9e951::t_88af7e3581028d 15-27
+crates/daw-engine/src/device/wasapi/policy.rs
+  s_7ba0b7bee9e951::t_9760e6e99dcda7 429-436
+  s_7ba0b7bee9e951::t_aa231e134870d0 1-428,437-910
+crates/daw-engine/src/device/wasapi/backend.rs
+  s_7ba0b7bee9e951::t_e1f8f5e7a60acf 550
+  s_7ba0b7bee9e951::t_997a65a4cd27f8 1-176,178-296,302,304-549,551-702,704-871
+  s_7ba0b7bee9e951::t_f806852d23866f 297-301,303
+  s_7ba0b7bee9e951::t_2845506e4a5adf 177
+  s_7ba0b7bee9e951::t_c1b400ba454066 703
+crates/daw-engine/src/device/mod.rs
+  s_7ba0b7bee9e951::t_4dc4b0b17a5533 15-18
+  s_a40848e8f8cca9::t_5d21f30244234a 1-14,19-95
+crates/daw-engine/src/lib.rs
+  s_7ba0b7bee9e951::t_ddea0edb2395a7 3
+Cargo.toml
+  s_7ba0b7bee9e951::t_db755fca710714 16-22
+crates/daw-engine/src/audio_thread.rs
+  s_7ba0b7bee9e951::t_c2ee2a70f36f82 383-394,398,409-410,412-414,416-421,423-457,460-478,480
+  s_7ba0b7bee9e951::t_f4b43a90429c3c 342
+  s_7ba0b7bee9e951::t_8f7d3308dd9e93 34
+  s_7ba0b7bee9e951::t_ef007c05daa75d 362
+  s_7ba0b7bee9e951::t_5dc934b6c76564 341
+  s_7ba0b7bee9e951::t_3152a7b127f2a2 1-11
+  s_7ba0b7bee9e951::t_60e7798518ef3a 361
+Cargo.lock
+  s_7ba0b7bee9e951::t_3759ebd8fedc04 505,634,3511,3523,3545,3590
+crates/daw-engine/src/device/cpal_backend.rs
+  s_7ba0b7bee9e951::t_f1ff6471e2ae2b 1-111
+crates/daw-engine/src/device/wasapi/mod.rs
+  s_7ba0b7bee9e951::t_4e7f8ecc1546dd 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e337f286a9bdf89ac18766ba669ab7c6df3446e2",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
