@@ -1476,6 +1476,7 @@ describe('modelStorageWorkerRuntime', () => {
             modelId: 'model.onnx',
         });
 
+        expect(familyDirectory.getFileHandle).toHaveBeenCalledWith('model.onnx', { create: false });
         expect(responses).toContainEqual({
             type: 'model-checked',
             requestId: 'check-hit',
