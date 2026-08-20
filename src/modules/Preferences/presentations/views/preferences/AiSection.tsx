@@ -6,6 +6,7 @@ import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Separator } from '#/components/ui/separator';
+import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
@@ -64,13 +65,16 @@ function isBackendSelection(value: string): value is BackendSelection {
 }
 
 function getSelectedBackend({ backend, preference }: SelectedBackendInput): BackendSelection {
+    if (preference === 'webllm' && !MODEL_RELEASE_ADMISSION.webLlm) {
+        return 'auto';
+    }
     if (preference !== 'auto') {
         return preference;
     }
     if (backend !== 'none') {
         return backend;
     }
-    return 'webllm';
+    return MODEL_RELEASE_ADMISSION.webLlm ? 'webllm' : 'auto';
 }
 
 function getProviderLabel(provider: HostedProviderSelection): string {
@@ -96,9 +100,12 @@ export const AiSection = (): ReactElement => {
     const [configurationPending, setConfigurationPending] = useState(false);
     const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
     const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
-    const selectedBackend = hostedProvidersAvailable
-        ? getSelectedBackend({ backend, preference: backendPreference })
-        : 'webllm';
+    let selectedBackend: BackendSelection;
+    if (hostedProvidersAvailable) {
+        selectedBackend = getSelectedBackend({ backend, preference: backendPreference });
+    } else {
+        selectedBackend = MODEL_RELEASE_ADMISSION.webLlm ? 'webllm' : 'auto';
+    }
     const cloudAvailable = configuredProvider !== null;
     const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
     const customFirstPartyModel =
@@ -167,12 +174,13 @@ export const AiSection = (): ReactElement => {
                     aria-label="AI execution backend"
                 >
                     <option value="auto">Automatic</option>
-                    <option value="webllm">Browser WebLLM</option>
+                    {MODEL_RELEASE_ADMISSION.webLlm ? <option value="webllm">Browser WebLLM</option> : null}
                     {hostedProvidersAvailable ? <option value="cloud">Hosted provider</option> : null}
                 </select>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                    Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts
-                    remotely.
+                    {MODEL_RELEASE_ADMISSION.webLlm
+                        ? 'Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts remotely.'
+                        : 'No local language model is admitted in this release. Hosted providers remain desktop-only.'}
                 </p>
             </FieldGroup>
             <FieldGroup label="Active Backend">
@@ -339,8 +347,7 @@ export const AiSection = (): ReactElement => {
             <Separator />
             <FieldGroup label="Browser AI">
                 <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
-                    Instrument synthesis (DDSP) and vocal previews (Kokoro TTS) run in the browser via WebGPU on Chrome.
-                    No server required.
+                    Kokoro vocal previews run locally in the browser. No server required.
                 </p>
                 <div className="border border-border/30 rounded overflow-hidden">
                     <CapabilityReportPanel />

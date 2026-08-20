@@ -14,7 +14,7 @@ const runKokoroTts = vi.hoisted(() =>
         }>
     >()
 );
-const readModel = vi.hoisted(() => vi.fn<() => Promise<ArrayBuffer | null>>());
+const readVerifiedModel = vi.hoisted(() => vi.fn<() => Promise<ArrayBuffer | null>>());
 const readRenderCache = vi.hoisted(() => vi.fn<() => Promise<Float32Array | null>>());
 const writeRenderCache = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const computeRenderCacheKey = vi.hoisted(() => vi.fn<() => Promise<string>>());
@@ -23,24 +23,34 @@ const resampleTo44100 = vi.hoisted(() =>
     vi.fn<(input: { audio: Float32Array; fromSampleRate: number }) => Promise<Float32Array>>()
 );
 const applyFades = vi.hoisted(() => vi.fn());
+const sha256ArrayBuffer = vi.hoisted(() => vi.fn<() => Promise<string>>());
+const releaseGate = vi.hoisted(() => ({ kokoro: true }));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
 
 vi.mock('../../repositories/inferenceWorkerBridge', () => ({
     inferenceWorkerBridge: { loadOnnxSession, runKokoroTts },
 }));
 
 vi.mock('../../repositories/computeRenderCacheKey', () => ({ computeRenderCacheKey }));
-vi.mock('../../repositories/readModel', () => ({ readModel }));
+vi.mock('../../repositories/readVerifiedModel', () => ({ readVerifiedModel }));
 vi.mock('../../repositories/readRenderCache', () => ({ readRenderCache }));
 vi.mock('../../repositories/writeRenderCache', () => ({ writeRenderCache }));
+vi.mock('../../repositories/sha256ArrayBuffer', () => ({ sha256ArrayBuffer }));
 vi.mock('../../services/kokoroTokenizer', () => ({ textToKokoroInputIds }));
 vi.mock('../../services/audioResampler', () => ({ resampleTo44100, applyFades }));
 
+import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../../models/KokoroArtifactManifest';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { renderKokoroTts } from '../renderKokoroTts';
 
-function voice_embedding_buffer(entryCount: number): ArrayBuffer {
-    return new Float32Array(256 * entryCount).buffer;
+function voice_embedding_buffer(): ArrayBuffer {
+    return new ArrayBuffer(522_240);
+}
+
+function voice_hash(id: (typeof KOKORO_VOICE_ARTIFACTS)[number]['id']): string {
+    return KOKORO_VOICE_ARTIFACTS.find((voice) => voice.id === id)!.sha256;
 }
 
 function stub_fetch_ok(buffer: ArrayBuffer): void {
@@ -62,7 +72,7 @@ function callRender(
     return renderKokoroTts({
         phraseId: 'phrase-1',
         text: 'hello there',
-        speakerId: 'af_heart_default',
+        speakerId: 'af_heart',
         ...overrides,
     });
 }
@@ -76,16 +86,26 @@ describe('renderKokoroTts', () => {
             audio: new Float32Array(2400),
             samplingRate: 24000,
         });
-        readModel.mockReset().mockResolvedValue(new ArrayBuffer(8));
+        readVerifiedModel.mockReset().mockResolvedValue(new ArrayBuffer(8));
         readRenderCache.mockReset().mockResolvedValue(null);
         writeRenderCache.mockReset().mockResolvedValue(undefined);
         computeRenderCacheKey.mockReset().mockResolvedValue('cache-key-1');
         textToKokoroInputIds.mockReset().mockReturnValue({ inputIds: [1n, 2n, 3n], tokenCount: 3, warnings: [] });
         resampleTo44100.mockReset().mockImplementation(({ audio }: { audio: Float32Array }) => Promise.resolve(audio));
         applyFades.mockReset();
+        sha256ArrayBuffer.mockReset().mockResolvedValue(voice_hash('af_heart'));
+        releaseGate.kokoro = true;
         renderQueueStore.set({ entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
         inferenceProgressStore.set({ activeRenders: {} });
-        stub_fetch_ok(voice_embedding_buffer(4));
+        stub_fetch_ok(voice_embedding_buffer());
+    });
+
+    it('rejects rendering while Kokoro artifacts are withheld', async () => {
+        releaseGate.kokoro = false;
+
+        await expect(callRender()).rejects.toThrow(/not admitted in this release/);
+        expect(readVerifiedModel).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
     });
 
     afterEach(() => {
@@ -101,8 +121,8 @@ describe('renderKokoroTts', () => {
         expect(result.audio).toBe(cached);
         expect(result.sampleRate).toBe(44100);
         expect(result.provenance).toMatchObject({
-            modelId: 'kokoro-82m-q8',
-            voiceId: 'af_heart_default',
+            modelId: KOKORO_MODEL_ARTIFACT.id,
+            voiceId: 'af_heart',
             renderQuality: 'standard',
             tier: 'browser-preview',
         });
@@ -111,10 +131,10 @@ describe('renderKokoroTts', () => {
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
     });
 
-    it('should throw a re-download message when the Kokoro model is absent from OPFS', async () => {
-        readModel.mockResolvedValue(null);
+    it('should throw a re-download message when the Kokoro model is absent or invalid', async () => {
+        readVerifiedModel.mockResolvedValue(null);
 
-        await expect(callRender()).rejects.toThrow(/not found in OPFS — download it in AI Settings/);
+        await expect(callRender()).rejects.toThrow(/absent or failed verification/);
 
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('error');
         expect(Object.keys(inferenceProgressStore.value?.activeRenders ?? {})).toHaveLength(0);
@@ -134,14 +154,22 @@ describe('renderKokoroTts', () => {
     });
 
     it('should run the full render pipeline and cache the result on a cache miss', async () => {
-        const result = await callRender({ speakerId: 'af_heart_full', speed: 1.5 });
+        sha256ArrayBuffer.mockResolvedValue(voice_hash('af_nicole'));
+        const result = await callRender({ speakerId: 'af_nicole', speed: 1.5 });
 
-        expect(loadOnnxSession).toHaveBeenCalledWith({ modelId: 'kokoro-82m-q8', modelData: expect.any(ArrayBuffer) });
+        expect(loadOnnxSession).toHaveBeenCalledWith({
+            modelId: KOKORO_MODEL_ARTIFACT.id,
+            modelData: expect.any(ArrayBuffer),
+        });
+        expect(fetch).toHaveBeenCalledWith(
+            expect.stringContaining('/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/af_nicole.bin'),
+            { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }
+        );
         expect(runKokoroTts).toHaveBeenCalledWith(expect.objectContaining({ inputIds: [1n, 2n, 3n], speed: 1.5 }));
         expect(applyFades).toHaveBeenCalledWith(expect.any(Float32Array), 441);
         expect(writeRenderCache).toHaveBeenCalledWith({ cacheKey: 'cache-key-1', audio: expect.any(Float32Array) });
         expect(result.sampleRate).toBe(44100);
-        expect(result.provenance.voiceId).toBe('af_heart_full');
+        expect(result.provenance.voiceId).toBe('af_nicole');
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
         expect(renderQueueStore.value?.cachedPhraseIds).toContain('cache-key-1');
         expect(Object.keys(inferenceProgressStore.value?.activeRenders ?? {})).toHaveLength(0);
@@ -153,7 +181,8 @@ describe('renderKokoroTts', () => {
         // pass-through of the pre-resample sample count.
         resampleTo44100.mockResolvedValueOnce(new Float32Array(44100));
 
-        await callRender({ speakerId: 'af_heart_stretch', targetDurationSec: 2 });
+        sha256ArrayBuffer.mockResolvedValue(voice_hash('af_sky'));
+        await callRender({ speakerId: 'af_sky', targetDurationSec: 2 });
 
         // One resample 24k→44.1k, plus one stretch resample — ratio 0.5 is far outside the 0.01 tolerance.
         expect(resampleTo44100).toHaveBeenCalledTimes(2);
@@ -169,7 +198,8 @@ describe('renderKokoroTts', () => {
             samplingRate: 24000,
         });
 
-        await callRender({ speakerId: 'af_heart_notretch', targetDurationSec: 1 });
+        sha256ArrayBuffer.mockResolvedValue(voice_hash('am_adam'));
+        await callRender({ speakerId: 'am_adam', targetDurationSec: 1 });
 
         expect(resampleTo44100).toHaveBeenCalledTimes(1);
     });
@@ -180,14 +210,28 @@ describe('renderKokoroTts', () => {
             vi.fn(() => Promise.resolve({ ok: false, statusText: 'Not Found' } as unknown as Response))
         );
 
-        await expect(callRender({ speakerId: 'af_heart_fetchfail' })).rejects.toThrow(
-            /Failed to fetch Kokoro voice embedding for "af_heart_fetchfail": Not Found/
+        await expect(callRender({ speakerId: 'am_michael' })).rejects.toThrow(
+            /Failed to fetch Kokoro voice embedding for "am_michael": Not Found/
         );
     });
 
-    it('should throw when the fetched voice embedding file is empty or corrupted', async () => {
-        stub_fetch_ok(new Float32Array(10).buffer);
+    it('should reject an unknown voice before reading or fetching artifacts', async () => {
+        await expect(callRender({ speakerId: 'not-a-voice' })).rejects.toThrow(/Unknown Kokoro voice/);
 
-        await expect(callRender({ speakerId: 'af_heart_corrupt' })).rejects.toThrow(/empty or corrupted/);
+        expect(readVerifiedModel).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject a voice embedding with the wrong byte length', async () => {
+        stub_fetch_ok(new ArrayBuffer(40));
+
+        await expect(callRender({ speakerId: 'bf_emma' })).rejects.toThrow(/has 40 bytes; expected 522240/);
+        expect(sha256ArrayBuffer).not.toHaveBeenCalled();
+    });
+
+    it('should reject a voice embedding with the wrong digest', async () => {
+        sha256ArrayBuffer.mockResolvedValue('0'.repeat(64));
+
+        await expect(callRender({ speakerId: 'bf_isabella' })).rejects.toThrow(/failed SHA-256 verification/);
     });
 });

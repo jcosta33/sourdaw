@@ -14,7 +14,9 @@ application does and how to operate it. It does not describe how it is built.
 
 Organized by what a device does, not by its name.
 
-**Dynamics** — [Gluten](./devices/07-gluten.md) (compressor)
+**Dynamics** — [Gluten](./devices/07-gluten.md) (compressor), [Crust](./devices/08-crust.md) (limiter)
+
+**Time & Space** — [Dutch Oven](./devices/09-dutch-oven.md) (reverb)
 
 **Amp and distortion** — [Grinder](./devices/11-grinder.md) (guitar amp and cabinet)
 
