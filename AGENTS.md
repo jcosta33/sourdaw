@@ -299,9 +299,24 @@ only when the current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
-there, and run the affected checks. An approval alone is weak evidence, so every consequential claim
-carries discriminating proof — a test that fails when the change is reverted, a measurement at the
-boundary users experience. That proof stays in the session; it is not the GitHub review.
+there, and run the checks this diff can break. Nothing hosted runs after it, so that run is the last
+thing standing between the change and `main`, and a check it leaves out is a check nobody runs at
+all — `main` simply absorbs whatever that check would have caught. Name the run instead of gesturing
+at it: the tests covering the changed files, the typecheck for every surface the diff touches, lint
+and format on the changed files, `pnpm deps:validate` whenever the change crosses a module boundary,
+and any other gate this diff can turn red. The `Checks` table holds the commands.
+
+Affected-only is the shape of that run, not a discount on it. Resource Safety forbids widening to
+repository-wide tests, lint, coverage, E2E, builds, Cargo, or WASM; the obligation here is
+everything that can fail because of these changed files. They are one boundary read from both sides:
+a check this diff can break is never out of scope, and a check it cannot break is not evidence about
+it. Run it in the lane, on the head being merged — `lane:publish` refuses a lane that is not
+strictly ahead of `origin/main`, and `deliver` refuses a pull request whose base its own fetch does
+not match, so the branch a green run measured is the branch that lands.
+
+An approval alone is weak evidence, so every consequential claim carries discriminating proof — a
+test that fails when the change is reverted, a measurement at the boundary users experience. That
+proof stays in the session; it is not the GitHub review.
 
 `pnpm deliver` squash-merges only after `jcosta33-reviewer[bot]` `APPROVED` the current head, the
 pull request is not a draft, merge state is `CLEAN`, and threads are resolved. Do not merge any
