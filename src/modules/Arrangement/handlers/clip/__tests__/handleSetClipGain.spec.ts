@@ -58,4 +58,97 @@ describe('handleSetClipGain', () => {
     it('is undoable', () => {
         expect(handleSetClipGain.undoable).toBe(true);
     });
+
+    describe('replay guard', () => {
+        it('is not batch-compensable when expectedGain is absent', () => {
+            expect(
+                handleSetClipGain.canReapplyAfterDivergence?.({
+                    type: 'setClipGain',
+                    payload: { clipId: 'c1', gain: 0.5 },
+                })
+            ).toBe(false);
+        });
+
+        it('is batch-compensable when expectedGain is present', () => {
+            expect(
+                handleSetClipGain.canReapplyAfterDivergence?.({
+                    type: 'setClipGain',
+                    payload: { clipId: 'c1', gain: 0.5, expectedGain: 0.8 },
+                })
+            ).toBe(true);
+        });
+
+        it('validate passes through when expectedGain is absent', () => {
+            expect(
+                handleSetClipGain.validate?.(
+                    { type: 'setClipGain', payload: { clipId: 'c1', gain: 0.5 } },
+                    { actions: [], actionIndex: 0 }
+                )
+            ).toBe(true);
+        });
+
+        it('validate rejects a diverged gain', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: [{ id: 'c1', gain: 0.3 }] }],
+            });
+
+            expect(
+                handleSetClipGain.validate?.(
+                    { type: 'setClipGain', payload: { clipId: 'c1', gain: 0.5, expectedGain: 0.8 } },
+                    { actions: [], actionIndex: 0 }
+                )
+            ).toBe(false);
+        });
+
+        it('validate accepts a matching gain', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: [{ id: 'c1', gain: 0.8 }] }],
+            });
+
+            expect(
+                handleSetClipGain.validate?.(
+                    { type: 'setClipGain', payload: { clipId: 'c1', gain: 0.5, expectedGain: 0.8 } },
+                    { actions: [], actionIndex: 0 }
+                )
+            ).toBe(true);
+        });
+
+        it('validate rejects when the clip no longer exists', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+            expect(
+                handleSetClipGain.validate?.(
+                    { type: 'setClipGain', payload: { clipId: 'c1', gain: 0.5, expectedGain: 0.8 } },
+                    { actions: [], actionIndex: 0 }
+                )
+            ).toBe(false);
+        });
+
+        it('execute reports a conflict when the gain diverged from expectedGain', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: [{ id: 'c1', gain: 0.3 }] }],
+            });
+
+            const result = handleSetClipGain.execute({
+                type: 'setClipGain',
+                payload: { clipId: 'c1', gain: 0.5, expectedGain: 0.8 },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.setClipGain).not.toHaveBeenCalled();
+        });
+
+        it('execute writes when the gain matches expectedGain', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: [{ id: 'c1', gain: 0.8 }] }],
+            });
+
+            void handleSetClipGain.execute({
+                type: 'setClipGain',
+                payload: { clipId: 'c1', gain: 0.5, expectedGain: 0.8 },
+            });
+
+            expect(mocks.setClipGain).toHaveBeenCalledWith('c1', 0.5);
+        });
+    });
 });

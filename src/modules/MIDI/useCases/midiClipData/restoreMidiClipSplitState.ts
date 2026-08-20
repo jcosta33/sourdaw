@@ -1,50 +1,11 @@
-import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
-import { midiStore, type MidiStoreState } from '../../stores/midiStore';
+import { midiStore } from '../../stores/midiStore';
+
+import { midiClipSplitStateMatches, type MidiClipSplitStateMatchInput } from './midiClipSplitStateMatches';
 
 type MidiClipDataSlotSnapshot<Row> = {
     present: boolean;
     value: readonly Row[];
 };
-
-type MidiClipDataActionSnapshot = {
-    notes: MidiClipDataSlotSnapshot<MidiNote>;
-    controlChanges: MidiClipDataSlotSnapshot<MidiCC>;
-    pitchBends: MidiClipDataSlotSnapshot<MidiPitchBend>;
-};
-
-type RestoreMidiClipSplitStateInput = {
-    sourceClipId: string;
-    rightClipId: string;
-    expectedSource: MidiClipDataActionSnapshot;
-    expectedRight: MidiClipDataActionSnapshot;
-    replacementSource: MidiClipDataActionSnapshot;
-    replacementRight: MidiClipDataActionSnapshot;
-};
-
-function snapshotsEqual(left: MidiClipDataActionSnapshot, right: MidiClipDataActionSnapshot): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function snapshotIsAbsent(snapshot: MidiClipDataActionSnapshot): boolean {
-    return !snapshot.notes.present && !snapshot.controlChanges.present && !snapshot.pitchBends.present;
-}
-
-function snapshotClipData(state: MidiStoreState, clipId: string): MidiClipDataActionSnapshot {
-    return {
-        notes: {
-            present: Object.hasOwn(state.notesByClipId, clipId),
-            value: structuredClone(state.notesByClipId[clipId] ?? []),
-        },
-        controlChanges: {
-            present: Object.hasOwn(state.ccByClipId, clipId),
-            value: structuredClone(state.ccByClipId[clipId] ?? []),
-        },
-        pitchBends: {
-            present: Object.hasOwn(state.pitchBendByClipId, clipId),
-            value: structuredClone(state.pitchBendByClipId[clipId] ?? []),
-        },
-    };
-}
 
 function replaceSlot<Row>(
     current: Record<string, Row[]>,
@@ -60,23 +21,14 @@ function replaceSlot<Row>(
     return next;
 }
 
-export function restoreMidiClipSplitState({
-    sourceClipId,
-    rightClipId,
-    expectedSource,
-    expectedRight,
-    replacementSource,
-    replacementRight,
-}: RestoreMidiClipSplitStateInput): boolean {
+export function restoreMidiClipSplitState(input: MidiClipSplitStateMatchInput): boolean {
+    const { sourceClipId, rightClipId, replacementSource, replacementRight } = input;
+    if (!midiClipSplitStateMatches(input)) {
+        return false;
+    }
     const state = midiStore.value;
     if (!state) {
-        return [expectedSource, expectedRight, replacementSource, replacementRight].every(snapshotIsAbsent);
-    }
-    if (
-        !snapshotsEqual(snapshotClipData(state, sourceClipId), expectedSource) ||
-        !snapshotsEqual(snapshotClipData(state, rightClipId), expectedRight)
-    ) {
-        return false;
+        return true;
     }
 
     let notesByClipId = replaceSlot(state.notesByClipId, sourceClipId, replacementSource.notes);

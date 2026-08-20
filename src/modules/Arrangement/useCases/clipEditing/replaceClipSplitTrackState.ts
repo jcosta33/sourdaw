@@ -1,15 +1,10 @@
-import { type ClipSplitActionSnapshot, type ClipStateSnapshot } from '#/utils/handlerContract';
+import { type ClipStateSnapshot } from '#/utils/handlerContract';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../stores/trackStore';
 
-type ReplaceClipSplitTrackStateInput = {
-    clipId: string;
-    rightClipId: string;
-    expected: ClipSplitActionSnapshot;
-    replacement: ClipSplitActionSnapshot;
-};
+import { clipSplitStateRestorable, type ClipSplitStateRestorableInput } from './clipSplitStateRestorable';
 
 function cloneClip(snapshot: ClipStateSnapshot): Clip {
     return {
@@ -27,41 +22,17 @@ function cloneClip(snapshot: ClipStateSnapshot): Clip {
     };
 }
 
-function trackSnapshotMatches(
-    clips: readonly Clip[],
-    clipId: string,
-    rightClipId: string,
-    expected: ClipSplitActionSnapshot
-): boolean {
-    const leftClip = clips.find((clip) => clip.id === clipId);
-    const rightClipIndex = clips.findIndex((clip) => clip.id === rightClipId);
-    const rightClip = rightClipIndex < 0 ? null : clips[rightClipIndex]!;
-    const effectiveRightIndex = rightClipIndex < 0 ? clips.length : rightClipIndex;
-    return (
-        JSON.stringify(leftClip ?? null) === JSON.stringify(expected.leftClip) &&
-        JSON.stringify(rightClip) === JSON.stringify(expected.rightClip) &&
-        effectiveRightIndex === expected.rightClipIndex
-    );
-}
-
-export function replaceClipSplitTrackState({
-    clipId,
-    rightClipId,
-    expected,
-    replacement,
-}: ReplaceClipSplitTrackStateInput): boolean {
-    if (
-        expected.trackId !== replacement.trackId ||
-        expected.leftClip.id !== clipId ||
-        replacement.leftClip.id !== clipId ||
-        (expected.rightClip !== null && expected.rightClip.id !== rightClipId) ||
-        (replacement.rightClip !== null && replacement.rightClip.id !== rightClipId)
-    ) {
+export function replaceClipSplitTrackState(input: ClipSplitStateRestorableInput): boolean {
+    const { clipId, rightClipId, replacement } = input;
+    if (!clipSplitStateRestorable(input)) {
         return false;
     }
+    // clipSplitStateRestorable already confirmed state/track presence; re-fetch rather than
+    // thread them through, matching this module's existing style of small re-derivation over
+    // parameter growth.
     const state = getTrackState();
-    const track = state?.tracks.find((candidate) => candidate.id === expected.trackId);
-    if (!state || !track || !trackSnapshotMatches(track.clips, clipId, rightClipId, expected)) {
+    const track = state?.tracks.find((candidate) => candidate.id === replacement.trackId);
+    if (!state || !track) {
         return false;
     }
 
@@ -69,9 +40,6 @@ export function replaceClipSplitTrackState({
         .filter((clip) => clip.id !== rightClipId)
         .map((clip) => (clip.id === clipId ? cloneClip(replacement.leftClip) : clip));
     if (replacement.rightClip) {
-        if (replacement.rightClipIndex < 0 || replacement.rightClipIndex > clips.length) {
-            return false;
-        }
         clips.splice(replacement.rightClipIndex, 0, cloneClip(replacement.rightClip));
     }
     setTrackState({
