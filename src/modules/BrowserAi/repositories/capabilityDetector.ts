@@ -1,7 +1,7 @@
 /**
  * Repository: Browser AI capability detection.
  *
- * Reports the platform facts (Chrome, WebGPU, SharedArrayBuffer, OPFS) and
+ * Reports the runtime facts (WebGPU, cross-origin isolation, Worker, OPFS) and
  * classifies the device into a `WebGpuTier` from a measured inference
  * throughput figure.
  *
@@ -64,26 +64,6 @@ const STORAGE_KEY = 'sourdaw-browser-ai-capability';
 const FAST_REALTIME_FACTOR = 1;
 /** At or above this, but below fast: `webgpu-slow`. Below it: `unavailable`. */
 const USABLE_REALTIME_FACTOR = 0.2;
-
-/**
- * Detect Chrome version from user agent.
- * Returns null if not Chrome-based.
- */
-function detectChromeVersion(): number | null {
-    if (typeof navigator === 'undefined') {
-        return null;
-    }
-    // Chrome (and Chromium-based): look for "Chrome/" in UA
-    const match = navigator.userAgent.match(/Chrome\/(\d+)/);
-    if (!match) {
-        return null;
-    }
-    // Exclude Edge and Opera which also have "Chrome/" in their UA
-    if (navigator.userAgent.includes('Edg/') || navigator.userAgent.includes('OPR/')) {
-        return null;
-    }
-    return parseInt(match[1]!, 10);
-}
 
 /**
  * The only place a `WebGpuTier` is produced. A throughput that was not measured
@@ -193,14 +173,13 @@ function is_capability_admission_pair(value: UnknownRecord): boolean {
     if (!is_browser_ai_capability(value.capability) || !is_web_gpu_probe_result(value.webGpu)) {
         return false;
     }
-    return value.capability !== 'supported' || value.webGpu.status === 'supported';
-}
-
-function is_nullable_finite_number(value: unknown): value is number | null {
-    if (value === null) {
-        return true;
-    }
-    return is_finite_number(value);
+    return (
+        value.capability !== 'supported' ||
+        (value.webGpu.status === 'supported' &&
+            value.crossOriginIsolated === true &&
+            value.workerAvailable === true &&
+            value.opfsAvailable === true)
+    );
 }
 
 function is_valid_capability_report(value: unknown): value is CapabilityReport {
@@ -210,11 +189,11 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
     return (
         is_capability_admission_pair(value) &&
         is_web_gpu_tier(value.webGpuTier) &&
-        typeof value.sharedArrayBuffer === 'boolean' &&
+        typeof value.crossOriginIsolated === 'boolean' &&
+        typeof value.workerAvailable === 'boolean' &&
         typeof value.opfsAvailable === 'boolean' &&
         typeof value.detectedAt === 'number' &&
         Number.isFinite(value.detectedAt) &&
-        is_nullable_finite_number(value.chromeVersion) &&
         is_inference_throughput(value.inference)
     );
 }
@@ -277,28 +256,41 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput, p
             const storage = get_capability_storage();
             const cachedReport = read_cached_report(storage);
 
-            const chromeVersion = detectChromeVersion();
+            const crossOriginIsolated = globalThis.crossOriginIsolated === true;
+            const workerAvailable = typeof Worker === 'function';
             let webGpu: WebGpuProbeResult;
-            try {
-                webGpu = await probeWebGpuUsability();
-            } catch {
+            if (!workerAvailable) {
                 webGpu = { status: 'unavailable', reason: 'probe-failed' };
-                logger.warn('[BrowserAi] WebGPU usability probe failed — browser AI disabled');
+            } else {
+                try {
+                    webGpu = await probeWebGpuUsability();
+                } catch {
+                    webGpu = { status: 'unavailable', reason: 'probe-failed' };
+                    logger.warn('[BrowserAi] WebGPU usability probe failed — browser AI disabled');
+                }
             }
-            const sharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
             const opfsAvailable =
-                typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
+                typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function';
 
             let capability: BrowserAiCapability;
             let inference: InferenceThroughput = { status: 'not-measured', reason: 'not-requested' };
 
-            if (!chromeVersion) {
+            if (!workerAvailable) {
                 capability = 'unsupported-browser';
-                logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');
+                inference = { status: 'not-measured', reason: 'runtime-unavailable' };
+                logger.info('[BrowserAi] Web Workers unavailable — browser AI disabled');
             } else if (webGpu.status === 'unavailable') {
                 capability = 'unsupported-browser';
                 inference = { status: 'not-measured', reason: 'no-webgpu' };
                 logger.info(`[BrowserAi] WebGPU ${webGpu.reason} — browser AI disabled`);
+            } else if (!crossOriginIsolated) {
+                capability = 'unsupported-browser';
+                inference = { status: 'not-measured', reason: 'runtime-unavailable' };
+                logger.info('[BrowserAi] Cross-origin isolation unavailable — browser AI disabled');
+            } else if (!opfsAvailable) {
+                capability = 'unsupported-browser';
+                inference = { status: 'not-measured', reason: 'runtime-unavailable' };
+                logger.info('[BrowserAi] OPFS unavailable — browser AI disabled');
             } else if (measureInference) {
                 capability = 'supported';
                 inference = await measureInferenceThroughput();
@@ -319,9 +311,9 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput, p
                 capability,
                 webGpu,
                 webGpuTier,
-                sharedArrayBuffer,
+                crossOriginIsolated,
+                workerAvailable,
                 opfsAvailable,
-                chromeVersion,
                 inference,
                 detectedAt: Date.now(),
             };
