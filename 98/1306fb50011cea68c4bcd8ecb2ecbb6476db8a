@@ -1,0 +1,49 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_27578aec2aab3b::t_34095e5171a276 36-49,53-60,740-773
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_487e9aa1e46063::t_cd501348520750 323-356
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_577d8de0ca220f::t_b2458f79362a8f 19,83-91,398-399,554-555,1430-1431,1433-1440,1442,1446-1447,1451-1452
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  s_7ba0b7bee9e951::t_db9588f2b3c991 266-276,528-529,549-566,570,572
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "981306fb50011cea68c4bcd8ecb2ecbb6476db8a",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_577d8de0ca220f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "56941809-a107-4f7d-8e07-4e7e838b1c69",
+        "model": "gpt-5.6-sol-medium"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
