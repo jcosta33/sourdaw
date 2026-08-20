@@ -1,0 +1,29 @@
+electron/__tests__/windowChrome.spec.ts
+  s_27578aec2aab3b::t_ea520256cdb8a8 1-16
+src/styles/main.css
+  s_27578aec2aab3b::t_30e490f43d5187 20-33
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_27578aec2aab3b::t_344cc75d3e2746 151-156
+electron/windowChrome.ts
+  s_27578aec2aab3b::t_30e490f43d5187 1-12
+electron/main.ts
+  s_27578aec2aab3b::t_30e490f43d5187 30,115,117
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_27578aec2aab3b::t_30e490f43d5187 77-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3d5d696a25922cecb984420e0cb37dee537cd9d5",
+  "prompts": {},
+  "sessions": {
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
