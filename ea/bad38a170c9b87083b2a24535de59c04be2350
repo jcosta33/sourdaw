@@ -1,0 +1,55 @@
+src/modules/PluginHost/useCases/faustEngine/dsp/multiband-compressor.dsp
+  s_487e9aa1e46063::t_e12841627779ef 2-43
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspCompile.spec.ts
+  s_487e9aa1e46063::t_aaa4caf1a7558a 10,12-13,21-30,46,48-49,68-80,87-94,98,104-110,113,123,130-191,196,202,208-213,220
+src/modules/PluginHost/useCases/faustEngine/__tests__/brickWallLimiterDspBehavior.spec.ts
+  s_487e9aa1e46063::t_aa24bdd1bcf127 122-123,134-151
+  s_487e9aa1e46063::t_c58213b4613e06 216-218
+  s_487e9aa1e46063::t_23b41c05bbf8f2 161-163
+  s_487e9aa1e46063::t_393edd00818f78 1-93,111-121,124-133,152-160,164-187,221-238
+  s_487e9aa1e46063::t_29be4e2d9a8809 94-110
+  s_487e9aa1e46063::t_bc6b1682f8e757 189-196
+  s_487e9aa1e46063::t_2d22e93e5c5c14 188,197-209,211-215,219-220
+  s_487e9aa1e46063::t_829f601982219e 210
+src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts
+  s_487e9aa1e46063::t_92b350ca7db684 248-249,257-259,271
+src/modules/PluginHost/useCases/faustEngine/__tests__/declaredControlRepairsDspBehavior.spec.ts
+  s_487e9aa1e46063::t_33242cacf8168d 46-51
+  s_487e9aa1e46063::t_e030a91ad35e95 177-201
+  s_487e9aa1e46063::t_c15b7559d306fb 1-45,52-176,202-212
+src/modules/PluginHost/useCases/faustEngine/dsp/brick-wall-limiter.dsp
+  s_487e9aa1e46063::t_19ecf797993e93 47,56,63,65-68
+  s_487e9aa1e46063::t_448aaa82090f89 30-38,45-46,48-55,57-62
+  s_487e9aa1e46063::t_7dacb472e10ef4 43-44,73,75
+  s_487e9aa1e46063::t_cd52d6e36b3fd2 39,42,64,74,80-81
+  s_487e9aa1e46063::t_88b3f2805c8a69 2-29,40-41,69-72,76,82-83
+  s_487e9aa1e46063::t_0940510fe3ee22 77-79
+src/modules/PluginHost/useCases/faustEngine/dsp/gain-utility.dsp
+  s_487e9aa1e46063::t_0e4bee8a024600 3-8
+src/modules/PluginHost/useCases/faustEngine/dsp/lufs-meter.dsp
+  s_487e9aa1e46063::t_c6bbce865aba03 8-19
+src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp
+  s_487e9aa1e46063::t_39bf988c57739f 21-27
+src/modules/PluginHost/useCases/faustEngine/__tests__/multibandCompressorDspBehavior.spec.ts
+  s_487e9aa1e46063::t_524f7123200d7c 106,109-124
+  s_487e9aa1e46063::t_1de9676e5b0e71 1-105,107-108,125-176
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_487e9aa1e46063::t_289e280b705b73 121
+  s_487e9aa1e46063::t_ff4fdc982c19cb 132-135,137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "eabad38a170c9b87083b2a24535de59c04be2350",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
