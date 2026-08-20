@@ -1,0 +1,94 @@
+crates/daw-engine/src/lib.rs
+  s_7ba0b7bee9e951::t_fc17e22294d935 134
+  s_7ba0b7bee9e951::t_6ca4c9ab3d74eb 84
+  s_7ba0b7bee9e951::t_1f8683c7a6d400 115,122
+  s_7ba0b7bee9e951::t_5c774d2c1adbfa 582,594
+  s_7ba0b7bee9e951::t_358c9146e99197 19-22
+  s_7ba0b7bee9e951::t_d0b5638a28d98f 260-269
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_7ba0b7bee9e951::t_015ec69403e144 37-46
+  s_7ba0b7bee9e951::t_80128f6c14a8a2 2-3
+  s_7ba0b7bee9e951::t_7fbfa5b6559dc6 16
+  s_7ba0b7bee9e951::t_b4d6bed54342aa 63-69,72
+  s_7ba0b7bee9e951::t_fce6c01bd9f7e1 59
+  s_7ba0b7bee9e951::t_ac795067bea87d 89-91
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_7ba0b7bee9e951::t_80eedfe315af1a 11,17-21,33,37-44
+  s_7ba0b7bee9e951::t_b6ed15bd9dd630 85-86,89-100,102,104,107-108,110-120,123-144
+  s_7ba0b7bee9e951::t_651d4fdc51a245 199-208,210-212,218-221,233
+  s_7ba0b7bee9e951::t_217a79022b07d3 109
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_7ba0b7bee9e951::t_ba03ff4f857ba2 2662
+  s_7ba0b7bee9e951::t_02a66d65b952eb 2361-2365,2380-2381
+  s_7ba0b7bee9e951::t_a5e3cb10aa4f92 2253-2257
+  s_7ba0b7bee9e951::t_277ead42d51fbb 2318
+  s_7ba0b7bee9e951::t_46629d6ef94f96 164-168
+  s_7ba0b7bee9e951::t_2999f6ffc4ef8f 2483-2488,2501,2504,2516-2525,2532-2538,2546-2554
+  s_7ba0b7bee9e951::t_1b8a5bb34ac651 2382
+crates/daw-engine/src/scheduler.rs
+  s_7ba0b7bee9e951::t_7f842098ba3541 640-655
+  s_7ba0b7bee9e951::t_c84c2c0ead1956 561-563
+  s_7ba0b7bee9e951::t_9d5a83e77958e4 21-64
+  s_7ba0b7bee9e951::t_d55e7a8fa641b1 623-624
+  s_7ba0b7bee9e951::t_a1ed2504902def 702-705
+  s_7ba0b7bee9e951::t_331201fe197742 585,592,602
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_7ba0b7bee9e951::t_209d0b73b82f1a 512-521
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeGraphTransport.spec.ts
+  s_7ba0b7bee9e951::t_1cab085202dcc2 65-83
+crates/daw-engine/src/offline.rs
+  s_7ba0b7bee9e951::t_a5775313f8fc71 66,73
+  s_7ba0b7bee9e951::t_9a97c671ab8a6e 261-297
+  s_7ba0b7bee9e951::t_a60d8a803e32d5 17-20
+  s_7ba0b7bee9e951::t_13a1489e44fa70 106-115
+crates/sourdaw-native/src/addon/mod.rs
+  s_7ba0b7bee9e951::t_788a8e5a09e70c 517-535
+crates/sourdaw-native/src/commands/graph.rs
+  s_7ba0b7bee9e951::t_0fbbffdfc89156 2002-2003,2101-2159
+  s_7ba0b7bee9e951::t_934821c34a009f 122
+  s_7ba0b7bee9e951::t_0795023643957a 1008-1013
+  s_7ba0b7bee9e951::t_dddf875094f2aa 702-705,712-717,725
+  s_7ba0b7bee9e951::t_f4e2953c8063a9 68-92
+  s_7ba0b7bee9e951::t_57016cf23abf4c 2005-2015,2032-2037
+  s_7ba0b7bee9e951::t_2fff46e20d402d 523-530,542-547,549,562
+  s_7ba0b7bee9e951::t_e3eea5d387375c 663-666,671-681
+  s_7ba0b7bee9e951::t_7caf1229ed50db 3315-3332
+  s_7ba0b7bee9e951::t_39069ce0b4ac45 1481-1485
+  s_7ba0b7bee9e951::t_2666a4b40a2c06 610-640
+  s_7ba0b7bee9e951::t_f0e6ce206daef2 443-460
+  s_7ba0b7bee9e951::t_d32d9a6cc2bb21 1892-1925,2099,2160
+  s_7ba0b7bee9e951::t_336d3f4c4ed174 2895-3190,3333
+  s_7ba0b7bee9e951::t_e658400e9adc96 752-756,762,767-769,772-776,779-782
+  s_7ba0b7bee9e951::t_8bea419f111848 1526,1528,1534
+  s_7ba0b7bee9e951::t_5018b87326dfcb 2004,2098,2100,3191,3334
+crates/daw-engine/src/audio_thread.rs
+  s_7ba0b7bee9e951::t_eac3ac256a783b 395
+  s_7ba0b7bee9e951::t_8a38d51444a3ae 466-470
+  s_7ba0b7bee9e951::t_4d3a2d43be1ed7 199,205
+  s_7ba0b7bee9e951::t_ee9400c9d0e9db 368
+  s_7ba0b7bee9e951::t_b05f58b1cd384f 224
+  s_7ba0b7bee9e951::t_d4fcf94d175894 8-9
+  s_7ba0b7bee9e951::t_d64d01cbfac73f 246
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_7ba0b7bee9e951::t_1b363006be6d70 397-403
+electron/commands.ts
+  s_7ba0b7bee9e951::t_0254ac4386f1d0 109-117,131
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_7ba0b7bee9e951::t_9674f22ffb374c 5-9,16,50,54-57,62,66,78-92,155-161,179,183,199-200,204,252-264,266,272-281,290-294,316,319-322,324,326-327,340-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a5f5b4b5d6ccc64dd7bbd883bc021b5f8acaf9b6",
+  "prompts": {},
+  "sessions": {
+    "s_7ba0b7bee9e951": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5445e5ed-889b-4d7c-ab8e-cc80484fa6fd",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
