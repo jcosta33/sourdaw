@@ -1,0 +1,42 @@
+src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts
+  s_487e9aa1e46063::t_aa615e63be9e59 75-84
+  s_487e9aa1e46063::t_1376e7d594d1e6 56-61
+  s_487e9aa1e46063::t_fe03d95f544e2c 90-101,106,112-123,126-131
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_487e9aa1e46063::t_a8f0b8988b6a0a 333
+  s_487e9aa1e46063::t_62f856e9ed1808 264
+src/modules/Transport/handlers/transport/__tests__/handleSetMasterGain.spec.ts
+  s_487e9aa1e46063::t_bbdfda61af0f75 54-77
+  s_487e9aa1e46063::t_4f8c6495de17e4 125-133
+src/utils/handlerContract.ts
+  s_487e9aa1e46063::t_144cc343617366 792-802
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+  s_487e9aa1e46063::t_724b98d4859b33 326-328
+  s_487e9aa1e46063::t_8d5d856ebb84a7 350-352
+  s_487e9aa1e46063::t_9b7d44d381743d 353,355-450
+  s_487e9aa1e46063::t_56d7e07e0a018b 19
+  s_487e9aa1e46063::t_7fa8efbcea5334 167
+  s_487e9aa1e46063::t_6c9f0acad64329 142-143,147,151
+  s_487e9aa1e46063::t_dea191ff74a241 152,354
+src/modules/Transport/handlers/transport/handleSetMasterGain.ts
+  s_487e9aa1e46063::t_9ed62cea077b7e 14-19
+  s_487e9aa1e46063::t_e29f0d188f3a06 52-60
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_487e9aa1e46063::t_14bebb8d45b431 770
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f1b170d83e38d462d73715f049b3634051e86d5b",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
