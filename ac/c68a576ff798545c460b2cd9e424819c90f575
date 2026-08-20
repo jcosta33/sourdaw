@@ -1,0 +1,20 @@
+tests/e2e/automationLanesTestId.spec.ts
+  s_24b1bdbc3c31ad::t_b607c676f7e12b 1,5-14,16-19,21-24,29,32-33,37-39,44,50-51,53-54,56-57,61-63
+  s_24b1bdbc3c31ad::t_3ed01f9c4944a4 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "acc68a576ff798545c460b2cd9e424819c90f575",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
