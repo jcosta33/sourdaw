@@ -692,10 +692,13 @@ Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(te
 
 Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
 coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
-sequentially through `package.json`. The scripts themselves are plain, standard commands; in
-agent sessions, wrap compute-heavy runs with `pnpm guard --profile <p> -- <command>`, which
-rejects concurrent validation, low-memory starts, timeouts, and process trees above the
-configured RSS ceiling. A guard refusal is final; never bypass it by rerunning unguarded.
+sequentially within each lane through `package.json`. Other lanes may validate concurrently when
+RAM permits. Wrap compute-heavy agent runs with
+`pnpm guard --profile <p> [--max-rss-mib <estimate>] -- <command>`. Estimate peak RAM from the
+latest observed guard peak or the nearest command; use the profile ceiling without evidence.
+The guard reserves that budget and waits until measured free RAM covers active unused headroom,
+the new command, and the 2 GiB system reserve. It still enforces timeouts, process cleanup, host
+pressure, and the command RSS ceiling. Never bypass it.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
