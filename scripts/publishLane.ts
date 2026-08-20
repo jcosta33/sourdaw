@@ -209,11 +209,11 @@ export function publishLane(
         fail(`refusing non-fast-forward push of ${lane.branch}`);
     }
     const existing = port.existingOpenPullRequest(lane.branch);
-    const resolvedRelationship =
-        relationship ??
-        (existing !== undefined && laneIssue !== undefined
+    const existingRelationship =
+        existing !== undefined && laneIssue !== undefined
             ? issueRelationshipFromBody(existing.body, laneIssue)
-            : 'closes');
+            : undefined;
+    const resolvedRelationship = relationship ?? existingRelationship ?? 'closes';
     const body = composePublishBody(laneIssue, title, resolvedRelationship);
     port.push(lane.path, lane.branch);
     const number =

@@ -33,6 +33,7 @@ describe('pull-request contract', () => {
     it('recovers one existing issue relationship', () => {
         expect(issueRelationshipFromBody('Closes #2164', 2164)).toBe('closes');
         expect(issueRelationshipFromBody('Related #2164', 2164)).toBe('relates');
+        expect(() => issueRelationshipFromBody('Closes #21640', 2164)).toThrow(/exactly one relationship/);
         expect(() => issueRelationshipFromBody('None.', 2164)).toThrow(/exactly one relationship/);
         expect(() => issueRelationshipFromBody('Closes #2164\nRelated #2164', 2164)).toThrow(
             /exactly one relationship/

@@ -212,6 +212,14 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain('Closes #12');
     });
 
+    it('validates existing state before an explicit relationship change', () => {
+        const { port, calls } = fakePort({ existing: 41, existingBody: 'None.' });
+
+        expect(() => publishLane(12, port, 'relates')).toThrow(/exactly one relationship/);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
     it('rejects --relates on an issueless lane', () => {
         const { port } = fakePort({
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
