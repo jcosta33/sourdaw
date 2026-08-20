@@ -19181,7 +19181,7 @@
   {
     "id": "ui-c1828759bab86a6b",
     "file": "src/modules/Metering/presentations/views/PhaseCorrelationDisplay.tsx",
-    "line": 142,
+    "line": 132,
     "fingerprint": "DawMeterFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterFrame",
@@ -23321,7 +23321,7 @@
   {
     "id": "ui-edf6760bd0ab3cc8",
     "file": "src/modules/Metering/presentations/views/Goniometer.tsx",
-    "line": 137,
+    "line": 150,
     "fingerprint": "DawMeterFrame\t",
     "kind": "daw-chrome",
     "mapping": "DawMeterFrame",
