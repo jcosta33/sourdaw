@@ -1,0 +1,22 @@
+crates/daw-engine/Cargo.toml
+  s_e469ec4fed6ab8::t_a7dfcd69d59bac 19-23
+release/open-source-inventory.json
+  s_e469ec4fed6ab8::t_6234b5d4402e2c 692,704,708,712,720
+  s_e469ec4fed6ab8::t_a7dfcd69d59bac 498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "a9ca21fc6a7df2a7c8ae3bd0aae1e99cf97a8558",
+  "prompts": {},
+  "sessions": {
+    "s_e469ec4fed6ab8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01f52-7250-7a20-b14c-11aadfd43abe",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
