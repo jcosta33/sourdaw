@@ -70,6 +70,9 @@ files:
     - '!node_modules/**/*'
 
 extraResources:
+    # LGPL notices and relinking material remain readable outside the asar.
+    - from: public/legal
+      to: legal
     # `resolveContentRoots()` in `electron/protocol.ts` reads packaged samples
     # from `<Resources>/samples`.
     - from: public/samples

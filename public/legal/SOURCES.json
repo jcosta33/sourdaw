@@ -9,6 +9,7 @@
             "integrity": "sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
             "repository": "https://github.com/grame-cncm/faustwasm",
             "revision": "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+            "modifications": "none",
             "packageLicense": "LGPL-3.0",
             "license": "LGPL-2.1-or-later",
             "licenseFiles": {
@@ -27,14 +28,18 @@
             },
             "sources": [
                 {
+                    "id": "faustwasm",
                     "repository": "https://github.com/grame-cncm/faustwasm",
                     "revision": "a1ae243d885d6494409a2a4a227cbdd2a6833edf",
+                    "relationship": "npm-gitHead",
                     "archive": "https://github.com/grame-cncm/faustwasm/archive/a1ae243d885d6494409a2a4a227cbdd2a6833edf.tar.gz"
                 },
                 {
+                    "id": "faust-core",
                     "repository": "https://github.com/grame-cncm/faust",
                     "revision": "011423ab76674cd96009385af15cadcd281a3259",
                     "version": "2.86.2",
+                    "relationship": "embedded-version-match",
                     "archive": "https://github.com/grame-cncm/faust/archive/011423ab76674cd96009385af15cadcd281a3259.tar.gz"
                 }
             ]
@@ -47,6 +52,7 @@
             "integrity": "sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==",
             "repository": "https://github.com/gideonstele/lamejs",
             "revision": "1fb0ef5fa177413107e2e107d054a9b994e3f79c",
+            "modifications": "none",
             "packageLicense": "LGPL-3.0",
             "license": "LGPL-3.0-only",
             "licenseFiles": {
@@ -60,8 +66,10 @@
             "shippedFiles": {},
             "sources": [
                 {
+                    "id": "lamejs",
                     "repository": "https://github.com/gideonstele/lamejs",
                     "revision": "1fb0ef5fa177413107e2e107d054a9b994e3f79c",
+                    "relationship": "npm-gitHead",
                     "archive": "https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz"
                 }
             ],

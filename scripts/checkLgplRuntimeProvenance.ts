@@ -6,9 +6,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type Source = {
+    id: string;
     repository: string;
     revision: string;
     version?: string;
+    relationship: 'npm-gitHead' | 'embedded-version-match';
     archive: string;
 };
 
@@ -20,6 +22,7 @@ type Component = {
     integrity: string;
     repository: string;
     revision: string;
+    modifications: 'none';
     packageLicense: string;
     license: string;
     licenseFiles: Record<string, string>;
@@ -32,6 +35,65 @@ type Component = {
 type Provenance = {
     schemaVersion: number;
     components: Component[];
+};
+
+type RequiredComponent = {
+    package: string;
+    packageLicense: string;
+    license: string;
+    licenseFiles: string[];
+    packageFiles: string[];
+    shippedFiles: Record<string, string>;
+    sources: Record<string, { repository: string; relationship: Source['relationship'] }>;
+    integration?: Component['integration'];
+};
+
+const REQUIRED_COMPONENTS: Record<string, RequiredComponent> = {
+    faustwasm: {
+        package: '@grame/faustwasm',
+        packageLicense: 'LGPL-3.0',
+        license: 'LGPL-2.1-or-later',
+        licenseFiles: ['public/legal/faustwasm-COPYING.txt'],
+        packageFiles: [
+            'COPYING.txt',
+            'libfaust-wasm/libfaust-wasm.data',
+            'libfaust-wasm/libfaust-wasm.js',
+            'libfaust-wasm/libfaust-wasm.wasm',
+        ],
+        shippedFiles: {
+            'public/faust/libfaust-wasm.data': 'libfaust-wasm/libfaust-wasm.data',
+            'public/faust/libfaust-wasm.js': 'libfaust-wasm/libfaust-wasm.js',
+            'public/faust/libfaust-wasm.wasm': 'libfaust-wasm/libfaust-wasm.wasm',
+        },
+        sources: {
+            faustwasm: {
+                repository: 'https://github.com/grame-cncm/faustwasm',
+                relationship: 'npm-gitHead',
+            },
+            'faust-core': {
+                repository: 'https://github.com/grame-cncm/faust',
+                relationship: 'embedded-version-match',
+            },
+        },
+    },
+    lamejs: {
+        package: '@breezystack/lamejs',
+        packageLicense: 'LGPL-3.0',
+        license: 'LGPL-3.0-only',
+        licenseFiles: ['public/legal/LGPL-3.0-and-GPL-3.0.txt', 'public/legal/lamejs-NOTICE.txt'],
+        packageFiles: ['LICENSE', 'dist/lamejs.js'],
+        shippedFiles: {},
+        sources: {
+            lamejs: {
+                repository: 'https://github.com/gideonstele/lamejs',
+                relationship: 'npm-gitHead',
+            },
+        },
+        integration: {
+            file: 'src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts',
+            import: '@breezystack/lamejs',
+        },
+    },
 };
 
 function sha256(path: string): string {
@@ -51,6 +113,14 @@ function checkHash(root: string, path: string, expected: string, errors: string[
     }
 }
 
+function sameRecord(actual: Record<string, string>, expected: Record<string, string>): boolean {
+    return JSON.stringify(Object.entries(actual).sort()) === JSON.stringify(Object.entries(expected).sort());
+}
+
+function sameKeys(actual: Record<string, string>, expected: string[]): boolean {
+    return JSON.stringify(Object.keys(actual).sort()) === JSON.stringify([...expected].sort());
+}
+
 export function validateLgplRuntimeProvenance(root: string): string[] {
     const manifest = readJson<Provenance>(resolve(root, 'public/legal/SOURCES.json'));
     const projectPackage = readJson<{ dependencies?: Record<string, string> }>(resolve(root, 'package.json'));
@@ -68,12 +138,46 @@ export function validateLgplRuntimeProvenance(root: string): string[] {
         return [...errors, 'components must be non-empty'];
     }
 
-    const ids = manifest.components.map((component) => component.id);
-    if (new Set(ids).size !== ids.length) {
-        errors.push('component IDs must be unique');
+    const ids = manifest.components.map((component) => component.id).sort();
+    if (JSON.stringify(ids) !== JSON.stringify(Object.keys(REQUIRED_COMPONENTS).sort())) {
+        errors.push('component set drifted');
     }
 
     for (const component of manifest.components) {
+        const required = REQUIRED_COMPONENTS[component.id];
+        if (required === undefined) {
+            continue;
+        }
+        if (
+            component.package !== required.package ||
+            component.packageLicense !== required.packageLicense ||
+            component.license !== required.license ||
+            component.modifications !== 'none'
+        ) {
+            errors.push(`${component.id}: identity or license contract drifted`);
+        }
+        if (!sameKeys(component.licenseFiles, required.licenseFiles)) {
+            errors.push(`${component.id}: required license files drifted`);
+        }
+        if (!sameKeys(component.packageFiles, required.packageFiles)) {
+            errors.push(`${component.id}: required package files drifted`);
+        }
+        if (!sameRecord(component.shippedFiles, required.shippedFiles)) {
+            errors.push(`${component.id}: shipped file mapping drifted`);
+        }
+        const sources = Object.fromEntries(component.sources.map((source) => [source.id, source]));
+        if (JSON.stringify(Object.keys(sources).sort()) !== JSON.stringify(Object.keys(required.sources).sort())) {
+            errors.push(`${component.id}: source set drifted`);
+        }
+        for (const [id, contract] of Object.entries(required.sources)) {
+            const source = sources[id];
+            if (source?.repository !== contract.repository || source.relationship !== contract.relationship) {
+                errors.push(`${component.id}: ${id} source identity drifted`);
+            }
+        }
+        if (JSON.stringify(component.integration) !== JSON.stringify(required.integration)) {
+            errors.push(`${component.id}: integration contract drifted`);
+        }
         if (projectPackage.dependencies?.[component.package] !== component.specifier) {
             errors.push(`${component.id}: dependency specifier drifted`);
         }
@@ -149,6 +253,56 @@ export function validateLgplRuntimeProvenance(root: string): string[] {
         errors.push('faustwasm: embedded compiler version drifted');
     }
 
+    const desktopConfig = readFileSync(resolve(root, 'electron-builder.yml'), 'utf8');
+    if (!/from: public\/legal\s+to: legal/u.test(desktopConfig)) {
+        errors.push('desktop package omits the legal directory');
+    }
+    const statusBar = readFileSync(
+        resolve(root, 'src/modules/WorkspaceShell/presentations/views/StatusBar.tsx'),
+        'utf8'
+    );
+    if (!statusBar.includes("window.open('/legal/THIRD-PARTY-NOTICES.md', '_blank')")) {
+        errors.push('application omits the legal notice entry point');
+    }
+
+    return errors;
+}
+
+export async function validateLgplSourceAvailability(root: string): Promise<string[]> {
+    const manifest = readJson<Provenance>(resolve(root, 'public/legal/SOURCES.json'));
+    const errors: string[] = [];
+    for (const component of manifest.components) {
+        const npmSource = component.sources.find((source) => source.relationship === 'npm-gitHead');
+        try {
+            const packageName = component.package.replace('/', '%2F');
+            const response = await fetch(`https://registry.npmjs.org/${packageName}/${component.version}`);
+            if (!response.ok) {
+                errors.push(`${component.id}: npm metadata unavailable (${String(response.status)})`);
+            } else {
+                const metadata = (await response.json()) as { gitHead?: string; dist?: { integrity?: string } };
+                if (metadata.gitHead !== npmSource?.revision || metadata.dist?.integrity !== component.integrity) {
+                    errors.push(`${component.id}: npm source or package integrity drifted`);
+                }
+            }
+        } catch (error) {
+            errors.push(
+                `${component.id}: npm metadata unavailable (${error instanceof Error ? error.message : String(error)})`
+            );
+        }
+
+        for (const source of component.sources) {
+            try {
+                const response = await fetch(source.archive, { method: 'HEAD', redirect: 'follow' });
+                if (!response.ok) {
+                    errors.push(`${component.id}: source archive unavailable: ${source.id}`);
+                }
+            } catch (error) {
+                errors.push(
+                    `${component.id}: source archive unavailable: ${source.id} (${error instanceof Error ? error.message : String(error)})`
+                );
+            }
+        }
+    }
     return errors;
 }
 
@@ -160,7 +314,21 @@ export function checkLgplRuntimeProvenance(root: string): void {
     process.stdout.write('LGPL runtime provenance valid\n');
 }
 
+async function checkLgplSourcesOnline(root: string): Promise<void> {
+    checkLgplRuntimeProvenance(root);
+    const errors = await validateLgplSourceAvailability(root);
+    if (errors.length > 0) {
+        throw new Error(errors.join('\n'));
+    }
+    process.stdout.write('LGPL source routes available\n');
+}
+
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === new URL(`file://${resolve(entry)}`).href) {
-    checkLgplRuntimeProvenance(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    if (process.argv.includes('--online')) {
+        await checkLgplSourcesOnline(root);
+    } else {
+        checkLgplRuntimeProvenance(root);
+    }
 }

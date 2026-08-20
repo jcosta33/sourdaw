@@ -1,7 +1,8 @@
 # Relinking LGPL Components
 
-Use the Sourdaw source matching the distributed build. Install its pinned Node and pnpm versions,
-then install dependencies from the lockfile.
+Every binary release must offer its exact Sourdaw source archive beside the download under terms
+that permit modification and relinking. Install that archive's pinned Node and pnpm versions, then
+install dependencies from its lockfile. Do not distribute a binary without the matching archive.
 
 ## FaustWasm
 

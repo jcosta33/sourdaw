@@ -726,7 +726,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "37aa1ea51612fdfc8c2f6be5ac1a3ac35e57bcaaba7aa8f0aedf99a63c706527"
+            "sha256": "96049cf92357f383bc5386c55b5498ecf2cf3f527b59ca38c03d4b8847f4a13e"
         },
         {
             "path": "server/package.json",
@@ -758,6 +758,27 @@
         }
     ],
     "externalReferences": [
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/gideonstele/lamejs"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faust"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faustwasm"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://registry.npmjs.org/${slot}/${slot}",
+            "templateSha256": "02a95343498392e262fd383338c97f045485a631775cadc86192aadc4cdbd478"
+        },
         {
             "surface": "mp3-encoder",
             "file": "public/legal/SOURCES.json",
