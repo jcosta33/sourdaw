@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -27,9 +29,13 @@ export type PublishWorktree = {
     lockReason?: string;
 };
 
+export const PUBLISH_LANE_USAGE = 'usage: pnpm lane:publish [issue-number]';
+
 export type PublishLanePort = {
     fetchMain: () => void;
     worktrees: () => PublishWorktree[];
+    cwd: () => string;
+    issueExists: (issue: number) => boolean;
     aheadBehind: (lane: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
     headSubject: (lane: string) => string;
@@ -52,30 +58,116 @@ export function parsePublishLaneArgs(args: string[]): { issue?: number; help: bo
         return { help: true };
     }
     const issueArg = args[0];
-    if (issueArg === undefined || args.length !== 1) {
-        fail('usage: pnpm lane:publish <issue-number>');
+    if (issueArg === undefined) {
+        return { help: false };
     }
-    return { issue: assertIssueNumber(issueArg, 'usage: pnpm lane:publish <issue-number>'), help: false };
+    if (args.length !== 1) {
+        fail(PUBLISH_LANE_USAGE);
+    }
+    return { issue: assertIssueNumber(issueArg, PUBLISH_LANE_USAGE), help: false };
 }
 
-export function publishLane(issue: number, port: PublishLanePort): number {
-    port.fetchMain();
-    const prefix = `agent/${issue}/`;
-    const matches = port.worktrees().filter((worktree) => {
+type ResolvedLane = { path: string; branch: string };
+
+export const NO_ISSUE_LANE_FAILURE =
+    'not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number';
+
+export function canonicalPath(path: string, resolveExisting: (path: string) => string): string {
+    const absolute = resolve(path);
+    try {
+        return resolveExisting(absolute);
+    } catch {
+        return absolute;
+    }
+}
+
+export function containsPath(container: string, candidate: string): boolean {
+    const relation = relative(container, candidate);
+    return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
+}
+
+export const AUTHOR_LANE_BRANCH_PREFIX = 'agent/';
+
+/**
+ * A push target must be lock-shaped *and* branch-shaped. `lockReason` is only ever set on a locked
+ * worktree, so it alone proves the lock; the branch prefix is the part that keeps a hand-locked
+ * checkout on, say, `release/1.2` out of the issueless resolution path, where no issue argument
+ * constrains the branch name.
+ */
+function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
+    return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        return (
-            worktree.locked &&
-            worktree.lockReason === AUTHOR_LOCK_REASON &&
-            branch !== undefined &&
-            branch.startsWith(prefix)
-        );
+        if (
+            worktree.lockReason !== AUTHOR_LOCK_REASON ||
+            branch === undefined ||
+            !branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX)
+        ) {
+            return [];
+        }
+        return [{ path: worktree.path, branch }];
     });
+}
+
+/**
+ * The issue a lane branch carries, or `undefined` for an issueless lane. `lane:open <issue>` is the
+ * only producer of the `agent/<issue>/<slug>` shape, so the branch is the lane's own record of
+ * which issue it closes.
+ */
+export function laneIssueNumber(branch: string): number | undefined {
+    const captured = /^agent\/(\d+)\//.exec(branch)?.[1];
+    if (captured === undefined) {
+        return undefined;
+    }
+    const issue = Number(captured);
+    return Number.isSafeInteger(issue) && issue > 0 ? issue : undefined;
+}
+
+export function resolveAuthorLane(
+    issue: number | undefined,
+    worktrees: PublishWorktree[],
+    cwd: string,
+    resolveExisting: (path: string) => string = realpathSync
+): ResolvedLane {
+    const lanes = authorLanes(worktrees);
+    if (issue === undefined) {
+        const here = canonicalPath(cwd, resolveExisting);
+        const enclosing = lanes.flatMap((lane) => {
+            const canonical = canonicalPath(lane.path, resolveExisting);
+            return containsPath(canonical, here) ? [{ lane, canonical }] : [];
+        });
+        // Depth is measured on the same canonical spellings containment used. Comparing the
+        // recorded paths instead lets a symlinked outer lane out-rank the inner lane it contains.
+        const innermost = enclosing.reduce<{ lane: ResolvedLane; canonical: string } | undefined>(
+            (deepest, candidate) =>
+                deepest === undefined || candidate.canonical.length > deepest.canonical.length ? candidate : deepest,
+            undefined
+        );
+        if (innermost === undefined) {
+            fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
+        }
+        return innermost.lane;
+    }
+    const prefix = `agent/${issue}/`;
+    const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
     if (matches.length !== 1) {
         fail(`expected exactly one locked author lane for issue #${issue}`);
     }
     const lane = matches[0];
-    if (lane === undefined || lane.branch === undefined) {
+    if (lane === undefined) {
         fail(`expected exactly one locked author lane for issue #${issue}`);
+    }
+    return lane;
+}
+
+export function publishLane(issue: number | undefined, port: PublishLanePort): number {
+    port.fetchMain();
+    const lane = resolveAuthorLane(issue, port.worktrees(), port.cwd());
+    // Without an argument the target is whatever the caller happened to be standing in, and the
+    // next steps commit and push it. Name the selection before anything mutates, so a caller who
+    // was in the wrong lane sees which one it was.
+    port.log(`publishing ${lane.path} on ${lane.branch}`);
+    if (issue !== undefined && !port.issueExists(issue)) {
+        fail(`issue #${issue} does not exist in ${REQUIRED_REPOSITORY}`);
     }
     if (port.dirty(lane.path)) {
         const subject = port.headSubject(lane.path);
@@ -88,7 +180,10 @@ export function publishLane(issue: number, port: PublishLanePort): number {
     }
     const title = port.headSubject(lane.path);
     assertConventionalSubject(title, 'pull-request title');
-    const body = composePublishBody(issue, title);
+    // The update path overwrites the whole body, so an argumentless run on an issue lane would
+    // strip `Closes #<issue>` off a pull request that already carried it. The resolved lane's own
+    // branch is the issue of record; `None.` is only for a lane that genuinely has no issue.
+    const body = composePublishBody(issue ?? laneIssueNumber(lane.branch), title);
     const headSha = port.headSha(lane.path);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
@@ -131,6 +226,19 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         },
         worktrees: () =>
             parsePublishWorktrees(spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })),
+        cwd: () => cwd,
+        issueExists: (issue) => {
+            const result = spawnSync('gh', issueLookupArgs(issue), {
+                cwd: primaryRoot,
+                env: session.env,
+                encoding: 'utf8',
+                shell: false,
+            });
+            if (result.error !== undefined) {
+                throw result.error;
+            }
+            return issueExistsFromLookup(issue, result);
+        },
         aheadBehind: (lane) => {
             const output = spawnCapture('git', ['rev-list', '--left-right', '--count', 'origin/main...HEAD'], {
                 cwd: lane,
@@ -229,6 +337,39 @@ function isAncestorCommit(lane: string, ancestorSha: string, descendantSha: stri
     throw new Error(result.stderr.trim() || 'git merge-base --is-ancestor failed');
 }
 
+const ISSUE_NOT_FOUND_PATTERN = /HTTP 404|Not Found|Could not resolve to an? Issue/i;
+
+/**
+ * The REST issues endpoint resolves pull-request numbers too, and answers with the same `number`.
+ * Only the `pull_request` key tells the two apart, so the lookup has to ask for it: without it a
+ * pull-request number passes the existence gate and lands `Closes #<pr>` in the body.
+ */
+export const ISSUE_LOOKUP_JQ = '{number: .number, isPullRequest: (has("pull_request"))}';
+
+type IssueLookup = { number?: number; isPullRequest?: boolean };
+
+export function issueLookupArgs(issue: number): string[] {
+    return ['api', `repos/${REQUIRED_REPOSITORY}/issues/${issue}`, '--jq', ISSUE_LOOKUP_JQ];
+}
+
+export function issueExistsFromLookup(
+    issue: number,
+    result: { status: number | null; stdout: string; stderr: string }
+): boolean {
+    if (result.status === 0) {
+        const lookup = parseJson<IssueLookup>(result.stdout, `issue #${issue} lookup`);
+        if (lookup.isPullRequest === true) {
+            fail(`#${issue} in ${REQUIRED_REPOSITORY} is a pull request, not an issue; pass the issue it closes`);
+        }
+        return lookup.number === issue;
+    }
+    const stderr = result.stderr.trim();
+    if (ISSUE_NOT_FOUND_PATTERN.test(stderr)) {
+        return false;
+    }
+    throw new Error(stderr || `cannot prove issue #${issue} exists in ${REQUIRED_REPOSITORY}`);
+}
+
 export function existingOpenPullRequestArgs(branch: string): string[] {
     return ['pr', 'list', '--repo', REQUIRED_REPOSITORY, '--head', branch, '--state', 'open', '--json', 'number'];
 }
@@ -256,11 +397,8 @@ export function parsePublishWorktrees(value: string): PublishWorktree[] {
 async function main(): Promise<number> {
     const parsed = parsePublishLaneArgs(process.argv.slice(2));
     if (parsed.help) {
-        console.log('Usage: pnpm lane:publish <issue-number>');
+        console.log('Usage: pnpm lane:publish [issue-number]');
         return 0;
-    }
-    if (parsed.issue === undefined) {
-        fail('usage: pnpm lane:publish <issue-number>');
     }
     const executingFile = fileURLToPath(import.meta.url);
     const cwd = process.cwd();

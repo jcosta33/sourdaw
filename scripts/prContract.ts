@@ -49,7 +49,12 @@ export function assertPullRequestBody(body: string, label: string): void {
     }
 }
 
-export function composePublishBody(issue: number, subject: string): string {
+export const ISSUE_NUMBER_PATTERN = /^[1-9][0-9]*$/;
+
+export const NO_RELATED_TICKETS = 'None.';
+
+export function composePublishBody(issue: number | undefined, subject: string): string {
+    const relatedTickets = issue === undefined ? NO_RELATED_TICKETS : `Closes #${issue}`;
     const body = `### 🎯 What does this PR do?
 ${subject}
 
@@ -60,17 +65,21 @@ pnpm test:run on the named spec files in this change.
 None.
 
 ### 📌 Related tickets & additional notes
-Closes #${issue}
+${relatedTickets}
 `;
     assertPullRequestBody(body, 'pull-request body');
-    if (!body.includes(`Closes #${issue}`)) {
+    if (issue !== undefined && !body.includes(`Closes #${issue}`)) {
         fail('pull-request body is missing Closes #<issue-number>');
     }
     return body;
 }
 
+export function isIssueArgument(value: string): boolean {
+    return ISSUE_NUMBER_PATTERN.test(value);
+}
+
 export function assertIssueNumber(value: string, usage: string): number {
-    if (!/^[1-9][0-9]*$/.test(value)) {
+    if (!isIssueArgument(value)) {
         fail(usage);
     }
     const number = Number(value);
@@ -84,10 +93,13 @@ export function assertLaneSlug(slug: string): void {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
         fail('lane slug must match [a-z0-9]+(?:-[a-z0-9]+)*');
     }
+    if (/^[0-9]+$/.test(slug)) {
+        fail('lane slug must not be purely numeric; a bare number is read as the issue number');
+    }
 }
 
-export function laneBranchName(issue: number, slug: string): string {
-    return `agent/${issue}/${slug}`;
+export function laneBranchName(issue: number | undefined, slug: string): string {
+    return issue === undefined ? `agent/${slug}` : `agent/${issue}/${slug}`;
 }
 
 export function assertReviewCommentBody(body: string): void {

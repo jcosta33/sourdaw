@@ -22,6 +22,15 @@ describe('pull-request contract', () => {
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
     });
 
+    it('composes a nonempty Related tickets section when no issue is given', () => {
+        const body = composePublishBody(undefined, 'feat(vcs): add identities');
+        expect(body).not.toContain('Closes #');
+        expect(body.slice(body.indexOf('### 📌 Related tickets & additional notes')).trim()).toBe(
+            '### 📌 Related tickets & additional notes\nNone.'
+        );
+        expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
+    });
+
     it.each([
         ['missing heading', '### 🎯 What does this PR do?\nChange.\n'],
         ['empty section', composePublishBody(1, 'feat: x').replace('None.', '')],
@@ -35,6 +44,17 @@ describe('pull-request contract', () => {
         expect(laneBranchName(12, 'work')).toBe('agent/12/work');
         expect(() => assertLaneSlug('Work')).toThrow(/slug/);
         expect(() => assertLaneSlug('agent')).not.toThrow();
+    });
+
+    it('drops the issue segment from the branch name when no issue is given', () => {
+        expect(laneBranchName(undefined, 'work')).toBe('agent/work');
+        expect(laneBranchName(undefined, 'lane-issue-optional')).toBe('agent/lane-issue-optional');
+    });
+
+    it('rejects a purely numeric slug that would be read as an issue number', () => {
+        expect(() => assertLaneSlug('2206')).toThrow(/purely numeric/);
+        expect(() => assertLaneSlug('0')).toThrow(/purely numeric/);
+        expect(() => assertLaneSlug('sprint-2206')).not.toThrow();
     });
 
     it('requires one-paragraph review comments with defect, consequence, and outcome', () => {
