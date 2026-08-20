@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawSectionDividerProps = HTMLAttributes<HTMLDivElement> & {
@@ -17,7 +18,7 @@ export const DawSectionDivider = ({
     className,
     ...props
 }: DawSectionDividerProps): ReactElement => (
-    <div className={cn('flex items-center gap-1.5', className)} {...props}>
+    <Row gap={1.5} className={className} {...props}>
         {startSlot}
         <span
             className={cn(
@@ -28,5 +29,5 @@ export const DawSectionDivider = ({
             {label}
         </span>
         <div className={cn('h-px flex-1 bg-border/20', lineClassName)} />
-    </div>
+    </Row>
 );

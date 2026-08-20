@@ -1,5 +1,6 @@
 import { type CSSProperties, type HTMLAttributes, type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawGridHeaderCellProps = HTMLAttributes<HTMLDivElement> & {
@@ -23,15 +24,17 @@ export const DawGridHeaderCell = ({
         : (style ?? {});
 
     return (
-        <div
+        <Row
+            align="center"
+            justify="center"
             className={cn(
-                'daw-grid-header-cell flex min-w-0 items-center justify-center border-b border-border-hairline px-2 text-[10px] font-medium text-foreground',
+                'daw-grid-header-cell border-b border-border-hairline px-2 text-[10px] font-medium text-foreground',
                 className
             )}
             style={mergedStyle}
             {...props}
         >
             {children}
-        </div>
+        </Row>
     );
 };

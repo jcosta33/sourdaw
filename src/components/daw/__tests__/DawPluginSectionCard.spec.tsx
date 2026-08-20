@@ -19,7 +19,7 @@ describe('DawPluginSectionCard', () => {
 
         expect(card.tagName).toBe('SECTION');
         expect(card).toHaveClass('flex', 'flex-col', 'gap-3', 'p-3');
-        expect(heading).toHaveClass('space-y-1');
+        expect(heading).toHaveClass('flex', 'flex-col', 'gap-1');
         expect(title).toHaveClass('text-[8px]', 'font-semibold', 'uppercase', 'tracking-[0.24em]');
         expect(detail).toHaveClass('sr-only');
         expect(Array.from(card.children, (child) => child.textContent)).toEqual(['FilterLow pass', 'first', 'second']);
