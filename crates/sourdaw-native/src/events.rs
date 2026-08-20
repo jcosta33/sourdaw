@@ -10,7 +10,7 @@
 //!
 //! Both seams take **owned** payloads. A sink implementation may hand the value
 //! to another thread and outlive the caller's frame, so nothing borrowed can
-//! cross. Neither seam may be called from the CPAL callback: `emit_json`
+//! cross. Neither seam may be called from the render callback: `emit_json`
 //! serializes, allocates and may block on a queue, all of which are forbidden on
 //! the audio path.
 
