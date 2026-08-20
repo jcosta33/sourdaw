@@ -167,6 +167,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             const trackState = trackStore.value;
             const notes = midiState?.notesByClipId[cId] ?? EMPTY_NOTES;
             const tracks = trackState?.tracks ?? null;
+            const openedIds = openedClipIdsRef.current;
 
             const dpr = window.devicePixelRatio || 1;
             const visiblePitches = getVisiblePitches(st, sr, folded);
@@ -176,12 +177,27 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 pitchToRow.set(visiblePitches[index]!, index);
             }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-            // Extent is derived from the clip being edited (see
-            // `getPianoRollExtentBeats`), not a fixed constant — this must
-            // stay in lock-step with the same call in PianoRoll.tsx.
+            // Extent is derived from the clip being edited plus every clip
+            // opened alongside it (see `getPianoRollExtentBeats`) — opened
+            // clips' notes are drawn in this same coordinate space by
+            // `drawOpenedClipNotes` below and are editable, not read-only, so
+            // their content must also grow the canvas. This must stay in
+            // lock-step with the same call in PianoRoll.tsx.
             const clip = tracks?.find((time) => time.id === tId)?.clips.find((context) => context.id === cId);
             const clipLengthBeats = clip ? clip.endBeat - clip.startBeat : 0;
-            const extentBeats = getPianoRollExtentBeats(clipLengthBeats, notes);
+            const extentSources = [{ clipLengthBeats, notes }];
+            if (openedIds.length > 0) {
+                for (const openedId of openedIds) {
+                    if (openedId === cId) {
+                        continue;
+                    }
+                    const openedNotes = midiState?.notesByClipId[openedId] ?? EMPTY_NOTES;
+                    const openedClip = tracks?.flatMap((time) => time.clips).find((context) => context.id === openedId);
+                    const openedClipLengthBeats = openedClip ? openedClip.endBeat - openedClip.startBeat : 0;
+                    extentSources.push({ clipLengthBeats: openedClipLengthBeats, notes: openedNotes });
+                }
+            }
+            const extentBeats = getPianoRollExtentBeats(extentSources);
             const containerW = canvas.parentElement?.clientWidth ?? extentBeats * bw;
             const totalWidth = Math.max(containerW, extentBeats * bw);
             const height = noteAreaHeight + RULER_HEIGHT;
@@ -267,7 +283,6 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId);
                 }
                 // A9: draw notes from other simultaneously-open clips at 55% opacity
-                const openedIds = openedClipIdsRef.current;
                 if (openedIds.length > 0 && midiState && tracks) {
                     drawOpenedClipNotes(ctx, pitchToRow, bw, midiState.notesByClipId, tracks, cId, openedIds, selIds);
                 }

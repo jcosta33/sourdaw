@@ -45,6 +45,26 @@ import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 import { PianoRollContextMenu } from './PianoRollContextMenu';
 import { PianoRollToolbar } from './PianoRollToolbar';
 
+/**
+ * Structural equality for the `clipId -> length in beats` map used to derive
+ * the grid extent. The selector below rebuilds this record on every
+ * `trackStore` notification (its identity is never stable), so
+ * `useStoreSelector` needs a predicate to tell a real length change from the
+ * same lengths in a new wrapper — otherwise every store notification would
+ * recompute `extentBeats` and re-run the layout effects that report it
+ * upward.
+ */
+function areClipLengthsEqual(a: Record<string, number>, b: Record<string, number>): boolean {
+    if (a === b) {
+        return true;
+    }
+    const ids = Object.keys(a);
+    if (ids.length !== Object.keys(b).length) {
+        return false;
+    }
+    return ids.every((id) => a[id] === b[id]);
+}
+
 type PianoRollProps = {
     clipId: string;
     trackId: string;
@@ -133,16 +153,47 @@ export const PianoRoll = ({
                 : undefined,
         areOpenedClipNotesEqual
     );
-    // Length of the clip being edited, read from the Arrangement module's own
-    // store (foreign modules may read another module's store directly — see
-    // AGENTS.md §Architecture). Drives the grid extent below so the piano
-    // roll spans the clip it is editing instead of a fixed constant.
-    const clipLengthBeats = useStoreSelector(trackStore, (state) => {
-        const track = state?.tracks.find((candidate) => candidate.id === trackId);
-        const clip = track?.clips.find((candidate) => candidate.id === clipId);
-        return clip ? clip.endBeat - clip.startBeat : 0;
-    });
-    const extentBeats = getPianoRollExtentBeats(clipLengthBeats, notes);
+    // Length of the primary clip plus every clip opened alongside it, read
+    // from the Arrangement module's own store (foreign modules may read
+    // another module's store directly — see AGENTS.md §Architecture). Drives
+    // the grid extent below so the piano roll spans everything actually
+    // drawn, not just the clip it was opened on. An opened clip may live on
+    // any track, so this searches every track's clips rather than only
+    // `trackId`'s.
+    const clipLengthsBeats = useStoreSelector(
+        trackStore,
+        (state) => {
+            const ids = openedClipIds && openedClipIds.length > 0 ? [clipId, ...openedClipIds] : [clipId];
+            const lengths: Record<string, number> = {};
+            for (const id of ids) {
+                let length = 0;
+                for (const track of state?.tracks ?? []) {
+                    const clip = track.clips.find((candidate) => candidate.id === id);
+                    if (clip) {
+                        length = clip.endBeat - clip.startBeat;
+                        break;
+                    }
+                }
+                lengths[id] = length;
+            }
+            return lengths;
+        },
+        areClipLengthsEqual
+    );
+    // Extent is derived from the primary clip and every opened clip together
+    // — see `getPianoRollExtentBeats` in pianoRollConstants.ts. Opened
+    // clips' notes are drawn in this same coordinate space (`openedClipNotes`
+    // below, rendered by `usePianoRollRenderer.ts`'s `drawOpenedClipNotes`)
+    // and are editable, not read-only, so their content must also grow the
+    // canvas. This must stay in lock-step with the same call in
+    // `usePianoRollRenderer.ts`.
+    const extentBeats = getPianoRollExtentBeats([
+        { clipLengthBeats: clipLengthsBeats[clipId] ?? 0, notes },
+        ...Object.entries(openedClipNotes ?? {}).map(([id, openedNotes]) => ({
+            clipLengthBeats: clipLengthsBeats[id] ?? 0,
+            notes: openedNotes,
+        })),
+    ]);
 
     // ── Report layout to parent ──────────────────────────────────────
     useLayoutEffect(() => {

@@ -172,4 +172,49 @@ describe('PianoRoll grid extent (real pianoRollConstants)', () => {
         const noteEndPx = (lateNote.startBeat + lateNote.duration) * 40;
         expect(reportedWidth).toBeGreaterThanOrEqual(noteEndPx);
     });
+
+    // A9 multi-clip editing (ClipView.tsx's `openedClipIds`) draws a second
+    // clip's notes in the piano roll's same absolute beat coordinate space,
+    // and those notes are editable — not read-only ghosts. An extent derived
+    // from only the primary clip reproduces the exact "tail outside the
+    // canvas, unreachable by mouse" bug this component exists to fix, just
+    // through the opened clip instead of a long primary one.
+    it('reports a content width that covers a note on an opened clip past the primary clip extent', () => {
+        const openedNote: ProbeNote = { id: 'o1', pitch: 60, startBeat: 50, duration: 2, velocity: 100 };
+        midiState.notesByClipId = { 'clip-1': [], 'clip-2': [openedNote] };
+        trackState.tracks = [
+            {
+                id: 'track-1',
+                kind: 'midi',
+                color: 'oklch(0.5 0.1 200)',
+                clips: [
+                    { id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 },
+                    { id: 'clip-2', type: 'midi', startBeat: 0, endBeat: 8 },
+                ],
+            },
+        ];
+
+        const onContentWidthChange = vi.fn();
+        render(
+            <PianoRoll
+                {...defaultProps}
+                openedClipIds={['clip-1', 'clip-2']}
+                onContentWidthChange={onContentWidthChange}
+            />
+        );
+
+        // primary clip length 8, opened clip length 8, furthest note end 52
+        // (50+2), GRID_BEATS floor 32 → max is 52, rounds up to bar 52
+        // (already aligned), + 1 trailing bar (4) = 56 beats. beatWidth = 40
+        // (zoom=1) → 56 * 40 = 2240.
+        const reportedWidth = onContentWidthChange.mock.calls.at(-1)?.[0] as number;
+        expect(reportedWidth).toBe(2240);
+
+        // The decisive assertion: the reported width must reach past the
+        // opened clip's own note end position (52 beats * 40px = 2080) —
+        // an extent computed from the primary clip alone (length 8, floored
+        // at GRID_BEATS(32) * 40 = 1280) would fail this.
+        const openedNoteEndPx = (openedNote.startBeat + openedNote.duration) * 40;
+        expect(reportedWidth).toBeGreaterThanOrEqual(openedNoteEndPx);
+    });
 });

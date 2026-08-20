@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
-import { getVisiblePitches, getPianoRollExtentBeats, GRID_BEATS, TOTAL_ROWS, BASE_PITCH } from '../pianoRollConstants';
+import {
+    getVisiblePitches,
+    getPianoRollExtentBeats,
+    GRID_BEATS,
+    MAX_EXTENT_BEATS,
+    TOTAL_ROWS,
+    BASE_PITCH,
+    type PianoRollExtentSource,
+} from '../pianoRollConstants';
 
 const note = (startBeat: number, duration: number): MidiNote => ({
     id: `${startBeat}-${duration}`,
@@ -10,6 +18,10 @@ const note = (startBeat: number, duration: number): MidiNote => ({
     duration,
     velocity: 100,
 });
+
+/** Single-source call, matching the shape most existing tests exercise. */
+const extentOf = (clipLengthBeats: number, notes: readonly MidiNote[]): number =>
+    getPianoRollExtentBeats([{ clipLengthBeats, notes }]);
 
 describe('getVisiblePitches — unfolded (all pitches)', () => {
     it('returns all 60 pitches descending from 83 to 24 when unfolded', () => {
@@ -73,34 +85,88 @@ describe('getVisiblePitches — folded (scale-filtered)', () => {
 describe('getPianoRollExtentBeats', () => {
     it('floors at GRID_BEATS, rounded to a bar, plus one trailing bar, for an empty clip', () => {
         // GRID_BEATS(32) is already a bar boundary → 32 + 4 trailing = 36.
-        expect(getPianoRollExtentBeats(0, [])).toBe(GRID_BEATS + 4);
+        expect(extentOf(0, [])).toBe(GRID_BEATS + 4);
     });
 
     it('is unaffected by a clip shorter than the GRID_BEATS floor', () => {
-        expect(getPianoRollExtentBeats(8, [])).toBe(GRID_BEATS + 4);
+        expect(extentOf(8, [])).toBe(GRID_BEATS + 4);
     });
 
     // Issue #2299: a clip longer than the floor must drive the extent, not
     // just be silently capped at GRID_BEATS.
     it('extends past GRID_BEATS to cover a clip longer than eight bars', () => {
         // clip length 40 → already a bar boundary → 40 + 4 trailing = 44.
-        expect(getPianoRollExtentBeats(40, [])).toBe(44);
+        expect(extentOf(40, [])).toBe(44);
     });
 
     it('extends to cover a note ending past both the clip length and GRID_BEATS', () => {
         // furthest note end 38 (36+2) exceeds clip length 10 and GRID_BEATS(32)
         // → rounds up to bar 40, + 4 trailing = 44.
-        expect(getPianoRollExtentBeats(10, [note(36, 2)])).toBe(44);
+        expect(extentOf(10, [note(36, 2)])).toBe(44);
     });
 
     it('takes the furthest note across multiple notes, not the last one in the array', () => {
-        expect(getPianoRollExtentBeats(0, [note(20, 1), note(2, 2), note(10, 1)])).toBe(
-            getPianoRollExtentBeats(0, [note(20, 1)])
-        );
+        expect(extentOf(0, [note(20, 1), note(2, 2), note(10, 1)])).toBe(extentOf(0, [note(20, 1)]));
     });
 
     it('rounds a non-bar-aligned content length up to the next bar before adding trailing room', () => {
         // clip length 34 is not a multiple of 4 → rounds up to bar 36, + 4 trailing = 40.
-        expect(getPianoRollExtentBeats(34, [])).toBe(40);
+        expect(extentOf(34, [])).toBe(40);
+    });
+
+    // Gap: an opened clip (A9 multi-clip editing) is drawn in the same
+    // absolute beat coordinate space as the primary clip and is editable,
+    // not a read-only ghost — its content must grow the shared extent too,
+    // or its tail reproduces the exact "drawn past the canvas" bug this
+    // helper exists to fix, just through a second clip.
+    it('folds a second source (an opened clip) into the shared extent', () => {
+        const sources: PianoRollExtentSource[] = [
+            { clipLengthBeats: 8, notes: [] },
+            { clipLengthBeats: 0, notes: [note(50, 2)] },
+        ];
+        // furthest end across sources: 52 → bar 52, + 4 trailing = 56.
+        expect(getPianoRollExtentBeats(sources)).toBe(56);
+    });
+
+    it('takes the longer clip length across multiple sources, not just the first', () => {
+        const sources: PianoRollExtentSource[] = [
+            { clipLengthBeats: 8, notes: [] },
+            { clipLengthBeats: 48, notes: [] },
+        ];
+        expect(getPianoRollExtentBeats(sources)).toBe(extentOf(48, []));
+    });
+
+    // Gap: nothing upstream validates a clip's startBeat/endBeat, so a
+    // non-finite clipLengthBeats must degrade to the GRID_BEATS floor rather
+    // than poisoning the whole result via Math.max(NaN, ...) === NaN, which
+    // downstream coerces canvas.width to 0 and blanks the piano roll.
+    it('falls back to the GRID_BEATS floor when clipLengthBeats is NaN', () => {
+        expect(extentOf(NaN, [])).toBe(GRID_BEATS + 4);
+    });
+
+    it('falls back to the GRID_BEATS floor when clipLengthBeats is Infinity', () => {
+        expect(extentOf(Infinity, [])).toBe(GRID_BEATS + 4);
+    });
+
+    it('a non-finite source does not suppress a legitimate length from another source', () => {
+        const sources: PianoRollExtentSource[] = [
+            { clipLengthBeats: NaN, notes: [] },
+            { clipLengthBeats: 48, notes: [] },
+        ];
+        expect(getPianoRollExtentBeats(sources)).toBe(extentOf(48, []));
+    });
+
+    // Gap: a malformed import (or a genuinely huge startBeat + duration) must
+    // not drive the canvas backing store past what the browser can allocate.
+    // See MAX_EXTENT_BEATS' own doc comment for the pixel-limit derivation.
+    it('clamps an absurd note end beat to MAX_EXTENT_BEATS rather than growing unbounded', () => {
+        const absurd = extentOf(0, [note(1_000_000, 1)]);
+        const barAlignedMax = Math.ceil(MAX_EXTENT_BEATS / 4) * 4 + 4;
+        expect(absurd).toBe(barAlignedMax);
+        expect(absurd).toBeLessThan(1_000_000);
+    });
+
+    it('clamps an absurd clip length the same way as an absurd note end beat', () => {
+        expect(extentOf(1_000_000, [])).toBe(extentOf(0, [note(1_000_000, 1)]));
     });
 });
