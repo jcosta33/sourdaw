@@ -1,16 +1,24 @@
 use daw_dsp::crumbs::engine::CrumbsEngine;
 use daw_dsp::crumbs::types::CrumbsCommand;
-/// Bridge: implements daw_engine::NativePlugin for ClapWrapper.
+/// Bridge: implements daw_engine::NativePlugin for any hosted plugin runtime.
 ///
 /// This allows plugin instances from daw-plugin-host to be sent to the native
 /// audio thread and processed inline by the scheduler — no IPC in the audio path.
 /// Supports MIDI note events and transport info forwarding.
 ///
+/// The runtime owner and the slot are generic over
+/// [`daw_plugin_host::HostedPluginRuntime`] rather than holding a trait object:
+/// the audio path is the reason. A `dyn` runtime would put a vtable dispatch on
+/// every `process` call in the render callback, where a generic monomorphises to
+/// the same direct call the concrete type had. `ClapWrapper` is the default type
+/// argument, so every existing caller names the same types it always did.
+///
 /// RT-safety: all scratch buffers are preallocated. No heap allocation occurs
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
-    AudioPlugin, ClapParameterUpdate, ClapWrapper, HostTransport, PluginParameter, ProcessingGate,
+    ClapWrapper, HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginParameter,
+    ProcessingGate,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
@@ -85,7 +93,7 @@ fn without_stalling_async_worker<ResultValue>(wait: impl FnOnce() -> ResultValue
     wait()
 }
 
-type PendingParameterUpdate = ClapParameterUpdate;
+type PendingParameterUpdate = HostParameterUpdate;
 
 struct PendingParameterSlot {
     param_id: AtomicU32,
@@ -321,15 +329,19 @@ impl PluginRuntimeLifecycle {
     }
 }
 
-/// Runtime owner for a CLAP plugin shared by the RT processor and non-RT control path.
-pub struct SharedClapPlugin {
+/// Runtime owner for a hosted plugin shared by the RT processor and non-RT
+/// control path.
+///
+/// Generic over the backend, defaulted to `ClapWrapper` — see the module note
+/// for why this is a type parameter and not a trait object.
+pub struct SharedHostedPlugin<Runtime = ClapWrapper> {
     name: String,
-    wrapper: UnsafeCell<ClapWrapper>,
+    wrapper: UnsafeCell<Runtime>,
     access_state: AtomicU8,
     lifecycle: PluginRuntimeLifecycle,
     non_rt_control_lock: Mutex<()>,
     activated: bool,
-    /// Shared with the wrapper. Lets the control path ask for the CLAP
+    /// Shared with the wrapper. Lets the control path ask for the plugin's
     /// processing state to be left without performing the transition itself.
     processing: Arc<ProcessingGate>,
     pending_parameters: PendingParameterQueue,
@@ -337,11 +349,11 @@ pub struct SharedClapPlugin {
 
 // SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
 // path never waits; if non-RT control owns the wrapper, processing bypasses it.
-unsafe impl Send for SharedClapPlugin {}
-unsafe impl Sync for SharedClapPlugin {}
+unsafe impl<Runtime: HostedPluginRuntime> Send for SharedHostedPlugin<Runtime> {}
+unsafe impl<Runtime: HostedPluginRuntime> Sync for SharedHostedPlugin<Runtime> {}
 
-impl SharedClapPlugin {
-    pub fn new(wrapper: ClapWrapper) -> Self {
+impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
+    pub fn new(wrapper: Runtime) -> Self {
         let name = wrapper.get_name().to_string();
         let activated = wrapper.is_activated();
         let processing = wrapper.processing_gate();
@@ -519,7 +531,7 @@ impl SharedClapPlugin {
     pub fn with_control<ResultValue>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
     ) -> Result<ResultValue, String> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
@@ -529,7 +541,7 @@ impl SharedClapPlugin {
     pub fn with_unload_control<ResultValue>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
     ) -> Result<ResultValue, String> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.with_control_locked(timeout, operation)
@@ -566,7 +578,7 @@ impl SharedClapPlugin {
     fn with_control_locked<ResultValue>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
     ) -> Result<ResultValue, String> {
         // The whole body runs under the hand-off, not just the contended wait:
         // `operation` is third-party CLAP code of unbounded duration (`set_state`
@@ -611,7 +623,7 @@ impl SharedClapPlugin {
     fn spin_for_control<ResultValue>(
         &self,
         timeout: Duration,
-        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+        operation: impl FnOnce(&mut Runtime) -> Result<ResultValue, String>,
     ) -> Result<ResultValue, String> {
         let deadline = Instant::now() + timeout;
 
@@ -633,7 +645,7 @@ impl SharedClapPlugin {
 
     fn with_process<ResultValue>(
         &self,
-        operation: impl FnOnce(&mut ClapWrapper, &PendingParameterQueue) -> ResultValue,
+        operation: impl FnOnce(&mut Runtime, &PendingParameterQueue) -> ResultValue,
     ) -> Option<ResultValue> {
         if !self.lifecycle.allows_process() {
             // An unloading instance is still wired into the scheduler, so blocks
@@ -711,9 +723,9 @@ impl Drop for PluginAccessGuard<'_> {
     }
 }
 
-/// RT processing handle for a shared CLAP runtime plugin.
-pub struct ClapPluginSlot {
-    plugin: Arc<SharedClapPlugin>,
+/// RT processing handle for a shared hosted plugin runtime.
+pub struct HostedPluginSlot<Runtime = ClapWrapper> {
+    plugin: Arc<SharedHostedPlugin<Runtime>>,
     /// Preallocated output scratch for left channel (avoids per-block Vec alloc on RT thread).
     out_l_scratch: Box<[f32; MAX_BUFFER]>,
     /// Preallocated output scratch for right channel.
@@ -722,8 +734,8 @@ pub struct ClapPluginSlot {
     pending_parameter_scratch: [PendingParameterUpdate; PENDING_PARAMETER_CAPACITY],
 }
 
-impl ClapPluginSlot {
-    pub fn new(plugin: Arc<SharedClapPlugin>) -> Self {
+impl<Runtime: HostedPluginRuntime> HostedPluginSlot<Runtime> {
+    pub fn new(plugin: Arc<SharedHostedPlugin<Runtime>>) -> Self {
         let pending_parameter_scratch =
             [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
 
@@ -743,7 +755,10 @@ fn drain_pending_parameters_for_process(
     pending_parameters.drain(scratch)
 }
 
-impl NativePlugin for ClapPluginSlot {
+// `'static` comes from `daw_engine::NativePlugin`, which carries its own
+// `as_any`: the engine's slot registry is where a scheduler node's concrete type
+// is recovered, and that is untouched here.
+impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<Runtime> {
     fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         let n = num_samples.min(MAX_BUFFER);
         let processed = self.plugin.with_process(|wrapper, pending_parameters| {
@@ -970,7 +985,7 @@ mod tests {
     #[test]
     fn beginning_an_unload_asks_the_audio_thread_to_stop_processing() {
         let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
-        let shared = SharedClapPlugin::new(wrapper);
+        let shared = SharedHostedPlugin::new(wrapper);
         let gate = shared.processing_gate();
         gate.request_start();
 
@@ -985,7 +1000,7 @@ mod tests {
     #[test]
     fn an_unloading_instance_is_visited_for_the_stop_but_never_processed() {
         let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
-        let shared = SharedClapPlugin::new(wrapper);
+        let shared = SharedHostedPlugin::new(wrapper);
         shared.processing_gate().request_start();
 
         assert!(
@@ -1116,7 +1131,7 @@ mod tests {
     #[test]
     fn control_access_hands_the_wrapper_over_while_the_seam_is_free() {
         let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
-        let shared = SharedClapPlugin::new(wrapper);
+        let shared = SharedHostedPlugin::new(wrapper);
 
         let name = shared
             .with_control(Duration::from_millis(50), |plugin| {
@@ -1135,7 +1150,7 @@ mod tests {
     #[test]
     fn control_access_times_out_while_the_audio_thread_holds_the_seam() {
         let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
-        let shared = SharedClapPlugin::new(wrapper);
+        let shared = SharedHostedPlugin::new(wrapper);
         shared
             .access_state
             .store(PLUGIN_ACCESS_PROCESSING, Ordering::Release);
@@ -1174,7 +1189,7 @@ mod tests {
         runtime.block_on(async {
             let wrapper =
                 ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
-            let shared = Arc::new(SharedClapPlugin::new(wrapper));
+            let shared = Arc::new(SharedHostedPlugin::new(wrapper));
             shared
                 .access_state
                 .store(PLUGIN_ACCESS_PROCESSING, Ordering::Release);
@@ -1237,7 +1252,7 @@ mod tests {
         runtime.block_on(async {
             let wrapper =
                 ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
-            let shared = Arc::new(SharedClapPlugin::new(wrapper));
+            let shared = Arc::new(SharedHostedPlugin::new(wrapper));
 
             let operating_plugin = Arc::clone(&shared);
             let operation = tokio::spawn(async move {

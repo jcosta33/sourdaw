@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawUtilityListRowProps = {
@@ -49,7 +50,7 @@ export const DawUtilityListRow = ({
     );
 
     const sharedClassName = cn(
-        'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
+        'w-full px-3 py-1.5 text-left transition-colors',
         onPress ? 'hover:bg-accent/50' : '',
         active ? 'bg-accent/35' : '',
         dimmed ? 'opacity-40' : '',
@@ -58,11 +59,15 @@ export const DawUtilityListRow = ({
 
     if (onPress) {
         return (
-            <button type="button" className={sharedClassName} onClick={onPress}>
+            <Row as="button" type="button" gap={2} className={sharedClassName} onClick={onPress}>
                 {content}
-            </button>
+            </Row>
         );
     }
 
-    return <div className={sharedClassName}>{content}</div>;
+    return (
+        <Row gap={2} className={sharedClassName}>
+            {content}
+        </Row>
+    );
 };
