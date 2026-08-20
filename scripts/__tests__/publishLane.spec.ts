@@ -442,7 +442,7 @@ describe('lane publish', () => {
             git(['update-ref', 'refs/remotes/origin/main', git(['rev-parse', 'main'])]);
             git(['checkout', 'agent/12/work']);
             const mergeSubject = 'chore(build): merge main into the tracker metadata lane';
-            git(['merge', '--no-ff', 'main', '-m', mergeSubject], '2026-01-01T00:10:00');
+            git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:10:00');
 
             expect(git(['log', '-1', '--format=%s'])).toBe(mergeSubject);
             expect(shellPort(session, repository).laneSubject(repository)).toBe(
@@ -450,7 +450,7 @@ describe('lane publish', () => {
             );
 
             git(['checkout', '-b', 'agent/13/merge-only', base]);
-            git(['merge', '--no-ff', 'main', '-m', mergeSubject], '2026-01-01T00:11:00');
+            git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:11:00');
             expect(git(['rev-list', '--count', 'origin/main..HEAD'])).toBe('1');
             expect(shellPort(session, repository).laneSubject(repository)).toBeUndefined();
         } finally {
