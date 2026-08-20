@@ -1,0 +1,34 @@
+scripts/checkLgplRuntimeProvenance.ts
+  s_0a3429e31e555d::t_b178e9df61a386 87,123,253
+  s_0a3429e31e555d::t_96355329bf2802 26,43-48,51-52,54-62,66-68,71-76,79-86,88-90,99,104-105,112-117,120-122,124-128,133,165-182,185-188,206,211,217-221,224-225,229-230,232-233,238-241,248-252,254,264,326
+public/legal/SOURCES.json
+  s_0a3429e31e555d::t_96355329bf2802 13,57
+scripts/__tests__/checkLgplRuntimeProvenance.spec.ts
+  s_0a3429e31e555d::t_f19fd23af74da3 102,289
+  s_0a3429e31e555d::t_3a30bc98e2b7c8 7,17-44,50-75,78,83,154,197,224,235-236,240,243,249,252-254,258,267,272-288,290-292
+  s_0a3429e31e555d::t_e50a5a845b4f66 45-49,76,89-91,263
+electron/__tests__/webviewSecurity.spec.ts
+  s_0a3429e31e555d::t_96355329bf2802 306,311-315,317-320
+electron/main.ts
+  s_0a3429e31e555d::t_96355329bf2802 90-99
+electron/security.ts
+  s_0a3429e31e555d::t_96355329bf2802 176,181-191
+public/legal/THIRD-PARTY-NOTICES.md
+  s_0a3429e31e555d::t_96355329bf2802 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "53e2e6a887e9173ec60095b9f27596e2f134ff27",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
