@@ -26,7 +26,7 @@ const NOT_MEASURED_LABELS: Record<Extract<InferenceThroughput, { status: 'not-me
 };
 
 const WEBGPU_UNAVAILABLE_LABELS: Record<WebGpuUnavailableReason, string> = {
-    'missing-surface': 'WebGPU is not exposed by this Chromium runtime',
+    'missing-surface': 'WebGPU is not exposed by this runtime',
     'adapter-unavailable': 'No core WebGPU adapter is available',
     'fallback-adapter': 'Only a software WebGPU fallback adapter is available',
     'device-unavailable': 'The WebGPU adapter could not create a device',

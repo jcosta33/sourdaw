@@ -53,7 +53,7 @@ import {
     type ThroughputNotMeasuredReason,
     type WebGpuTier,
 } from '../models/CapabilityReport';
-import { type WebGpuProbeResult } from '../models/WebGpuProbe';
+import { type WebGpuProbeObservation, type WebGpuProbeResult } from '../models/WebGpuProbe';
 
 import { measureInferenceThroughput } from './measureInferenceThroughput';
 import { probeWebGpuUsability } from './probeWebGpuUsability';
@@ -94,6 +94,18 @@ function get_capability_storage(): Storage | null {
         return globalThis.localStorage;
     } catch {
         return null;
+    }
+}
+
+async function probe_opfs_availability(): Promise<boolean> {
+    if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
+        return false;
+    }
+    try {
+        await navigator.storage.getDirectory();
+        return true;
+    } catch {
+        return false;
     }
 }
 
@@ -256,21 +268,26 @@ export const detectCapabilities = inject({ logger, measureInferenceThroughput, p
             const storage = get_capability_storage();
             const cachedReport = read_cached_report(storage);
 
-            const crossOriginIsolated = globalThis.crossOriginIsolated === true;
             const workerAvailable = typeof Worker === 'function';
-            let webGpu: WebGpuProbeResult;
+            let workerProbe: WebGpuProbeObservation;
             if (!workerAvailable) {
-                webGpu = { status: 'unavailable', reason: 'probe-failed' };
+                workerProbe = {
+                    webGpu: { status: 'unavailable', reason: 'probe-failed' },
+                    crossOriginIsolated: false,
+                };
             } else {
                 try {
-                    webGpu = await probeWebGpuUsability();
+                    workerProbe = await probeWebGpuUsability();
                 } catch {
-                    webGpu = { status: 'unavailable', reason: 'probe-failed' };
+                    workerProbe = {
+                        webGpu: { status: 'unavailable', reason: 'probe-failed' },
+                        crossOriginIsolated: false,
+                    };
                     logger.warn('[BrowserAi] WebGPU usability probe failed — browser AI disabled');
                 }
             }
-            const opfsAvailable =
-                typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function';
+            const { webGpu, crossOriginIsolated } = workerProbe;
+            const opfsAvailable = await probe_opfs_availability();
 
             let capability: BrowserAiCapability;
             let inference: InferenceThroughput = { status: 'not-measured', reason: 'not-requested' };

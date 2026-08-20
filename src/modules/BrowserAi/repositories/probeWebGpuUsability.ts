@@ -1,4 +1,4 @@
-import { type WebGpuProbeRequest, type WebGpuProbeResult } from '../models/WebGpuProbe';
+import { type WebGpuProbeObservation, type WebGpuProbeRequest, type WebGpuProbeResult } from '../models/WebGpuProbe';
 
 const WEBGPU_PROBE_TIMEOUT_MS = 10_000;
 
@@ -22,8 +22,8 @@ function isWebGpuProbeResult(value: unknown): value is WebGpuProbeResult {
     );
 }
 
-export function probeWebGpuUsability(): Promise<WebGpuProbeResult> {
-    return new Promise<WebGpuProbeResult>((resolve, reject) => {
+export function probeWebGpuUsability(): Promise<WebGpuProbeObservation> {
+    return new Promise<WebGpuProbeObservation>((resolve, reject) => {
         const worker = new Worker(new URL('../workers/webGpuProbeWorker.ts', import.meta.url), { type: 'module' });
         let timeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -40,18 +40,23 @@ export function probeWebGpuUsability(): Promise<WebGpuProbeResult> {
             const response = event.data;
             const result: unknown =
                 typeof response === 'object' && response !== null ? Reflect.get(response, 'result') : null;
+            const workerCrossOriginIsolated: unknown =
+                typeof response === 'object' && response !== null
+                    ? Reflect.get(response, 'workerCrossOriginIsolated')
+                    : null;
             if (
                 typeof response !== 'object' ||
                 response === null ||
                 Reflect.get(response, 'type') !== 'webgpu-probe-result' ||
-                !isWebGpuProbeResult(result)
+                !isWebGpuProbeResult(result) ||
+                typeof workerCrossOriginIsolated !== 'boolean'
             ) {
                 finish();
                 reject(new TypeError('WebGPU probe worker returned an invalid response'));
                 return;
             }
             finish();
-            resolve(result);
+            resolve({ webGpu: result, crossOriginIsolated: workerCrossOriginIsolated });
         };
         worker.onerror = (): void => {
             finish();
