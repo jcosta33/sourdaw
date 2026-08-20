@@ -1,0 +1,19 @@
+.github/ISSUE_TEMPLATE/config.yml
+  s_8ddfabd1166b5d::t_8c15eab1c5511c 6-8,10-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "dba8de5ddcea39b3041d6f98c3a51c0b92efc202",
+  "prompts": {},
+  "sessions": {
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
