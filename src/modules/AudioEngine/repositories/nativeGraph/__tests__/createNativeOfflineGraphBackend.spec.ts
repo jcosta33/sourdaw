@@ -2,16 +2,19 @@
  * The native offline backend's own laws, against a scripted transport.
  *
  * Everything the backend does *between* the contract and the wire is pinned
- * here: material registered before the probe, the one-frame probe carrying
- * the whole accumulated batch, refusal-with-rollback, report derivation and
- * the interleaved-bytes round trip. What the wire's far side does with those
- * payloads is the null test's question, answered against the built addon.
+ * here: material registered before the probe, the render-nothing mapping
+ * probe carrying the committed prior beside the incoming batch,
+ * refusal-with-rollback, wire-fed reports and the interleaved-bytes round
+ * trip — and the line between a batch refusal, which resolves, and a seam
+ * fault, which throws. What the wire's far side does with those payloads is
+ * the null test's question, answered against the built addon.
  */
 import { describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { createNativeOfflineGraphBackend, NATIVE_OFFLINE_BACKEND_ID } from '../createNativeOfflineGraphBackend';
 import {
+    type MapGraphBatchInput,
     type NativeGraphTransport,
     type RegisterTimelineSampleInput,
     type RenderGraphOfflineInput,
@@ -45,17 +48,23 @@ function interleavedBytes(frames: number, fill: (frame: number, channel: 0 | 1) 
 type ScriptedTransport = NativeGraphTransport & {
     registered: RegisterTimelineSampleInput[];
     renders: RenderGraphOfflineInput[];
+    maps: MapGraphBatchInput[];
 };
 
 function scriptedTransport(options?: {
-    refuseRender?: (input: RenderGraphOfflineInput) => string | undefined;
+    /** Answer the wire's `rejected` result for a probe, by reason. */
+    refuseMap?: (input: MapGraphBatchInput) => string | undefined;
+    /** Script the wire's reports for an accepted probe. */
+    reports?: (input: MapGraphBatchInput) => unknown;
     refuseRegistration?: string;
 }): ScriptedTransport {
     const registered: RegisterTimelineSampleInput[] = [];
     const renders: RenderGraphOfflineInput[] = [];
+    const maps: MapGraphBatchInput[] = [];
     return {
         registered,
         renders,
+        maps,
         async registerTimelineSample(input) {
             if (options?.refuseRegistration !== undefined) {
                 throw new Error(options.refuseRegistration);
@@ -64,12 +73,23 @@ function scriptedTransport(options?: {
             return { frames: input.pcm.byteLength / (4 * input.channels) };
         },
         async renderGraphOffline(input) {
-            const refusal = options?.refuseRender?.(input);
-            if (refusal !== undefined) {
-                throw new Error(refusal);
-            }
             renders.push(input);
             return interleavedBytes(input.frames, (frame, channel) => (channel === 0 ? frame : -frame));
+        },
+        async mapGraphBatch(input) {
+            const refusal = options?.refuseMap?.(input);
+            if (refusal !== undefined) {
+                // A batch refusal is the wire's `rejected` result, never a
+                // thrown transport error — the addon's one failure vocabulary.
+                return { acceptance: 'rejected', application: 'not-applied', reason: refusal };
+            }
+            maps.push(input);
+            return {
+                acceptance: 'accepted',
+                application: 'applied',
+                ...(input.batch.correlation !== undefined ? { correlation: input.batch.correlation } : {}),
+                reports: options?.reports?.(input) ?? [],
+            };
         },
         applyGraphCommands: vi.fn(async () => ({ acceptance: 'accepted' })),
     };
@@ -133,12 +153,13 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(view.getFloat32(4, true)).toBe(0.25);
         expect(view.getFloat32(8, true)).toBe(-1);
         expect(view.getFloat32(12, true)).toBe(1);
-        // Both applies probed, at one frame, and the second probe carried the
-        // whole accumulated batch — statefulness is the backend's, not the
-        // stateless render command's.
-        expect(transport.renders.map((render) => render.frames)).toEqual([1, 1]);
-        expect(transport.renders[0]!.batch.commands).toHaveLength(2);
-        expect(transport.renders[1]!.batch.commands).toHaveLength(3);
+        // Both applies probed with nothing rendered: the committed commands
+        // ride as the prior, the incoming batch alone rides as the batch —
+        // the split that scopes reports and refusal indices to this apply.
+        expect(transport.renders).toHaveLength(0);
+        expect(transport.maps.map((probe) => probe.prior.length)).toEqual([0, 2]);
+        expect(transport.maps.map((probe) => probe.batch.commands.length)).toEqual([2, 1]);
+        expect(transport.maps[1]!.sampleRate).toBe(SAMPLE_RATE);
     });
 
     it('passes an identity-only source through and lets the pool answer for it', async () => {
@@ -156,11 +177,11 @@ describe('createNativeOfflineGraphBackend', () => {
 
     it('rejects with the native refusal reason and rolls the batch back whole', async () => {
         const transport = scriptedTransport({
-            refuseRender: (input) =>
+            refuseMap: (input) =>
                 input.batch.commands.some(
                     (command) => command.kind === 'schedule-clip' && command.playback.playbackRate !== 1
                 )
-                    ? 'commands[1]: schedule-clip: stretched-clip-unsupported — playbackRate 0.5 refused'
+                    ? 'commands[0]: schedule-clip: stretched-clip-unsupported — playbackRate 0.5 refused'
                     : undefined,
         });
         const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport });
@@ -176,10 +197,12 @@ describe('createNativeOfflineGraphBackend', () => {
             ],
         });
 
+        // The wire's `rejected` result surfaces as this backend's own
+        // rejection, reason verbatim.
         expect(refused).toEqual({
             acceptance: 'rejected',
             application: 'not-applied',
-            reason: 'commands[1]: schedule-clip: stretched-clip-unsupported — playbackRate 0.5 refused',
+            reason: 'commands[0]: schedule-clip: stretched-clip-unsupported — playbackRate 0.5 refused',
         });
         // Rollback: the refused command never enters a later wire batch.
         await backend.render(4);
@@ -227,44 +250,36 @@ describe('createNativeOfflineGraphBackend', () => {
         });
     });
 
-    it('derives strip reports by the accepted-batch law map_device applies', async () => {
-        const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport: scriptedTransport() });
+    it('hands back the reports the wire answered and keeps the revision counter its own', async () => {
+        // Reports a TS-side derivation could never produce — a chain the
+        // *prior* built plus this batch's edit — prove the reports are read
+        // off the wire, not restated from the incoming commands.
+        const backend = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: scriptedTransport({
+                reports: (input) =>
+                    input.prior.length === 0
+                        ? [{ kind: 'track', id: 'track-1', deviceIds: [] }]
+                        : [{ kind: 'track', id: 'track-1', deviceIds: ['dev-prior', 'dev-new'] }],
+            }),
+        });
 
+        await backend.apply({ schemaVersion: 1, commands: [TRACK_STRIP] });
         const result = await backend.apply({
             schemaVersion: 1,
             correlation: { appRevision: 2, projectRevision: 'rev-4' },
             commands: [
                 {
-                    ...TRACK_STRIP,
-                    // A strip built only for routing fidelity: the non-knead
-                    // device degrades rather than refusing, so it is absent
-                    // from the report the contract says a caller must read.
-                    contributesAudio: false,
-                    devices: [
-                        {
-                            id: 'dev-knead',
-                            name: 'Knead',
-                            type: 'Knead',
-                            bypassed: false,
-                            parameterValues: {},
-                        },
-                        {
-                            id: 'dev-web-only',
-                            name: 'Filter',
-                            type: 'builtin-filter',
-                            bypassed: false,
-                            parameterValues: {},
-                        },
-                    ],
-                },
-                {
-                    kind: 'create-bus-strip',
-                    busId: 'bus-1',
-                    name: 'Bus',
-                    state: { gain: 0.9, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
-                    devices: [],
-                    honorMuted: true,
-                    contributesAudio: true,
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    index: 1,
+                    device: {
+                        id: 'dev-new',
+                        name: 'Knead',
+                        type: 'Knead',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
                 },
             ],
         });
@@ -273,11 +288,11 @@ describe('createNativeOfflineGraphBackend', () => {
             acceptance: 'accepted',
             application: 'applied',
             correlation: { appRevision: 2, projectRevision: 'rev-4' },
-            runtimeRevision: 1,
-            reports: [
-                { kind: 'track', id: 'track-1', deviceIds: ['dev-knead'] },
-                { kind: 'bus', id: 'bus-1', deviceIds: [] },
-            ],
+            // The mapping wire carries no runtimeRevision — a mapping has no
+            // runtime — so the counter here is this backend's own, advancing
+            // once per accepted batch.
+            runtimeRevision: 2,
+            reports: [{ kind: 'track', id: 'track-1', deviceIds: ['dev-prior', 'dev-new'] }],
         });
     });
 
@@ -299,16 +314,18 @@ describe('createNativeOfflineGraphBackend', () => {
         await backend.render(2);
 
         // A batch's own correlation crosses on its own probe.
-        expect(transport.renders[0]!.batch.correlation).toEqual({ appRevision: 1, projectRevision: 'rev-1' });
+        expect(transport.maps[0]!.batch.correlation).toEqual({ appRevision: 1, projectRevision: 'rev-1' });
         // A correlation-free batch crosses with no correlation key at all,
         // even immediately after a correlated batch was accepted — absence is
-        // meaningful (`serializeAudioGraphCommandBatch`'s law), so nothing may
-        // stick from a predecessor.
-        expect('correlation' in transport.renders[1]!.batch).toBe(false);
+        // meaningful (`serializeAudioGraphCommandBatch`'s law: an absent
+        // correlation is "not correlated" and must not trip the native side's
+        // validation), so nothing may stick from a predecessor.
+        expect('correlation' in transport.maps[1]!.batch).toBe(false);
         // And a later correlated batch crosses under its own key, not rev-1.
-        expect(transport.renders[2]!.batch.correlation).toEqual({ appRevision: 2, projectRevision: 'rev-2' });
+        expect(transport.maps[2]!.batch.correlation).toEqual({ appRevision: 2, projectRevision: 'rev-2' });
         // The render applies no batch and carries none.
-        expect('correlation' in transport.renders[3]!.batch).toBe(false);
+        expect(transport.renders).toHaveLength(1);
+        expect('correlation' in transport.renders[0]!.batch).toBe(false);
     });
 
     it('renders the accumulated batch and hands back the planar pair', async () => {
@@ -321,6 +338,55 @@ describe('createNativeOfflineGraphBackend', () => {
         expect([...left]).toEqual([0, 1, 2]);
         expect([...right]).toEqual([-0, -1, -2]);
         expect(transport.renders.at(-1)).toMatchObject({ frames: 3, sampleRate: SAMPLE_RATE });
+        // The render batch is the committed commands — mapping probes never
+        // rendered them.
+        expect(transport.renders.at(-1)!.batch.commands).toHaveLength(1);
+    });
+
+    it('throws a prior-fault transport error instead of blaming the incoming batch', async () => {
+        const transport = scriptedTransport();
+        const backend = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: {
+                ...transport,
+                async mapGraphBatch() {
+                    throw new Error('previously applied commands no longer map: duplicate track id "track-1"');
+                },
+            },
+        });
+
+        // The prefix is the wire's fault marker: the already-accepted commands
+        // failed to replay, so this is a broken seam, not a refusal of the
+        // batch the caller just sent.
+        await expect(backend.apply({ schemaVersion: 1, commands: [TRACK_STRIP] })).rejects.toThrow(
+            'previously applied commands no longer map'
+        );
+    });
+
+    it('throws on wire shapes the mapping result vocabulary does not contain', async () => {
+        const transport = scriptedTransport();
+        const unknownOutcome = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: {
+                ...transport,
+                async mapGraphBatch() {
+                    return { acceptance: 'accepted', application: 'needs-reconcile' };
+                },
+            },
+        });
+        await expect(unknownOutcome.apply({ schemaVersion: 1, commands: [TRACK_STRIP] })).rejects.toThrow(
+            'map_graph_batch answered an unknown outcome'
+        );
+
+        const malformedReports = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport: scriptedTransport({
+                reports: () => [{ kind: 'track', id: 'track-1', deviceIds: 'dev-1' }],
+            }),
+        });
+        await expect(malformedReports.apply({ schemaVersion: 1, commands: [TRACK_STRIP] })).rejects.toThrow(
+            'map_graph_batch answered a malformed strip report'
+        );
     });
 
     it('refuses a schema version it does not speak, and everything after dispose', async () => {

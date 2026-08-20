@@ -106,15 +106,15 @@ export const EXPOSED_COMMANDS = [
  * renderer-driven, and the raw audio-file and whisper-model paths are
  * reachable only through the narrower commands that wrap them.
  *
- * The three graph commands (`apply_graph_commands`, `register_timeline_sample`,
- * `render_graph_offline`) stay denied as of D3.b even though their IPC
- * transport now exists (`src/modules/AudioEngine/repositories/nativeGraph/
- * nativeGraphTransport.ts`): nothing in `src/` reaches that transport yet —
- * `createOfflineRenderBackend` returns the web backend unconditionally, and
- * the null test drives the addon in-process, not over IPC. Exposing a command
- * requires a production caller. The D3.c cutover (jcosta33/sourdaw#2223) flips
- * the backend selection, and that same change moves these three to
- * `EXPOSED_COMMANDS` together with their caller.
+ * The graph commands (`apply_graph_commands`, `map_graph_batch`,
+ * `register_timeline_sample`, `render_graph_offline`) stay denied even though
+ * their IPC transport exists (`src/modules/AudioEngine/repositories/
+ * nativeGraph/nativeGraphTransport.ts`): nothing in `src/` reaches that
+ * transport yet — `createOfflineRenderBackend` returns the web backend
+ * unconditionally, and the null test drives the addon in-process, not over
+ * IPC. Exposing a command requires a production caller. The D3.c.2 cutover
+ * (jcosta33/sourdaw#2225) flips the backend selection, and that same change
+ * moves these four to `EXPOSED_COMMANDS` together with their caller.
  */
 export const DENIED_COMMANDS = [
     'apply_graph_commands',
@@ -128,6 +128,7 @@ export const DENIED_COMMANDS = [
     'get_asr_status',
     'hide_all_plugin_guis',
     'load_whisper_model',
+    'map_graph_batch',
     'post_process_audio',
     'read_audio_file',
     'register_timeline_sample',

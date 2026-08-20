@@ -14,7 +14,10 @@
 //! frame count produce bit-identical output.
 
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
-use crate::scheduler::{AudioScheduler, GraphCommand, RetiredGraphObjects};
+use crate::scheduler::{
+    graph_progress_channel, AudioScheduler, GraphCommand, GraphProgressSnapshot,
+    RetiredGraphObjects,
+};
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -60,12 +63,14 @@ impl OfflineRenderer {
         let (midi_diagnostics_tx, _midi_diagnostics_reader) = active_midi_rt_diagnostics_channel();
         let (timeline_diagnostics_tx, _timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
+        let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
         let scheduler = AudioScheduler::with_rt_diagnostics(
             command_rx,
             retired_tx,
             sample_rate,
             midi_diagnostics_tx,
             timeline_diagnostics_tx,
+            graph_progress_tx,
         );
 
         Self {
@@ -96,6 +101,16 @@ impl OfflineRenderer {
     /// whole rather than partially dropped.
     pub fn timeline_diagnostics(&self) -> TimelineRtDiagnosticsSnapshot {
         self.scheduler.timeline().diagnostics()
+    }
+
+    /// The progress echo the live engine publishes per callback, read
+    /// directly here because this thread *is* the render thread — the offline
+    /// stand-in for [`crate::EngineHandle::graph_progress_snapshot`], with no
+    /// lag by construction. Batches count only when pushed behind a
+    /// [`GraphCommand::BeginBatch`] fence, exactly as the live drain counts
+    /// them.
+    pub fn graph_progress(&self) -> GraphProgressSnapshot {
+        self.scheduler.graph_progress()
     }
 
     /// Render `frames` frames into planar stereo, in
@@ -241,6 +256,43 @@ mod tests {
         assert_eq!(left[OFFLINE_BLOCK_FRAMES + 3], 1.0);
         assert_eq!(left[OFFLINE_BLOCK_FRAMES + 10], 1.0);
         assert_eq!(left[OFFLINE_BLOCK_FRAMES + 11], 0.0);
+    }
+
+    /// The progress echo's two guarantees, driven synchronously: a fenced
+    /// batch counts only once it applied whole, and the playhead field is the
+    /// frame the last block reached — the pair the control-side ledger's
+    /// release law subtracts against.
+    #[test]
+    fn graph_progress_counts_fenced_batches_and_reports_the_playhead() {
+        let mut renderer = OfflineRenderer::new(48_000.0, 16);
+        assert_eq!(renderer.graph_progress(), GraphProgressSnapshot::default());
+
+        let commands = clip_and_gain_commands();
+        renderer
+            .push(GraphCommand::BeginBatch {
+                commands: commands.len(),
+            })
+            .expect("the fence fits");
+        for command in commands {
+            renderer.push(command).expect("the batch fits");
+        }
+
+        // Nothing counted before a block drains the ring.
+        assert_eq!(renderer.graph_progress().batches_applied, 0);
+
+        renderer.render(OFFLINE_BLOCK_FRAMES * 2);
+
+        let progress = renderer.graph_progress();
+        assert_eq!(progress.batches_applied, 1);
+        assert_eq!(progress.playhead_frame, OFFLINE_BLOCK_FRAMES as u64 * 2);
+
+        // A loose (unfenced) command is not a batch and must not advance the
+        // batch horizon the ledger numbers against.
+        renderer
+            .push(GraphCommand::SeekFrames(0))
+            .expect("the loose command fits");
+        renderer.render(OFFLINE_BLOCK_FRAMES);
+        assert_eq!(renderer.graph_progress().batches_applied, 1);
     }
 
     #[test]

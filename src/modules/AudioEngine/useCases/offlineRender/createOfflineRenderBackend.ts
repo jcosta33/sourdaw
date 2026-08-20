@@ -10,7 +10,7 @@
  * web implementation's own surface (`getTrackStrip`, sidechain and Toaster
  * routing, clip/note scheduling) rather than the contract.
  *
- * **The selection flips here, in D3.c (#2223)**: when the export's graph work
+ * **The selection flips here, in D3.c.2 (#2225)**: when the export's graph work
  * arrives entirely through commands, this function becomes the composition
  * decision between `web-audio/offline` and `native/offline`, and nothing else
  * in the render path moves.

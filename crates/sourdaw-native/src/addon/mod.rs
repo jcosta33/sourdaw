@@ -514,6 +514,25 @@ impl SourdawNative {
         )?))
     }
 
+    /// Map one graph batch against the graph a prior wire-command sequence
+    /// built, with nothing rendered: the report and refusal wire of the
+    /// offline seam. Returns the apply-result mirror with the incoming
+    /// batch's touched-strip reports and no `runtimeRevision`; a refusal is
+    /// a `rejected` result, a prior that no longer maps is a transport
+    /// error.
+    #[napi]
+    pub async fn map_graph_batch(
+        &self,
+        prior: Value,
+        batch: Value,
+        sample_rate: f64,
+    ) -> Result<Value> {
+        reason(
+            commands::graph::map_graph_batch(prior, batch, sample_rate, &self.singletons.app_state)
+                .await,
+        )
+    }
+
     #[napi]
     pub async fn send_plugin_midi(
         &self,

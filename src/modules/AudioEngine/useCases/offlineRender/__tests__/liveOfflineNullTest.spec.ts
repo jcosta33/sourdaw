@@ -161,7 +161,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AudioGraphCommand, type AudioGraphParameterWrite } from '../../../models/AudioGraphBackend';
+import {
+    type AudioGraphCommand,
+    type AudioGraphParameterWrite,
+    type AudioGraphStripReport,
+} from '../../../models/AudioGraphBackend';
 import { type Device } from '../../../models/TrackViewTypes';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
@@ -2246,11 +2250,11 @@ describe('live/offline null test — a stretched clip', () => {
  * `createNativeOfflineGraphBackend`, whose serializer
  * (`serializeAudioGraphCommandBatch`) is the unit this leg exists to prove.
  * Only the transport differs from the desktop path: production crosses the
- * Electron bridge to `render_graph_offline`, this leg calls the same addon
- * method in-process. Everything law-bearing — the wire spellings, the PCM
- * interleave, the probe, the report derivation — is the same code the app
- * ships, so a residual here is a defect in that code or in the native render,
- * never in a test-only reimplementation.
+ * Electron bridge to `map_graph_batch` and `render_graph_offline`, this leg
+ * calls the same addon methods in-process. Everything law-bearing — the wire
+ * spellings, the PCM interleave, the mapping probe, the wire-fed reports —
+ * is the same code the app ships, so a residual here is a defect in that
+ * code or in the native render, never in a test-only reimplementation.
  *
  * ── The skip law ──────────────────────────────────────────────────────────
  *
@@ -2311,6 +2315,7 @@ type NativeHostAddon = {
         pcm: Uint8Array
     ) => Promise<unknown>;
     renderGraphOffline: (batch: NativeGraphWireBatch, frames: number, sampleRate: number) => Promise<Uint8Array>;
+    mapGraphBatch: (prior: unknown, batch: NativeGraphWireBatch, sampleRate: number) => Promise<unknown>;
 };
 
 const NATIVE_CRATE_DIR = join(
@@ -2353,11 +2358,11 @@ function requireNativeHost(): NativeHostAddon {
 }
 
 /**
- * The in-process transport: the same three commands the desktop transport
- * carries, minus the wire. `applyGraphCommands` throws because the offline
- * null test must never touch the live engine — reaching it here would mean
- * the offline backend regressed into starting CPAL, which is the exact
- * property `createNativeOfflineGraphBackend`'s header promises it will not.
+ * The in-process transport: the same commands the desktop transport carries,
+ * minus the wire. `applyGraphCommands` throws because the offline null test
+ * must never touch the live engine — reaching it here would mean the offline
+ * backend regressed into starting CPAL, which is the exact property
+ * `createNativeOfflineGraphBackend`'s header promises it will not.
  */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
@@ -2371,6 +2376,9 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
         },
         async renderGraphOffline(input) {
             return host.renderGraphOffline(input.batch, input.frames, input.sampleRate);
+        },
+        async mapGraphBatch(input) {
+            return host.mapGraphBatch(input.prior, input.batch, input.sampleRate);
         },
         async applyGraphCommands() {
             throw new Error('the offline null test never touches the live engine (apply_graph_commands)');
@@ -2472,7 +2480,12 @@ function nativeLegPostFaderSendGraphCommands(fixture: GraphFixture): AudioGraphC
  * signal, so it cannot serve here — the native graph has no injection input,
  * and both legs must take their programme from the same `schedule-clip`.
  */
-async function renderCommandsThroughWebBackend(commands: AudioGraphCommand[]): Promise<RenderedBuffer> {
+type RenderedLeg = Readonly<{
+    rendered: RenderedBuffer;
+    reports: readonly AudioGraphStripReport[];
+}>;
+
+async function renderCommandsThroughWebBackend(commands: AudioGraphCommand[]): Promise<RenderedLeg> {
     const context = newContext({ automation: 'scheduled' });
     const master = newMaster(context);
     const backend = createWebAudioOfflineBackend({
@@ -2485,10 +2498,10 @@ async function renderCommandsThroughWebBackend(commands: AudioGraphCommand[]): P
     if (result.application !== 'applied') {
         throw new Error(`web backend refused the shared batch: ${JSON.stringify(result)}`);
     }
-    return context.startRendering();
+    return { rendered: await context.startRendering(), reports: result.reports };
 }
 
-async function renderCommandsThroughNativeBackend(commands: AudioGraphCommand[]): Promise<RenderedBuffer> {
+async function renderCommandsThroughNativeBackend(commands: AudioGraphCommand[]): Promise<RenderedLeg> {
     const backend = createNativeOfflineGraphBackend({
         sampleRate: SAMPLE_RATE,
         transport: inProcessNativeTransport(requireNativeHost()),
@@ -2498,26 +2511,29 @@ async function renderCommandsThroughNativeBackend(commands: AudioGraphCommand[])
         if (result.application !== 'applied') {
             throw new Error(`native backend refused the shared batch: ${JSON.stringify(result)}`);
         }
-        // `result.reports` is deliberately not asserted against here: it is a
-        // TS-side restatement of this caller's own commands (`deriveStripReports`
-        // mirroring `map_device`'s knead/non-external law), so a comparison
-        // against the same command list could never fail and would only dress
-        // the restatement up as an observation. Strip presence is actually
-        // covered by the audio residual below plus the offline diagnostics
-        // backstop (`offline-render-dropped-commands` in `graph.rs`), which
-        // fails the render when the engine dropped any admitted command.
-        // Reports become a native observation when they cross the wire with
-        // the D3.c cutover (#2223), where production starts consuming them.
         const { left, right } = await backend.render(RENDER_FRAMES);
         return {
-            sampleRate: SAMPLE_RATE,
-            length: RENDER_FRAMES,
-            numberOfChannels: 2,
-            getChannelData: (channel: number) => (channel === 0 ? left : right),
+            rendered: {
+                sampleRate: SAMPLE_RATE,
+                length: RENDER_FRAMES,
+                numberOfChannels: 2,
+                getChannelData: (channel: number) => (channel === 0 ? left : right),
+            },
+            // The native mapping's own observations, carried over
+            // `map_graph_batch` — never a TS-side restatement of this
+            // caller's commands.
+            reports: result.reports,
         };
     } finally {
         backend.dispose();
     }
+}
+
+/** Reports as a set: the one report law is about coverage, not ordering. */
+function reportSet(reports: readonly AudioGraphStripReport[]): AudioGraphStripReport[] {
+    return reports
+        .map((report) => ({ kind: report.kind, id: report.id, deviceIds: [...report.deviceIds] }))
+        .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 async function nullTestNativeLeg(input: {
@@ -2527,7 +2543,15 @@ async function nullTestNativeLeg(input: {
 }): Promise<NullTestResult> {
     const web = await renderCommandsThroughWebBackend(input.commands);
     const native = await renderCommandsThroughNativeBackend(input.nativeCommands ?? input.commands);
-    return nullTest({ a: web, b: native });
+    if (input.nativeCommands === undefined) {
+        // The one report law, measured: both backends answer the same
+        // touched-strip report set for a shared batch. The shared fixtures'
+        // only chain-touching commands are creates (the web backend refuses
+        // the rest), so equality here is the law's whole reachable surface
+        // on this seam.
+        expect(reportSet(native.reports)).toEqual(reportSet(web.reports));
+    }
+    return nullTest({ a: web.rendered, b: native.rendered });
 }
 
 const NATIVE_LEG_FIXTURES: Array<[string, AudioGraphCommand[]]> = [
@@ -2635,7 +2659,7 @@ describe('live/offline null test — the native backend leg', () => {
             const commands = nativeLegStripCommands({ gain: 0.8, pan: 18 });
             const first = await renderCommandsThroughNativeBackend(commands);
             const second = await renderCommandsThroughNativeBackend(commands);
-            const repeat = nullTest({ a: first, b: second });
+            const repeat = nullTest({ a: first.rendered, b: second.rendered });
 
             expect(repeat.signalPeakDbfs).toBeGreaterThan(-40);
             expect(repeat.residualPeakDbfs).toBe(-Infinity);

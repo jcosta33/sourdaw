@@ -62,4 +62,23 @@ describe('createDesktopNativeGraphTransport', () => {
         expect(desktopInvoke).toHaveBeenCalledWith('apply_graph_commands', { batch: BATCH });
         expect(result).toBe(applyResult);
     });
+
+    it('probes through map_graph_batch with the prior beside the incoming batch', async () => {
+        const mapResult = { acceptance: 'accepted', application: 'applied', reports: [] };
+        vi.mocked(desktopInvoke).mockResolvedValue(mapResult);
+        const prior = BATCH.commands;
+
+        const result = await createDesktopNativeGraphTransport().mapGraphBatch({
+            prior,
+            batch: BATCH,
+            sampleRate: 48_000,
+        });
+
+        expect(desktopInvoke).toHaveBeenCalledWith('map_graph_batch', {
+            prior,
+            batch: BATCH,
+            sampleRate: 48_000,
+        });
+        expect(result).toBe(mapResult);
+    });
 });
