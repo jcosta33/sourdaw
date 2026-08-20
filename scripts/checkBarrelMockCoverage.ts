@@ -79,28 +79,36 @@ export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/vi
  * `persistDeviceParam`, and three specs' hand-listed mocks omitted it — one of
  * them, collected as part of `main` and not some unrelated suite, failed to
  * collect at all, the same blast-radius failure `presentations/views` was gated
- * to catch). Widening the scan surfaced eleven spec files short of exhaustive
- * `stores` coverage, not three: `stores` fans out into use-case registries
- * (AI action descriptions, command handlers, offline render, MIDI, Knead) that
- * statically import far more of the barrel than any one spec's tests actually
- * read, so the graph walk — which cannot tell "imported" from "imported and
- * later executed" apart without running the code — over-reports. The three specs
- * whose own bug this gate exists to catch are fixed for real (every missing key
- * stubbed, not spread — spreading a barrel this size measurably slows the
- * specs that already avoid it, see `formatViolation`'s App.spec.tsx numbers).
- * The other eight are `exemptions` rows: each one is evidenced by a passing
- * `pnpm test:run` on the unmodified spec, not assumed, and is documented as
- * debt to close later rather than debt hidden by narrowing the gate. `useCases`
- * is not gated at all: `--all` reports **109 unique (spec, barrel) pairs across
- * 72 spec files** there alone (2127 individual violations, since one pair is
- * counted once per consuming module — the pair is the unit of repair, not the
- * violation). Gating that now would need a 109-row baseline whose only content
- * is "pre-existing", which is a baseline wearing an exemption table's clothes —
- * eight reasoned, evidenced rows is a table; 109 unexamined ones is not. `--all`
- * keeps the `useCases` number measurable so a follow-up clearing it to zero
- * starts from a count in the right unit.
+ * to catch). Widening the scan surfaced more than those three, because `stores`
+ * fans out into use-case registries (AI action descriptions, command handlers,
+ * offline render, MIDI, Knead) that statically import far more of the barrel
+ * than any one spec's tests actually read, so the graph walk — which cannot tell
+ * "imported" from "imported and later executed" apart without running the code —
+ * over-reports. The specs whose own bug this gate exists to catch are fixed for
+ * real (every missing key stubbed, not spread — spreading a barrel this size
+ * measurably slows the specs that already avoid it, see `formatViolation`'s
+ * App.spec.tsx numbers). The over-reported remainder are `exemptions` rows: each
+ * one is evidenced by a passing `pnpm test:run` on the unmodified spec, not
+ * assumed, and is documented as debt to close later rather than debt hidden by
+ * narrowing the gate.
+ *
+ * `useCases` is not gated at all. Gating it now would need a baseline row per
+ * outstanding pair whose only content is "pre-existing", which is a baseline
+ * wearing an exemption table's clothes — a handful of reasoned, evidenced rows
+ * is a table; a hundred unexamined ones is not. `--all` keeps that debt
+ * measurable, in the unit a person repairs (the (spec, barrel) pair, counted
+ * once however many consuming modules import through it), so a follow-up
+ * clearing it to zero starts from a real measurement rather than a number
+ * someone wrote down.
+ *
+ * Exported so the guard spec makes its "no violations" claim once per gated kind
+ * and cannot silently stop claiming one.
  */
-const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = ['presentations/views', 'stores', 'events'];
+export const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = [
+    'presentations/views',
+    'stores',
+    'events',
+];
 
 function buildBarrelPattern(kinds: ReadonlyArray<string>): RegExp {
     const kindAlternation = kinds.map((kind) => kind.replace('/', '\\/')).join('|');
@@ -943,11 +951,11 @@ export function formatViolation(violation: Violation): string {
 const usage = [
     'pnpm test:barrel-mocks [--all] [--help]',
     '',
-    '  (no flags)  Fail when a spec mocks a presentations/views contract barrel without',
-    '              spreading importOriginal and omits an export its own module graph',
-    '              imports from that barrel. This is the gate; it must stay at zero.',
-    '  --all       Report the same violation across all four contract barrels',
-    '              (useCases, stores, events, presentations/views). Not gated: those',
+    `  (no flags)  Fail when a spec mocks a ${gatedBarrelKinds.join(', ')} contract barrel`,
+    '              without spreading importOriginal and omits an export its own module',
+    '              graph imports from that barrel. This is the gate; it must stay at zero.',
+    `  --all       Report the same violation across all ${String(allBarrelKinds.length)} contract barrels`,
+    `              (${allBarrelKinds.join(', ')}). The kinds outside the gate`,
     '              carry pre-existing debt this measures rather than blocks. Exits 1',
     '              when it finds any, so it is a measurement command, not a check.',
     '  --help      This text.',
@@ -991,9 +999,9 @@ function main(): number {
     // scanned" was true and misleading: 3370 is the glob, and it stays 3370 when
     // resolution is broken and nothing at all is checked. Naming the kinds here
     // matters just as much: printing "barrel" with no qualifier is how a reader
-    // mistakes this for full coverage — `useCases` carries 109 unmeasured-here
-    // (spec, barrel) pairs (`--all`), and this line is the only place that scope
-    // is stated at the moment someone reads the result.
+    // mistakes this for full coverage — the kinds outside the gate carry debt this
+    // run did not look at (`--all` measures it), and this line is the only place
+    // that scope is stated at the moment someone reads the result.
     console.log(
         `barrel mock coverage (${kinds.join(', ')}): OK — ${String(result.analyzedSpecCount)} of ` +
             `${String(result.specCount)} spec files mock one of these barrel kinds without a spread; ` +

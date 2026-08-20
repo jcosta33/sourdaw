@@ -32,11 +32,12 @@
 
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
     allBarrelKinds,
     analyzeSpecs,
+    gatedBarrelKinds,
     readFileFacts,
     scanRepository,
     type FileFacts,
@@ -305,44 +306,98 @@ describe('checkBarrelMockCoverage — the analysis cannot pass by deriving nothi
     });
 });
 
-describe('checkBarrelMockCoverage — the real tree', () => {
-    it('has no presentations/views barrel mock that omits an export its graph imports', () => {
-        const result = scanRepository();
+type RealTreeScan = ReturnType<typeof scanRepository>;
 
-        expect(
-            result.violations.map((violation) => `${violation.spec.replace(`${sourceRoot}/`, '')}: ${violation.barrel}`)
-        ).toEqual([]);
+/** `#/modules/Foo/Common/Bar/presentations/views` → `presentations/views`. No kind
+ * is a suffix of another, so the suffix test partitions the violations exactly. */
+function kindOf(barrel: string): string | undefined {
+    return allBarrelKinds.find((kind) => barrel.endsWith(`/${kind}`));
+}
+
+function describeViolations(result: RealTreeScan, predicate: (barrel: string) => boolean): string[] {
+    return result.violations
+        .filter((violation) => predicate(violation.barrel))
+        .map((violation) => `${violation.spec.replace(`${sourceRoot}/`, '')}: ${violation.barrel}`);
+}
+
+/**
+ * Floors, not pins: they separate "clean" from "measured nothing", and they sit far
+ * below the real tree so ordinary work never moves them. Break `fileExists`,
+ * `readFacts`, the parser or the glob and one of these is 0 — which is also what a
+ * clean tree looks like on the violation list alone.
+ */
+function expectDerivedEnough(result: RealTreeScan): void {
+    expect(result.analyzedSpecCount).toBeGreaterThanOrEqual(5);
+    expect(result.resolvedMockCount).toBeGreaterThanOrEqual(50);
+    expect(result.graphNodeCount).toBeGreaterThanOrEqual(500);
+}
+
+/**
+ * Scanning the real tree costs seconds. Three `it` bodies each running their own
+ * scan is how this suite went red the moment the gate widened past
+ * `presentations/views`: not one assertion failed, all three blew vitest's 5s
+ * default while the analysis they were waiting on was clean. One scan per barrel-kind
+ * set, hoisted, with a timeout sized to the work instead of to a single-kind scan.
+ */
+describe('checkBarrelMockCoverage — the real tree', () => {
+    let gated: RealTreeScan;
+    let everyKind: RealTreeScan;
+
+    beforeAll(() => {
+        gated = scanRepository();
+        everyKind = scanRepository(allBarrelKinds);
+    }, 120_000);
+
+    // One claim per gated kind, named for that kind, reading only that kind's
+    // violations. `scanRepository()` scans every gated kind at once, so a single
+    // combined assertion would report a `stores` regression under a test named for
+    // `presentations/views` — the name has to keep meaning what it says.
+    it.each(gatedBarrelKinds)('has no %s barrel mock that omits an export its graph imports', (kind) => {
+        expect(describeViolations(gated, (barrel) => kindOf(barrel) === kind)).toEqual([]);
+    });
+
+    // The scope contract behind those names. Widening the gate is picked up for
+    // free — the new kind gets its own claim above. Narrowing it is not: dropping
+    // `presentations/views` would delete the claim this whole file exists to make,
+    // and would do it silently. That is a deliberate act, so it edits this line.
+    it('claims every barrel kind the gate blocks on', () => {
+        expect([...gatedBarrelKinds].toSorted()).toEqual(['events', 'presentations/views', 'stores']);
     });
 
     it('derived enough to have a verdict — no spec parses, resolves or walks to nothing', () => {
-        const result = scanRepository();
-
-        expect(result.extractionFailures).toEqual([]);
-        // Floors, not pins: they separate "clean" from "measured nothing". Break
-        // `fileExists`, `readFacts`, the parser or the glob and one of these is 0.
-        expect(result.analyzedSpecCount).toBeGreaterThanOrEqual(5);
-        expect(result.resolvedMockCount).toBeGreaterThanOrEqual(50);
-        expect(result.graphNodeCount).toBeGreaterThanOrEqual(500);
+        expect(gated.extractionFailures).toEqual([]);
+        expectDerivedEnough(gated);
     });
 
     /**
-     * The ratchet over the three barrel kinds the gate does not block.
+     * What holds the ungated kinds, in place of the scalar that used to.
      *
-     * A per-row baseline was refused, and that refusal was about a table whose only
-     * content is "pre-existing" — 109 rows nobody reads, each needing exemption
-     * semantics. It said nothing about a scalar, and without one nothing holds the
-     * number at all: `--all` is invoked by no script, and the gate itself only ever
-     * scans `presentations/views`. So the 109 could become 130 unnoticed.
+     * The scalar did not work. `does not grow the ungated barrel-mock debt beyond
+     * its measured 127 pairs` was written against 109 in a source comment and 127
+     * in the assertion while the tree held 101 — three numbers for one quantity, in
+     * one change. A ratchet 26 pairs above the real figure passes a 26-pair
+     * regression, and the only way to tighten it is to re-type it, which is the
+     * move that produced the slack. Worse, it was defeated by exactly the failure
+     * this file's zero-derivation cases exist to catch: a `--all` scan that derived
+     * nothing reports zero pairs, and zero is comfortably under any ceiling.
      *
-     * One assertion, no table: pair 110 reds, and every pair repaid is a free
-     * ratchet down (lower the number in the same commit). The unit is the (spec,
-     * barrel) pair, not the violation, because one pair is counted once per
-     * consuming module and the pair is what a person actually fixes.
+     * The property underneath is the one worth holding, and it does not drift with
+     * unrelated work. `--all` must stay a strict widening of the gate: every pair
+     * it finds belongs to a kind the gate does not cover, so the gated kinds read
+     * zero through both entry points, and `--all` must have derived enough to be
+     * saying so. Repaying `useCases` debt to zero keeps this green; regressing a
+     * gated kind, or blinding the wider scan, does not.
      */
-    it('does not grow the ungated barrel-mock debt beyond its measured 127 pairs', () => {
-        const result = scanRepository(allBarrelKinds);
-        const pairs = new Set(result.violations.map((violation) => `${violation.spec} ${violation.barrel}`));
-
-        expect(pairs.size).toBeLessThanOrEqual(127);
+    it('confines the debt --all measures to the kinds the gate does not cover', () => {
+        expect(
+            describeViolations(everyKind, (barrel) => gatedBarrelKinds.some((kind) => kindOf(barrel) === kind))
+        ).toEqual([]);
+        expect(everyKind.extractionFailures).toEqual([]);
+        expectDerivedEnough(everyKind);
+        // `--all` scans a superset of the gate's mocks over the same spec glob, so
+        // it can never walk less than the gate did. A drop means it stopped walking.
+        expect(everyKind.analyzedSpecCount).toBeGreaterThanOrEqual(gated.analyzedSpecCount);
+        expect(everyKind.graphNodeCount).toBeGreaterThanOrEqual(gated.graphNodeCount);
+        expect(everyKind.resolvedMockCount).toBeGreaterThanOrEqual(gated.resolvedMockCount);
     });
 });
