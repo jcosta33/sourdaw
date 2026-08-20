@@ -1,0 +1,23 @@
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_24b1bdbc3c31ad::t_b9881e5743ae24 63
+src/modules/AiRuntime/transformers/__tests__/toolCallParser.spec.ts
+  s_24b1bdbc3c31ad::t_04fc37025576c8 205
+src/modules/AiRuntime/repositories/__tests__/drumBusProviderPlanConformance.spec.ts
+  s_24b1bdbc3c31ad::t_48f4001c439077 68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "abc92639f876009f8d029325832ddf7a7623f2bc",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
