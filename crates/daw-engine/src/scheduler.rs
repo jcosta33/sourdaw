@@ -1,4 +1,4 @@
-//! Lock-free Messaging and Task Schedule for Native CPAL engine.
+//! Lock-free Messaging and Task Schedule for the native audio engine.
 //!
 //! Handles both built-in DSP effects (Knead) and external plugins (CLAP/VST3)
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
@@ -1373,7 +1373,7 @@ impl AudioScheduler {
 
             // Only clear pending MIDI when the closure actually ran and
             // consumed it. When the input ring was empty this cycle (the
-            // CPAL callback beating the worklet's push, guaranteed at
+            // render callback beating the worklet's push, guaranteed at
             // bridge startup and on any cadence jitter), the events must
             // survive to the next cycle rather than being dropped.
             if drain.blocks_processed > 0 {
@@ -1460,7 +1460,8 @@ impl AudioScheduler {
         );
     }
 
-    /// Process a block of audio (called by CPAL render callback).
+    /// Process a block of audio (called by the device's render callback,
+    /// `RenderFn` in `crate::device`).
     ///
     /// The order is the strip's: the timeline renders tracks, sends, buses and
     /// the master sum; the master insert chain runs over that sum; the master
@@ -1485,7 +1486,7 @@ impl AudioScheduler {
             // scratch, so processing a bridged plugin here would push phantom
             // silence through a stateful plugin (corrupting its tails, envelope
             // followers and delay lines) and emit its output on a second,
-            // uncontrolled path straight into the CPAL device buffer.
+            // uncontrolled path straight into the device's output buffer.
             //
             // `pending_midi` is deliberately left untouched here: ownership of
             // clearing it belongs entirely to `process_audio_bridges`, which
@@ -1864,7 +1865,7 @@ mod tests {
         // The standalone chain must leave a bridged plugin alone. It runs over
         // zeroed scratch, so processing the plugin here would both corrupt its
         // internal state with phantom silence and write its output into the
-        // CPAL device buffer on a path nothing controls.
+        // device's output buffer on a path nothing controls.
         let mut left = [0.0; 4];
         let mut right = [0.0; 4];
         scheduler.process_block(&mut left, &mut right, 4);
@@ -1953,10 +1954,10 @@ mod tests {
         let mut left = [0.0; 4];
         let mut right = [0.0; 4];
 
-        // Drive both calls in sequence, the way audio_thread.rs's CPAL
+        // Drive both calls in sequence, the way audio_thread.rs's render
         // callback does every cycle: process_audio_bridges() first, then
         // process_block() over the standalone chain's zeroed scratch. The
-        // CPAL callback beats the worklet's input push here — the bridge's
+        // render callback beats the worklet's input push here — the bridge's
         // input ring is empty, so drain_process's closure never runs this
         // cycle — and process_block must not wipe the note that
         // process_audio_bridges deliberately left queued for next cycle.
@@ -2050,7 +2051,7 @@ mod tests {
             .unwrap();
         scheduler.update_graph();
 
-        // The device buffer spans several render quanta — a 512-frame CPAL
+        // The device buffer spans several render quanta — a 512-frame render
         // callback at 48 kHz covers four 128-frame worklet quanta — so four
         // blocks are already waiting when the callback runs. Taking one per
         // callback leaves the rest to fill the ring, after which the app's
@@ -2614,7 +2615,7 @@ mod timeline_tests {
             }))
         }
 
-        /// Render one block over a freshly zeroed pair, the way the CPAL
+        /// Render one block over a freshly zeroed pair, the way the render
         /// callback does.
         fn render(&mut self, frames: usize) -> (Vec<f32>, Vec<f32>) {
             let mut left = vec![0.0; frames];
