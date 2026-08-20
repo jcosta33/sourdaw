@@ -1,0 +1,23 @@
+tests/e2e/crossFeatureWorkflowTestId.spec.ts
+  s_24b1bdbc3c31ad::t_ba5b7a1113aaed 8-9
+  s_24b1bdbc3c31ad::t_dfdcd5a4377aaa 82,91,96
+  s_24b1bdbc3c31ad::t_1fe3269a8cce46 129
+  s_24b1bdbc3c31ad::t_1b9a3a959bb627 149,152
+  s_24b1bdbc3c31ad::t_57030f6b1c6b82 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "cf875de0f619abb1a1b0af8fa8eaa0c485339bb7",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
