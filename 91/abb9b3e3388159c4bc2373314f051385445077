@@ -1,0 +1,73 @@
+src/modules/Arrangement/handlers/clip/handleRestoreClipGlueState.ts
+  s_487e9aa1e46063::t_7f338bbccd0823 7-10
+  s_487e9aa1e46063::t_3d01a4e833e027 3
+src/modules/Arrangement/handlers/clip/__tests__/handleNormalizeClip.spec.ts
+  s_487e9aa1e46063::t_d295c51232d347 66,70,79,83-94
+  s_487e9aa1e46063::t_e6dd5d1211981f 95-96
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleRestoreClipStretchState.spec.ts
+  s_487e9aa1e46063::t_2733637a1bd484 102-154
+src/modules/Arrangement/useCases/clipEditing/clipGlueStateRestorable.ts
+  s_487e9aa1e46063::t_0a56c08ca66eaa 1-77
+src/modules/Arrangement/handlers/clip/handleNormalizeClip.ts
+  s_487e9aa1e46063::t_0df19d2f0da1df 40-42
+  s_487e9aa1e46063::t_8f8ce52a152159 17-20
+  s_487e9aa1e46063::t_ad1ce117acbe64 21-24,43-46
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  s_487e9aa1e46063::t_77aee3a3b4ab44 22-34,36-39,41
+  s_487e9aa1e46063::t_d52e375be0d9bf 3
+src/modules/Arrangement/handlers/clipStretch/handleRestoreClipStretchState.ts
+  s_487e9aa1e46063::t_be29223d318152 2,15-16,37-45,47-51,53
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_487e9aa1e46063::t_8c0401f720fe7d 77,80-81,90
+  s_487e9aa1e46063::t_c0408319291b70 8
+src/modules/MIDI/useCases/midiClipData/midiClipSplitStateMatches.ts
+  s_487e9aa1e46063::t_b17ba8a6167e10 1-69
+src/modules/MIDI/useCases/midiClipData/midiClipGlueStateMatches.ts
+  s_487e9aa1e46063::t_7d6ea8b546457b 1-46
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoopLength.ts
+  s_487e9aa1e46063::t_3b4b9610b4f6b5 2,15-44,47-50,52-53,56,59
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipSplitState.ts
+  s_487e9aa1e46063::t_54a7b58bcfb62c 25-28,31
+  s_487e9aa1e46063::t_229ef2397df379 1-3,24
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_487e9aa1e46063::t_e44c14ffb6e9c5 2424
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipGain.spec.ts
+  s_487e9aa1e46063::t_abb34a5551efd5 61-153
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_487e9aa1e46063::t_b3833fab778ed4 1-63
+src/utils/handlerContract.ts
+  s_487e9aa1e46063::t_69437d4587c5bd 1286-1294
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_487e9aa1e46063::t_36220a9264bc28 1,3,8-27,29-32
+  s_487e9aa1e46063::t_9fb48a61dd2236 5
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_487e9aa1e46063::t_c38cceb1a68f0e 8-17,19-26
+src/modules/MIDI/useCases/index.ts
+  s_487e9aa1e46063::t_31d5eb34a59a6e 48
+  s_487e9aa1e46063::t_ec7d2b00a1a564 53
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipGlueState.ts
+  s_487e9aa1e46063::t_6119db2cf7144b 3,52
+  s_487e9aa1e46063::t_68966e14b297ec 58
+  s_487e9aa1e46063::t_4ea81c413f19b8 53,55
+src/modules/Arrangement/handlers/clip/handleDiscardDuplicatedClip.ts
+  s_487e9aa1e46063::t_d3201a9d9a5346 7-18
+src/modules/Arrangement/useCases/clipEditing/replaceClipSplitTrackState.ts
+  s_487e9aa1e46063::t_4e9970bdfbbaf1 26-27,30-32,34-35
+  s_487e9aa1e46063::t_f784c4215c3552 1,7,25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "91abb9b3e3388159c4bc2373314f051385445077",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
