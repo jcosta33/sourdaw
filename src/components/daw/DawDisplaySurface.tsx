@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawDisplaySurfaceProps = HTMLAttributes<HTMLDivElement> & {
@@ -12,14 +13,16 @@ export const DawDisplaySurface = ({
     children,
     ...props
 }: DawDisplaySurfaceProps): ReactElement => (
-    <div
+    <Row
+        align="center"
+        justify="center"
         className={cn(
-            'daw-display-surface flex items-center justify-center rounded-md p-3',
+            'daw-display-surface rounded-md p-3',
             accentTop ? 'border-t-[var(--color-light-edge)]' : '',
             className
         )}
         {...props}
     >
         {children}
-    </div>
+    </Row>
 );

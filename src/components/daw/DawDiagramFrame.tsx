@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
+import { Stack } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 import { DawHeaderBand } from './DawHeaderBand';
@@ -24,9 +25,9 @@ export const DawDiagramFrame = ({
     children,
     ...props
 }: DawDiagramFrameProps): ReactElement => (
-    <div
+    <Stack
         className={cn(
-            'flex min-h-0 flex-col overflow-hidden rounded-[16px] border border-white/8 bg-black/[0.18] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
+            'overflow-hidden rounded-[16px] border border-white/8 bg-black/[0.18] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
             className
         )}
         {...props}
@@ -42,5 +43,5 @@ export const DawDiagramFrame = ({
         ) : null}
         <div className={cn('min-h-0 flex-1 overflow-auto p-2', viewportClassName)}>{children}</div>
         {footer ? <div className="border-t border-white/[0.06] px-3 py-2">{footer}</div> : null}
-    </div>
+    </Stack>
 );

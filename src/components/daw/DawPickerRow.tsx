@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPickerRowProps = {
@@ -38,7 +39,7 @@ export const DawPickerRow = ({
     onKeyDown,
 }: DawPickerRowProps): ReactElement => {
     const sharedClassName = cn(
-        'group flex w-full items-start gap-2 rounded-md border text-left transition-all',
+        'group w-full rounded-md border text-left transition-all',
         compact ? 'px-2 py-1.5' : 'px-3 py-2',
         active ? 'border-white/16 bg-white/[0.04]' : 'border-transparent hover:border-white/10 hover:bg-white/[0.03]',
         className
@@ -73,10 +74,13 @@ export const DawPickerRow = ({
 
     if (href) {
         return (
-            <a
+            <Row
+                as="a"
                 href={href}
                 target={target}
                 rel={rel}
+                align="start"
+                gap={2}
                 className={sharedClassName}
                 title={title}
                 role={role}
@@ -84,14 +88,17 @@ export const DawPickerRow = ({
                 onKeyDown={onKeyDown}
             >
                 {content}
-            </a>
+            </Row>
         );
     }
 
     if (onClick) {
         return (
-            <button
+            <Row
+                as="button"
                 type="button"
+                align="start"
+                gap={2}
                 className={sharedClassName}
                 onClick={onClick}
                 title={title}
@@ -99,13 +106,21 @@ export const DawPickerRow = ({
                 tabIndex={tabIndex}
             >
                 {content}
-            </button>
+            </Row>
         );
     }
 
     return (
-        <div className={sharedClassName} title={title} role={role} tabIndex={tabIndex} onKeyDown={onKeyDown}>
+        <Row
+            align="start"
+            gap={2}
+            className={sharedClassName}
+            title={title}
+            role={role}
+            tabIndex={tabIndex}
+            onKeyDown={onKeyDown}
+        >
             {content}
-        </div>
+        </Row>
     );
 };

@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 
+import { Row } from '#/components/layout';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginChoiceRowProps = {
@@ -33,14 +34,14 @@ export const DawPluginChoiceRow = ({
         <>
             {startSlot ? <div className="shrink-0">{startSlot}</div> : null}
             <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
+                <Row justify="between" gap={2}>
                     <span className="truncate text-[11px] font-medium text-foreground">{title}</span>
                     {detail ? (
                         <span className="shrink-0 text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
                             {detail}
                         </span>
                     ) : null}
-                </div>
+                </Row>
                 {subtitle ? <div className="text-[9px] leading-4 text-muted-foreground">{subtitle}</div> : null}
             </div>
             {endSlot ? <div className="shrink-0">{endSlot}</div> : null}
@@ -48,15 +49,17 @@ export const DawPluginChoiceRow = ({
     );
 
     const sharedClassName = cn(
-        'flex items-center gap-3 px-3 py-2 text-left transition-all',
+        'px-3 py-2 text-left transition-all',
         active ? 'border-white/18 bg-white/[0.03]' : 'hover:border-white/12 hover:bg-white/[0.02]',
         className
     );
 
     if (onPress) {
         return (
-            <button
+            <Row
+                as="button"
                 type="button"
+                gap={3}
                 className={sharedClassName}
                 onClick={onPress}
                 role={role}
@@ -64,13 +67,13 @@ export const DawPluginChoiceRow = ({
                 aria-label={ariaLabel}
             >
                 {content}
-            </button>
+            </Row>
         );
     }
 
     return (
-        <div className={sharedClassName} role={role} aria-selected={ariaSelected} aria-label={ariaLabel}>
+        <Row gap={3} className={sharedClassName} role={role} aria-selected={ariaSelected} aria-label={ariaLabel}>
             {content}
-        </div>
+        </Row>
     );
 };
