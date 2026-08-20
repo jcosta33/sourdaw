@@ -29,6 +29,8 @@ type Input = {
     throwAfterComment?: boolean;
     concurrentCommentOnThrow?: boolean;
     concurrentCommentBeforeConvergence?: boolean;
+    foreignLowerCommentBeforeConvergence?: boolean;
+    closeBeforeConvergence?: boolean;
     throwCloseWithConcurrentState?: boolean;
     failDelete?: boolean;
     returnedCommentBody?: string;
@@ -46,6 +48,7 @@ function fakePort(input: Input = {}) {
     let index = 0;
     let state = input.initialState ?? 'OPEN';
     let closeCalled = false;
+    let commentCalled = false;
     let concurrentCommentAdded = false;
     let closedAt: string | null = null;
     let comments = [oldComment];
@@ -102,6 +105,28 @@ function fakePort(input: Input = {}) {
                     },
                 ];
             }
+            if (
+                number === 2244 &&
+                input.foreignLowerCommentBeforeConvergence &&
+                !concurrentCommentAdded &&
+                commentCalled
+            ) {
+                concurrentCommentAdded = true;
+                comments = [
+                    ...comments,
+                    {
+                        id: 'IC_foreign',
+                        fullDatabaseId: '9223372036854775806',
+                        body: 'Superseded by #2246.',
+                        authorLogin: AUTHOR_BOT_LOGIN,
+                        authorType: 'Bot',
+                    },
+                ];
+            }
+            if (number === 2244 && input.closeBeforeConvergence && commentCalled) {
+                state = 'CLOSED';
+                closedAt = '2026-08-20T12:00:00Z';
+            }
             if (number === 2244 && input.throwCloseWithConcurrentState && closeCalled) {
                 state = 'CLOSED';
                 closedAt = '2026-08-20T12:00:01Z';
@@ -121,6 +146,7 @@ function fakePort(input: Input = {}) {
         },
         comment: (number, body) => {
             calls.push(`comment:${number}:${body}`);
+            commentCalled = true;
             const created = {
                 id: 'IC_new',
                 fullDatabaseId: '9223372036854775808',
@@ -234,7 +260,7 @@ describe('pull-request supersession', () => {
                     errors: [{ message: 'partial failure' }],
                 })
             )
-        ).toThrow(/GraphQL errors/i);
+        ).toThrow(/invalid GraphQL envelope/i);
     });
 
     it.each([
@@ -411,6 +437,16 @@ describe('pull-request supersession', () => {
         expect(state().comments.filter((comment) => comment.body === 'Superseded by #2246.')).toEqual([
             expect.objectContaining({ id: 'IC_new' }),
         ]);
+    });
+    it("deletes only this invocation's noncanonical comment when another invocation closes first", () => {
+        const { port, calls, authorLogin, state } = fakePort({
+            foreignLowerCommentBeforeConvergence: true,
+            closeBeforeConvergence: true,
+        });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/changed after supersession/i);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_new']);
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+        expect(state().comments.map((comment) => comment.id)).toEqual(['IC_old', 'IC_foreign']);
     });
     it('returns completed supersession success without mutation only for one exact Bot marker', () => {
         const { port, calls, authorLogin } = fakePort({ initialState: 'CLOSED', existingCommentCount: 1 });

@@ -23,6 +23,8 @@ type Input = {
     throwAfterReply?: boolean;
     concurrentReplyOnThrow?: boolean;
     concurrentReplyBeforeConvergence?: boolean;
+    foreignLowerReplyBeforeConvergence?: boolean;
+    resolveBeforeConvergence?: boolean;
     throwResolveWithConcurrentState?: boolean;
     failDelete?: boolean;
     rootAuthorLogin?: string | null;
@@ -80,6 +82,24 @@ function fakePort(input: Input = {}) {
                         authorType: 'Bot',
                     },
                 ];
+            }
+            if (input.foreignLowerReplyBeforeConvergence && !concurrentReplyAdded && index === 2) {
+                concurrentReplyAdded = true;
+                comments = [
+                    ...comments,
+                    {
+                        id: 'PRRC_foreign',
+                        fullDatabaseId: '9223372036854775806',
+                        body: 'Done',
+                        authorLogin: AUTHOR_BOT_LOGIN,
+                        authorType: 'Bot',
+                    },
+                ];
+            }
+            if (input.resolveBeforeConvergence && index === 2) {
+                resolved = true;
+                resolvedByLogin = AUTHOR_BOT_LOGIN;
+                resolvedByType = 'Bot';
             }
             if (input.throwResolveWithConcurrentState && resolveCalled) {
                 resolved = true;
@@ -289,7 +309,7 @@ describe('review thread resolution', () => {
                     errors: [{ message: 'partial failure' }],
                 })
             )
-        ).toThrow(/GraphQL errors/i);
+        ).toThrow(/invalid GraphQL envelope/i);
     });
     it('proves absence only after the final thread page', () => {
         let call = 0;
@@ -489,6 +509,16 @@ describe('review thread resolution', () => {
             expect.objectContaining({ id: replyId }),
         ]);
     });
+    it("deletes only this invocation's noncanonical reply when another invocation resolves first", () => {
+        const { port, calls, authorLogin, state } = fakePort({
+            foreignLowerReplyBeforeConvergence: true,
+            resolveBeforeConvergence: true,
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/already resolved/i);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([`delete:${replyId}`]);
+        expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([]);
+        expect(state().comments.map((comment) => comment.id)).toEqual([rootId, 'PRRC_foreign']);
+    });
     it('returns completed success without mutation only for one exact Bot Done marker', () => {
         const { port, calls, authorLogin } = fakePort({
             isResolved: true,
@@ -509,6 +539,17 @@ describe('review thread resolution', () => {
             existingReplyCount: 2,
         });
         expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/exactly one/i);
+        expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
+    });
+    it('rejects a User-typed root reviewer for a completed thread without mutation', () => {
+        const { port, calls, authorLogin } = fakePort({
+            isResolved: true,
+            initialResolvedByLogin: AUTHOR_BOT_LOGIN,
+            initialResolvedByType: 'Bot',
+            existingReplyCount: 1,
+            rootAuthorType: 'User',
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorLogin, port)).toThrow(/root comment/i);
         expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
     });
     it('rejects a User-typed reviewer marker before any mutation', () => {

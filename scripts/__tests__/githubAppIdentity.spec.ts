@@ -61,7 +61,12 @@ GH_TOKEN=parent-token
     };
 }
 
-function mintClient(input: { login: string; permissions: Record<string, string>; token?: string }): {
+function mintClient(input: {
+    login: string;
+    permissions: Record<string, string>;
+    token?: string;
+    appStatus?: number;
+}): {
     requests: Array<{ url: string; body?: string }>;
     request: GitHubJsonClient;
 } {
@@ -76,7 +81,7 @@ function mintClient(input: { login: string; permissions: Record<string, string>;
                     body: { token: input.token ?? 'ghs_minted', permissions: input.permissions },
                 };
             }
-            return { status: 200, body: { slug: input.login.replace('[bot]', '') } };
+            return { status: input.appStatus ?? 200, body: { slug: input.login.replace('[bot]', '') } };
         },
     };
 }
@@ -154,9 +159,12 @@ describe('dotenv and role files', () => {
 });
 
 describe('GraphQL envelopes', () => {
-    it.each(['[]', 'null', '{"errors":{}}', '{}'])('rejects malformed envelopes: %s', (response) => {
-        expect(() => parseGraphqlResponse(response, 'GraphQL query')).toThrow(/invalid GraphQL envelope/i);
-    });
+    it.each(['[]', 'null', '{"errors":{}}', '{"data":{},"errors":[]}', '{}'])(
+        'rejects malformed envelopes: %s',
+        (response) => {
+            expect(() => parseGraphqlResponse(response, 'GraphQL query')).toThrow(/invalid GraphQL envelope/i);
+        }
+    );
 });
 
 describe('installation mint', () => {
@@ -176,6 +184,23 @@ describe('installation mint', () => {
         expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: REVIEWER_MINT_PERMISSIONS });
         expect(minted.login).toBe(REVIEWER_BOT_LOGIN);
         expect(minted.token).toBe('ghs_minted');
+    });
+    it('rejects a non-success App identity response even when its slug matches', async () => {
+        const { request } = mintClient({
+            login: REVIEWER_BOT_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write' },
+            appStatus: 401,
+        });
+        await expect(
+            mintInstallationToken({
+                appId: '1',
+                installationId: '1',
+                privateKey: pem,
+                permissions: REVIEWER_MINT_PERMISSIONS,
+                expectedLogin: REVIEWER_BOT_LOGIN,
+                request,
+            })
+        ).rejects.toThrow(/failed to verify GitHub App identity/i);
     });
 
     it('refuses a reviewer token with contents write before further GitHub writes', async () => {

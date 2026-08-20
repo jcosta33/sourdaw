@@ -140,7 +140,6 @@ export function resolveReviewThread(
             replyAttempted,
             replyCreated,
             createdReplyId,
-            replyId,
             resolveAttempted,
             resolutionReceipt,
             port,
@@ -163,7 +162,6 @@ function compensateResolution(
     replyAttempted: boolean,
     replyCreated: boolean,
     createdReplyId: string | undefined,
-    replyId: string | undefined,
     resolveAttempted: boolean,
     resolutionReceipt: ReviewResolutionReceipt | undefined,
     port: ResolveReviewThreadPort,
@@ -186,11 +184,11 @@ function compensateResolution(
         } else if (replyAttempted && !replyCreated) {
             failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
         } else if (replyCreated && !stateMayHaveMutated) {
-            if (replyId === undefined) {
+            if (createdReplyId === undefined) {
                 failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
-            } else if (hasExpectedReply(current.thread, replyId)) {
-                attempt(failures, 'delete review reply', () => port.deleteReply(replyId));
-            } else {
+            } else if (hasExpectedReply(current.thread, createdReplyId)) {
+                attempt(failures, 'delete review reply', () => port.deleteReply(createdReplyId));
+            } else if (current.thread.comments.some((comment) => comment.id === createdReplyId)) {
                 failures.push('review reply receipt is no longer present; refusing to delete an unverified comment');
             }
         }
@@ -376,6 +374,7 @@ function deleteCreatedNoncanonicalReply(
     attempt(failures, 'delete noncanonical review reply', () => port.deleteReply(createdReplyId));
 }
 function assertCompletedResolution(thread: ReviewThread, threadId: string): void {
+    assertRootReviewer(thread, threadId);
     if (!isAuthorBotActor(thread.resolvedByLogin, thread.resolvedByType)) {
         fail(`review thread ${threadId} was not resolved by ${AUTHOR_BOT_LOGIN}`);
     }
@@ -401,15 +400,18 @@ function assertResolvableThread(thread: ReviewThread | null, expectedThreadId: s
     if (thread.isResolved) {
         fail(`review thread ${expectedThreadId} is already resolved`);
     }
+    assertRootReviewer(thread, expectedThreadId);
+}
+function assertRootReviewer(thread: ReviewThread, threadId: string): void {
     if (!isReviewerBotActor(thread.rootAuthorLogin, thread.rootAuthorType)) {
-        fail(`review thread ${expectedThreadId} root comment is not authored by ${REVIEWER_BOT_LOGIN}`);
+        fail(`review thread ${threadId} root comment is not authored by ${REVIEWER_BOT_LOGIN}`);
     }
     if (
         typeof thread.rootCommentId !== 'string' ||
         thread.rootCommentId === '' ||
         !isDecimalId(thread.rootCommentFullDatabaseId)
     ) {
-        fail(`review thread ${expectedThreadId} root comment has no decimal fullDatabaseId`);
+        fail(`review thread ${threadId} root comment has no decimal fullDatabaseId`);
     }
 }
 function findReusableReply(thread: ReviewThread | null): ReviewComment | undefined {

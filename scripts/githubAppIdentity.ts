@@ -199,6 +199,9 @@ export async function mintInstallationToken(input: {
             'X-GitHub-Api-Version': '2022-11-28',
         },
     });
+    if (app.status < 200 || app.status >= 300) {
+        fail('failed to verify GitHub App identity');
+    }
     const slug =
         app.body !== null && typeof app.body === 'object' && 'slug' in app.body && typeof app.body.slug === 'string'
             ? app.body.slug
@@ -373,11 +376,8 @@ export function parseGraphqlResponse<Value>(value: string, label: string): Value
         fail(`${label} returned an invalid GraphQL envelope`);
     }
     const envelope = response as { data?: unknown; errors?: unknown };
-    if (!Object.hasOwn(envelope, 'data') || (envelope.errors !== undefined && !Array.isArray(envelope.errors))) {
+    if (!Object.hasOwn(envelope, 'data') || Object.hasOwn(envelope, 'errors')) {
         fail(`${label} returned an invalid GraphQL envelope`);
-    }
-    if (Array.isArray(envelope.errors) && envelope.errors.length > 0) {
-        fail(`${label} returned GraphQL errors`);
     }
     return response as Value;
 }

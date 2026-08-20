@@ -137,7 +137,6 @@ export function supersedePullRequest(
             commentAttempted,
             commentCreated,
             createdCommentId,
-            commentId,
             closeAttempted,
             closeReceipt,
             port,
@@ -160,7 +159,6 @@ function compensateSupersession(
     commentAttempted: boolean,
     commentCreated: boolean,
     createdCommentId: string | undefined,
-    commentId: string | undefined,
     closeAttempted: boolean,
     closeReceipt: PullRequestCloseReceipt | undefined,
     port: SupersedePullRequestPort,
@@ -185,11 +183,11 @@ function compensateSupersession(
         } else if (commentAttempted && !commentCreated) {
             failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
         } else if (commentCreated && !stateMayHaveMutated && current.state === before.state) {
-            if (commentId === undefined) {
+            if (createdCommentId === undefined) {
                 failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
-            } else if (hasExpectedComment(current.comments, commentId, expectedCommentBody)) {
-                attempt(failures, 'delete supersession comment', () => port.deleteComment(commentId));
-            } else {
+            } else if (hasExpectedComment(current.comments, createdCommentId, expectedCommentBody)) {
+                attempt(failures, 'delete supersession comment', () => port.deleteComment(createdCommentId));
+            } else if (current.comments.some((comment) => comment.id === createdCommentId)) {
                 failures.push(
                     'supersession comment receipt is no longer present; refusing to delete an unverified comment'
                 );
