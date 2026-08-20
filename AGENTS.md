@@ -222,11 +222,13 @@ never from a list written down here, which drifts the day it is written.
 GitHub writes for agent work go through trusted `pnpm` scripts. Where a script covers the action it
 is the only way to take it: identity and the delivery gates live inside those scripts, so a
 hand-rolled equivalent or a route around a gate defeats both. Where none covers it, run `gh`
-yourself, provided the write only moves tracker metadata and one later command puts it back —
-anything that lands a commit, a pull request, a review, or a merge has a script and never qualifies.
-`git push` carries no such exception: lane tooling owns every push, because a push from anywhere
-else destroys the review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how
-you check live tracker state. Identity is the App those scripts mint, not a persona.
+yourself, provided the write only moves tracker metadata, one later command puts it back, and it
+clears no delivery gate. Anything that lands a commit, a pull request, a review, or a merge has a
+script and never qualifies; resolving a review thread clears the gate that holds a merge, so
+reversibility never rescues it. `git push` carries no such exception: lane tooling owns every push,
+because a push from anywhere else destroys the review anchor and can strand a lane. Read-only `gh`
+stays unrestricted and is how you check live tracker state. Identity is the App those scripts mint,
+not a persona.
 
 | Need                        | Command                         |
 | --------------------------- | ------------------------------- |
