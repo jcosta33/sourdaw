@@ -1,0 +1,44 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipToNextBar.integration.spec.ts
+  s_487e9aa1e46063::t_52a708e1c8e5aa 20
+  s_487e9aa1e46063::t_98eb21aa836fce 1-19,21-77
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  s_487e9aa1e46063::t_370898a2e0f284 1-69,73-74
+  s_487e9aa1e46063::t_158b9c8fcdc655 70,72
+  s_487e9aa1e46063::t_c29b79bcb552e4 71
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipToNextBar.spec.ts
+  s_487e9aa1e46063::t_5c66ece57c626d 9-10,25-32,37-38
+  s_487e9aa1e46063::t_6337a6c80dd729 73-76,89-128
+  s_487e9aa1e46063::t_0d0bb6c809a15b 129-130
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_487e9aa1e46063::t_b65f4e08a446cc 82-105
+  s_487e9aa1e46063::t_3eb267efb13850 1,7,12-18,28-53
+  s_487e9aa1e46063::t_ea8037d2bb0be3 54
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.spec.ts
+  s_487e9aa1e46063::t_528b1f1af0195a 9-10,25-32,37-38
+  s_487e9aa1e46063::t_c26b1b96fef51e 73-76,89-128
+  s_487e9aa1e46063::t_f78937acbef25d 129-130
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_487e9aa1e46063::t_6279e84f5ba46c 95,98-114
+  s_487e9aa1e46063::t_c7637eac54f009 5
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_487e9aa1e46063::t_cc9714f102d661 82-102,104-105
+  s_487e9aa1e46063::t_a583812d2998c1 103
+  s_487e9aa1e46063::t_a6790aef1dcd98 1,7,12-18,28-53
+  s_487e9aa1e46063::t_40f598f1e9ea1e 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6653479fc5b15c1da8fb56b125f928fe58eea69e",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
