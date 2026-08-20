@@ -1,0 +1,98 @@
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  s_487e9aa1e46063::t_51ce3899879fc8 1-2
+  s_487e9aa1e46063::t_76a7ec11af0d2e 161-164
+src/modules/Transport/useCases/replaceMasterGain.ts
+  s_487e9aa1e46063::t_ae65c0df80b500 3,10-21,23
+src/modules/Automation/stores/automationStore.ts
+  s_487e9aa1e46063::t_955160f426d5fa 444-475
+  s_487e9aa1e46063::t_a7c624b54f6fa0 501-521,529
+  s_487e9aa1e46063::t_21a3d6aca4aede 3
+src/modules/AiRuntime/models/Tools/Track.ts
+  s_487e9aa1e46063::t_6543556fb5fdb9 66
+  s_487e9aa1e46063::t_d18c4437c70734 63
+  s_487e9aa1e46063::t_be80451ed38bc2 1-2
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_487e9aa1e46063::t_925b4e8224061e 69-75,77
+  s_487e9aa1e46063::t_9046a9af4c0cdd 3
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_487e9aa1e46063::t_4bf2895b08a8f9 3-4
+  s_487e9aa1e46063::t_695fbc567ca12c 559-578
+src/modules/Transport/useCases/__tests__/replaceMasterGain.spec.ts
+  s_487e9aa1e46063::t_f6bf6b4b135cfa 6
+  s_487e9aa1e46063::t_a085b98db3c79c 41
+  s_487e9aa1e46063::t_1126f865062bb0 32-37
+src/modules/AiRuntime/models/Tools/Transport.ts
+  s_487e9aa1e46063::t_fa508850ed0f5c 1-2
+  s_487e9aa1e46063::t_dd845d40508ae9 50
+src/modules/Arrangement/useCases/vca/setVcaGain.ts
+  s_487e9aa1e46063::t_491cd8314cf4f1 1-2,6
+src/utils/audioLevelLaw.ts
+  s_487e9aa1e46063::t_8998fb0e4e511a 48-62,70-75,77-78,83-84
+  s_487e9aa1e46063::t_f9c5d5884c3baa 47,110-132
+  s_487e9aa1e46063::t_e9019643c24c1f 154-157
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_487e9aa1e46063::t_4ed88d31142192 1219
+  s_487e9aa1e46063::t_84e60528efec96 1640
+  s_487e9aa1e46063::t_3336095413d842 1
+  s_487e9aa1e46063::t_e2f8365e7070f0 1205
+  s_487e9aa1e46063::t_fecaa34ba8a8d0 1652
+src/modules/DawInterchange/useCases/__tests__/serializeProjectXmlBranches.spec.ts
+  s_487e9aa1e46063::t_81275932d20406 3-4
+  s_487e9aa1e46063::t_c618a75b612b8d 179,182-188
+src/modules/Transport/handlers/transport/__tests__/masterGainHeadroom.spec.ts
+  s_487e9aa1e46063::t_c403119f225623 70-75
+  s_487e9aa1e46063::t_bc791566a8a931 3
+  s_487e9aa1e46063::t_fb5e1c29361420 50
+  s_487e9aa1e46063::t_b47daf6b78508b 1-2,4-49,51-69,76-80
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackGain.spec.ts
+  s_487e9aa1e46063::t_35ac0204dd5445 154-196
+  s_487e9aa1e46063::t_5675e610908393 7
+src/modules/DawInterchange/useCases/serializeProjectXml.ts
+  s_487e9aa1e46063::t_9ef352efb4a66d 1-2
+  s_487e9aa1e46063::t_31c4e115cf2fa9 85-92,94
+src/modules/DawInterchange/useCases/__tests__/serializeProjectXml.spec.ts
+  s_487e9aa1e46063::t_bf2bf0982c2a17 3-4
+  s_487e9aa1e46063::t_dd0f7dee02c85a 378,381,384,388-399
+  s_487e9aa1e46063::t_3209b1d3932af0 400-401
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_487e9aa1e46063::t_df53c871b4978a 3
+  s_487e9aa1e46063::t_053353a66ffbb0 20
+src/modules/AiRuntime/useCases/__tests__/gainSchemaCeilingParity.spec.ts
+  s_487e9aa1e46063::t_5f3f8d599b28f3 46
+  s_487e9aa1e46063::t_d48609fd049f22 1-11,15,24-35,41,50-52,55-57,59-71,73-79,83,88-90,95,106,110
+  s_487e9aa1e46063::t_264ba61a3cb90a 12-14,16-23,36-40,42-45,47-49,53-54,58,72,80-82,84-87,91-94,96-105,107-109
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts
+  s_487e9aa1e46063::t_b2e058f6d2dc7c 11
+  s_487e9aa1e46063::t_cc18292fd457e5 41-46,49-50
+src/modules/DawInterchange/useCases/__tests__/mapToProjectData.spec.ts
+  s_487e9aa1e46063::t_fb0c1f744a2a7c 3-4
+  s_487e9aa1e46063::t_77b79bed68e073 497
+  s_487e9aa1e46063::t_7d5f810e79a47b 520,524-551
+  s_487e9aa1e46063::t_81766590cd952e 552-553
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_487e9aa1e46063::t_7fc2c4a906fb69 9
+  s_487e9aa1e46063::t_a34e8e4a829274 605-606
+  s_487e9aa1e46063::t_4c24faa21ba2ee 836-837
+src/modules/Automation/stores/__tests__/automationStore.spec.ts
+  s_487e9aa1e46063::t_904a14580231c2 85-123,166
+  s_487e9aa1e46063::t_9553493f6a7df3 4
+  s_487e9aa1e46063::t_c22be4a7387e42 238,274,371
+src/modules/Arrangement/useCases/setTrackGainPan/isToasterPadTrack.ts
+  s_487e9aa1e46063::t_dd50e36a1d2584 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4f6269f7656122a2cee27fe034d5eafccd66b5ac",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
