@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
 import {
+    inspectIssueComments,
     parseSupersedePullRequestArgs,
     supersedePullRequest,
     type SupersedePullRequestPort,
@@ -15,6 +16,7 @@ type Input = {
     authorLogin?: string;
     replacementState?: string;
     throwAfterComment?: boolean;
+    concurrentCommentOnThrow?: boolean;
     throwAfterClose?: boolean;
     failDelete?: boolean;
 };
@@ -56,6 +58,17 @@ function fakePort(input: Input = {}) {
             };
             comments = [...comments, created];
             if (input.throwAfterComment) {
+                if (input.concurrentCommentOnThrow) {
+                    comments = [
+                        ...comments,
+                        {
+                            id: 'IC_concurrent',
+                            fullDatabaseId: '9223372036854775809',
+                            body,
+                            authorLogin: AUTHOR_BOT_LOGIN,
+                        },
+                    ];
+                }
                 throw new Error('comment transport lost');
             }
             return created;
@@ -84,6 +97,61 @@ function fakePort(input: Input = {}) {
 }
 
 describe('pull-request supersession', () => {
+    it('paginates over 100 pull-request comments before supersession compensation can compare them', () => {
+        const first = Array.from({ length: 100 }, (_, index) => ({
+            id: `IC_${index}`,
+            fullDatabaseId: String(index + 1),
+            body: 'old',
+            author: { login: 'reviewer[bot]' },
+        }));
+        const final = {
+            id: 'IC_100',
+            fullDatabaseId: '9223372036854775808',
+            body: 'Superseded by #2246.',
+            author: { login: AUTHOR_BOT_LOGIN },
+        };
+        const calls: string[][] = [];
+        const comments = inspectIssueComments('PR_kwDOExample', (args) => {
+            calls.push(args);
+            const firstPage = calls.length === 1;
+            return JSON.stringify({
+                data: {
+                    node: {
+                        comments: {
+                            nodes: firstPage ? first : [final],
+                            pageInfo: { hasNextPage: firstPage, endCursor: firstPage ? 'issue-comments-1' : null },
+                        },
+                    },
+                },
+            });
+        });
+        expect(comments).toHaveLength(101);
+        expect(comments.at(-1)?.id).toBe('IC_100');
+        expect(calls[1]).toContain('cursor=issue-comments-1');
+    });
+
+    it.each([
+        ['repeated', 'issue-comments-1'],
+        ['empty', ''],
+    ])('fails closed on a %s issue-comment cursor', (_case, cursor) => {
+        let call = 0;
+        expect(() =>
+            inspectIssueComments('PR_kwDOExample', () => {
+                call += 1;
+                return JSON.stringify({
+                    data: {
+                        node: {
+                            comments: {
+                                nodes: [],
+                                pageInfo: { hasNextPage: true, endCursor: cursor },
+                            },
+                        },
+                    },
+                });
+            })
+        ).toThrow(/pagination/i);
+    });
+
     it('parses strict arguments', () => {
         expect(parseSupersedePullRequestArgs(['2244', '--head', head, '--replacement', '2246'])).toMatchObject({
             oldNumber: 2244,
@@ -119,10 +187,16 @@ describe('pull-request supersession', () => {
             'log:pull-request-superseded:2244:2246',
         ]);
     });
-    it('compensates a comment that committed before its mutation threw', () => {
-        const { port, authorLogin, state } = fakePort({ throwAfterComment: true });
-        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/comment transport lost$/);
-        expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+    it('fails closed when a thrown comment mutation collides with an identical concurrent comment', () => {
+        const { port, authorLogin, state, calls } = fakePort({
+            throwAfterComment: true,
+            concurrentCommentOnThrow: true,
+        });
+        expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(
+            /comment transport lost[\s\S]*ambiguous supersession comment mutation/i
+        );
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
+        expect(state().comments.map((comment) => comment.id)).toEqual(['IC_old', 'IC_new', 'IC_concurrent']);
     });
     it('compensates a close that committed before its mutation threw', () => {
         const { port, authorLogin, state } = fakePort({ throwAfterClose: true });
@@ -130,9 +204,10 @@ describe('pull-request supersession', () => {
         expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
     });
     it('rolls back after a post-comment head move', () => {
-        const { port, authorLogin, state } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
+        const { port, authorLogin, state, calls } = fakePort({ heads: [head, movedHead, movedHead, movedHead] });
         expect(() => supersedePullRequest(2244, head, 2246, authorLogin, port)).toThrow(/head moved/i);
         expect(state()).toMatchObject({ state: 'OPEN', comments: [oldComment] });
+        expect(calls).toContain('delete:IC_new');
     });
     it('surfaces compensation failure', () => {
         const { port, authorLogin } = fakePort({ throwAfterComment: true, failDelete: true });

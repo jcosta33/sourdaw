@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_LOGIN,
+    isAuthorBotLogin,
     AUTHOR_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_LOGIN,
@@ -463,5 +464,13 @@ describe('repository and trusted blob', () => {
         expect(isReviewerBotLogin('jcosta33-author[bot]')).toBe(false);
         expect(isReviewerBotLogin('jcosta33')).toBe(false);
         expect(isReviewerBotLogin(undefined)).toBe(false);
+    });
+
+    it('normalizes GraphQL and REST author bot logins without accepting other actors', () => {
+        expect(isAuthorBotLogin('jcosta33-author[bot]')).toBe(true);
+        expect(isAuthorBotLogin('jcosta33-author')).toBe(true);
+        expect(isAuthorBotLogin('jcosta33-reviewer[bot]')).toBe(false);
+        expect(isAuthorBotLogin('jcosta33')).toBe(false);
+        expect(isAuthorBotLogin(undefined)).toBe(false);
     });
 });

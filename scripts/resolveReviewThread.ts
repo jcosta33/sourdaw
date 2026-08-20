@@ -8,6 +8,7 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    isAuthorBotLogin,
     isReviewerBotLogin,
     originMainBlob,
     parseJson,
@@ -27,7 +28,7 @@ export type ReviewThread = {
     comments: ReviewComment[];
 };
 export type ReviewThreadInspection = { head: string; thread: ReviewThread | null };
-export type ReviewReply = { id: string; fullDatabaseId: string };
+export type ReviewReply = { id: string; fullDatabaseId: string; authorLogin: string | null };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
     replyDone: (threadId: string) => ReviewReply;
@@ -80,11 +81,13 @@ export function resolveReviewThread(
     assertExpectedHead(before.head, expectedHead);
     assertResolvableThread(before.thread, threadId);
     let replyAttempted = false;
+    let replyId: string | undefined;
     let resolveAttempted = false;
     try {
         replyAttempted = true;
         const reply = port.replyDone(threadId);
         assertReply(reply);
+        replyId = reply.id;
         const afterReply = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(afterReply.head, expectedHead);
         assertResolvableThread(afterReply.thread, threadId);
@@ -96,7 +99,7 @@ export function resolveReviewThread(
             fail(`review thread ${threadId} was not resolved`);
         }
     } catch (error) {
-        compensateResolution(number, threadId, before, replyAttempted, resolveAttempted, port, error);
+        compensateResolution(number, threadId, before, replyAttempted, replyId, resolveAttempted, port, error);
     }
     const success = `review-thread-resolved:${number}:${threadId}`;
     port.log(success);
@@ -108,6 +111,7 @@ function compensateResolution(
     threadId: string,
     before: ReviewThreadInspection,
     replyAttempted: boolean,
+    replyId: string | undefined,
     resolveAttempted: boolean,
     port: ResolveReviewThreadPort,
     original: unknown
@@ -124,10 +128,9 @@ function compensateResolution(
             attempt(failures, 'unresolve review thread', () => port.unresolve(threadId));
         }
         if (replyAttempted) {
-            const replyId = createdCommentId(before.thread.comments, current.thread.comments, 'Done', AUTHOR_BOT_LOGIN);
             if (replyId === undefined) {
-                failures.push('cannot identify the created review reply for compensation');
-            } else if (replyId !== null) {
+                failures.push('ambiguous review reply mutation; refusing to delete an unverified comment');
+            } else {
                 attempt(failures, 'delete review reply', () => port.deleteReply(replyId));
             }
         }
@@ -146,20 +149,6 @@ function compensateResolution(
     throwWithCompensation(original, failures);
 }
 
-export function createdCommentId(
-    before: ReviewComment[],
-    after: ReviewComment[],
-    body: string,
-    authorLogin: string
-): string | null | undefined {
-    const beforeIds = new Set(before.map((comment) => comment.id));
-    const newComments = after.filter((comment) => !beforeIds.has(comment.id));
-    if (newComments.length === 0) {
-        return null;
-    }
-    const candidates = newComments.filter((comment) => comment.body === body && comment.authorLogin === authorLogin);
-    return candidates.length === 1 ? candidates[0]?.id : undefined;
-}
 function sameCommentIds(left: ReviewComment[], right: ReviewComment[]): boolean {
     if (left.length !== right.length) {
         return false;
@@ -201,7 +190,12 @@ function isDecimalId(value: unknown): value is string {
     return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
 function assertReply(reply: ReviewReply): void {
-    if (typeof reply.id !== 'string' || reply.id === '' || !isDecimalId(reply.fullDatabaseId)) {
+    if (
+        typeof reply.id !== 'string' ||
+        reply.id === '' ||
+        !isDecimalId(reply.fullDatabaseId) ||
+        !isAuthorBotLogin(reply.authorLogin)
+    ) {
         fail('add review-thread reply returned an invalid result');
     }
 }
@@ -377,7 +371,7 @@ function toReviewComment(value: unknown): ReviewComment {
 }
 function mutationReply(threadId: string, gh: Gh): ReviewReply {
     const query =
-        'mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id fullDatabaseId body}}}';
+        'mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id fullDatabaseId body author{login}}}}';
     const response = graphql(
         gh,
         query,
@@ -385,14 +379,27 @@ function mutationReply(threadId: string, gh: Gh): ReviewReply {
         'add review-thread reply'
     ) as {
         data?: {
-            addPullRequestReviewThreadReply?: { comment?: { id?: unknown; fullDatabaseId?: unknown; body?: unknown } };
+            addPullRequestReviewThreadReply?: {
+                comment?: {
+                    id?: unknown;
+                    fullDatabaseId?: unknown;
+                    body?: unknown;
+                    author?: { login?: unknown } | null;
+                };
+            };
         };
     };
     const comment = response.data?.addPullRequestReviewThreadReply?.comment;
-    if (comment?.body !== 'Done' || typeof comment.id !== 'string' || !isDecimalId(comment.fullDatabaseId)) {
+    const authorLogin = typeof comment?.author?.login === 'string' ? comment.author.login : null;
+    if (
+        comment?.body !== 'Done' ||
+        typeof comment.id !== 'string' ||
+        !isDecimalId(comment.fullDatabaseId) ||
+        !isAuthorBotLogin(authorLogin)
+    ) {
         fail(`add review-thread reply returned an invalid result for ${threadId}`);
     }
-    return { id: comment.id, fullDatabaseId: comment.fullDatabaseId };
+    return { id: comment.id, fullDatabaseId: comment.fullDatabaseId, authorLogin };
 }
 function mutateThread(
     name: 'resolveReviewThread' | 'unresolveReviewThread',

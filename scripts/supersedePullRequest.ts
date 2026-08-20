@@ -7,6 +7,7 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    isAuthorBotLogin,
     originMainBlob,
     parseJson,
     resolvePrimaryRoot,
@@ -86,11 +87,13 @@ export function supersedePullRequest(
     assertReplacement(replacement, replacementNumber, before);
     const body = `Superseded by #${replacementNumber}.`;
     let commentAttempted = false;
+    let commentId: string | undefined;
     let closeAttempted = false;
     try {
         commentAttempted = true;
         const comment = port.comment(oldNumber, body);
         assertComment(comment);
+        commentId = comment.id;
         assertStableOpen(port.inspect(oldNumber), oldNumber, expectedHead);
         closeAttempted = true;
         port.close(oldNumber);
@@ -102,7 +105,7 @@ export function supersedePullRequest(
             fail(`PR #${oldNumber} was not closed`);
         }
     } catch (error) {
-        compensateSupersession(oldNumber, body, before, commentAttempted, closeAttempted, port, error);
+        compensateSupersession(oldNumber, before, commentAttempted, commentId, closeAttempted, port, error);
     }
     const success = `pull-request-superseded:${oldNumber}:${replacementNumber}`;
     port.log(success);
@@ -111,9 +114,9 @@ export function supersedePullRequest(
 
 function compensateSupersession(
     number: number,
-    body: string,
     before: SupersededPullRequest,
     commentAttempted: boolean,
+    commentId: string | undefined,
     closeAttempted: boolean,
     port: SupersedePullRequestPort,
     original: unknown
@@ -134,10 +137,9 @@ function compensateSupersession(
             }
         }
         if (commentAttempted) {
-            const commentId = createdCommentId(before.comments, current.comments, body, AUTHOR_BOT_LOGIN);
             if (commentId === undefined) {
-                failures.push('cannot identify the created supersession comment for compensation');
-            } else if (commentId !== null) {
+                failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
+            } else {
                 attempt(failures, 'delete supersession comment', () => port.deleteComment(commentId));
             }
         }
@@ -149,20 +151,6 @@ function compensateSupersession(
         }
     });
     throwWithCompensation(original, failures);
-}
-export function createdCommentId(
-    before: IssueComment[],
-    after: IssueComment[],
-    body: string,
-    authorLogin: string
-): string | null | undefined {
-    const ids = new Set(before.map((comment) => comment.id));
-    const newComments = after.filter((comment) => !ids.has(comment.id));
-    if (newComments.length === 0) {
-        return null;
-    }
-    const candidates = newComments.filter((comment) => comment.body === body && comment.authorLogin === authorLogin);
-    return candidates.length === 1 ? candidates[0]?.id : undefined;
 }
 function sameCommentIds(left: IssueComment[], right: IssueComment[]): boolean {
     if (left.length !== right.length) {
@@ -229,7 +217,7 @@ function assertComment(value: IssueComment): void {
         typeof value.id !== 'string' ||
         value.id === '' ||
         !isDecimalId(value.fullDatabaseId) ||
-        value.authorLogin !== AUTHOR_BOT_LOGIN
+        !isAuthorBotLogin(value.authorLogin)
     ) {
         fail('add supersession comment returned an invalid result');
     }
@@ -305,7 +293,7 @@ function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): S
         comments: inspectIssueComments(pullRequest.id, gh),
     };
 }
-function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] {
+export function inspectIssueComments(subjectId: string, gh: Gh): IssueComment[] {
     let cursor: string | undefined;
     const cursors = new Set<string>();
     const comments: IssueComment[] = [];
