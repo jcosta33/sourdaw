@@ -1,0 +1,43 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_0a3429e31e555d::t_2795e5f38c3610 10,140,145-149,168,170,178,188-190
+  s_a40848e8f8cca9::t_6d53c210fb5678 143-144
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_0a3429e31e555d::t_2795e5f38c3610 24-29,44-45,50-53,129-130,312-374
+tests/e2e/instrumentPanelsTestId.spec.ts
+  s_0a3429e31e555d::t_2795e5f38c3610 5
+  s_0a3429e31e555d::t_0a9c730b6f9558 55-58
+tests/e2e/remainingCoverage.spec.ts
+  s_0a3429e31e555d::t_2795e5f38c3610 154
+tests/e2e/browserInstrumentsTestId.spec.ts
+  s_0a3429e31e555d::t_2795e5f38c3610 36
+tests/e2e/crumbsTestId.spec.ts
+  s_0a3429e31e555d::t_2795e5f38c3610 22
+  s_0a3429e31e555d::t_50801699784384 30-32,42-44
+tests/e2e/instrumentPanels.spec.ts
+  s_0a3429e31e555d::t_2795e5f38c3610 15,20-21
+  s_0a3429e31e555d::t_4279a35706c1cd 38-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "259e052e232f9167df7fe1cd595935cbc8d9cbba",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
