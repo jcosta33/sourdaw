@@ -118,6 +118,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
             fp('delay', 'faust-tape-delay', 'Delay Time', 0.01, 2, 0.3, 0.01, 's', 'log'),
             fp('feedback', 'faust-tape-delay', 'Feedback', 0, 0.95, 0.5, 0.01),
             fp('dry_wet', 'faust-tape-delay', 'Dry/Wet', 0, 1, 0.3, 0.01),
+            fp('tone', 'faust-tape-delay', 'Tone', 500, 12000, 4000, 100, 'Hz', 'log'),
         ],
     },
     {
@@ -128,8 +129,13 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         parameters: [
+            // Release and look-ahead are milliseconds, matching both the DSP
+            // and how every shipping limiter displays them. Release used to be
+            // declared here in seconds while nothing in the compiled node read
+            // it at all, so no stored project value ever reached the DSP.
             fp('ceiling', 'faust-brick-wall-limiter', 'Ceiling', -12, 0, -0.3, 0.1, 'dB'),
-            fp('release', 'faust-brick-wall-limiter', 'Release', 0.01, 1, 0.1, 0.01, 's', 'log'),
+            fp('release', 'faust-brick-wall-limiter', 'Release', 1, 1000, 100, 1, 'ms', 'log'),
+            fp('lookahead', 'faust-brick-wall-limiter', 'Lookahead', 0, 10, 5, 0.1, 'ms'),
         ],
     },
     {
