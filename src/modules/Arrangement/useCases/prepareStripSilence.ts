@@ -119,10 +119,7 @@ function rebaseWarpState(warpState: WarpState | null, shift: number): WarpState 
     return { ...warpState, markers };
 }
 
-function pointsInsideSegment(
-    points: readonly AutomationLanePoint[] | undefined,
-    segment: Clip
-): AutomationLanePoint[] {
+function pointsInsideSegment(points: readonly AutomationLanePoint[] | undefined, segment: Clip): AutomationLanePoint[] {
     return (points ?? [])
         .filter((point) => point.beat >= segment.startBeat && point.beat <= segment.endBeat)
         .map((point) => ({ ...point }));
@@ -154,7 +151,8 @@ function migrateAutomationLanesToSegments(
         let placed = false;
         for (const segment of segments) {
             const points = pointsInsideSegment(lane.points, segment);
-            const trimPoints = lane.trimPoints === undefined ? undefined : pointsInsideSegment(lane.trimPoints, segment);
+            const trimPoints =
+                lane.trimPoints === undefined ? undefined : pointsInsideSegment(lane.trimPoints, segment);
             const ghostPoints =
                 lane.ghostPoints === undefined ? undefined : pointsInsideSegment(lane.ghostPoints, segment);
             // An object is a bounded container in the same absolute frame. It
