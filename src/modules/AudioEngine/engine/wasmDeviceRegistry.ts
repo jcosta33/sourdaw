@@ -1375,15 +1375,27 @@ const proofDescriptor: WasmDeviceDescriptor = {
         };
         placeholder.nativeDspControls = loadingControls;
         placeholder.controller = loadingControls;
+        let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: ProofNodeResult | null = null;
-        let failed = false;
-        const onRuntimeFailure = (): void => {
-            if (failed || !publishedNode || !publishedResult) {
+        let runtimeFailureHandled = false;
+        // Demotion is terminal and unrecoverable, so it must run only once the
+        // worklet has actually reported a fault. A fault raised before the node
+        // is published is held in `runtimeFailureMessage` and drained at the
+        // publish site; a healthy load never enters this body at all.
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
                 return;
             }
-            failed = true;
-            publishedNode.controller!.ready = false;
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
             pendingParams.length = 0;
             const terminalControls = { ready: false, setParam: () => {}, setBypass: () => {}, destroy: () => {} };
             placeholder.nativeDspControls = terminalControls;
@@ -1398,7 +1410,25 @@ const proofDescriptor: WasmDeviceDescriptor = {
             sink.unregisterProofDevice(deviceId);
             sink.clearProofMeters(deviceId);
         };
-        const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
+        // Supplying the target fields at all selects live control. Whether the
+        // supplied values bind is `createProofNode`'s decision: it rejects an
+        // out-of-bounds id and leaves every control inert. Testing the values
+        // for truthiness here would turn an invalid target back into "no target
+        // supplied", which selects the legacy raw-param path and routes writes
+        // around the target, generation and sequence binding instead of
+        // stopping at it.
+        const controlTarget =
+            trackId !== undefined && parameterIds !== undefined
+                ? { trackId, deviceId, deviceType, parameterIds }
+                : undefined;
         const loadPromise = createProofNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: ProofNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
@@ -1442,6 +1472,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                         outputNode: result.workletNode,
                         dispose: result.destroy,
                         controller: {
+                            ready: true,
                             setParam: result.setParam,
                             setBypass: result.setBypass,
                             destroy: () => {
@@ -1464,7 +1495,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     }
                     publishedNode = loadedNode;
                     publishedResult = result;
-                    onRuntimeFailure();
+                    applyRuntimeFailure();
                 } catch (error) {
                     try {
                         runtimeSink.unregisterProofDevice(deviceId);
