@@ -272,6 +272,32 @@ fn relative_gate_factor(lu: f64) -> f64 {
     10.0_f64.powf(-lu / 10.0)
 }
 
+/// Upper bound on a derived window/hop sample count, safely above anything a
+/// real audio rate produces (3 s at 768 kHz — an extreme professional rate —
+/// is 2,304,000 samples) but far below what a corrupt or absurd host-reported
+/// rate could otherwise request.
+const MAX_DERIVED_SAMPLES: usize = 10_000_000;
+
+/// `seconds * sample_rate` as a sample count, clamped to `[1,
+/// MAX_DERIVED_SAMPLES]`.
+///
+/// The rate arrives from the host. Rust's float-to-int `as` cast saturates
+/// rather than panicking, so a sample rate of zero, negative, or NaN all cast
+/// to `0`, which then sizes a ring buffer to nothing — the first
+/// `process_sample` indexes an empty `Vec` and computes `% 0`, a panic. A
+/// sample rate of `+inf` casts the other way, to `usize::MAX`, which turns a
+/// buffer allocation into an OOM abort. Both ends are host input, not an
+/// invariant this crate controls, so both are clamped here rather than
+/// asserted away.
+#[inline]
+fn sanitized_sample_count(seconds: f64, sample_rate: f64) -> usize {
+    let raw = seconds * sample_rate;
+    if !raw.is_finite() || raw <= 0.0 {
+        return 1;
+    }
+    (raw as usize).clamp(1, MAX_DERIVED_SAMPLES)
+}
+
 /// Momentary LUFS (400ms sliding window).
 pub struct MomentaryLufs {
     k_l: KWeightingFilter,
@@ -286,7 +312,7 @@ pub struct MomentaryLufs {
 
 impl MomentaryLufs {
     pub fn new(sr: f64) -> Self {
-        let window_size = (0.4 * sr) as usize; // 400ms
+        let window_size = sanitized_sample_count(0.4, sr); // 400ms
         Self {
             k_l: KWeightingFilter::new(sr),
             k_r: KWeightingFilter::new(sr),
@@ -328,6 +354,21 @@ impl MomentaryLufs {
     pub fn get_lufs(&self) -> f32 {
         loudness_from_energy(self.energy())
     }
+
+    /// Clear the K-weighting filter state, the ring buffers, and the running
+    /// sums, so one non-finite input sample cannot poison every reading taken
+    /// after a reset. Without this, `k_l`/`k_r`'s filter state and
+    /// `sum_sq_l`/`sum_sq_r` survive a caller's `reset` untouched — see
+    /// `IntegratedLufs::reset`, which calls this.
+    pub fn reset(&mut self) {
+        self.k_l.reset();
+        self.k_r.reset();
+        self.buffer_l.iter_mut().for_each(|s| *s = 0.0);
+        self.buffer_r.iter_mut().for_each(|s| *s = 0.0);
+        self.sum_sq_l = 0.0;
+        self.sum_sq_r = 0.0;
+        self.write_pos = 0;
+    }
 }
 
 /// Short-term LUFS (3000ms sliding window).
@@ -344,7 +385,7 @@ pub struct ShortTermLufs {
 
 impl ShortTermLufs {
     pub fn new(sr: f64) -> Self {
-        let window_size = (3.0 * sr) as usize;
+        let window_size = sanitized_sample_count(3.0, sr);
         Self {
             k_l: KWeightingFilter::new(sr),
             k_r: KWeightingFilter::new(sr),
@@ -379,6 +420,19 @@ impl ShortTermLufs {
 
     pub fn get_lufs(&self) -> f32 {
         loudness_from_energy(self.energy())
+    }
+
+    /// Clear the K-weighting filter state, the ring buffers, and the running
+    /// sums — the short-term twin of [`MomentaryLufs::reset`]. Called from
+    /// `LoudnessRange::reset`.
+    pub fn reset(&mut self) {
+        self.k_l.reset();
+        self.k_r.reset();
+        self.buffer_l.iter_mut().for_each(|s| *s = 0.0);
+        self.buffer_r.iter_mut().for_each(|s| *s = 0.0);
+        self.sum_sq_l = 0.0;
+        self.sum_sq_r = 0.0;
+        self.write_pos = 0;
     }
 }
 
@@ -701,7 +755,7 @@ pub struct IntegratedLufs {
 
 impl IntegratedLufs {
     pub fn new(sr: f64) -> Self {
-        let hop_size = (0.1 * sr) as usize;
+        let hop_size = sanitized_sample_count(0.1, sr);
         Self {
             momentary: MomentaryLufs::new(sr),
             blocks: BlockStore::new(),
@@ -726,6 +780,7 @@ impl IntegratedLufs {
     }
 
     pub fn reset(&mut self) {
+        self.momentary.reset();
         self.blocks.clear();
         self.cached_lufs = -100.0;
         self.hop_counter = 0;
@@ -970,7 +1025,7 @@ pub struct LoudnessRange {
 
 impl LoudnessRange {
     pub fn new(sr: f64) -> Self {
-        let hop_size = (0.1 * sr) as usize; // 100ms hop
+        let hop_size = sanitized_sample_count(0.1, sr); // 100ms hop
         Self {
             st_lufs: ShortTermLufs::new(sr),
             blocks: BlockStore::new(),
@@ -1048,6 +1103,7 @@ impl LoudnessRange {
     }
 
     pub fn reset(&mut self) {
+        self.st_lufs.reset();
         self.blocks.clear();
         self.scratch.clear();
         self.quantiles.clear();
@@ -1291,7 +1347,7 @@ mod k_weighting_design_tests {
 
     use super::{
         k_weighting_highpass, k_weighting_shelf, BiquadCoefficients, IntegratedLufs,
-        KWeightingFilter, MomentaryLufs,
+        KWeightingFilter, LoudnessRange, MomentaryLufs,
     };
 
     /// ITU-R BS.1770-4 Table 1 — stage 1 at 48 kHz.
@@ -1309,7 +1365,7 @@ mod k_weighting_design_tests {
         b1: -2.0,
         b2: 1.0,
         a1: -1.990_047_454_833_98,
-        a2: 0.990_072_250_366_88,
+        a2: 0.990_072_250_366_21,
     };
 
     /// Rates an `AudioContext` or an interface can actually present, plus two
@@ -1337,8 +1393,11 @@ mod k_weighting_design_tests {
     #[test]
     fn derived_coefficients_reproduce_the_published_48k_table() {
         // The recommendation prints the 48 kHz table to 15 significant figures,
-        // so agreement well inside its own last printed digit is the claim.
-        const TOLERANCE: f64 = 1e-12;
+        // so agreement well inside its own last printed digit is the claim. The
+        // derivation agrees with the published table to ~1e-16 (f64 epsilon);
+        // 1e-14 is two orders of magnitude looser than that measured agreement,
+        // not four, so the guard is no longer sized to a transcription typo.
+        const TOLERANCE: f64 = 1e-14;
 
         let shelf = k_weighting_shelf(48_000.0);
         for (name, derived, published) in [
@@ -1416,6 +1475,127 @@ mod k_weighting_design_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_nonsensical_sample_rate_does_not_panic_the_gated_meters() {
+        // The coefficient-level test above only exercises the two free design
+        // functions. `IntegratedLufs::new` and `LoudnessRange::new` additionally
+        // derive a ring-buffer window size (`MomentaryLufs`/`ShortTermLufs`) and
+        // a block hop size from the same host-supplied rate. Before those sizes
+        // were clamped to at least one sample, a rate of 0.0, a negative rate,
+        // or NaN all cast `0.4 * sr` (or `0.1 * sr`) to `0usize` via Rust's
+        // saturating float-to-int `as`, sizing the ring buffer to nothing: the
+        // first `process_sample` indexed an empty `Vec` and computed `% 0`, a
+        // panic. `+inf` cast the other way, to `usize::MAX`, turning the buffer
+        // allocation into an OOM abort.
+        for sr in [0.0_f64, -48_000.0, f64::NAN, f64::INFINITY, 1.0] {
+            let mut integrated = IntegratedLufs::new(sr);
+            integrated.process_sample(0.5, 0.5);
+            assert!(
+                integrated.get_lufs().is_finite(),
+                "IntegratedLufs at sample rate {sr} produced a non-finite reading \
+                 instead of degrading cleanly"
+            );
+
+            let mut lra = LoudnessRange::new(sr);
+            lra.process_sample(0.5, 0.5);
+            assert!(
+                lra.get_lra().is_finite(),
+                "LoudnessRange at sample rate {sr} produced a non-finite reading \
+                 instead of degrading cleanly"
+            );
+        }
+    }
+
+    #[test]
+    fn reset_recovers_from_a_poisoning_non_finite_sample() {
+        // `MomentaryLufs`/`ShortTermLufs` hold K-weighting filter state, a ring
+        // buffer, and a running sum-of-squares; a single non-finite sample
+        // parks the running sum at NaN forever, because every later
+        // `sum_sq -= old*old` / `sum_sq += new*new` propagates it. Neither
+        // struct had a `reset()` at all, and `IntegratedLufs::reset` /
+        // `LoudnessRange::reset` cleared only their own block store, leaving
+        // the inner meter poisoned. This test goes red if either forwarding
+        // call — `momentary.reset()` in `IntegratedLufs::reset`, or
+        // `st_lufs.reset()` in `LoudnessRange::reset` — is removed: a poisoned
+        // instance that was reset must read exactly what an instance that was
+        // never poisoned reads, once both are fed the same tone.
+        let sr = 48_000.0_f64;
+        let amplitude = 0.5_f64;
+        let one_second = sr as usize;
+
+        fn feed_tone(mut process: impl FnMut(f32, f32), sr: f64, amplitude: f64, samples: usize) {
+            for n in 0..samples {
+                let s = amplitude * (2.0 * core::f64::consts::PI * 1_000.0 * n as f64 / sr).sin();
+                process(s as f32, s as f32);
+            }
+        }
+
+        // IntegratedLufs::reset must reset the inner MomentaryLufs.
+        let mut poisoned_integrated = IntegratedLufs::new(sr);
+        poisoned_integrated.process_sample(f32::NAN, f32::NAN);
+        poisoned_integrated.reset();
+        feed_tone(
+            |l, r| poisoned_integrated.process_sample(l, r),
+            sr,
+            amplitude,
+            one_second,
+        );
+
+        let mut clean_integrated = IntegratedLufs::new(sr);
+        feed_tone(
+            |l, r| clean_integrated.process_sample(l, r),
+            sr,
+            amplitude,
+            one_second,
+        );
+
+        assert!(
+            poisoned_integrated.get_lufs().is_finite(),
+            "integrated LUFS must be finite after reset, got {}",
+            poisoned_integrated.get_lufs()
+        );
+        assert_eq!(
+            poisoned_integrated.get_lufs(),
+            clean_integrated.get_lufs(),
+            "a reset IntegratedLufs must read exactly like an instance that was never \
+             poisoned — if IntegratedLufs::reset stops calling MomentaryLufs::reset the \
+             poisoned instance's running sum stays NaN, every block is excluded by the \
+             absolute gate, and it reads -100.0 forever instead"
+        );
+
+        // LoudnessRange::reset must reset the inner ShortTermLufs.
+        let mut poisoned_lra = LoudnessRange::new(sr);
+        poisoned_lra.process_sample(f32::NAN, f32::NAN);
+        poisoned_lra.reset();
+        feed_tone(
+            |l, r| poisoned_lra.process_sample(l, r),
+            sr,
+            amplitude,
+            one_second,
+        );
+
+        let mut clean_lra = LoudnessRange::new(sr);
+        feed_tone(
+            |l, r| clean_lra.process_sample(l, r),
+            sr,
+            amplitude,
+            one_second,
+        );
+
+        assert!(
+            poisoned_lra.st_lufs.get_lufs().is_finite(),
+            "the loudness range meter's short-term LUFS must be finite after reset, got {}",
+            poisoned_lra.st_lufs.get_lufs()
+        );
+        assert_eq!(
+            poisoned_lra.st_lufs.get_lufs(),
+            clean_lra.st_lufs.get_lufs(),
+            "a reset LoudnessRange must read exactly like an instance that was never \
+             poisoned — if LoudnessRange::reset stops calling ShortTermLufs::reset the \
+             poisoned instance's K-weighting filter state and running sum stay NaN forever"
+        );
     }
 
     /// The impulse-response half of stability, at the two rates the coefficient

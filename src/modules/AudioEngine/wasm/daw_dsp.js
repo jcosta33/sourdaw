@@ -1937,6 +1937,14 @@ export class ProofInstance {
     reorder(m0, m1, m2, m3, m4) {
         wasm.proofinstance_reorder(this.__wbg_ptr, m0, m1, m2, m3, m4);
     }
+    /**
+     * Reset the panel's integrated-loudness measures together. Loudness range
+     * shares the same "since when" question as integrated loudness — both are
+     * figures about one programme — so a reset that touched integrated LUFS
+     * and true peak but left `chain.lra` accumulating from device
+     * instantiation would make the two readings on the same panel describe
+     * different programmes.
+     */
     reset_integrated() {
         wasm.proofinstance_reset_integrated(this.__wbg_ptr);
     }
