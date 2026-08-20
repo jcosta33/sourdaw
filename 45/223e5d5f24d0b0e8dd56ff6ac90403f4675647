@@ -1,0 +1,39 @@
+docs/manual/README.md
+  s_487e9aa1e46063::t_737acf005cb923 31-32
+docs/manual/coverage-exceptions.json
+  s_8ddfabd1166b5d::t_ad750de918c144 83-97,167-190
+docs/manual/devices/15-levain.md
+  s_815371b033ccf2::t_ecbf02cd3e0692 1-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "45223e5d5f24d0b0e8dd56ff6ac90403f4675647",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_815371b033ccf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0205d-8a20-7a20-9075-f26ea79ca25d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8ddfabd1166b5d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3ef7dfaf-be76-41ba-8356-b08f01349465",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
