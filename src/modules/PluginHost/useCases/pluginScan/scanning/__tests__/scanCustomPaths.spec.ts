@@ -29,6 +29,7 @@ function create_plugin_scan_state(overrides: Partial<PluginScanState> = {}): Plu
         isScanning: false,
         scannedPlugins: [],
         errors: [],
+        notices: [],
         lastScanTime: null,
         ...overrides,
     };
@@ -50,6 +51,7 @@ const mocks = vi.hoisted(() => {
             isScanning: false,
             scannedPlugins: [],
             errors: [],
+            notices: [],
             lastScanTime: null,
         },
     };
@@ -94,7 +96,7 @@ describe('scanCustomPaths', () => {
     it('appends only plugins not already scanned', async () => {
         mocks.pluginScanStoreValue.value.scannedPlugins = [create_scanned_plugin({ id: 'existing' })];
         const scanned = [create_scanned_plugin({ id: 'existing' }), create_scanned_plugin({ id: 'fresh' })];
-        mocks.scanPlugins.mockResolvedValue({ plugins: scanned, errors: [], scan_duration_ms: 0 });
+        mocks.scanPlugins.mockResolvedValue({ plugins: scanned, errors: [], notices: [], scan_duration_ms: 0 });
 
         await scanCustomPaths(['/custom']);
 
@@ -121,7 +123,12 @@ describe('scanCustomPaths', () => {
             ...mocks.pluginScanStoreValue.value,
             scannedPlugins: [create_scanned_plugin({ id: 'existing' }), create_scanned_plugin({ id: 'manual-edit' })],
         };
-        scan_deferred.resolve({ plugins: [create_scanned_plugin({ id: 'fresh' })], errors: [], scan_duration_ms: 0 });
+        scan_deferred.resolve({
+            plugins: [create_scanned_plugin({ id: 'fresh' })],
+            errors: [],
+            notices: [],
+            scan_duration_ms: 0,
+        });
         await scan_promise;
 
         expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(

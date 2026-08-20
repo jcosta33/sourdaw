@@ -34,6 +34,7 @@ describe('pluginScanStore', () => {
             isScanning: false,
             lastScanTime: null,
             errors: [],
+            notices: [],
         });
     });
 
@@ -44,6 +45,7 @@ describe('pluginScanStore', () => {
             isScanning: false,
             lastScanTime: 1_700_000_000_000,
             errors: ['Failed to load plugin c'],
+            notices: ['VST3 plugins are recognised but not loaded yet.'],
         };
 
         pluginScanStore.set(finished);
@@ -90,6 +92,7 @@ describe('pluginScanStore', () => {
             isScanning: false,
             lastScanTime: 1_700_000_000_000,
             errors: [],
+            notices: [],
         };
 
         pluginScanStore.set(finished);
@@ -104,6 +107,7 @@ describe('pluginScanStore', () => {
             isScanning: false,
             lastScanTime: 1_700_000_000_000,
             errors: [],
+            notices: [],
         };
         pluginScanStore.set(first);
         const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -127,6 +131,7 @@ describe('pluginScanStore', () => {
             isScanning: false,
             lastScanTime: 1_700_000_000_000,
             errors: [],
+            notices: [],
         };
         pluginScanStore.set(first);
         const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -207,6 +212,7 @@ describe('pluginScanStore hydration', () => {
                 isScanning: true,
                 lastScanTime: null,
                 errors: ['Failed to load plugin c'],
+                notices: ['VST3 plugins are recognised but not loaded yet.'],
             })
         );
 
@@ -214,6 +220,11 @@ describe('pluginScanStore hydration', () => {
         // cases' in-flight guard would refuse to start a real one over it.
         expect(restored?.isScanning).toBe(false);
         expect(restored?.errors).toEqual([]);
+        // Notices go the same way as errors and for the same reason: they
+        // describe the run that is gone. Restoring them would show the user a
+        // reason about a scan that never produced it this session, and the next
+        // scan restates whichever ones still apply.
+        expect(restored?.notices).toEqual([]);
     });
 
     it('should drop a stored plugin that is missing part of its scanned contract', async () => {
@@ -230,6 +241,31 @@ describe('pluginScanStore hydration', () => {
         );
 
         expect(restored?.scannedPlugins).toEqual([sample('b')]);
+    });
+
+    it('should restore the reason a plugin capability is a default rather than a measurement', async () => {
+        // Zeros that survive a reload without their reason are read downstream
+        // as a scanned fact about the plugin. The reason is what makes an
+        // unqueried default legible as one, so it has to survive with them.
+        const unqueried: ScannedPlugin = {
+            ...sample('a'),
+            num_inputs: 0,
+            num_outputs: 0,
+            has_custom_ui: false,
+            capability_metadata_reason: 'This plugin does not implement clap.audio-ports.',
+        };
+
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [unqueried],
+                scanPaths: [],
+                isScanning: false,
+                lastScanTime: null,
+                errors: [],
+            })
+        );
+
+        expect(restored?.scannedPlugins).toEqual([unqueried]);
     });
 
     it('should start empty when the stored value cannot be read', async () => {
