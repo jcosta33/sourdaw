@@ -188,7 +188,9 @@ hits all of them.
 
 `pnpm lane:remove <path>` from outside the lane. The author lock stays until removal succeeds.
 Removal requires a clean lane holding the merged head of exactly one pull request. Delete a leftover
-local branch after success.
+local branch after success. A superseded lane therefore cannot be removed: `pr:supersede` closes the
+old pull request unmerged, so that lane and the author lock it holds persist until the tooling gains
+a path.
 
 ## Artifacts
 
@@ -231,22 +233,22 @@ exception at all: lane tooling owns every push, because a push from anywhere els
 review anchor and can strand a lane. Read-only `gh` stays unrestricted and is how you check live
 tracker state. Identity for a script-covered write is the App that script mints, not a persona.
 
-| Need                           | Command                                                      |
-| ------------------------------ | ------------------------------------------------------------ |
-| Open a lane                    | `pnpm lane:open [issue] [slug]`                              |
-| Push; open or update the PR    | `pnpm lane:publish [issue]`                                  |
-| Write the review bundle        | `pnpm review:prepare <pr>`                                   |
-| Post `review.json`             | `pnpm review:publish <pr>`                                   |
-| Reply `Done`; resolve a thread | `pnpm review:resolve <pr> --thread <id> --head <sha>`        |
-| Squash-merge                   | `pnpm deliver <pr>`                                          |
-| Close a superseded PR          | `pnpm pr:supersede <old-pr> --head <sha> --replacement <pr>` |
-| Remove a spent lane            | `pnpm lane:remove <path>`                                    |
+| Need                        | Command                                                           |
+| --------------------------- | ----------------------------------------------------------------- |
+| Open a lane                 | `pnpm lane:open [issue] [slug]`                                   |
+| Push; open or update the PR | `pnpm lane:publish [issue]`                                       |
+| Write the review bundle     | `pnpm review:prepare <pr>`                                        |
+| Post `review.json`          | `pnpm review:publish <pr>`                                        |
+| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`             |
+| Squash-merge                | `pnpm deliver <pr>`                                               |
+| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>` |
+| Remove a spent lane         | `pnpm lane:remove <path>`                                         |
 
 Credentials sit at the primary root (parent of `git rev-parse --git-common-dir`), gitignored:
-`.env.sourdaw-author` for `lane:publish` and `deliver`, `.env.sourdaw-reviewer` for `review:prepare`
-and `review:publish`. Do not commit them. Do not load the other role's file. Author mint is
-`jcosta33-author[bot]`. Reviewer mint is `jcosta33-reviewer[bot]`. `deliver` does not mint the
-reviewer.
+`.env.sourdaw-author` for `lane:publish`, `review:resolve`, `deliver`, and `pr:supersede`;
+`.env.sourdaw-reviewer` for `review:prepare` and `review:publish`. Do not commit them. Do not load
+the other role's file. Author mint is `jcosta33-author[bot]`. Reviewer mint is
+`jcosta33-reviewer[bot]`. `deliver` does not mint the reviewer.
 
 If `origin/main` already has the executing script, run that blob, not a mutated working copy. New
 scripts may run from the working tree.
@@ -308,9 +310,12 @@ that never happened. Put a non-blocking observation in the approval body, prefix
 `Optional:`, or file it. Inline comments belong to a `CHANGES_REQUESTED` review, where the thread is
 meant to stop the merge and a new head clears it.
 
-When answering, push a commit first. Reply `Done` plus where, or why not, in one sentence. Clarify
-the code, not the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation
-only when the current head actually addresses it. A new head needs a new review.
+When answering, push the fix first; `review:resolve` then posts a bare `Done` as the author bot and
+resolves the thread, pinned to that head. The reply body is fixed and no script writes free-form
+thread text, so a finding you judge wrong has no route on the thread: only a new head that addresses
+it clears one, which is why a finding is validated before it is ever posted. Clarify the code, not
+the thread. File out-of-scope feedback; do not grow the PR. Resolve a conversation only when the
+current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, confirm every finding it accepted is actually addressed
