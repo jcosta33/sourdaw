@@ -969,9 +969,6 @@ impl LevainVoice {
             // does not reach the `1e-5` that idles it until 11.5 time
             // constants have passed, which on a struck one-shot with a long
             // modelled release is tens of seconds of pool held by silence.
-            // `VoicePool::allocate` cannot recover it either: `steal_priority`
-            // scores an inaudible release tail `1`, below every sounding
-            // voice, so the allocator steals the note still ringing instead.
             let layer_still_sounding = self.layer_active && self.layer_secondary.active;
             if !layer_still_sounding {
                 self.active = false;
@@ -999,13 +996,14 @@ impl LevainVoice {
         shaped * env * gain
     }
 
-    /// Voice stealing score: lower = more likely to be stolen.
+    /// Voice stealing score: higher = more likely to be stolen.
     pub fn steal_priority(&self) -> u32 {
         if !self.active {
             return 0;
         }
         if self.amp_env.is_releasing() && self.energy < 1e-4 {
-            return 1; // release tails past audibility
+            let age_score = self.age.min(10000);
+            return 10000 + age_score; // release tails past audibility sort above every sounding voice
         }
         // Lower energy = more stealable, older = more stealable.
         let energy_score = ((1.0 - self.energy.min(1.0)) * 1000.0) as u32;
@@ -1115,5 +1113,38 @@ impl VoicePool {
                 voice.set_expression(bend_semitones, pressure, slide);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steal_priority_prefers_inaudible_release_tail_over_sounding_voice() {
+        let sample_rate = 44100.0;
+        let mut sounding = LevainVoice::new(sample_rate);
+        sounding.active = true;
+        sounding.energy = 0.5;
+        sounding.age = 100;
+
+        let mut inaudible_releasing = LevainVoice::new(sample_rate);
+        inaudible_releasing.active = true;
+        inaudible_releasing.energy = 1e-5;
+        inaudible_releasing.age = 100;
+        inaudible_releasing.amp_env.trigger();
+        inaudible_releasing.amp_env.release();
+
+        assert!(
+            inaudible_releasing.steal_priority() > sounding.steal_priority(),
+            "inaudible release tail score {} must exceed sounding voice score {}",
+            inaudible_releasing.steal_priority(),
+            sounding.steal_priority()
+        );
+
+        let mut pool = VoicePool {
+            voices: vec![sounding, inaudible_releasing],
+        };
+        assert_eq!(pool.allocate(), 1);
     }
 }
