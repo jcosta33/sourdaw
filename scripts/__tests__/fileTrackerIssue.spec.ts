@@ -6,11 +6,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
     composeIssueTitle,
+    parseCliArgs,
     parseIssueForm,
     ghIssueCreateArgs,
     readFields,
     renderIssueSubmission,
     resolveTemplatePath,
+    type IssueSubmission,
 } from '../fileTrackerIssue';
 
 const templates = join(process.cwd(), '.github/ISSUE_TEMPLATE');
@@ -219,23 +221,102 @@ describe('research options field', () => {
 });
 
 describe('ghIssueCreateArgs', () => {
+    const submission: IssueSubmission = {
+        title: 'spec(scope): mixer',
+        body: '### Intent\n\nDone.\n',
+        labels: ['status:tracking', 'priority:P1'],
+    };
+
+    const labelledArgs = [
+        'issue',
+        'create',
+        '--title',
+        'spec(scope): mixer',
+        '--body',
+        submission.body,
+        '--label',
+        'status:tracking',
+        '--label',
+        'priority:P1',
+    ];
+
     it('passes title, body, and each label', () => {
-        const submission = {
-            title: 'spec(scope): mixer',
-            body: '### Intent\n\nDone.\n',
-            labels: ['status:tracking', 'priority:P1'],
-        };
-        expect(ghIssueCreateArgs(submission)).toEqual([
-            'issue',
-            'create',
-            '--title',
-            'spec(scope): mixer',
-            '--body',
-            submission.body,
-            '--label',
-            'status:tracking',
-            '--label',
-            'priority:P1',
+        expect(ghIssueCreateArgs(submission)).toEqual(labelledArgs);
+    });
+
+    it('adds nothing when neither milestone nor project is given', () => {
+        expect(ghIssueCreateArgs(submission, {})).toEqual(labelledArgs);
+        expect(ghIssueCreateArgs(submission, {})).toEqual(ghIssueCreateArgs(submission));
+    });
+
+    it('appends the milestone alone', () => {
+        expect(ghIssueCreateArgs(submission, { milestone: 'v1.2' })).toEqual([...labelledArgs, '--milestone', 'v1.2']);
+    });
+
+    it('appends the project alone', () => {
+        expect(ghIssueCreateArgs(submission, { project: 'Sourdaw Roadmap' })).toEqual([
+            ...labelledArgs,
+            '--project',
+            'Sourdaw Roadmap',
         ]);
+    });
+
+    it('orders labels, then milestone, then project', () => {
+        expect(ghIssueCreateArgs(submission, { milestone: '7', project: 'Sourdaw Roadmap' })).toEqual([
+            ...labelledArgs,
+            '--milestone',
+            '7',
+            '--project',
+            'Sourdaw Roadmap',
+        ]);
+    });
+});
+
+describe('parseCliArgs', () => {
+    const base = ['spec', '--title', 'mixer: mute groups', '--fields', '{"scope":"arrangement"}'];
+
+    it('leaves milestone and project unset when the flags are absent', () => {
+        const parsed = parseCliArgs([...base, '--create']);
+        expect(parsed.create).toBe(true);
+        expect(parsed.milestone).toBeUndefined();
+        expect(parsed.project).toBeUndefined();
+    });
+
+    it('reads a milestone number or title', () => {
+        expect(parseCliArgs([...base, '--milestone', '7']).milestone).toBe('7');
+        expect(parseCliArgs([...base, '--milestone', 'v1.2']).milestone).toBe('v1.2');
+    });
+
+    it('reads a project title and trims it', () => {
+        expect(parseCliArgs([...base, '--project', '  Sourdaw Roadmap  ']).project).toBe('Sourdaw Roadmap');
+    });
+
+    it('reads both flags alongside --create', () => {
+        const parsed = parseCliArgs([...base, '--milestone', '7', '--project', 'Sourdaw Roadmap', '--create']);
+        expect(parsed.milestone).toBe('7');
+        expect(parsed.project).toBe('Sourdaw Roadmap');
+        expect(parsed.create).toBe(true);
+    });
+
+    it('rejects a milestone with no value', () => {
+        expect(() => parseCliArgs([...base, '--milestone'])).toThrow(/missing value for --milestone/);
+        expect(() => parseCliArgs([...base, '--milestone', '   '])).toThrow(/--milestone is empty/);
+    });
+
+    it('rejects a project with no value', () => {
+        expect(() => parseCliArgs([...base, '--project'])).toThrow(/missing value for --project/);
+        expect(() => parseCliArgs([...base, '--project', '   '])).toThrow(/--project is empty/);
+    });
+
+    it('rejects a repeated milestone', () => {
+        expect(() => parseCliArgs([...base, '--milestone', '7', '--milestone', '8'])).toThrow(
+            /duplicate option: --milestone/
+        );
+    });
+
+    it('rejects a repeated project', () => {
+        expect(() => parseCliArgs([...base, '--project', 'One', '--project', 'Two'])).toThrow(
+            /duplicate option: --project/
+        );
     });
 });

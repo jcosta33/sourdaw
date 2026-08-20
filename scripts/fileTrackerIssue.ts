@@ -25,11 +25,19 @@ export type IssueSubmission = {
     body: string;
 };
 
+export type IssueMetadata = {
+    milestone?: string;
+    project?: string;
+};
+
 const TEMPLATE_ALIASES: Record<string, string> = {
     bug: 'bug_report',
     feature: 'feature_request',
     'change-plan': 'change_plan',
 };
+
+const USAGE =
+    'pnpm issue:file <template> --title <title> --fields <json> [--create] [--milestone <value>] [--project <value>]';
 
 export function resolveTemplatePath(templatesDir: string, name: string): string {
     const stem = TEMPLATE_ALIASES[name] ?? name;
@@ -149,16 +157,20 @@ export function parseCliArgs(args: string[]): {
     template?: string;
     title?: string;
     fieldsPath?: string;
+    milestone?: string;
+    project?: string;
 } {
     if (args[0] === '--help') {
         return { help: true, create: false };
     }
     const template = args[0];
     if (template === undefined || template.startsWith('--')) {
-        fail('usage: pnpm issue:file <template> --title <title> --fields <json> [--create]');
+        fail(`usage: ${USAGE}`);
     }
     let title: string | undefined;
     let fieldsPath: string | undefined;
+    let milestone: string | undefined;
+    let project: string | undefined;
     let create = false;
     for (let index = 1; index < args.length; index += 1) {
         const flag = args[index];
@@ -177,9 +189,36 @@ export function parseCliArgs(args: string[]): {
             index += 1;
             continue;
         }
+        if (flag === '--milestone') {
+            if (milestone !== undefined) {
+                fail('duplicate option: --milestone');
+            }
+            milestone = optionValue(flag, value);
+            index += 1;
+            continue;
+        }
+        if (flag === '--project') {
+            if (project !== undefined) {
+                fail('duplicate option: --project');
+            }
+            project = optionValue(flag, value);
+            index += 1;
+            continue;
+        }
         fail(`unknown option: ${flag}`);
     }
-    return { help: false, create, template, title, fieldsPath };
+    return { help: false, create, template, title, fieldsPath, milestone, project };
+}
+
+function optionValue(flag: string, value: string | undefined): string {
+    if (value === undefined) {
+        fail(`missing value for ${flag}`);
+    }
+    const trimmed = value.trim();
+    if (trimmed === '') {
+        fail(`${flag} is empty`);
+    }
+    return trimmed;
 }
 
 function resolveOption(value: string, options: string[], id: string): string {
@@ -326,16 +365,22 @@ function fieldString(key: string, value: unknown): string {
     return fail(`field ${key} must be a string`);
 }
 
-export function ghIssueCreateArgs(submission: IssueSubmission): string[] {
+export function ghIssueCreateArgs(submission: IssueSubmission, metadata: IssueMetadata = {}): string[] {
     const args = ['issue', 'create', '--title', submission.title, '--body', submission.body];
     for (const label of submission.labels) {
         args.push('--label', label);
     }
+    if (metadata.milestone !== undefined) {
+        args.push('--milestone', metadata.milestone);
+    }
+    if (metadata.project !== undefined) {
+        args.push('--project', metadata.project);
+    }
     return args;
 }
 
-function createIssue(submission: IssueSubmission): { url: string; number: number } {
-    const result = spawnSync('gh', ghIssueCreateArgs(submission), { encoding: 'utf8' });
+function createIssue(submission: IssueSubmission, metadata: IssueMetadata): { url: string; number: number } {
+    const result = spawnSync('gh', ghIssueCreateArgs(submission, metadata), { encoding: 'utf8' });
     if (result.status !== 0) {
         fail(result.stderr.trim() || 'gh issue create failed');
     }
@@ -351,14 +396,15 @@ function main(): number {
     try {
         const parsed = parseCliArgs(process.argv.slice(2));
         if (parsed.help) {
-            console.log('Usage: pnpm issue:file <template> --title <title> --fields <json> [--create]');
+            console.log(`Usage: ${USAGE}`);
             console.log('');
             console.log('Renders a tracker issue from .github/ISSUE_TEMPLATE using field ids as JSON.');
             console.log('--create files it with gh.');
+            console.log('--milestone takes a milestone number or title. --project takes a project title.');
             return 0;
         }
         if (parsed.template === undefined || parsed.title === undefined || parsed.fieldsPath === undefined) {
-            fail('usage: pnpm issue:file <template> --title <title> --fields <json> [--create]');
+            fail(`usage: ${USAGE}`);
         }
         const templatesDir = join(dirname(fileURLToPath(import.meta.url)), '..', '.github/ISSUE_TEMPLATE');
         const form = parseIssueForm(readFileSync(resolveTemplatePath(templatesDir, parsed.template), 'utf8'));
@@ -370,7 +416,7 @@ function main(): number {
             process.stdout.write(`${JSON.stringify(submission, null, 2)}\n`);
             return 0;
         }
-        const created = createIssue(submission);
+        const created = createIssue(submission, { milestone: parsed.milestone, project: parsed.project });
         process.stdout.write(
             `${JSON.stringify({ ...created, title: submission.title, labels: submission.labels }, null, 2)}\n`
         );
