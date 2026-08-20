@@ -1,3 +1,4 @@
+import { migrateStoredDeviceParameterValues } from '../../models/StoredDeviceParameterMigration';
 import { type Device, type Send, type TrackKind } from '../../models/Track';
 import { type TrackTemplate } from '../../models/TrackTemplate';
 
@@ -77,7 +78,10 @@ function validateStoredDevice(value: unknown): Device | null {
         name: value.name,
         type: value.type,
         bypassed: value.bypassed,
-        parameterValues,
+        // A template is the second place stored device parameters come back
+        // from, and it predates a declared-unit change the same way a project
+        // does. See `StoredDeviceParameterMigration`.
+        parameterValues: migrateStoredDeviceParameterValues(value.type, parameterValues),
         externalPluginId: value.externalPluginId,
         externalInstanceId: value.externalInstanceId,
         externalStateChunk: value.externalStateChunk,
