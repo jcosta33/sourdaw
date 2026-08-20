@@ -8,6 +8,8 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 
+import { Row } from '#/components/layout';
+
 import { type ProofAnalyserStatus } from '../hooks/useProofAnalyser';
 
 const MIN_FREQ = 20;
@@ -276,12 +278,14 @@ export const TonalBalance = ({
                 aria-label="Tonal balance display with Harman target curve"
             />
             {status === 'unavailable' ? (
-                <span
+                <Row
+                    as="span"
+                    justify="center"
+                    className="absolute inset-0 rounded bg-surface-base/70 text-center text-[8px] text-[var(--color-accent-peach)]"
                     role="status"
-                    className="absolute inset-0 flex items-center justify-center rounded bg-surface-base/70 text-center text-[8px] text-[var(--color-accent-peach)]"
                 >
                     Spectrum analyser unavailable — showing the target curve only
-                </span>
+                </Row>
             ) : null}
         </div>
     );

@@ -7,6 +7,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -31,7 +32,7 @@ export const ProofLimiterSection = ({
     onPatchChange,
 }: Props): ReactElement => {
     return (
-        <div className="flex flex-col gap-1.5 px-2">
+        <Stack gap={1.5} className="px-2">
             <DawPluginSectionHeader
                 title="Limiter"
                 size="xs"
@@ -58,8 +59,8 @@ export const ProofLimiterSection = ({
 
             <div className={`flex gap-4 ${patch.limBypassed ? 'opacity-30' : ''}`}>
                 {/* Controls */}
-                <div className="flex gap-3">
-                    <div className="flex flex-col items-center gap-0.5">
+                <Row align="stretch" gap={3}>
+                    <Stack align="center" gap={0.5}>
                         <RotaryKnob
                             value={patch.limCeiling}
                             aria-label="Limiter ceiling"
@@ -83,9 +84,9 @@ export const ProofLimiterSection = ({
                         <span className="text-[6px] text-muted-foreground font-mono">
                             {patch.limCeiling.toFixed(1)} dBTP
                         </span>
-                    </div>
+                    </Stack>
 
-                    <div className="flex flex-col items-center gap-0.5">
+                    <Stack align="center" gap={0.5}>
                         <RotaryKnob
                             value={patch.limRelease}
                             aria-label="Limiter release"
@@ -109,9 +110,9 @@ export const ProofLimiterSection = ({
                         <span className="text-[6px] text-muted-foreground font-mono">
                             {patch.limRelease.toFixed(0)} ms
                         </span>
-                    </div>
+                    </Stack>
 
-                    <div className="flex flex-col items-center gap-0.5">
+                    <Stack align="center" gap={0.5}>
                         <RotaryKnob
                             value={patch.limLookahead}
                             aria-label="Limiter lookahead"
@@ -135,15 +136,15 @@ export const ProofLimiterSection = ({
                         <span className="text-[6px] text-muted-foreground font-mono">
                             {patch.limLookahead.toFixed(1)} ms
                         </span>
-                    </div>
-                </div>
+                    </Stack>
+                </Row>
 
                 {/* GR + True Peak meters */}
-                <div className="flex flex-col gap-1 min-w-[80px]">
-                    <div className="flex justify-between text-[7px]">
+                <Stack gap={1} className="min-w-[80px]">
+                    <Row align="stretch" justify="between" className="text-[7px]">
                         <span className="text-muted-foreground">GR</span>
                         <span className="text-[var(--color-state-danger)] font-mono">{limiterGrDb.toFixed(1)} dB</span>
-                    </div>
+                    </Row>
                     <div className="h-2 bg-surface-inset rounded overflow-hidden">
                         <div
                             className="h-full bg-[var(--color-state-danger)] transition-all duration-75 rounded"
@@ -151,18 +152,18 @@ export const ProofLimiterSection = ({
                         />
                     </div>
 
-                    <div className="flex justify-between text-[7px]">
+                    <Row align="stretch" justify="between" className="text-[7px]">
                         <span className="text-muted-foreground">True Peak</span>
                         <span
                             className={`font-mono ${truePeakDb > -1 ? 'text-[var(--color-state-danger)]' : 'text-foreground'}`}
                         >
                             {truePeakDb > -100 ? `${truePeakDb.toFixed(1)} dBTP` : '-∞'}
                         </span>
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
 
                 {/* Dither */}
-                <div className="flex flex-col gap-1">
+                <Stack gap={1}>
                     <span className="text-[7px] text-muted-foreground">Dither</span>
                     <DawCompactSelect
                         size="micro"
@@ -185,7 +186,7 @@ export const ProofLimiterSection = ({
                             </option>
                         ))}
                     </DawCompactSelect>
-                    <div className="flex items-center gap-1">
+                    <Row gap={1}>
                         <span className="text-[6px] text-muted-foreground">Bits:</span>
                         <DawCompactSelect
                             size="micro"
@@ -204,9 +205,9 @@ export const ProofLimiterSection = ({
                             <option value={16}>16</option>
                             <option value={24}>24</option>
                         </DawCompactSelect>
-                    </div>
-                </div>
+                    </Row>
+                </Stack>
             </div>
-        </div>
+        </Stack>
     );
 };

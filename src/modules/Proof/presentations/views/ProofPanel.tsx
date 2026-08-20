@@ -10,6 +10,7 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
+import { Row, Stack } from '#/components/layout';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
@@ -477,10 +478,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         title="Mission"
                         detail="Choose the target, the preset, and the depth of the mastering desk."
                     >
-                        <div className="space-y-2">
-                            <div className="space-y-1">
+                        <Stack gap={2}>
+                            <Stack gap={1}>
                                 <div className="text-[10px] font-medium text-foreground">Presets</div>
-                                <div className="flex min-h-0 flex-col gap-1">
+                                <Stack gap={1}>
                                     {PROOF_PRESETS.map((preset) => {
                                         const active = patch.presetId === preset.id;
                                         return (
@@ -497,12 +498,12 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                             />
                                         );
                                     })}
-                                </div>
-                            </div>
+                                </Stack>
+                            </Stack>
 
-                            <div className="space-y-1">
+                            <Stack gap={1}>
                                 <div className="text-[10px] font-medium text-foreground">Targets</div>
-                                <div className="flex flex-wrap gap-1.5">
+                                <Row align="stretch" wrap gap={1.5}>
                                     {TARGET_OPTIONS.map((option) => {
                                         const active = patch.target === option.value;
                                         return (
@@ -517,12 +518,12 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                             </DawPluginChip>
                                         );
                                     })}
-                                </div>
-                            </div>
+                                </Row>
+                            </Stack>
 
-                            <div className="space-y-1">
+                            <Stack gap={1}>
                                 <div className="text-[10px] font-medium text-foreground">Desk depth</div>
-                                <div className="flex flex-col gap-1">
+                                <Stack gap={1}>
                                     {LEVEL_OPTIONS.map((entry) => {
                                         const active = uiLevel === entry.level;
                                         return (
@@ -536,24 +537,24 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                             />
                                         );
                                     })}
-                                </div>
-                            </div>
-                        </div>
+                                </Stack>
+                            </Stack>
+                        </Stack>
                     </SideCard>
                 </DawPluginRail>
 
-                <section className="flex min-h-0 min-w-0 flex-col gap-3">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-2">
+                <Stack as="section" gap={3} className="min-w-0">
+                    <Row align="start" justify="between" gap={3}>
+                        <Stack gap={2}>
                             <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-mint)]/70">
                                 Mastering desk
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{levelMeta.title}</div>
                             <span className="sr-only">{levelMeta.description}</span>
-                        </div>
+                        </Stack>
 
                         <ProofDeskMetrics deviceId={deviceId} />
-                    </div>
+                    </Row>
 
                     <div className="proof-window min-h-0 flex-1 overflow-auto p-3">
                         <ProofLevelContent
@@ -567,7 +568,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             onChainReorder={handleChainReorder}
                         />
                     </div>
-                </section>
+                </Stack>
 
                 <DawPluginRail>
                     <SideCard title="Quick read" detail="Keep the mission, the chain, and the compare switch in reach.">
@@ -582,7 +583,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         title="Chain"
                         detail="The mastering stations stay visible even when you dive into one deck."
                     >
-                        <div className="flex flex-col gap-1.5">
+                        <Stack gap={1.5}>
                             {patch.chainOrder.map((moduleIndex, slot) => {
                                 const label = MODULE_LABELS[moduleIndex] ?? '?';
                                 const bypassed = isModuleBypassed(patch, moduleIndex);
@@ -604,11 +605,11 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     />
                                 );
                             })}
-                        </div>
+                        </Stack>
                     </SideCard>
 
                     <SideCard title="Check" detail="Compare and reset without hunting through the deck.">
-                        <div className="flex flex-col gap-2">
+                        <Stack gap={2}>
                             <ProofAbCompareChip deviceId={deviceId} />
                             <DawPluginChip
                                 type="button"
@@ -618,7 +619,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             >
                                 Reset loudness
                             </DawPluginChip>
-                            <div className="flex flex-col items-center gap-1 pt-1">
+                            <Stack align="center" gap={1} className="pt-1">
                                 <RotaryKnob
                                     value={patch.limCeiling}
                                     aria-label="Master limiter ceiling"
@@ -644,8 +645,8 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 <span className="font-mono text-[9px] text-foreground/85">
                                     {patch.limCeiling.toFixed(1)} dBTP
                                 </span>
-                            </div>
-                        </div>
+                            </Stack>
+                        </Stack>
                     </SideCard>
                 </DawPluginRail>
             </div>
@@ -671,11 +672,11 @@ const Level1Play = ({
     onTargetSelection: (target: ProofTarget) => void;
 }): ReactElement => {
     return (
-        <div className="flex-1 flex items-center justify-center gap-12 px-8">
+        <Row justify="center" grow className="gap-12 px-8">
             {/* Target selector */}
-            <div className="flex flex-col items-center gap-2">
+            <Stack align="center" gap={2}>
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Target</span>
-                <div className="flex flex-col gap-1">
+                <Stack gap={1}>
                     {TARGET_OPTIONS.map((opt) => (
                         <button
                             key={opt.value}
@@ -692,14 +693,14 @@ const Level1Play = ({
                             {opt.label} ({opt.lufs} LUFS)
                         </button>
                     ))}
-                </div>
-            </div>
+                </Stack>
+            </Stack>
 
             {/* Big LUFS meters */}
             <Level1Meters patch={patch} deviceId={deviceId} />
 
             {/* Ceiling knob */}
-            <div className="flex flex-col items-center gap-1">
+            <Stack align="center" gap={1}>
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Ceiling</span>
                 <RotaryKnob
                     value={patch.limCeiling}
@@ -715,8 +716,8 @@ const Level1Play = ({
                     gestureAuthority={gestureAuthority}
                 />
                 <span className="text-[8px] text-muted-foreground font-mono">{patch.limCeiling.toFixed(1)} dBTP</span>
-            </div>
-        </div>
+            </Stack>
+        </Row>
     );
 };
 
@@ -733,25 +734,25 @@ const Level1Meters = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string
     });
 
     return (
-        <div className="flex flex-col items-center gap-3">
-            <div className="flex gap-8">
-                <div className="flex flex-col items-center">
+        <Stack align="center" gap={3}>
+            <Row align="stretch" gap={8}>
+                <Stack align="center">
                     <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Input</span>
                     <span className="text-2xl font-mono text-foreground tabular-nums">{formatLufs(inputLufs)}</span>
                     <span className="text-[8px] text-muted-foreground">LUFS</span>
-                </div>
+                </Stack>
                 <div className="w-px h-16 bg-border/20 self-center" />
-                <div className="flex flex-col items-center">
+                <Stack align="center">
                     <span className="text-[8px] text-muted-foreground uppercase tracking-widest mb-1">Output</span>
                     <span className="text-2xl font-mono text-foreground tabular-nums">{formatLufs(outputLufs)}</span>
                     <span className="text-[8px] text-muted-foreground">LUFS</span>
-                </div>
-            </div>
-            <div className="flex gap-4 text-[8px] text-muted-foreground font-mono">
+                </Stack>
+            </Row>
+            <Row align="stretch" gap={4} className="text-[8px] text-muted-foreground font-mono">
                 <span>Integrated: {formatLufs(integratedLufs)}</span>
                 <span>Short-term: {formatLufs(outputStLufs)}</span>
                 <span>Correlation: {correlation.toFixed(2)}</span>
-            </div>
+            </Row>
 
             {/* Loudness-normalization warning */}
             {alert ? (
@@ -763,7 +764,7 @@ const Level1Meters = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string
                     {alert.message}
                 </div>
             ) : null}
-        </div>
+        </Stack>
     );
 };
 
@@ -786,9 +787,9 @@ const Level2Shape = ({
     const bypassKeys = ['eqBypassed', 'dynBypassed', 'imgBypassed', 'excBypassed', 'limBypassed'] as const;
 
     return (
-        <div className="flex-1 flex flex-col px-3 py-2 gap-2">
+        <Stack grow gap={2} className="px-3 py-2">
             {/* Signal chain strip with inline meters */}
-            <div className="flex items-center gap-1">
+            <Row gap={1}>
                 {/* Input meter */}
                 <ProofTapMeter deviceId={deviceId} tapIndex={0} label="IN" />
 
@@ -799,7 +800,7 @@ const Level2Shape = ({
                     const tapIdx = slot + 1;
 
                     return (
-                        <div key={moduleIdx} className="flex items-center gap-1">
+                        <Row gap={1} key={moduleIdx}>
                             <div className="w-4 h-px bg-border/30" />
                             <button
                                 type="button"
@@ -817,13 +818,13 @@ const Level2Shape = ({
                             </button>
                             <div className="w-4 h-px bg-border/30" />
                             <ProofTapMeter deviceId={deviceId} tapIndex={tapIdx} />
-                        </div>
+                        </Row>
                     );
                 })}
-            </div>
+            </Row>
 
             {/* Primary knobs per module */}
-            <div className="flex items-start justify-around flex-1 pt-2">
+            <Row align="start" justify="around" grow className="pt-2">
                 <KnobColumn
                     label="Dynamics"
                     sublabel="Threshold"
@@ -967,8 +968,8 @@ const Level2Shape = ({
                     color={MODULE_COLORS[4]}
                     defaultValue={-1}
                 />
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
 
@@ -988,9 +989,9 @@ const Level3Build = ({
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
     return (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
+        <Row align="stretch" grow className="min-h-0 overflow-hidden">
             {/* Module controls — scrollable */}
-            <div className="flex-1 overflow-y-auto py-2 space-y-3">
+            <Stack grow gap={3} className="overflow-y-auto py-2">
                 <ProofEqSection
                     patch={patch}
                     gestureOwner={gestureOwner}
@@ -1028,11 +1029,11 @@ const Level3Build = ({
                     gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
                 />
-            </div>
+            </Stack>
 
             {/* Right: Loudness history + summary */}
             <Level3MeterAside deviceId={deviceId} targetLufs={patch.targetLufs} />
-        </div>
+        </Row>
     );
 };
 
@@ -1119,7 +1120,7 @@ const Level3MeterAside = ({ deviceId, targetLufs }: { deviceId: string; targetLu
     const samples = useProofLoudnessHistory(deviceId);
 
     return (
-        <div className="w-[200px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2">
+        <Stack gap={2} shrink={false} className="w-[200px] border-l border-border/20 p-2">
             <LoudnessHistory
                 samples={samples}
                 capacity={PROOF_LOUDNESS_HISTORY_LENGTH}
@@ -1128,35 +1129,35 @@ const Level3MeterAside = ({ deviceId, targetLufs }: { deviceId: string; targetLu
                 width={184}
                 height={120}
             />
-            <div className="space-y-1 text-[8px] font-mono">
-                <div className="flex justify-between">
+            <Stack gap={1} className="text-[8px] font-mono">
+                <Row align="stretch" justify="between">
                     <span className="text-muted-foreground">Momentary</span>
                     <span className="text-foreground">{formatLufs(outputLufs)} LUFS</span>
-                </div>
-                <div className="flex justify-between">
+                </Row>
+                <Row align="stretch" justify="between">
                     <span className="text-muted-foreground">Short-term</span>
                     <span className="text-foreground">{formatLufs(outputStLufs)} LUFS</span>
-                </div>
-                <div className="flex justify-between">
+                </Row>
+                <Row align="stretch" justify="between">
                     <span className="text-muted-foreground">Integrated</span>
                     <span className="text-foreground">{formatLufs(integratedLufs)} LUFS</span>
-                </div>
-                <div className="flex justify-between">
+                </Row>
+                <Row align="stretch" justify="between">
                     <span className="text-muted-foreground">LRA</span>
                     <span className="text-foreground">{lra.toFixed(1)} LU</span>
-                </div>
-                <div className="flex justify-between">
+                </Row>
+                <Row align="stretch" justify="between">
                     <span className="text-muted-foreground">True Peak</span>
                     <span className={truePeakDb > -1 ? 'text-[var(--color-state-danger)]' : 'text-foreground'}>
                         {formatDb(truePeakDb)} dBTP
                     </span>
-                </div>
-                <div className="flex justify-between">
+                </Row>
+                <Row align="stretch" justify="between">
                     <span className="text-muted-foreground">Correlation</span>
                     <span className="text-foreground">{correlation.toFixed(2)}</span>
-                </div>
-            </div>
-        </div>
+                </Row>
+            </Stack>
+        </Stack>
     );
 };
 
@@ -1190,7 +1191,7 @@ const Level4Route = ({
     };
 
     return (
-        <div className="flex-1 flex flex-col px-4 py-3 gap-4">
+        <Stack grow gap={4} className="px-4 py-3">
             {/* Chain reorder */}
             <div>
                 <span
@@ -1199,18 +1200,22 @@ const Level4Route = ({
                 >
                     Signal Chain Order
                 </span>
-                <div className="flex items-center gap-1" role="group" aria-labelledby={`${deviceId}-chain-order-label`}>
+                <Row gap={1} role="group" aria-labelledby={`${deviceId}-chain-order-label`}>
                     <span className="text-[7px] text-muted-foreground">IN</span>
                     <div className="w-4 h-px bg-border/30" />
                     {patch.chainOrder.map((moduleIdx, slot) => {
                         const moduleLabel = MODULE_LABELS[moduleIdx] ?? 'module';
                         return (
-                            <div key={moduleIdx} className="flex items-center gap-1">
-                                <div className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded bg-surface-base/80 border border-border/30">
+                            <Row gap={1} key={moduleIdx}>
+                                <Stack
+                                    align="center"
+                                    gap={0.5}
+                                    className="px-2 py-1.5 rounded bg-surface-base/80 border border-border/30"
+                                >
                                     <span className="text-[9px] font-bold" style={{ color: MODULE_COLORS[moduleIdx] }}>
                                         {moduleLabel}
                                     </span>
-                                    <div className="flex gap-0.5">
+                                    <Row align="stretch" gap={0.5}>
                                         <button
                                             type="button"
                                             className="text-[8px] text-muted-foreground hover:text-foreground cursor-pointer px-1"
@@ -1229,15 +1234,15 @@ const Level4Route = ({
                                         >
                                             →
                                         </button>
-                                    </div>
-                                </div>
+                                    </Row>
+                                </Stack>
                                 {slot < 4 ? <div className="w-4 h-px bg-border/30" /> : null}
-                            </div>
+                            </Row>
                         );
                     })}
                     <div className="w-4 h-px bg-border/30" />
                     <span className="text-[7px] text-muted-foreground">OUT</span>
-                </div>
+                </Row>
                 <span className="sr-only" role="status" aria-live="polite">
                     {`Signal chain order: ${patch.chainOrder
                         .map((moduleIdx) => MODULE_LABELS[moduleIdx] ?? 'module')
@@ -1249,8 +1254,8 @@ const Level4Route = ({
             <ProofLatencyReadout deviceId={deviceId} />
 
             {/* Input/Output gain */}
-            <div className="flex gap-8">
-                <div className="flex flex-col items-center gap-1">
+            <Row align="stretch" gap={8}>
+                <Stack align="center" gap={1}>
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
                         value={patch.inputGain}
@@ -1269,8 +1274,8 @@ const Level4Route = ({
                         {patch.inputGain > 0 ? '+' : ''}
                         {patch.inputGain.toFixed(1)} dB
                     </span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
+                </Stack>
+                <Stack align="center" gap={1}>
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
                         value={patch.outputGain}
@@ -1289,9 +1294,9 @@ const Level4Route = ({
                         {patch.outputGain > 0 ? '+' : ''}
                         {patch.outputGain.toFixed(1)} dB
                     </span>
-                </div>
-            </div>
-        </div>
+                </Stack>
+            </Row>
+        </Stack>
     );
 };
 
@@ -1299,12 +1304,12 @@ const ProofLatencyReadout = ({ deviceId }: { deviceId: string }): ReactElement =
     const latency = useProofMeter(deviceId, (state) => state.latency);
 
     return (
-        <div className="flex items-center gap-4 text-[8px] text-muted-foreground">
+        <Row gap={4} className="text-[8px] text-muted-foreground">
             <span>
                 Reported latency: <span className="text-foreground font-mono">{latency} samples</span>
                 {latency > 0 ? ` (${((latency / getAudioSampleRate()) * 1000).toFixed(1)}ms)` : ''}
             </span>
-        </div>
+        </Row>
     );
 };
 
@@ -1315,9 +1320,9 @@ const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string })
     const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 
     return (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
+        <Row align="stretch" grow className="min-h-0 overflow-hidden">
             {/* Left: Advanced metering dashboard */}
-            <div className="flex-1 overflow-y-auto py-2 px-3 space-y-3">
+            <Stack grow gap={3} className="overflow-y-auto py-2 px-3">
                 {/* Loudness history */}
                 <div>
                     <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">
@@ -1357,10 +1362,10 @@ const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string })
                 >
                     Reset Integrated LUFS + True Peak
                 </button>
-            </div>
+            </Stack>
             {/* Right: Input vs Output comparison */}
             <Level5GainComparison deviceId={deviceId} />
-        </div>
+        </Row>
     );
 };
 
@@ -1434,7 +1439,7 @@ const Level5GainComparison = ({ deviceId }: { deviceId: string }): ReactElement 
     const outputLufs = useProofMeter(deviceId, (state) => state.outputLufs);
 
     return (
-        <div className="w-[160px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2 justify-center">
+        <Stack justify="center" gap={2} shrink={false} className="w-[160px] border-l border-border/20 p-2">
             <div className="text-center">
                 <span className="text-[7px] text-muted-foreground uppercase tracking-wider block mb-1">Input</span>
                 <span className="text-lg font-mono text-foreground">{formatLufs(inputLufs)}</span>
@@ -1458,7 +1463,7 @@ const Level5GainComparison = ({ deviceId }: { deviceId: string }): ReactElement 
                 </span>
                 <span className="text-[7px] text-muted-foreground block">dB</span>
             </div>
-        </div>
+        </Stack>
     );
 };
 
@@ -1502,9 +1507,9 @@ const MiniMeter = ({ peakL, peakR, label }: { peakL: number; peakR: number; labe
     const clampDb = (db: number) => Math.round(Math.max(-60, Math.min(0, db)));
 
     return (
-        <div className="flex flex-col items-center gap-0.5">
+        <Stack align="center" gap={0.5}>
             {label ? <span className="text-[6px] text-muted-foreground/50">{label}</span> : null}
-            <div className="flex gap-px">
+            <Row align="stretch" className="gap-px">
                 <div
                     className="w-1 bg-surface-inset rounded-sm overflow-hidden"
                     style={{ height }}
@@ -1535,8 +1540,8 @@ const MiniMeter = ({ peakL, peakR, label }: { peakL: number; peakR: number; labe
                         style={{ height: hR, marginTop: height - hR }}
                     />
                 </div>
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
 
