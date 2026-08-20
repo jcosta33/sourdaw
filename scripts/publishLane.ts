@@ -27,6 +27,7 @@ import {
     composePublishBody,
     fail,
     issueRelationshipFromBody,
+    repairLegacyBody,
     type IssueRelationship,
 } from './prContract.ts';
 
@@ -56,6 +57,11 @@ export type PublishLanePort = {
     existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
     createPullRequest: (input: { branch: string; title: string; body: string }) => number;
     updatePullRequest: (number: number, input: { title: string; body: string }) => void;
+    /**
+     * Writes a body and nothing else. A legacy pull request's title belongs to whoever opened it, so
+     * the completion path needs a write that cannot carry one.
+     */
+    updatePullRequestBody: (number: number, body: string) => void;
     log: (message: string) => void;
 };
 
@@ -381,7 +387,7 @@ export function publishLane(
  */
 function pullRequestNumber(lane: ResolvedLane, write: PullRequestWrite | undefined, port: PublishLanePort): number {
     if (write === undefined) {
-        return legacyPullRequestNumber(lane, port.existingOpenPullRequest(lane.branch));
+        return legacyPullRequestNumber(lane, port.existingOpenPullRequest(lane.branch), port);
     }
     const { existing, ...content } = write;
     if (existing === undefined) {
@@ -452,13 +458,32 @@ function pullRequestWrite(
  * proven before the push, not after. If it has closed in between there is nothing to update and
  * nothing this script may author, so it refuses rather than opening a replacement carrying a
  * regenerated body.
+ *
+ * The one write this path may make is a completion. `deliver` holds a legacy body to the template
+ * that is current at merge time, not the one it was written against, and no other sanctioned command
+ * writes a pull-request body — so a body predating a heading is otherwise stuck forever. Completing
+ * it here adds the heading and leaves every existing byte, and the title, exactly as its author left
+ * them; `repairLegacyBody` answers `undefined`, and nothing is written, the moment the body already
+ * satisfies the contract.
  */
-function legacyPullRequestNumber(lane: ResolvedLane, existing: ExistingPullRequest | undefined): number {
+function legacyPullRequestNumber(
+    lane: ResolvedLane,
+    existing: ExistingPullRequest | undefined,
+    port: PublishLanePort
+): number {
     if (existing === undefined) {
         fail(
             `${lane.branch} no longer has an open pull request: it was pushed, but a pre-convention ` +
                 `lane's pull request is not lane:publish's to open or rewrite`
         );
+    }
+    if (typeof existing.body !== 'string') {
+        fail('existing pull-request body is unreadable');
+    }
+    const completed = repairLegacyBody(existing.body, `pull request #${existing.number} body`);
+    if (completed !== undefined) {
+        port.updatePullRequestBody(existing.number, completed);
+        port.log(`completed the body of pull request #${existing.number} against the current template`);
     }
     return existing.number;
 }
@@ -583,6 +608,9 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Publ
         },
         updatePullRequest: (number, { title, body }) => {
             ghRun(['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--title', title, '--body', body]);
+        },
+        updatePullRequestBody: (number, body) => {
+            ghRun(['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body]);
         },
         log: (message) => {
             console.log(message);

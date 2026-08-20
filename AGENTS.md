@@ -291,9 +291,21 @@ to title the pull request. It does not enable auto-merge or post a review.
 An author-locked, off-convention branch may also publish — but only from inside its own worktree,
 since no issue argument ever resolves one, and only once the repository already has an open pull
 request for that exact branch, which is what proves the worktree a genuine, if stranded, lane
-rather than one locked for an unrelated purpose. That path never writes a title or body: pushing is
-the whole of what publishing it means, so it leaves the pull request exactly as its owner wrote it,
-and it refuses outright if that pull request is no longer open by the time the push lands.
+rather than one locked for an unrelated purpose. That path never writes a title: pushing is nearly
+the whole of what publishing it means, so it leaves the pull request as its owner wrote it, and it
+refuses outright if that pull request is no longer open by the time the push lands.
+
+The one thing that path may write is a completion. `deliver` holds every body to the template
+current at merge time rather than the one it was written against, so a heading added to the
+template after a pull request was opened would otherwise strand it: no sanctioned command could
+supply the heading, and none may be added by hand. So after the push `lane:publish` adds any
+required heading the body lacks, in template order, immediately before the heading that follows it,
+and changes nothing else — existing sections keep their bytes and their order, and the title is
+never touched. A body that already satisfies the contract is left alone entirely. It only ever adds
+a heading whose emptiness the template itself answers, `None.` under Screenshots being that answer;
+a heading whose content is the author's to write, a body it cannot insert into without reordering
+or rewriting, and a completion that would push the body past the byte ceiling are all refusals
+naming what is wrong, never a guess and never a trim.
 
 Write the pull request for a teammate who was not in the session. Under the four template headings,
 say what changed, why, and how to test. Leave session diaries, unpublished rounds, and mutation

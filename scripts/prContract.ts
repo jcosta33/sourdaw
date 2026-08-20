@@ -19,33 +19,48 @@ export function assertConventionalSubject(subject: string, label: string): void 
     }
 }
 
+export type RequiredBodyHeading = (typeof REQUIRED_BODY_HEADINGS)[number];
+
+/** Where each required heading sits in a body. A negative index means the heading is absent. */
+type LocatedSection = { heading: RequiredBodyHeading; index: number };
+
+function locateRequiredSections(body: string): LocatedSection[] {
+    return REQUIRED_BODY_HEADINGS.map((heading) => ({ heading, index: body.indexOf(heading) }));
+}
+
+/**
+ * A missing heading and an empty section are two different failures, so they are diagnosed in two
+ * separate passes and never share a message. Deriving one section's end from the *next* heading's
+ * position — the only way to know where its content stops — means an absent later heading makes the
+ * current section look unterminated. Judging presence first, across every required heading, is what
+ * keeps that from being reported as the preceding section being empty: a body whose Screenshots
+ * heading was never written is missing Screenshots, not missing a How-to-test section that is
+ * sitting right there, full.
+ */
 export function assertPullRequestBody(body: string, label: string): void {
     if (Buffer.byteLength(body, 'utf8') > PULL_REQUEST_BODY_BYTE_LIMIT) {
         fail(`${label} exceeds 4000 bytes`);
     }
-    let previousHeading = -1;
-    for (let index = 0; index < REQUIRED_BODY_HEADINGS.length; index += 1) {
-        const heading = REQUIRED_BODY_HEADINGS[index];
-        if (heading === undefined) {
-            continue;
-        }
-        const headingIndex = body.indexOf(heading);
-        if (headingIndex < 0) {
-            fail(`${label} is missing: ${heading}`);
-        }
-        if (headingIndex <= previousHeading) {
+    const sections = locateRequiredSections(body);
+    const absent = sections.find((section) => section.index < 0);
+    if (absent !== undefined) {
+        fail(`${label} is missing: ${absent.heading}`);
+    }
+    for (const [position, section] of sections.entries()) {
+        const previous = sections[position - 1];
+        if (previous !== undefined && section.index <= previous.index) {
             fail(`${label} sections are out of order`);
         }
-        if (body.includes(heading, headingIndex + heading.length)) {
-            fail(`${label} duplicates: ${heading}`);
+    }
+    for (const [position, section] of sections.entries()) {
+        const contentStart = section.index + section.heading.length;
+        if (body.includes(section.heading, contentStart)) {
+            fail(`${label} duplicates: ${section.heading}`);
         }
-        const nextHeading = REQUIRED_BODY_HEADINGS[index + 1];
-        const contentEnd =
-            nextHeading === undefined ? body.length : body.indexOf(nextHeading, headingIndex + heading.length);
-        if (contentEnd < 0 || body.slice(headingIndex + heading.length, contentEnd).trim() === '') {
-            fail(`${label} section is empty: ${heading}`);
+        const contentEnd = sections[position + 1]?.index ?? body.length;
+        if (body.slice(contentStart, contentEnd).trim() === '') {
+            fail(`${label} section is empty: ${section.heading}`);
         }
-        previousHeading = headingIndex;
     }
 }
 
@@ -175,6 +190,89 @@ ${relatedTickets}
         fail(`pull-request body is missing ${relationship === 'closes' ? 'Closes' : 'Related'} #<issue-number>`);
     }
     return body;
+}
+
+/**
+ * The content a missing heading may be added with. A completion must never invent authored prose, so
+ * a heading only appears here when the template's own answer for "nothing to say" is a statement of
+ * absence rather than a summary somebody has to write. Screenshots is that heading: every body
+ * `composePublishBody` writes already reads `None.` under it, so adding it to a body that has no
+ * screenshots states exactly what is true of that pull request.
+ *
+ * Related tickets is deliberately absent even though `None.` is its filler too. There the word
+ * asserts that the pull request references no issue, and a body written before a heading existed may
+ * carry its `Closes #<issue>` as prose further up; writing `None.` underneath would contradict its
+ * author rather than complete them.
+ */
+export const LEGACY_SECTION_FILLERS: Partial<Record<RequiredBodyHeading, string>> = {
+    '### 🖼️ Screenshots': 'None.',
+};
+
+function withTrailingBlankLine(text: string): string {
+    const trailing = /\n*$/.exec(text)?.[0].length ?? 0;
+    return text === '' ? text : `${text}${'\n'.repeat(Math.max(0, 2 - trailing))}`;
+}
+
+/**
+ * Brings a body written against an older template up to the current one, or returns `undefined` when
+ * it already carries every required heading. The template gains headings over time and an existing
+ * pull request's body is the only copy of what its author wrote, so this only ever *adds*: existing
+ * bytes are copied through untouched, a heading is inserted immediately before the first required
+ * heading that follows it, and nothing is reordered, shortened or replaced.
+ *
+ * It refuses rather than guesses. A body whose existing headings are out of order or repeated cannot
+ * take an insertion without rewriting them; a missing heading with no honest filler is a section only
+ * its author can write; and a completion that would push the body past the byte ceiling has no
+ * silent remedy, because trimming to make room is exactly the rewriting this must not do. Every one
+ * of those is louder than the alternative, which is a pull request that can never be delivered and
+ * no message saying why.
+ */
+export function repairLegacyBody(body: string, label: string): string | undefined {
+    const sections = locateRequiredSections(body);
+    if (sections.every((section) => section.index >= 0)) {
+        return undefined;
+    }
+    const present = sections.filter((section) => section.index >= 0);
+    for (const [position, section] of present.entries()) {
+        const previous = present[position - 1];
+        if (previous !== undefined && section.index <= previous.index) {
+            fail(`${label} carries its template headings out of order: completing it would reorder them`);
+        }
+        if (body.includes(section.heading, section.index + section.heading.length)) {
+            fail(`${label} repeats ${section.heading}: completing it would rewrite that section`);
+        }
+    }
+    const added: string[] = [];
+    let repaired = '';
+    let cursor = 0;
+    const append = (text: string): void => {
+        if (text === '') {
+            return;
+        }
+        repaired = repaired === '' ? text : `${withTrailingBlankLine(repaired)}${text}`;
+    };
+    for (const [position, section] of sections.entries()) {
+        if (section.index >= 0) {
+            continue;
+        }
+        const filler = LEGACY_SECTION_FILLERS[section.heading];
+        if (filler === undefined) {
+            fail(`${label} is missing ${section.heading}, and only its author can write that section`);
+        }
+        const insertAt = sections.slice(position + 1).find((later) => later.index >= 0)?.index ?? body.length;
+        append(body.slice(cursor, insertAt));
+        append(`${section.heading}\n${filler}\n`);
+        added.push(section.heading);
+        cursor = insertAt;
+    }
+    append(body.slice(cursor));
+    if (Buffer.byteLength(repaired, 'utf8') > PULL_REQUEST_BODY_BYTE_LIMIT) {
+        fail(
+            `${label} cannot be completed within ${PULL_REQUEST_BODY_BYTE_LIMIT} bytes: adding ${added.join(', ')} would overflow it, and no existing section may be shortened to make room`
+        );
+    }
+    assertPullRequestBody(repaired, label);
+    return repaired;
 }
 
 export function isIssueArgument(value: string): boolean {
