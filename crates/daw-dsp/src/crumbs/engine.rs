@@ -683,6 +683,17 @@ impl CrumbsEngine {
         target_choke: u8,
         claimed: &[usize],
     ) -> Option<usize> {
+        // The incoming note's own choke group is not on offer for the note's
+        // first voice. The choke pass owns silencing that group and leaves the
+        // slots in place to come back on their own within the 3 ms fade, so a
+        // note that would have to begin by displacing one of its own group's
+        // fresh voices is dropped — the same bounded loss taking a voice that
+        // is already fading is, and the ordering this keeps: reservation first,
+        // so a rejected note never silences the group either. Completing a
+        // stack that has already reserved a slot is the exception — the
+        // reservation is all-or-nothing, and the group the choke is about to
+        // fade anyway is its least audible victim.
+        let first_voice_of_note = claimed.is_empty();
         let mut best_idx: Option<usize> = None;
         let mut best_priority = StealPriority::None;
         let mut quietest_idx: Option<usize> = None;
@@ -710,6 +721,12 @@ impl CrumbsEngine {
             // same reason: they are sounding, they are not fading, and taking
             // one back would silence a note the caller asked for.
             if claimed.contains(&idx) {
+                continue;
+            }
+            // And skip the note's own choke group while that exclusion holds —
+            // not by demoting the tier, which would hand the voice to the
+            // quietest fallback below, but outright.
+            if first_voice_of_note && target_choke > 0 && voice.choke_group == target_choke {
                 continue;
             }
 
