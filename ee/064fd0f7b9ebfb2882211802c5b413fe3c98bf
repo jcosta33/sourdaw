@@ -1,0 +1,19 @@
+tests/e2e/trackArmLinkTestId.spec.ts
+  s_24b1bdbc3c31ad::t_3f7743f88560fb 1,5-14,17,19,22,25-27,29,33-34,37,40,44-45,53-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ee064fd0f7b9ebfb2882211802c5b413fe3c98bf",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
