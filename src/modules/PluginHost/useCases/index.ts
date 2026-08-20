@@ -7,6 +7,7 @@ export { registerFaustDSP } from './faustEngine/registerFaustDSP';
 export { compileFaustDSP } from './faustEngine/compileFaustDSP';
 export { createFaustNode } from './faustEngine/createFaustNode';
 export { isFaustModule } from './faustEngine/isFaustModule';
+export { getFaustModuleLatencyMs } from './faustEngine/getFaustModuleLatencyMs';
 export { isFaustInstrumentModule } from './faustEngine/isFaustInstrumentModule';
 
 export { getPluginHostHandlers } from './getPluginHostHandlers';
