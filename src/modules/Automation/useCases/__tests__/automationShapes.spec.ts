@@ -101,6 +101,53 @@ describe('automationShapes', () => {
         expect(points?.every((p) => p.curve === 'smooth')).toBe(true);
     });
 
+    // A sine cycle spaces its points a quarter-cycle apart, so any range under
+    // 0.2 beats puts adjacent points inside the freehand-jitter merge window
+    // (0.05 beats) and the whole shape used to collapse onto one point. Beats
+    // are compared in milli-beats because 0.12 * 0.25 is not an exact binary
+    // double.
+    it('lands every point of a sine shape denser than the freehand merge window', () => {
+        insertAutomationShape('lane-a', 'sine', 0, 0.12);
+
+        const points = storeCell.state?.lanes[0]?.points ?? [];
+        expect(points.map((point) => Math.round(point.beat * 1000))).toEqual([0, 30, 60, 90, 120]);
+        expect(points.every((point) => point.curve === 'smooth' && point.tension === 0.5)).toBe(true);
+    });
+
+    it('lands every point of a multi-cycle dense sine shape, boundaries included', () => {
+        insertAutomationShape('lane-a', 'sine', 0, 0.24, 2);
+
+        const points = storeCell.state?.lanes[0]?.points ?? [];
+        expect(points.map((point) => Math.round(point.beat * 1000))).toEqual([
+            0, 30, 60, 90, 120, 150, 180, 210, 240,
+        ]);
+    });
+
+    // Random spaces its points an eighth-cycle apart: 0.3 beats gives 0.0375
+    // gaps, again inside the default merge window.
+    it('lands every point of a random shape denser than the freehand merge window', () => {
+        insertAutomationShape('lane-a', 'random', 0, 0.3);
+
+        expect(storeCell.state?.lanes[0]?.points).toHaveLength(9);
+    });
+
+    // The density-sized epsilon must not stop the batch from merging into a
+    // pre-existing point it legitimately overwrites: a shape whose own gaps
+    // are wide keeps the freehand default, and a dense shape still merges with
+    // whatever sits inside its (now smaller) window.
+    it('still merges a generated point into a pre-existing point within the freehand window', () => {
+        storeCell.state = {
+            lanes: [{ ...makeLane('lane-a'), points: [{ beat: 1.999, value: 4, curve: 'linear', tension: 0 }] }],
+        };
+        insertAutomationShape('lane-a', 'triangle', 0, 4);
+
+        // The triangle's beat-2 point lands within 0.05 beats of the existing
+        // 1.999 point and takes it over (the later write wins), so the lane
+        // holds 3 points, not 4.
+        expect(storeCell.state?.lanes[0]?.points.map((point) => point.beat)).toEqual([0, 1.999, 4]);
+        expect(storeCell.state?.lanes[0]?.points[1]?.value).toBe(10);
+    });
+
     it('scales shape values to the lane min/max when they differ from 0/10', () => {
         storeCell.state = { lanes: [{ ...makeLane('lane-b'), minValue: 20, maxValue: 40 }] };
         insertAutomationShape('lane-b', 'triangle', 0, 4);
