@@ -132,6 +132,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // MIDI re-emission gate reads — never ran under test. Any assertion about
     // scheduling windows was vacuous while that hole was open.
     refreshSidechainAlignment: vi.fn(),
+    getCompensationDelay: vi.fn(() => 0),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: harness.logger }));
 vi.mock('../scheduling/scheduleMetronome', () => ({

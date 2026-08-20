@@ -51,7 +51,7 @@
 //! ## Engine bootstrap (#1984)
 //!
 //! The recorded activation point is **lazy start on the first
-//! `apply_graph_commands`**: the engine spawns its CPAL stream when the first
+//! `apply_graph_commands`**: the engine spawns its audio stream when the first
 //! batch arrives, and a machine with no output device degrades observably —
 //! the batch is rejected with an `engine-not-running:` reason and
 //! `engine_rt_diagnostics` keeps reporting `running: false`. The old

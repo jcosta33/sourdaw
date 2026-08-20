@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-render-parity-instrumentation
 subject: the instruments every later design decision is argued from
-status: landed
+status: done
 repo: sourdaw
 date: 2026-08-01
 landed: 2026-08-04

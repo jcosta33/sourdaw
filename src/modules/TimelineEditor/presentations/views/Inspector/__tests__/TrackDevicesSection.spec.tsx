@@ -62,6 +62,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: (action: unknown): void => {
         mockExecuteAppAction(action);
     },
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();

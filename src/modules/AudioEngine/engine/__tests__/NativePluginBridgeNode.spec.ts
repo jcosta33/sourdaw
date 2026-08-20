@@ -8,6 +8,7 @@ import { createNativePluginBridgeNode } from '../NativePluginBridgeNode';
 vi.mock('#/modules/PluginHost/useCases', () => ({
     processAudioIPC: vi.fn(),
     setPluginParameter: vi.fn(),
+    setPluginBypass: vi.fn(() => Promise.resolve()),
 }));
 
 type BridgeWorkletMessage = {
