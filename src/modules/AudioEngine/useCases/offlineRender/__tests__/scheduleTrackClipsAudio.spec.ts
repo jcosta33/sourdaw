@@ -846,4 +846,26 @@ describe('scheduleTrackClips — comping (take-lane) resolution edges', () => {
         // One comp segment (1..3) plus two gaps (0..1, 3..4) → 3 sources.
         expect(sources).toHaveLength(3);
     });
+
+    it('honours audioOffsetBeats on split or slipped audio clips', async () => {
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const buf = makeBuffer(10);
+        mocks.audioBufferCache.get.mockReturnValue(buf);
+
+        const track = TrackDummy.create({
+            clips: [
+                makeAudioClip({
+                    startBeat: 0,
+                    endBeat: 4, // 2.0s at 120bpm
+                    audioOffsetBeats: 2, // 1.0s offset into buffer
+                }),
+            ],
+        });
+
+        await run({ track, ctx });
+
+        expect(sources).toHaveLength(1);
+        // start(when = 0, offset = 1.0, duration = 2.0)
+        expect(sources[0]?.start).toHaveBeenCalledWith(0, 1, 2);
+    });
 });

@@ -20,6 +20,7 @@ export type OfflineProjectableAudioClip = Pick<
     | 'gain'
     | 'fadeInBeats'
     | 'fadeOutBeats'
+    | 'audioOffsetBeats'
 >;
 
 export type ProjectOfflineAudioClipPlaybacksInput = Readonly<{
@@ -102,6 +103,13 @@ export function projectOfflineAudioClipPlaybacks(
     const safeStretchRatio = Math.max(0.01, Math.min(100, stretchRatio));
     const clipGainValue = clip.gain;
 
+    const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
+    const clipOffsetTimelineSec =
+        clipAudioOffsetBeats > 0
+            ? projectBeatToSeconds(clip.startBeat + clipAudioOffsetBeats) - projectBeatToSeconds(clip.startBeat)
+            : 0;
+    const baseBufferOffsetSec = clipOffsetTimelineSec * safeStretchRatio;
+
     const playbacks: OfflineAudioClipPlaybackProjection[] = [];
     for (let iter = 0; iter < maxIterations; iter++) {
         const iterStartBeat = clip.startBeat + iter * loopLen;
@@ -132,13 +140,14 @@ export function projectOfflineAudioClipPlaybacks(
         // timeline. `scheduleOfflineClipSource` scales the span back into
         // source seconds for `start()`, so a ceiling stated here bounds the
         // material that is read.
-        const maxBufferSec = bufferDurationSeconds / safeStretchRatio;
+        const remainingBufferSourceSec = Math.max(0, bufferDurationSeconds - baseBufferOffsetSec);
+        const maxBufferSec = remainingBufferSourceSec / safeStretchRatio;
         const availableSec = Math.min(iterDurationSec, maxBufferSec);
 
         // If this iteration straddles the region start, trim the leading portion
         // by advancing the buffer read offset and clamping start to 0.
         const trimBeforeSec = Math.max(0, -iterStartTime);
-        const bufferOffsetSec = trimBeforeSec * safeStretchRatio;
+        const bufferOffsetSec = baseBufferOffsetSec + trimBeforeSec * safeStretchRatio;
         if (bufferOffsetSec >= bufferDurationSeconds) {
             continue;
         }
