@@ -7,6 +7,18 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         getFloatTimeDomainData: vi.fn((arr: Float32Array) => arr.fill(0)),
         getFloatFrequencyData: vi.fn((arr: Float32Array) => arr.fill(-100)),
     })),
+    getMasterStereoAnalysers: vi.fn(() => ({
+        left: {
+            fftSize: 256,
+            frequencyBinCount: 128,
+            getFloatTimeDomainData: vi.fn((arr: Float32Array) => arr.fill(0)),
+        },
+        right: {
+            fftSize: 256,
+            frequencyBinCount: 128,
+            getFloatTimeDomainData: vi.fn((arr: Float32Array) => arr.fill(0)),
+        },
+    })),
     getTrackAnalyser: vi.fn(),
     getAudioSampleRate: vi.fn(() => 48000),
     PhaseCorrelationMeter: class {
