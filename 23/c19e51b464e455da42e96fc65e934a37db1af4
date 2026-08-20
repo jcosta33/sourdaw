@@ -1,0 +1,33 @@
+src/modules/Automation/useCases/automation/__tests__/batchAddAutomationPoints.spec.ts
+  s_487e9aa1e46063::t_bf915ac30bf538 403-406,427,433-489,495-504
+  s_487e9aa1e46063::t_638b1436a244e7 83-94,96-97,101-112,114
+  s_487e9aa1e46063::t_faba6550d8dd34 490-494,505
+  s_487e9aa1e46063::t_6c804da084ccb7 409-426,428-432
+src/modules/Automation/stores/__tests__/automationStore.spec.ts
+  s_487e9aa1e46063::t_9654a3f9fad2e6 5
+  s_487e9aa1e46063::t_9f5b0f36725663 242-278,283-285,290,294-309,312,315-316
+  s_487e9aa1e46063::t_52a08135fe46b5 279-282,286-289,291-293,310-311,313-314
+src/modules/Automation/stores/automationStore.ts
+  s_487e9aa1e46063::t_376b6e78c90348 228-246
+  s_487e9aa1e46063::t_f27c0dbdf002a2 95-113
+  s_487e9aa1e46063::t_7b7aa18bd68b6a 298-299
+  s_487e9aa1e46063::t_dda636f6c8aa9c 384,387-389,391-393
+src/modules/Automation/useCases/automation/batchAddAutomationPoints.ts
+  s_487e9aa1e46063::t_ef0d14229d35b7 20-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "23c19e51b464e455da42e96fc65e934a37db1af4",
+  "prompts": {},
+  "sessions": {
+    "s_487e9aa1e46063": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49b45b91-028d-462c-b146-db1559561123",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
