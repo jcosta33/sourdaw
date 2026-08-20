@@ -56,6 +56,7 @@ type FakeInput = {
     remoteSha?: string;
     ancestor?: boolean;
     existing?: number;
+    existingByCall?: Array<number | undefined>;
     issueExists?: boolean;
 };
 
@@ -64,6 +65,7 @@ function fakePort(input: FakeInput = {}) {
     const logs: string[] = [];
     const bodies: string[] = [];
     let dirty = input.dirty ?? false;
+    let pullRequestQueries = 0;
     const port: PublishLanePort = {
         fetchMain: () => calls.push('fetch'),
         worktrees: () => input.trees ?? [worktree()],
@@ -83,7 +85,14 @@ function fakePort(input: FakeInput = {}) {
         remoteBranchSha: () => input.remoteSha,
         isAncestor: () => input.ancestor ?? true,
         push: (_lane, branch) => calls.push(`push:${branch}`),
-        existingOpenPullRequest: () => input.existing,
+        // The queried branch is the entire authorization decision on the legacy path, so it goes
+        // into the ledger: a fake that discarded it would stay green if resolution asked about a
+        // sibling lane's branch, or a constant.
+        existingOpenPullRequest: (branch) => {
+            const query = pullRequestQueries++;
+            calls.push(`pr:${branch}`);
+            return input.existingByCall === undefined ? input.existing : input.existingByCall[query];
+        },
         createPullRequest: ({ title, body, branch }) => {
             bodies.push(body);
             calls.push(`create:${branch}:${title}:${body.includes('Closes #12') ? 'closes' : 'missing'}`);
@@ -100,6 +109,19 @@ function fakePort(input: FakeInput = {}) {
         },
     };
     return { port, calls, logs, bodies };
+}
+
+/**
+ * The whole text of a refusal, so a test can assert what it must *not* say. `toThrow` can only
+ * assert presence, and the defect these tests pin is an extra sentence, not a missing one.
+ */
+function refusalMessage(run: () => unknown): string {
+    try {
+        run();
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+    }
+    throw new Error('expected a refusal, but resolution succeeded');
 }
 
 const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
@@ -215,6 +237,7 @@ describe('lane publish', () => {
         expect(resolveAuthorLane(undefined, [foo, fooTwo], '/repo/.agents/worktrees/agent--foo-2')).toEqual({
             path: '/repo/.agents/worktrees/agent--foo-2',
             branch: 'agent/foo-2',
+            legacy: false,
         });
         expect(() => resolveAuthorLane(undefined, [foo], '/repo/.agents/worktrees/agent--foo-2')).toThrow(
             /not inside a locked author lane/
@@ -228,6 +251,7 @@ describe('lane publish', () => {
         expect(resolveAuthorLane(undefined, [outer, inner], '/repo/.agents/worktrees/agent--foo/inner/src')).toEqual({
             path: '/repo/.agents/worktrees/agent--foo/inner',
             branch: 'agent/inner',
+            legacy: false,
         });
     });
 
@@ -239,6 +263,7 @@ describe('lane publish', () => {
         expect(resolveAuthorLane(undefined, [outer, inner], '/w/a/i/src', resolver)).toEqual({
             path: '/w/a/i',
             branch: 'agent/inner',
+            legacy: false,
         });
     });
 
@@ -301,10 +326,12 @@ describe('lane publish', () => {
         expect(resolveAuthorLane(undefined, trees, '/var/lanes/agent--cleanup/scripts', resolver)).toEqual({
             path: '/var/lanes/agent--cleanup',
             branch: 'agent/cleanup',
+            legacy: false,
         });
         expect(resolveAuthorLane(undefined, trees, '/private/var/lanes/agent--cleanup', resolver)).toEqual({
             path: '/var/lanes/agent--cleanup',
             branch: 'agent/cleanup',
+            legacy: false,
         });
     });
 
@@ -316,6 +343,7 @@ describe('lane publish', () => {
         expect(resolveAuthorLane(undefined, trees, `${laneAbsolute}-real/src`, resolver)).toEqual({
             path: 'lanes/agent--relative',
             branch: 'agent/relative',
+            legacy: false,
         });
     });
 
@@ -325,10 +353,12 @@ describe('lane publish', () => {
         expect(resolveAuthorLane(12, trees, PRIMARY_ROOT)).toEqual({
             path: ISSUE_LANE,
             branch: 'agent/12/work',
+            legacy: false,
         });
         expect(resolveAuthorLane(12, trees, '/elsewhere/checkout')).toEqual({
             path: ISSUE_LANE,
             branch: 'agent/12/work',
+            legacy: false,
         });
         expect(() =>
             resolveAuthorLane(2237, [...trees, worktree({ branch: 'agent/2237/second' })], PRIMARY_ROOT)
@@ -490,6 +520,7 @@ describe('lane publish', () => {
             expect(resolveAuthorLane(undefined, trees, `${LEGACY_LANE}/src`, undefined, () => true)).toEqual({
                 path: LEGACY_LANE,
                 branch: LEGACY_BRANCH,
+                legacy: true,
             });
         });
 
@@ -501,17 +532,39 @@ describe('lane publish', () => {
             );
         });
 
-        it('refuses an off-convention branch locked with the wrong reason, naming the lock and the remedy', () => {
+        it('refuses a lock that names another owner without telling the caller how to take it', () => {
+            // The lock reason is the only ownership signal this gate has, so an unrecognized
+            // `active:<someone>` is an owner, not a lane that forgot to migrate. Printing the
+            // unlock/relock pair here is a recipe: run the two commands and the next invocation
+            // resolves, commits, pushes, and rewrites that owner's pull request.
             const trees = [...otherAuthorLanes(), legacyWorktree({ lockReason: 'active:principal' })];
+            const message = refusalMessage(() =>
+                resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => true)
+            );
 
-            expect(() => resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => true)).toThrow(
-                /active:principal/
+            expect(message).toContain('active:principal');
+            expect(message).toContain(`only ${AUTHOR_LOCK_REASON} may publish`);
+            expect(message).not.toContain('git worktree unlock');
+            expect(message).not.toContain('git worktree lock');
+        });
+
+        it('offers the lock migration only for a lock that names nobody', () => {
+            const remedy = new RegExp(
+                `git worktree unlock ${LEGACY_LANE} && git worktree lock --reason ${AUTHOR_LOCK_REASON} ${LEGACY_LANE}`
             );
-            expect(() => resolveAuthorLane(undefined, trees, LEGACY_LANE, undefined, () => true)).toThrow(
-                new RegExp(
-                    `git worktree unlock ${LEGACY_LANE}.*git worktree lock --reason ${AUTHOR_LOCK_REASON} ${LEGACY_LANE}`
+            const unowned = (lockReason: string | undefined) => [...otherAuthorLanes(), legacyWorktree({ lockReason })];
+
+            expect(
+                refusalMessage(() =>
+                    resolveAuthorLane(undefined, unowned(undefined), LEGACY_LANE, undefined, () => true)
                 )
-            );
+            ).toMatch(remedy);
+            // `lane-remove:<pid>` is `removeLane`'s own marker: it records a removal, not an owner.
+            expect(
+                refusalMessage(() =>
+                    resolveAuthorLane(undefined, unowned('lane-remove:2147483647'), LEGACY_LANE, undefined, () => true)
+                )
+            ).toMatch(remedy);
         });
 
         it('does not treat a foreign lock on an off-convention branch as a legacy candidate at all', () => {
@@ -538,9 +591,9 @@ describe('lane publish', () => {
             // The legacy candidate is nested inside the conforming lane and is the deepest enclosing
             // candidate, so it is tried first. Its lock is wrong (`active:collab-lane-9`, not
             // AUTHOR_LOCK_REASON) and it does have an open pull request, so `resolveLegacyCandidate`
-            // throws the lock-migration message. Before the fix that throw ended resolution outright;
-            // now the loop must fall through to the shallower conforming lane the operator is
-            // actually standing in and resolve it instead.
+            // refuses it as someone else's worktree. That refusal is the deepest candidate's, not
+            // the operator's: the loop must record it and fall through to the shallower conforming
+            // lane the operator is actually standing in.
             const outer = worktree({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer' });
             const nestedLegacy = worktree({
                 path: '/repo/.agents/worktrees/agent--outer/legacy-nested',
@@ -556,10 +609,44 @@ describe('lane publish', () => {
                     undefined,
                     () => true
                 )
-            ).toEqual({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer' });
+            ).toEqual({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer', legacy: false });
         });
 
-        it('publishes a legacy lane end to end and writes None., not Closes #2039, into the body', () => {
+        it.each([
+            ['the token is rejected', 'gh: Bad credentials (HTTP 401)'],
+            [
+                'the branch has more than one open pull request',
+                'branch fix/legacy-nested has more than one open pull request',
+            ],
+        ])('propagates a pull-request lookup that failed when %s', (_case, failure) => {
+            // A throw out of `hasOpenPullRequest` means "could not find out", never "this candidate
+            // does not apply". Only `resolveLegacyCandidate`'s own two refusals mean the latter, so
+            // an unknown must stop resolution instead of falling through to a shallower lane and
+            // pushing it.
+            const outer = worktree({ path: '/repo/.agents/worktrees/agent--outer', branch: 'agent/outer' });
+            const nestedLegacy = worktree({
+                path: '/repo/.agents/worktrees/agent--outer/legacy-nested',
+                branch: 'fix/legacy-nested',
+            });
+
+            expect(() =>
+                resolveAuthorLane(
+                    undefined,
+                    [outer, nestedLegacy],
+                    '/repo/.agents/worktrees/agent--outer/legacy-nested/src',
+                    undefined,
+                    () => {
+                        throw new Error(failure);
+                    }
+                )
+            ).toThrow(failure);
+        });
+
+        it('publishes a legacy lane by pushing only, leaving its pull request exactly as written', () => {
+            // `lane:publish` did not author this pull request and cannot reproduce it:
+            // `laneIssueNumber` reads only the `agent/<issue>/` shape, so recomposing the body would
+            // replace a hand-written `Closes #2039` with `None.` and stop the merge closing the
+            // issue. The push is the whole deliverable.
             const { port, calls, bodies } = fakePort({
                 trees: [...otherAuthorLanes(), legacyWorktree()],
                 cwd: LEGACY_LANE,
@@ -568,8 +655,38 @@ describe('lane publish', () => {
 
             expect(publishLane(undefined, port)).toBe(2275);
             expect(calls).toContain(`push:${LEGACY_BRANCH}`);
-            expect(bodies.at(-1)).not.toContain('Closes #2039');
-            expect(bodies.at(-1)).toContain('### 📌 Related tickets & additional notes\nNone.');
+            expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+            expect(bodies).toEqual([]);
+        });
+
+        it('asks about the legacy lane own branch, both when authorizing and after the push', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+            });
+
+            publishLane(undefined, port);
+
+            expect(calls.filter((call) => call.startsWith('pr:'))).toEqual([
+                `pr:${LEGACY_BRANCH}`,
+                `pr:${LEGACY_BRANCH}`,
+            ]);
+        });
+
+        it('refuses when the pull request that authorized the legacy push is gone by the time it lands', () => {
+            // Resolution and the post-push lookup are two separate queries. If the pull request
+            // closed in between there is nothing to update and nothing this script may author, so
+            // it must refuse rather than open a replacement carrying a regenerated body.
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existingByCall: [2275, undefined],
+            });
+
+            expect(() => publishLane(undefined, port)).toThrow(/no longer has an open pull request/);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
         });
     });
 });

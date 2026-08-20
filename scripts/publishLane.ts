@@ -15,6 +15,7 @@ import {
     gitAuthenticatedArgs,
     originMainBlob,
     parseJson,
+    removalLockPid,
     resolvePrimaryRoot,
     spawnCapture,
     spawnRun,
@@ -67,7 +68,12 @@ export function parsePublishLaneArgs(args: string[]): { issue?: number; help: bo
     return { issue: assertIssueNumber(issueArg, PUBLISH_LANE_USAGE), help: false };
 }
 
-type ResolvedLane = { path: string; branch: string };
+/**
+ * `legacy` marks a lane resolved through the pre-`agent/` path. It is not decoration: that lane's
+ * pull request predates `lane:publish` and is not this script's to rewrite, so the flag has to
+ * travel with the lane all the way to the publish step.
+ */
+type ResolvedLane = { path: string; branch: string; legacy: boolean };
 
 export const NO_ISSUE_LANE_FAILURE =
     'not inside a locked author lane: run pnpm lane:publish from inside the lane, or pass the issue number';
@@ -104,7 +110,7 @@ function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
         ) {
             return [];
         }
-        return [{ path: worktree.path, branch }];
+        return [{ path: worktree.path, branch, legacy: false }];
     });
 }
 
@@ -130,12 +136,33 @@ function legacyLaneCandidates(worktrees: PublishWorktree[]): LegacyLaneCandidate
     });
 }
 
+/**
+ * The migration remedy is only for a lock that names nobody: no reason at all, or `removeLane`'s own
+ * `lane-remove:<pid>` marker, which records work in flight rather than an owner. Any other reason is
+ * someone's claim on that worktree, and `legacyForeignLockMessage` handles it instead.
+ */
 function legacyLockMigrationMessage(candidate: LegacyLaneCandidate): string {
     const actual = candidate.lockReason ?? 'with no reason';
     return (
         `${candidate.branch} has an open pull request but ${candidate.path} is locked ${actual}, not ` +
         `${AUTHOR_LOCK_REASON}: only ${AUTHOR_LOCK_REASON} may publish. Migrate the lock, then retry: ` +
         `git worktree unlock ${candidate.path} && git worktree lock --reason ${AUTHOR_LOCK_REASON} ${candidate.path}`
+    );
+}
+
+/**
+ * The lock reason is the only ownership signal this gate has, so a refusal must never hand out the
+ * command that overwrites it. An unrecognized `active:<someone>` is another owner working in that
+ * worktree; relocking it as the author lane and rerunning would commit `git add -A`, push, and
+ * rewrite a pull request that belongs to them. Name the holder and stop — the remedy is theirs to
+ * run, not this caller's.
+ */
+function legacyForeignLockMessage(candidate: LegacyLaneCandidate, owner: string): string {
+    return (
+        `${candidate.branch} has an open pull request but ${candidate.path} is locked ${owner}, not ` +
+        `${AUTHOR_LOCK_REASON}: only ${AUTHOR_LOCK_REASON} may publish, and that lock names its holder. ` +
+        `Whoever holds ${owner} owns this worktree and its pull request; taking the lock here would ` +
+        `push over their work. Ask them to publish it.`
     );
 }
 
@@ -148,29 +175,43 @@ function legacyNoPullRequestMessage(candidate: LegacyLaneCandidate): string {
 }
 
 /**
+ * The three outcomes a candidate can have, returned rather than thrown. `skip` means "this worktree
+ * was never an author lane, try the next candidate"; `refuse` means "it is one, and here is exactly
+ * why it may not publish". Returning them is what lets the resolution loop swallow precisely these
+ * two verdicts and nothing else: `hasOpenPullRequest` reaches `gh`, where an expired token, a rate
+ * limit, a missing binary, or unparseable output all throw, and every one of those means "could not
+ * find out". An authorization gate has to stop on an unknown, not read it as `skip` and go push a
+ * different lane.
+ */
+type LegacyResolution =
+    { kind: 'skip' } | { kind: 'refuse'; message: string } | { kind: 'resolved'; lane: ResolvedLane };
+
+/**
  * Applies the legacy-lane bound to one structural candidate: an open pull request for the exact
  * branch is what proves this off-convention worktree is a genuine (if stranded) author lane; the
- * correct lock is what proves it may push. Returns the resolved lane when both hold; throws the
- * specific, actionable message the moment exactly one of the two holds (that is precisely the
- * situation callers need named); returns `undefined` when neither holds, so the caller can fall back
- * to the ordinary "not a lane" refusal instead of explaining a worktree that was never an author lane.
+ * correct lock is what proves it may push. Resolves when both hold; refuses with the specific,
+ * actionable message the moment exactly one of the two holds (that is precisely the situation
+ * callers need named); skips when neither holds, so the caller can fall back to the ordinary "not a
+ * lane" refusal instead of explaining a worktree that was never an author lane.
  */
 function resolveLegacyCandidate(
     candidate: LegacyLaneCandidate,
     hasOpenPullRequest: (branch: string) => boolean
-): ResolvedLane | undefined {
+): LegacyResolution {
     const correctLock = candidate.lockReason === AUTHOR_LOCK_REASON;
     const hasPullRequest = hasOpenPullRequest(candidate.branch);
-    if (correctLock && hasPullRequest) {
-        return { path: candidate.path, branch: candidate.branch };
+    if (correctLock) {
+        return hasPullRequest
+            ? { kind: 'resolved', lane: { path: candidate.path, branch: candidate.branch, legacy: true } }
+            : { kind: 'refuse', message: legacyNoPullRequestMessage(candidate) };
     }
-    if (correctLock && !hasPullRequest) {
-        fail(legacyNoPullRequestMessage(candidate));
+    if (!hasPullRequest) {
+        return { kind: 'skip' };
     }
-    if (!correctLock && hasPullRequest) {
-        fail(legacyLockMigrationMessage(candidate));
-    }
-    return undefined;
+    const owner = candidate.lockReason;
+    return owner !== undefined && removalLockPid(owner) === undefined
+        ? { kind: 'refuse', message: legacyForeignLockMessage(candidate, owner) }
+        : { kind: 'refuse', message: legacyLockMigrationMessage(candidate) };
 }
 
 /**
@@ -197,10 +238,12 @@ export function resolveAuthorLane(
     const lanes = authorLanes(worktrees);
     if (issue === undefined) {
         const here = canonicalPath(cwd, resolveExisting);
-        type Enclosing = { canonical: string; resolve: () => ResolvedLane | undefined };
+        type Enclosing = { canonical: string; resolve: () => LegacyResolution };
         const conformingEnclosing: Enclosing[] = lanes.flatMap((lane) => {
             const canonical = canonicalPath(lane.path, resolveExisting);
-            return containsPath(canonical, here) ? [{ canonical, resolve: () => lane }] : [];
+            return containsPath(canonical, here)
+                ? [{ canonical, resolve: (): LegacyResolution => ({ kind: 'resolved', lane }) }]
+                : [];
         });
         const legacyEnclosing: Enclosing[] = legacyLaneCandidates(worktrees).flatMap((candidate) => {
             const canonical = canonicalPath(candidate.path, resolveExisting);
@@ -216,30 +259,30 @@ export function resolveAuthorLane(
         const byDescendingDepth = [...conformingEnclosing, ...legacyEnclosing].sort(
             (a, b) => b.canonical.length - a.canonical.length
         );
-        // A legacy candidate's own `.resolve()` can throw (`resolveLegacyCandidate` calls `fail` on
-        // a bad lock or a missing pull request) instead of returning `undefined`. Before this PR only
-        // one candidate was ever tried, so that throw was final. Now an enclosing conforming lane may
-        // sit shallower than a broken legacy worktree nested inside it (or, symmetrically, deeper —
-        // depth alone decides who is tried first), and a valid lane the operator is standing in
-        // should not fail because an unrelated nested worktree's lock or pull-request problem is not
-        // theirs to fix right now. So a throw is caught and resolution keeps trying shallower
-        // candidates rather than stopping outright. If nothing ever resolves, the first throw
-        // encountered (the deepest candidate's, the one closest to `cwd`) is the most specific
-        // diagnostic available and is rethrown instead of being replaced by the generic
-        // "not inside a locked author lane" message.
-        let firstError: Error | undefined;
+        // A legacy candidate can refuse (bad lock, or no open pull request) where a conforming lane
+        // never does. An enclosing conforming lane may sit shallower than a broken legacy worktree
+        // nested inside it — or, symmetrically, deeper; depth alone decides who is tried first — and
+        // a valid lane the operator is standing in should not fail because an unrelated nested
+        // worktree's problem is not theirs to fix right now. So a refusal is recorded and resolution
+        // keeps trying shallower candidates. If nothing ever resolves, the first refusal seen (the
+        // deepest candidate's, the one closest to `cwd`) is the most specific diagnostic available
+        // and is raised instead of the generic "not inside a locked author lane" message.
+        //
+        // Only a *returned* refusal is absorbed here. Anything `resolve()` throws is an unknown —
+        // `hasOpenPullRequest` reaches the network — and propagates untouched, because a gate that
+        // could not find out must not answer "does not apply".
+        let firstRefusal: string | undefined;
         for (const candidate of byDescendingDepth) {
-            try {
-                const resolved = candidate.resolve();
-                if (resolved !== undefined) {
-                    return resolved;
-                }
-            } catch (error) {
-                firstError ??= error instanceof Error ? error : new Error(String(error));
+            const outcome = candidate.resolve();
+            if (outcome.kind === 'resolved') {
+                return outcome.lane;
+            }
+            if (outcome.kind === 'refuse') {
+                firstRefusal ??= outcome.message;
             }
         }
-        if (firstError !== undefined) {
-            throw firstError;
+        if (firstRefusal !== undefined) {
+            fail(firstRefusal);
         }
         return fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
     }
@@ -248,8 +291,7 @@ export function resolveAuthorLane(
     // *specific* legacy candidate. Resolving one anyway would let `pnpm lane:publish <any issue>`
     // pick up an unrelated stranded lane and stamp `Closes #<that issue>` on its pull request. A
     // legacy lane resolves only from inside itself, with no issue argument — see the `issue ===
-    // undefined` branch above, which is also what keeps `laneIssueNumber` reachable so the body
-    // gets `None.` instead of a wrong closing keyword.
+    // undefined` branch above.
     const prefix = `agent/${issue}/`;
     const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
     if (matches.length !== 1) {
@@ -283,12 +325,7 @@ export function publishLane(issue: number | undefined, port: PublishLanePort): n
     if (behind !== 0 || ahead < 1) {
         fail('lane must be strictly ahead of origin/main');
     }
-    const title = port.headSubject(lane.path);
-    assertConventionalSubject(title, 'pull-request title');
-    // The update path overwrites the whole body, so an argumentless run on an issue lane would
-    // strip `Closes #<issue>` off a pull request that already carried it. The resolved lane's own
-    // branch is the issue of record; `None.` is only for a lane that genuinely has no issue.
-    const body = composePublishBody(issue ?? laneIssueNumber(lane.branch), title);
+    const content = pullRequestContent(issue, lane, port);
     const headSha = port.headSha(lane.path);
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
@@ -296,12 +333,68 @@ export function publishLane(issue: number | undefined, port: PublishLanePort): n
     }
     port.push(lane.path, lane.branch);
     const existing = port.existingOpenPullRequest(lane.branch);
-    const number =
-        existing === undefined
-            ? port.createPullRequest({ branch: lane.branch, title, body })
-            : (port.updatePullRequest(existing, { title, body }), existing);
+    const number = pullRequestNumber(lane, content, existing, port);
     port.log(String(number));
     return number;
+}
+
+function pullRequestNumber(
+    lane: ResolvedLane,
+    content: PullRequestContent | undefined,
+    existing: number | undefined,
+    port: PublishLanePort
+): number {
+    if (content === undefined) {
+        return legacyPullRequestNumber(lane, existing);
+    }
+    if (existing === undefined) {
+        return port.createPullRequest({ branch: lane.branch, ...content });
+    }
+    port.updatePullRequest(existing, content);
+    return existing;
+}
+
+type PullRequestContent = { title: string; body: string };
+
+/**
+ * The title and body to write, or `undefined` for a legacy lane, whose pull request this script must
+ * not touch. `lane:publish` never authored that pull request — the branch predates the convention
+ * and was unpublishable by it — and cannot reproduce it: `laneIssueNumber` reads only the
+ * `agent/<issue>/` shape, so recomposing the body would put `None.` under Related tickets and sever
+ * the `Closes #<issue>` a human wrote, and retitling from HEAD would rename it too. Parsing an issue
+ * out of the branch slug instead is not the fix; the slug is nobody's record, and a rename would
+ * then close the wrong ticket.
+ */
+function pullRequestContent(
+    issue: number | undefined,
+    lane: ResolvedLane,
+    port: PublishLanePort
+): PullRequestContent | undefined {
+    if (lane.legacy) {
+        return undefined;
+    }
+    const title = port.headSubject(lane.path);
+    assertConventionalSubject(title, 'pull-request title');
+    // The update path overwrites the whole body, so an argumentless run on an issue lane would
+    // strip `Closes #<issue>` off a pull request that already carried it. The resolved lane's own
+    // branch is the issue of record; `None.` is only for a lane that genuinely has no issue.
+    return { title, body: composePublishBody(issue ?? laneIssueNumber(lane.branch), title) };
+}
+
+/**
+ * An open pull request for the exact branch is the only thing that authorized this push, and it was
+ * proven before the push, not after. If it has closed in between there is nothing to update and
+ * nothing this script may author, so it refuses rather than opening a replacement carrying a
+ * regenerated body.
+ */
+function legacyPullRequestNumber(lane: ResolvedLane, existing: number | undefined): number {
+    if (existing === undefined) {
+        fail(
+            `${lane.branch} no longer has an open pull request: it was pushed, but a pre-convention ` +
+                `lane's pull request is not lane:publish's to open or rewrite`
+        );
+    }
+    return existing;
 }
 
 export function shellPort(session: GhSession, cwd: string = process.cwd()): PublishLanePort {
