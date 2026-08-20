@@ -1,23 +1,23 @@
 ---
 name: crdt-collaboration
 description: >-
-  Keep project truth, undo, persistence, and collaboration consistent through the
-  Automerge CRDT write path. ALWAYS apply when touching executeAppAction or undo,
-  CrdtDocument, CRDT-backed stores or persistence, .sdaw files, collaboration
-  sessions or transports, or projections between the document and stores — even
-  for a one-line store field. Skip pure presentational state, ephemeral UI, and
-  engine-internal RT buffers.
+    Keep project truth, undo, persistence, and collaboration consistent through the
+    Automerge CRDT write path. ALWAYS apply when touching executeAppAction or undo,
+    CrdtDocument, CRDT-backed stores or persistence, .sdaw files, collaboration
+    sessions or transports, or projections between the document and stores — even
+    for a one-line store field. Skip pure presentational state, ephemeral UI, and
+    engine-internal RT buffers.
 ---
 
 ## Purpose
 
-Project truth is an Automerge document, not a pile of stores. One write path feeds four consumers — live stores, undo/history, persistence, and collaboration sync — so a shortcut that "just writes the store" silently breaks the other three.
+Project truth is an Automerge document, not a pile of stores. One write path feeds live stores, undo/history, persistence, and collaboration sync, so a shortcut that "just writes the store" silently breaks the rest.
 
 ## Core rules
 
 ### 1. Every project mutation goes through `executeAppAction`
 
-Each action executes inside an Automerge storage transaction and carries a semantic context (`setSemanticContext` from CrdtDocument) that becomes its history entry. CRDT history doubles as the undo/audit log. No project-truth write outside this path — not "temporary", not "internal".
+Each action executes inside an Automerge storage transaction and carries a semantic context (`setSemanticContext` from CrdtDocument) that becomes its history entry; that history is also the undo/audit log. No project-truth write outside this path — not "temporary", not "internal".
 
 **Why:** a write that skips the transaction is invisible to undo, persistence, and merge — three features lost for the price of one shortcut.
 
@@ -25,7 +25,7 @@ Each action executes inside an Automerge storage transaction and carries a seman
 
 `runWithAutomergeStorageTransaction` installs the transaction for the **synchronous** execution of the handler. An `async` handler returns its promise at its first `await`, and the transaction is uninstalled right there. Every CRDT-backed store write the handler makes **after** that await runs unscoped: it gets its own commit owner and its own animation frame, so it is **not** part of the action's atomic commit and **survives an abort that should have discarded it**.
 
-A handler that writes after an `await` must capture its scope **synchronously, before that await**, and re-enter it for the later writes:
+Capture the scope **synchronously, before the await**, and re-enter it for the later writes:
 
 ```ts
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
@@ -39,31 +39,25 @@ export async function commitSomething(input: Input): Promise<void> {
 }
 ```
 
-Worked example: `src/modules/Knead/useCases/pitch/commitPitchEdit.ts`. Capture is explicit rather than implicit because browsers have no async context propagation — keeping the transaction installed across an `await` would also capture writes made by unrelated code in that window, and this app dispatches many actions without awaiting them.
+Capture is explicit rather than implicit because browsers have no async context propagation: holding the transaction across an `await` would also capture writes made by unrelated code in that window, and this app dispatches many actions without awaiting them. Worked example: `src/modules/Knead/useCases/pitch/commitPitchEdit.ts`.
 
-**`scope(callback)` takes a synchronous callback.** `scope` restores the previous ambient transaction in a `finally` that runs as soon as the callback's synchronous portion returns — for an `async` callback, that is its first `await`. Writes after that await are unscoped again. Putting the `await` inside `scope` reproduces the exact bug `scope` exists to fix:
+**`scope(callback)` takes a synchronous callback.** It restores the previous ambient transaction in a `finally` that runs as soon as the callback's synchronous portion returns — for an `async` callback, at its first `await`. Awaiting inside `scope` reproduces the exact bug `scope` exists to fix; the block above is the correct shape.
 
 ```ts
-// ❌ Wrong — the await inside scope re-opens the same hole.
+// ❌ the await inside scope re-opens the same hole
 scope(async () => {
     const rendered = await render(input);
     trackStore.set(rendered); // unscoped again
-});
-
-// ✅ Correct — await outside, write inside.
-const rendered = await render(input);
-scope(() => {
-    trackStore.set(rendered);
 });
 ```
 
 Two writes separated by an `await` need two `scope(...)` calls, one per synchronous run.
 
-**Both mistakes fail silently.** Capturing *after* an `await` finds no active transaction and returns a pass-through; awaiting *inside* `scope` un-scopes at that await. Neither raises an error, fails a type check, or trips lint — the code looks fixed and behaves exactly as it did before. Audit finding CC-10 tracks the handlers that still need converting, and carries a proposal to make the second case loud (a dev-mode assertion when the callback returns a thenable).
+**Both mistakes fail silently.** Capturing _after_ an `await` finds no active transaction and returns a pass-through; awaiting _inside_ `scope` un-scopes at that await. Neither raises an error, fails a type check, or trips lint — the code looks fixed and behaves exactly as it did before.
 
 ### 2. CrdtDocument owns the document; modules own projections
 
-Document lifecycle (create/load/save, branches, merge, semantic action history, compaction) belongs to CrdtDocument. Stores fed from the document are projections (`projection/projectProjection.ts`): derived, disposable, rebuildable — never a second truth and never patched by hand.
+Document lifecycle — create/load/save, branches, merge, semantic action history, compaction — belongs to CrdtDocument. Stores fed from the document are projections (`projection/projectProjection.ts`): derived, disposable, rebuildable; never a second truth and never patched by hand.
 
 **Why:** two writable copies of one truth diverge; a projection you cannot throw away becomes the bug you cannot find.
 
@@ -75,13 +69,13 @@ No `AudioContext`, nodes, worklet handles, plugin instances, or editor windows i
 
 ### 4. Know the persistence layers
 
-Browser: CRDT-backed stores persist via the Automerge storage adapter (`src/infra/store/storage/createAutomergeStorage.ts`). Native: the `daw-collab` crate reads/writes `.sdaw` bundles (magic `SDAW`, version u16, per-doc Automerge saves — `crates/daw-collab/src/persistence.rs`); TS encode/decode lives in `CrdtDocument/useCases/sdawFileFormat/`. Filesystem access goes through repositories (`nativeCrdtPersistence/`), never components.
+Browser: CRDT-backed stores persist via the Automerge storage adapter (`src/infra/store/storage/createAutomergeStorage.ts`). Native: the `daw-collab` crate reads and writes `.sdaw` bundles — magic `SDAW`, version u16, per-doc Automerge saves (`crates/daw-collab/src/persistence.rs`); TS encode/decode lives in `CrdtDocument/useCases/sdawFileFormat/`. Filesystem access goes through repositories (`nativeCrdtPersistence/`), never components.
 
 **Why:** two formats, one document model — confusing them corrupts saves at the boundary.
 
-### 5. Three collaboration transports, one document model
+### 5. Transports vary; the document model does not
 
-Serverless WebRTC with manual offer/answer + QR invites; the standalone `server/` WebSocket relay (separate npm package); native LAN via mDNS and `collab_*` Tauri commands. Transport/session/presence belongs to the Collaboration module; the document belongs to CrdtDocument (canonical split: `src/modules/Collaboration/AGENTS.md`).
+Transport, session, and presence belong to the Collaboration module; the document belongs to CrdtDocument. That split, and the transports themselves, are canonical in [src/modules/Collaboration/AGENTS.md](../../../src/modules/Collaboration/AGENTS.md).
 
 **Why:** fixes land in the wrong layer when transport and document ownership blur.
 
@@ -95,25 +89,11 @@ Automerge guarantees convergence of concurrent edits. It does not guarantee sens
 
 ### CRITICAL — Direct store write against a CRDT-backed store
 
-❌ Wrong: `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".
+❌ `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".
 
-✅ Correct: dispatch the owning action; let the transaction update the document and the projection refresh the store.
-
-### CRITICAL — Post-`await` write in an async handler, left unscoped
-
-❌ Wrong: an `async` handler that writes a CRDT-backed store after an `await`. The write escapes the action's atomic commit and outlives its abort.
-
-```ts
-export async function commitSomething(input: Input): Promise<void> {
-    const rendered = await render(input);
-    trackStore.set(rendered); // unscoped: not in the action, not undone by abort
-}
-```
-
-✅ Correct: capture the scope before the `await` and re-enter it (rule 1).
+✅ Dispatch the owning action; the transaction updates the document and the projection refreshes the store.
 
 ## References
 
 - [docs/architecture/06-crdt-collaboration.md](../../../docs/architecture/06-crdt-collaboration.md) — full write-path and transport architecture.
-- [src/modules/Collaboration/AGENTS.md](../../../src/modules/Collaboration/AGENTS.md) — the three transports in detail.
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — truth/projection state model.
