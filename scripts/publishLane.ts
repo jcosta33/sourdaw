@@ -199,9 +199,9 @@ export function publishLane(
     if (port.dirty(lane.path)) {
         fail(`${lane.branch} ${DIRTY_LANE_FAILURE}`);
     }
-    const { ahead, behind } = port.aheadBehind(lane.path);
-    if (behind !== 0 || ahead < 1) {
-        fail('lane must be strictly ahead of origin/main');
+    const { ahead } = port.aheadBehind(lane.path);
+    if (ahead < 1) {
+        fail('lane must be ahead of origin/main');
     }
     const title = port.laneSubject(lane.path);
     if (title === undefined) {

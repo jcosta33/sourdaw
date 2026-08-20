@@ -13,7 +13,7 @@ const PARAMETER_DESCRIPTOR_UNAVAILABLE_REASON =
 const PARAMETER_SCAN_FAILED_REASON = 'The scanner could not safely complete external parameter inspection.';
 
 type ScannedFactory = {
-    clap_id: string;
+    descriptor_id: string;
     id: string;
     version: string;
     vendor: string;
@@ -85,18 +85,21 @@ function stableFingerprint(parts: readonly string[]): string {
     return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function factoryType(plugin: Pick<ScannedFactory, 'clap_id' | 'id'>): string {
-    const clapId = normalizedScanText(plugin.clap_id);
-    const declaredType = `clap:${clapId}`;
+function factoryType(plugin: Pick<ScannedFactory, 'descriptor_id' | 'id'>): string {
+    const descriptorId = normalizedScanText(plugin.descriptor_id);
+    // The `clap:` prefix and the `clap-id-v2` scheme are persisted device-type
+    // text. They identify already-saved devices, so they stay as written
+    // whatever the descriptor field is called.
+    const declaredType = `clap:${descriptorId}`;
     if (
-        clapId.length > 0 &&
-        Array.from(clapId).length <= 240 &&
-        clapId === plugin.clap_id &&
+        descriptorId.length > 0 &&
+        Array.from(descriptorId).length <= 240 &&
+        descriptorId === plugin.descriptor_id &&
         declaredType.length <= 256
     ) {
         return declaredType;
     }
-    return `clap-scan:${EXTERNAL_FACTORY_IDENTITY_SCHEME}:${stableFingerprint([plugin.clap_id])}`;
+    return `clap-scan:${EXTERNAL_FACTORY_IDENTITY_SCHEME}:${stableFingerprint([plugin.descriptor_id])}`;
 }
 
 function boundedParameterCount(value: number): number | null {
@@ -248,7 +251,7 @@ function parameterContract(plugin: ScannedFactory): ParameterContract {
 function advertisedFactoryFingerprint(plugin: ScannedFactory): string {
     return stableFingerprint([
         factoryType(plugin),
-        plugin.clap_id || plugin.id,
+        plugin.descriptor_id || plugin.id,
         plugin.version,
         plugin.vendor,
         plugin.name,

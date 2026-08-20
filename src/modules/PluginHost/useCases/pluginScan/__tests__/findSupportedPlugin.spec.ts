@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultPluginScanState, pluginScanStore } from '../../../stores/pluginScanStore';
 import { findSupportedPlugin } from '../findSupportedPlugin';
+import { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat } from '../supportedPluginFormats';
 
 const clapPlugin = {
     id: 'path-hash',
-    clap_id: 'com.vendor.plugin',
+    descriptor_id: 'com.vendor.plugin',
     name: 'Vendor Plugin',
     vendor: 'Vendor',
     format: 'clap',
@@ -24,7 +25,7 @@ describe('findSupportedPlugin', () => {
             ...defaultPluginScanState,
             scannedPlugins: [
                 clapPlugin,
-                { ...clapPlugin, id: 'legacy-vst', clap_id: '', name: 'Legacy VST', format: 'vst3' },
+                { ...clapPlugin, id: 'legacy-vst', descriptor_id: '', name: 'Legacy VST', format: 'vst3' },
             ],
         });
     });
@@ -39,5 +40,37 @@ describe('findSupportedPlugin', () => {
         expect(findSupportedPlugin('legacy-vst')).toBeUndefined();
         expect(findSupportedPlugin('Vendor')).toBeUndefined();
         expect(findSupportedPlugin('')).toBeUndefined();
+    });
+
+    it('resolves every listed supported format and nothing outside the list', () => {
+        // Drives the list itself rather than the one format it holds today, so a
+        // format added to it is resolvable without this test being rewritten.
+        pluginScanStore.set({
+            ...defaultPluginScanState,
+            scannedPlugins: SUPPORTED_PLUGIN_FORMATS.map((format) => ({
+                ...clapPlugin,
+                id: `id-${format}`,
+                descriptor_id: `com.vendor.${format}`,
+                name: `${format} plugin`,
+                format,
+            })).concat({
+                ...clapPlugin,
+                id: 'id-unsupported',
+                descriptor_id: 'com.vendor.unsupported',
+                name: 'unsupported plugin',
+                format: 'not-a-format',
+            }),
+        });
+
+        for (const format of SUPPORTED_PLUGIN_FORMATS) {
+            expect(findSupportedPlugin(`id-${format}`)?.format).toBe(format);
+        }
+        expect(findSupportedPlugin('id-unsupported')).toBeUndefined();
+    });
+
+    it('answers the format question case-insensitively on the wire value', () => {
+        expect(isSupportedPluginFormat('CLAP')).toBe(true);
+        expect(isSupportedPluginFormat('vst3')).toBe(false);
+        expect(SUPPORTED_PLUGIN_FORMATS).toContain('clap');
     });
 });
