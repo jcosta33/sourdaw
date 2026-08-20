@@ -93,6 +93,23 @@ describe('CapabilityReportPanel', () => {
         expect(screen.getByText('Unsupported')).toBeInTheDocument();
     });
 
+    it('should name the Worker failure before a probe-failed WebGPU result', () => {
+        capabilityStore.set({
+            phase: 'done',
+            report: {
+                ...SUPPORTED_REPORT,
+                capability: 'unsupported-browser',
+                workerAvailable: false,
+                webGpu: { status: 'unavailable', reason: 'probe-failed' },
+            },
+        });
+
+        render(<CapabilityReportPanel />);
+
+        expect(screen.getByText('Web Workers are unavailable in this runtime')).toBeInTheDocument();
+        expect(screen.queryByText('The WebGPU usability check could not complete')).not.toBeInTheDocument();
+    });
+
     it.each([
         ['workerAvailable', 'Web Workers are unavailable in this runtime'],
         ['crossOriginIsolated', 'Cross-origin isolation is not active in this runtime'],

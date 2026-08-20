@@ -15,10 +15,12 @@ type FakeWorker = {
 const OriginalWorker = globalThis.Worker;
 let installedWorkers: FakeWorker[] = [];
 let postMessageError: Error | null = null;
+let constructorError: Error | null = null;
 
 beforeEach(() => {
     installedWorkers = [];
     postMessageError = null;
+    constructorError = null;
     class WorkerStub {
         url: string;
         options: WorkerOptions;
@@ -32,6 +34,9 @@ beforeEach(() => {
         terminate = vi.fn();
 
         constructor(url: string | URL, options: WorkerOptions) {
+            if (constructorError) {
+                throw constructorError;
+            }
             this.url = String(url);
             this.options = options;
             installedWorkers.push(this);
@@ -74,6 +79,7 @@ describe('probeWebGpuUsability', () => {
         await expect(result).resolves.toEqual({
             webGpu: { status: 'supported' },
             crossOriginIsolated: true,
+            workerAvailable: true,
         });
         expect(worker.terminate).toHaveBeenCalledTimes(1);
         expect(worker.onmessage).toBeNull();
@@ -101,6 +107,7 @@ describe('probeWebGpuUsability', () => {
         await expect(result).resolves.toEqual({
             webGpu: { status: 'unavailable', reason: 'fallback-adapter' },
             crossOriginIsolated: false,
+            workerAvailable: true,
         });
         expect(worker.terminate).toHaveBeenCalledTimes(1);
     });
@@ -141,6 +148,13 @@ describe('probeWebGpuUsability', () => {
 
         await expect(result).rejects.toThrow('WebGPU probe worker failed');
         expect(worker.terminate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects when the module worker constructor throws before a worker exists', async () => {
+        constructorError = new Error('WebGPU probe worker construction failed');
+
+        await expect(probeWebGpuUsability()).rejects.toThrow('WebGPU probe worker construction failed');
+        expect(installedWorkers).toHaveLength(0);
     });
 
     it('cleans up when posting the probe request throws synchronously', async () => {

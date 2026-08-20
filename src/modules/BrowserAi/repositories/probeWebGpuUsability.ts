@@ -56,7 +56,7 @@ export function probeWebGpuUsability(): Promise<WebGpuProbeObservation> {
                 return;
             }
             finish();
-            resolve({ webGpu: result, crossOriginIsolated: workerCrossOriginIsolated });
+            resolve({ webGpu: result, crossOriginIsolated: workerCrossOriginIsolated, workerAvailable: true });
         };
         worker.onerror = (): void => {
             finish();

@@ -14,6 +14,8 @@ export type WebGpuProbeObservation = {
     webGpu: WebGpuProbeResult;
     /** The isolation fact from the worker global that will host inference. */
     crossOriginIsolated: boolean;
+    /** A valid typed response proves the module worker bridge completed its handshake. */
+    workerAvailable: true;
 };
 
 export type WebGpuProbeResponse = {

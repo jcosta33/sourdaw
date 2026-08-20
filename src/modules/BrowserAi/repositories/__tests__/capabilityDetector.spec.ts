@@ -83,7 +83,7 @@ function install(
     crossOriginIsolated = true
 ): InstallOutput {
     const measure = vi.fn<MeasureThroughput>().mockResolvedValue(throughput);
-    const probe = vi.fn<ProbeWebGpu>().mockResolvedValue({ webGpu, crossOriginIsolated });
+    const probe = vi.fn<ProbeWebGpu>().mockResolvedValue({ webGpu, crossOriginIsolated, workerAvailable: true });
     injectDependencies(detectCapabilities, {
         logger: create_logger_mock(),
         measureInferenceThroughput: measure,
@@ -115,6 +115,7 @@ describe('detectCapabilities', () => {
             probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockResolvedValue({
                 webGpu: { status: 'supported' },
                 crossOriginIsolated: true,
+                workerAvailable: true,
             }),
         });
     });
@@ -233,6 +234,7 @@ describe('detectCapabilities', () => {
 
         const report = await detectCapabilities({ forceRefresh: true });
 
+        expect(measure).not.toHaveBeenCalled();
         expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
     });
 
@@ -249,7 +251,7 @@ describe('detectCapabilities', () => {
 
     // ── Cache handling ───────────────────────────────────────────────────────
 
-    it('should discard the retired Chrome-gated supported report before reusing its measurement', async () => {
+    it('should migrate only the measured throughput from a retired supported report', async () => {
         install_supported_browser();
         const { measure, probe } = install(measured(3));
         const retired_inference = measured(8.75);
@@ -273,8 +275,8 @@ describe('detectCapabilities', () => {
 
         expect(probe).toHaveBeenCalledTimes(1);
         expect(measure).not.toHaveBeenCalled();
-        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
-        expect(report.inference).not.toEqual(retired_inference);
+        expect(report.inference).toEqual(retired_inference);
+        expect(report.webGpuTier).toBe('webgpu-fast');
         expect(report.detectedAt).toBe(detected_at);
         expect(report.detectedAt).not.toBe(retired_detected_at);
         expect(report).toMatchObject({
@@ -285,6 +287,59 @@ describe('detectCapabilities', () => {
         expect(written_report).toEqual(report);
         expect(written_report).not.toHaveProperty('sharedArrayBuffer');
         expect(written_report).not.toHaveProperty('chromeVersion');
+    });
+
+    it('should not reuse a malformed measured throughput from a retired report', async () => {
+        install_supported_browser();
+        install(measured(3));
+        window.localStorage.setItem(
+            storage_key,
+            JSON.stringify({
+                capability: 'supported',
+                webGpu: { status: 'supported' },
+                webGpuTier: 'webgpu-fast',
+                sharedArrayBuffer: true,
+                opfsAvailable: true,
+                chromeVersion: 133,
+                inference: {
+                    status: 'measured',
+                    modelId: 'kokoro-82m-q8',
+                    executionProviders: ['webgpu'],
+                    audioSeconds: 4,
+                    elapsedSeconds: 0,
+                    realtimeFactor: 'fast',
+                },
+                detectedAt: detected_at - 86_400_000,
+            })
+        );
+
+        const report = await detectCapabilities();
+
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
+    });
+
+    it('should not reuse measured throughput from a retired unavailable report', async () => {
+        install_supported_browser();
+        install(measured(3));
+        window.localStorage.setItem(
+            storage_key,
+            JSON.stringify({
+                capability: 'unsupported-browser',
+                webGpu: { status: 'unavailable', reason: 'adapter-unavailable' },
+                webGpuTier: 'webgpu-fast',
+                sharedArrayBuffer: true,
+                opfsAvailable: true,
+                chromeVersion: 133,
+                inference: measured(8.75),
+                detectedAt: detected_at - 86_400_000,
+            })
+        );
+
+        const report = await detectCapabilities();
+
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'not-requested' });
+        expect(report.webGpuTier).toBe('not-measured');
     });
 
     it('should probe current hardware while reusing cached measured throughput', async () => {
@@ -555,6 +610,7 @@ describe('detectCapabilities', () => {
             probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockResolvedValue({
                 webGpu: { status: 'supported' },
                 crossOriginIsolated: false,
+                workerAvailable: true,
             }),
         });
 
@@ -625,26 +681,33 @@ describe('detectCapabilities', () => {
         expect(probe).toHaveBeenCalledTimes(capability === 'workerAvailable' ? 0 : 1);
     });
 
-    it('should fail closed without measuring inference when the WebGPU worker probe rejects', async () => {
+    it.each([
+        ['constructor throw', 'WebGPU probe worker construction failed'],
+        ['postMessage throw', 'postMessage refused'],
+        ['worker error', 'WebGPU probe worker failed'],
+        ['worker timeout', 'WebGPU probe worker timed out'],
+    ])('should report Worker unavailable when the probe bridge has a %s', async (_label, message) => {
         install_supported_browser();
         const measure = vi.fn<MeasureThroughput>().mockResolvedValue(measured(3));
         const logger = create_logger_mock();
         injectDependencies(detectCapabilities, {
             logger,
             measureInferenceThroughput: measure,
-            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockRejectedValue(new Error('WebGPU probe worker timed out')),
+            probeWebGpuUsability: vi.fn<ProbeWebGpu>().mockRejectedValue(new Error(message)),
         });
 
         const report = await detectCapabilities({ forceRefresh: true, measureInference: true });
 
         expect(report.capability).toBe('unsupported-browser');
+        expect(report.workerAvailable).toBe(false);
         expect(report.webGpu).toEqual({ status: 'unavailable', reason: 'probe-failed' });
         expect(report.webGpuTier).toBe('not-measured');
-        expect(report.inference).toEqual({ status: 'not-measured', reason: 'no-webgpu' });
+        expect(report.inference).toEqual({ status: 'not-measured', reason: 'runtime-unavailable' });
         expect(measure).not.toHaveBeenCalled();
         expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
             '[BrowserAi] WebGPU usability probe failed — browser AI disabled'
         );
+        expect(logger.info).toHaveBeenCalledWith('[BrowserAi] Web Workers unavailable — browser AI disabled');
     });
 
     /**
