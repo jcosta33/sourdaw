@@ -6210,6 +6210,15 @@
     "disposition": "eligible"
   },
   {
+    "id": "ui-3c9d1371953bffcd",
+    "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
+    "line": 269,
+    "fingerprint": "Button\t",
+    "kind": "generic-control",
+    "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-3ca469058b76bfd6",
     "file": "src/modules/Levain/presentations/views/LevainPanel.tsx",
     "line": 153,
@@ -8489,7 +8498,7 @@
   {
     "id": "ui-5314900b4b17695b",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 241,
+    "line": 243,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16796,7 +16805,7 @@
   {
     "id": "ui-a80367a44e5fe732",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 254,
+    "line": 256,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -18614,7 +18623,7 @@
   {
     "id": "ui-b92268bf4a69f7a5",
     "file": "src/modules/WorkspaceShell/presentations/views/StatusBar.tsx",
-    "line": 250,
+    "line": 265,
     "fingerprint": "DawStatusDot\t",
     "kind": "daw-chrome",
     "mapping": "DawStatusDot",
