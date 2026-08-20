@@ -28,6 +28,8 @@ Organized by what a device does, not by its name.
 
 **MIDI FX** — [Yeast](./devices/14-yeast.md) (MIDI rack)
 
+**Orchestra** — [Levain](./devices/15-levain.md) (sampled orchestra)
+
 ## Conventions used in this manual
 
 Sourdaw is in active development. Where a feature is incomplete, this manual says so at the point
