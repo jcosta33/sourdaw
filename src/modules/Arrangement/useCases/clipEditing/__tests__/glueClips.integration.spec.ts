@@ -12,6 +12,36 @@ import { setWarpState, warpStates } from '../../../stores/warpStates';
 import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
 
+type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
+type AutomationLanePoints = AutomationLane['points'];
+
+/** One clip-scoped lane, with absolute-beat points, on the given source clip. */
+function clipAutomationLane(
+    laneId: string,
+    clipId: string,
+    parameterId: string,
+    points: AutomationLanePoints
+): AutomationLane {
+    return {
+        id: laneId,
+        trackId: 'track-midi',
+        clipId,
+        parameterId,
+        parameterName: parameterId,
+        points,
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
+}
+
+function setClipAutomationLanes(lanes: readonly AutomationLane[]): void {
+    automationStore.set({ lanes: [...lanes] });
+}
+
 describe('glueClips MIDI state integration', () => {
     beforeEach(() => {
         const first = ClipDummy.create({
