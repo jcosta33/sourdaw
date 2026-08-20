@@ -1,0 +1,19 @@
+tests/e2e/modulationMatrixTestId.spec.ts
+  s_24b1bdbc3c31ad::t_42b97efb069750 1,5-18,21-25,27-28,33,36-38,40-45,49-52,55,57-64,67-69,72-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "aa4a363e05970f62d9a101fd2771005c5a388386",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
