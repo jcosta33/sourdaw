@@ -21,6 +21,12 @@ type FactoryPresetMock = {
 const arrangementMocks = vi.hoisted(() => ({
     compileLoadPresetActions: vi.fn(),
     getFactoryPresets: vi.fn<() => FactoryPresetMock[]>(() => []),
+    getUserPresets: vi.fn<() => FactoryPresetMock[]>(() => []),
+    saveCurrentAsPreset: vi.fn(),
+}));
+
+const notificationMocks = vi.hoisted(() => ({
+    notifyUser: vi.fn(),
 }));
 
 const toasterMocks = vi.hoisted(() => ({
@@ -35,10 +41,14 @@ const commandMocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
     getFactoryPresets: arrangementMocks.getFactoryPresets,
-    getUserPresets: vi.fn(() => []),
-    saveCurrentAsPreset: vi.fn(),
+    getUserPresets: arrangementMocks.getUserPresets,
+    saveCurrentAsPreset: arrangementMocks.saveCurrentAsPreset,
     deleteUserPreset: vi.fn(),
     compileLoadPresetActions: arrangementMocks.compileLoadPresetActions,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: notificationMocks.notifyUser,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -116,6 +126,8 @@ describe('InstrumentsTab', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         arrangementMocks.getFactoryPresets.mockReturnValue([]);
+        arrangementMocks.getUserPresets.mockReturnValue([]);
+        arrangementMocks.saveCurrentAsPreset.mockReturnValue({ id: 'saved-preset' });
         commandMocks.executeAppAction.mockResolvedValue(undefined);
         commandMocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
     });
@@ -280,18 +292,7 @@ describe('InstrumentsTab', () => {
         expect(showToaster).toHaveBeenCalledWith('toaster-device-1');
     });
 
-    it('creates Grand Boule through the catalog action before opening its panel', async () => {
-        const showGrandBoule = vi.fn();
-        const action = {
-            type: 'loadPreset',
-            payload: { presetId: 'grand-boule-default', trackId: 'grand-track' },
-        } as const;
-        arrangementMocks.compileLoadPresetActions.mockReturnValue({
-            actions: [action],
-            deviceIds: ['grand-device-1'],
-            groupLabel: 'Load preset',
-            trackId: 'grand-track',
-        });
+    it('does not advertise a device withheld from release', () => {
         renderWithTooltip(
             <InstrumentsTab
                 selectedTrackId={mockTrack.id}
@@ -302,16 +303,73 @@ describe('InstrumentsTab', () => {
                 preview={mockPreview as any}
                 currentRoute={mockRoute}
                 pushRoute={vi.fn()}
-                panelActions={makePanelActions({ showGrandBoule })}
+                panelActions={makePanelActions()}
             />
         );
 
-        fireEvent.click(screen.getByRole('button', { name: /^Grand Boule/ }));
+        expect(screen.queryByRole('button', { name: /^Grand Boule/ })).not.toBeInTheDocument();
+    });
 
-        await waitFor(() =>
-            expect(arrangementMocks.compileLoadPresetActions).toHaveBeenCalledWith({ presetId: 'grand-boule-default' })
+    it('explains why a preserved preset with a withheld device cannot load', () => {
+        const preset = {
+            id: 'legacy-grand-boule',
+            name: 'Legacy Grand Boule',
+            category: 'keys',
+            description: '',
+            trackKind: 'audio',
+            devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }],
+            tags: [],
+            author: 'user',
+            isFactory: false,
+        };
+        arrangementMocks.getUserPresets.mockReturnValue([preset]);
+        arrangementMocks.compileLoadPresetActions.mockReturnValue(null);
+
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery="legacy"
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview as any}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+            />
         );
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
-        expect(showGrandBoule).toHaveBeenCalledWith('grand-device-1');
+
+        fireEvent.click(screen.getByText('Legacy Grand Boule'));
+
+        expect(notificationMocks.notifyUser).toHaveBeenCalledWith(
+            'Preset contains withheld device "grand-boule" and cannot be loaded in this build.',
+            'error'
+        );
+    });
+
+    it('keeps the save form open when a withheld preset is rejected', () => {
+        arrangementMocks.saveCurrentAsPreset.mockReturnValue(null);
+        const selectedTrack = {
+            ...mockTrack,
+            devices: [{ type: 'grand-boule', name: 'Grand Boule', parameterValues: {} }],
+        };
+
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={selectedTrack.id}
+                searchQuery=""
+                selectedTrack={selectedTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview as any}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByTitle('Save "Track 1" as preset'));
+        fireEvent.change(screen.getByPlaceholderText('Preset name…'), { target: { value: 'Legacy piano' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(screen.getByDisplayValue('Legacy piano')).toBeInTheDocument();
     });
 });

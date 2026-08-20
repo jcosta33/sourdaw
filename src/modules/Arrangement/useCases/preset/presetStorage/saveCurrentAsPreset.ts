@@ -1,3 +1,6 @@
+import { findWithheldDeviceType } from '#/infra/release/deviceReleaseAdmission';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { type SoundPreset } from '../../../models/SoundPreset';
 
 import { saveUserPreset } from './saveUserPreset';
@@ -19,9 +22,14 @@ type SaveCurrentAsPresetInput = {
     trackKind: 'midi' | 'audio';
     devices: SaveCurrentAsPresetDevice[];
 };
-type SaveCurrentAsPresetOutput = SoundPreset;
+type SaveCurrentAsPresetOutput = SoundPreset | null;
 
 export function saveCurrentAsPreset(input: SaveCurrentAsPresetInput): SaveCurrentAsPresetOutput {
+    const withheldDeviceType = findWithheldDeviceType(input.devices);
+    if (withheldDeviceType) {
+        notifyUser(`Preset contains withheld device "${withheldDeviceType}" and was not saved.`, 'warning');
+        return null;
+    }
     return saveUserPreset({
         name: input.name,
         category: input.category,
