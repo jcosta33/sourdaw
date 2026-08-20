@@ -14,6 +14,8 @@ const { transportRef, tempoMapRef } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../stores/transportStore', () => ({
+    MIN_TEMPO: 20,
+    MAX_TEMPO: 300,
     transportStore: {
         get value() {
             return transportRef.value;
